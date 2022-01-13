@@ -923,7 +923,7 @@ void GCToEEInterface::DisablePreemptiveGC()
 Thread* GCToEEInterface::GetThread()
 {
 #ifndef DACCESS_COMPILE
-    return ThreadStore::GetCurrentThreadIfAvailable();
+    return ThreadStore::GetCurrentThread();
 #else
     return NULL;
 #endif
