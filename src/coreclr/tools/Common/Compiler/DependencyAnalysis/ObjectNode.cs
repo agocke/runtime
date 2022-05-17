@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable enable
+
 using System;
 using System.Collections.Generic;
 
@@ -56,8 +58,8 @@ namespace ILCompiler.DependencyAnalysis
 
         public sealed override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory factory)
         {
-            DependencyList dependencies = ComputeNonRelocationBasedDependencies(factory);
-            Relocation[] relocs = GetData(factory, true).Relocs;
+            DependencyList? dependencies = ComputeNonRelocationBasedDependencies(factory);
+            Relocation[]? relocs = GetData(factory, true).Relocs;
 
             if (relocs != null)
             {
@@ -76,12 +78,12 @@ namespace ILCompiler.DependencyAnalysis
                 return dependencies;
         }
 
-        protected virtual DependencyList ComputeNonRelocationBasedDependencies(NodeFactory factory)
+        protected virtual DependencyList? ComputeNonRelocationBasedDependencies(NodeFactory factory)
         {
             return null;
         }
 
-        public override IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(NodeFactory factory) => null;
-        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory factory) => null;
+        public override IEnumerable<CombinedDependencyListEntry>? GetConditionalStaticDependencies(NodeFactory factory) => null;
+        public override IEnumerable<CombinedDependencyListEntry>? SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory factory) => null;
     }
 }

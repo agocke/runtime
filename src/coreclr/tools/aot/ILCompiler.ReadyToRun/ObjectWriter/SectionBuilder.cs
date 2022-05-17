@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable enable
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -227,7 +229,7 @@ namespace ILCompiler.PEWriter
         /// <summary>
         /// Optional symbol representing an entrypoint override.
         /// </summary>
-        ISymbolNode _entryPointSymbol;
+        ISymbolNode? _entryPointSymbol;
 
         /// <summary>
         /// Export directory entry when available.
@@ -245,7 +247,7 @@ namespace ILCompiler.PEWriter
         /// executables don't have a COR header and locate the ReadyToRun
         /// header directly using the well-known export symbol RTR_HEADER.
         /// </summary>
-        ISymbolNode _corHeaderSymbol;
+        ISymbolNode? _corHeaderSymbol;
 
         /// <summary>
         /// Size of the ready-to-run header table in bytes.
@@ -255,7 +257,7 @@ namespace ILCompiler.PEWriter
         /// <summary>
         /// Symbol representing the debug directory.
         /// </summary>
-        ISymbolNode _debugDirectorySymbol;
+        ISymbolNode? _debugDirectorySymbol;
 
         /// <summary>
         /// Size of the debug directory in bytes.
@@ -265,7 +267,7 @@ namespace ILCompiler.PEWriter
         /// <summary>
         /// Symbol representing the start of the win32 resources
         /// </summary>
-        ISymbolNode _win32ResourcesSymbol;
+        ISymbolNode? _win32ResourcesSymbol;
 
         /// <summary>
         /// Size of the win32 resources
@@ -281,7 +283,7 @@ namespace ILCompiler.PEWriter
         /// <summary>
         /// For PE files with exports, this is the "DLL name" string to store in the export directory table.
         /// </summary>
-        string _dllNameForExportDirectoryTable;
+        string? _dllNameForExportDirectoryTable;
 
         /// <summary>
         /// Construct an empty section builder without any sections or blocks.
@@ -337,7 +339,7 @@ namespace ILCompiler.PEWriter
         /// <summary>
         /// Try to look up a pre-existing section in the builder; returns null if not found.
         /// </summary>
-        public Section FindSection(string name)
+        public Section? FindSection(string name)
         {
             return _sections.FirstOrDefault((sec) => sec.Name == name);
         }
@@ -418,7 +420,7 @@ namespace ILCompiler.PEWriter
             _win32ResourcesSize = resourcesSize;
         }
 
-        private NativeAotNameMangler _nameMangler;
+        private NativeAotNameMangler? _nameMangler;
 
         private NameMangler GetNameMangler()
         {
@@ -566,7 +568,7 @@ namespace ILCompiler.PEWriter
         /// <param name="name">Section to serialize</param>
         /// <param name="sectionLocation">Logical section address within the output PE file</param>
         /// <returns></returns>
-        public BlobBuilder SerializeSection(string name, SectionLocation sectionLocation)
+        public BlobBuilder? SerializeSection(string name, SectionLocation sectionLocation)
         {
             if (name == R2RPEBuilder.RelocSectionName)
             {
@@ -578,7 +580,7 @@ namespace ILCompiler.PEWriter
                 return SerializeExportSection(sectionLocation);
             }
 
-            BlobBuilder serializedSection = null;
+            BlobBuilder? serializedSection = null;
 
             // Locate logical section index by name
             foreach (Section section in _sections.Where((sec) => sec.Name == name))
@@ -640,9 +642,9 @@ namespace ILCompiler.PEWriter
 
             BlobBuilder builder = new BlobBuilder();
             int baseRVA = 0;
-            List<ushort> offsetsAndTypes = null;
+            List<ushort>? offsetsAndTypes = null;
 
-            Section relocSection = FindSection(R2RPEBuilder.RelocSectionName);
+            Section? relocSection = FindSection(R2RPEBuilder.RelocSectionName);
             if (relocSection != null)
             {
                 relocSection.FilePosWhenPlaced = sectionLocation.PointerToRawData;
@@ -755,7 +757,10 @@ namespace ILCompiler.PEWriter
 
             // Emit the DLL name
             int dllNameRVA = sectionLocation.RelativeVirtualAddress + builder.Count;
-            builder.WriteUTF8(_dllNameForExportDirectoryTable);
+            if (_dllNameForExportDirectoryTable is not null)
+            {
+                builder.WriteUTF8(_dllNameForExportDirectoryTable);
+            }
             builder.WriteByte(0);
 
             int[] addressTable = new int[maxOrdinal - minOrdinal + 1];
