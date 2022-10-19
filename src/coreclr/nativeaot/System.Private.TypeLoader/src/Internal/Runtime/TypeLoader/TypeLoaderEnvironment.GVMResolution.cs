@@ -21,7 +21,7 @@ namespace Internal.Runtime.TypeLoader
     public sealed partial class TypeLoaderEnvironment
     {
 #if GVM_RESOLUTION_TRACE
-        private string GetTypeNameDebug(RuntimeTypeHandle rtth)
+        private static string GetTypeNameDebug(RuntimeTypeHandle rtth)
         {
             string result;
 
@@ -156,7 +156,7 @@ namespace Internal.Runtime.TypeLoader
                     targetTypeHandle = extRefs.GetRuntimeTypeHandleFromIndex(entryParser.GetUnsigned());
                     isDefaultInterfaceMethodImplementation = RuntimeAugments.IsInterface(targetTypeHandle);
 #if GVM_RESOLUTION_TRACE
-                    Debug.WriteLine("    Searching for GVM implementation on targe type = " + GetTypeNameDebug(targetTypeHandle));
+                    Debug.WriteLine("    Searching for GVM implementation on target type = " + GetTypeNameDebug(targetTypeHandle));
 #endif
                 }
                 else
