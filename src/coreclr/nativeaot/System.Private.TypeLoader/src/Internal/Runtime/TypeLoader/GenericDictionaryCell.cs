@@ -196,11 +196,12 @@ namespace Internal.Runtime.TypeLoader
                                                                                 ConstrainedMethodSlot);
             }
         }
+#endif
 
         /// <summary>
         /// Used for generic Constrained Methods
         /// </summary>
-        private class GenericConstrainedMethodCell : GenericDictionaryCell
+        private class GenericStaticConstrainedMethodCell : GenericDictionaryCell
         {
             internal TypeDesc ConstraintType;
             internal MethodDesc ConstrainedMethod;
@@ -223,7 +224,7 @@ namespace Internal.Runtime.TypeLoader
                     builder.RegisterForPreparation(type);
             }
 
-            internal override IntPtr Create(TypeBuilder builder)
+            internal override unsafe IntPtr Create(TypeBuilder builder)
             {
                 RuntimeTypeHandle[] genericArgHandles = ConstrainedMethod.HasInstantiation ?
                     builder.GetRuntimeTypeHandles(ConstrainedMethod.Instantiation) : null;
@@ -234,10 +235,9 @@ namespace Internal.Runtime.TypeLoader
                     MethodSignature,
                     genericArgHandles);
 
-                return ConstrainedCallSupport.GenericConstrainedCallDesc.Get(builder.GetRuntimeTypeHandle(ConstraintType), rmh);
+                return rmh.Value;
             }
         }
-#endif
 
         /// <summary>
         /// Used for non-generic static constrained Methods
@@ -1061,6 +1061,7 @@ namespace Internal.Runtime.TypeLoader
             Debug.Assert(count > 0);
 
             TypeLoaderLogger.WriteLine("Parsing dictionary layout @ " + parserStartOffset.LowLevelToString() + " (" + count.LowLevelToString() + " entries)");
+            Debug.WriteLine("Non Native Metadata loading");
 
             GenericDictionaryCell[] dictionary = new GenericDictionaryCell[count];
 
@@ -1153,6 +1154,7 @@ namespace Internal.Runtime.TypeLoader
 
             Debug.Assert(count > 0);
             TypeLoaderLogger.WriteLine("Parsing dictionary layout @ " + parserStartOffset.LowLevelToString() + " (" + count.LowLevelToString() + " entries)");
+            Debug.WriteLine("Native Metadata loading");
 
             GenericDictionaryCell[] dictionary = new GenericDictionaryCell[count];
 
@@ -1804,6 +1806,26 @@ namespace Internal.Runtime.TypeLoader
                     }
                     break;
 #endif
+                case FixupSignatureKind.GenericStaticConstrainedMethod:
+                    {
+                        TypeLoaderLogger.WriteLine("GenericStaticConstrainedMethod: ");
+                        var constraintType = nativeLayoutInfoLoadContext.GetType(ref parser);
+                        NativeParser ldtokenSigParser = parser.GetParserFromRelativeOffset();
+                        RuntimeSignature methodNameSig;
+                        RuntimeSignature methodSig;
+                        var method = nativeLayoutInfoLoadContext.GetMethod(ref ldtokenSigParser, out methodNameSig, out methodSig);
+
+                        TypeLoaderLogger.WriteLine("GenericConstrainedMethod: " + constraintType.ToString() + " Method " + method.OwningType.ToString() + "::" + method.NameAndSignature.Name);
+                        cell = new GenericStaticConstrainedMethodCell()
+                        {
+                            ConstraintType = constraintType,
+                            ConstrainedMethod = method,
+                            MethodName = methodNameSig.NativeLayoutSignature(),
+                            MethodSignature = methodSig
+                        };
+                    }
+                    break;
+
                 case FixupSignatureKind.NonGenericStaticConstrainedMethod:
                     {
                         var constraintType = nativeLayoutInfoLoadContext.GetType(ref parser);
@@ -1871,7 +1893,6 @@ namespace Internal.Runtime.TypeLoader
                     break;
 
                 case FixupSignatureKind.NotYetSupported:
-                case FixupSignatureKind.GenericStaticConstrainedMethod:
                     TypeLoaderLogger.WriteLine("Valid dictionary entry, but not yet supported by the TypeLoader!");
                     throw new TypeBuilder.MissingTemplateException();
 

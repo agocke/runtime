@@ -22,7 +22,7 @@ public static class Gvm77070
         }
     }
 
-    public record StringWrap(string Value)
+    public record struct StringWrap(string Value)
         : IDeserialize
     {
         public static void Deserialize<D>(ref D deserializer)
