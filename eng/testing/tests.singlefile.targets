@@ -10,6 +10,13 @@
     <RunScriptCommand Condition="'$(TargetOS)' != 'windows'">chmod +rwx $(AssemblyName) &amp;&amp; ./$(AssemblyName)</RunScriptCommand>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(TargetOS)' == 'windows'">
+    <SetScriptCommands Include="set __IsXUnitLogCheckerSupported=1" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetOS)' != 'windows'">
+    <SetScriptCommands Include="export __IsXUnitLogCheckerSupported=1" />
+  </ItemGroup>
+
   <PropertyGroup Condition="'$(TestNativeAot)' != 'true'">
     <PublishSingleFile>true</PublishSingleFile>
     <UseAppHost>true</UseAppHost>

@@ -44,6 +44,12 @@ set EXECUTION_DIR=%~dp0
 :: Don't use a globally installed SDK.
 set DOTNET_MULTILEVEL_LOOKUP=0
 
+
+:: Custom configuration settings
+[[SetCommands]]
+[[SetCommandsEcho]]
+:: End custom configuration settings
+
 :: Assume failure
 set HAS_TEST_RESULTS=0
 

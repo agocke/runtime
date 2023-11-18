@@ -61,6 +61,11 @@ exitcode_list[139]="SIGSEGV Illegal memory access. Deref invalid pointer, overru
 exitcode_list[143]="SIGTERM Terminated. Usually before SIGKILL."
 exitcode_list[159]="SIGSYS  Bad System Call."
 
+# Custom configuration settings
+[[SetCommands]]
+[[SetCommandsEcho]]
+# End custom configuration settings
+
 function move_core_file_to_temp_location {
   local core_file_name=$1
 
@@ -79,7 +84,7 @@ function invoke_xunitlogchecker {
   local dump_folder=$1
 
   total_dumps=$(find $dump_folder -name "*.dmp" | wc -l)
-  
+
   if [[ $total_dumps > 0 ]]; then
     echo "Total dumps found in $dump_folder: $total_dumps"
     xunitlogchecker_file_name="$HELIX_CORRELATION_PAYLOAD/XUnitLogChecker.dll"
@@ -88,7 +93,7 @@ function invoke_xunitlogchecker {
     if [[ ! -f $dotnet_file_name ]]; then
       echo "'$dotnet_file_name' was not found. Unable to run XUnitLogChecker."
       xunitlogchecker_exit_code=1
-    elif [[ ! -f $xunitlogchecker_file_name ]]; then 
+    elif [[ ! -f $xunitlogchecker_file_name ]]; then
       echo "'$xunitlogchecker_file_name' was not found. Unable to print dump file contents."
       xunitlogchecker_exit_code=2
     elif [[ ! -d $dump_folder ]]; then
@@ -202,7 +207,7 @@ if [[ $system_name == "Linux" && $test_exitcode -ne 0 ]]; then
   if [[ -e /proc/sys/kernel/core_uses_pid && "1" == $(cat /proc/sys/kernel/core_uses_pid) ]]; then
     core_name_uses_pid=1
   fi
-  
+
   # The osx dumps are too large to egress the machine
   echo Looking around for any Linux dumps...
 
@@ -234,7 +239,7 @@ elif [[ "$__IsXUnitLogCheckerSupported" != "1" ]]; then
   echo "XUnitLogChecker not supported for this test case. Skipping."
 else
   echo ----- start ===============  XUnitLogChecker Output =====================================================
-  
+
   invoke_xunitlogchecker "$HELIX_DUMP_FOLDER"
 
   if [[ $xunitlogchecker_exit_code -ne 0 ]]; then
