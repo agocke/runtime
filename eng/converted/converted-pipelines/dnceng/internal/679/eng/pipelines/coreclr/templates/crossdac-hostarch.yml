@@ -1,0 +1,10 @@
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
+parameters:
+  archType: ''
+variables:
+- name: crossDacHostArch
+  value: x64
+- ${{ if eq(parameters.archType, 'arm') }}:
+  - name: crossDacHostArch
+    value: x86

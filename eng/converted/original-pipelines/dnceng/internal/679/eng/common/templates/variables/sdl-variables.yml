@@ -1,0 +1,5 @@
+variables:
+- name: DefaultGuardianVersion
+  value: 0.109.0
+- name: GuardianPackagesConfigFile
+  value: $(Build.SourcesDirectory)\eng\common\sdl\packages.config

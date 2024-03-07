@@ -1,0 +1,26 @@
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
+parameters:
+  packageType: null
+  target: ''
+  packageStepDescription: null
+  packagingArgs: ''
+  subsetArg: ''
+  condition: succeeded()
+steps:
+- ${{ if ne(variables['System.TeamProject'], 'public') }}:
+  - task: NuGetAuthenticate@1
+    target: ${{ parameters.target }}
+- script: |
+    $(Build.SourcesDirectory)/build.sh \
+      --ci \
+      ${{ parameters.subsetArg }} \
+      ${{ parameters.packagingArgs }} \
+      $(CommonMSBuildArgs) \
+      $(LiveOverridePathArgs) \
+      /bl:artifacts/log/$(_BuildConfig)/msbuild.${{ parameters.packageType }}.installers.binlog
+  displayName: Package ${{ parameters.packageStepDescription }} - ${{ parameters.packageType }}
+  target: ${{ parameters.target }}
+  condition: ${{ parameters.condition }}
+- script: find . -xtype l -delete
+  displayName: Remove broken symbolic links

@@ -1,0 +1,104 @@
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
+# This pipeline will be extended to the OneESPT template
+# If you are not using the E+D shared hosted pool with windows-2022, replace the pool section with your hosted pool, os, and image name. If you are using a Linux image, you must specify an additional windows image for SDL: https://eng.ms/docs/cloud-ai-platform/devdiv/one-engineering-system-1es/1es-docs/1es-pipeline-templates/features/sdlanalysis/overview#how-to-specify-a-windows-pool-for-the-sdl-source-analysis-stage
+# Unable to process stages since it is an unsupported format: ${{ parameters.stages }}, in eng\pipelines\common\templates\pipeline-with-resources.yml.
+parameters:
+- name: stages
+  type: stageList
+resources:
+  containers:
+  - container: linux_arm
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-arm
+    env:
+      ROOTFS_DIR: /crossrootfs/arm
+  - container: linux_armv6
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-20.04-cross-armv6-raspbian-10
+    env:
+      ROOTFS_DIR: /crossrootfs/armv6
+  - container: linux_arm64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-biarch-amd64-arm64
+    env:
+      ROOTFS_HOST_DIR: /crossrootfs/x64
+      ROOTFS_DIR: /crossrootfs/arm64
+  - container: linux_musl_x64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-amd64-alpine
+    env:
+      ROOTFS_DIR: /crossrootfs/x64
+  - container: linux_musl_arm
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-arm-alpine
+    env:
+      ROOTFS_DIR: /crossrootfs/arm
+  - container: linux_musl_arm64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-arm64-alpine
+    env:
+      ROOTFS_DIR: /crossrootfs/arm64
+  - container: linux_bionic
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-android-amd64
+  - container: android_docker
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-android-docker
+  - container: linux_x64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-amd64
+    env:
+      ROOTFS_DIR: /crossrootfs/x64
+  - container: linux_x86
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-x86
+    env:
+      ROOTFS_DIR: /crossrootfs/x86
+  - container: linux_x64_dev_innerloop
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-22.04
+  - container: SourceBuild_centos_x64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:centos-stream8
+  - container: SourceBuild_linux_x64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:almalinux-8-source-build
+  - container: linux_s390x
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-cross-s390x
+    env:
+      ROOTFS_DIR: /crossrootfs/s390x
+  - container: linux_ppc64le
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-cross-ppc64le
+    env:
+      ROOTFS_DIR: /crossrootfs/ppc64le
+  - container: linux_riscv64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-22.04-cross-riscv64
+    env:
+      ROOTFS_DIR: /crossrootfs/riscv64
+  - container: debian-12-gcc13-amd64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:debian-12-gcc13-amd64
+  - container: linux_x64_llvmaot
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:centos-stream8
+  - container: browser_wasm
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-webassembly-20230913040940-1edc1c6
+    env:
+      ROOTFS_DIR: /crossrootfs/x64
+  - container: wasi_wasm
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-webassembly
+    env:
+      ROOTFS_DIR: /crossrootfs/x64
+  - container: freebsd_x64
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-cross-amd64-freebsd-13
+    env:
+      ROOTFS_DIR: /crossrootfs/x64
+  - container: tizen_armel
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-22.04-cross-armel-tizen
+    env:
+      ROOTFS_DIR: /crossrootfs/armel
+  - container: debpkg
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-22.04-debpkg
+  - container: rpmpkg
+    image: mcr.microsoft.com/dotnet-buildtools/prereqs:cbl-mariner-2.0-fpm
+  repositories:
+  - repository: 1ESPipelineTemplates
+    type: git
+    name: 1ESPipelineTemplates/1ESPipelineTemplates
+    ref: refs/tags/release
+extends:
+  template: v1/1ES.Official.PipelineTemplate.yml@1ESPipelineTemplates
+  parameters:
+    pool:
+      name: Azure-Pipelines-1ESPT-ExDShared
+      image: windows-2022
+      os: windows
+    customBuildTags:
+    - ES365AIMigrationTooling
+    stages: ${{ parameters.stages }}

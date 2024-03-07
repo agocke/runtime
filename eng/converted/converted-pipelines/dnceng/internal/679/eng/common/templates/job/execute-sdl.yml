@@ -1,0 +1,115 @@
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
+# Outputs were added with YAML Conditional expressions generated using AI in a best attempt to preserve the boolean logic that would have lead to the tasks producing outputs executing before conversion. You may need to review the generated expressions for correctness of the execution logic, and you will need to manually translate any cross-template parameters.
+# Output from "eng\common\templates\steps\execute-sdl.yml" added to job "Run SDL tool" with conditionals extracted using AI from the following files: "eng\common\templates\steps\execute-sdl.yml".
+# Output from "eng\common\templates\steps\execute-sdl.yml" added to job "Run SDL tool" with conditionals extracted using AI from the following files: "eng\common\templates\steps\execute-sdl.yml".
+
+parameters:
+  enable: 'false'
+  overrideParameters: ''
+  additionalParameters: ''
+  overrideGuardianVersion: ''
+  publishGuardianDirectoryToPipeline: false
+  executeAllSdlToolsScript: 'eng/common/sdl/execute-all-sdl-tools.ps1'
+  sdlContinueOnError: false
+  downloadArtifacts: true
+  extractArchiveArtifacts: false
+  dependsOn: ''
+  artifactNames: ''
+  pipelineArtifactNames: []
+jobs:
+- job: Run_SDL
+  dependsOn: ${{ parameters.dependsOn }}
+  displayName: Run SDL tool
+  condition: and(succeededOrFailed(), eq( ${{ parameters.enable }}, 'true'))
+  variables:
+  - group: DotNet-VSTS-Bot
+  - name: AzDOProjectName
+    value: ${{ parameters.AzDOProjectName }}
+  - name: AzDOPipelineId
+    value: ${{ parameters.AzDOPipelineId }}
+  - name: AzDOBuildId
+    value: ${{ parameters.AzDOBuildId }}
+  - template: /eng/common/templates/variables/sdl-variables.yml@self
+  - name: GuardianVersion
+    value: ${{ coalesce(parameters.overrideGuardianVersion, '$(DefaultGuardianVersion)') }}
+  - template: /eng/common/templates/variables/pool-providers.yml@self
+  templateContext:
+    outputs:
+    - ${{ if ne(parameters.publishGuardianDirectoryToPipeline, 'false') }}:
+      - output: pipelineArtifact
+        displayName: 'Publish GuardianConfiguration'
+        condition: succeededOrFailed()
+        targetPath: $(Agent.BuildDirectory)/.gdn
+        artifactName: GuardianConfiguration
+    - ${{ if ne(parameters.publishGuardianDirectoryToPipeline, 'false') }}:
+      - output: pipelineArtifact
+        displayName: 'Publish SARIF files to CodeAnalysisLogs container'
+        condition: succeededOrFailed()
+        targetPath: $(Build.SourcesDirectory)/CodeAnalysisLogs
+        artifactName: CodeAnalysisLogs
+  steps:
+  - checkout: self
+    clean: true
+  - ${{ if not(and(parameters.AzDOProjectName, parameters.AzDOPipelineId, parameters.AzDOBuildId)) }}:
+    - template: /eng/common/templates/post-build/setup-maestro-vars.yml@self
+  - ${{ if ne(parameters.downloadArtifacts, 'false')}}:
+    - ${{ if ne(parameters.artifactNames, '') }}:
+      - ${{ each artifactName in parameters.artifactNames }}:
+        - task: DownloadBuildArtifacts@0
+          displayName: Download Build Artifacts
+          inputs:
+            buildType: specific
+            buildVersionToDownload: specific
+            project: $(AzDOProjectName)
+            pipeline: $(AzDOPipelineId)
+            buildId: $(AzDOBuildId)
+            artifactName: ${{ artifactName }}
+            downloadPath: $(Build.ArtifactStagingDirectory)\artifacts
+            checkDownloadedFiles: true
+    - ${{ if eq(parameters.artifactNames, '') }}:
+      - task: DownloadBuildArtifacts@0
+        displayName: Download Build Artifacts
+        inputs:
+          buildType: specific
+          buildVersionToDownload: specific
+          project: $(AzDOProjectName)
+          pipeline: $(AzDOPipelineId)
+          buildId: $(AzDOBuildId)
+          downloadType: specific files
+          itemPattern: "**"
+          downloadPath: $(Build.ArtifactStagingDirectory)\artifacts
+          checkDownloadedFiles: true
+  - ${{ each artifactName in parameters.pipelineArtifactNames }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: Download Pipeline Artifacts
+      inputs:
+        buildType: specific
+        buildVersionToDownload: specific
+        project: $(AzDOProjectName)
+        pipeline: $(AzDOPipelineId)
+        buildId: $(AzDOBuildId)
+        artifactName: ${{ artifactName }}
+        downloadPath: $(Build.ArtifactStagingDirectory)\artifacts
+        checkDownloadedFiles: true
+  - powershell: eng/common/sdl/trim-assets-version.ps1 -InputPath $(Build.ArtifactStagingDirectory)\artifacts
+    displayName: Trim the version from the NuGet packages
+    continueOnError: ${{ parameters.sdlContinueOnError }}
+  - powershell: eng/common/sdl/extract-artifact-packages.ps1 -InputPath $(Build.ArtifactStagingDirectory)\artifacts\BlobArtifacts -ExtractPath $(Build.ArtifactStagingDirectory)\artifacts\BlobArtifacts
+    displayName: Extract Blob Artifacts
+    continueOnError: ${{ parameters.sdlContinueOnError }}
+  - powershell: eng/common/sdl/extract-artifact-packages.ps1 -InputPath $(Build.ArtifactStagingDirectory)\artifacts\PackageArtifacts -ExtractPath $(Build.ArtifactStagingDirectory)\artifacts\PackageArtifacts
+    displayName: Extract Package Artifacts
+    continueOnError: ${{ parameters.sdlContinueOnError }}
+  - ${{ if ne(parameters.extractArchiveArtifacts, 'false') }}:
+    - powershell: eng/common/sdl/extract-artifact-archives.ps1 -InputPath $(Build.ArtifactStagingDirectory)\artifacts -ExtractPath $(Build.ArtifactStagingDirectory)\artifacts
+      displayName: Extract Archive Artifacts
+      continueOnError: ${{ parameters.sdlContinueOnError }}
+  - template: /eng/common/templates/steps/execute-sdl.yml@self
+    parameters:
+      overrideGuardianVersion: ${{ parameters.overrideGuardianVersion }}
+      executeAllSdlToolsScript: ${{ parameters.executeAllSdlToolsScript }}
+      overrideParameters: ${{ parameters.overrideParameters }}
+      additionalParameters: ${{ parameters.additionalParameters }}
+      publishGuardianDirectoryToPipeline: ${{ parameters.publishGuardianDirectoryToPipeline }}
+      sdlContinueOnError: ${{ parameters.sdlContinueOnError }}

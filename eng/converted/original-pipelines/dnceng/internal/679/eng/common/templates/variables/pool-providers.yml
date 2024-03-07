@@ -1,0 +1,5 @@
+variables:
+- name: DncEngPublicBuildPool
+  value: $[ replace( replace( eq(contains(coalesce(variables['System.PullRequest.TargetBranch'], variables['Build.SourceBranch'], 'refs/heads/main'), 'release'), 'true'), True, 'NetCore-Svc-Public' ), False, 'NetCore-Public' ) ]
+- name: DncEngInternalBuildPool
+  value: $[ replace( replace( eq(contains(coalesce(variables['System.PullRequest.TargetBranch'], variables['Build.SourceBranch'], 'refs/heads/main'), 'release'), 'true'), True, 'NetCore1ESPool-Svc-Internal' ), False, 'NetCore1ESPool-Internal' ) ]

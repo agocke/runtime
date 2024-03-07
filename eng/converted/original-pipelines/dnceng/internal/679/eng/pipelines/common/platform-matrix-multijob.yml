@@ -1,0 +1,9 @@
+parameters:
+  jobTemplates: []
+  platforms: []
+jobs:
+- ${{ each job in parameters.jobTemplates }}:
+  - template: /eng/pipelines/common/platform-matrix.yml@self
+    parameters:
+      platforms: ${{ parameters.platforms }}
+      ${{ insert }}: ${{ job }}

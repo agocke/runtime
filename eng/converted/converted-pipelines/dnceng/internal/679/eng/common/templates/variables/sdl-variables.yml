@@ -1,0 +1,7 @@
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
+variables:
+- name: DefaultGuardianVersion
+  value: 0.109.0
+- name: GuardianPackagesConfigFile
+  value: $(Build.SourcesDirectory)\eng\common\sdl\packages.config

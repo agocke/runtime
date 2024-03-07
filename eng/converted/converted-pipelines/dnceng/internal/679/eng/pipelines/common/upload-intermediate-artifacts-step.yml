@@ -1,0 +1,27 @@
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
+# The Task 'PublishBuildArtifacts@1' has been converted to an output named 'Publish intermediate artifacts' in the templateContext section.
+parameters:
+  name: ''
+  publishPackagesCondition: always()
+  publishVSSetupCondition: false
+steps:
+- task: CopyFiles@2
+  displayName: Prepare job-specific intermediate artifacts subdirectory
+  condition: and(succeeded(), ${{ parameters.publishPackagesCondition }})
+  inputs:
+    SourceFolder: '$(Build.SourcesDirectory)/artifacts/packages/$(_BuildConfig)'
+    Contents: |
+      Shipping/**/*
+      NonShipping/**/*
+    TargetFolder: '$(Build.StagingDirectory)/IntermediateArtifacts/${{ parameters.name }}'
+    CleanTargetFolder: true
+- task: CopyFiles@2
+  displayName: Prepare job-specific intermediate artifacts subdirectory
+  condition: and(succeeded(), ${{ parameters.publishVSSetupCondition }})
+  inputs:
+    SourceFolder: '$(Build.SourcesDirectory)/artifacts/VSSetup/$(_BuildConfig)'
+    Contents: |
+      Insertion/**/*
+    TargetFolder: '$(Build.StagingDirectory)/IntermediateArtifacts/${{ parameters.name }}'
+    CleanTargetFolder: true
