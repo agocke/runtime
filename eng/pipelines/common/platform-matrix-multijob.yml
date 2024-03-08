@@ -1,13 +1,11 @@
-# Use one list of platforms to create build jobs for multiple templates. Avoids
-# platform list duplication.
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
 parameters:
   jobTemplates: []
   platforms: []
-
 jobs:
-
 - ${{ each job in parameters.jobTemplates }}:
-  - template: /eng/pipelines/common/platform-matrix.yml
+  - template: /eng/pipelines/common/platform-matrix.yml@self
     parameters:
       platforms: ${{ parameters.platforms }}
       ${{ insert }}: ${{ job }}

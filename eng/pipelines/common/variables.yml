@@ -1,18 +1,14 @@
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
 variables:
-
-# These values enable longer delays, configurable number of retries, and special understanding of TCP hang-up 
-# See https://github.com/NuGet/Home/issues/11027 for details
 - name: NUGET_ENABLE_EXPERIMENTAL_HTTP_RETRY
   value: true
 - name: NUGET_EXPERIMENTAL_MAX_NETWORK_TRY_COUNT
   value: 6
 - name: NUGET_EXPERIMENTAL_NETWORK_RETRY_DELAY_MILLISECONDS
   value: 1000
-
-# disable CodeQL if we're not in the dedicated pipeline for it
 - name: Codeql.Enabled
   value: ${{ eq(variables['Build.DefinitionName'], 'dotnet-runtime-codeql') }}
-
 - name: isOfficialBuild
   value: ${{ and(eq(variables['System.TeamProject'], 'internal'), eq(variables['Build.DefinitionName'], 'dotnet-runtime-official')) }}
 - name: isRollingBuild
@@ -39,9 +35,6 @@ variables:
   value: ${{ notin(variables['Build.DefinitionName'], 'runtime-extra-platforms', 'runtime-wasm', 'runtime-wasm-libtests', 'runtime-wasm-non-libtests', 'runtime-ioslike', 'runtime-ioslikesimulator', 'runtime-android', 'runtime-androidemulator', 'runtime-maccatalyst', 'runtime-linuxbionic') }}
 - name: isNotSpecificPlatformOnlyBuild
   value: ${{ notin(variables['Build.DefinitionName'], 'runtime-wasm', 'runtime-wasm-libtests', 'runtime-wasm-non-libtests', 'runtime-ioslike', 'runtime-ioslikesimulator', 'runtime-android', 'runtime-androidemulator', 'runtime-maccatalyst', 'runtime-linuxbionic') }}
-
-# We only run evaluate paths on runtime and runtime-community pipelines on PRs
-# keep in sync with /eng/pipelines/common/xplat-setup.yml
 - name: dependOnEvaluatePaths
   value: ${{ and(eq(variables['Build.Reason'], 'PullRequest'), in(variables['Build.DefinitionName'], 'runtime', 'runtime-community', 'runtime-extra-platforms', 'runtime-wasm', 'runtime-wasm-libtests', 'runtime-wasm-non-libtests', 'runtime-ioslike', 'runtime-ioslikesimulator', 'runtime-android', 'runtime-androidemulator', 'runtime-maccatalyst', 'runtime-linuxbionic', 'dotnet-linker-tests', 'runtime-dev-innerloop', 'runtime-coreclr superpmi-replay', 'runtime-coreclr superpmi-diffs')) }}
 - name: debugOnPrReleaseOnRolling
@@ -49,12 +42,6 @@ variables:
     value: Release
   ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
     value: Debug
-
 - name: isDefaultPipeline
-  value: $[ and(
-              ne(variables['isWasmOnlyBuild'], true),
-              or(
-                ne(variables['isExtraPlatformsBuild'], true),
-                eq(variables['isRollingBuild'], true))) ]
-
-- template: /eng/pipelines/common/perf-variables.yml
+  value: $[ and( ne(variables['isWasmOnlyBuild'], true), or( ne(variables['isExtraPlatformsBuild'], true), eq(variables['isRollingBuild'], true))) ]
+- template: /eng/pipelines/common/perf-variables.yml@self

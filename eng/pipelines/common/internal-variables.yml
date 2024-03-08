@@ -1,12 +1,13 @@
+# This Yaml Document has been converted by ESAI Yaml Pipeline Conversion Tool.
+# Please make sure to check all the converted content, it is your team's responsibility to make sure that the pipeline is still valid and functions as expected.
 parameters:
   teamName: ''
-
 variables:
-  - name: TeamName
-    value: ${{ parameters.teamName }}
-  - ${{ if or(startswith(variables['Build.SourceBranch'], 'refs/heads/release/'), startswith(variables['Build.SourceBranch'], 'refs/heads/internal/release/'), eq(variables['Build.Reason'], 'Manual')) }}:
-    - name: PostBuildSign
-      value: false
-  - ${{ else }}:
-    - name: PostBuildSign
-      value: true
+- name: TeamName
+  value: ${{ parameters.teamName }}
+- ${{ if or(startswith(variables['Build.SourceBranch'], 'refs/heads/release/'), startswith(variables['Build.SourceBranch'], 'refs/heads/internal/release/'), eq(variables['Build.Reason'], 'Manual')) }}:
+  - name: PostBuildSign
+    value: false
+- ${{ else }}:
+  - name: PostBuildSign
+    value: true
