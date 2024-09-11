@@ -362,3 +362,9 @@ src/coreclr/System.Private.CoreLib/common
 .dotnet-daily/
 run-stress-*
 test:.cs
+
+# Bazel
+bazel-bin
+bazel-out
+bazel-runtime
+bazel-testlogs

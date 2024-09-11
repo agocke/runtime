@@ -1,0 +1,14 @@
+load(
+    "@rules_dotnet//dotnet:defs.bzl",
+    "csharp_binary",
+    "csharp_library",
+    "csharp_nunit_test",
+)
+
+csharp_binary(
+    name = "instance_assignment_class01",
+    srcs = [ "JIT/Generics/Locals/instance_assignment_class01.cs",
+        "Common/Assert.cs"
+    ],
+    target_frameworks = [ "net8.0" ]
+)
