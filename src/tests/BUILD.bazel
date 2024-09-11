@@ -7,8 +7,11 @@ load(
 
 csharp_binary(
     name = "instance_assignment_class01",
-    srcs = [ "JIT/Generics/Locals/instance_assignment_class01.cs",
-        "Common/Assert.cs"
+    srcs = [
+        "JIT/Generics/Locals/instance_assignment_class01.cs",
+    ],
+    deps = [
+        "//:TargetingPack"
     ],
     target_frameworks = [ "net8.0" ]
 )
