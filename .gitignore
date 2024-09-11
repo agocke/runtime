@@ -368,3 +368,9 @@ test:.cs
 *.tempLog.xml
 *.testResults.xml
 *.testStats.csv
+
+# Bazel
+bazel-bin
+bazel-out
+bazel-runtime
+bazel-testlogs
