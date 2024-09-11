@@ -1,0 +1,14 @@
+load(
+    "@rules_dotnet//dotnet:defs.bzl",
+    "import_library"
+)
+
+import_library(
+    name = "TargetingPack",
+    library_name = "xunit.abstractions",
+    refs = [
+        "artifacts/TargetingPack/xunit.abstractions.dll",
+        "artifacts/TargetingPack/xunit.core.dll"
+    ],
+    visibility = ["//visibility:public"]
+)
