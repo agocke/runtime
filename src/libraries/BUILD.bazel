@@ -38,6 +38,7 @@ csharp_library(
         "System.Private.CoreLib/ref/System.Private.CoreLib.ManualShimTypeForwards.cs",
     ],
     nullable = "enable",
+    allow_unsafe_blocks = True,
     target_frameworks = [ "net9.0" ],
     disable_implicit_framework_refs = True
 )
