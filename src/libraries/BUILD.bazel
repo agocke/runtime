@@ -1,0 +1,43 @@
+load(
+    "@rules_dotnet//dotnet:defs.bzl",
+    "csharp_library"
+)
+
+csharp_library(
+    name = "ref_System.Private.CoreLib",
+    srcs = [
+        "Microsoft.Win32.Primitives/ref/Microsoft.Win32.Primitives.cs",
+        "System.Diagnostics.Contracts/ref/System.Diagnostics.Contracts.cs",
+        "System.Diagnostics.Tracing/ref/System.Diagnostics.Tracing.cs",
+        "System.Diagnostics.Tracing/ref/System.Diagnostics.Tracing.Counters.cs",
+        "System.Numerics.Vectors/ref/System.Numerics.Vectors.cs",
+        "System.Reflection.Emit.ILGeneration/ref/System.Reflection.Emit.ILGeneration.cs",
+        "System.Reflection.Emit.Lightweight/ref/System.Reflection.Emit.Lightweight.cs",
+        "System.Reflection.Emit/ref/System.Reflection.Emit.cs",
+        "System.Reflection.Primitives/ref/System.Reflection.Primitives.cs",
+        "System.Runtime.Intrinsics/ref/System.Runtime.Intrinsics.cs",
+        "System.Runtime.Loader/ref/System.Runtime.Loader.cs",
+        "System.Runtime/ref/System.Runtime.cs",
+        "System.Text.Encoding.Extensions/ref/System.Text.Encoding.Extensions.cs",
+        "System.Threading.Overlapped/ref/System.Threading.Overlapped.cs",
+        "System.Threading.ThreadPool/ref/System.Threading.ThreadPool.cs",
+        "System.Threading.Thread/ref/System.Threading.Thread.cs",
+
+        # contracts where types were partially moved to CoreLib, these are used both here and in the contract assemblies and are generated -->
+        "System.Collections.Concurrent/ref/System.Collections.Concurrent.cs",
+        "System.Collections/ref/System.Collections.cs",
+        "System.Diagnostics.StackTrace/ref/System.Diagnostics.StackTrace.cs",
+        "System.Memory/ref/System.Memory.cs",
+        "System.Runtime.InteropServices/ref/System.Runtime.InteropServices.cs",
+        "System.Threading/ref/System.Threading.cs",
+
+        # types only exposed through CoreLib, this is manually maintained -->
+        "System.Private.CoreLib/ref/System.Private.CoreLib.ExtraApis.cs",
+
+        # types not exposed in contracts but forwarded from the mscorlib shim, this is manually maintained -->
+        "System.Private.CoreLib/ref/System.Private.CoreLib.ManualShimTypeForwards.cs",
+    ],
+    nullable = "enable",
+    target_frameworks = [ "net9.0" ],
+    disable_implicit_framework_refs = True
+)

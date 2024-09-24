@@ -1,7 +1,8 @@
-bazel_dep(name = "rules_dotnet", version = "0.15.1")
+bazel_dep(name = "rules_dotnet")
+local_path_override(module_name = "rules_dotnet", path = "/home/andy/code/rules_dotnet")
 
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
-dotnet.toolchain(dotnet_version = "8.0.200")
+dotnet.toolchain(dotnet_version = "9.0.100-preview.7.24407.12")
 use_repo(dotnet, "dotnet_toolchains")
 
 register_toolchains("@dotnet_toolchains//:all")
