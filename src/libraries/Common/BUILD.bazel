@@ -2,4 +2,5 @@
 exports_files([
     "src/System/Collections/Generic/ArrayBuilder.cs",
     "src/System/Experimentals.cs",
+    "src/System/Runtime/Versioning/NonVersionableAttribute.cs"
 ])
