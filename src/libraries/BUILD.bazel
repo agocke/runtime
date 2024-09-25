@@ -3,6 +3,19 @@ load(
     "csharp_library"
 )
 
+nowarn = [ "CS8500", "CS8969" ]
+
+ref_assembly_nowarns = [
+    # Ref assemblies use 'throw null'
+    "CS8597",
+    # Fields are unused
+    "CS0169", "CS0649", "CS8618",
+    # Fields are not assigned in ctors
+    "CS8618",
+    # Call base constructors with null literals
+    "CS8625"
+]
+
 csharp_library(
     name = "ref_System.Private.CoreLib",
     srcs = [
@@ -40,5 +53,24 @@ csharp_library(
     nullable = "enable",
     allow_unsafe_blocks = True,
     target_frameworks = [ "net9.0" ],
-    disable_implicit_framework_refs = True
+    disable_implicit_framework_refs = True,
+    defines = ["BUILDING_CORELIB_REFERENCE"],
+    compiler_options = [ "/runtimemetadataversion:v4.0.30319" ],
+    nowarn = nowarn + ref_assembly_nowarns + [
+        # disable warnings about obsolete APIs,
+        # Remove warning disable when nullable attributes are respected,
+        # Type has no accessible constructors which use only CLS-compliant types
+        "CS0809", "CS0618", "CS8614", "CS3015"
+    ]
+)
+
+csharp_library(
+    name = "impl_System.Private.CoreLib",
+    srcs = [],
+    nullable = "enable",
+    allow_unsafe_blocks = True,
+    target_frameworks = [ "net9.0" ],
+    disable_implicit_framework_refs = True,
+    compiler_options = [ "/runtimemetadataversion:v4.0.30319" ],
+    nowarn = nowarn
 )
