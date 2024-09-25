@@ -135,6 +135,7 @@ csharp_library(
         # Common
         "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
         "//src/libraries/Common:src/System/Experimentals.cs",
+        "//src/libraries/Common:src/System/Runtime/Versioning/NonVersionableAttribute.cs",
 
         # files from nativeaot
         "//src/coreclr/nativeaot:Common/src/System/Runtime/RhFailFastReason.cs",
