@@ -1,0 +1,216 @@
+load(
+    "@rules_dotnet//dotnet:defs.bzl",
+    "csharp_library"
+)
+
+load(
+    "//src/libraries/System.Private.CoreLib/src:files.bzl",
+    "all_files"
+)
+
+nowarn = [ "CS8500", "CS8969" ]
+
+csharp_library(
+    name = "impl_System.Private.CoreLib",
+    srcs = [
+        "src/Internal/Runtime/CompilerHelpers/ThrowHelpers.cs",
+        "src/Internal/Runtime/InteropServices/ComActivationContextInternal.cs",
+        "src/Internal/Runtime/InteropServices/ComponentActivator.CoreCLR.cs",
+        "src/System/__Canon.cs",
+        "src/System/ArgIterator.cs",
+        "src/System/Array.CoreCLR.cs",
+        "src/System/Attribute.CoreCLR.cs",
+        "src/System/BadImageFormatException.CoreCLR.cs",
+        "src/System/Buffer.CoreCLR.cs",
+        "src/System/CLRConfig.cs",
+        "src/System/Collections/EmptyReadOnlyDictionaryInternal.cs",
+        "src/System/Collections/Generic/ArraySortHelper.CoreCLR.cs",
+        "src/System/Collections/Generic/Comparer.CoreCLR.cs",
+        "src/System/Collections/Generic/ComparerHelpers.cs",
+        "src/System/Collections/Generic/EqualityComparer.CoreCLR.cs",
+        "src/System/ComAwareWeakReference.CoreCLR.cs",
+        "src/System/Currency.cs",
+        "src/System/Delegate.CoreCLR.cs",
+        "src/System/Diagnostics/Debugger.cs",
+        "src/System/Diagnostics/EditAndContinueHelper.cs",
+        "src/System/Diagnostics/ICustomDebuggerNotification.cs",
+        "src/System/Diagnostics/StackFrame.CoreCLR.cs",
+        "src/System/Diagnostics/StackFrameHelper.cs",
+        "src/System/Diagnostics/StackTrace.CoreCLR.cs",
+        "src/System/Enum.CoreCLR.cs",
+        "src/System/Environment.CoreCLR.cs",
+        "src/System/Exception.CoreCLR.cs",
+        "src/System/GC.CoreCLR.cs",
+        "src/System/IO/FileLoadException.CoreCLR.cs",
+        "src/System/IO/FileNotFoundException.CoreCLR.cs",
+        "src/System/IO/Stream.CoreCLR.cs",
+        "src/System/Math.CoreCLR.cs",
+        "src/System/MathF.CoreCLR.cs",
+        "src/System/MulticastDelegate.CoreCLR.cs",
+        "src/System/Object.CoreCLR.cs",
+        "src/System/Reflection/Assembly.CoreCLR.cs",
+        "src/System/Reflection/AssemblyName.CoreCLR.cs",
+        "src/System/Reflection/Associates.cs",
+        "src/System/Reflection/ConstructorInfo.CoreCLR.cs",
+        "src/System/Reflection/ConstructorInvoker.CoreCLR.cs",
+        "src/System/Reflection/Emit/CustomAttributeBuilder.cs",
+        "src/System/Reflection/Emit/DynamicILGenerator.cs",
+        "src/System/Reflection/Emit/DynamicMethod.CoreCLR.cs",
+        "src/System/Reflection/Emit/RuntimeAssemblyBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeConstructorBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeEnumBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeEventBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeFieldBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeGenericTypeParameterBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeILGenerator.cs",
+        "src/System/Reflection/Emit/RuntimeLocalBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeMethodBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeModuleBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeParameterBuilder.cs",
+        "src/System/Reflection/Emit/RuntimePropertyBuilder.cs",
+        "src/System/Reflection/Emit/RuntimeTypeBuilder.cs",
+        "src/System/Reflection/Emit/SignatureHelper.cs",
+        "src/System/Reflection/Emit/SymbolMethod.cs",
+        "src/System/Reflection/FieldInfo.CoreCLR.cs",
+        "src/System/Reflection/LoaderAllocator.cs",
+        "src/System/Reflection/MdConstant.cs",
+        "src/System/Reflection/MdFieldInfo.cs",
+        "src/System/Reflection/MdImport.cs",
+        "src/System/Reflection/MemberInfo.Internal.cs",
+        "src/System/Reflection/Metadata/AssemblyExtensions.cs",
+        "src/System/Reflection/Metadata/MetadataUpdater.cs",
+        "src/System/Reflection/MethodBase.CoreCLR.cs",
+        "src/System/Reflection/MethodBaseInvoker.CoreCLR.cs",
+        "src/System/Reflection/MethodInvoker.CoreCLR.cs",
+        "src/System/Reflection/ModifiedType.CoreCLR.cs",
+        "src/System/Reflection/RtFieldInfo.cs",
+        "src/System/Reflection/RuntimeAssembly.cs",
+        "src/System/Reflection/RuntimeConstructorInfo.CoreCLR.cs",
+        "src/System/Reflection/RuntimeCustomAttributeData.cs",
+        "src/System/Reflection/RuntimeEventInfo.cs",
+        "src/System/Reflection/RuntimeExceptionHandlingClause.cs",
+        "src/System/Reflection/RuntimeFieldInfo.cs",
+        "src/System/Reflection/RuntimeLocalVariableInfo.cs",
+        "src/System/Reflection/RuntimeMethodBody.cs",
+        "src/System/Reflection/RuntimeMethodInfo.CoreCLR.cs",
+        "src/System/Reflection/RuntimeModule.cs",
+        "src/System/Reflection/RuntimeParameterInfo.cs",
+        "src/System/Reflection/RuntimePropertyInfo.cs",
+        "src/System/Reflection/TypeNameResolver.CoreCLR.cs",
+        "src/System/Reflection/Metadata/RuntimeTypeMetadataUpdateHandler.cs",
+        "src/System/Runtime/CompilerServices/CastHelpers.cs",
+        "src/System/Runtime/CompilerServices/RuntimeHelpers.CoreCLR.cs",
+        "src/System/Runtime/ControlledExecution.CoreCLR.cs",
+        "src/System/Runtime/DependentHandle.cs",
+        "src/System/Runtime/ExceptionServices/AsmOffsets.cs",
+        "src/System/Runtime/ExceptionServices/InternalCalls.cs",
+        "src/System/Runtime/GCSettings.CoreCLR.cs",
+        "src/System/Runtime/JitInfo.CoreCLR.cs",
+        "src/System/Runtime/InteropServices/DynamicInterfaceCastableHelpers.cs",
+        "src/System/Runtime/InteropServices/GCHandle.CoreCLR.cs",
+        "src/System/Runtime/InteropServices/Marshal.CoreCLR.cs",
+        "src/System/Runtime/InteropServices/MemoryMarshal.CoreCLR.cs",
+        "src/System/Runtime/InteropServices/NativeLibrary.CoreCLR.cs",
+        "src/System/Runtime/Intrinsics/X86/X86Base.CoreCLR.cs",
+        "src/System/Runtime/Loader/AssemblyLoadContext.CoreCLR.cs",
+        "src/System/RuntimeArgumentHandle.cs",
+        "src/System/RuntimeHandles.cs",
+        "src/System/RuntimeType.ActivatorCache.cs",
+        "src/System/RuntimeType.CoreCLR.cs",
+        "src/System/StartupHookProvider.CoreCLR.cs",
+        "src/System/String.CoreCLR.cs",
+        "src/System/StubHelpers.cs",
+        "src/System/Text/StringBuilder.CoreCLR.cs",
+        "src/System/Threading/Interlocked.CoreCLR.cs",
+        "src/System/Threading/Monitor.CoreCLR.cs",
+        "src/System/Threading/SynchronizationContext.CoreCLR.cs",
+        "src/System/Threading/Thread.CoreCLR.cs",
+        "src/System/Threading/ThreadPool.CoreCLR.cs",
+        "src/System/Threading/WaitHandle.CoreCLR.cs",
+        "src/System/Type.CoreCLR.cs",
+        "src/System/TypedReference.CoreCLR.cs",
+        "src/System/TypeLoadException.CoreCLR.cs",
+        "src/System/ValueType.cs",
+
+        # Common
+        "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
+        "//src/libraries/Common:src/System/Experimentals.cs",
+
+        # files from nativeaot
+        "//src/coreclr/nativeaot:Common/src/System/Runtime/RhFailFastReason.cs",
+        "//src/coreclr/nativeaot:Runtime.Base/src/System/Runtime/ExceptionHandling.cs",
+        "//src/coreclr/nativeaot:Runtime.Base/src/System/Runtime/ExceptionIDs.cs",
+        "//src/coreclr/nativeaot:Runtime.Base/src/System/Runtime/StackFrameIterator.cs",
+
+        "src/System/RuntimeType.BoxCache.cs",
+        "src/System/RuntimeType.CreateUninitializedCache.CoreCLR.cs",
+        "src/System/RuntimeType.GenericCache.cs",
+    ] + [ "//src/libraries/System.Private.CoreLib/src:%s" % x for x in all_files ],
+    #   System.Private.CoreLib/src/
+    # </ItemGSystem.Private.CoreLib/src/roup>
+    # <ItemGrSystem.Private.CoreLib/src/oup Condition="'$(FeatureComWrappers)' == 'true'">
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\ComWrappers.cs" />
+    # </ItemGSystem.Private.CoreLib/src/roup>
+    # <ItemGrSystem.Private.CoreLib/src/oup Condition="'$(FeatureCominterop)' == 'true'">
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(CommonPath)System\Runtime\InteropServices\IDispatch.cs">
+    #     <LiSystem.Private.CoreLib/src/nk>Common\System\Runtime\InteropServices\IDispatch.cs</Link>
+    #   </ComSystem.Private.CoreLib/src/pile>
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(CommonPath)System\Runtime\InteropServices\ComEventsMethod.cs">
+    #     <LiSystem.Private.CoreLib/src/nk>Common\System\Runtime\InteropServices\ComEventsMethod.cs</Link>
+    #   </ComSystem.Private.CoreLib/src/pile>
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(CommonPath)System\Runtime\InteropServices\ComEventsSink.cs">
+    #     <LiSystem.Private.CoreLib/src/nk>Common\System\Runtime\InteropServices\ComEventsSink.cs</Link>
+    #   </ComSystem.Private.CoreLib/src/pile>
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(CommonPath)System\Runtime\InteropServices\BuiltInVariantExtensions.cs">
+    #     <LiSystem.Private.CoreLib/src/nk>Common\System\Runtime\InteropServices\BuiltInVariantExtensions.cs</Link>
+    #   </ComSystem.Private.CoreLib/src/pile>
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\Internal\Runtime\InteropServices\ComActivator.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\Microsoft\Win32\OAVariantLib.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\__ComObject.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\OleAutBinder.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\ComEventsHelper.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\ComEventsInfo.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\CustomMarshalers\ComDataHelpers.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\CustomMarshalers\EnumVariantViewOfEnumerator.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\CustomMarshalers\EnumeratorToEnumVariantMarshaler.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\CustomMarshalers\EnumeratorViewOfEnumVariant.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\CustomMarshalers\ExpandoToDispatchExMarshaler.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\CustomMarshalers\TypeToTypeInfoMarshaler.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Variant.cs" />
+    # </ItemGSystem.Private.CoreLib/src/roup>
+    # <ItemGrSystem.Private.CoreLib/src/oup Condition="'$(FeatureCominterop)' != 'true'">
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\Internal\Runtime\InteropServices\ComActivator.PlatformNotSupported.cs" />
+    # </ItemGSystem.Private.CoreLib/src/roup>
+    # <ItemGrSystem.Private.CoreLib/src/oup Condition="'$(TargetsUnix)' == 'true'">
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\Internal\Runtime\InteropServices\InMemoryAssemblyLoader.PlatformNotSupported.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\Interop\Unix\Interop.Libraries.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Threading\LowLevelLifoSemaphore.Unix.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Threading\Mutex.CoreCLR.Unix.cs" />
+    # </ItemGSystem.Private.CoreLib/src/roup>
+    # <ItemGrSystem.Private.CoreLib/src/oup Condition="'$(TargetsWindows)' == 'true'">
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\Internal\Runtime\InteropServices\InMemoryAssemblyLoader.cs" />
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(CommonPath)Interop\Windows\OleAut32\Interop.VariantClear.cs">
+    #     <LiSystem.Private.CoreLib/src/nk>Common\Interop\Windows\OleAut32\Interop.VariantClear.cs</Link>
+    #   </ComSystem.Private.CoreLib/src/pile>
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(CommonPath)Interop\Windows\OleAut32\Interop.VariantChangeTypeEx.cs">
+    #     <LiSystem.Private.CoreLib/src/nk>Common\Interop\Windows\OleAut32\Interop.VariantChangeTypeEx.cs</Link>
+    #   </ComSystem.Private.CoreLib/src/pile>
+    # </ItemGSystem.Private.CoreLib/src/roup>
+    # <ItemGrSystem.Private.CoreLib/src/oup Condition="'$(FeatureObjCMarshal)' == 'true'">
+    #   <CompSystem.Private.CoreLib/src/ile Include="$(BclSourcesRoot)\System\Runtime\InteropServices\ObjectiveCMarshal.CoreCLR.cs" />
+    # </ItemGSystem.Private.CoreLib/src/roup>
+    nullable = "enable",
+    allow_unsafe_blocks = True,
+    target_frameworks = [ "net9.0" ],
+    disable_implicit_framework_refs = True,
+    compiler_options = [ "/runtimemetadataversion:v4.0.30319" ],
+    defines = [ ] + select({
+            "@platforms//cpu:x86_64": [ "TARGET_AMD64" ],
+            "@platforms//cpu:aarch64": [ "TARGET_ARM64" ],
+        }) + select({
+            "@platforms//os:windows": [ "TARGET_WINDOWS" ],
+            "@platforms//os:linux": [ "TARGET_LINUX" ],
+            "@platforms//os:macos": [ "TARGET_OSX" ],
+        }),
+    nowarn = nowarn
+)

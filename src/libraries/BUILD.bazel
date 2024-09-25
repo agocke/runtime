@@ -63,14 +63,3 @@ csharp_library(
         "CS0809", "CS0618", "CS8614", "CS3015"
     ]
 )
-
-csharp_library(
-    name = "impl_System.Private.CoreLib",
-    srcs = [],
-    nullable = "enable",
-    allow_unsafe_blocks = True,
-    target_frameworks = [ "net9.0" ],
-    disable_implicit_framework_refs = True,
-    compiler_options = [ "/runtimemetadataversion:v4.0.30319" ],
-    nowarn = nowarn
-)
