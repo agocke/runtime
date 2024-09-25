@@ -1,0 +1,4 @@
+
+load("files.bzl", "all_files")
+
+exports_files(all_files)

@@ -1,0 +1,7 @@
+
+exports_files([
+    "Common/src/System/Runtime/RhFailFastReason.cs",
+    "Runtime.Base/src/System/Runtime/ExceptionHandling.cs",
+    "Runtime.Base/src/System/Runtime/ExceptionIDs.cs",
+    "Runtime.Base/src/System/Runtime/StackFrameIterator.cs",
+])
