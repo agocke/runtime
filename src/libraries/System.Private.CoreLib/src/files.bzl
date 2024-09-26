@@ -1,5 +1,5 @@
 
-all_files = [
+base_files = [
     "Internal/AssemblyAttributes.cs",
     "Internal/Console.cs",
     "Internal/Padding.cs",
@@ -2728,4 +2728,8 @@ all_files = [
     "System/Numerics/IUnaryNegationOperators.cs",
     "System/Numerics/IUnaryPlusOperators.cs",
     "System/Numerics/IUnsignedNumber.cs",
+]
+
+coreclr_files = base_files + [
+    "System/Runtime/CompilerServices/QCallHandles.cs"
 ]

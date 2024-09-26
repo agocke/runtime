@@ -6,3 +6,7 @@ dotnet.toolchain(dotnet_version = "9.0.100-preview.7.24407.12")
 use_repo(dotnet, "dotnet_toolchains")
 
 register_toolchains("@dotnet_toolchains//:all")
+
+main_extension = use_extension("//paket:paket.main_extension.bzl", "main_extension")
+
+use_repo(main_extension, "paket.main")

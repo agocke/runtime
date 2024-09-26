@@ -5,7 +5,7 @@ load(
 
 load(
     "//src/libraries/System.Private.CoreLib/src:files.bzl",
-    "all_files"
+    "coreclr_files"
 )
 
 nowarn = [ "CS8500", "CS8969" ]
@@ -136,6 +136,7 @@ csharp_library(
         "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
         "//src/libraries/Common:src/System/Experimentals.cs",
         "//src/libraries/Common:src/System/Runtime/Versioning/NonVersionableAttribute.cs",
+        "//src/libraries/Common:src/System/Obsoletions.cs",
 
         # files from nativeaot
         "//src/coreclr/nativeaot:Common/src/System/Runtime/RhFailFastReason.cs",
@@ -146,7 +147,7 @@ csharp_library(
         "src/System/RuntimeType.BoxCache.cs",
         "src/System/RuntimeType.CreateUninitializedCache.CoreCLR.cs",
         "src/System/RuntimeType.GenericCache.cs",
-    ] + [ "//src/libraries/System.Private.CoreLib/src:%s" % x for x in all_files ],
+    ] + [ "//src/libraries/System.Private.CoreLib/src:%s" % x for x in coreclr_files ],
     #   System.Private.CoreLib/src/
     # </ItemGSystem.Private.CoreLib/src/roup>
     # <ItemGrSystem.Private.CoreLib/src/oup Condition="'$(FeatureComWrappers)' == 'true'">
