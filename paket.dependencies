@@ -6,3 +6,4 @@ framework: netstandard2.0
 nuget Microsoft.CodeAnalysis.Common 4.11.0
 nuget Microsoft.CodeAnalysis.CSharp 4.11.0
 nuget Microsoft.CodeAnalysis.CSharp.Workspaces 4.11.0
+nuget System.Memory 4.5.5

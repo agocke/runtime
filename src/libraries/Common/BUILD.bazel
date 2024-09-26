@@ -3,5 +3,9 @@ exports_files([
     "src/System/Collections/Generic/ArrayBuilder.cs",
     "src/System/Experimentals.cs",
     "src/System/Runtime/Versioning/NonVersionableAttribute.cs",
-    "src/System/Obsoletions.cs"
+    "src/System/Obsoletions.cs",
+    "src/Roslyn/DiagnosticDescriptorHelper.cs",
+    "src/Roslyn/GetBestTypeByMetadataName.cs",
+    "src/Roslyn/Hash.cs",
+    "src/System/SR.cs",
 ])
