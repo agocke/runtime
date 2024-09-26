@@ -1,0 +1,28 @@
+
+
+load(
+    "@rules_dotnet//dotnet:defs.bzl",
+    "csharp_library"
+)
+
+csharp_library(
+    name = "Microsoft.Interop.SourceGeneration",
+    srcs = glob(["*.cs"]) + [
+        "//src/libraries/System.Private.CoreLib/src:System/Diagnostics/CodeAnalysis/NullableAttributes.cs",
+        "//src/libraries/System.Private.CoreLib/src:System/Runtime/CompilerServices/IsExternalInit.cs",
+        "//src/libraries/System.Private.CoreLib/src:System/Runtime/CompilerServices/RequiredMemberAttribute.cs",
+        "//src/libraries/System.Private.CoreLib/src:System/Diagnostics/CodeAnalysis/SetsRequiredMembersAttribute.cs",
+        "//src/libraries/System.Private.CoreLib/src:System/Runtime/CompilerServices/CompilerFeatureRequiredAttribute.cs",
+    ],
+    target_frameworks = ["netstandard2.0"],
+    langversion = "preview",
+    nullable = "enable",
+    allow_unsafe_blocks = True,
+    deps = [
+        "@paket.main//microsoft.codeanalysis.common",
+        "@paket.main//microsoft.codeanalysis.csharp",
+        "@paket.main//system.collections.immutable",
+    ],
+    nowarn = [ "CS3003" ],
+    cls_compliant = False,
+)
