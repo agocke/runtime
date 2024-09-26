@@ -1,0 +1,17 @@
+
+load(
+    "@rules_dotnet//dotnet:defs.bzl",
+    "csharp_library"
+)
+
+csharp_library(
+    name = "LibraryImportGenerator",
+    srcs = glob(["*.cs"]),
+    target_frameworks = ["netstandard2.0"],
+    langversion = "preview",
+    deps = [
+        "@paket.main//microsoft.codeanalysis.common",
+        "@paket.main//microsoft.codeanalysis.csharp",
+        "@paket.main//system.collections.immutable",
+    ],
+)

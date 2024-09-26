@@ -1,4 +1,4 @@
 
-load("files.bzl", "all_files")
+load("files.bzl", "coreclr_files")
 
-exports_files(all_files)
+exports_files(coreclr_files)
