@@ -2,7 +2,7 @@
 #if BAZEL
 using System.Reflection;
 
-namespace FxResources.Microsoft.Interop.SourceGeneration
+namespace FxResources.Microsoft.Interop.LibraryImportGenerator
 {
     internal static class SR { }
 }
@@ -11,7 +11,7 @@ namespace System
     internal static partial class SR
     {
         private static global::System.Resources.ResourceManager s_resourceManager;
-        internal static global::System.Resources.ResourceManager ResourceManager => s_resourceManager ?? (s_resourceManager = new global::System.Resources.ResourceManager(typeof(FxResources.Microsoft.Interop.SourceGeneration.SR)));
+        internal static global::System.Resources.ResourceManager ResourceManager => s_resourceManager ?? (s_resourceManager = new global::System.Resources.ResourceManager(typeof(FxResources.Microsoft.Interop.LibraryImportGenerator.SR)));
 
         /// <summary>Marshalling an array from unmanaged to managed requires either the 'SizeParamIndex' or 'SizeConst' fields to be set on a 'MarshalAsAttribute' or the 'ConstantElementCount' or 'CountElementName' properties to be set on a 'MarshalUsingAttribute'.</summary>
         internal static string @ArraySizeMustBeSpecified => GetResourceString("ArraySizeMustBeSpecified", @"Marshalling an array from unmanaged to managed requires either the 'SizeParamIndex' or 'SizeConst' fields to be set on a 'MarshalAsAttribute' or the 'ConstantElementCount' or 'CountElementName' properties to be set on a 'MarshalUsingAttribute'.");
