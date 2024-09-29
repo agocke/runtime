@@ -1,0 +1,7 @@
+
+exports_files([
+    "src/System/Reflection/Metadata/AssemblyNameInfo.cs",
+    "src/System/Reflection/Metadata/TypeName.cs",
+    "src/System/Reflection/Metadata/TypeNameParser.cs",
+    "src/System/Reflection/Metadata/TypeNameParserHelpers.cs",
+])

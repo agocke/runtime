@@ -39,6 +39,7 @@ csharp_library(
     nowarn = [ "CS3003" ],
     cls_compliant = False,
     defines = [ "MICROSOFT_INTEROP_SOURCEGENERATION", "BAZEL" ],
+    visibility = ["//visibility:public"],
 )
 
 csharp_library(
@@ -73,4 +74,5 @@ csharp_library(
         "@paket.main//system.memory",
     ],
     nowarn = [ "CS3003" ],
+    visibility = ["//visibility:public"],
 )
