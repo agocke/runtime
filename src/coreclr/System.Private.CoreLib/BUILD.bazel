@@ -147,11 +147,10 @@ common_imports = [
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.IsMemberOfGroup.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetPwUid.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetPid.cs",
-    "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.TryReadStatusFile.cs",
     "//src/libraries/Common:src/System/IO/StringParser.cs",
-    "//src/libraries/Common:src/Interop/Linux/os-release/Interop.OSReleaseFile.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.InitializeTerminalAndSignalHandling.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.PosixSignal.cs",
+    "//src/libraries/Common:src/Interop/OSX/System.Native/Interop.SearchPath.cs",
 ]
 
 csharp_library(
