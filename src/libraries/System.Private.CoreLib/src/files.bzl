@@ -1374,7 +1374,7 @@ coreclr_files = [
     "System/TimeZoneInfo.Unix.NonAndroid.cs",
     "System/IO/FileStatus.SetTimes.OtherUnix.cs",
     "System/Environment.Unix.cs",
-    "System/Environment.OSX.cs",
+    "System/Environment.Linux.cs",
     "System/Environment.OSVersion.Unix.cs",
     "System/TimeZoneInfo.FullGlobalizationData.Unix.cs",
     "System/IO/DriveInfoInternal.Unix.cs",

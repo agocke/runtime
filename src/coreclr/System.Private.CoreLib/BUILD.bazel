@@ -147,10 +147,12 @@ common_imports = [
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.IsMemberOfGroup.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetPwUid.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetPid.cs",
+    "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.TryReadStatusFile.cs",
     "//src/libraries/Common:src/System/IO/StringParser.cs",
+    "//src/libraries/Common:src/Interop/Linux/os-release/Interop.OSReleaseFile.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.InitializeTerminalAndSignalHandling.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.PosixSignal.cs",
-    "//src/libraries/Common:src/Interop/OSX/System.Native/Interop.SearchPath.cs",
+    #"//src/libraries/Common:src/Interop/Linux/System.Native/Interop.SearchPath.cs",
 ]
 
 csharp_library(
@@ -158,6 +160,7 @@ csharp_library(
     analyzers = [
         "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
+        "//src/libraries/System.Private.CoreLib:System.Private.CoreLib.Generators",
     ],
     srcs = [
         "src/Internal/Runtime/CompilerHelpers/ThrowHelpers.cs",
@@ -313,7 +316,7 @@ csharp_library(
     disable_implicit_framework_refs = True,
     cls_compliant = False,
     compiler_options = [ "/runtimemetadataversion:v4.0.30319" ],
-    defines = [ "SYSTEM_PRIVATE_CORELIB", "CORECLR" ] + select({
+    defines = [ "SYSTEM_PRIVATE_CORELIB", "CORECLR", "FEATURE_PERFTRACING" ] + select({
             "@platforms//cpu:x86_64": [ "TARGET_AMD64", "TARGET_64BIT" ],
             "@platforms//cpu:aarch64": [ "TARGET_ARM64", "TARGET_64BIT" ],
         }) + select({

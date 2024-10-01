@@ -1,0 +1,28 @@
+
+load(
+    "@rules_dotnet//dotnet:defs.bzl",
+    "csharp_library"
+)
+
+csharp_library(
+    name = "System.Private.CoreLib.Generators",
+    srcs = glob(["gen/*.cs"]) + [
+        "//src/libraries/System.Private.CoreLib/src:System/Runtime/CompilerServices/IsExternalInit.cs",
+        "//src/libraries/System.Private.CoreLib/src:System/Collections/Generic/ValueListBuilder.cs",
+        "//src/libraries/System.Private.CoreLib/src:System/Collections/Generic/ValueListBuilder.Pop.cs",
+    ],
+    target_frameworks = ["netstandard2.0"],
+    langversion = "preview",
+    nullable = "annotations",
+    allow_unsafe_blocks = True,
+    deps = [
+        "@paket.main//microsoft.codeanalysis.common",
+        "@paket.main//microsoft.codeanalysis.csharp",
+        "@paket.main//system.collections.immutable",
+        "@paket.main//system.memory",
+        "@paket.main//system.buffers",
+    ],
+    nowarn = [ "CS3003" ],
+    defines = [ "MICROSOFT_INTEROP_SOURCEGENERATION", "BAZEL" ],
+    visibility = ["//visibility:public"],
+)
