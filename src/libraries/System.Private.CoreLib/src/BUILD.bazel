@@ -1,4 +1,2 @@
 
-load("files.bzl", "coreclr_files")
-
-exports_files(coreclr_files)
+exports_files(glob(["**/*.cs"]))
