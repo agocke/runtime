@@ -12,6 +12,10 @@ namespace System
         private static global::System.Resources.ResourceManager s_resourceManager;
         internal static global::System.Resources.ResourceManager ResourceManager => s_resourceManager ?? (s_resourceManager = new global::System.Resources.ResourceManager(typeof(System.Private.CoreLib.Strings)));
 
+        /// shim osx resources
+        internal static string @CantGetAllPids => GetResourceString("CantGetAllPids");
+        internal static string @RUsageFailure => GetResourceString("RUsageFailure");
+
         /// <summary>Cannot create an abstract class.</summary>
         internal static string @Acc_CreateAbst => GetResourceString("Acc_CreateAbst");
         /// <summary>Cannot create an instance of {0} because it is an abstract class.</summary>

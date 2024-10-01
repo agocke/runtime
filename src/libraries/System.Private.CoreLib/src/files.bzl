@@ -1,5 +1,4 @@
 
-
 coreclr_files = [
     "Internal/AssemblyAttributes.cs",
     "Internal/Console.cs",
@@ -1374,7 +1373,6 @@ coreclr_files = [
     "System/TimeZoneInfo.Unix.NonAndroid.cs",
     "System/IO/FileStatus.SetTimes.OtherUnix.cs",
     "System/Environment.Unix.cs",
-    "System/Environment.Linux.cs",
     "System/Environment.OSVersion.Unix.cs",
     "System/TimeZoneInfo.FullGlobalizationData.Unix.cs",
     "System/IO/DriveInfoInternal.Unix.cs",
@@ -1472,4 +1470,12 @@ coreclr_files = [
     "System/Numerics/IUnaryNegationOperators.cs",
     "System/Numerics/IUnaryPlusOperators.cs",
     "System/Numerics/IUnsignedNumber.cs",
+]
+
+coreclr_linux_files = [
+    "System/Environment.Linux.cs",
+]
+
+coreclr_macos_files = [
+    "System/Environment.OSX.cs",
 ]
