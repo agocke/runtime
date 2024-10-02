@@ -5,6 +5,10 @@ load(
     "csharp_library"
 )
 
+exports_files([
+    "ref/System.Runtime.InteropServices.cs",
+])
+
 csharp_library(
     name = "Microsoft.Interop.SourceGeneration",
     srcs = glob(["gen/Microsoft.Interop.SourceGeneration/**/*.cs"]) + [

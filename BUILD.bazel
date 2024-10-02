@@ -7,8 +7,10 @@ import_library(
     name = "TargetingPack",
     library_name = "xunit.abstractions",
     refs = [
+        "artifacts/TargetingPack/xunit.assert.dll",
         "artifacts/TargetingPack/xunit.abstractions.dll",
-        "artifacts/TargetingPack/xunit.core.dll"
+        "artifacts/TargetingPack/xunit.core.dll",
+        "artifacts/TargetingPack/Microsoft.DotNet.XUnitExtensions.dll",
     ],
     visibility = ["//visibility:public"]
 )

@@ -41,14 +41,14 @@ csharp_library(
         "System.Collections/ref/System.Collections.cs",
         "System.Diagnostics.StackTrace/ref/System.Diagnostics.StackTrace.cs",
         "System.Memory/ref/System.Memory.cs",
-        "System.Runtime.InteropServices/ref/System.Runtime.InteropServices.cs",
+        "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.cs",
         "System.Threading/ref/System.Threading.cs",
 
         # types only exposed through CoreLib, this is manually maintained -->
-        "System.Private.CoreLib/ref/System.Private.CoreLib.ExtraApis.cs",
+        "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
 
         # types not exposed in contracts but forwarded from the mscorlib shim, this is manually maintained -->
-        "System.Private.CoreLib/ref/System.Private.CoreLib.ManualShimTypeForwards.cs",
+        "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ManualShimTypeForwards.cs",
     ],
     nullable = "enable",
     allow_unsafe_blocks = True,
@@ -61,5 +61,27 @@ csharp_library(
         # Remove warning disable when nullable attributes are respected,
         # Type has no accessible constructors which use only CLS-compliant types
         "CS0809", "CS0618", "CS8614", "CS3015"
-    ]
+    ],
+    visibility = ["//visibility:public"]
+)
+
+csharp_library(
+    name = "ref_System.Runtime",
+    out = "System.Runtime",
+    allow_unsafe_blocks = True,
+    assembly_version = "9.0.0.0",
+    compiler_options = [
+        "/runtimemetadataversion:v4.0.30319",
+        "/keyfile:/home/andy/.nuget/packages/microsoft.dotnet.arcade.sdk/9.0.0-beta.24423.2/tools/snk/MSFT.snk",
+        "/checksumalgorithm:SHA256",
+        "/publicsign+",
+    ],
+    target_frameworks = [ "net9.0" ],
+    srcs = [
+        "System.Runtime/ref/System.Runtime.cs",
+    ],
+    disable_implicit_framework_refs = True,
+    nullable = "annotations",
+    visibility = ["//visibility:public"],
+    nowarn = [ "CS0169", "CS0809", "CS0618", "CS3015" ]
 )

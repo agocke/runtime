@@ -15,3 +15,45 @@ csharp_binary(
     ],
     target_frameworks = [ "net8.0" ]
 )
+
+csharp_library(
+    allow_unsafe_blocks = True,
+    name = "UnsafeAccessorsTests",
+    srcs = [
+        "baseservices/compilerservices/UnsafeAccessors/UnsafeAccessorsTests.cs",
+        "baseservices/compilerservices/UnsafeAccessors/UnsafeAccessorsTests.Generics.cs",
+    ],
+    deps = [
+        "//:TargetingPack",
+        "//src/tests:CoreCLRTestLibrary",
+        "//src/libraries:ref_System.Runtime",
+    ],
+    disable_implicit_framework_refs = True,
+    target_frameworks = [ "net9.0" ],
+)
+
+csharp_library(
+    name = "CoreCLRTestLibrary",
+    allow_unsafe_blocks = True,
+    cls_compliant = False,
+    nowarn = [ "CS1574", "CS1572", ],
+    nullable = "annotations",
+    srcs = [
+        "Common/CoreCLRTestLibrary/AssertExtensions.cs",
+        "Common/CoreCLRTestLibrary/Generator.cs",
+        "Common/CoreCLRTestLibrary/Logging.cs",
+        "Common/CoreCLRTestLibrary/TestFramework.cs",
+        "Common/CoreCLRTestLibrary/Utilities.cs",
+        "Common/CoreCLRTestLibrary/HostPolicyMock.cs",
+        "Common/CoreCLRTestLibrary/XPlatformUtils.cs",
+        "Common/CoreCLRTestLibrary/CoreClrConfigurationDetection.cs",
+        "Common/CoreCLRTestLibrary/OutOfProcessTest.cs",
+        "Common/CoreCLRTestLibrary/PlatformDetection.cs",
+        "Common/Coreclr.TestWrapper/CoreclrTestWrapperLib.cs",
+        "Common/Coreclr.TestWrapper/MobileAppHandler.cs",
+    ],
+    deps = [
+        "//:TargetingPack",
+    ],
+    target_frameworks = [ "net9.0"],
+)
