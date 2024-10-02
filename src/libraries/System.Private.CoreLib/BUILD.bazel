@@ -4,6 +4,11 @@ load(
     "csharp_library"
 )
 
+exports_files([
+    "ref/System.Private.CoreLib.ExtraApis.cs",
+    "ref/System.Private.CoreLib.ManualShimTypeForwards.cs",
+])
+
 csharp_library(
     name = "System.Private.CoreLib.Generators",
     srcs = glob(["gen/*.cs"]) + [
