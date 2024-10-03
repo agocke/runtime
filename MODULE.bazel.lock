@@ -513,7 +513,7 @@
     },
     "@@rules_dotnet~//dotnet:extensions.bzl%dotnet": {
       "general": {
-        "bzlTransitiveDigest": "LnW9FC0IyW8jLhpargtZQW583Dd/FLFwe2RVDQTLkUI=",
+        "bzlTransitiveDigest": "IX7TIRoQE098V5ObUNATkPNNRqeuFyEE7kpPmbtPhS8=",
         "usagesDigest": "eocy+CE6/v4kC1nREiUj4H/776W5sU5xaQBaZlkrWpU=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -2011,7 +2011,7 @@
     },
     "@@rules_dotnet~//dotnet/private/sdk/apphost_packs:dotnet.apphost_packs_extension.bzl%apphost_packs_extension": {
       "general": {
-        "bzlTransitiveDigest": "RqBmvMrkR7D/GeLcrxFXLRjkEjMVeqvP/rFvceLZfic=",
+        "bzlTransitiveDigest": "DIKt8f2inbNUlHLoJviBIfNXSvIDdvkqMhK/f+ZQuVc=",
         "usagesDigest": "rRpNQ7Fy2bJKTZx7680SfrQy66VRtvbcrCW7iUHp3EU=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -2029,18 +2029,6 @@
               "sha512": "sha512-DswXqix50wAEPlovKVJ1VbPx+tYwXtwdh6zkpzGkq+Qn27Axs2iNUXdKffBjZsDBjeGavb7AEWYMrBz98a/5uA=="
             }
           },
-          "nuget.microsoft.netcore.app.host.linux-arm64.v6.0.33": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-arm64",
-              "version": "6.0.33",
-              "sha512": "sha512-W7W8GCU/YnVc9Ovl2F8YVe1w5fDrA5cNW/5VcSxp8UYEsl0g6XXy3F1rG51s7q9Yp1Q50NRddc76POIrL9dW9A=="
-            }
-          },
           "nuget.microsoft.netcore.app.host.win-arm64.v3.0.3": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
@@ -2051,18 +2039,6 @@
               "id": "microsoft.netcore.app.host.win-arm64",
               "version": "3.0.3",
               "sha512": "sha512-h4tRZdiosNe48JJU91uw7WBga3AkT6dOvJSBgqnAaYIXZ1Hbc/z2NZ79D3JsKyXIdcQaqW1k0eI2ticzeqtjMA=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.linux-musl-x64.v6.0.33": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-musl-x64",
-              "version": "6.0.33",
-              "sha512": "sha512-9iMx++NoSzMibl4mPcFcZ8VDBJUSAYdQtoc2fBAYsZZWIXXi0MEc2mepAQPyqwgaXf6HlEg0Zi5gbxhLaSsWXw=="
             }
           },
           "nuget.microsoft.netcore.app.host.win-x64.v7.0.20": {
@@ -2101,18 +2077,6 @@
               "sha512": "sha512-9k+5qHlL2/uiC5/crfn+Shv/93FV1E9oLFFK6nAs+/tUXL0olwsqpyEMUAdKdAoCgiTv50GnBjX/7jlp9bMmlg=="
             }
           },
-          "nuget.microsoft.netcore.app.host.win-arm64.v8.0.8": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.win-arm64",
-              "version": "8.0.8",
-              "sha512": "sha512-y+6FdThbFGcmDOddfbWmxeVIcj8jC7jSW2yc8bycltJIwc/6L2gSxVD3xgd5m6suNYJABeyLEL8c1ZjlkwZdVg=="
-            }
-          },
           "nuget.microsoft.netcore.app.host.linux-musl-arm64.v5.0.17": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
@@ -2125,31 +2089,7 @@
               "sha512": "sha512-H9co6YngYniZfzz8XER87mkQ03h2R1eR8NYKNZL1jEVnFQYHvPRZqN6pEhIhGVx+RiKhKDEGdHORFVZDVhTFbw=="
             }
           },
-          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v8.0.8": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-musl-arm64",
-              "version": "8.0.8",
-              "sha512": "sha512-39zao16B3FggIVpRPehDWdGTkwDUVMak39LqBcXbySPbNlTL9OuZeoWOIHpvdKjkYYGB4pP8ENKC16WiYde3+Q=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.linux-x64.v8.0.8": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-x64",
-              "version": "8.0.8",
-              "sha512": "sha512-mB6mchIjuRfOwelryQ2iDhkxEW4Qcmi5zrUxtz6qXTqM69dNlsPPFdpsnpxcvW3/tlw/fkdyD2uDloW7oAbqxg=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.win-arm64.v5.0.17": {
+          "nuget.microsoft.netcore.app.host.win-arm64.v9.0.0-rc.1.24431.7": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
             "attributes": {
@@ -2157,8 +2097,8 @@
                 "https://api.nuget.org/v3/index.json"
               ],
               "id": "microsoft.netcore.app.host.win-arm64",
-              "version": "5.0.17",
-              "sha512": "sha512-ibTt4do4+2H3pShc5cvk/u3SG5zeiXMwi3HvTRNMKfnjd+UIjf4w364tXNoEADHrWokdUOX37k5icLvqCIqqNA=="
+              "version": "9.0.0-rc.1.24431.7",
+              "sha512": "sha512-o9KILrr6qh3SQaFQ8xBI84sYdtUNx7QUmWE7U2BHVFhALtST3wsESOjZt5JEOa0o82bOI2X3xyvq4Tk1bSSaSQ=="
             }
           },
           "nuget.microsoft.netcore.app.host.osx-x64.v3.0.3": {
@@ -2171,18 +2111,6 @@
               "id": "microsoft.netcore.app.host.osx-x64",
               "version": "3.0.3",
               "sha512": "sha512-eIA7DY8jtGGCw+89OfgbRy05orLvoI4YKNkX3fGioKJRnzjLvg1QcbcfqVTHeXxo1hTP8qJBrNPJi54Tl3V0kw=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.win-x64.v3.1.32": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.win-x64",
-              "version": "3.1.32",
-              "sha512": "sha512-p9nogZAnicSfXmfpDCBlNJbszywmLhbV6/IbcK4qB4gb+9AF46OOnSVzMc2BVZmPsLfkQtSFVlG/chdttCqD9A=="
             }
           },
           "dotnet.apphost_packs": {
@@ -2235,7 +2163,15 @@
                 "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.osx-x64\",\"name\":\"microsoft.netcore.app.host.osx-x64.v8.0.8\",\"sha512\":\"sha512-gTlDiH/loxdT9fioPw4+XIaGZ0nYY1aGZD7n0x4jwCxhHpGPTOy7EA9EvbpGaGvWm5ve5gHTAyEH9KOyMqU3nQ==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"8.0.8\"}",
                 "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.osx-arm64\",\"name\":\"microsoft.netcore.app.host.osx-arm64.v8.0.8\",\"sha512\":\"sha512-cuRgyxlXWAZT1y68B54SXDCoqgWrKywUWx4qZ742MQslHjwQxrUrRPuX4IxarqwAMVEesWYgqTLjhPHuMmMR3Q==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"8.0.8\"}",
                 "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.win-x64\",\"name\":\"microsoft.netcore.app.host.win-x64.v8.0.8\",\"sha512\":\"sha512-i6GqVVFgQc8Brkuew5BSHJ0FXDxo1EXKOSw+GQCq+fGbMcXLWlJVY4mB36vYc0k0anuZH7L9A+GhFSjWRhKD9A==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"8.0.8\"}",
-                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.win-arm64\",\"name\":\"microsoft.netcore.app.host.win-arm64.v8.0.8\",\"sha512\":\"sha512-y+6FdThbFGcmDOddfbWmxeVIcj8jC7jSW2yc8bycltJIwc/6L2gSxVD3xgd5m6suNYJABeyLEL8c1ZjlkwZdVg==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"8.0.8\"}"
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.win-arm64\",\"name\":\"microsoft.netcore.app.host.win-arm64.v8.0.8\",\"sha512\":\"sha512-y+6FdThbFGcmDOddfbWmxeVIcj8jC7jSW2yc8bycltJIwc/6L2gSxVD3xgd5m6suNYJABeyLEL8c1ZjlkwZdVg==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"8.0.8\"}",
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.linux-x64\",\"name\":\"microsoft.netcore.app.host.linux-x64.v9.0.0-rc.1.24431.7\",\"sha512\":\"sha512-0bnqDla3y1lZQk2WXntwjoM3w+C251TAo/jrWM9EsEfx5jLkAXavYkrB+qqxb9GpjV5dLjupIHsJTcSWjeUpuQ==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"9.0.0-rc.1.24431.7\"}",
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.linux-arm64\",\"name\":\"microsoft.netcore.app.host.linux-arm64.v9.0.0-rc.1.24431.7\",\"sha512\":\"sha512-Lak7lKA45tC3a4OgQ1QkniKIqkoDoi8hM0ctSK3jyJfJ7/RvdYv8oacw2B+Az7jCNytI4E3ojlQPO0EGNOPqaA==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"9.0.0-rc.1.24431.7\"}",
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.linux-musl-x64\",\"name\":\"microsoft.netcore.app.host.linux-musl-x64.v9.0.0-rc.1.24431.7\",\"sha512\":\"sha512-4SxzrzDFP0aqjWu6nAhaV8D0xpkEpWJlA6Vl686cGLisHF7KpBaahtMPBk2/LbEVr9sZhg6qipGfhvn8onxwsA==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"9.0.0-rc.1.24431.7\"}",
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.linux-musl-arm64\",\"name\":\"microsoft.netcore.app.host.linux-musl-arm64.v9.0.0-rc.1.24431.7\",\"sha512\":\"sha512-JlXwZEgadpV5cdxEAIyzWW+QiTU1H0zJXTc/MezjlWj7O+/1GFnrkZ1c9WngA7FNGlrgG/bTnGRAnqbmFX+hUg==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"9.0.0-rc.1.24431.7\"}",
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.osx-x64\",\"name\":\"microsoft.netcore.app.host.osx-x64.v9.0.0-rc.1.24431.7\",\"sha512\":\"sha512-dPOj8M4+ldhz1dbcYV2QwNQmybswkCoxZkO2a1TyzSzf//HH7HBIrR+B8Jws6Q55KDZ/IyB1gPuiWVI/Lag/fg==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"9.0.0-rc.1.24431.7\"}",
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.osx-arm64\",\"name\":\"microsoft.netcore.app.host.osx-arm64.v9.0.0-rc.1.24431.7\",\"sha512\":\"sha512-19v8ZclolYWnYzAxUQEz6aSo22LEoyp4XNCIuq1rWs43TM4/R3YAXHUwBFJ1mi8J/2E38Vj0MASi2S3J27HWJg==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"9.0.0-rc.1.24431.7\"}",
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.win-x64\",\"name\":\"microsoft.netcore.app.host.win-x64.v9.0.0-rc.1.24431.7\",\"sha512\":\"sha512-p2gBs4CLbDVo5sClyJ3/cTbmIm2OuHJeCoBFrOR4G0v1PutDmrkENTiZzO7Zt2R/38Osq92tJ2mhx+ebFvickg==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"9.0.0-rc.1.24431.7\"}",
+                "{\"dependencies\":{},\"framework_list\":[],\"id\":\"Microsoft.NETCore.App.Host.win-arm64\",\"name\":\"microsoft.netcore.app.host.win-arm64.v9.0.0-rc.1.24431.7\",\"sha512\":\"sha512-o9KILrr6qh3SQaFQ8xBI84sYdtUNx7QUmWE7U2BHVFhALtST3wsESOjZt5JEOa0o82bOI2X3xyvq4Tk1bSSaSQ==\",\"sources\":[\"https://api.nuget.org/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"9.0.0-rc.1.24431.7\"}"
               ],
               "targeting_pack_overrides": {
                 "microsoft.netcore.app.host.linux-x64": [],
@@ -2271,30 +2207,6 @@
               "sha512": "sha512-Z1FdgE3MQ3BBmJ8obAlvZTyX5mmfQKEF0tWcBUttLfvZQbsMicJ4T3fc6dPhO6D6g9xLBc+H7MTrnEzdWDl2iQ=="
             }
           },
-          "nuget.microsoft.netcore.app.host.osx-x64.v7.0.20": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.osx-x64",
-              "version": "7.0.20",
-              "sha512": "sha512-aQuov94b4ppO3l5CVG0z+VDCFVNHeklnwLS7XT/AbvSyBJ6+9BFqoSWg2uZz0MGjRl0tSA9eK9A6bkoVkPi1bQ=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v3.1.32": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-musl-arm64",
-              "version": "3.1.32",
-              "sha512": "sha512-8MAEJqAVpNSU/w0qKZFHvdweNdcIht3g0Of3gTEVqyR0R2ovNHCenSSfo5kAS8hfVZ1oxiEdTNdHrKmwq3vvRA=="
-            }
-          },
           "nuget.microsoft.netcore.app.host.linux-arm64.v7.0.20": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
@@ -2319,30 +2231,6 @@
               "sha512": "sha512-/ytwOp85R5T/NTSmBL51+GlytssrC2Ov7CgZPJIWj/9u8pPI6unO1UZ219MrDZttGUWP1pHm7kJ7XaKbifjHlg=="
             }
           },
-          "nuget.microsoft.netcore.app.host.win-arm64.v6.0.33": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.win-arm64",
-              "version": "6.0.33",
-              "sha512": "sha512-qjnVZqs1fPNFCwX2tBh3Eii1S3UBy003p5KPuUode0oxBfulm9dKXxr71cxHH2DqG0JUdYBl5gz7D6ybGhx4zw=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.osx-x64.v3.1.32": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.osx-x64",
-              "version": "3.1.32",
-              "sha512": "sha512-vV19A5M60cxvdRM3ZabhPjI6lz2svjXtbyD3n0lRz0FzxvztP4Vvf0nH1FXzwDVm/ydNL7UN3tlj62XjdNfKjQ=="
-            }
-          },
           "nuget.microsoft.netcore.app.host.osx-arm64.v6.0.33": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
@@ -2365,18 +2253,6 @@
               "id": "microsoft.netcore.app.host.linux-musl-x64",
               "version": "3.1.32",
               "sha512": "sha512-uglFvmuXerWDbNZuwx7ZJvvblKrMgMYcCr6r+un62yfkhx4OjjyuaAdFjSo40qpalR5QUMlqM+5xBERcw4+GOQ=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.osx-x64.v5.0.17": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.osx-x64",
-              "version": "5.0.17",
-              "sha512": "sha512-cW3IvuCZC4ULbzsA4A3FznaUTFNXOJNCUDfFn9eN/t6tjJZe70tI4WAc51GApa3wC/B7Sy/S7yRsH+m5fDnjzA=="
             }
           },
           "nuget.microsoft.netcore.app.host.linux-arm64.v8.0.8": {
@@ -2427,30 +2303,6 @@
               "sha512": "sha512-cuRgyxlXWAZT1y68B54SXDCoqgWrKywUWx4qZ742MQslHjwQxrUrRPuX4IxarqwAMVEesWYgqTLjhPHuMmMR3Q=="
             }
           },
-          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v7.0.20": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-musl-arm64",
-              "version": "7.0.20",
-              "sha512": "sha512-bCcmlaXLBmlScQ/HXkkLf1DYQtOjqet/dI8y2sNx1hu89BwEQc28inzi24PZ9GjYo3KyKvy7U17aldK8b2uYAw=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.win-x64.v8.0.8": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.win-x64",
-              "version": "8.0.8",
-              "sha512": "sha512-i6GqVVFgQc8Brkuew5BSHJ0FXDxo1EXKOSw+GQCq+fGbMcXLWlJVY4mB36vYc0k0anuZH7L9A+GhFSjWRhKD9A=="
-            }
-          },
           "nuget.microsoft.netcore.app.host.linux-arm64.v3.1.32": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
@@ -2461,18 +2313,6 @@
               "id": "microsoft.netcore.app.host.linux-arm64",
               "version": "3.1.32",
               "sha512": "sha512-kH1+TFUJTQOoUBrEFwHYNryf28OO4JF3xcOTbUN/8WGS3NW29oCqyR88RYKEOly7QThmGua/PNd8IpjC10vRaA=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.linux-x64.v7.0.20": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-x64",
-              "version": "7.0.20",
-              "sha512": "sha512-abPlEkse/tu8w/F9YPG7fzIP+NbtfhfBrkTjCgnRUnL+HXRkn7ysrUQJ63zWlhVYWilzwTAmUlnjqBsZ+Psnzg=="
             }
           },
           "nuget.microsoft.netcore.app.host.win-arm64.v7.0.20": {
@@ -2499,31 +2339,7 @@
               "sha512": "sha512-3x4x8sACczUaRusJAfZ8uG+lGxDSeeqb0d6PekygzgT44lQhaXKKof8yji3X4xH1JqHnprv1faChuZkD54OYNg=="
             }
           },
-          "nuget.microsoft.netcore.app.host.linux-musl-x64.v8.0.8": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-musl-x64",
-              "version": "8.0.8",
-              "sha512": "sha512-YWXIKMDEEde4ELVsM4gVd76qpQAmb1HPDHJRHd1HbMKT3EGfsTt5UGZpI256PhclBgAfXFfuvctObONCNGWUPA=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.win-x64.v5.0.17": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.win-x64",
-              "version": "5.0.17",
-              "sha512": "sha512-GjnT+8oke0YvrrbD2VlIcBmJ8HyqB0/zOpnNJ+f0dc0RzAQ/lSxCC7avT0Ly86as+zK5vU9TatXP++5VqspCZQ=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.osx-x64.v8.0.8": {
+          "nuget.microsoft.netcore.app.host.osx-x64.v9.0.0-rc.1.24431.7": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
             "attributes": {
@@ -2531,23 +2347,11 @@
                 "https://api.nuget.org/v3/index.json"
               ],
               "id": "microsoft.netcore.app.host.osx-x64",
-              "version": "8.0.8",
-              "sha512": "sha512-gTlDiH/loxdT9fioPw4+XIaGZ0nYY1aGZD7n0x4jwCxhHpGPTOy7EA9EvbpGaGvWm5ve5gHTAyEH9KOyMqU3nQ=="
+              "version": "9.0.0-rc.1.24431.7",
+              "sha512": "sha512-dPOj8M4+ldhz1dbcYV2QwNQmybswkCoxZkO2a1TyzSzf//HH7HBIrR+B8Jws6Q55KDZ/IyB1gPuiWVI/Lag/fg=="
             }
           },
-          "nuget.microsoft.netcore.app.host.linux-x64.v3.0.3": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-x64",
-              "version": "3.0.3",
-              "sha512": "sha512-GUhjsX3RrvzfRmGH7ol6VvVOVc8DQagZgolXuBNR0W9H/w3fGeCK32ZxZjQ1HS1qzZ1tloQPRjz1ba1MPqlkDA=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.win-x64.v6.0.33": {
+          "nuget.microsoft.netcore.app.host.win-x64.v9.0.0-rc.1.24431.7": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
             "attributes": {
@@ -2555,11 +2359,11 @@
                 "https://api.nuget.org/v3/index.json"
               ],
               "id": "microsoft.netcore.app.host.win-x64",
-              "version": "6.0.33",
-              "sha512": "sha512-TQipjmrwAD34o3iRACeZK/4rI+YBKsQzkfC5Gja2XahJ35kN5g7+Gm9VaueurlVmdB2QpBgxC9jvkU5qjk0HMg=="
+              "version": "9.0.0-rc.1.24431.7",
+              "sha512": "sha512-p2gBs4CLbDVo5sClyJ3/cTbmIm2OuHJeCoBFrOR4G0v1PutDmrkENTiZzO7Zt2R/38Osq92tJ2mhx+ebFvickg=="
             }
           },
-          "nuget.microsoft.netcore.app.host.osx-arm64.v7.0.20": {
+          "nuget.microsoft.netcore.app.host.osx-arm64.v9.0.0-rc.1.24431.7": {
             "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
             "ruleClassName": "nuget_archive",
             "attributes": {
@@ -2567,20 +2371,8 @@
                 "https://api.nuget.org/v3/index.json"
               ],
               "id": "microsoft.netcore.app.host.osx-arm64",
-              "version": "7.0.20",
-              "sha512": "sha512-zskULQ4seV5+Aqj/hG1VQ5RKqGcjZi7T1ceCUHbfAJOxcVQOOcSzxGxy7+Ys2wQnhQsIjWYNIji58c5tnv/6vA=="
-            }
-          },
-          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v3.0.3": {
-            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
-            "ruleClassName": "nuget_archive",
-            "attributes": {
-              "sources": [
-                "https://api.nuget.org/v3/index.json"
-              ],
-              "id": "microsoft.netcore.app.host.linux-musl-arm64",
-              "version": "3.0.3",
-              "sha512": "sha512-rwJyEcl3wwxCI0hyIOw7tHsCfA5v2NpZVa3GZSFa7/nJmtyZlTfWyuYAXxdnFzxSwU2DNYL3kYy59/4+9EF4hA=="
+              "version": "9.0.0-rc.1.24431.7",
+              "sha512": "sha512-19v8ZclolYWnYzAxUQEz6aSo22LEoyp4XNCIuq1rWs43TM4/R3YAXHUwBFJ1mi8J/2E38Vj0MASi2S3J27HWJg=="
             }
           },
           "nuget.microsoft.netcore.app.host.win-x64.v3.0.3": {
@@ -2630,6 +2422,318 @@
               "version": "6.0.33",
               "sha512": "sha512-5F03J9p5OKW4naA3M+RgH3OLWZASyiAK+TVD45uq3ixLwa2FyzcHgoZktdO+B9bLJyrvNTcdWW88ATrbTx0Y9A=="
             }
+          },
+          "nuget.microsoft.netcore.app.host.linux-arm64.v6.0.33": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-arm64",
+              "version": "6.0.33",
+              "sha512": "sha512-W7W8GCU/YnVc9Ovl2F8YVe1w5fDrA5cNW/5VcSxp8UYEsl0g6XXy3F1rG51s7q9Yp1Q50NRddc76POIrL9dW9A=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-musl-x64.v6.0.33": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-musl-x64",
+              "version": "6.0.33",
+              "sha512": "sha512-9iMx++NoSzMibl4mPcFcZ8VDBJUSAYdQtoc2fBAYsZZWIXXi0MEc2mepAQPyqwgaXf6HlEg0Zi5gbxhLaSsWXw=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.win-arm64.v8.0.8": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.win-arm64",
+              "version": "8.0.8",
+              "sha512": "sha512-y+6FdThbFGcmDOddfbWmxeVIcj8jC7jSW2yc8bycltJIwc/6L2gSxVD3xgd5m6suNYJABeyLEL8c1ZjlkwZdVg=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-musl-x64.v9.0.0-rc.1.24431.7": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-musl-x64",
+              "version": "9.0.0-rc.1.24431.7",
+              "sha512": "sha512-4SxzrzDFP0aqjWu6nAhaV8D0xpkEpWJlA6Vl686cGLisHF7KpBaahtMPBk2/LbEVr9sZhg6qipGfhvn8onxwsA=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v8.0.8": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-musl-arm64",
+              "version": "8.0.8",
+              "sha512": "sha512-39zao16B3FggIVpRPehDWdGTkwDUVMak39LqBcXbySPbNlTL9OuZeoWOIHpvdKjkYYGB4pP8ENKC16WiYde3+Q=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-x64.v8.0.8": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-x64",
+              "version": "8.0.8",
+              "sha512": "sha512-mB6mchIjuRfOwelryQ2iDhkxEW4Qcmi5zrUxtz6qXTqM69dNlsPPFdpsnpxcvW3/tlw/fkdyD2uDloW7oAbqxg=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-arm64.v9.0.0-rc.1.24431.7": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-arm64",
+              "version": "9.0.0-rc.1.24431.7",
+              "sha512": "sha512-Lak7lKA45tC3a4OgQ1QkniKIqkoDoi8hM0ctSK3jyJfJ7/RvdYv8oacw2B+Az7jCNytI4E3ojlQPO0EGNOPqaA=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.win-arm64.v5.0.17": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.win-arm64",
+              "version": "5.0.17",
+              "sha512": "sha512-ibTt4do4+2H3pShc5cvk/u3SG5zeiXMwi3HvTRNMKfnjd+UIjf4w364tXNoEADHrWokdUOX37k5icLvqCIqqNA=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.win-x64.v3.1.32": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.win-x64",
+              "version": "3.1.32",
+              "sha512": "sha512-p9nogZAnicSfXmfpDCBlNJbszywmLhbV6/IbcK4qB4gb+9AF46OOnSVzMc2BVZmPsLfkQtSFVlG/chdttCqD9A=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.osx-x64.v7.0.20": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.osx-x64",
+              "version": "7.0.20",
+              "sha512": "sha512-aQuov94b4ppO3l5CVG0z+VDCFVNHeklnwLS7XT/AbvSyBJ6+9BFqoSWg2uZz0MGjRl0tSA9eK9A6bkoVkPi1bQ=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v3.1.32": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-musl-arm64",
+              "version": "3.1.32",
+              "sha512": "sha512-8MAEJqAVpNSU/w0qKZFHvdweNdcIht3g0Of3gTEVqyR0R2ovNHCenSSfo5kAS8hfVZ1oxiEdTNdHrKmwq3vvRA=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-x64.v9.0.0-rc.1.24431.7": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-x64",
+              "version": "9.0.0-rc.1.24431.7",
+              "sha512": "sha512-0bnqDla3y1lZQk2WXntwjoM3w+C251TAo/jrWM9EsEfx5jLkAXavYkrB+qqxb9GpjV5dLjupIHsJTcSWjeUpuQ=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.win-arm64.v6.0.33": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.win-arm64",
+              "version": "6.0.33",
+              "sha512": "sha512-qjnVZqs1fPNFCwX2tBh3Eii1S3UBy003p5KPuUode0oxBfulm9dKXxr71cxHH2DqG0JUdYBl5gz7D6ybGhx4zw=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.osx-x64.v3.1.32": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.osx-x64",
+              "version": "3.1.32",
+              "sha512": "sha512-vV19A5M60cxvdRM3ZabhPjI6lz2svjXtbyD3n0lRz0FzxvztP4Vvf0nH1FXzwDVm/ydNL7UN3tlj62XjdNfKjQ=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.osx-x64.v5.0.17": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.osx-x64",
+              "version": "5.0.17",
+              "sha512": "sha512-cW3IvuCZC4ULbzsA4A3FznaUTFNXOJNCUDfFn9eN/t6tjJZe70tI4WAc51GApa3wC/B7Sy/S7yRsH+m5fDnjzA=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v7.0.20": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-musl-arm64",
+              "version": "7.0.20",
+              "sha512": "sha512-bCcmlaXLBmlScQ/HXkkLf1DYQtOjqet/dI8y2sNx1hu89BwEQc28inzi24PZ9GjYo3KyKvy7U17aldK8b2uYAw=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.win-x64.v8.0.8": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.win-x64",
+              "version": "8.0.8",
+              "sha512": "sha512-i6GqVVFgQc8Brkuew5BSHJ0FXDxo1EXKOSw+GQCq+fGbMcXLWlJVY4mB36vYc0k0anuZH7L9A+GhFSjWRhKD9A=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-x64.v7.0.20": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-x64",
+              "version": "7.0.20",
+              "sha512": "sha512-abPlEkse/tu8w/F9YPG7fzIP+NbtfhfBrkTjCgnRUnL+HXRkn7ysrUQJ63zWlhVYWilzwTAmUlnjqBsZ+Psnzg=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-musl-x64.v8.0.8": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-musl-x64",
+              "version": "8.0.8",
+              "sha512": "sha512-YWXIKMDEEde4ELVsM4gVd76qpQAmb1HPDHJRHd1HbMKT3EGfsTt5UGZpI256PhclBgAfXFfuvctObONCNGWUPA=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.win-x64.v5.0.17": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.win-x64",
+              "version": "5.0.17",
+              "sha512": "sha512-GjnT+8oke0YvrrbD2VlIcBmJ8HyqB0/zOpnNJ+f0dc0RzAQ/lSxCC7avT0Ly86as+zK5vU9TatXP++5VqspCZQ=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.osx-x64.v8.0.8": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.osx-x64",
+              "version": "8.0.8",
+              "sha512": "sha512-gTlDiH/loxdT9fioPw4+XIaGZ0nYY1aGZD7n0x4jwCxhHpGPTOy7EA9EvbpGaGvWm5ve5gHTAyEH9KOyMqU3nQ=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v9.0.0-rc.1.24431.7": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-musl-arm64",
+              "version": "9.0.0-rc.1.24431.7",
+              "sha512": "sha512-JlXwZEgadpV5cdxEAIyzWW+QiTU1H0zJXTc/MezjlWj7O+/1GFnrkZ1c9WngA7FNGlrgG/bTnGRAnqbmFX+hUg=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-x64.v3.0.3": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-x64",
+              "version": "3.0.3",
+              "sha512": "sha512-GUhjsX3RrvzfRmGH7ol6VvVOVc8DQagZgolXuBNR0W9H/w3fGeCK32ZxZjQ1HS1qzZ1tloQPRjz1ba1MPqlkDA=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.win-x64.v6.0.33": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.win-x64",
+              "version": "6.0.33",
+              "sha512": "sha512-TQipjmrwAD34o3iRACeZK/4rI+YBKsQzkfC5Gja2XahJ35kN5g7+Gm9VaueurlVmdB2QpBgxC9jvkU5qjk0HMg=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.osx-arm64.v7.0.20": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.osx-arm64",
+              "version": "7.0.20",
+              "sha512": "sha512-zskULQ4seV5+Aqj/hG1VQ5RKqGcjZi7T1ceCUHbfAJOxcVQOOcSzxGxy7+Ys2wQnhQsIjWYNIji58c5tnv/6vA=="
+            }
+          },
+          "nuget.microsoft.netcore.app.host.linux-musl-arm64.v3.0.3": {
+            "bzlFile": "@@rules_dotnet~//dotnet/private/rules/nuget:nuget_archive.bzl",
+            "ruleClassName": "nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://api.nuget.org/v3/index.json"
+              ],
+              "id": "microsoft.netcore.app.host.linux-musl-arm64",
+              "version": "3.0.3",
+              "sha512": "sha512-rwJyEcl3wwxCI0hyIOw7tHsCfA5v2NpZVa3GZSFa7/nJmtyZlTfWyuYAXxdnFzxSwU2DNYL3kYy59/4+9EF4hA=="
+            }
           }
         },
         "recordedRepoMappingEntries": [
@@ -2663,7 +2767,7 @@
     },
     "@@rules_dotnet~//dotnet/private/sdk/runtime_packs:dotnet.runtime_packs_extension.bzl%runtime_packs_extension": {
       "general": {
-        "bzlTransitiveDigest": "VL4Ed886040VApFILz2lYndo3BDGL3hP+WvVDH6zzNk=",
+        "bzlTransitiveDigest": "RROEmaan7c4GQTIvsJMwJI9Zb5gxC6IhxEey3+yYG+k=",
         "usagesDigest": "M7JnhNrM8a72UUvsALPsWEc7K1vxVYawGUQpO2q81HY=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -4007,7 +4111,7 @@
     },
     "@@rules_dotnet~//dotnet/private/sdk/targeting_packs:dotnet.targeting_packs_extension.bzl%targeting_packs_extension": {
       "general": {
-        "bzlTransitiveDigest": "fKjgdbyq8yL9gtC6h5PvuYPYDuHVOR2wOLNtDtwNzTw=",
+        "bzlTransitiveDigest": "Weln7c/loG9vgpaBpHtEwjLczpSbxPVWzZgTDNopei4=",
         "usagesDigest": "faHU/T6TucXyqJ/W2lDqKBmKkUM0Hr8Mb2EjdeiM0Iw=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
