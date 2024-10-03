@@ -5,6 +5,11 @@ load(
     "csharp_nunit_test",
 )
 
+load(
+    "//:defs.bzl",
+    "NETCOREAPP_TOOL_CURRENT"
+)
+
 csharp_binary(
     name = "instance_assignment_class01",
     srcs = [
@@ -56,4 +61,12 @@ csharp_library(
         "//:TargetingPack",
     ],
     target_frameworks = [ "net9.0"],
+)
+
+csharp_binary(
+    name = "DwarfDumpTest",
+    srcs = [
+        "nativeaot/SmokeTests/DwarfDump/Program.cs",
+    ],
+    target_frameworks = [ NETCOREAPP_TOOL_CURRENT ]
 )

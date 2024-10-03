@@ -1,0 +1,2 @@
+
+NETCOREAPP_TOOL_CURRENT = "net9.0"
