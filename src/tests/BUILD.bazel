@@ -7,7 +7,8 @@ load(
 
 load(
     "//:defs.bzl",
-    "NETCOREAPP_TOOL_CURRENT"
+    "NETCOREAPP_TOOL_CURRENT",
+    "LIVE_REFPACK_DEPS",
 )
 
 csharp_binary(
@@ -68,5 +69,7 @@ csharp_binary(
     srcs = [
         "nativeaot/SmokeTests/DwarfDump/Program.cs",
     ],
+    deps = LIVE_REFPACK_DEPS,
+    disable_implicit_framework_refs = True,
     target_frameworks = [ NETCOREAPP_TOOL_CURRENT ]
 )
