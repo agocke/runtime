@@ -1,9 +1,13 @@
+source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json
+source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9-transport/nuget/v3/index.json
+source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json
 source https://api.nuget.org/v3/index.json
 
 storage: none
-framework: netstandard2.0
+framework: net8.0
 
 nuget Microsoft.CodeAnalysis.Common 4.11.0
 nuget Microsoft.CodeAnalysis.CSharp 4.11.0
 nuget Microsoft.CodeAnalysis.CSharp.Workspaces 4.11.0
 nuget System.Memory 4.5.5
+nuget microsoft.dotnet.arcade.sdk 9.0.0-beta.24423.2
