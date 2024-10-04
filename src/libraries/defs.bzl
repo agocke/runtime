@@ -19,7 +19,6 @@ def netcoreapp_ref_assembly(
     **kwargs
 ):
     compiler_options = compiler_options + [
-        "/keyfile:/home/andy/.nuget/packages/microsoft.dotnet.arcade.sdk/9.0.0-beta.24423.2/tools/snk/MSFT.snk",
         "/checksumalgorithm:SHA256",
         "/publicsign+",
     ]
@@ -37,5 +36,6 @@ def netcoreapp_ref_assembly(
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         nowarn = nowarn,
+        compiler_options = compiler_options,
         **kwargs
     )
