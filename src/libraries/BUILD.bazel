@@ -68,7 +68,6 @@ csharp_library(
         "/publicsign+",
     ],
     keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
-
     nowarn = nowarn + ref_assembly_nowarns + [
         # disable warnings about obsolete APIs,
         # Remove warning disable when nullable attributes are respected,

@@ -33,6 +33,7 @@ def netcoreapp_ref_assembly(
         assembly_version = "9.0.0.0",
         visibility = [ "//visibility:public" ],
         nullable = "annotations",
+        keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         nowarn = nowarn,
