@@ -11,6 +11,8 @@ load(
     "LIVE_REFPACK_DEPS",
 )
 
+load("defs.bzl", "live_csharp_binary")
+
 csharp_binary(
     name = "instance_assignment_class01",
     srcs = [
@@ -64,12 +66,11 @@ csharp_library(
     target_frameworks = [ "net9.0"],
 )
 
-csharp_binary(
+live_csharp_binary(
     name = "DwarfDumpTest",
     srcs = [
         "nativeaot/SmokeTests/DwarfDump/Program.cs",
     ],
     deps = LIVE_REFPACK_DEPS,
-    disable_implicit_framework_refs = True,
     target_frameworks = [ NETCOREAPP_TOOL_CURRENT ]
 )
