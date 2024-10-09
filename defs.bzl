@@ -18,3 +18,9 @@ LIVE_REFPACK_DEPS = [
     "//src/libraries:ref_System.Runtime.InteropServices",
     "//src/libraries:ref_System.Diagnostics.Process",
 ]
+
+def from_coreclr_artifacts(file):
+    return select({
+        "@platforms//os:linux": [ Label("//:artifacts/bin/coreclr/linux.x64.Debug/%s" % file) ],
+        "@platforms//os:macos": [ Label("//:artifacts/bin/coreclr/osx.arm64.Debug/%s" % file) ],
+    })
