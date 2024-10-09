@@ -23,6 +23,14 @@ ref_assembly_nowarns = [
     "CS8625"
 ]
 
+filegroup(
+    name = "impl_netcoreapp",
+    srcs = [
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 csharp_library(
     name = "ref_System.Private.CoreLib",
     srcs = [

@@ -206,9 +206,23 @@ live_csharp_binary = rule(
                 cfg = "exec",
                 allow_single_file = True,
             ),
+            "_bash_runfiles": attr.label(
+                default = "@bazel_tools//tools/bash/runfiles",
+                allow_single_file = True,
+            ),
             "_targeting_pack": attr.label(
                 default = "@rules_dotnet//dotnet/private/sdk/targeting_packs:targeting_pack",
                 cfg = targeting_pack_transition,
+            ),
+            "_launcher_sh": attr.label(
+                doc = "A template file for the launcher on Linux/MacOS",
+                default = "//:eng/run_test.sh",
+                allow_single_file = True,
+            ),
+            "_core_root": attr.label(
+                doc = "The host binary to use for the launcher",
+                default = "//:Core_Root",
+                allow_single_file = True,
             ),
             "include_host_model_dll": attr.bool(
                 doc = "Whether to include Microsoft.NET.HostModel from the toolchain. This is only required to build tha apphost shimmer.",
@@ -223,8 +237,24 @@ live_csharp_binary = rule(
     cfg = tfm_transition,
 )
 
-def _create_launcher(ctx, runfiles, executable):
-    return ""
+def _create_launcher(ctx, runfiles, entry_dll):
+    windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
+
+    launcher = ctx.actions.declare_file("{}.{}".format(entry_dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = entry_dll)
+
+    ctx.actions.expand_template(
+        template = ctx.file._launcher_sh,
+        output = launcher,
+        substitutions = {
+            "TEMPLATED_core_root": to_rlocation_path(ctx, ctx.file._core_root),
+            "TEMPLATED_entry_dll": to_rlocation_path(ctx, entry_dll),
+        },
+        is_executable = True,
+    )
+    runfiles.append(ctx.file._core_root)
+    runfiles.append(ctx.file._bash_runfiles)
+
+    return launcher
 
 def _build_binary(ctx, compile_action):
     """Builds a .Net binary from a compilation action
@@ -298,11 +328,4 @@ def _build_binary(ctx, compile_action):
         files = depset(default_info_files),
     )
 
-    dotnet_binary_info = DotnetBinaryInfo(
-        dll = dll,
-        transitive_runtime_deps = transitive_runtime_deps,
-        apphost_pack_info = ctx.attr._apphost_pack[0][DotnetApphostPackInfo],
-        runtime_pack_info = ctx.attr._runtime_pack[0][DotnetRuntimePackInfo],
-    )
-
-    return [default_info, dotnet_binary_info, compile_provider, runtime_provider]
+    return [default_info, compile_provider, runtime_provider]
