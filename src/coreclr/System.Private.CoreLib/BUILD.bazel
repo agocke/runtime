@@ -167,6 +167,7 @@ macos_srcs = [
 
 csharp_library(
     name = "impl_System.Private.CoreLib",
+    out = "System.Private.CoreLib",
     analyzers = [
         "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
@@ -328,12 +329,18 @@ csharp_library(
         "@platforms//os:linux": linux_srcs,
         "@platforms//os:macos": macos_srcs,
     }),
+    assembly_version = "9.0.0.0",
     nullable = "enable",
     allow_unsafe_blocks = True,
     target_frameworks = [ "net9.0" ],
     disable_implicit_framework_refs = True,
     cls_compliant = False,
-    compiler_options = [ "/runtimemetadataversion:v4.0.30319" ],
+    compiler_options = [
+        "/runtimemetadataversion:v4.0.30319",
+        "/checksumalgorithm:SHA256",
+        "/publicsign+",
+    ],
+    keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
     defines = [ "SYSTEM_PRIVATE_CORELIB", "CORECLR", "FEATURE_PERFTRACING" ] + select({
             "@platforms//cpu:x86_64": [ "TARGET_AMD64", "TARGET_64BIT" ],
             "@platforms//cpu:aarch64": [ "TARGET_ARM64", "TARGET_64BIT" ],
@@ -342,5 +349,6 @@ csharp_library(
             "@platforms//os:linux": [ "TARGET_LINUX" ],
             "@platforms//os:macos": [ "TARGET_OSX" ],
         }),
-    nowarn = nowarn
+    nowarn = nowarn,
+    visibility = ["//visibility:public"]
 )

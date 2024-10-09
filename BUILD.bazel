@@ -3,6 +3,29 @@ load(
     "import_library"
 )
 
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+
+exports_files([
+    "eng/run_test.sh"
+])
+
+CORECLR_ARTIFACTS_PATH = "artifacts/bin/coreclr/osx.arm64.Debug"
+
+copy_to_directory(
+    name = "Core_Root",
+    out = "Core_Root",
+    srcs = [
+        CORECLR_ARTIFACTS_PATH + "/corerun",
+        CORECLR_ARTIFACTS_PATH + "/libcoreclr.dylib",
+        "//src/libraries:impl_netcoreapp",
+    ],
+    replace_prefixes = {
+        "artifacts/bin/coreclr/osx.arm64.Debug": "",
+        "src/coreclr/System.Private.CoreLib/impl_System.Private.CoreLib/net9.0": "",
+    },
+    visibility = ["//visibility:public"],
+)
+
 import_library(
     name = "TargetingPack",
     library_name = "xunit.abstractions",
