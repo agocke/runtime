@@ -1,0 +1,62 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
+using Microsoft.Build.Framework;
+
+internal sealed class MockEngine : IBuildEngine
+{
+    private readonly TextWriter? _testOutputHelper;
+    private StringBuilder _log = new StringBuilder();
+    public MessageImportance MinimumMessageImportance = MessageImportance.Low;
+    public List<BuildMessageEventArgs> BuildMessages = new List<BuildMessageEventArgs>();
+
+    internal string Log
+    {
+        get { return _log.ToString(); }
+        set { _log = new StringBuilder(value); }
+    }
+
+    public void LogErrorEvent(BuildErrorEventArgs eventArgs)
+    {
+        var msg = $"MSBUILD ERROR {eventArgs.Code}: {eventArgs.Message}";
+        _testOutputHelper?.WriteLine(msg);
+        _log.AppendLine(msg);
+    }
+
+    public void LogWarningEvent(BuildWarningEventArgs eventArgs)
+    {
+        var msg = $"MSBUILD WARNING {eventArgs.Code}: {eventArgs.Message}";
+        _testOutputHelper?.WriteLine(msg);
+        _log.AppendLine(msg);
+    }
+
+    public void LogCustomEvent(CustomBuildEventArgs eventArgs)
+    {
+        _testOutputHelper?.WriteLine(eventArgs.Message);
+        _log.AppendLine(eventArgs.Message);
+    }
+
+    public void LogMessageEvent(BuildMessageEventArgs eventArgs)
+    {
+        _testOutputHelper?.WriteLine(eventArgs.Message);
+        _log.AppendLine(eventArgs.Message);
+        BuildMessages.Add(eventArgs);
+    }
+
+    public string ProjectFileOfTaskNode => "";
+    public int ColumnNumberOfTaskNode => 0;
+    public int LineNumberOfTaskNode => 0;
+    public bool ContinueOnError => true;
+
+    public MockEngine(TextWriter? testOutputHelper = null)
+    {
+        _testOutputHelper = testOutputHelper;
+    }
+
+    public bool BuildProjectFile(string projectFileName, string[] targetNames, IDictionary globalProperties, IDictionary targetOutputs)
+        => throw new NotImplementedException();
+}

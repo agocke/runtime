@@ -4,7 +4,8 @@ load("//:defs.bzl", "from_coreclr_artifacts")
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 
 exports_files([
-    "eng/run_test.sh"
+    "eng/run_test.sh",
+    "artifacts/obj/coreclr/System.Private.CoreLib/linux.x64.Debug/System.Private.CoreLib.Strings.resources",
 ])
 
 copy_to_directory(
@@ -12,18 +13,18 @@ copy_to_directory(
     out = "Core_Root",
     srcs =
         from_coreclr_artifacts("corerun") + select({
-            "@platforms//os:linux": glob(["artifacts/bin/coreclr/linux.x64.Debug/*.so"]),
+            "@platforms//os:linux": glob([
+                "artifacts/bin/coreclr/linux.x64.Debug/*.so",
+                "artifacts/bin/coreclr/linux.x64.Debug/*.dbg",
+                "artifacts/bin/native/net9.0-linux-Debug-x64/*.so",
+                "artifacts/bin/native/net9.0-linux-Debug-x64/*.dbg",
+            ]),
             "@platforms//os:macos": glob(["artifacts/bin/coreclr/osx.arm64.Debug/*.dylib"]),
-        }) + [
+        })
+        + [
             "//src/libraries:impl_netcoreapp",
         ],
-    root_paths = glob(["**/corerun*"]) + glob(["**/*.dll"]) + glob(["**/*.dylib"]) + glob(["**/*.so"]) + [
-        "artifacts/bin/coreclr/linux.x64.Debug",
-    ] ,
-    replace_prefixes = {
-        "artifacts/bin/coreclr/osx.arm64.Debug": "",
-        "src/coreclr/System.Private.CoreLib/impl_System.Private.CoreLib/net9.0": "",
-    },
+    root_paths = [ "**" ],
     visibility = ["//visibility:public"],
 )
 

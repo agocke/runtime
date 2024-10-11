@@ -40,3 +40,29 @@ def netcoreapp_ref_assembly(
         compiler_options = compiler_options,
         **kwargs
     )
+
+def netcoreapp_impl_assembly(
+    name,
+    srcs,
+    deps = [],
+    compiler_options = [],
+    **kwargs
+):
+    compiler_options = compiler_options + [
+        "/checksumalgorithm:SHA256",
+        "/publicsign+",
+    ]
+    csharp_library(
+        name = "impl_" + name,
+        out = name,
+        srcs = srcs,
+        deps = deps,
+        assembly_version = "9.0.0.0",
+        visibility = [ "//visibility:public" ],
+        nullable = "annotations",
+        keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
+        target_frameworks = [ NETCOREAPP_CURRENT ],
+        disable_implicit_framework_refs = True,
+        compiler_options = compiler_options,
+        **kwargs
+    )
