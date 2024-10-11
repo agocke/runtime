@@ -8,7 +8,7 @@ load(
     "NETCOREAPP_CURRENT"
 )
 
-load("defs.bzl", "netcoreapp_ref_assembly")
+load("defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
 
 nowarn = [ "CS8500", "CS8969" ]
 
@@ -27,6 +27,7 @@ filegroup(
     name = "impl_netcoreapp",
     srcs = [
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
+        ":impl_System.Runtime",
     ],
     visibility = ["//visibility:public"],
 )
@@ -95,6 +96,16 @@ netcoreapp_ref_assembly(
     ],
     allow_unsafe_blocks = True,
     nowarn = [ "CS0169", "CS0809", "CS0618", "CS3015" ]
+)
+
+netcoreapp_impl_assembly(
+    name = "System.Runtime",
+    srcs = [
+        "System.Runtime/src/System.Runtime.Typeforwards.cs",
+    ],
+    deps = [
+        ":ref_System.Private.CoreLib",
+    ],
 )
 
 netcoreapp_ref_assembly(
