@@ -8,6 +8,7 @@ var seeds = new List<string>();
 string contractAssembly = "";
 var compileFiles = new List<string>();
 string outputSourcePath = "";
+var omitTypes = new List<string>();
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -28,6 +29,10 @@ for (int i = 0; i < args.Length; i++)
     {
         outputSourcePath = outPath;
     }
+    else if (StartsWith(arg, "--omitType=", out var omit))
+    {
+        omitTypes.Add(omit);
+    }
 }
 
 Microsoft.DotNet.Build.Tasks.ILog logger = new Logger();
@@ -39,9 +44,9 @@ _ = GenPartialFacadeSourceGenerator.Execute(
     defineConstants: "",
     langVersion: "preview",
     outputSourcePath: outputSourcePath,
-    logger: logger
+    logger: logger,
+    OmitTypes: omitTypes.ToArray()
 );
-Console.WriteLine("Hello, World!");
 
 static bool StartsWith(string s, string prefix, [NotNullWhen(true)] out string? rest)
 {
