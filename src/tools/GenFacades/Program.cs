@@ -2,8 +2,54 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using Microsoft.DotNet.GenFacades;
+using System.Diagnostics.CodeAnalysis;
 
-var facadeTask = new GenPartialFacadeSource();
-facadeTask.Execute();
-facadeTask.BuildEngine = new MockEngine(Console.Out);
+var seeds = new List<string>();
+string contractAssembly = "";
+var compileFiles = new List<string>();
+string outputSourcePath = "";
+
+for (int i = 0; i < args.Length; i++)
+{
+    var arg = args[i];
+    if (StartsWith(arg, "--ref-path=", out var seed))
+    {
+        seeds.Add(seed);
+    }
+    else if (StartsWith(arg, "--contractAssembly=", out var asm))
+    {
+        contractAssembly = asm;
+    }
+    else if (StartsWith(arg, "--file=", out var file))
+    {
+        compileFiles.Add(file);
+    }
+    else if (StartsWith(arg, "--outputSourcePath=", out var outPath))
+    {
+        outputSourcePath = outPath;
+    }
+}
+
+Microsoft.DotNet.Build.Tasks.ILog logger = new Logger();
+
+_ = GenPartialFacadeSourceGenerator.Execute(
+    seeds: seeds.ToArray(),
+    contractAssembly: contractAssembly,
+    compileFiles: compileFiles.ToArray(),
+    defineConstants: "",
+    langVersion: "preview",
+    outputSourcePath: outputSourcePath,
+    logger: logger
+);
 Console.WriteLine("Hello, World!");
+
+static bool StartsWith(string s, string prefix, [NotNullWhen(true)] out string? rest)
+{
+    if (s.StartsWith(prefix))
+    {
+        rest = s[prefix.Length..];
+        return true;
+    }
+    rest = null;
+    return false;
+}
