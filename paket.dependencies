@@ -12,3 +12,6 @@ nuget Microsoft.CodeAnalysis.CSharp.Workspaces 4.11.0
 nuget System.Memory 4.5.5
 nuget microsoft.dotnet.arcade.sdk 9.0.0-beta.24423.2
 nuget System.Buffers 4.5.1
+nuget microsoft.dotnet.genfacades 9.0.0-beta.24423.2
+nuget Microsoft.Build.Framework 17.8.3
+nuget Microsoft.Build.Utilities.Core 17.8.3

@@ -106,6 +106,7 @@ netcoreapp_impl_assembly(
     deps = [
         ":ref_System.Private.CoreLib",
     ],
+    gen_facades = True,
 )
 
 netcoreapp_ref_assembly(
