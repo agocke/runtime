@@ -7,6 +7,10 @@ load(
     "//:defs.bzl",
     "NETCOREAPP_CURRENT"
 )
+load(
+    "@rules_dotnet//dotnet/private:providers.bzl",
+    "DotnetAssemblyRuntimeInfo",
+)
 
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 
@@ -43,28 +47,71 @@ def netcoreapp_ref_assembly(
         **kwargs
     )
 
-def netcoreapp_impl_assembly(
+def _gen_facades_impl(ctx):
+    libs_paths = [r[DotnetAssemblyRuntimeInfo].libs[0] for r in ctx.attr.ref_paths]
+    contract_assembly = ctx.attr.facade_contract_assembly[DotnetAssemblyRuntimeInfo].libs[0]
+    ctx.actions.run(
+        executable = ctx.executable._exe,
+        inputs = libs_paths + [contract_assembly],
+        outputs = [ctx.outputs.out],
+        arguments = [
+            "--outputSourcePath=%s" % ctx.outputs.out.path,
+            "--contractAssembly=%s" % contract_assembly.path,
+        ]
+        + [ "--omitType=%s" % t for t in ctx.attr.facade_omit_types ]
+        + ["--ref-path=%s" % p.path for p in libs_paths],
+    )
+
+gen_facades = rule(
+    implementation = _gen_facades_impl,
+    attrs = {
+        "srcs": attr.label_list(
+            allow_files = True,
+            doc = "The source files to generate facades for.",
+        ),
+        "out": attr.output(mandatory = True),
+        "ref_paths": attr.label_list(
+            doc = "The paths to the reference assemblies.",
+        ),
+        "facade_contract_assembly": attr.label(
+            doc = "The contract assembly to use.",
+        ),
+        "facade_omit_types": attr.string_list(
+            doc = "The types to omit from the generated facades.",
+        ),
+        "_exe": attr.label(
+            default = Label("//src/tools/GenFacades:GenFacades"),
+            cfg = "exec",
+            executable = True,
+        ),
+    }
+)
+
+def netcoreapp_impl_library(
     name,
     srcs,
     deps = [],
     compiler_options = [],
-    gen_facades = False,
+    generate_facades = False,
+    facade_contract_assembly = None,
+    facade_omit_types = [],
     **kwargs
 ):
+
     compiler_options = compiler_options + [
         "/checksumalgorithm:SHA256",
         "/publicsign+",
     ]
 
-    if gen_facades:
+    if generate_facades:
         forwards_cs = name + ".Forwards.cs"
-        run_binary(
+        gen_facades(
             name = "facade_" + name,
-            tool = "//src/tools/GenFacades",
-            args = [
-                "--outputSourcePath=" + forwards_cs,
-            ],
-            outs = [forwards_cs],
+            srcs = srcs,
+            out = forwards_cs,
+            ref_paths = deps,
+            facade_contract_assembly = facade_contract_assembly,
+            facade_omit_types = facade_omit_types,
         )
         srcs = srcs + [ ":facade_" + name ]
 

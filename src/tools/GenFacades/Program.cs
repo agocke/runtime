@@ -13,7 +13,7 @@ var omitTypes = new List<string>();
 
 for (int i = 0; i < args.Length; i++)
 {
-    var arg = args[i];
+    var arg = args[i].TrimStart('\'').TrimEnd('\'');
     if (StartsWith(arg, "--ref-path=", out var seed))
     {
         seeds.Add(seed);
