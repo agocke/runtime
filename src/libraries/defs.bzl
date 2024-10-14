@@ -14,8 +14,7 @@ load(
 
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 
-# Convenience macro for defining a ref assembly for the NetCoreApp framework. The name of the ref
-# assembly will be prefixed with "ref_".
+# Convenience macro for defining a ref assembly for the NetCoreApp framework.
 def netcoreapp_ref_assembly(
     name,
     srcs,
@@ -31,9 +30,10 @@ def netcoreapp_ref_assembly(
     nowarn = nowarn + [
         "CS0169",
     ]
+    base_name = name[len("ref_"):]
     csharp_library(
-        name = "ref_" + name,
-        out = name,
+        name = name,
+        out = base_name,
         srcs = srcs,
         deps = deps,
         assembly_version = "9.0.0.0",
@@ -97,6 +97,7 @@ def netcoreapp_impl_library(
     facade_omit_types = [],
     **kwargs
 ):
+    base_name = name[len("impl_"):]
 
     compiler_options = compiler_options + [
         "/checksumalgorithm:SHA256",
@@ -106,18 +107,18 @@ def netcoreapp_impl_library(
     if generate_facades:
         forwards_cs = name + ".Forwards.cs"
         gen_facades(
-            name = "facade_" + name,
+            name = "facade_" + base_name,
             srcs = srcs,
             out = forwards_cs,
             ref_paths = deps,
             facade_contract_assembly = facade_contract_assembly,
             facade_omit_types = facade_omit_types,
         )
-        srcs = srcs + [ ":facade_" + name ]
+        srcs = srcs + [ ":facade_" + base_name ]
 
     csharp_library(
-        name = "impl_" + name,
-        out = name,
+        name = name,
+        out = base_name,
         srcs = srcs,
         deps = deps,
         assembly_version = "9.0.0.0",
