@@ -28,6 +28,7 @@ filegroup(
     srcs = [
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         ":impl_System.Runtime",
+        ":impl_System.Diagnostics.Process",
     ],
     visibility = ["//visibility:public"],
 )
@@ -88,7 +89,7 @@ csharp_library(
 )
 
 netcoreapp_ref_assembly(
-    name = "System.Runtime",
+    name = "ref_System.Runtime",
     srcs = [
         "System.Runtime/ref/System.Runtime.cs",
     ],
@@ -99,8 +100,51 @@ netcoreapp_ref_assembly(
     nowarn = [ "CS0169", "CS0809", "CS0618", "CS3015" ]
 )
 
+netcoreapp_ref_assembly(
+    name = "ref_Microsoft.Win32.Primitives",
+    srcs = [
+        "Microsoft.Win32.Primitives/ref/Microsoft.Win32.Primitives.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+    ],
+)
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Threading",
+    srcs = [
+        "System.Threading/ref/System.Threading.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+    ],
+)
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Threading.Overlapped",
+    srcs = [
+        "System.Threading.Overlapped/ref/System.Threading.Overlapped.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+    ],
+    allow_unsafe_blocks = True,
+)
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Threading.ThreadPool",
+    srcs = [
+        "System.Threading.ThreadPool/ref/System.Threading.ThreadPool.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+        ":ref_System.Threading.Overlapped",
+    ],
+    allow_unsafe_blocks = True,
+)
+
 netcoreapp_impl_library(
-    name = "System.Private.Uri",
+    name = "impl_System.Private.Uri",
     srcs = [
         "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
         "//src/libraries/Common:src/System/HexConverter.cs",
@@ -140,7 +184,7 @@ netcoreapp_impl_library(
 )
 
 netcoreapp_impl_library(
-    name = "System.Runtime",
+    name = "impl_System.Runtime",
     srcs = [
         "System.Runtime/src/System.Runtime.Typeforwards.cs",
     ],
@@ -155,8 +199,66 @@ netcoreapp_impl_library(
     ]
 )
 
+netcoreapp_impl_library(
+    name = "impl_System.Diagnostics.Process",
+    srcs = [
+        "System.Diagnostics.Process/src/Microsoft/Win32/SafeHandles/SafeProcessHandle.cs",
+        "System.Diagnostics.Process/src/System/Collections/Specialized/DictionaryWrapper.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/AsyncStreamReader.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/DataReceivedEventArgs.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/Process.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessInfo.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessModule.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessModuleCollection.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessPriorityClass.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessStartInfo.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessThread.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessThreadCollection.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessWindowStyle.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ThreadInfo.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ThreadPriorityLevel.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ThreadState.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ThreadWaitReason.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/MonitoringDescriptionAttribute.cs",
+        "System.Diagnostics.Process/src/System/Collections/Specialized/StringDictionaryWrapper.cs",
+
+        "//src/libraries/System.Private.CoreLib/src:System/PasteArguments.cs",
+
+        "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
+        "//src/libraries/Common:src/System/Runtime/Serialization/SerializationGuard.cs",
+        "//src/libraries/Common:src/Interop/Windows/Interop.Errors.cs",
+        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
+        "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
+    ] + select({
+        "@platforms//os:linux": [
+            "System.Diagnostics.Process/src/Microsoft/Win32/SafeHandles/SafeProcessHandle.Unix.cs",
+        ],
+    }),
+    deps = [
+        ":ref_Microsoft.Win32.Primitives",
+#        ":ref_Microsoft.Win32.Registry",
+        ":ref_System.Collections",
+#        ":ref_System.Collections.Concurrent",
+        ":ref_System.Collections.NonGeneric",
+        ":ref_System.Collections.Specialized",
+        ":ref_System.ComponentModel.Primitives",
+        ":ref_System.Diagnostics.FileVersionInfo",
+#        ":ref_System.IO.FileSystem.DriveInfo",
+#        ":ref_System.Memory",
+#        ":ref_System.IO.Pipes",
+        ":ref_System.Runtime",
+#        ":ref_System.Runtime.InteropServices",
+#        ":ref_System.Text.Encoding.Extensions",
+        ":ref_System.Threading",
+#        ":ref_System.Threading.Thread",
+        ":ref_System.Threading.ThreadPool",
+    ],
+    allow_unsafe_blocks = True,
+)
+
 netcoreapp_ref_assembly(
-    name = "System.Console",
+    name = "ref_System.Console",
     srcs = [
         "System.Console/ref/System.Console.cs",
     ],
@@ -166,7 +268,7 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "System.Collections",
+    name = "ref_System.Collections",
     srcs = [
         "System.Collections/ref/System.Collections.cs",
     ],
@@ -177,7 +279,7 @@ netcoreapp_ref_assembly(
 
 
 netcoreapp_ref_assembly(
-    name = "System.Collections.NonGeneric",
+    name = "ref_System.Collections.NonGeneric",
     srcs = [
         "System.Collections.NonGeneric/ref/System.Collections.NonGeneric.cs",
         "System.Collections.NonGeneric/ref/System.Collections.NonGeneric.Forwards.cs",
@@ -188,7 +290,7 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "System.ComponentModel",
+    name = "ref_System.ComponentModel",
     srcs = [
         "System.ComponentModel/ref/System.ComponentModel.cs",
     ],
@@ -198,7 +300,7 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "System.Diagnostics.FileVersionInfo",
+    name = "ref_System.Diagnostics.FileVersionInfo",
     srcs = [
         "System.Diagnostics.FileVersionInfo/ref/System.Diagnostics.FileVersionInfo.cs",
     ],
@@ -208,7 +310,7 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "System.ObjectModel",
+    name = "ref_System.ObjectModel",
     srcs = [
         "System.ObjectModel/ref/System.ObjectModel.cs",
         "System.ObjectModel/ref/System.ObjectModel.Forwards.cs",
@@ -219,7 +321,7 @@ netcoreapp_ref_assembly(
     ],
 )
 netcoreapp_ref_assembly(
-    name = "System.ComponentModel.Primitives",
+    name = "ref_System.ComponentModel.Primitives",
     srcs = [
         "System.ComponentModel.Primitives/ref/System.ComponentModel.Primitives.cs",
     ],
@@ -232,7 +334,7 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "System.Collections.Specialized",
+    name = "ref_System.Collections.Specialized",
     srcs = [
         "System.Collections.Specialized/ref/System.Collections.Specialized.cs",
     ],
@@ -243,7 +345,7 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "System.Runtime.InteropServices",
+    name = "ref_System.Runtime.InteropServices",
     srcs = [
         "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.cs",
         "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.Forwards.cs",
@@ -256,7 +358,7 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "System.Diagnostics.Process",
+    name = "ref_System.Diagnostics.Process",
     srcs = [
         "System.Diagnostics.Process/ref/System.Diagnostics.Process.cs",
     ],
