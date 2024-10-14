@@ -8,7 +8,7 @@ load(
     "NETCOREAPP_CURRENT"
 )
 
-load("defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
+load("defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_library")
 
 nowarn = [ "CS8500", "CS8969" ]
 
@@ -34,6 +34,7 @@ filegroup(
 
 csharp_library(
     name = "ref_System.Private.CoreLib",
+    out = "System.Private.CoreLib",
     srcs = [
         "Microsoft.Win32.Primitives/ref/Microsoft.Win32.Primitives.cs",
         "System.Diagnostics.Contracts/ref/System.Diagnostics.Contracts.cs",
@@ -98,15 +99,60 @@ netcoreapp_ref_assembly(
     nowarn = [ "CS0169", "CS0809", "CS0618", "CS3015" ]
 )
 
-netcoreapp_impl_assembly(
+netcoreapp_impl_library(
+    name = "System.Private.Uri",
+    srcs = [
+        "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
+        "//src/libraries/Common:src/System/HexConverter.cs",
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+        "//src/libraries/Common:src/System/Net/IPv4AddressHelper.Common.cs",
+        "//src/libraries/Common:src/System/Net/IPv6AddressHelper.Common.cs",
+        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
+
+        "System.Private.Uri/src/System/DomainNameHelper.cs",
+        "System.Private.Uri/src/System/GenericUriParser.cs",
+        "System.Private.Uri/src/System/IPv4AddressHelper.cs",
+        "System.Private.Uri/src/System/IPv6AddressHelper.cs",
+        "System.Private.Uri/src/System/IriHelper.cs",
+        "System.Private.Uri/src/System/PercentEncodingHelper.cs",
+        "System.Private.Uri/src/System/UncNameHelper.cs",
+        "System.Private.Uri/src/System/Uri.cs",
+        "System.Private.Uri/src/System/UriBuilder.cs",
+        "System.Private.Uri/src/System/UriCreationOptions.cs",
+        "System.Private.Uri/src/System/UriEnumTypes.cs",
+        "System.Private.Uri/src/System/UriExt.cs",
+        "System.Private.Uri/src/System/UriFormatException.cs",
+        "System.Private.Uri/src/System/UriHelper.cs",
+        "System.Private.Uri/src/System/UriHostNameType.cs",
+        "System.Private.Uri/src/System/UriParserTemplates.cs",
+        "System.Private.Uri/src/System/UriPartial.cs",
+        "System.Private.Uri/src/System/UriScheme.cs",
+        "System.Private.Uri/src/System/UriSyntax.cs",
+        "System.Private.Uri/src/System/ValueStringBuilderExtensions.cs",
+
+        "System.Private.Uri/System.SR.cs",
+        "//src/libraries/Common:src/System/SR.cs",
+    ],
+    deps = [
+        ":ref_System.Private.CoreLib",
+    ],
+    allow_unsafe_blocks = True,
+)
+
+netcoreapp_impl_library(
     name = "System.Runtime",
     srcs = [
         "System.Runtime/src/System.Runtime.Typeforwards.cs",
     ],
     deps = [
         ":ref_System.Private.CoreLib",
+        ":impl_System.Private.Uri",
     ],
-    gen_facades = True,
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Runtime",
+    facade_omit_types = [
+        "System.Void",
+    ]
 )
 
 netcoreapp_ref_assembly(
