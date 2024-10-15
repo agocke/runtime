@@ -5,6 +5,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <NoWarn>$(NoWarn);SYSLIB1045;CA1845;CA1861;CA1834;IDE0200;CA1859;CA1852</NoWarn>
+    <Nullable>annotations</Nullable>
   </PropertyGroup>
 
   <ItemGroup>

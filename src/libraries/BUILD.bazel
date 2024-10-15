@@ -235,6 +235,7 @@ netcoreapp_impl_library(
             "System.Diagnostics.Process/src/Microsoft/Win32/SafeHandles/SafeProcessHandle.Unix.cs",
         ],
     }),
+    resource_file = "System.Diagnostics.Process/src/Resources/Strings.resx",
     deps = [
         ":ref_Microsoft.Win32.Primitives",
 #        ":ref_Microsoft.Win32.Registry",
