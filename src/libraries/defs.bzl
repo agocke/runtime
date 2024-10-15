@@ -87,6 +87,35 @@ gen_facades = rule(
     }
 )
 
+def _gen_resx_source_impl(ctx):
+    ctx.actions.run(
+        executable = ctx.executable._exe,
+        inputs = [ctx.file.resource_file],
+        outputs = [ctx.outputs.out],
+        arguments = [
+            "--output-path=%s" % ctx.outputs.out.path,
+            "--resource-name=%s" % ("FxResources." + ctx.attr.assembly_name + ".SR"),
+            "--resource-file=%s" % ctx.file.resource_file.path,
+        ],
+    )
+
+gen_resx_source = rule(
+    implementation = _gen_resx_source_impl,
+    attrs = {
+        "out": attr.output(mandatory = True),
+        "assembly_name": attr.string(mandatory = True),
+        "resource_file": attr.label(
+            mandatory = True,
+            allow_single_file = True,
+        ),
+        "_exe": attr.label(
+            default = Label("//src/tools/GenerateResxSource:GenerateResxSource"),
+            cfg = "exec",
+            executable = True,
+        ),
+    }
+)
+
 def netcoreapp_impl_library(
     name,
     srcs,
@@ -95,6 +124,7 @@ def netcoreapp_impl_library(
     generate_facades = False,
     facade_contract_assembly = None,
     facade_omit_types = [],
+    resource_file = None,
     **kwargs
 ):
     base_name = name[len("impl_"):]
@@ -115,6 +145,16 @@ def netcoreapp_impl_library(
             facade_omit_types = facade_omit_types,
         )
         srcs = srcs + [ ":facade_" + base_name ]
+
+    if resource_file != None:
+        resx_target = "resx_" + base_name
+        gen_resx_source(
+            name = resx_target,
+            out = name + ".System.SR.cs",
+            assembly_name = base_name,
+            resource_file = resource_file,
+        )
+        srcs = srcs + [ ":" + resx_target ]
 
     csharp_library(
         name = name,
