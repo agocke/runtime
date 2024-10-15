@@ -175,7 +175,6 @@ netcoreapp_impl_library(
         "System.Private.Uri/src/System/ValueStringBuilderExtensions.cs",
 
         "System.Private.Uri/System.SR.cs",
-        "//src/libraries/Common:src/System/SR.cs",
     ],
     deps = [
         ":ref_System.Private.CoreLib",
