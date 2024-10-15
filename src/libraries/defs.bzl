@@ -125,13 +125,16 @@ def netcoreapp_impl_library(
     facade_contract_assembly = None,
     facade_omit_types = [],
     resource_file = None,
+    exclude_sr = False,
     **kwargs
 ):
     base_name = name[len("impl_"):]
 
-    srcs = srcs + [
-        "//src/libraries/Common:src/System/SR.cs",
-    ]
+    if not exclude_sr:
+        srcs = srcs + [
+            "//src/libraries/Common:src/System/SR.cs",
+        ]
+
     compiler_options = compiler_options + [
         "/checksumalgorithm:SHA256",
         "/publicsign+",

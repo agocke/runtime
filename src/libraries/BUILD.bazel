@@ -29,6 +29,8 @@ filegroup(
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         ":impl_System.Runtime",
         ":impl_System.Diagnostics.Process",
+        ":impl_System.ComponentModel.Primitives",
+        ":impl_System.Console",
     ],
     visibility = ["//visibility:public"],
 )
@@ -101,6 +103,27 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
+    name = "ref_System.Memory",
+    srcs = [
+        "System.Memory/ref/System.Memory.cs",
+        "System.Memory/ref/System.Memory.Forwards.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+    ]
+)
+
+netcoreapp_ref_assembly(
+    name = "ref_System.IO.Pipes",
+    srcs = [
+        "System.IO.Pipes/ref/System.IO.Pipes.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+    ],
+)
+
+netcoreapp_ref_assembly(
     name = "ref_Microsoft.Win32.Primitives",
     srcs = [
         "Microsoft.Win32.Primitives/ref/Microsoft.Win32.Primitives.cs",
@@ -143,120 +166,6 @@ netcoreapp_ref_assembly(
     allow_unsafe_blocks = True,
 )
 
-netcoreapp_impl_library(
-    name = "impl_System.Private.Uri",
-    srcs = [
-        "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
-        "//src/libraries/Common:src/System/HexConverter.cs",
-        "//src/libraries/Common:src/System/Obsoletions.cs",
-        "//src/libraries/Common:src/System/Net/IPv4AddressHelper.Common.cs",
-        "//src/libraries/Common:src/System/Net/IPv6AddressHelper.Common.cs",
-        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
-
-        "System.Private.Uri/src/System/DomainNameHelper.cs",
-        "System.Private.Uri/src/System/GenericUriParser.cs",
-        "System.Private.Uri/src/System/IPv4AddressHelper.cs",
-        "System.Private.Uri/src/System/IPv6AddressHelper.cs",
-        "System.Private.Uri/src/System/IriHelper.cs",
-        "System.Private.Uri/src/System/PercentEncodingHelper.cs",
-        "System.Private.Uri/src/System/UncNameHelper.cs",
-        "System.Private.Uri/src/System/Uri.cs",
-        "System.Private.Uri/src/System/UriBuilder.cs",
-        "System.Private.Uri/src/System/UriCreationOptions.cs",
-        "System.Private.Uri/src/System/UriEnumTypes.cs",
-        "System.Private.Uri/src/System/UriExt.cs",
-        "System.Private.Uri/src/System/UriFormatException.cs",
-        "System.Private.Uri/src/System/UriHelper.cs",
-        "System.Private.Uri/src/System/UriHostNameType.cs",
-        "System.Private.Uri/src/System/UriParserTemplates.cs",
-        "System.Private.Uri/src/System/UriPartial.cs",
-        "System.Private.Uri/src/System/UriScheme.cs",
-        "System.Private.Uri/src/System/UriSyntax.cs",
-        "System.Private.Uri/src/System/ValueStringBuilderExtensions.cs",
-
-        "System.Private.Uri/System.SR.cs",
-    ],
-    deps = [
-        ":ref_System.Private.CoreLib",
-    ],
-    allow_unsafe_blocks = True,
-)
-
-netcoreapp_impl_library(
-    name = "impl_System.Runtime",
-    srcs = [
-        "System.Runtime/src/System.Runtime.Typeforwards.cs",
-    ],
-    deps = [
-        ":ref_System.Private.CoreLib",
-        ":impl_System.Private.Uri",
-    ],
-    generate_facades = True,
-    facade_contract_assembly = ":ref_System.Runtime",
-    facade_omit_types = [
-        "System.Void",
-    ]
-)
-
-netcoreapp_impl_library(
-    name = "impl_System.Diagnostics.Process",
-    srcs = [
-        "System.Diagnostics.Process/src/Microsoft/Win32/SafeHandles/SafeProcessHandle.cs",
-        "System.Diagnostics.Process/src/System/Collections/Specialized/DictionaryWrapper.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/AsyncStreamReader.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/DataReceivedEventArgs.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/Process.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessInfo.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessModule.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessModuleCollection.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessPriorityClass.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessStartInfo.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessThread.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessThreadCollection.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ProcessWindowStyle.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ThreadInfo.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ThreadPriorityLevel.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ThreadState.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/ThreadWaitReason.cs",
-        "System.Diagnostics.Process/src/System/Diagnostics/MonitoringDescriptionAttribute.cs",
-        "System.Diagnostics.Process/src/System/Collections/Specialized/StringDictionaryWrapper.cs",
-
-        "//src/libraries/System.Private.CoreLib/src:System/PasteArguments.cs",
-
-        "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
-        "//src/libraries/Common:src/System/Runtime/Serialization/SerializationGuard.cs",
-        "//src/libraries/Common:src/Interop/Windows/Interop.Errors.cs",
-        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
-        "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
-    ] + select({
-        "@platforms//os:linux": [
-            "System.Diagnostics.Process/src/Microsoft/Win32/SafeHandles/SafeProcessHandle.Unix.cs",
-        ],
-    }),
-    resource_file = "System.Diagnostics.Process/src/Resources/Strings.resx",
-    deps = [
-        ":ref_Microsoft.Win32.Primitives",
-#        ":ref_Microsoft.Win32.Registry",
-        ":ref_System.Collections",
-#        ":ref_System.Collections.Concurrent",
-        ":ref_System.Collections.NonGeneric",
-        ":ref_System.Collections.Specialized",
-        ":ref_System.ComponentModel.Primitives",
-        ":ref_System.Diagnostics.FileVersionInfo",
-#        ":ref_System.IO.FileSystem.DriveInfo",
-#        ":ref_System.Memory",
-#        ":ref_System.IO.Pipes",
-        ":ref_System.Runtime",
-#        ":ref_System.Runtime.InteropServices",
-#        ":ref_System.Text.Encoding.Extensions",
-        ":ref_System.Threading",
-#        ":ref_System.Threading.Thread",
-        ":ref_System.Threading.ThreadPool",
-    ],
-    allow_unsafe_blocks = True,
-)
-
 netcoreapp_ref_assembly(
     name = "ref_System.Console",
     srcs = [
@@ -277,6 +186,15 @@ netcoreapp_ref_assembly(
     ],
 )
 
+netcoreapp_ref_assembly(
+    name = "ref_System.IO.FileSystem.DriveInfo",
+    srcs = [
+        "System.IO.FileSystem.DriveInfo/ref/System.IO.FileSystem.DriveInfo.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+    ],
+)
 
 netcoreapp_ref_assembly(
     name = "ref_System.Collections.NonGeneric",
@@ -370,4 +288,301 @@ netcoreapp_ref_assembly(
         ":ref_System.Collections.NonGeneric",
         ":ref_System.Diagnostics.FileVersionInfo",
     ],
+)
+
+netcoreapp_impl_library(
+    name = "impl_System.Private.Uri",
+    srcs = [
+        "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
+        "//src/libraries/Common:src/System/HexConverter.cs",
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+        "//src/libraries/Common:src/System/Net/IPv4AddressHelper.Common.cs",
+        "//src/libraries/Common:src/System/Net/IPv6AddressHelper.Common.cs",
+        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
+
+        "System.Private.Uri/src/System/DomainNameHelper.cs",
+        "System.Private.Uri/src/System/GenericUriParser.cs",
+        "System.Private.Uri/src/System/IPv4AddressHelper.cs",
+        "System.Private.Uri/src/System/IPv6AddressHelper.cs",
+        "System.Private.Uri/src/System/IriHelper.cs",
+        "System.Private.Uri/src/System/PercentEncodingHelper.cs",
+        "System.Private.Uri/src/System/UncNameHelper.cs",
+        "System.Private.Uri/src/System/Uri.cs",
+        "System.Private.Uri/src/System/UriBuilder.cs",
+        "System.Private.Uri/src/System/UriCreationOptions.cs",
+        "System.Private.Uri/src/System/UriEnumTypes.cs",
+        "System.Private.Uri/src/System/UriExt.cs",
+        "System.Private.Uri/src/System/UriFormatException.cs",
+        "System.Private.Uri/src/System/UriHelper.cs",
+        "System.Private.Uri/src/System/UriHostNameType.cs",
+        "System.Private.Uri/src/System/UriParserTemplates.cs",
+        "System.Private.Uri/src/System/UriPartial.cs",
+        "System.Private.Uri/src/System/UriScheme.cs",
+        "System.Private.Uri/src/System/UriSyntax.cs",
+        "System.Private.Uri/src/System/ValueStringBuilderExtensions.cs",
+
+        "System.Private.Uri/System.SR.cs",
+    ],
+    deps = [
+        ":ref_System.Private.CoreLib",
+    ],
+    allow_unsafe_blocks = True,
+)
+
+netcoreapp_impl_library(
+    name = "impl_System.Runtime",
+    srcs = [
+        "System.Runtime/src/System.Runtime.Typeforwards.cs",
+    ],
+    deps = [
+        ":ref_System.Private.CoreLib",
+        ":impl_System.Private.Uri",
+    ],
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Runtime",
+    facade_omit_types = [
+        "System.Void",
+    ],
+    exclude_sr = True,
+)
+
+netcoreapp_impl_library(
+    name = "impl_System.Diagnostics.Process",
+    analyzers = [
+        "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
+        "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
+    ],
+    srcs = [
+        "System.Diagnostics.Process/src/Microsoft/Win32/SafeHandles/SafeProcessHandle.cs",
+        "System.Diagnostics.Process/src/System/Collections/Specialized/DictionaryWrapper.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/AsyncStreamReader.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/DataReceivedEventArgs.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/Process.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessInfo.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessModule.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessModuleCollection.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessPriorityClass.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessStartInfo.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessThread.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessThreadCollection.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ProcessWindowStyle.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ThreadInfo.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ThreadPriorityLevel.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ThreadState.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/ThreadWaitReason.cs",
+        "System.Diagnostics.Process/src/System/Diagnostics/MonitoringDescriptionAttribute.cs",
+        "System.Diagnostics.Process/src/System/Collections/Specialized/StringDictionaryWrapper.cs",
+
+        "//src/libraries/System.Private.CoreLib/src:System/PasteArguments.cs",
+
+        "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
+        "//src/libraries/Common:src/System/Runtime/Serialization/SerializationGuard.cs",
+        "//src/libraries/Common:src/Interop/Windows/Interop.Errors.cs",
+        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
+        "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
+    ] + select({
+        "@platforms//os:linux": [
+            "System.Diagnostics.Process/src/Microsoft/Win32/SafeHandles/SafeProcessHandle.Unix.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/Process.Unix.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.Unix.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessThread.Unix.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessStartInfo.Unix.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessWaitHandle.Unix.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessWaitState.Unix.cs",
+
+            "//src/libraries/Common:src/System/IO/StringParser.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Errors.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Close.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.DefaultPathBufferSize.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetHostName.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SysConf.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.ForkAndExecProcess.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetGroupList.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetPwUid.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetSetPriority.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetSid.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.InitializeTerminalAndSignalHandling.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Kill.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.ReadLink.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.RegisterForSigChld.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SetDelayedSigChildConsoleConfigurationHandler.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.ResourceLimits.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.PathConf.cs",
+            "//src/libraries/Common:src/System/Text/ValueUtf8Converter.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.WaitId.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.WaitPid.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Access.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetEUid.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.IsMemberOfGroup.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.ConfigureTerminalForChildProcess.cs",
+
+            "System.Diagnostics.Process/src/System/Diagnostics/Process.ConfigureTerminalForChildProcesses.Unix.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/Process.Linux.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.Linux.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessThread.Linux.cs",
+
+            "//src/libraries/Common:src/Interop/Linux/cgroups/Interop.cgroups.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.MountPoints.FormatInfo.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.UnixFileSystemTypes.cs",
+            "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.cs",
+            "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.ParseMapModules.cs",
+            "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.TryReadStatusFile.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetBootTimeTicks.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SchedGetSetAffinity.cs",
+
+            "System.Diagnostics.Process/src/System/Diagnostics/Process.NonUap.cs",
+        ],
+    }),
+    resource_file = "System.Diagnostics.Process/src/Resources/Strings.resx",
+    deps = [
+        ":ref_Microsoft.Win32.Primitives",
+#        ":ref_Microsoft.Win32.Registry",
+        ":ref_System.Collections",
+#        ":ref_System.Collections.Concurrent",
+        ":ref_System.Collections.NonGeneric",
+        ":ref_System.Collections.Specialized",
+        ":ref_System.ComponentModel.Primitives",
+        ":ref_System.Diagnostics.FileVersionInfo",
+        ":ref_System.IO.FileSystem.DriveInfo",
+        ":ref_System.Memory",
+        ":ref_System.IO.Pipes",
+        ":ref_System.Runtime",
+        ":ref_System.Runtime.InteropServices",
+#        ":ref_System.Text.Encoding.Extensions",
+        ":ref_System.Threading",
+#        ":ref_System.Threading.Thread",
+        ":ref_System.Threading.ThreadPool",
+    ],
+    allow_unsafe_blocks = True,
+)
+
+netcoreapp_impl_library(
+    name = "impl_System.ComponentModel.Primitives",
+    srcs = [
+        "System.ComponentModel.Primitives/src/System/ComponentModel/ISynchronizeInvoke.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/BrowsableAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/CategoryAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/Component.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/ComponentCollection.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/DescriptionAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/DesignerAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/DesignerCategoryAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/DesignerSerializationVisibility.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/DesignerSerializationVisibilityAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/DesignOnlyAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/Design/Serialization/DesignerSerializerAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/DisplayNameAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/EditorAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/EventHandlerList.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/IComponent.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/IContainer.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/ImmutableObjectAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/InitializationEventAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/InvalidAsynchronousStateException.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/InvalidEnumArgumentException.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/ISite.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/ISupportInitialize.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/LocalizableAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/MergablePropertyAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/NotifyParentPropertyAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/ParenthesizePropertyNameAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/ReadOnlyAttribute.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/RefreshProperties.cs",
+        "System.ComponentModel.Primitives/src/System/ComponentModel/RefreshPropertiesAttribute.cs",
+
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+    ],
+    deps = [
+        ":ref_System.Collections.NonGeneric",
+        ":ref_System.ComponentModel",
+        ":ref_System.ObjectModel",
+        ":ref_System.Runtime",
+        ":ref_System.Threading",
+    ],
+    resource_file = "System.ComponentModel.Primitives/src/Resources/Strings.resx",
+)
+
+netcoreapp_impl_library(
+    name = "impl_System.Console",
+    analyzers = [
+        "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
+        "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
+    ],
+    srcs = [
+        "System.Console/src/System/Console.cs",
+        "System.Console/src/System/ConsoleCancelEventArgs.cs",
+        "System.Console/src/System/ConsoleColor.cs",
+        "System.Console/src/System/ConsoleSpecialKey.cs",
+        "System.Console/src/System/ConsoleKey.cs",
+        "System.Console/src/System/ConsoleKeyInfo.cs",
+        "System.Console/src/System/ConsoleModifiers.cs",
+        "System.Console/src/System/IO/ConsoleStream.cs",
+        "System.Console/src/System/IO/CachedConsoleStream.cs",
+        "System.Console/src/System/IO/SyncTextReader.cs",
+        "System.Console/src/System/IO/Error.cs",
+
+        "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
+        "//src/libraries/Common:src/System/Text/ConsoleEncoding.cs",
+        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
+        "//src/libraries/Common:src/System/Text/ValueStringBuilder.AppendSpanFormattable.cs",
+    ] + select({
+        "@platforms//os:linux": [
+            "System.Console/src/System/ConsolePal.Unix.cs",
+            "System.Console/src/System/ConsolePal.Unix.ConsoleStream.cs",
+            "System.Console/src/System/TerminalFormatStrings.cs",
+            "System.Console/src/System/TermInfo.cs",
+            "System.Console/src/System/TermInfo.WellKnownStrings.cs",
+            "System.Console/src/System/TermInfo.Database.cs",
+            "System.Console/src/System/TermInfo.DatabaseFactory.cs",
+            "System.Console/src/System/TermInfo.WellKnownNumbers.cs",
+            "System.Console/src/System/IO/StdInReader.cs",
+            "System.Console/src/System/IO/SyncTextReader.Unix.cs",
+            "System.Console/src/System/IO/KeyParser.cs",
+
+            "//src/libraries/System.Private.CoreLib/src:System/IO/PersistedFiles.Unix.cs",
+            "//src/libraries/System.Private.CoreLib/src:System/IO/PersistedFiles.Names.Unix.cs",
+
+            "//src/libraries/Common:src/System/Console/ConsoleUtils.cs",
+            "//src/libraries/Common:src/System/Text/EncodingHelper.Unix.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Errors.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.IOErrors.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Close.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Dup.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.FileDescriptors.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.FLock.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetControlCharacters.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.IsATty.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Open.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.OpenFlags.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Poll.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Poll.Structs.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetEUid.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetPwUid.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SetTerminalInvalidationHandler.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SetSignalForBreak.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SNPrintF.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Read.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Write.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetWindowWidth.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.InitializeTerminalAndSignalHandling.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.ReadStdinUnbuffered.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.StdinReady.cs",
+        ]
+    }),
+    deps = [
+        ":ref_System.Collections",
+        ":ref_System.Memory",
+        ":ref_System.Runtime",
+        ":ref_System.Runtime.InteropServices",
+#        ":ref_System.Text.Encoding.Extensions",
+        ":ref_System.Threading",
+        ":ref_Microsoft.Win32.Primitives",
+    ],
+    resource_file = "System.Console/src/Resources/Strings.resx",
+    allow_unsafe_blocks = True,
 )
