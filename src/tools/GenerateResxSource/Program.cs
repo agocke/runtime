@@ -32,6 +32,8 @@ var resxGen = new Microsoft.DotNet.Arcade.GenerateResxSource()
     ResourceName = resourceName ?? throw new Exception("No resource name specified"),
     ResourceFile = resourceFile ?? throw new Exception("No resource file specified"),
     ResourceClassName = "System.SR",
+    OmitGetResourceString = true,
+    IncludeDefaultValues = true,
 };
 return resxGen.Execute() ? 0 : 1;
 

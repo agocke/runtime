@@ -129,6 +129,9 @@ def netcoreapp_impl_library(
 ):
     base_name = name[len("impl_"):]
 
+    srcs = srcs + [
+        "//src/libraries/Common:src/System/SR.cs",
+    ]
     compiler_options = compiler_options + [
         "/checksumalgorithm:SHA256",
         "/publicsign+",
