@@ -1,9 +1,5 @@
 
-
-load(
-    "@rules_dotnet//dotnet:defs.bzl",
-    "csharp_library"
-)
+load("//:defs.bzl", "csharp_library")
 
 exports_files([
     "ref/System.Runtime.InteropServices.cs",
@@ -49,6 +45,7 @@ csharp_library(
 
 csharp_library(
     name = "LibraryImportGenerator",
+    out = "Microsoft.Interop.LibraryImportGenerator",
     srcs = glob(["gen/LibraryImportGenerator/**/*.cs"]) + [
         "//src/libraries/System.Private.CoreLib/src:System/Diagnostics/CodeAnalysis/NullableAttributes.cs",
         "//src/libraries/System.Private.CoreLib/src:System/Runtime/CompilerServices/IsExternalInit.cs",
@@ -78,6 +75,7 @@ csharp_library(
         "@paket.main//system.collections.immutable",
         "@paket.main//system.memory",
     ],
+    resource_file = "gen/Common/Resources/Strings.resx",
     nowarn = [ "CS3003" ],
     visibility = ["//visibility:public"],
 )
