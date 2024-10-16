@@ -23,6 +23,7 @@ for (int i = 0; i < args.Length; i++)
     {
         resourceFile = resFile;
     }
+
 }
 
 var resxGen = new Microsoft.DotNet.Arcade.GenerateResxSource()

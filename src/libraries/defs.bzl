@@ -1,12 +1,10 @@
-load(
-    "@rules_dotnet//dotnet:defs.bzl",
-    "csharp_library"
-)
 
 load(
     "//:defs.bzl",
-    "NETCOREAPP_CURRENT"
+    "NETCOREAPP_CURRENT",
+    "csharp_library",
 )
+
 load(
     "@rules_dotnet//dotnet/private:providers.bzl",
     "DotnetAssemblyRuntimeInfo",
@@ -134,7 +132,6 @@ def netcoreapp_impl_library(
         srcs = srcs + [
             "//src/libraries/Common:src/System/SR.cs",
         ]
-
     compiler_options = compiler_options + [
         "/checksumalgorithm:SHA256",
         "/publicsign+",
@@ -152,16 +149,6 @@ def netcoreapp_impl_library(
         )
         srcs = srcs + [ ":facade_" + base_name ]
 
-    if resource_file != None:
-        resx_target = "resx_" + base_name
-        gen_resx_source(
-            name = resx_target,
-            out = name + ".System.SR.cs",
-            assembly_name = base_name,
-            resource_file = resource_file,
-        )
-        srcs = srcs + [ ":" + resx_target ]
-
     csharp_library(
         name = name,
         out = base_name,
@@ -174,5 +161,6 @@ def netcoreapp_impl_library(
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         compiler_options = compiler_options,
+        resource_file = resource_file,
         **kwargs
     )
