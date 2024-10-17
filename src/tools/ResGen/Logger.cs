@@ -5,10 +5,19 @@ using System;
 
 internal sealed class Logger
 {
+    public bool HasLoggedErrors { get; private set; }
+
     public void LogError(string message, params object[] messageArgs)
     {
         Console.WriteLine(message, messageArgs);
+        HasLoggedErrors = true;
     }
+
+    public void LogErrorFromException(Exception ex)
+    {
+        Console.WriteLine(ex.Message);
+    }
+
     public void LogWarning(string message, params object[] messageArgs)
     {
         Console.WriteLine(message, messageArgs);
@@ -18,9 +27,22 @@ internal sealed class Logger
         Console.WriteLine(message, messageArgs);
     }
 
-    internal void LogMessageFromResources(string v, string inFile, string outFileOrDir) => throw new NotImplementedException();
+    internal void LogMessageFromResources(MessageImportance importance, string resNamem, params object[] _)
+        => throw new NotImplementedException();
+    internal void LogMessageFromResources(string resName, params object[] _)
+        => LogMessage(resName);
     internal void LogErrorFromResources(string rsCode, params object[] _)
         => LogError(rsCode);
     internal void LogErrorWithCodeFromResources(string rsCode, params object [] _)
         => LogError(rsCode);
+    internal void LogWarningWithCodeFromResources(string rsCode, params object [] _)
+        => LogWarning(rsCode);
+
+    public string FormatResourceString(string resourceName, params object[] args)
+        => string.Format(resourceName, args);
+}
+
+internal enum MessageImportance
+{
+    Low
 }
