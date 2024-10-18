@@ -9,7 +9,8 @@ internal sealed class Logger
 
     public void LogError(string message, params object[] messageArgs)
     {
-        Console.WriteLine(message, messageArgs);
+        Console.WriteLine("Error" + message);
+        Console.WriteLine(messageArgs);
         HasLoggedErrors = true;
     }
 
@@ -27,8 +28,14 @@ internal sealed class Logger
         Console.WriteLine(message, messageArgs);
     }
 
-    internal void LogMessageFromResources(MessageImportance importance, string resNamem, params object[] _)
-        => throw new NotImplementedException();
+    internal void LogMessageFromResources(MessageImportance importance, string resName, params object[] args)
+    {
+        if (importance != MessageImportance.Low)
+        {
+            LogMessageFromResources(resName, args);
+        }
+    }
+
     internal void LogMessageFromResources(string resName, params object[] _)
         => LogMessage(resName);
     internal void LogErrorFromResources(string rsCode, params object[] _)

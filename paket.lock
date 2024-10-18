@@ -67,6 +67,7 @@ NUGET
     System.IO.Pipelines (8.0)
     System.Memory (4.5.5)
     System.Reflection.Metadata (8.0.1)
+    System.Resources.Extensions (8.0)
     System.Security.Cryptography.ProtectedData (8.0)
     System.Threading.Channels (8.0)
   remote: https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json
