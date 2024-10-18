@@ -1,29 +1,46 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Build.Tasks;
 
-Console.WriteLine("Hello, World!");
-
-var srcPath = "/home/andy/code/runtime/src/libraries/System.Console/src/Resources/Strings.resx";
-string[] _references = [
-    "/home/andy/code/runtime/artifacts/bin/microsoft.netcore.app.ref/ref/net9.0/Microsoft.Win32.Primitives.dll",
-    "/home/andy/code/runtime/artifacts/bin/microsoft.netcore.app.ref/ref/net9.0/System.Collections.dll",
-    "/home/andy/code/runtime/artifacts/bin/microsoft.netcore.app.ref/ref/net9.0/System.Memory.dll",
-    "/home/andy/code/runtime/artifacts/bin/microsoft.netcore.app.ref/ref/net9.0/System.Runtime.dll",
-    "/home/andy/code/runtime/artifacts/bin/microsoft.netcore.app.ref/ref/net9.0/System.Runtime.InteropServices.dll",
-    "/home/andy/code/runtime/artifacts/bin/microsoft.netcore.app.ref/ref/net9.0/System.Text.Encoding.Extensions.dll",
-    "/home/andy/code/runtime/artifacts/bin/microsoft.netcore.app.ref/ref/net9.0/System.Threading.dll",
-];
-var outPath = "/home/andy/code/runtime/artifacts/obj/System.Console/Debug/net9.0-unix/FxResources.System.Console.SR.resources";
-
+string? srcPath = null;
+string? outPath = null;
+for (int i = 0; i < args.Length; i++)
+{
+    var arg = args[i].TrimStart('\'').TrimEnd('\'');
+    if (StartsWith(arg, "--src-path=", out var temp))
+    {
+        srcPath = temp;
+    }
+    else if(StartsWith(arg, "--out-path=", out var temp2))
+    {
+        outPath = temp2;
+    }
+}
+if (srcPath == null || outPath == null)
+{
+    Console.WriteLine("Usage: ResGen --src-path=<srcPath> --out-path=<outPath>");
+    return 1;
+}
 
 var logger = new Logger();
 var process = new ProcessResourceFiles(
     logger,
     srcPath,
-    outPath,
-    _references);
+    outPath);
 process.Run();
 
-return logger.HasLoggedErrors ? 1 : 0;
+return logger.HasLoggedErrors ? 2 : 0;
+
+static bool StartsWith(string s, string prefix, [NotNullWhen(true)] out string? rest)
+{
+    if (s.StartsWith(prefix))
+    {
+        rest = s[prefix.Length..];
+        return true;
+    }
+    rest = null;
+    return false;
+}

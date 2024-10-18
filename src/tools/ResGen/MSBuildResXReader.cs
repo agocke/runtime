@@ -13,7 +13,7 @@ using System.Xml.Linq;
 
 internal static class MSBuildResXReader
 {
-    public static IReadOnlyList<IResource> ReadResources(Stream s, string filename, bool pathsRelativeToBasePath, Logger log, bool logWarningForBinaryFormatter)
+    public static IReadOnlyList<IResource> ReadResources(Stream s, string filename, Logger log)
     {
         var resources = new List<IResource>();
         var aliases = new Dictionary<string, string>();
@@ -35,7 +35,7 @@ internal static class MSBuildResXReader
                         case "resheader":
                             break;
                         case "data":
-                            ParseData(filename, pathsRelativeToBasePath, resources, aliases, elem, log, logWarningForBinaryFormatter);
+                            ParseData(filename, resources, aliases, elem, log);
                             break;
                     }
                 }
@@ -100,12 +100,10 @@ internal static class MSBuildResXReader
 
     private static void ParseData(
         string resxFilename,
-        bool pathsRelativeToBasePath,
         List<IResource> resources,
         Dictionary<string, string> aliases,
         XElement elem,
-        Logger log,
-        bool logWarningForBinaryFormatter)
+        Logger log)
     {
         string name = elem.Attribute("name").Value;
         string value;
@@ -151,7 +149,7 @@ internal static class MSBuildResXReader
 
         if (typename.StartsWith("System.Resources.ResXFileRef", StringComparison.Ordinal)) // TODO: is this too general? Should it be OrdinalIgnoreCase?
         {
-            AddLinkedResource(resxFilename, pathsRelativeToBasePath, resources, name, value);
+            AddLinkedResource(resxFilename, resources, name, value);
             return;
         }
 
@@ -190,17 +188,7 @@ internal static class MSBuildResXReader
                 case BinSerializedObjectMimeType:
                 case Beta2CompatSerializedObjectMimeType:
                 case CompatBinSerializedObjectMimeType:
-                    // Warn of BinaryFormatter exposure (SDK should turn this on by default in .NET 8+)
-                    if (logWarningForBinaryFormatter)
-                    {
-                        log?.LogWarningWithCodeFromResources(null, resxFilename, ((IXmlLineInfo)elem).LineNumber, ((IXmlLineInfo)elem).LinePosition, 0, 0, "GenerateResource.BinaryFormatterUse", name, typename);
-                    }
-
-                    // BinaryFormatter from byte array
-                    byte[] binaryFormatterBytes = Convert.FromBase64String(value);
-
-                    resources.Add(new BinaryFormatterByteArrayResource(name, binaryFormatterBytes, resxFilename));
-                    return;
+                    throw new InvalidDataException("Binary formatter is not supported");
                 default:
                     log.LogErrorFromResources("GenerateResource.MimeTypeNotSupportedOnCore", name, resxFilename, mimetype);
                     return;
@@ -208,20 +196,12 @@ internal static class MSBuildResXReader
         }
     }
 
-    private static void AddLinkedResource(string resxFilename, bool pathsRelativeToBasePath, List<IResource> resources, string name, string value)
+    private static void AddLinkedResource(string resxFilename, List<IResource> resources, string name, string value)
     {
         string[] fileRefInfo = ParseResxFileRefString(value);
 
         string fileName = FileUtilities.FixFilePath(fileRefInfo[0]);
         string fileRefType = fileRefInfo[1];
-
-        if (pathsRelativeToBasePath)
-        {
-            fileName = Path.Combine(
-                FileUtilities.GetDirectory(
-                    FileUtilities.NormalizePath(resxFilename)),
-                fileName);
-        }
 
         if (IsString(fileRefType))
         {
@@ -230,11 +210,9 @@ internal static class MSBuildResXReader
             {
                 fileRefEncoding = fileRefInfo[2];
 
-#if RUNTIME_TYPE_NETCORE
                 // Ensure that all Windows codepages are available.
                 // Safe to call multiple times per https://docs.microsoft.com/en-us/dotnet/api/system.text.encoding.registerprovider
                 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-#endif
             }
 
             // from https://github.com/dotnet/winforms/blob/a88c1a73fd7298b0a5c45251771f439262016826/src/System.Windows.Forms/src/System/Resources/ResXFileRef.cs#L231-L241
@@ -296,19 +274,11 @@ internal static class MSBuildResXReader
     /// <summary>
     /// Extract <see cref="IResource"/>s from a given file on disk.
     /// </summary>
-    public static IReadOnlyList<IResource> GetResourcesFromFile(string filename, bool pathsRelativeToBasePath, Logger log, bool logWarningForBinaryFormatter)
+    public static IReadOnlyList<IResource> GetResourcesFromFile(string filename, Logger log)
     {
         using (var x = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            return ReadResources(x, filename, pathsRelativeToBasePath, log, logWarningForBinaryFormatter);
-        }
-    }
-
-    public static IReadOnlyList<IResource> GetResourcesFromString(string resxContent, Logger log, bool logWarningForBinaryFormatter, string basePath = null, bool? useRelativePath = null)
-    {
-        using (var x = new MemoryStream(Encoding.UTF8.GetBytes(resxContent)))
-        {
-            return ReadResources(x, basePath, useRelativePath.GetValueOrDefault(basePath != null), log, logWarningForBinaryFormatter);
+            return ReadResources(x, filename, log);
         }
     }
 
@@ -373,14 +343,6 @@ internal static class MSBuildResXReader
 
 internal sealed class MSBuildResXException : Exception
 {
-    public MSBuildResXException()
-    {
-    }
-
-    public MSBuildResXException(string message) : base(message)
-    {
-    }
-
     public MSBuildResXException(string message, Exception innerException) : base(message, innerException)
     {
     }

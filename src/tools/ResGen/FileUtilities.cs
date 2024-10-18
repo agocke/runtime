@@ -3,6 +3,7 @@
 
 #nullable disable
 
+using System.IO;
 using System.Text;
 
 internal static class FileUtilities
