@@ -88,12 +88,12 @@ gen_facades = rule(
 def _gen_resx_source_impl(ctx):
     ctx.actions.run(
         executable = ctx.executable._exe,
-        inputs = [ctx.file.resource_file],
+        inputs = [ctx.file.resx_file],
         outputs = [ctx.outputs.out],
         arguments = [
             "--output-path=%s" % ctx.outputs.out.path,
             "--resource-name=%s" % ("FxResources." + ctx.attr.assembly_name + ".SR"),
-            "--resource-file=%s" % ctx.file.resource_file.path,
+            "--resource-file=%s" % ctx.file.resx_file.path,
         ],
     )
 
@@ -102,7 +102,7 @@ gen_resx_source = rule(
     attrs = {
         "out": attr.output(mandatory = True),
         "assembly_name": attr.string(mandatory = True),
-        "resource_file": attr.label(
+        "resx_file": attr.label(
             mandatory = True,
             allow_single_file = True,
         ),
@@ -122,7 +122,7 @@ def netcoreapp_impl_library(
     generate_facades = False,
     facade_contract_assembly = None,
     facade_omit_types = [],
-    resource_file = None,
+    resx_file = None,
     exclude_sr = False,
     **kwargs
 ):
@@ -161,6 +161,6 @@ def netcoreapp_impl_library(
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         compiler_options = compiler_options,
-        resource_file = resource_file,
+        resx_file = resx_file,
         **kwargs
     )
