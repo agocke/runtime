@@ -27,16 +27,15 @@ def from_coreclr_artifacts(file):
     })
 
 def _gen_resx_source_impl(ctx):
-    print(ctx.attr.assembly_name)
     resource_name = "FxResources.%s.SR" % ctx.attr.assembly_name
     ctx.actions.run(
         executable = ctx.executable._exe,
-        inputs = [ctx.file.resource_file],
+        inputs = [ctx.file.resx_file],
         outputs = [ctx.outputs.out],
         arguments = [
             "--output-path=%s" % ctx.outputs.out.path,
             "--resource-name=%s" % resource_name,
-            "--resource-file=%s" % ctx.file.resource_file.path,
+            "--resource-file=%s" % ctx.file.resx_file.path,
         ],
     )
 
@@ -45,7 +44,7 @@ gen_resx_source = rule(
     attrs = {
         "out": attr.output(mandatory = True),
         "assembly_name": attr.string(mandatory = True),
-        "resource_file": attr.label(
+        "resx_file": attr.label(
             mandatory = True,
             allow_single_file = True,
         ),
@@ -57,23 +56,60 @@ gen_resx_source = rule(
     }
 )
 
+def _resgen_impl(ctx):
+    ctx.actions.run(
+        executable = ctx.executable._exe,
+        inputs = [ctx.file.resx_file],
+        outputs = [ctx.outputs.out],
+        arguments = [
+            "--src-path=%s" % ctx.file.resx_file.path,
+            "--out-path=%s" % ctx.outputs.out.path,
+        ],
+    )
+
+resgen = rule(
+    implementation = _resgen_impl,
+    attrs = {
+        "out": attr.output(mandatory = True),
+        "resx_file": attr.label(
+            mandatory = True,
+            allow_single_file = True,
+        ),
+        "_exe": attr.label(
+            default = Label("//src/tools/ResGen:ResGen"),
+            cfg = "exec",
+            executable = True,
+        ),
+    }
+)
+
 def csharp_library(
     name,
     srcs,
     out = None,
-    resource_file = None,
+    resx_file = None,
+    resources = [],
     **kwargs
 ):
     if out == None:
         out = name
 
-    if resource_file != None:
+    if resx_file != None:
+        resgen_target = "resgen_" + name
+        resgen_out = "FxResources.%s.SR.resources" % out
+        resgen(
+            name = resgen_target,
+            out = resgen_out,
+            resx_file = resx_file,
+        )
+        resources = resources + [ ":" + resgen_target ]
+
         resx_target = "resx_" + name
         gen_resx_source(
             name = resx_target,
             out = name + ".System.SR.cs",
             assembly_name = out,
-            resource_file = resource_file,
+            resx_file = resx_file,
         )
         srcs = srcs + [ ":" + resx_target ]
 
@@ -81,5 +117,6 @@ def csharp_library(
         name = name,
         srcs = srcs,
         out = out,
+        resources = resources,
         **kwargs
     )

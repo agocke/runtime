@@ -75,7 +75,7 @@ csharp_library(
         "@paket.main//system.collections.immutable",
         "@paket.main//system.memory",
     ],
-    resource_file = "gen/Common/Resources/Strings.resx",
+    resx_file = "gen/Common/Resources/Strings.resx",
     nowarn = [ "CS3003" ],
     visibility = ["//visibility:public"],
 )

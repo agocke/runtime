@@ -436,7 +436,7 @@ netcoreapp_impl_library(
             "System.Diagnostics.Process/src/System/Diagnostics/Process.NonUap.cs",
         ],
     }),
-    resource_file = "System.Diagnostics.Process/src/Resources/Strings.resx",
+    resx_file = "System.Diagnostics.Process/src/Resources/Strings.resx",
     deps = [
         ":ref_Microsoft.Win32.Primitives",
 #        ":ref_Microsoft.Win32.Registry",
@@ -502,7 +502,7 @@ netcoreapp_impl_library(
         ":ref_System.Runtime",
         ":ref_System.Threading",
     ],
-    resource_file = "System.ComponentModel.Primitives/src/Resources/Strings.resx",
+    resx_file = "System.ComponentModel.Primitives/src/Resources/Strings.resx",
 )
 
 netcoreapp_impl_library(
@@ -583,6 +583,6 @@ netcoreapp_impl_library(
         ":ref_System.Threading",
         ":ref_Microsoft.Win32.Primitives",
     ],
-    resource_file = "System.Console/src/Resources/Strings.resx",
+    resx_file = "System.Console/src/Resources/Strings.resx",
     allow_unsafe_blocks = True,
 )
