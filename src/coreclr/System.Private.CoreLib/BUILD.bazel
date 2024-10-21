@@ -344,14 +344,18 @@ csharp_library(
         "/publicsign+",
     ],
     keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
-    defines = [ "SYSTEM_PRIVATE_CORELIB", "CORECLR", "FEATURE_PERFTRACING" ] + select({
-            "@platforms//cpu:x86_64": [ "TARGET_AMD64", "TARGET_64BIT" ],
-            "@platforms//cpu:aarch64": [ "TARGET_ARM64", "TARGET_64BIT" ],
-        }) + select({
-            "@platforms//os:windows": [ "TARGET_WINDOWS" ],
-            "@platforms//os:linux": [ "TARGET_LINUX" ],
-            "@platforms//os:macos": [ "TARGET_OSX" ],
-        }),
+    defines = [
+        "SYSTEM_PRIVATE_CORELIB",
+        "CORECLR",
+        "FEATURE_PERFTRACING",
+    ] + select({
+        "@platforms//cpu:x86_64": [ "TARGET_AMD64", "TARGET_64BIT" ],
+        "@platforms//cpu:aarch64": [ "TARGET_ARM64", "TARGET_64BIT" ],
+    }) + select({
+        "@platforms//os:windows": [ "TARGET_WINDOWS" ],
+        "@platforms//os:linux": [ "TARGET_LINUX", "TARGET_UNIX" ],
+        "@platforms//os:macos": [ "TARGET_OSX", "TARGET_UNIX" ],
+    }),
     nowarn = nowarn,
     visibility = ["//visibility:public"]
 )
