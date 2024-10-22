@@ -4,7 +4,7 @@ source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/inde
 source https://api.nuget.org/v3/index.json
 
 storage: none
-framework: net8.0
+framework: net9.0
 
 nuget Microsoft.CodeAnalysis.Common 4.11.0
 nuget Microsoft.CodeAnalysis.CSharp 4.11.0
@@ -16,3 +16,4 @@ nuget microsoft.dotnet.genfacades 9.0.0-beta.24423.2
 nuget Microsoft.Build.Framework 17.8.3
 nuget Microsoft.Build.Utilities.Core 17.8.3
 nuget System.Resources.Extensions 8.0.0
+nuget Microsoft.DotNet.XUnitAssert 2.9.0-beta.24423.2
