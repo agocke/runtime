@@ -74,3 +74,12 @@ live_csharp_binary(
     deps = LIVE_REFPACK_DEPS,
     target_frameworks = [ NETCOREAPP_TOOL_CURRENT ]
 )
+
+live_csharp_binary(
+    name = "nintindexoutofrange",
+    srcs = [
+        "JIT/Directed/Arrays/nintindexoutofrange.cs",
+    ],
+    deps = LIVE_REFPACK_DEPS,
+    target_frameworks = [ NETCOREAPP_TOOL_CURRENT ]
+)
