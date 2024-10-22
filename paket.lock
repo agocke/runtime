@@ -1,5 +1,5 @@
 STORAGE: NONE
-RESTRICTION: == net8.0
+RESTRICTION: == net9.0
 NUGET
   remote: https://api.nuget.org/v3/index.json
     Humanizer.Core (2.14.1)
@@ -73,3 +73,4 @@ NUGET
   remote: https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json
     Microsoft.DotNet.Arcade.Sdk (9.0.0-beta.24423.2)
     Microsoft.DotNet.GenFacades (9.0.0-beta.24423.2)
+    Microsoft.DotNet.XUnitAssert (2.9.0-beta.24423.2)
