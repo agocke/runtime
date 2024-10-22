@@ -141,7 +141,7 @@ live_csharp_binary = rule(
             ),
             "disable_implicit_framework_refs": attr.bool(
                 doc = "Disable implicit framework references. This is useful when you want to control the framework references yourself.",
-                default = False,
+                default = True,
             ),
             "warnings_as_errors": attr.string_list(
                 doc = "List of compiler warning codes that should be considered as errors. Note that this attribute can not be used in conjunction with treat_warning_as_errors.",

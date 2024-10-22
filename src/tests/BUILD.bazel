@@ -80,6 +80,11 @@ live_csharp_binary(
     srcs = [
         "JIT/Directed/Arrays/nintindexoutofrange.cs",
     ],
-    deps = LIVE_REFPACK_DEPS,
-    target_frameworks = [ NETCOREAPP_TOOL_CURRENT ]
+    deps = LIVE_REFPACK_DEPS + [
+        "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//xunit.abstractions",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    target_frameworks = [ NETCOREAPP_TOOL_CURRENT ],
+    allow_unsafe_blocks = True,
 )
