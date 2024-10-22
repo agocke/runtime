@@ -5,7 +5,7 @@ load(
 
 load("//:defs.bzl", "csharp_library")
 
-nowarn = [ "CS8500", "CS8969" ]
+nowarn = [ "CS8500", "CS8969", "SYSLIB1092", "CS0419" ]
 
 common_imports = [
     "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
@@ -324,6 +324,7 @@ csharp_library(
         "@platforms//os:linux": linux_srcs,
         "@platforms//os:macos": macos_srcs,
     }),
+    resx_file = "//src/libraries/System.Private.CoreLib/src:Resources/Strings.resx",
     assembly_version = "9.0.0.0",
     nullable = "enable",
     allow_unsafe_blocks = True,
