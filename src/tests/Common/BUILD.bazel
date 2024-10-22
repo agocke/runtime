@@ -1,0 +1,18 @@
+
+load("//:defs.bzl", "csharp_library")
+
+csharp_library(
+    name = "XUnitWrapperGenerator",
+    srcs = glob(["XUnitWrapperGenerator/*.cs"]) + [
+        "XUnitWrapperLibrary/TestFilter.cs",
+    ],
+    deps = [
+        "@paket.main//microsoft.codeanalysis.common",
+        "@paket.main//microsoft.codeanalysis.csharp",
+        "@paket.main//system.collections.immutable",
+    ],
+    target_frameworks = ["net9.0"],
+    visibility = ["//visibility:public"],
+    nullable = "enable",
+    cls_compliant = False,
+)

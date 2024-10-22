@@ -11,7 +11,7 @@ load(
     "LIVE_REFPACK_DEPS",
 )
 
-load("defs.bzl", "live_csharp_binary")
+load("defs.bzl", "live_csharp_binary", "coreclr_test", "coreclr_merged_test")
 
 csharp_binary(
     name = "instance_assignment_class01",
@@ -40,31 +40,31 @@ csharp_library(
     target_frameworks = [ "net9.0" ],
 )
 
-csharp_library(
-    name = "CoreCLRTestLibrary",
-    allow_unsafe_blocks = True,
-    cls_compliant = False,
-    nowarn = [ "CS1574", "CS1572", ],
-    nullable = "annotations",
-    srcs = [
-        "Common/CoreCLRTestLibrary/AssertExtensions.cs",
-        "Common/CoreCLRTestLibrary/Generator.cs",
-        "Common/CoreCLRTestLibrary/Logging.cs",
-        "Common/CoreCLRTestLibrary/TestFramework.cs",
-        "Common/CoreCLRTestLibrary/Utilities.cs",
-        "Common/CoreCLRTestLibrary/HostPolicyMock.cs",
-        "Common/CoreCLRTestLibrary/XPlatformUtils.cs",
-        "Common/CoreCLRTestLibrary/CoreClrConfigurationDetection.cs",
-        "Common/CoreCLRTestLibrary/OutOfProcessTest.cs",
-        "Common/CoreCLRTestLibrary/PlatformDetection.cs",
-        "Common/Coreclr.TestWrapper/CoreclrTestWrapperLib.cs",
-        "Common/Coreclr.TestWrapper/MobileAppHandler.cs",
-    ],
-    deps = [
-        "//:TargetingPack",
-    ],
-    target_frameworks = [ "net9.0"],
-)
+#csharp_library(
+#    name = "CoreCLRTestLibrary",
+#    allow_unsafe_blocks = True,
+#    cls_compliant = False,
+#    nowarn = [ "CS1574", "CS1572", ],
+#    nullable = "annotations",
+#    srcs = [
+#        "Common/CoreCLRTestLibrary/AssertExtensions.cs",
+#        "Common/CoreCLRTestLibrary/Generator.cs",
+#        "Common/CoreCLRTestLibrary/Logging.cs",
+#        "Common/CoreCLRTestLibrary/TestFramework.cs",
+#        "Common/CoreCLRTestLibrary/Utilities.cs",
+#        "Common/CoreCLRTestLibrary/HostPolicyMock.cs",
+#        "Common/CoreCLRTestLibrary/XPlatformUtils.cs",
+#        "Common/CoreCLRTestLibrary/CoreClrConfigurationDetection.cs",
+#        "Common/CoreCLRTestLibrary/OutOfProcessTest.cs",
+#        "Common/CoreCLRTestLibrary/PlatformDetection.cs",
+#        "Common/Coreclr.TestWrapper/CoreclrTestWrapperLib.cs",
+#        "Common/Coreclr.TestWrapper/MobileAppHandler.cs",
+#    ],
+#    deps = [
+#        "//:TargetingPack",
+#    ],
+#    target_frameworks = [ "net9.0"],
+#)
 
 live_csharp_binary(
     name = "DwarfDumpTest",
@@ -75,7 +75,7 @@ live_csharp_binary(
     target_frameworks = [ NETCOREAPP_TOOL_CURRENT ]
 )
 
-live_csharp_binary(
+coreclr_test(
     name = "nintindexoutofrange",
     srcs = [
         "JIT/Directed/Arrays/nintindexoutofrange.cs",
@@ -87,4 +87,12 @@ live_csharp_binary(
     ],
     target_frameworks = [ NETCOREAPP_TOOL_CURRENT ],
     allow_unsafe_blocks = True,
+)
+
+coreclr_merged_test(
+    name = "JIT_Directed_3",
+    analyzers = [
+        "//src/tests/Common:XUnitWrapperGenerator",
+    ],
+    deps = LIVE_REFPACK_DEPS,
 )

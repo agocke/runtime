@@ -85,7 +85,7 @@ resgen = rule(
 
 def csharp_library(
     name,
-    srcs,
+    srcs = [],
     out = None,
     resx_file = None,
     resources = [],
