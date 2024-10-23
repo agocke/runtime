@@ -7,6 +7,7 @@ load(
 
 load(
     "@rules_dotnet//dotnet/private:providers.bzl",
+    "DotnetAssemblyCompileInfo",
     "DotnetAssemblyRuntimeInfo",
 )
 
@@ -42,12 +43,13 @@ def netcoreapp_ref_assembly(
         disable_implicit_framework_refs = True,
         nowarn = nowarn,
         compiler_options = compiler_options,
+        ref_assembly = True,
         **kwargs
     )
 
 def _gen_facades_impl(ctx):
-    libs_paths = [r[DotnetAssemblyRuntimeInfo].libs[0] for r in ctx.attr.ref_paths]
-    contract_assembly = ctx.attr.facade_contract_assembly[DotnetAssemblyRuntimeInfo].libs[0]
+    libs_paths = [r[DotnetAssemblyCompileInfo].irefs[0] for r in ctx.attr.ref_paths]
+    contract_assembly = ctx.attr.facade_contract_assembly[DotnetAssemblyCompileInfo].irefs[0]
     ctx.actions.run(
         executable = ctx.executable._exe,
         inputs = libs_paths + [contract_assembly],

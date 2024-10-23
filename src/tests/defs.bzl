@@ -22,7 +22,7 @@ load(
 )
 load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
 load("@rules_dotnet//dotnet/private/sdk/targeting_packs:targeting_pack_transition.bzl", "targeting_pack_transition")
-load("//:defs.bzl", "NETCOREAPP_TOOL_CURRENT", "LIVE_REFPACK_DEPS")
+load("//:defs.bzl", "csharp_library", "LIVE_REFPACK_DEPS")
 
 def _live_csharp_binary_impl(ctx):
     result = _build_binary(ctx, compile_csharp_exe)
@@ -327,6 +327,20 @@ def _build_binary(ctx, compile_action):
     )
 
     return [default_info, compile_provider, runtime_provider]
+
+def live_csharp_library(
+    name,
+    deps = [],
+    **kwargs
+):
+    deps = deps + LIVE_REFPACK_DEPS
+
+    csharp_library(
+        name = name,
+        deps = deps,
+        disable_implicit_framework_refs = True,
+        **kwargs
+    )
 
 def coreclr_test(
     name,
