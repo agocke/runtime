@@ -7,8 +7,8 @@ load(
 load(
     "//:defs.bzl",
     "NETCOREAPP_TOOL_CURRENT",
-    "LIVE_REFPACK_DEPS",
 )
+load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS")
 
 load("defs.bzl", "live_csharp_binary", "live_csharp_library", "coreclr_merged_test")
 

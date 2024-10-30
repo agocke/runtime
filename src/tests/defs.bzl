@@ -23,7 +23,7 @@ load(
 load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
 load("@rules_dotnet//dotnet/private/sdk/targeting_packs:targeting_pack_transition.bzl", "targeting_pack_transition")
 load("//:defs.bzl", "csharp_library")
-load("//src/libraries:defs.bzl", "LIVE_NETCOREAPP_DEPS")
+load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS")
 
 def _live_csharp_binary_impl(ctx):
     result = _build_binary(ctx, compile_csharp_exe)
@@ -241,7 +241,7 @@ def live_csharp_binary(
     deps = [],
     **kwargs
 ):
-    deps = deps + LIVE_NETCOREAPP_DEPS
+    deps = deps + LIVE_REFPACK_DEPS
     _live_csharp_binary_rule(
         name = name,
         deps = deps,
@@ -365,11 +365,9 @@ def _build_binary(ctx, compile_action):
 
     for dep in transitive_runtime_deps:
         for lib in dep.libs:
-            print("runtime_dep: %s" % lib.basename)
             if lib.extension == "dll":
                 src = lib
                 dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, lib.basename))
-                print("dest: %s" % dst.path)
                 ctx.actions.run_shell(
                     inputs = [src],
                     outputs = [dst],
@@ -395,7 +393,7 @@ def live_csharp_library(
     deps = [],
     **kwargs
 ):
-    deps = deps + LIVE_NETCOREAPP_DEPS
+    deps = deps + LIVE_REFPACK_DEPS
 
     csharp_library(
         name = name,
