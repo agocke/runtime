@@ -1,6 +1,7 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.DotNet.GenFacades;
@@ -10,6 +11,7 @@ string contractAssembly = "";
 var compileFiles = new List<string>();
 string outputSourcePath = "";
 var omitTypes = new List<string>();
+string defines = "";
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -34,6 +36,14 @@ for (int i = 0; i < args.Length; i++)
     {
         omitTypes.Add(omit);
     }
+    else if (StartsWith(arg, "--defines=", out var def))
+    {
+        defines = def;
+    }
+    else
+    {
+        throw new ArgumentException($"Unknown argument: {arg}");
+    }
 }
 
 Microsoft.DotNet.Build.Tasks.ILog logger = new Logger();
@@ -42,7 +52,7 @@ _ = GenPartialFacadeSourceGenerator.Execute(
     seeds: seeds.ToArray(),
     contractAssembly: contractAssembly,
     compileFiles: compileFiles.ToArray(),
-    defineConstants: "",
+    defineConstants: defines,
     langVersion: "preview",
     outputSourcePath: outputSourcePath,
     logger: logger,

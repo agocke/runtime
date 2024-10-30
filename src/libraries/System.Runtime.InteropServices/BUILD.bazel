@@ -1,6 +1,8 @@
 
 load("//:defs.bzl", "csharp_library")
 
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+
 exports_files([
     "ref/System.Runtime.InteropServices.cs",
     "ref/System.Runtime.InteropServices.Forwards.cs",
@@ -77,5 +79,107 @@ csharp_library(
     ],
     resx_file = "gen/Common/Resources/Strings.resx",
     nowarn = [ "CS3003" ],
+    visibility = ["//visibility:public"],
+)
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Runtime.InteropServices",
+    srcs = [
+        "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.cs",
+        "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.Forwards.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries:ref_System.Collections",
+    ],
+    allow_unsafe_blocks = True,
+)
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Runtime.InteropServices",
+    srcs = [
+        "src/System/Runtime/CompilerServices/IDispatchConstantAttribute.cs",
+        "src/System/Runtime/CompilerServices/IUnknownConstantAttribute.cs",
+        "src/System/Runtime/InteropServices/ComTypes/ADVF.cs",
+        "src/System/Runtime/InteropServices/ComTypes/DATADIR.cs",
+        "src/System/Runtime/InteropServices/ComTypes/DVASPECT.cs",
+        "src/System/Runtime/InteropServices/ComTypes/FORMATETC.cs",
+        "src/System/Runtime/InteropServices/ComTypes/IAdviseSink.cs",
+        "src/System/Runtime/InteropServices/ComTypes/IDataObject.cs",
+        "src/System/Runtime/InteropServices/ComTypes/IEnumFormatETC.cs",
+        "src/System/Runtime/InteropServices/ComTypes/IEnumSTATDATA.cs",
+        "src/System/Runtime/InteropServices/ComTypes/STATDATA.cs",
+        "src/System/Runtime/InteropServices/ComTypes/STGMEDIUM.cs",
+        "src/System/Runtime/InteropServices/ComTypes/TYMED.cs",
+        "src/System/Runtime/InteropServices/AssemblyRegistrationFlags.cs",
+        "src/System/Runtime/InteropServices/AutomationProxyAttribute.cs",
+        "src/System/Runtime/InteropServices/ComAliasNameAttribute.cs",
+        "src/System/Runtime/InteropServices/ComAwareEventInfo.cs",
+        "src/System/Runtime/InteropServices/ComCompatibleVersionAttribute.cs",
+        "src/System/Runtime/InteropServices/ComConversionLossAttribute.cs",
+        "src/System/Runtime/InteropServices/ComRegisterFunctionAttribute.cs",
+        "src/System/Runtime/InteropServices/ComUnregisterFunctionAttribute.cs",
+        "src/System/Runtime/InteropServices/ExporterEventKind.cs",
+        "src/System/Runtime/InteropServices/HandleCollector.cs",
+        "src/System/Runtime/InteropServices/ImportedFromTypeLibAttribute.cs",
+        "src/System/Runtime/InteropServices/ManagedToNativeComInteropStubAttribute.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ComExposedClassAttribute.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ComImportInteropInterfaceDetailsStrategy.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ComInterfaceOptions.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ComVariantMarshaller.cs",
+        "src/System/Runtime/InteropServices/Marshalling/UniqueComInterfaceMarshaller.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ComInterfaceMarshaller.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ComObject.cs",
+        "src/System/Runtime/InteropServices/Marshalling/DefaultCaching.cs",
+        "src/System/Runtime/InteropServices/Marshalling/DefaultIUnknownInterfaceDetailsStrategy.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ExceptionAsDefaultMarshaller.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ExceptionAsHResultMarshaller.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ExceptionAsNaNMarshaller.cs",
+        "src/System/Runtime/InteropServices/Marshalling/ExceptionAsVoidMarshaller.cs",
+        "src/System/Runtime/InteropServices/Marshalling/FreeThreadedStrategy.cs",
+        "src/System/Runtime/InteropServices/Marshalling/GeneratedComClassAttribute.cs",
+        "src/System/Runtime/InteropServices/Marshalling/GeneratedComInterfaceAttribute.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IComExposedClass.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IComExposedDetails.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IIUnknownCacheStrategy.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IIUnknownDerivedDetails.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IIUnknownInterfaceDetailsStrategy.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IIUnknownInterfaceType.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IIUnknownStrategy.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IUnknownDerivedAttribute.cs",
+        "src/System/Runtime/InteropServices/Marshalling/IUnmanagedVirtualMethodTableProvider.cs",
+        "src/System/Runtime/InteropServices/Marshalling/StrategyBasedComWrappers.cs",
+        "src/System/Runtime/InteropServices/Marshalling/VirtualMethodTableInfo.cs",
+        "src/System/Runtime/InteropServices/PrimaryInteropAssemblyAttribute.cs",
+        "src/System/Runtime/InteropServices/RegistrationClassContext.cs",
+        "src/System/Runtime/InteropServices/RegistrationConnectionType.cs",
+        "src/System/Runtime/InteropServices/RuntimeEnvironment.cs",
+        "src/System/Runtime/InteropServices/TypeLibFuncAttribute.cs",
+        "src/System/Runtime/InteropServices/TypeLibFuncFlags.cs",
+        "src/System/Runtime/InteropServices/TypeLibImportClassAttribute.cs",
+        "src/System/Runtime/InteropServices/TypeLibTypeAttribute.cs",
+        "src/System/Runtime/InteropServices/TypeLibTypeFlags.cs",
+        "src/System/Runtime/InteropServices/TypeLibVarAttribute.cs",
+        "src/System/Runtime/InteropServices/TypeLibVarFlags.cs",
+        "src/System/Runtime/InteropServices/TypeLibVersionAttribute.cs",
+        "src/System/Security/SecureStringMarshal.cs",
+
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Private.CoreLib",
+        "//src/libraries:impl_System.Runtime",
+        "//src/libraries:ref_System.Collections.Concurrent",
+    ],
+    allow_unsafe_blocks = True,
+    resx_file = "src/Resources/Strings.resx",
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Runtime.InteropServices",
+)
+
+ref_impl_pair(
+    name = "live_System.Runtime.InteropServices",
+    ref = ":ref_System.Runtime.InteropServices",
+    lib = ":impl_System.Runtime.InteropServices",
     visibility = ["//visibility:public"],
 )

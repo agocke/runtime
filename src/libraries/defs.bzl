@@ -15,8 +15,26 @@ load(
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 
 LIVE_NETCOREAPP_DEPS = [
-    "//src/libraries:live_System.Runtime",
-    "//src/libraries:live_System.Console",
+#    "//src/libraries:live_System.Runtime",
+#    "//src/libraries:live_System.Console",
+#    "//src/libraries/System.Runtime.InteropServices:live_System.Runtime.InteropServices",
+#    "//src/libraries:live_Microsoft.Win32.Primitives",
+#    "//src/libraries:live_System.Collections",
+]
+
+LIVE_REFPACK_DEPS = [
+    # Roughly topologically sorted
+    "//src/libraries:ref_System.Runtime",
+    "//src/libraries:ref_System.Console",
+    "//src/libraries:ref_System.Collections",
+    "//src/libraries:ref_System.Collections.NonGeneric",
+    "//src/libraries:ref_System.ComponentModel",
+    "//src/libraries:ref_System.Diagnostics.FileVersionInfo",
+    "//src/libraries:ref_System.ObjectModel",
+    "//src/libraries:ref_System.ComponentModel.Primitives",
+    "//src/libraries:ref_System.Collections.Specialized",
+    "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
+    "//src/libraries:ref_System.Diagnostics.Process",
 ]
 
 # Convenience macro for defining a ref assembly for the NetCoreApp framework.
@@ -56,17 +74,23 @@ def netcoreapp_ref_assembly(
 def _gen_facades_impl(ctx):
     libs_paths = [r[DotnetAssemblyCompileInfo].irefs[0] for r in ctx.attr.ref_paths]
     contract_assembly = ctx.attr.facade_contract_assembly[DotnetAssemblyCompileInfo].irefs[0]
+
+    args = [
+        "--outputSourcePath=%s" % ctx.outputs.out.path,
+        "--contractAssembly=%s" % contract_assembly.path,
+    ]
+
+    if len(ctx.attr.defines) > 0:
+        args.append("--defines=%s" % ";".join(ctx.attr.defines))
+
     ctx.actions.run(
         executable = ctx.executable._exe,
         inputs = ctx.files.srcs + libs_paths + [contract_assembly],
         outputs = [ctx.outputs.out],
-        arguments = [
-            "--outputSourcePath=%s" % ctx.outputs.out.path,
-            "--contractAssembly=%s" % contract_assembly.path,
-        ]
-        + [ "--src=%s" % s.path for s in ctx.files.srcs ]
-        + [ "--omitType=%s" % t for t in ctx.attr.facade_omit_types ]
-        + ["--ref-path=%s" % p.path for p in libs_paths],
+        arguments = args
+            + [ "--src=%s" % s.path for s in ctx.files.srcs ]
+            + [ "--omitType=%s" % t for t in ctx.attr.facade_omit_types ]
+            + ["--ref-path=%s" % p.path for p in libs_paths],
     )
 
 gen_facades = rule(
@@ -75,6 +99,9 @@ gen_facades = rule(
         "srcs": attr.label_list(
             allow_files = True,
             doc = "The source files to generate facades for.",
+        ),
+        "defines": attr.string_list(
+            doc = "The defines to use when generating facades.",
         ),
         "out": attr.output(mandatory = True),
         "ref_paths": attr.label_list(
@@ -123,10 +150,11 @@ gen_resx_source = rule(
     }
 )
 
-def netcoreapp_impl_library(
+def netcoreapp_impl_assembly(
     name,
-    srcs,
+    srcs = [],
     deps = [],
+    defines = [],
     compiler_options = [],
     generate_facades = False,
     facade_contract_assembly = None,
@@ -151,6 +179,7 @@ def netcoreapp_impl_library(
         gen_facades(
             name = "facade_" + base_name,
             srcs = srcs,
+            defines = defines,
             out = forwards_cs,
             ref_paths = deps,
             facade_contract_assembly = facade_contract_assembly,
@@ -162,6 +191,7 @@ def netcoreapp_impl_library(
         name = name,
         out = base_name,
         srcs = srcs,
+        defines = defines,
         deps = deps,
         assembly_version = "9.0.0.0",
         visibility = [ "//visibility:public" ],
@@ -174,15 +204,14 @@ def netcoreapp_impl_library(
         **kwargs
     )
 
-def _live_library_impl(ctx):
-    print (ctx.attr.lib)
+def _ref_impl_pair(ctx):
     return [
         ctx.attr.ref[DotnetAssemblyCompileInfo],
         ctx.attr.lib[DotnetAssemblyRuntimeInfo],
     ]
 
-live_library_impl = rule(
-    implementation = _live_library_impl,
+ref_impl_pair = rule(
+    implementation = _ref_impl_pair,
     attrs = {
         "ref": attr.label(
             doc = "The reference assembly to use.",
