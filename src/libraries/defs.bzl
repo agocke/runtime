@@ -30,11 +30,12 @@ LIVE_REFPACK_DEPS = [
     "//src/libraries:ref_System.Collections.NonGeneric",
     "//src/libraries:ref_System.ComponentModel",
     "//src/libraries:ref_System.Diagnostics.FileVersionInfo",
+    "//src/libraries:ref_System.Diagnostics.Process",
+    "//src/libraries:ref_System.Memory",
     "//src/libraries:ref_System.ObjectModel",
     "//src/libraries:ref_System.ComponentModel.Primitives",
     "//src/libraries:ref_System.Collections.Specialized",
     "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
-    "//src/libraries:ref_System.Diagnostics.Process",
 ]
 
 # Convenience macro for defining a ref assembly for the NetCoreApp framework.
@@ -223,3 +224,18 @@ ref_impl_pair = rule(
         ),
     }
 )
+
+def live_csharp_library(
+    name,
+    deps = [],
+    **kwargs
+):
+    deps = deps + LIVE_REFPACK_DEPS
+
+    csharp_library(
+        name = name,
+        deps = deps,
+        disable_implicit_framework_refs = True,
+        target_frameworks = [ NETCOREAPP_CURRENT ],
+        **kwargs
+    )

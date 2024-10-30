@@ -1,0 +1,100 @@
+
+load("//:defs.bzl", "NETCOREAPP_TOOL_CURRENT")
+load("//src/libraries:defs.bzl", "live_csharp_library")
+load("//src/tests:live_test.bzl", "coreclr_merged_test")
+
+live_csharp_library(
+    name = "nintindexoutofrange",
+    srcs = [
+        "Arrays/nintindexoutofrange.cs",
+    ],
+    deps = [
+        "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//xunit.abstractions",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    allow_unsafe_blocks = True,
+)
+
+coreclr_merged_test(
+    name = "Directed_3",
+    analyzers = [
+        "//src/tests/Common:XUnitWrapperGenerator",
+    ],
+    deps = [
+        "@paket.main//microsoft.dotnet.xunitassert",
+        ":nintindexoutofrange",
+        "//src/tests/JIT/Directed/physicalpromotion:addressinterference",
+        "//src/tests/JIT/Directed/physicalpromotion:fuzzlyn1",
+        "//src/tests/JIT/Directed/physicalpromotion:fuzzlyn2",
+        "//src/tests/JIT/Directed/physicalpromotion:mixedpromotion",
+        "//src/tests/JIT/Directed/physicalpromotion:physicalpromotion",
+        "//src/tests/JIT/Directed/physicalpromotion:readbackbeforeqmark",
+    ],
+)
+#JIT/Directed/physicalpromotion/addressinterference/addressinterference.dll
+#JIT/Directed/physicalpromotion/fuzzlyn1/fuzzlyn1.dll
+#JIT/Directed/physicalpromotion/fuzzlyn2/fuzzlyn2.dll
+#JIT/Directed/physicalpromotion/mixedpromotion/mixedpromotion.dll
+#JIT/Directed/physicalpromotion/physicalpromotion/physicalpromotion.dll
+#JIT/Directed/physicalpromotion/readbackbeforeqmark/readbackbeforeqmark.dll
+
+#JIT/Directed/StructPromote/Unsafe/AccessInvalidFieldOffset/AccessInvalidFieldOffset.dll
+#JIT/Directed/debugging/debuginfo/attribute/attribute.dll
+#JIT/Directed/zeroinit/Dev10_863995/Dev10_863995.dll
+#JIT/Directed/ExcepFilters/excepobj/excepobj/excepobj.dll
+#JIT/Directed/ExcepFilters/fault/fault/fault.dll
+#JIT/Directed/throwbox/fault_throwbox/fault_throwbox.dll
+#JIT/Directed/StructABI/FieldListByteNodeTypeMismatchX86/FieldListByteNodeTypeMismatchX86.dll
+#JIT/Directed/throwbox/filter/filter.dll
+#JIT/Directed/throwbox/finally/finally.dll
+#JIT/Directed/ConstantFolding/folding_extends_int32_on_64_bit_hosts/folding_extends_int32_on_64_bit_hosts.dll
+#JIT/Directed/Misc/gettype/gettypetypeofmatrix_gettype/gettypetypeofmatrix_gettype.dll
+#JIT/Directed/gettypetypeof/gettypetypeofmatrix_gettypetypeof/gettypetypeofmatrix_gettypetypeof.dll
+#JIT/Directed/ConstantFolding/HandlesInAddrModes/HandlesInAddrModes.dll
+#JIT/Directed/zeroinit/init_struct/init_struct.dll
+#JIT/Directed/IL/Tailcall/jitTailcall1/jitTailcall1.dll
+#JIT/Directed/Convert/ldind_conv/ldind_conv.dll
+#JIT/Directed/IL/leave/leave1/leave1.dll
+#JIT/Directed/UnrollLoop/loop3_r/loop3_r.dll
+#JIT/Directed/UnrollLoop/loop4_cs_do/loop4_cs_do.dll
+#JIT/Directed/UnrollLoop/loop4_cs_ro/loop4_cs_ro.dll
+#JIT/Directed/StructABI/MisSizedStructs/MisSizedStructs.dll
+#JIT/Directed/StructABI/MisSizedStructs_ArmArch/MisSizedStructs_ArmArch.dll
+#JIT/Directed/ExcepFilters/mixed3/mixed3/mixed3.dll
+#JIT/Directed/IL/mutualrecur-tailcall/MutualRecur-TailCall/MutualRecur-TailCall.dll
+#JIT/Directed/Misc/function_pointer/MutualThdRecur-fptr/MutualThdRecur-fptr.dll
+#JIT/Directed/forceinlining/NegativeCases/NegativeCases.dll
+#JIT/Directed/newarr/newarr/newarr.dll
+#JIT/Directed/RVAInit/oddsize/oddsize.dll
+#JIT/Directed/debugging/poisoning/poison/poison.dll
+#JIT/Directed/StructPromote/Unsafe/ReadDoubleFromIntOffset/ReadDoubleFromIntOffset.dll
+#JIT/Directed/StructPromote/Unsafe/ReadStructAsAnotherType/ReadStructAsAnotherType.dll
+#JIT/Directed/throwbox/rethrow/rethrow.dll
+#JIT/Directed/IL/rethrow/Rethrow1/Rethrow1.dll
+#JIT/Directed/IL/rethrow/Rethrow2/Rethrow2.dll
+#JIT/Directed/StructABI/SevenByteStruct/SevenByteStruct.dll
+#JIT/Directed/Convert/signed_overflow_conversions_are_not_treated_as_unsigned/signed_overflow_conversions_are_not_treated_as_unsigned.dll
+#JIT/Directed/StrAccess/straccess1_cs_ro/straccess1_cs_ro.dll
+#JIT/Directed/StrAccess/straccess2_cs_do/straccess2_cs_do.dll
+#JIT/Directed/StrAccess/straccess2_cs_ro/straccess2_cs_ro.dll
+#JIT/Directed/StrAccess/straccess3_cs_d/straccess3_cs_d.dll
+#JIT/Directed/StrAccess/straccess3_cs_do/straccess3_cs_do.dll
+#JIT/Directed/StrAccess/straccess3_cs_r/straccess3_cs_r.dll
+#JIT/Directed/StrAccess/straccess3_cs_ro/straccess3_cs_ro.dll
+#JIT/Directed/StructABI/structfieldparam_r/structfieldparam_r.dll
+#JIT/Directed/StructABI/structfieldparam_ro/structfieldparam_ro.dll
+#JIT/Directed/StructABI/structreturn/structreturn.dll
+#JIT/Directed/StructABI/StructWithOverlappingFields/StructWithOverlappingFields.dll
+#JIT/Directed/zeroinit/tail_zeroinit/tail_zeroinit.dll
+#Common/CoreCLRTestLibrary/CoreCLRTestLibrary/TestLibrary.dll
+#JIT/Directed/debugging/debuginfo/tests_d/tests_d.dll
+#JIT/Directed/debugging/debuginfo/tests_r/tests_r.dll
+#JIT/Directed/StructABI/TypeMismatchedArgs/TypeMismatchedArgs.dll
+#JIT/Directed/VectorABI/VectorMgdMgdArray_r/VectorMgdMgdArray_r.dll
+#JIT/Directed/VectorABI/VectorMgdMgdArray_ro/VectorMgdMgdArray_ro.dll
+#JIT/Directed/VectorABI/VectorMgdMgdStatic_r/VectorMgdMgdStatic_r.dll
+#JIT/Directed/VectorABI/VectorMgdMgdStatic_ro/VectorMgdMgdStatic_ro.dll
+#JIT/Directed/VectorABI/VectorMgdMgd_r/VectorMgdMgd_r.dll
+#Common/XUnitWrapperLibrary/XUnitWrapperLibrary/XUnitWrapperLibrary.dll
+#JIT/Directed/array-il/_Arrayscomplex3/_Arrayscomplex3.dll

@@ -318,6 +318,9 @@ def build_binary(ctx, compile_action):
     if is_standard_framework(tfm):
         fail("It doesn't make sense to build an executable for " + tfm)
 
+    for d in ctx.attr.deps:
+        print(d)
+
     (compile_provider, runtime_provider) = compile_action(ctx, tfm)
     dll = runtime_provider.libs[0]
     default_info_files = [dll] + runtime_provider.xml_docs + runtime_provider.appsetting_files.to_list()
@@ -389,28 +392,3 @@ def build_binary(ctx, compile_action):
     )
 
     return [default_info, compile_provider, runtime_provider]
-
-def live_csharp_library(
-    name,
-    deps = [],
-    **kwargs
-):
-    deps = deps + LIVE_REFPACK_DEPS
-
-    csharp_library(
-        name = name,
-        deps = deps,
-        disable_implicit_framework_refs = True,
-        **kwargs
-    )
-
-def coreclr_test(
-    name,
-    srcs,
-    **kwargs
-):
-    live_csharp_binary(
-        name = name,
-        srcs = srcs,
-        **kwargs
-    )
