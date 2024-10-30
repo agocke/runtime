@@ -22,13 +22,14 @@ load(
 )
 load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
 load("@rules_dotnet//dotnet/private/sdk/targeting_packs:targeting_pack_transition.bzl", "targeting_pack_transition")
-load("//:defs.bzl", "csharp_library", "LIVE_REFPACK_DEPS")
+load("//:defs.bzl", "csharp_library")
+load("//src/libraries:defs.bzl", "LIVE_NETCOREAPP_DEPS")
 
 def _live_csharp_binary_impl(ctx):
     result = _build_binary(ctx, compile_csharp_exe)
     return result
 
-live_csharp_binary = rule(
+_live_csharp_binary_rule = rule(
     _live_csharp_binary_impl,
     doc = """Compile a C# exe for the live framework""",
     attrs = dicts.add({
@@ -235,6 +236,18 @@ live_csharp_binary = rule(
     cfg = tfm_transition,
 )
 
+def live_csharp_binary(
+    name,
+    deps = [],
+    **kwargs
+):
+    deps = deps + LIVE_NETCOREAPP_DEPS
+    _live_csharp_binary_rule(
+        name = name,
+        deps = deps,
+        **kwargs
+    )
+
 def _create_launcher(ctx, runfiles, entry_dll):
     windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
 
@@ -253,6 +266,36 @@ def _create_launcher(ctx, runfiles, entry_dll):
     runfiles.append(ctx.file._bash_runfiles)
 
     return launcher
+
+# Hints for Bazel spawn strategy
+COPY_EXECUTION_REQUIREMENTS = {
+    # ----------------+-----------------------------------------------------------------------------
+    # no-remote       | Prevents the action or test from being executed remotely or cached remotely.
+    #                 | This is equivalent to using both `no-remote-cache` and `no-remote-exec`.
+    # ----------------+-----------------------------------------------------------------------------
+    # no-cache        | Results in the action or test never being cached (remotely or locally)
+    # ----------------+-----------------------------------------------------------------------------
+    # See https://bazel.build/reference/be/common-definitions#common-attributes
+    #
+    # Copying file & directories is entirely IO-bound and there is no point doing this work
+    # remotely.
+    #
+    # Also, remote-execution does not allow source directory inputs, see
+    # https://github.com/bazelbuild/bazel/commit/c64421bc35214f0414e4f4226cc953e8c55fa0d2 So we must
+    # not attempt to execute remotely in that case.
+    #
+    # There is also no point pulling the output file or directory from the remote cache since the
+    # bytes to copy are already available locally. Conversely, no point in writing to the cache if
+    # no one has any reason to check it for this action.
+    #
+    # Read and writing to disk cache is disabled as well primarily to reduce disk usage on the local
+    # machine. A disk cache hit of a directory copy could be slghtly faster than a copy since the
+    # disk cache stores the directory artifact as a single entry, but the slight performance bump
+    # comes at the cost of heavy disk cache usage, which is an unmanaged directory that grow beyond
+    # the bounds of the physical disk.
+    "no-remote": "1",
+    "no-cache": "1",
+}
 
 def _build_binary(ctx, compile_action):
     """Builds a .Net binary from a compilation action
@@ -320,6 +363,25 @@ def _build_binary(ctx, compile_action):
     if depsjson != None:
         additional_runfiles.append(depsjson)
 
+    for dep in transitive_runtime_deps:
+        for lib in dep.libs:
+            print("runtime_dep: %s" % lib.basename)
+            if lib.extension == "dll":
+                src = lib
+                dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, lib.basename))
+                print("dest: %s" % dst.path)
+                ctx.actions.run_shell(
+                    inputs = [src],
+                    outputs = [dst],
+                    command = "cp -f \"$1\" \"$2\"",
+                    arguments = [src.path, dst.path],
+                    mnemonic = "CopyFile",
+                    progress_message = "Copying files",
+                    use_default_shell_env = True,
+                    execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+                )
+                additional_runfiles.append(dst)
+
     default_info = DefaultInfo(
         executable = launcher,
         runfiles = collect_transitive_runfiles(ctx, runtime_provider, ctx.attr.deps).merge(ctx.runfiles(files = additional_runfiles)),
@@ -333,7 +395,7 @@ def live_csharp_library(
     deps = [],
     **kwargs
 ):
-    deps = deps + LIVE_REFPACK_DEPS
+    deps = deps + LIVE_NETCOREAPP_DEPS
 
     csharp_library(
         name = name,

@@ -22,9 +22,9 @@ for (int i = 0; i < args.Length; i++)
     {
         contractAssembly = asm;
     }
-    else if (StartsWith(arg, "--file=", out var file))
+    else if (StartsWith(arg, "--src=", out var src))
     {
-        compileFiles.Add(file);
+        compileFiles.Add(src);
     }
     else if (StartsWith(arg, "--outputSourcePath=", out var outPath))
     {

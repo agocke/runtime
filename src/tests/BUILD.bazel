@@ -92,7 +92,7 @@ coreclr_merged_test(
     analyzers = [
         "//src/tests/Common:XUnitWrapperGenerator",
     ],
-    deps = LIVE_REFPACK_DEPS + [
+    deps = [
         "@paket.main//microsoft.dotnet.xunitassert",
         ":nintindexoutofrange",
     ],
