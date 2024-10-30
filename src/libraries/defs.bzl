@@ -9,9 +9,15 @@ load(
     "@rules_dotnet//dotnet/private:providers.bzl",
     "DotnetAssemblyCompileInfo",
     "DotnetAssemblyRuntimeInfo",
+    "DotnetTargetingPackInfo",
 )
 
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+
+LIVE_NETCOREAPP_DEPS = [
+    "//src/libraries:live_System.Runtime",
+    "//src/libraries:live_System.Console",
+]
 
 # Convenience macro for defining a ref assembly for the NetCoreApp framework.
 def netcoreapp_ref_assembly(
@@ -52,12 +58,13 @@ def _gen_facades_impl(ctx):
     contract_assembly = ctx.attr.facade_contract_assembly[DotnetAssemblyCompileInfo].irefs[0]
     ctx.actions.run(
         executable = ctx.executable._exe,
-        inputs = libs_paths + [contract_assembly],
+        inputs = ctx.files.srcs + libs_paths + [contract_assembly],
         outputs = [ctx.outputs.out],
         arguments = [
             "--outputSourcePath=%s" % ctx.outputs.out.path,
             "--contractAssembly=%s" % contract_assembly.path,
         ]
+        + [ "--src=%s" % s.path for s in ctx.files.srcs ]
         + [ "--omitType=%s" % t for t in ctx.attr.facade_omit_types ]
         + ["--ref-path=%s" % p.path for p in libs_paths],
     )
@@ -166,3 +173,24 @@ def netcoreapp_impl_library(
         resx_file = resx_file,
         **kwargs
     )
+
+def _live_library_impl(ctx):
+    print (ctx.attr.lib)
+    return [
+        ctx.attr.ref[DotnetAssemblyCompileInfo],
+        ctx.attr.lib[DotnetAssemblyRuntimeInfo],
+    ]
+
+live_library_impl = rule(
+    implementation = _live_library_impl,
+    attrs = {
+        "ref": attr.label(
+            doc = "The reference assembly to use.",
+            providers = [DotnetAssemblyCompileInfo],
+        ),
+        "lib": attr.label(
+            doc = "The libraries to use.",
+            providers = [DotnetAssemblyRuntimeInfo],
+        ),
+    }
+)

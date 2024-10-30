@@ -1,14 +1,15 @@
 load(
     "@rules_dotnet//dotnet:defs.bzl",
-    "csharp_library"
+    "csharp_library",
+    "import_library",
 )
 
 load(
     "//:defs.bzl",
-    "NETCOREAPP_CURRENT"
+    "LIVE_REFPACK_DEPS",
 )
 
-load("defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_library")
+load("defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_library", "live_library_impl")
 
 nowarn = [ "CS8500", "CS8969" ]
 
@@ -32,6 +33,20 @@ filegroup(
         ":impl_System.ComponentModel.Primitives",
         ":impl_System.Console",
     ],
+    visibility = ["//visibility:public"],
+)
+
+live_library_impl(
+    name = "live_System.Runtime",
+    ref = ":ref_System.Runtime",
+    lib = ":impl_System.Runtime",
+    visibility = ["//visibility:public"],
+)
+
+live_library_impl(
+    name = "live_System.Console",
+    ref = ":ref_System.Console",
+    lib = ":impl_System.Console",
     visibility = ["//visibility:public"],
 )
 
@@ -141,6 +156,36 @@ netcoreapp_ref_assembly(
     deps = [
         ":ref_System.Runtime",
     ],
+)
+
+netcoreapp_impl_library(
+    name = "impl_System.Threading",
+    srcs = [
+        "System.Threading/src/System/Threading/Barrier.cs",
+        "System.Threading/src/System/Threading/CDSsyncETWBCLProvider.cs",
+        "System.Threading/src/System/Threading/CountdownEvent.cs",
+        "System.Threading/src/System/Threading/HostExecutionContext.cs",
+        "System.Threading/src/System/Threading/HostExecutionContextManager.cs",
+        "System.Threading/src/System/Threading/LockCookie.cs",
+        "System.Threading/src/System/Threading/ReaderWriterLock.cs",
+
+        "//src/libraries/Common:src/System/HResults.cs",
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+    ],
+    deps = [
+        ":ref_System.Private.CoreLib",
+    ],
+    resx_file = "System.Threading/src/Resources/Strings.resx",
+    allow_unsafe_blocks = True,
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Threading",
+)
+
+live_library_impl(
+    name = "live_System.Threading",
+    ref = ":ref_System.Threading",
+    lib = ":impl_System.Threading",
+    visibility = [ "//visibility:public" ],
 )
 
 netcoreapp_ref_assembly(
@@ -580,7 +625,7 @@ netcoreapp_impl_library(
         ":ref_System.Runtime",
         ":ref_System.Runtime.InteropServices",
 #        ":ref_System.Text.Encoding.Extensions",
-        ":ref_System.Threading",
+        ":live_System.Threading",
         ":ref_Microsoft.Win32.Primitives",
     ],
     resx_file = "System.Console/src/Resources/Strings.resx",
