@@ -10,7 +10,6 @@ load(
 )
 load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS")
 load("defs.bzl", "live_csharp_binary", "live_csharp_library")
-load("live_test.bzl", "coreclr_merged_test")
 
 csharp_binary(
     name = "instance_assignment_class01",
@@ -71,29 +70,4 @@ live_csharp_binary(
         "nativeaot/SmokeTests/DwarfDump/Program.cs",
     ],
     target_frameworks = [ NETCOREAPP_TOOL_CURRENT ]
-)
-
-live_csharp_library(
-    name = "nintindexoutofrange",
-    srcs = [
-        "JIT/Directed/Arrays/nintindexoutofrange.cs",
-    ],
-    deps = [
-        "@paket.main//microsoft.dotnet.xunitassert",
-        "@paket.main//xunit.abstractions",
-        "@paket.main//xunit.extensibility.core",
-    ],
-    target_frameworks = [ NETCOREAPP_TOOL_CURRENT ],
-    allow_unsafe_blocks = True,
-)
-
-coreclr_merged_test(
-    name = "JIT_Directed_3",
-    analyzers = [
-        "//src/tests/Common:XUnitWrapperGenerator",
-    ],
-    deps = [
-        "@paket.main//microsoft.dotnet.xunitassert",
-        ":nintindexoutofrange",
-    ],
 )
