@@ -75,7 +75,7 @@
   "moduleExtensions": {
     "//paket:paket.main_extension.bzl%main_extension": {
       "general": {
-        "bzlTransitiveDigest": "xl30tQxbhlCIFUeX7/7vrho1MA9ARirIVhgwHNDjon8=",
+        "bzlTransitiveDigest": "/daJCTV5SjY5HDtSb4aI6IkPfYOC4BLq+6qSiFkOzHU=",
         "usagesDigest": "okNkhmmpibvrPUv/d6MMg1dmF+M7Bo3Uy7YOYRxEss0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -3075,7 +3075,7 @@
     },
     "@@rules_dotnet~//dotnet/private/sdk/apphost_packs:dotnet.apphost_packs_extension.bzl%apphost_packs_extension": {
       "general": {
-        "bzlTransitiveDigest": "Qoy2whbJRchyXEydSBV94R2JqPbpnEE0lC5m4JsH0XA=",
+        "bzlTransitiveDigest": "gQHdjQ4meS/Y5vOaelxpqKfiV0t9LDCAslOHks3uWs4=",
         "usagesDigest": "c6i+Akm4qBw9TBhhFzOUyfauz+P5JgYq8yhj4OKO10U=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -3831,7 +3831,7 @@
     },
     "@@rules_dotnet~//dotnet/private/sdk/runtime_packs:dotnet.runtime_packs_extension.bzl%runtime_packs_extension": {
       "general": {
-        "bzlTransitiveDigest": "y33XcTfGlnfzRzNv5rpXkHjFkOcaA4uuoKe3m+xaqYg=",
+        "bzlTransitiveDigest": "EN/ExGvsN/xNKQ1lVSjpDyOHs/822+BJ+CUUXkMuiTY=",
         "usagesDigest": "erQZ46czivzbktqzW6+gar9488xEEoNfBtVx9DPHzJo=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -5175,7 +5175,7 @@
     },
     "@@rules_dotnet~//dotnet/private/sdk/targeting_packs:dotnet.targeting_packs_extension.bzl%targeting_packs_extension": {
       "general": {
-        "bzlTransitiveDigest": "wYuHDUIR60bGB2Wf+VLavjKevySC67CIGwnvVH01OuU=",
+        "bzlTransitiveDigest": "VPz4o4h9l/2+L8sz6GDzFrrdiNWgKbYbUD3kefXVg1Q=",
         "usagesDigest": "Y/zvKEkXe2YkI6eFH1J2CqylOuwaHkSX/U32fsllod0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},

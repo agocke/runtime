@@ -4,7 +4,8 @@ load("//:defs.bzl", "from_coreclr_artifacts")
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 
 exports_files([
-    "eng/run_test.sh",
+    "eng/run_binary.sh.tpl",
+    "eng/run_test.sh.tpl",
     "artifacts/obj/coreclr/System.Private.CoreLib/linux.x64.Debug/System.Private.CoreLib.Strings.resources",
 ])
 
