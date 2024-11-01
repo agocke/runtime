@@ -1,6 +1,9 @@
 load("//:defs.bzl", "csharp_library", "NETCOREAPP_CURRENT")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
-load("@rules_dotnet//dotnet/private:providers.bzl", "DotnetAssemblyCompileInfo")
+load("@rules_dotnet//dotnet/private:providers.bzl",
+    "DotnetAssemblyCompileInfo",
+    "DotnetAssemblyRuntimeInfo",
+    "NuGetInfo",)
 load("@rules_dotnet//dotnet/private/transitions:tfm_transition.bzl", "tfm_transition")
 load("@rules_dotnet//dotnet/private/rules/csharp:binary.bzl", "compile_csharp_exe")
 load("@rules_dotnet//dotnet/private:common.bzl", "is_debug",)
@@ -8,6 +11,7 @@ load("//src/libraries:defs.bzl", "live_csharp_library", "LIVE_REFPACK_DEPS")
 load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary")
 
 def _live_csharp_test_impl(ctx):
+    print(ctx.attr.deps)
     result = build_binary(ctx, compile_csharp_exe)
     return result
 
@@ -28,14 +32,6 @@ _live_csharp_test = rule(
                 doc = "A template file for the launcher on Linux/MacOS",
                 default = "//:eng/run_test.sh.tpl",
                 allow_single_file = True,
-            ),
-            "aliased_deps": attr.label_keyed_string_dict(
-                doc = "The dependencies to transform",
-                default = {},
-            ),
-            "_live_refpack_deps": attr.label_list(
-                doc = "The refpack dependencies for the live framework",
-                default = LIVE_REFPACK_DEPS,
             ),
         }),
     test = True,
@@ -67,18 +63,28 @@ def coreclr_test_library(
         **kwargs
     )
 
-def _transform_deps_impl(ctx):
-    # Transform all explicit deps into deps with extern alias
-    for dep in ctx.attr.deps:
-        compile = dep[DotnetAssemblyCompileInfo]
-        print(compile)
-        compile.alias = compile.name
-    return ctx.attr.deps
+def _transform_dep_impl(ctx):
+    # Transform explicit dep into dep with extern alias
+    dep = ctx.attr.dep
+    compile = dep[DotnetAssemblyCompileInfo]
+    compile_dict = _to_dict(compile)
+    compile_dict.pop("alias")
+    newcomp = DotnetAssemblyCompileInfo(
+        alias = "_" + compile.name,
+        **compile_dict
+    )
+    default_info = dep[DefaultInfo]
+    runtime_info = dep[DotnetAssemblyRuntimeInfo]
+    return [
+        default_info,
+        newcomp,
+        runtime_info,
+    ]
 
-_transform_deps = rule(
-    _transform_deps_impl,
+_transform_dep = rule(
+    _transform_dep_impl,
     attrs = {
-        "deps": attr.label_list(
+        "dep": attr.label(
             doc = "The dependencies to transform",
             providers = [DotnetAssemblyCompileInfo],
         ),
@@ -90,15 +96,18 @@ def coreclr_merged_test(
     deps = [],
     **kwargs
 ):
-    print (deps)
-    _transform_deps(
-        name = "_transform_deps_" + name,
-        deps = deps,
-    )
+    transformed_deps = []
+    for (i, dep) in enumerate(deps):
+        label_name = "_transform_dep_%s_%s" % (name, i)
+        _transform_dep(
+            name = label_name,
+            dep = dep,
+        )
+        transformed_deps.append(":" + label_name)
 
     _live_csharp_test(
         name = name,
         target_frameworks = ["net9.0"],
-        deps = [ ":_transform_deps_" + name ],
+        deps = transformed_deps + LIVE_REFPACK_DEPS,
         **kwargs
     )
