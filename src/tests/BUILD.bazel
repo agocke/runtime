@@ -9,7 +9,7 @@ load(
     "NETCOREAPP_TOOL_CURRENT",
 )
 load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS")
-load("defs.bzl", "live_csharp_binary", "live_csharp_library")
+load("defs.bzl", "live_csharp_binary")
 
 csharp_binary(
     name = "instance_assignment_class01",

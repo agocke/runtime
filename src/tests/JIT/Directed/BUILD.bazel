@@ -1,28 +1,22 @@
 
-load("//:defs.bzl", "NETCOREAPP_TOOL_CURRENT")
-load("//src/libraries:defs.bzl", "live_csharp_library")
-load("//src/tests:live_test.bzl", "coreclr_merged_test")
+load("//src/tests:live_test.bzl", "coreclr_test", "coreclr_merged_test")
 
-live_csharp_library(
+coreclr_test(
     name = "nintindexoutofrange",
     srcs = [
         "Arrays/nintindexoutofrange.cs",
-    ],
-    deps = [
-        "@paket.main//microsoft.dotnet.xunitassert",
-        "@paket.main//xunit.abstractions",
-        "@paket.main//xunit.extensibility.core",
     ],
     allow_unsafe_blocks = True,
 )
 
 coreclr_merged_test(
-    name = "Directed_3",
-    analyzers = [
-        "//src/tests/Common:XUnitWrapperGenerator",
-    ],
+    name = "merged_3",
     deps = [
         "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//xunit.abstractions",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    test_deps = [
         ":nintindexoutofrange",
         "//src/tests/JIT/Directed/physicalpromotion:addressinterference",
         "//src/tests/JIT/Directed/physicalpromotion:fuzzlyn1",
@@ -32,12 +26,6 @@ coreclr_merged_test(
         "//src/tests/JIT/Directed/physicalpromotion:readbackbeforeqmark",
     ],
 )
-#JIT/Directed/physicalpromotion/addressinterference/addressinterference.dll
-#JIT/Directed/physicalpromotion/fuzzlyn1/fuzzlyn1.dll
-#JIT/Directed/physicalpromotion/fuzzlyn2/fuzzlyn2.dll
-#JIT/Directed/physicalpromotion/mixedpromotion/mixedpromotion.dll
-#JIT/Directed/physicalpromotion/physicalpromotion/physicalpromotion.dll
-#JIT/Directed/physicalpromotion/readbackbeforeqmark/readbackbeforeqmark.dll
 
 #JIT/Directed/StructPromote/Unsafe/AccessInvalidFieldOffset/AccessInvalidFieldOffset.dll
 #JIT/Directed/debugging/debuginfo/attribute/attribute.dll
