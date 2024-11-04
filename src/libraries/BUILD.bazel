@@ -29,12 +29,15 @@ filegroup(
         ":impl_Microsoft.Win32.Primitives",
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         ":impl_System.Runtime",
+        "//src/libraries/System.Runtime.Loader:impl_System.Runtime.Loader",
         ":impl_System.Diagnostics.Process",
         ":impl_System.ComponentModel.Primitives",
         ":impl_System.Console",
         ":impl_System.Collections",
         ":impl_System.Linq",
         ":impl_System.Memory",
+        "//src/libraries/System.Numerics.Vectors:impl_System.Numerics.Vectors",
+        "//src/libraries/System.Runtime.Intrinsics:impl_System.Runtime.Intrinsics",
         ":impl_System.Threading",
         "//src/libraries/System.Runtime.InteropServices:impl_System.Runtime.InteropServices",
     ],
@@ -62,13 +65,13 @@ netcoreapp_ref_assembly(
         "System.Diagnostics.Contracts/ref/System.Diagnostics.Contracts.cs",
         "System.Diagnostics.Tracing/ref/System.Diagnostics.Tracing.cs",
         "System.Diagnostics.Tracing/ref/System.Diagnostics.Tracing.Counters.cs",
-        "System.Numerics.Vectors/ref/System.Numerics.Vectors.cs",
+        "//src/libraries/System.Numerics.Vectors:ref/System.Numerics.Vectors.cs",
         "System.Reflection.Emit.ILGeneration/ref/System.Reflection.Emit.ILGeneration.cs",
         "System.Reflection.Emit.Lightweight/ref/System.Reflection.Emit.Lightweight.cs",
         "System.Reflection.Emit/ref/System.Reflection.Emit.cs",
         "System.Reflection.Primitives/ref/System.Reflection.Primitives.cs",
-        "System.Runtime.Intrinsics/ref/System.Runtime.Intrinsics.cs",
-        "System.Runtime.Loader/ref/System.Runtime.Loader.cs",
+        "//src/libraries/System.Runtime.Intrinsics:ref/System.Runtime.Intrinsics.cs",
+        "//src/libraries/System.Runtime.Loader:ref/System.Runtime.Loader.cs",
         "System.Runtime/ref/System.Runtime.cs",
         "System.Text.Encoding.Extensions/ref/System.Text.Encoding.Extensions.cs",
         "System.Threading.Overlapped/ref/System.Threading.Overlapped.cs",
@@ -727,29 +730,6 @@ netcoreapp_impl_assembly(
     allow_unsafe_blocks = True,
 )
 
-netcoreapp_ref_assembly(
-    name = "ref_System.Numerics.Vectors",
-    srcs = [
-        "System.Numerics.Vectors/ref/System.Numerics.Vectors.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-    allow_unsafe_blocks = True,
-)
-
-netcoreapp_ref_assembly(
-    name = "ref_System.Runtime.Intrinsics",
-    srcs = [
-        "System.Runtime.Intrinsics/ref/System.Runtime.Intrinsics.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        ":ref_System.Numerics.Vectors",
-    ],
-    allow_unsafe_blocks = True,
-)
-
 netcoreapp_impl_assembly(
     name = "impl_System.Linq",
     srcs = [
@@ -828,10 +808,10 @@ netcoreapp_impl_assembly(
     deps = [
         ":ref_System.Collections",
         ":ref_System.Memory",
-        ":ref_System.Numerics.Vectors",
+        "//src/libraries/System.Numerics.Vectors:ref_System.Numerics.Vectors",
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
-        ":ref_System.Runtime.Intrinsics",
+        "//src/libraries/System.Runtime.Intrinsics:ref_System.Runtime.Intrinsics",
     ],
     resx_file = "System.Linq/src/Resources/Strings.resx",
 )

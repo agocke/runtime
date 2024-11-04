@@ -25,6 +25,7 @@ LIVE_NETCOREAPP_DEPS = [
 LIVE_REFPACK_DEPS = [
     # Roughly topologically sorted
     "//src/libraries:ref_System.Runtime",
+    "//src/libraries/System.Runtime.Loader:ref_System.Runtime.Loader",
     "//src/libraries:ref_System.Console",
     "//src/libraries:ref_System.Collections",
     "//src/libraries:ref_System.Collections.NonGeneric",
@@ -32,6 +33,8 @@ LIVE_REFPACK_DEPS = [
     "//src/libraries:ref_System.Diagnostics.FileVersionInfo",
     "//src/libraries:ref_System.Diagnostics.Process",
     "//src/libraries:ref_System.Memory",
+    "//src/libraries/System.Runtime.Intrinsics:ref_System.Runtime.Intrinsics",
+    "//src/libraries/System.Numerics.Vectors:ref_System.Numerics.Vectors",
     "//src/libraries:ref_System.ObjectModel",
     "//src/libraries:ref_System.ComponentModel.Primitives",
     "//src/libraries:ref_System.Collections.Specialized",
