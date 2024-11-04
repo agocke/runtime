@@ -64,6 +64,8 @@ def coreclr_test(
     size = "small",
     pri = 0,
     tags = [],
+    debug_type = "full", # TODO: plum through to compiler
+    optimize = False, # TODO: plum through to compiler
     **kwargs
 ):
     deps = deps + [

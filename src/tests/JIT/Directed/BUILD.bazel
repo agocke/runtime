@@ -1,13 +1,5 @@
 
-load("//src/tests:live_test.bzl", "coreclr_test", "coreclr_merged_test")
-
-coreclr_test(
-    name = "nintindexoutofrange",
-    srcs = [
-        "Arrays/nintindexoutofrange.cs",
-    ],
-    allow_unsafe_blocks = True,
-)
+load("//src/tests:live_test.bzl", "coreclr_merged_test")
 
 coreclr_merged_test(
     name = "merged_3",

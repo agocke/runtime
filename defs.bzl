@@ -74,6 +74,7 @@ def csharp_library(
     out = None,
     resx_file = None,
     resources = [],
+    nowarn = [],
     **kwargs
 ):
     if out == None:
@@ -103,5 +104,6 @@ def csharp_library(
         srcs = srcs,
         out = out,
         resources = resources,
+        nowarn = nowarn + [ "CS1701" ],
         **kwargs
     )
