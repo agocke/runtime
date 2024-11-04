@@ -6,7 +6,8 @@ load("@rules_dotnet//dotnet/private:providers.bzl",
 load("@rules_dotnet//dotnet/private/transitions:tfm_transition.bzl", "tfm_transition")
 load("@rules_dotnet//dotnet/private/rules/csharp:binary.bzl", "compile_csharp_exe")
 load("//src/libraries:defs.bzl", "live_csharp_library", "LIVE_REFPACK_DEPS")
-load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary")
+load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary", "create_launcher")
+load("@rules_dotnet//dotnet/private:common.bzl", "to_rlocation_path",)
 
 def _live_csharp_test_impl(ctx):
     result = build_binary(ctx, compile_csharp_exe)
@@ -141,6 +142,10 @@ def _il_test_impl(ctx):
     if ctx.attr.optimize:
         args.append("-optimize")
 
+    additional_runfiles = []
+
+    dll = ctx.outputs.out
+
     ctx.actions.run(
         inputs = ctx.files.srcs,
         outputs = [ctx.outputs.out],
@@ -149,16 +154,15 @@ def _il_test_impl(ctx):
         executable = ctx.executable.ilasm_exe,
     )
 
-    ctx.actions.expand_template(
-        template = ctx.file._launcher_sh,
-        output = launcher,
-        substitutions = {
-            "TEMPLATED_dotnet": to_rlocation_path(ctx, runtime.files_to_run.executable),
-            "TEMPLATED_executable": to_rlocation_path(ctx, executable),
-        },
-        is_executable = True,
+    launcher = create_launcher(ctx, additional_runfiles, dll)
+
+    default_info = DefaultInfo(
+        executable = launcher,
+        runfiles = ctx.runfiles(files = additional_runfiles),
+        files = depset([dll]),
     )
-    runfiles.append(ctx.file._bash_runfiles)
+
+    return [ default_info ]
 
 _il_test = rule(
     implementation = _il_test_impl,
@@ -190,19 +194,32 @@ _il_test = rule(
             default = "//:eng/run_test.sh.tpl",
             allow_single_file = True,
         ),
+        "_windows_constraint": attr.label(default = "@platforms//os:windows"),
+        "_core_root": attr.label(
+            doc = "The host binary to use for the launcher",
+            default = "//:Core_Root",
+            allow_single_file = True,
+        ),
+        "_bash_runfiles": attr.label(
+            default = "@bazel_tools//tools/bash/runfiles",
+            allow_single_file = True,
+        ),
     },
     test = True,
 )
 
 def il_coreclr_test(
     name,
-    srcs,
+    size = "small",
+    pri = 0,
+    tags = [],
     **kwargs
 ):
     _il_test(
         name = name,
-        srcs = srcs,
         out = name + ".dll",
+        size = size,
+        tags = tags + [ "pri%d" % pri ],
         **kwargs
     )
 
