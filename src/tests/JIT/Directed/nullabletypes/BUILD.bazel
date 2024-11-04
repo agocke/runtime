@@ -17,14 +17,12 @@ coreclr_test(
 coreclr_test(
     name = "boxunboxenum_r",
     srcs = ["boxunboxenum.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "boxunboxenum_ro",
     srcs = ["boxunboxenum.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = True,
 )
 
@@ -45,14 +43,12 @@ coreclr_test(
 coreclr_test(
     name = "boxunboxinterface_r",
     srcs = ["boxunboxinterface.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "boxunboxinterface_ro",
     srcs = ["boxunboxinterface.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = True,
 )
 
@@ -73,14 +69,12 @@ coreclr_test(
 coreclr_test(
     name = "castclassenum_r",
     srcs = ["castclassenum.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "castclassenum_ro",
     srcs = ["castclassenum.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = True,
 )
 
@@ -101,14 +95,12 @@ coreclr_test(
 coreclr_test(
     name = "castclassinterface_r",
     srcs = ["castclassinterface.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "castclassinterface_ro",
     srcs = ["castclassinterface.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = True,
 )
 
@@ -129,14 +121,12 @@ coreclr_test(
 coreclr_test(
     name = "castclassvaluetype_r",
     srcs = ["castclassvaluetype.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "castclassvaluetype_ro",
     srcs = ["castclassvaluetype.cs", "Desktop/StructDefinitions.cs"],
-    debug_type = "none",
     optimize = True,
 )
 
@@ -152,7 +142,6 @@ coreclr_test(
     name = "constructor_ro",
     srcs = ["constructor.cs", "invokecommon.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -176,7 +165,6 @@ coreclr_test(
     name = "gettype_r",
     srcs = ["gettype.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -184,7 +172,6 @@ coreclr_test(
     name = "gettype_ro",
     srcs = ["gettype.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -198,7 +185,6 @@ coreclr_test(
 coreclr_test(
     name = "hashcode_ro",
     srcs = ["hashcode.cs", "invokecommon.cs"],
-    debug_type = "none",
     optimize = True,
 )
 
@@ -214,7 +200,6 @@ coreclr_test(
     name = "hasvalue_ro",
     srcs = ["hasvalue.cs", "invokecommon.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -230,7 +215,6 @@ coreclr_test(
     name = "invocation_ro",
     srcs = ["invocation.cs", "invokecommon.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -254,7 +238,6 @@ coreclr_test(
     name = "isinst2_r",
     srcs = ["isinst2.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -262,7 +245,6 @@ coreclr_test(
     name = "isinst2_ro",
     srcs = ["isinst2.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -285,7 +267,6 @@ coreclr_test(
     name = "isinst_r",
     srcs = ["isinst.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -293,7 +274,6 @@ coreclr_test(
     name = "isinst_ro",
     srcs = ["isinst.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -317,7 +297,6 @@ coreclr_test(
     name = "isinstboxed_r",
     srcs = ["isinstboxed.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -325,7 +304,6 @@ coreclr_test(
     name = "isinstboxed_ro",
     srcs = ["isinstboxed.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -349,7 +327,6 @@ coreclr_test(
     name = "isinstenum_r",
     srcs = ["isinstenum.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -357,7 +334,6 @@ coreclr_test(
     name = "isinstenum_ro",
     srcs = ["isinstenum.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -381,7 +357,6 @@ coreclr_test(
     name = "isinstgenerics_r",
     srcs = ["isinstgenerics.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -389,7 +364,6 @@ coreclr_test(
     name = "isinstgenerics_ro",
     srcs = ["isinstgenerics.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -413,7 +387,6 @@ coreclr_test(
     name = "isinstinterface_r",
     srcs = ["isinstinterface.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -421,7 +394,6 @@ coreclr_test(
     name = "isinstinterface_ro",
     srcs = ["isinstinterface.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -444,7 +416,6 @@ coreclr_test(
     name = "isinstvaluetype_r",
     srcs = ["isinstvaluetype.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -452,7 +423,6 @@ coreclr_test(
     name = "isinstvaluetype_ro",
     srcs = ["isinstvaluetype.cs", "Desktop/StructDefinitions.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -468,7 +438,6 @@ coreclr_test(
     name = "tostring_ro",
     srcs = ["tostring.cs", "invokecommon.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -489,14 +458,12 @@ coreclr_test(
 coreclr_test(
     name = "unboxnullable_r",
     srcs = ["unboxnullable.cs"],
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "unboxnullable_ro",
     srcs = ["unboxnullable.cs"],
-    debug_type = "none",
     optimize = True,
 )
 
@@ -517,6 +484,5 @@ coreclr_test(
 coreclr_test(
     name = "value_ro",
     srcs = ["value.cs", "invokecommon.cs"],
-    debug_type = "none",
     optimize = True,
 )

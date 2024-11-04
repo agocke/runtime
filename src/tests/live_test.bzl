@@ -64,8 +64,9 @@ def coreclr_test(
     size = "small",
     pri = 0,
     tags = [],
-    debug_type = "full", # TODO: plum through to compiler
+    debug_type = "portable", # TODO: plum through to compiler
     optimize = False, # TODO: plum through to compiler
+    compiler_options = [],
     **kwargs
 ):
     deps = deps + [
@@ -73,6 +74,11 @@ def coreclr_test(
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
     ]
+
+    compiler_options = [
+        "/debug:%s" % debug_type,
+        "/optimize%s" % ("" if optimize else "-"),
+    ] + compiler_options
 
     # Create two targets: a library for the merged runner and a test. We'll use one or the other.
     live_csharp_library(
@@ -85,6 +91,7 @@ def coreclr_test(
         ],
         tags = tags,
         visibility = ["//visibility:public"],
+        compiler_options = compiler_options,
         **kwargs
     )
 
@@ -93,6 +100,7 @@ def coreclr_test(
         deps = deps,
         size = size,
         tags = tags + [ "pri%d" % pri ],
+        compiler_options = compiler_options,
         **kwargs
     )
 
@@ -123,6 +131,81 @@ _transform_dep = rule(
         ),
     },
 )
+
+def _il_test_impl(ctx):
+    args = []
+    if ctx.attr.debug_type == "full":
+        args.append("-debug")
+    if ctx.attr.debug_type == "pdbonly":
+        args.append("-debug=opt")
+    if ctx.attr.optimize:
+        args.append("-optimize")
+
+    ctx.actions.run(
+        inputs = ctx.files.srcs,
+        outputs = [ctx.outputs.out],
+        arguments = args,
+        progress_message = "Compiling %s" % ctx.outputs.out.short_path,
+        executable = ctx.executable.ilasm_exe,
+    )
+
+    ctx.actions.expand_template(
+        template = ctx.file._launcher_sh,
+        output = launcher,
+        substitutions = {
+            "TEMPLATED_dotnet": to_rlocation_path(ctx, runtime.files_to_run.executable),
+            "TEMPLATED_executable": to_rlocation_path(ctx, executable),
+        },
+        is_executable = True,
+    )
+    runfiles.append(ctx.file._bash_runfiles)
+
+_il_test = rule(
+    implementation = _il_test_impl,
+    attrs = {
+        "srcs": attr.label_list(
+            doc = "The source files to compile",
+            allow_files = True,
+        ),
+        "out": attr.output(
+            mandatory = True,
+            doc = "The output DLL.",
+        ),
+        "debug_type": attr.string(
+            doc = "The debug type",
+            default = "full",
+        ),
+        "optimize": attr.bool(
+            doc = "Enable optimization.",
+            default = False,
+        ),
+        "ilasm_exe": attr.label(
+            default = Label("//:artifacts/bin/coreclr/linux.x64.Debug/ilasm"),
+            cfg = "exec",
+            executable = True,
+            allow_files = True,
+        ),
+        "_launcher_sh": attr.label(
+            doc = "A template file for the launcher on Linux/MacOS",
+            default = "//:eng/run_test.sh.tpl",
+            allow_single_file = True,
+        ),
+    },
+    test = True,
+)
+
+def il_coreclr_test(
+    name,
+    srcs,
+    **kwargs
+):
+    _il_test(
+        name = name,
+        srcs = srcs,
+        out = name + ".dll",
+        **kwargs
+    )
+
 
 def coreclr_merged_test(
     name,
@@ -159,6 +242,6 @@ def coreclr_merged_test(
     live_csharp_test(
         name = name,
         deps = deps + transformed_deps,
-        tags = tags + ["merged"],
+        tags = tags + ["merged", "manual"],
         **kwargs
     )
