@@ -250,7 +250,7 @@ def live_csharp_binary(
         **kwargs
     )
 
-def _create_launcher(ctx, runfiles, entry_dll):
+def create_launcher(ctx, runfiles, entry_dll):
     windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
 
     launcher = ctx.actions.declare_file("{}.{}".format(entry_dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = entry_dll)
@@ -323,7 +323,7 @@ def build_binary(ctx, compile_action):
     default_info_files = [dll] + runtime_provider.xml_docs + runtime_provider.appsetting_files.to_list()
     additional_runfiles = []
 
-    launcher = _create_launcher(ctx, additional_runfiles, dll)
+    launcher = create_launcher(ctx, additional_runfiles, dll)
 
     runtimeconfig = None
     depsjson = None
