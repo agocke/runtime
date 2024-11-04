@@ -19,6 +19,7 @@ foreach (var projPath in args)
     var srcs = new List<string>();
     bool allowUnsafe = false;
     bool? optimize = null;
+    var tags = new List<string>();
 
     var projXml = XDocument.Load(projFullPath);
     foreach (var projElement in projXml.Root!.Elements())
@@ -58,6 +59,9 @@ foreach (var projPath in args)
                             switch (debugType)
                             {
                                 case "none":
+                                    // The bazel rules don't support "none" so we'll just use the default.
+                                    debugType = null;
+                                    break;
                                 case "portable":
                                 case "embedded":
                                 case "pdbonly":
@@ -80,6 +84,10 @@ foreach (var projPath in args)
                             {
                                 optimize = false;
                             }
+                            else if (optimizeString == "")
+                            {
+                                optimize = null;
+                            }
                             else
                             {
                                 Console.Error.WriteLine($"Unknown Optimize value: {propElement.Value}");
@@ -87,6 +95,12 @@ foreach (var projPath in args)
                             }
                             break;
                         }
+                        case "requiresprocessisolation":
+                            // Nothing to do here for now since the test runners are all isolated.
+                            break;
+                        case "jitoptimizationsensitive":
+                            tags.Add("JitOptimizationSensitive");
+                            break;
                         default:
                             Console.Error.WriteLine($"Unknown PropertyGroup element: {propElement.Name}");
                             goto UnsupportedProject;
@@ -130,7 +144,14 @@ foreach (var projPath in args)
         }
     }
 
-    WriteBazelTest(projFullPath, priority, debugType, optimize, allowUnsafe, srcs);
+    WriteBazelTest(
+        projFullPath,
+        priority,
+        debugType,
+        optimize,
+        allowUnsafe,
+        srcs,
+        tags);
 
 UnsupportedProject:
     // This project contains data we don't understand -- continue to next one
@@ -145,7 +166,8 @@ static void WriteBazelTest(
     string? debugType,
     bool? optimize,
     bool allowUnsafe,
-    List<string> sources)
+    List<string> sources,
+    List<string> tags)
 {
     // Write to a BUILD.bazel file in the same directory as the project file
     var projDir = Path.GetDirectoryName(projPath)!;
@@ -168,6 +190,10 @@ static void WriteBazelTest(
     if (optimize != null)
     {
         optLines.Add(Environment.NewLine + $"    optimize = {optimize},");
+    }
+    if (tags.Count > 0)
+    {
+        optLines.Add(Environment.NewLine + $"    tags = [{string.Join(", ", tags.Select(t => $"\"{t}\""))}],");
     }
     string bazelTestText = $"""
 

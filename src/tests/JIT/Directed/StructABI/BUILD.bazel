@@ -4,7 +4,6 @@ coreclr_test(
     name = "FieldListByteNodeTypeMismatchX86",
     srcs = ["FieldListByteNodeTypeMismatchX86.cs"],
     allow_unsafe_blocks = True,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -49,14 +48,12 @@ coreclr_test(
 coreclr_test(
     name = "structfieldparam_r",
     srcs = ["structfieldparam.cs"],
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "structfieldparam_ro",
     srcs = ["structfieldparam.cs"],
-    debug_type = "none",
     optimize = True,
 )
 

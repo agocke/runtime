@@ -20,14 +20,12 @@ coreclr_test(
     name = "straccess1_cs_r",
     srcs = ["straccess1.cs"],
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "straccess1_cs_ro",
     srcs = ["straccess1.cs"],
-    debug_type = "none",
     optimize = True,
 )
 
@@ -53,7 +51,6 @@ coreclr_test(
     srcs = ["straccess2.cs"],
     allow_unsafe_blocks = True,
     pri = 1,
-    debug_type = "none",
     optimize = False,
 )
 
@@ -61,7 +58,6 @@ coreclr_test(
     name = "straccess2_cs_ro",
     srcs = ["straccess2.cs"],
     allow_unsafe_blocks = True,
-    debug_type = "none",
     optimize = True,
 )
 
@@ -82,13 +78,11 @@ coreclr_test(
 coreclr_test(
     name = "straccess3_cs_r",
     srcs = ["straccess3.cs"],
-    debug_type = "none",
     optimize = False,
 )
 
 coreclr_test(
     name = "straccess3_cs_ro",
     srcs = ["straccess3.cs"],
-    debug_type = "none",
     optimize = True,
 )

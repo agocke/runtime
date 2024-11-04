@@ -7,6 +7,7 @@ exports_files([
     "eng/run_binary.sh.tpl",
     "eng/run_test.sh.tpl",
     "artifacts/obj/coreclr/System.Private.CoreLib/linux.x64.Debug/System.Private.CoreLib.Strings.resources",
+    "artifacts/bin/coreclr/linux.x64.Debug/ilasm",
 ])
 
 copy_to_directory(
