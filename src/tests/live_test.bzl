@@ -142,9 +142,13 @@ def _il_test_impl(ctx):
     if ctx.attr.optimize:
         args.append("-optimize")
 
-    additional_runfiles = []
+    args.append("-output=%s" % ctx.outputs.out.path)
+
+    for src in ctx.files.srcs:
+        args.append(src.path)
 
     dll = ctx.outputs.out
+    additional_runfiles = [dll]
 
     ctx.actions.run(
         inputs = ctx.files.srcs,
