@@ -90,7 +90,7 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
-        "//src/libraries:ref_System.Collections",
+        "//src/libraries/System.Collections:ref_System.Collections",
     ],
     allow_unsafe_blocks = True,
 )
