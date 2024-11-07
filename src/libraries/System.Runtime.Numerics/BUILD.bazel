@@ -1,0 +1,11 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Runtime.Numerics",
+    srcs = [
+        "ref/System.Runtime.Numerics.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+    ],
+)

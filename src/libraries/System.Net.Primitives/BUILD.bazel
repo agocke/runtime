@@ -1,0 +1,13 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Net.Primitives",
+    srcs = [
+        "ref/System.Net.Primitives.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_Microsoft.Win32.Primitives",
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
+    ],
+)
