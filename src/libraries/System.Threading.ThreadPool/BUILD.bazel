@@ -1,0 +1,14 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
+
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Threading.ThreadPool",
+    srcs = [
+        "ref/System.Threading.ThreadPool.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Threading.Overlapped:ref_System.Threading.Overlapped",
+    ],
+    allow_unsafe_blocks = True,
+)

@@ -1,0 +1,15 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Collections.Immutable",
+    srcs = [
+        "ref/System.Collections.Immutable.cs",
+        "ref/System.Collections.Immutable.netcoreapp.cs",
+        # net9 only
+        "ref/System.Collections.Immutable.net9.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections:ref_System.Collections",
+    ],
+)
