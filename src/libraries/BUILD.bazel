@@ -64,8 +64,8 @@ netcoreapp_ref_assembly(
     srcs = [
         "Microsoft.Win32.Primitives/ref/Microsoft.Win32.Primitives.cs",
         "//src/libraries/System.Diagnostics.Contracts:ref/System.Diagnostics.Contracts.cs",
-        "//src/libraries/System.Diagnostics.Contracts:ref/System.Diagnostics.Tracing.cs",
-        "//src/libraries/System.Diagnostics.Contracts:ref/System.Diagnostics.Tracing.Counters.cs",
+        "//src/libraries/System.Diagnostics.Tracing:ref/System.Diagnostics.Tracing.cs",
+        "//src/libraries/System.Diagnostics.Tracing:ref/System.Diagnostics.Tracing.Counters.cs",
         "//src/libraries/System.Numerics.Vectors:ref/System.Numerics.Vectors.cs",
         "//src/libraries/System.Reflection.Emit.ILGeneration:ref/System.Reflection.Emit.ILGeneration.cs",
         "//src/libraries/System.Reflection.Emit.Lightweight:ref/System.Reflection.Emit.Lightweight.cs",
@@ -85,7 +85,7 @@ netcoreapp_ref_assembly(
         "//src/libraries/System.Diagnostics.StackTrace:ref/System.Diagnostics.StackTrace.cs",
         "//src/libraries/System.Memory:ref/System.Memory.cs",
         "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.cs",
-        "//src/libraries/System.Threading:ref/System.Threading.cs",
+        "System.Threading/ref/System.Threading.cs",
 
         # types only exposed through CoreLib, this is manually maintained -->
         "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
@@ -255,7 +255,7 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         ":ref_System.Runtime",
-        ":ref_System.ObjectModel",
+        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
         ":ref_System.Collections.NonGeneric",
         ":ref_System.ComponentModel",
     ],
@@ -371,7 +371,7 @@ netcoreapp_impl_assembly(
         "System.Diagnostics.Process/src/System/Diagnostics/MonitoringDescriptionAttribute.cs",
         "System.Diagnostics.Process/src/System/Collections/Specialized/StringDictionaryWrapper.cs",
 
-        "//src/libraries/System.Private.CoreLib/src:System/PasteArguments.cs",
+        "//src/libraries/System.Private.CoreLib:src/System/PasteArguments.cs",
 
         "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
         "//src/libraries/Common:src/System/Runtime/Serialization/SerializationGuard.cs",
@@ -443,7 +443,7 @@ netcoreapp_impl_assembly(
         ":ref_System.Collections.Specialized",
         ":ref_System.ComponentModel.Primitives",
         ":ref_System.Diagnostics.FileVersionInfo",
-        ":ref_System.IO.FileSystem.DriveInfo",
+        "//src/libraries/System.IO.FileSystem.DriveInfo:ref_System.IO.FileSystem.DriveInfo",
         "//src/libraries/System.Memory:ref_System.Memory",
         ":ref_System.IO.Pipes",
         ":ref_System.Runtime",
@@ -451,7 +451,7 @@ netcoreapp_impl_assembly(
 #        ":ref_System.Text.Encoding.Extensions",
         ":ref_System.Threading",
 #        ":ref_System.Threading.Thread",
-        ":ref_System.Threading.ThreadPool",
+        "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
     ],
     allow_unsafe_blocks = True,
 )
@@ -495,7 +495,7 @@ netcoreapp_impl_assembly(
     deps = [
         ":ref_System.Collections.NonGeneric",
         ":ref_System.ComponentModel",
-        ":ref_System.ObjectModel",
+        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
         ":ref_System.Runtime",
         ":ref_System.Threading",
     ],
@@ -539,8 +539,8 @@ netcoreapp_impl_assembly(
             "System.Console/src/System/IO/SyncTextReader.Unix.cs",
             "System.Console/src/System/IO/KeyParser.cs",
 
-            "//src/libraries/System.Private.CoreLib/src:System/IO/PersistedFiles.Unix.cs",
-            "//src/libraries/System.Private.CoreLib/src:System/IO/PersistedFiles.Names.Unix.cs",
+            "//src/libraries/System.Private.CoreLib:src/System/IO/PersistedFiles.Unix.cs",
+            "//src/libraries/System.Private.CoreLib:src/System/IO/PersistedFiles.Names.Unix.cs",
 
             "//src/libraries/Common:src/System/Console/ConsoleUtils.cs",
             "//src/libraries/Common:src/System/Text/EncodingHelper.Unix.cs",

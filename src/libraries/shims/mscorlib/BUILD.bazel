@@ -39,12 +39,14 @@ netcoreapp_ref_assembly(
         "//src/libraries/shims/stubs:ref_System.Security.Permissions",
         "//src/libraries/shims/stubs:ref_System.Threading.AccessControl",
     ],
+    keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/ECMA.snk"
 )
 
 netcoreapp_impl_assembly(
     name = "impl_mscorlib",
     srcs = [ "src/mscorlib.cs" ],
     deps = [
+        "//src/libraries/Microsoft.Win32.Registry:impl_Microsoft.Win32.Registry",
         "//src/libraries/System.Collections:impl_System.Collections",
         "//src/libraries:ref_System.Private.CoreLib",
         "//src/libraries/System.Reflection.TypeExtensions:ref_System.Reflection.TypeExtensions",

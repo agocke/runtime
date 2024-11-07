@@ -1,5 +1,5 @@
 load(
-    "//src/libraries/System.Private.CoreLib/src:files.bzl",
+    "//src/libraries/System.Private.CoreLib:src/files.bzl",
     "coreclr_files", "coreclr_linux_files", "coreclr_macos_files"
 )
 
@@ -315,16 +315,16 @@ csharp_library(
         # Prebuilt copy of event source data
         "src/NativeRuntimeEventSource.Generated.cs",
 
-    ] + common_imports + [ "//src/libraries/System.Private.CoreLib/src:%s" % x for x in coreclr_files ] +
+    ] + common_imports + [ "//src/libraries/System.Private.CoreLib:src/%s" % x for x in coreclr_files ] +
     select({
-        "@platforms//os:linux": [ "//src/libraries/System.Private.CoreLib/src:%s" % x for x in coreclr_linux_files ],
-        "@platforms//os:macos": [ "//src/libraries/System.Private.CoreLib/src:%s" % x for x in coreclr_macos_files ],
+        "@platforms//os:linux": [ "//src/libraries/System.Private.CoreLib:src/%s" % x for x in coreclr_linux_files ],
+        "@platforms//os:macos": [ "//src/libraries/System.Private.CoreLib:src/%s" % x for x in coreclr_macos_files ],
     }) +
     select({
         "@platforms//os:linux": linux_srcs,
         "@platforms//os:macos": macos_srcs,
     }),
-    resx_file = "//src/libraries/System.Private.CoreLib/src:Resources/Strings.resx",
+    resx_file = "//src/libraries/System.Private.CoreLib:src/Resources/Strings.resx",
     assembly_version = "9.0.0.0",
     nullable = "enable",
     allow_unsafe_blocks = True,
