@@ -1,5 +1,8 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
 
+exports_files([
+    "ref/System.Threading.ThreadPool.cs",
+])
 
 netcoreapp_ref_assembly(
     name = "ref_System.Threading.ThreadPool",

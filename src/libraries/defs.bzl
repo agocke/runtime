@@ -35,7 +35,7 @@ LIVE_REFPACK_DEPS = [
     "//src/libraries/System.Memory:ref_System.Memory",
     "//src/libraries/System.Runtime.Intrinsics:ref_System.Runtime.Intrinsics",
     "//src/libraries/System.Numerics.Vectors:ref_System.Numerics.Vectors",
-    "//src/libraries:ref_System.ObjectModel",
+    "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
     "//src/libraries:ref_System.ComponentModel.Primitives",
     "//src/libraries:ref_System.Collections.Specialized",
     "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
@@ -48,6 +48,7 @@ def netcoreapp_ref_assembly(
     deps = [],
     nowarn = [],
     compiler_options = [],
+    keyfile = None,
     **kwargs
 ):
     compiler_options = compiler_options + [
@@ -66,7 +67,7 @@ def netcoreapp_ref_assembly(
         assembly_version = "9.0.0.0",
         visibility = [ "//visibility:public" ],
         nullable = "annotations",
-        keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
+        keyfile = keyfile if keyfile else "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         nowarn = nowarn,
