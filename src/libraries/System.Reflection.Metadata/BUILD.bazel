@@ -1,3 +1,4 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
 
 exports_files([
     "src/System/Reflection/Metadata/AssemblyNameInfo.cs",
@@ -5,3 +6,17 @@ exports_files([
     "src/System/Reflection/Metadata/TypeNameParser.cs",
     "src/System/Reflection/Metadata/TypeNameParserHelpers.cs",
 ])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Reflection.Metadata",
+    srcs = [
+        "ref/System.Reflection.Metadata.cs",
+        "ref/System.Reflection.Metadata.Manual.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
+    ],
+    cls_compliant = False,
+    allow_unsafe_blocks = True,
+)

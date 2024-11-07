@@ -63,29 +63,29 @@ netcoreapp_ref_assembly(
     name = "ref_System.Private.CoreLib",
     srcs = [
         "Microsoft.Win32.Primitives/ref/Microsoft.Win32.Primitives.cs",
-        "System.Diagnostics.Contracts/ref/System.Diagnostics.Contracts.cs",
-        "System.Diagnostics.Tracing/ref/System.Diagnostics.Tracing.cs",
-        "System.Diagnostics.Tracing/ref/System.Diagnostics.Tracing.Counters.cs",
+        "//src/libraries/System.Diagnostics.Contracts:ref/System.Diagnostics.Contracts.cs",
+        "//src/libraries/System.Diagnostics.Contracts:ref/System.Diagnostics.Tracing.cs",
+        "//src/libraries/System.Diagnostics.Contracts:ref/System.Diagnostics.Tracing.Counters.cs",
         "//src/libraries/System.Numerics.Vectors:ref/System.Numerics.Vectors.cs",
-        "System.Reflection.Emit.ILGeneration/ref/System.Reflection.Emit.ILGeneration.cs",
-        "System.Reflection.Emit.Lightweight/ref/System.Reflection.Emit.Lightweight.cs",
-        "System.Reflection.Emit/ref/System.Reflection.Emit.cs",
-        "System.Reflection.Primitives/ref/System.Reflection.Primitives.cs",
+        "//src/libraries/System.Reflection.Emit.ILGeneration:ref/System.Reflection.Emit.ILGeneration.cs",
+        "//src/libraries/System.Reflection.Emit.Lightweight:ref/System.Reflection.Emit.Lightweight.cs",
+        "//src/libraries/System.Reflection.Emit:ref/System.Reflection.Emit.cs",
+        "//src/libraries/System.Reflection.Primitives:ref/System.Reflection.Primitives.cs",
         "//src/libraries/System.Runtime.Intrinsics:ref/System.Runtime.Intrinsics.cs",
         "//src/libraries/System.Runtime.Loader:ref/System.Runtime.Loader.cs",
         "System.Runtime/ref/System.Runtime.cs",
-        "System.Text.Encoding.Extensions/ref/System.Text.Encoding.Extensions.cs",
+        "//src/libraries/System.Text.Encoding.Extensions:ref/System.Text.Encoding.Extensions.cs",
         "//src/libraries/System.Threading.Overlapped:ref/System.Threading.Overlapped.cs",
-        "System.Threading.ThreadPool/ref/System.Threading.ThreadPool.cs",
-        "System.Threading.Thread/ref/System.Threading.Thread.cs",
+        "//src/libraries/System.Threading.ThreadPool:ref/System.Threading.ThreadPool.cs",
+        "//src/libraries/System.Threading.Thread:ref/System.Threading.Thread.cs",
 
         # contracts where types were partially moved to CoreLib, these are used both here and in the contract assemblies and are generated -->
         "System.Collections.Concurrent/ref/System.Collections.Concurrent.cs",
         "//src/libraries/System.Collections:ref/System.Collections.cs",
-        "System.Diagnostics.StackTrace/ref/System.Diagnostics.StackTrace.cs",
+        "//src/libraries/System.Diagnostics.StackTrace:ref/System.Diagnostics.StackTrace.cs",
         "//src/libraries/System.Memory:ref/System.Memory.cs",
         "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.cs",
-        "System.Threading/ref/System.Threading.cs",
+        "//src/libraries/System.Threading:ref/System.Threading.cs",
 
         # types only exposed through CoreLib, this is manually maintained -->
         "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
@@ -198,18 +198,6 @@ ref_impl_pair(
 )
 
 netcoreapp_ref_assembly(
-    name = "ref_System.Threading.ThreadPool",
-    srcs = [
-        "System.Threading.ThreadPool/ref/System.Threading.ThreadPool.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        "//src/libraries/System.Threading.Overlapped:ref_System.Threading.Overlapped",
-    ],
-    allow_unsafe_blocks = True,
-)
-
-netcoreapp_ref_assembly(
     name = "ref_System.Console",
     srcs = [
         "System.Console/ref/System.Console.cs",
@@ -223,16 +211,6 @@ netcoreapp_ref_assembly(
     name = "ref_System.Collections.Concurrent",
     srcs = [
         "System.Collections.Concurrent/ref/System.Collections.Concurrent.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
-
-netcoreapp_ref_assembly(
-    name = "ref_System.IO.FileSystem.DriveInfo",
-    srcs = [
-        "System.IO.FileSystem.DriveInfo/ref/System.IO.FileSystem.DriveInfo.cs",
     ],
     deps = [
         ":ref_System.Runtime",
@@ -270,17 +248,6 @@ netcoreapp_ref_assembly(
     ],
 )
 
-netcoreapp_ref_assembly(
-    name = "ref_System.ObjectModel",
-    srcs = [
-        "System.ObjectModel/ref/System.ObjectModel.cs",
-        "System.ObjectModel/ref/System.ObjectModel.Forwards.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        "//src/libraries/System.Collections:ref_System.Collections",
-    ],
-)
 netcoreapp_ref_assembly(
     name = "ref_System.ComponentModel.Primitives",
     srcs = [
