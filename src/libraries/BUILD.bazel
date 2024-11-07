@@ -26,6 +26,7 @@ ref_assembly_nowarns = [
 filegroup(
     name = "impl_netcoreapp",
     srcs = [
+        "//src/libraries/shims/mscorlib:impl_mscorlib",
         ":impl_Microsoft.Win32.Primitives",
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         ":impl_System.Runtime",
@@ -33,9 +34,9 @@ filegroup(
         ":impl_System.Diagnostics.Process",
         ":impl_System.ComponentModel.Primitives",
         ":impl_System.Console",
-        ":impl_System.Collections",
+        "//src/libraries/System.Collections:impl_System.Collections",
         ":impl_System.Linq",
-        ":impl_System.Memory",
+        "//src/libraries/System.Memory:impl_System.Memory",
         "//src/libraries/System.Numerics.Vectors:impl_System.Numerics.Vectors",
         "//src/libraries/System.Runtime.Intrinsics:impl_System.Runtime.Intrinsics",
         ":impl_System.Threading",
@@ -74,15 +75,15 @@ netcoreapp_ref_assembly(
         "//src/libraries/System.Runtime.Loader:ref/System.Runtime.Loader.cs",
         "System.Runtime/ref/System.Runtime.cs",
         "System.Text.Encoding.Extensions/ref/System.Text.Encoding.Extensions.cs",
-        "System.Threading.Overlapped/ref/System.Threading.Overlapped.cs",
+        "//src/libraries/System.Threading.Overlapped:ref/System.Threading.Overlapped.cs",
         "System.Threading.ThreadPool/ref/System.Threading.ThreadPool.cs",
         "System.Threading.Thread/ref/System.Threading.Thread.cs",
 
         # contracts where types were partially moved to CoreLib, these are used both here and in the contract assemblies and are generated -->
         "System.Collections.Concurrent/ref/System.Collections.Concurrent.cs",
-        "System.Collections/ref/System.Collections.cs",
+        "//src/libraries/System.Collections:ref/System.Collections.cs",
         "System.Diagnostics.StackTrace/ref/System.Diagnostics.StackTrace.cs",
-        "System.Memory/ref/System.Memory.cs",
+        "//src/libraries/System.Memory:ref/System.Memory.cs",
         "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.cs",
         "System.Threading/ref/System.Threading.cs",
 
@@ -117,50 +118,6 @@ netcoreapp_ref_assembly(
     ],
     allow_unsafe_blocks = True,
     nowarn = [ "CS0169", "CS0809", "CS0618", "CS3015" ]
-)
-
-netcoreapp_ref_assembly(
-    name = "ref_System.Memory",
-    srcs = [
-        "System.Memory/ref/System.Memory.cs",
-        "System.Memory/ref/System.Memory.Forwards.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ]
-)
-
-netcoreapp_impl_assembly(
-    name = "impl_System.Memory",
-    srcs = [
-        "System.Memory/src/System/SequencePosition.cs",
-
-        "System.Memory/src/System/ThrowHelper.cs",
-        "System.Memory/src/System/Buffers/ArrayMemoryPool.cs",
-        "System.Memory/src/System/Buffers/ArrayMemoryPool.ArrayMemoryPoolBuffer.cs",
-        "System.Memory/src/System/Buffers/BuffersExtensions.cs",
-        "System.Memory/src/System/Buffers/IBufferWriter.cs",
-        "System.Memory/src/System/Buffers/MemoryPool.cs",
-        "System.Memory/src/System/Buffers/ReadOnlySequence.cs",
-        "System.Memory/src/System/Buffers/ReadOnlySequenceDebugView.cs",
-        "System.Memory/src/System/Buffers/ReadOnlySequenceSegment.cs",
-        "System.Memory/src/System/Buffers/ReadOnlySequence.Helpers.cs",
-        "System.Memory/src/System/Buffers/SequenceReader.cs",
-        "System.Memory/src/System/Buffers/SequenceReader.Search.cs",
-        "System.Memory/src/System/Buffers/SequenceReaderExtensions.Binary.cs",
-        "System.Memory/src/System/Runtime/InteropServices/SequenceMarshal.cs",
-        "System.Memory/src/System/Text/EncodingExtensions.cs",
-
-        "//src/libraries/Common:src/System/Buffers/ArrayBufferWriter.cs",
-    ],
-    deps = [
-        ":ref_System.Private.CoreLib",
-    ],
-    allow_unsafe_blocks = True,
-    resx_file = "System.Memory/src/Resources/Strings.resx",
-    generate_facades = True,
-    facade_contract_assembly = ":ref_System.Memory",
-    defines = [ "MAKE_ABW_PUBLIC" ],
 )
 
 netcoreapp_ref_assembly(
@@ -241,17 +198,6 @@ ref_impl_pair(
 )
 
 netcoreapp_ref_assembly(
-    name = "ref_System.Threading.Overlapped",
-    srcs = [
-        "System.Threading.Overlapped/ref/System.Threading.Overlapped.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-    allow_unsafe_blocks = True,
-)
-
-netcoreapp_ref_assembly(
     name = "ref_System.Threading.ThreadPool",
     srcs = [
         "System.Threading.ThreadPool/ref/System.Threading.ThreadPool.cs",
@@ -271,65 +217,6 @@ netcoreapp_ref_assembly(
     deps = [
         ":ref_System.Runtime",
     ],
-)
-
-netcoreapp_ref_assembly(
-    name = "ref_System.Collections",
-    srcs = [
-        "System.Collections/ref/System.Collections.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
-
-netcoreapp_impl_assembly(
-    name = "impl_System.Collections",
-    srcs = [
-        "System.Collections/src/System/Collections/BitArray.cs",
-        "System.Collections/src/System/Collections/ThrowHelper.cs",
-        "System.Collections/src/System/Collections/Generic/LinkedList.cs",
-        "System.Collections/src/System/Collections/Generic/OrderedDictionary.cs",
-        "System.Collections/src/System/Collections/Generic/PriorityQueue.cs",
-        "System.Collections/src/System/Collections/Generic/PriorityQueueDebugView.cs",
-        "System.Collections/src/System/Collections/Generic/ReadOnlySet.cs",
-        "System.Collections/src/System/Collections/Generic/SortedDictionary.cs",
-        "System.Collections/src/System/Collections/Generic/SortedList.cs",
-        "System.Collections/src/System/Collections/Generic/SortedSet.cs",
-        "System.Collections/src/System/Collections/Generic/SortedSet.TreeSubSet.cs",
-        "System.Collections/src/System/Collections/Generic/SortedSetEqualityComparer.cs",
-        "System.Collections/src/System/Collections/Generic/Stack.cs",
-        "System.Collections/src/System/Collections/Generic/StackDebugView.cs",
-        "System.Collections/src/System/Collections/StructuralComparisons.cs",
-
-        "//src/libraries/System.Private.CoreLib/src:System/Collections/Generic/DebugViewDictionaryItem.cs",
-        "//src/libraries/System.Private.CoreLib/src:System/Collections/Generic/ICollectionDebugView.cs",
-        "//src/libraries/System.Private.CoreLib/src:System/Collections/Generic/IDictionaryDebugView.cs",
-        "//src/libraries/System.Private.CoreLib/src:System/Collections/ObjectModel/CollectionHelpers.cs",
-        "//src/libraries/System.Private.CoreLib/src:System/Collections/HashHelpers.cs",
-
-        "//src/libraries/Common:src/System/Collections/Generic/BitHelper.cs",
-        "//src/libraries/Common:src/System/Collections/Generic/EnumerableHelpers.cs",
-        "//src/libraries/Common:src/System/Obsoletions.cs",
-    ],
-    deps = [
-        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
-    ],
-    allow_unsafe_blocks = True,
-    resx_file = "System.Collections/src/Resources/Strings.resx",
-    generate_facades = True,
-    facade_contract_assembly = ":ref_System.Collections",
-    defines = [
-        "SYSTEM_COLLECTIONS",
-        "NET8_0_OR_GREATER", # TODO: Fix in rules
-    ],
-)
-
-ref_impl_pair(
-    name = "live_System.Collections",
-    ref = ":ref_System.Collections",
-    lib = ":impl_System.Collections",
-    visibility = [ "//visibility:public" ],
 )
 
 netcoreapp_ref_assembly(
@@ -391,7 +278,7 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         ":ref_System.Runtime",
-        ":ref_System.Collections",
+        "//src/libraries/System.Collections:ref_System.Collections",
     ],
 )
 netcoreapp_ref_assembly(
@@ -583,14 +470,14 @@ netcoreapp_impl_assembly(
     deps = [
         ":ref_Microsoft.Win32.Primitives",
 #        ":ref_Microsoft.Win32.Registry",
-        ":ref_System.Collections",
+        "//src/libraries/System.Collections:ref_System.Collections",
 #        ":ref_System.Collections.Concurrent",
         ":ref_System.Collections.NonGeneric",
         ":ref_System.Collections.Specialized",
         ":ref_System.ComponentModel.Primitives",
         ":ref_System.Diagnostics.FileVersionInfo",
         ":ref_System.IO.FileSystem.DriveInfo",
-        ":ref_System.Memory",
+        "//src/libraries/System.Memory:ref_System.Memory",
         ":ref_System.IO.Pipes",
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
@@ -718,8 +605,8 @@ netcoreapp_impl_assembly(
         ]
     }),
     deps = [
-        ":ref_System.Collections",
-        ":ref_System.Memory",
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries/System.Memory:ref_System.Memory",
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
 #        ":ref_System.Text.Encoding.Extensions",
@@ -806,8 +693,8 @@ netcoreapp_impl_assembly(
         "System.Linq/src/System/Linq/Zip.cs",
     ],
     deps = [
-        ":ref_System.Collections",
-        ":ref_System.Memory",
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries/System.Memory:ref_System.Memory",
         "//src/libraries/System.Numerics.Vectors:ref_System.Numerics.Vectors",
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
