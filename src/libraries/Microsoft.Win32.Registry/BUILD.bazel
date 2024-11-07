@@ -48,5 +48,8 @@ netcoreapp_impl_assembly(
         "src/Microsoft/Win32/RegistryView.cs",
         "src/System/Security/AccessControl/RegistryRights.cs",
         "src/System/Security/AccessControl/RegistrySecurity.cs",
-    ]
+    ],
+    deps = [
+        "//src/libraries:ref_System.Private.CoreLib"
+    ],
 )
