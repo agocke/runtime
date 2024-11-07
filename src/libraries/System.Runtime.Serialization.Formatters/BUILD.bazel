@@ -1,0 +1,13 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Runtime.Serialization.Formatters",
+    srcs = [
+        "ref/System.Runtime.Serialization.Formatters.cs",
+        "ref/System.Runtime.Serialization.Formatters.Forwards.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Collections.NonGeneric",
+        "//src/libraries:ref_System.Runtime",
+    ],
+)

@@ -1,0 +1,13 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Formats.Asn1",
+    srcs = [
+        "ref/System.Formats.Asn1.cs",
+    ],
+    deps = [
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
+    ],
+)

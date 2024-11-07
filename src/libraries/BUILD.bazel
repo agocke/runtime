@@ -204,7 +204,7 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         ":ref_System.Runtime",
-        ":ref_System.Threading.Overlapped",
+        "//src/libraries/System.Threading.Overlapped:ref_System.Threading.Overlapped",
     ],
     allow_unsafe_blocks = True,
 )
