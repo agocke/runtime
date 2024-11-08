@@ -11,3 +11,16 @@ netcoreapp_ref_assembly(
         "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
     ],
 )
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Security.AccessControl",
+    srcs = [
+        "System.Security.AccessControl.notsupported.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Collections.NonGeneric",
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+)

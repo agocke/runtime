@@ -50,6 +50,23 @@ netcoreapp_impl_assembly(
         "src/System/Security/AccessControl/RegistrySecurity.cs",
     ],
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib"
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Memory:ref_System.Memory",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
+        "//src/libraries/System.Security.AccessControl:ref_System.Security.AccessControl",
+        "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
     ],
+    analyzers = [
+        "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
+        "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
+    ],
+    allow_unsafe_blocks = True,
+    nowarn = [
+        "SYSLIB1092",
+    ],
+    defines = [
+        "REGISTRY_ASSEMBLY",
+    ],
+    resx_file = "src/Resources/Strings.resx",
 )

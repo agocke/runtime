@@ -52,13 +52,6 @@ ref_impl_pair(
     visibility = ["//visibility:public"],
 )
 
-ref_impl_pair(
-    name = "live_System.Console",
-    ref = ":ref_System.Console",
-    lib = ":impl_System.Console",
-    visibility = ["//visibility:public"],
-)
-
 netcoreapp_ref_assembly(
     name = "ref_System.Private.CoreLib",
     srcs = [
@@ -195,16 +188,6 @@ ref_impl_pair(
     ref = ":ref_System.Threading",
     lib = ":impl_System.Threading",
     visibility = [ "//visibility:public" ],
-)
-
-netcoreapp_ref_assembly(
-    name = "ref_System.Console",
-    srcs = [
-        "System.Console/ref/System.Console.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
 )
 
 netcoreapp_ref_assembly(
@@ -501,89 +484,6 @@ netcoreapp_impl_assembly(
     ],
     resx_file = "System.ComponentModel.Primitives/src/Resources/Strings.resx",
 )
-
-netcoreapp_impl_assembly(
-    name = "impl_System.Console",
-    analyzers = [
-        "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
-        "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
-    ],
-    srcs = [
-        "System.Console/src/System/Console.cs",
-        "System.Console/src/System/ConsoleCancelEventArgs.cs",
-        "System.Console/src/System/ConsoleColor.cs",
-        "System.Console/src/System/ConsoleSpecialKey.cs",
-        "System.Console/src/System/ConsoleKey.cs",
-        "System.Console/src/System/ConsoleKeyInfo.cs",
-        "System.Console/src/System/ConsoleModifiers.cs",
-        "System.Console/src/System/IO/ConsoleStream.cs",
-        "System.Console/src/System/IO/CachedConsoleStream.cs",
-        "System.Console/src/System/IO/SyncTextReader.cs",
-        "System.Console/src/System/IO/Error.cs",
-
-        "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
-        "//src/libraries/Common:src/System/Text/ConsoleEncoding.cs",
-        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
-        "//src/libraries/Common:src/System/Text/ValueStringBuilder.AppendSpanFormattable.cs",
-    ] + select({
-        "@platforms//os:linux": [
-            "System.Console/src/System/ConsolePal.Unix.cs",
-            "System.Console/src/System/ConsolePal.Unix.ConsoleStream.cs",
-            "System.Console/src/System/TerminalFormatStrings.cs",
-            "System.Console/src/System/TermInfo.cs",
-            "System.Console/src/System/TermInfo.WellKnownStrings.cs",
-            "System.Console/src/System/TermInfo.Database.cs",
-            "System.Console/src/System/TermInfo.DatabaseFactory.cs",
-            "System.Console/src/System/TermInfo.WellKnownNumbers.cs",
-            "System.Console/src/System/IO/StdInReader.cs",
-            "System.Console/src/System/IO/SyncTextReader.Unix.cs",
-            "System.Console/src/System/IO/KeyParser.cs",
-
-            "//src/libraries/System.Private.CoreLib:src/System/IO/PersistedFiles.Unix.cs",
-            "//src/libraries/System.Private.CoreLib:src/System/IO/PersistedFiles.Names.Unix.cs",
-
-            "//src/libraries/Common:src/System/Console/ConsoleUtils.cs",
-            "//src/libraries/Common:src/System/Text/EncodingHelper.Unix.cs",
-            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
-            "//src/libraries/Common:src/Interop/Unix/Interop.Errors.cs",
-            "//src/libraries/Common:src/Interop/Unix/Interop.IOErrors.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Close.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Dup.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.FileDescriptors.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.FLock.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetControlCharacters.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.IsATty.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Open.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.OpenFlags.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Poll.cs",
-            "//src/libraries/Common:src/Interop/Unix/Interop.Poll.Structs.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetEUid.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetPwUid.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SetTerminalInvalidationHandler.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SetSignalForBreak.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SNPrintF.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Read.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Write.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetWindowWidth.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.InitializeTerminalAndSignalHandling.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.ReadStdinUnbuffered.cs",
-            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.StdinReady.cs",
-        ]
-    }),
-    deps = [
-        "//src/libraries/System.Collections:ref_System.Collections",
-        "//src/libraries/System.Memory:ref_System.Memory",
-        ":ref_System.Runtime",
-        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
-#        ":ref_System.Text.Encoding.Extensions",
-        ":live_System.Threading",
-        ":ref_Microsoft.Win32.Primitives",
-    ],
-    resx_file = "System.Console/src/Resources/Strings.resx",
-    allow_unsafe_blocks = True,
-)
-
 netcoreapp_impl_assembly(
     name = "impl_System.Linq",
     srcs = [
