@@ -10,4 +10,7 @@ netcoreapp_ref_assembly(
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
     ],
+    defines = [
+        "NET9_0_OR_GREATER",
+    ]
 )
