@@ -26,10 +26,10 @@ LIVE_REFPACK_DEPS = [
     # Roughly topologically sorted
     "//src/libraries:ref_System.Runtime",
     "//src/libraries/System.Runtime.Loader:ref_System.Runtime.Loader",
-    "//src/libraries:ref_System.Console",
+    "//src/libraries/System.Console:ref_System.Console",
     "//src/libraries/System.Collections:ref_System.Collections",
-    "//src/libraries:ref_System.Collections.NonGeneric",
-    "//src/libraries:ref_System.ComponentModel",
+    "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
+    "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
     "//src/libraries:ref_System.Diagnostics.FileVersionInfo",
     "//src/libraries:ref_System.Diagnostics.Process",
     "//src/libraries/System.Memory:ref_System.Memory",
@@ -166,6 +166,7 @@ def netcoreapp_impl_assembly(
     facade_omit_types = [],
     resx_file = None,
     exclude_sr = False,
+    keyfile = None,
     **kwargs
 ):
     base_name = name[len("impl_"):]
@@ -201,7 +202,7 @@ def netcoreapp_impl_assembly(
         assembly_version = "9.0.0.0",
         visibility = [ "//visibility:public" ],
         nullable = "annotations",
-        keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
+        keyfile = keyfile if keyfile else "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         compiler_options = compiler_options,

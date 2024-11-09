@@ -85,7 +85,7 @@ netcoreapp_impl_assembly(
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
 #        ":ref_System.Text.Encoding.Extensions",
-        "//src/libraries:live_System.Threading",
+        "//src/libraries/System.Threading:ref_System.Threading",
         "//src/libraries:ref_Microsoft.Win32.Primitives",
     ],
     resx_file = "src/Resources/Strings.resx",

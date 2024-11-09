@@ -7,6 +7,28 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
-        "//src/libraries:ref_System.Collections.Concurrent",
+        "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
     ],
+)
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Threading.Tasks.Parallel",
+    srcs = [
+        "src/System/Threading/Tasks/Parallel.cs",
+        "src/System/Threading/Tasks/Parallel.ForEachAsync.cs",
+        "src/System/Threading/Tasks/ParallelETWProvider.cs",
+        "src/System/Threading/Tasks/ParallelLoopState.cs",
+        "src/System/Threading/Tasks/ParallelRangeManager.cs",
+        "src/System/Threading/Tasks/TaskReplicator.cs",
+    ],
+    deps = [
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
+        "//src/libraries/System.Diagnostics.Tracing:ref_System.Diagnostics.Tracing",
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Threading:ref_System.Threading",
+        "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
+    ],
+    allow_unsafe_blocks = True,
+    resx_file = "src/Resources/Strings.resx",
 )

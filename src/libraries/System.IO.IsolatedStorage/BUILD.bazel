@@ -9,3 +9,31 @@ netcoreapp_ref_assembly(
         "//src/libraries:ref_System.Runtime",
     ],
 )
+
+netcoreapp_impl_assembly(
+    name = "impl_System.IO.IsolatedStorage",
+    srcs = [
+        "src/System/IO/IsolatedStorage/IsolatedStorageException.cs",
+        "src/System/IO/IsolatedStorage/IsolatedStorageFile.cs",
+        "src/System/IO/IsolatedStorage/IsolatedStorageFileStream.cs",
+        "src/System/IO/IsolatedStorage/IsolatedStorage.cs",
+        "src/System/IO/IsolatedStorage/IsolatedStorageScope.cs",
+        "src/System/IO/IsolatedStorage/Helper.cs",
+        "src/System/IO/IsolatedStorage/INormalizeForIsolatedStorage.cs",
+
+        "//src/libraries/Common:src/System/Security/IdentityHelper.cs",
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+
+        "src/System/IO/IsolatedStorage/Helper.NonMobile.cs",
+        "src/System/IO/IsolatedStorage/Helper.Unix.cs",
+        "src/System/IO/IsolatedStorage/IsolatedStorageFile.NonMobile.cs",
+    ],
+    deps = [
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries/System.Linq:ref_System.Linq",
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+)

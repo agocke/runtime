@@ -11,3 +11,14 @@ netcoreapp_ref_assembly(
         "//src/libraries:ref_System.Runtime",
     ],
 )
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Runtime.CompilerServices.VisualC",
+    srcs = [
+        "src/System/Runtime/CompilerServices/Attributes.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+    ],
+    exclude_sr = True,
+)
