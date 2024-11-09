@@ -33,13 +33,13 @@ filegroup(
         "//src/libraries/System.Runtime.Loader:impl_System.Runtime.Loader",
         ":impl_System.Diagnostics.Process",
         ":impl_System.ComponentModel.Primitives",
-        ":impl_System.Console",
+        "//src/libraries/System.Console:impl_System.Console",
         "//src/libraries/System.Collections:impl_System.Collections",
-        ":impl_System.Linq",
+        "//src/libraries/System.Linq:impl_System.Linq",
         "//src/libraries/System.Memory:impl_System.Memory",
         "//src/libraries/System.Numerics.Vectors:impl_System.Numerics.Vectors",
         "//src/libraries/System.Runtime.Intrinsics:impl_System.Runtime.Intrinsics",
-        ":impl_System.Threading",
+        "//src/libraries/System.Threading:impl_System.Threading",
         "//src/libraries/System.Runtime.InteropServices:impl_System.Runtime.InteropServices",
     ],
     visibility = ["//visibility:public"],
@@ -73,12 +73,12 @@ netcoreapp_ref_assembly(
         "//src/libraries/System.Threading.Thread:ref/System.Threading.Thread.cs",
 
         # contracts where types were partially moved to CoreLib, these are used both here and in the contract assemblies and are generated -->
-        "System.Collections.Concurrent/ref/System.Collections.Concurrent.cs",
+        "//src/libraries/System.Collections.Concurrent:ref/System.Collections.Concurrent.cs",
         "//src/libraries/System.Collections:ref/System.Collections.cs",
         "//src/libraries/System.Diagnostics.StackTrace:ref/System.Diagnostics.StackTrace.cs",
         "//src/libraries/System.Memory:ref/System.Memory.cs",
         "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.cs",
-        "System.Threading/ref/System.Threading.cs",
+        "//src/libraries/System.Threading:ref/System.Threading.cs",
 
         # types only exposed through CoreLib, this is manually maintained -->
         "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
@@ -151,77 +151,6 @@ ref_impl_pair(
 )
 
 netcoreapp_ref_assembly(
-    name = "ref_System.Threading",
-    srcs = [
-        "System.Threading/ref/System.Threading.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
-
-netcoreapp_impl_assembly(
-    name = "impl_System.Threading",
-    srcs = [
-        "System.Threading/src/System/Threading/Barrier.cs",
-        "System.Threading/src/System/Threading/CDSsyncETWBCLProvider.cs",
-        "System.Threading/src/System/Threading/CountdownEvent.cs",
-        "System.Threading/src/System/Threading/HostExecutionContext.cs",
-        "System.Threading/src/System/Threading/HostExecutionContextManager.cs",
-        "System.Threading/src/System/Threading/LockCookie.cs",
-        "System.Threading/src/System/Threading/ReaderWriterLock.cs",
-
-        "//src/libraries/Common:src/System/HResults.cs",
-        "//src/libraries/Common:src/System/Obsoletions.cs",
-    ],
-    deps = [
-        ":ref_System.Private.CoreLib",
-    ],
-    resx_file = "System.Threading/src/Resources/Strings.resx",
-    allow_unsafe_blocks = True,
-    generate_facades = True,
-    facade_contract_assembly = ":ref_System.Threading",
-)
-
-ref_impl_pair(
-    name = "live_System.Threading",
-    ref = ":ref_System.Threading",
-    lib = ":impl_System.Threading",
-    visibility = [ "//visibility:public" ],
-)
-
-netcoreapp_ref_assembly(
-    name = "ref_System.Collections.Concurrent",
-    srcs = [
-        "System.Collections.Concurrent/ref/System.Collections.Concurrent.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
-
-netcoreapp_ref_assembly(
-    name = "ref_System.Collections.NonGeneric",
-    srcs = [
-        "System.Collections.NonGeneric/ref/System.Collections.NonGeneric.cs",
-        "System.Collections.NonGeneric/ref/System.Collections.NonGeneric.Forwards.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
-
-netcoreapp_ref_assembly(
-    name = "ref_System.ComponentModel",
-    srcs = [
-        "System.ComponentModel/ref/System.ComponentModel.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
-
-netcoreapp_ref_assembly(
     name = "ref_System.Diagnostics.FileVersionInfo",
     srcs = [
         "System.Diagnostics.FileVersionInfo/ref/System.Diagnostics.FileVersionInfo.cs",
@@ -239,8 +168,8 @@ netcoreapp_ref_assembly(
     deps = [
         ":ref_System.Runtime",
         "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
-        ":ref_System.Collections.NonGeneric",
-        ":ref_System.ComponentModel",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
     ],
 )
 
@@ -251,7 +180,7 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         ":ref_System.Runtime",
-        ":ref_System.ComponentModel.Primitives",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
     ],
 )
 
@@ -263,9 +192,9 @@ netcoreapp_ref_assembly(
     deps = [
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
-        ":ref_System.ComponentModel.Primitives",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
         ":ref_System.Collections.Specialized",
-        ":ref_System.Collections.NonGeneric",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         ":ref_System.Diagnostics.FileVersionInfo",
     ],
 )
@@ -422,9 +351,9 @@ netcoreapp_impl_assembly(
 #        ":ref_Microsoft.Win32.Registry",
         "//src/libraries/System.Collections:ref_System.Collections",
 #        ":ref_System.Collections.Concurrent",
-        ":ref_System.Collections.NonGeneric",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         ":ref_System.Collections.Specialized",
-        ":ref_System.ComponentModel.Primitives",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
         ":ref_System.Diagnostics.FileVersionInfo",
         "//src/libraries/System.IO.FileSystem.DriveInfo:ref_System.IO.FileSystem.DriveInfo",
         "//src/libraries/System.Memory:ref_System.Memory",
@@ -432,7 +361,7 @@ netcoreapp_impl_assembly(
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
 #        ":ref_System.Text.Encoding.Extensions",
-        ":ref_System.Threading",
+        "//src/libraries/System.Threading:ref_System.Threading",
 #        ":ref_System.Threading.Thread",
         "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
     ],
@@ -476,96 +405,11 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Obsoletions.cs",
     ],
     deps = [
-        ":ref_System.Collections.NonGeneric",
-        ":ref_System.ComponentModel",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
         "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
         ":ref_System.Runtime",
-        ":ref_System.Threading",
+        "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "System.ComponentModel.Primitives/src/Resources/Strings.resx",
-)
-netcoreapp_impl_assembly(
-    name = "impl_System.Linq",
-    srcs = [
-        "System.Linq/src/System/Linq/AppendPrepend.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Cast.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Concat.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/DefaultIfEmpty.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Distinct.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Grouping.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Iterator.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Lookup.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/OfType.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/OrderedEnumerable.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Range.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Repeat.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Reverse.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Select.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/SelectMany.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Skip.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/SkipTake.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Take.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Union.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Where.SpeedOpt.cs",
-        "System.Linq/src/System/Linq/Aggregate.cs",
-        "System.Linq/src/System/Linq/AnyAll.cs",
-        "System.Linq/src/System/Linq/AppendPrepend.cs",
-        "System.Linq/src/System/Linq/Average.cs",
-        "System.Linq/src/System/Linq/Cast.cs",
-        "System.Linq/src/System/Linq/Chunk.cs",
-        "System.Linq/src/System/Linq/Concat.cs",
-        "System.Linq/src/System/Linq/Contains.cs",
-        "System.Linq/src/System/Linq/AggregateBy.cs",
-        "System.Linq/src/System/Linq/CountBy.cs",
-        "System.Linq/src/System/Linq/Count.cs",
-        "System.Linq/src/System/Linq/DebugView.cs",
-        "System.Linq/src/System/Linq/DefaultIfEmpty.cs",
-        "System.Linq/src/System/Linq/Distinct.cs",
-        "System.Linq/src/System/Linq/ElementAt.cs",
-        "System.Linq/src/System/Linq/Enumerable.cs",
-        "System.Linq/src/System/Linq/Except.cs",
-        "System.Linq/src/System/Linq/First.cs",
-        "System.Linq/src/System/Linq/Grouping.cs",
-        "System.Linq/src/System/Linq/GroupJoin.cs",
-        "System.Linq/src/System/Linq/Index.cs",
-        "System.Linq/src/System/Linq/Intersect.cs",
-        "System.Linq/src/System/Linq/Iterator.cs",
-        "System.Linq/src/System/Linq/Join.cs",
-        "System.Linq/src/System/Linq/Last.cs",
-        "System.Linq/src/System/Linq/Lookup.cs",
-        "System.Linq/src/System/Linq/Max.cs",
-        "System.Linq/src/System/Linq/MaxMin.cs",
-        "System.Linq/src/System/Linq/Min.cs",
-        "System.Linq/src/System/Linq/OfType.cs",
-        "System.Linq/src/System/Linq/OrderBy.cs",
-        "System.Linq/src/System/Linq/OrderedEnumerable.cs",
-        "System.Linq/src/System/Linq/PartialArrayEnumerator.cs",
-        "System.Linq/src/System/Linq/Range.cs",
-        "System.Linq/src/System/Linq/Repeat.cs",
-        "System.Linq/src/System/Linq/Reverse.cs",
-        "System.Linq/src/System/Linq/SegmentedArrayBuilder.cs",
-        "System.Linq/src/System/Linq/Select.cs",
-        "System.Linq/src/System/Linq/SelectMany.cs",
-        "System.Linq/src/System/Linq/SequenceEqual.cs",
-        "System.Linq/src/System/Linq/Single.cs",
-        "System.Linq/src/System/Linq/SingleLinkedNode.cs",
-        "System.Linq/src/System/Linq/Skip.cs",
-        "System.Linq/src/System/Linq/Sum.cs",
-        "System.Linq/src/System/Linq/Take.cs",
-        "System.Linq/src/System/Linq/ThrowHelper.cs",
-        "System.Linq/src/System/Linq/ToCollection.cs",
-        "System.Linq/src/System/Linq/Union.cs",
-        "System.Linq/src/System/Linq/Utilities.cs",
-        "System.Linq/src/System/Linq/Where.cs",
-        "System.Linq/src/System/Linq/Zip.cs",
-    ],
-    deps = [
-        "//src/libraries/System.Collections:ref_System.Collections",
-        "//src/libraries/System.Memory:ref_System.Memory",
-        "//src/libraries/System.Numerics.Vectors:ref_System.Numerics.Vectors",
-        ":ref_System.Runtime",
-        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
-        "//src/libraries/System.Runtime.Intrinsics:ref_System.Runtime.Intrinsics",
-    ],
-    resx_file = "System.Linq/src/Resources/Strings.resx",
 )

@@ -6,7 +6,7 @@ netcoreapp_ref_assembly(
         "ref/System.Security.AccessControl.cs",
     ],
     deps = [
-        "//src/libraries:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
     ],
@@ -18,7 +18,7 @@ netcoreapp_impl_assembly(
         "System.Security.AccessControl.notsupported.cs",
     ],
     deps = [
-        "//src/libraries:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
     ],

@@ -169,7 +169,7 @@ netcoreapp_impl_assembly(
     deps = [
         "//src/libraries:ref_System.Private.CoreLib",
         "//src/libraries:impl_System.Runtime",
-        "//src/libraries:ref_System.Collections.Concurrent",
+        "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
     ],
     allow_unsafe_blocks = True,
     resx_file = "src/Resources/Strings.resx",
