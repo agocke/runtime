@@ -9,7 +9,7 @@ coreclr_merged_test(
         "@paket.main//xunit.extensibility.core",
     ],
     test_deps = [
-        ":nintindexoutofrange",
+        "//src/tests/JIT/Directed/Arrays:nintindexoutofrange",
         "//src/tests/JIT/Directed/physicalpromotion:addressinterference",
         "//src/tests/JIT/Directed/physicalpromotion:fuzzlyn1",
         "//src/tests/JIT/Directed/physicalpromotion:fuzzlyn2",

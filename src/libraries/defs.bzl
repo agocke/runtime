@@ -28,6 +28,7 @@ LIVE_REFPACK_DEPS = [
     "//src/libraries/System.Runtime.Loader:ref_System.Runtime.Loader",
     "//src/libraries/System.Console:ref_System.Console",
     "//src/libraries/System.Collections:ref_System.Collections",
+    "//src/libraries/System.Linq:ref_System.Linq",
     "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
     "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
     "//src/libraries:ref_System.Diagnostics.FileVersionInfo",

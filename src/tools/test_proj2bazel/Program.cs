@@ -195,9 +195,11 @@ static void WriteBazelTest(
     {
         optLines.Add(Environment.NewLine + $"    tags = [{string.Join(", ", tags.Select(t => $"\"{t}\""))}],");
     }
+    string test_rule_name = projPath.EndsWith("ilproj") ? "il_coreclr_test" : "coreclr_test";
     string bazelTestText = $"""
+    load("//src/tests:live_test.bzl", "{test_rule_name}")
 
-    coreclr_test(
+    {test_rule_name}(
         name = "{Path.GetFileNameWithoutExtension(projPath)}",
         srcs = [{string.Join(", ", sources.Select(s => $"\"{s}\""))}],{string.Join("", optLines)}
     )
