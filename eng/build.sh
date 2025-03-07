@@ -156,6 +156,7 @@ cmakeargs=''
 extraargs=''
 crossBuild=0
 portableBuild=1
+bootstrap=false
 
 source $scriptroot/common/native/init-os-and-arch.sh
 
@@ -220,6 +221,11 @@ while [[ $# > 0 ]]; do
           ;;
       esac
       shift 2
+      ;;
+
+     -bootstrap)
+      bootstrap=true
+      shift 1
       ;;
 
      -configuration|-c)
@@ -556,6 +562,19 @@ fi
 arguments="$arguments -tl:false"
 
 initDistroRid "$os" "$arch" "$crossBuild"
+
+if [[ "$bootstrap" == true ]]; then
+  # Import Arcade functions
+  echo "$scriptroot/common/tools.sh"
+  . "$scriptroot/common/tools.sh"
+
+  bootstrap_dir="$artifacts_dir/bootstrap"
+
+  echo "Building bootstrap toolset"
+  "$scriptroot/common/build.sh" -restore -build -p:Subset=bootstrap
+
+  exit 0
+fi
 
 # Disable targeting pack caching as we reference a partially constructed targeting pack and update it later.
 # The later changes are ignored when using the cache.

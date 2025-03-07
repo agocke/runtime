@@ -177,6 +177,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <SubsetName Include="Bootstrap" Description="The bootstrap projects. Construct a toolset needed to build the rest of the product." />
+
     <!-- CoreClr -->
     <SubsetName Include="Clr" Description="The full CoreCLR runtime. Equivalent to: $(DefaultCoreClrSubsets)" />
     <SubsetName Include="Clr.NativePrereqs" Description="Managed tools that support building the native components of the runtime (such as DacTableGen)." />
@@ -264,6 +266,10 @@
       <BuildInParallel>false</BuildInParallel>
     </ProjectToBuild>
   </ItemDefinitionGroup>
+
+  <ItemGroup Condition="$(_subset.Contains('+bootstrap+'))">
+    <ProjectToBuild Include="$(BootstrapProjectRoot)bootstrap.proj" Category="bootstrap" />
+  </ItemGroup>
 
   <!-- emscripten provisioning, needs to be placed before runtime projects -->
   <ItemGroup Condition="$(_subset.Contains('+mono.emsdk+'))">
