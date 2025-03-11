@@ -268,7 +268,10 @@
   </ItemDefinitionGroup>
 
   <ItemGroup Condition="$(_subset.Contains('+bootstrap+'))">
-    <ProjectToBuild Include="$(BootstrapProjectRoot)bootstrap.proj" Category="bootstrap" />
+    <ProjectToBuild Include="$(CoreClrProjectRoot)tools\aot\crossgen2\crossgen2_publish.csproj" Condition="'$(NativeAotSupported)' == 'true'" Category="clr" />
+    <ProjectToBuild Include="$(CoreClrProjectRoot)tools\aot\ILCompiler.Build.Tasks\ILCompiler.Build.Tasks.csproj" Category="clr" Condition="'$(NativeAotSupported)' == 'true'" />
+    <ProjectToBuild Include="$(CoreClrProjectRoot)tools\aot\ILCompiler\ILCompiler_publish.csproj" Category="clr" Condition="'$(NativeAotSupported)' == 'true'" />
+    <ProjectToBuild Include="$(CoreClrProjectRoot)nativeaot\BuildIntegration\BuildIntegration.proj" Category="clr" Condition="'$(NativeAotSupported)' == 'true'" />
   </ItemGroup>
 
   <!-- emscripten provisioning, needs to be placed before runtime projects -->
