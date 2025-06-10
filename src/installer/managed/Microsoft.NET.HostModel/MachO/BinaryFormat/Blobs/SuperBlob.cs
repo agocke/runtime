@@ -4,6 +4,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.IO;
 using System.IO.MemoryMappedFiles;
@@ -35,8 +36,8 @@ internal class SuperBlob : IBlob
     /// </summary>
     protected uint SubBlobCount => (uint)_blobIndices.Count;
 
-    private List<BlobIndex> _blobIndices;
-    private List<IBlob> _blobs;
+    private ImmutableArray<BlobIndex> _blobIndices;
+    private ImmutableArray<IBlob> _blobs;
 
     protected IEnumerable<IBlob> Blobs => _blobs;
     protected IEnumerable<BlobIndex> BlobIndices => _blobIndices;
@@ -139,5 +140,29 @@ internal class SuperBlob : IBlob
         }
 
         return (int)Size;
+    }
+
+    /// <summary>
+    /// Creates a SuperBlob by reading from a memory-mapped file.
+    /// </summary>
+    public static SuperBlob Read(IMachOFileReader reader, long offset)
+    {
+        BlobMagic magic = (BlobMagic)reader.ReadUInt32BigEndian(offset);
+        uint size = reader.ReadUInt32BigEndian(offset + sizeof(BlobMagic));
+        uint count = reader.ReadUInt32BigEndian(offset + sizeof(BlobMagic) + sizeof(uint));
+
+        var blobs = new List<IBlob>((int)count);
+        var blobIndices = new List<BlobIndex>((int)count);
+        for (int i = 0; i < count; i++)
+        {
+            reader.Read(offset + sizeof(uint) * 3 + (i * BlobIndex.Size), out BlobIndex blobIndex);
+            blobIndices.Add(blobIndex);
+            blobs.Add(SimpleBlob.Read(reader, offset + blobIndex.Offset));
+        }
+        Debug.Assert(size == sizeof(uint) + sizeof(uint) + sizeof(uint)
+                             + blobIndices.Count * BlobIndex.Size
+                             + blobs.Sum(b => b.Size));
+
+        return new SuperBlob(magic, blobIndices, blobs);
     }
 }

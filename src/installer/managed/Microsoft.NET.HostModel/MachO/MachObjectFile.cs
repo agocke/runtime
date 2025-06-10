@@ -88,7 +88,7 @@ internal unsafe partial class MachObjectFile
             out long lowestSection);
         EmbeddedSignatureBlob? codeSignatureBlob = codeSignatureLC.Command.IsDefault
             ? null
-            : (EmbeddedSignatureBlob)BlobFactory.ReadBlob(file, codeSignatureLC.Command.GetDataOffset(header));
+            : (EmbeddedSignatureBlob)BlobParser.ReadBlob(file, codeSignatureLC.Command.GetDataOffset(header));
         return new MachObjectFile(
             header,
             codeSignatureLC,

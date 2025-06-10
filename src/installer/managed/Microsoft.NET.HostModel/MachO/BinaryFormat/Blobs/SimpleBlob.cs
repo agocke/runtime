@@ -17,8 +17,10 @@ internal class SimpleBlob : IBlob
     /// <inheritdoc />
     public BlobMagic Magic { get; }
 
+    private const uint HeaderSize = sizeof(uint) + sizeof(uint);
+
     /// <inheritdoc />
-    public uint Size => sizeof(uint) + sizeof(uint) + (uint)Data.Length;
+    public uint Size => HeaderSize + (uint)Data.Length;
 
     /// <summary>
     /// Gets the data stored in the blob after the 8-byte header.
@@ -51,5 +53,18 @@ internal class SimpleBlob : IBlob
         bytesWritten += Data.Length;
 
         return bytesWritten;
+    }
+
+    public static SimpleBlob Read(IMachOFileReader reader, long offset)
+    {
+        var blobMagic = (BlobMagic)reader.ReadUInt32BigEndian(offset);
+        var size = reader.ReadUInt32BigEndian(offset + sizeof(uint));
+
+        uint dataSize = size - HeaderSize;
+        byte[] data = new byte[dataSize];
+        if (dataSize > 0)
+            reader.ReadExactly(offset + sizeof(uint) * 2, data);
+
+        return new SimpleBlob(blobMagic, data);
     }
 }

@@ -8,9 +8,9 @@ using System.Linq;
 namespace Microsoft.NET.HostModel.MachO;
 
 /// <summary>
-/// Factory for creating blob instances.
+/// Parser reading blobs from a Mach-O file.
 /// </summary>
-internal static class BlobFactory
+internal static class BlobParser
 {
     /// <summary>
     /// Reads a blob from a file at the specified offset.
@@ -23,50 +23,14 @@ internal static class BlobFactory
         var magic = (BlobMagic)reader.ReadUInt32BigEndian(offset);
         return magic switch
         {
-            BlobMagic.CodeDirectory => new CodeDirectoryBlob(ReadSimpleBlob(reader, offset)),
-            BlobMagic.Requirements => new RequirementsBlob(ReadSuperBlob(reader, offset)),
-            BlobMagic.Entitlements => new EntitlementsBlob(ReadSimpleBlob(reader, offset)),
-            BlobMagic.DerEntitlements => new DerEntitlementsBlob(ReadSimpleBlob(reader, offset)),
-            BlobMagic.CmsWrapper => new CmsWrapperBlob(ReadSimpleBlob(reader, offset)),
-            BlobMagic.EmbeddedSignature => new EmbeddedSignatureBlob(ReadSuperBlob(reader, offset)),
-            _ => ReadSimpleBlob(reader, offset)
+            BlobMagic.CodeDirectory => new CodeDirectoryBlob(SimpleBlob.Read(reader, offset)),
+            BlobMagic.Requirements => new RequirementsBlob(SuperBlob.Read(reader, offset)),
+            BlobMagic.Entitlements => new EntitlementsBlob(SimpleBlob.Read(reader, offset)),
+            BlobMagic.DerEntitlements => new DerEntitlementsBlob(SimpleBlob.Read(reader, offset)),
+            BlobMagic.CmsWrapper => new CmsWrapperBlob(SimpleBlob.Read(reader, offset)),
+            BlobMagic.EmbeddedSignature => new EmbeddedSignatureBlob(SuperBlob.Read(reader, offset)),
+            _ => SimpleBlob.Read(reader, offset)
         };
     }
 
-    private static SimpleBlob ReadSimpleBlob(IMachOFileReader reader, long offset)
-    {
-        var blobMagic = (BlobMagic)reader.ReadUInt32BigEndian(offset);
-        var size = reader.ReadUInt32BigEndian(offset + sizeof(uint));
-
-        uint dataSize = size - sizeof(uint) - sizeof(uint);
-        byte[] data = new byte[dataSize];
-        if (dataSize > 0)
-            reader.ReadExactly(offset + sizeof(uint) * 2, data);
-
-        return new SimpleBlob(blobMagic, data);
-    }
-
-    /// <summary>
-    /// Creates a SuperBlob by reading from a memory-mapped file.
-    /// </summary>
-    private static SuperBlob ReadSuperBlob(IMachOFileReader reader, long offset)
-    {
-        BlobMagic magic = (BlobMagic)reader.ReadUInt32BigEndian(offset);
-        uint size = reader.ReadUInt32BigEndian(offset + sizeof(BlobMagic));
-        uint count = reader.ReadUInt32BigEndian(offset + sizeof(BlobMagic) + sizeof(uint));
-
-        var blobs = new List<IBlob>((int)count);
-        var blobIndices = new List<BlobIndex>((int)count);
-        for (int i = 0; i < count; i++)
-        {
-            reader.Read(offset + sizeof(uint) * 3 + (i * BlobIndex.Size), out BlobIndex blobIndex);
-            blobIndices.Add(blobIndex);
-            blobs.Add(ReadBlob(reader, offset + blobIndex.Offset));
-        }
-        Debug.Assert(size == sizeof(uint) + sizeof(uint) + sizeof(uint)
-                             + blobIndices.Count * BlobIndex.Size
-                             + blobs.Sum(b => b.Size));
-
-        return new SuperBlob(magic, blobIndices, blobs);
-    }
 }
