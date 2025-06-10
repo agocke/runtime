@@ -12,7 +12,7 @@ namespace Microsoft.NET.HostModel.MachO;
 /// <summary>
 /// This class represents a simple blob with unstructured byte array data.
 /// </summary>
-internal class SimpleBlob : IBlob
+internal sealed class SimpleBlob : IBlob
 {
     /// <inheritdoc />
     public BlobMagic Magic { get; }
@@ -31,11 +31,6 @@ internal class SimpleBlob : IBlob
     {
         Magic = magic;
         Data = data;
-    }
-
-    protected SimpleBlob(SimpleBlob blob)
-        : this(blob.Magic, blob.Data)
-    {
     }
 
     /// <inheritdoc />
