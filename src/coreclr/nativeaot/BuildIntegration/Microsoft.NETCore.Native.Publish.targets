@@ -10,13 +10,36 @@
     </ItemGroup>
   </Target>
 
+  <UsingTask TaskName="SwapRuntimePacks" AssemblyFile="$(MSBuildThisFileDirectory)../aottask/bin/Debug/net10.0/aottask.dll" />
+  <Target Name="SwapRuntimePacks"
+          DependsOnTargets="ResolveFrameworkReferences"
+          BeforeTargets="ResolveRuntimePackAssets">
+
+      <SwapRuntimePacks
+        ResolvedRuntimePacks="@(ResolvedRuntimePack)"
+        NativeAotRuntimePacks="@(ResolvedTargetILCompilerPack)">
+          <Output TaskParameter="SwappedRuntimePacks" ItemName="SwappedRuntimePacks" />
+      </SwapRuntimePacks>
+
+      <ItemGroup>
+        <ResolvedRuntimePack Remove="@(ResolvedRuntimePack)" />
+        <ResolvedRuntimePack Include="@(SwappedRuntimePacks)" />
+      </ItemGroup>
+
+  </Target>
+
+  <Target Name="_FixupIlcPublishFiles"
+          DependsOnTargets="ComputeResolvedFilesToPublishList"
+          BeforeTargets="_ComputeManagedAssemblyToLink"
+          Condition="'$(PublishAot)' == 'true'">
+  </Target>
+
   <!--
     This target hooks into the dotnet CLI publish pipeline. That pipeline has
     a target called ComputeFilesToPublish which produces the ItemGroup
     ResolvedFileToPublish based on the inputs of @(IntermediateAssembly)
     and @(ResolvedAssembliesToPublish). We modify those two item groups
     to control what gets published after NativeAOT optimizes the application.
-  -->
   <Target Name="ComputeLinkedFilesToPublish"
           BeforeTargets="ComputeResolvedFilesToPublishList"
           DependsOnTargets="_ComputeAssembliesToCompileToNative;LinkNative">
@@ -32,6 +55,7 @@
       <IntermediateAssembly Include="$(NativeBinary)" />
     </ItemGroup>
   </Target>
+  -->
 
   <!--
     Filter the input publish file list selecting managed assemblies for compilation.
@@ -70,6 +94,7 @@
     <Error Condition="'@(PrivateSdkAssemblies)' == ''" Text="The PrivateSdkAssemblies ItemGroup is required for _ComputeAssembliesToCompileToNative" />
     <Error Condition="'@(FrameworkAssemblies)' == ''" Text="The FrameworkAssemblies ItemGroup is required for _ComputeAssembliesToCompileToNative" />
 
+    <!-- Assume all assemblies have been added to _ResolvedCopyLocalPublishAssets
     <ComputeManagedAssembliesToCompileToNative
       Assemblies="@(_ResolvedCopyLocalPublishAssets)"
       DotNetAppHostExecutableName="$(_DotNetAppHostExecutableName)"
@@ -82,6 +107,7 @@
       <Output TaskParameter="SatelliteAssemblies" ItemName="_SatelliteAssembliesToPublish" />
       <Output TaskParameter="AssembliesToSkipPublish" ItemName="_AssembliesToSkipPublish" />
     </ComputeManagedAssembliesToCompileToNative>
+    -->
 
   </Target>
 
