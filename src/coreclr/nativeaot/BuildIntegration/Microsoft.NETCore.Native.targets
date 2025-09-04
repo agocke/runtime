@@ -126,6 +126,15 @@ The .NET Foundation licenses this file to you under the MIT license.
       <ManagedAssemblyToLink Remove="@(ManagedAssemblyToLink)" />
       <ManagedAssemblyToLink Include="@(DefaultFrameworkAssemblies);@(_ManagedResolvedAssembliesToPublish);@(ManagedBinary)" />
     </ItemGroup>
+
+    <!-- Now that we know the managed inputs to ILLink/ILC we can remove them from the publish set,
+         since all managed assemblies will be compiled into the native binary. Next, remove all native
+         assets from the runtime pack, which are linked into the native binary by the native linker. -->
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ManagedAssemblyToLink)"/>
+      <_IlcNativeAssets Include="@(RuntimePackAsset)" Condition="'%(AssetType)' == 'native'" />
+      <ResolvedFileToPublish Remove="@(_IlcNativeAssets)" />
+    </ItemGroup>
   </Target>
 
   <!-- The properties below need to be defined only after we've found the correct runtime package reference -->
@@ -414,6 +423,10 @@ The .NET Foundation licenses this file to you under the MIT license.
       Command="
         dsymutil $(DsymUtilOptions) &quot;$(NativeBinary)&quot; &amp;&amp;
         strip -no_code_signature_warning -x &quot;$(NativeBinary)&quot;" />
+
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(NativeBinary)" />
+    </ItemGroup>
   </Target>
 
   <Target Name="CreateLib"

@@ -10,7 +10,7 @@
     </ItemGroup>
   </Target>
 
-  <UsingTask TaskName="SwapRuntimePacks" AssemblyFile="$(MSBuildThisFileDirectory)../aottask/bin/Debug/net10.0/aottask.dll" />
+  <UsingTask TaskName="SwapRuntimePacks" AssemblyFile="$(IlcBuildTasksPath)" />
   <Target Name="SwapRuntimePacks"
           DependsOnTargets="ResolveFrameworkReferences"
           BeforeTargets="ResolveRuntimePackAssets">
@@ -32,6 +32,11 @@
           DependsOnTargets="ComputeResolvedFilesToPublishList"
           BeforeTargets="_ComputeManagedAssemblyToLink"
           Condition="'$(PublishAot)' == 'true'">
+  </Target>
+
+  <Target Name="CompileNative"
+          DependsOnTargets="LinkNative"
+          BeforeTargets="ComputeFilesToPublish">
   </Target>
 
   <!--
@@ -111,11 +116,13 @@
 
   </Target>
 
+  <!--
   <Target Name="CopyNativeBinary" AfterTargets="Publish">
-    <!-- replace apphost with binary we generated during native compilation -->
+    <!- replace apphost with binary we generated during native compilation ->
     <Delete Files="$(PublishDir)\$(TargetName)$(NativeBinaryExt)" />
     <Copy SourceFiles="$(NativeBinary)" DestinationFolder="$(PublishDir)" />
   </Target>
+  -->
 
   <Target Name="_CopyAotSymbols" AfterTargets="Publish"
           Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true'">
