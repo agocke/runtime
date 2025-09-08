@@ -431,12 +431,13 @@ The .NET Foundation licenses this file to you under the MIT license.
       </ResolvedFileToPublish>
     </ItemGroup>
 
-    <!-- If symbol copy is enabled, remove the existing symbols (which is the original managed PDB) and
-         replace it with the native symbol file. -->
-    <ItemGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true'">
+    <!-- Always remove the original managed PDB -->
+    <ItemGroup>
+      <_symFileToRemove Include="$(_DebugSymbolsIntermediatePath)" />
       <ResolvedFileToPublish Remove="$(_DebugSymbolsIntermediatePath)" />
     </ItemGroup>
 
+    <!-- If symbol copy is enabled, add the native symbol file. -->
     <PropertyGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true'">
       <_symbolExt Condition="'$(OS)' == 'Windows_NT'">$(NativeSymbolExt)</_symbolExt>
       <_symbolExt Condition="'$(OS)' != 'Windows_NT'">$(NativeBinaryExt)$(NativeSymbolExt)</_symbolExt>
