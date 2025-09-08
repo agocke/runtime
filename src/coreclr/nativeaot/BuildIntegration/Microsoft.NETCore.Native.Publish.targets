@@ -124,34 +124,4 @@
   </Target>
   -->
 
-  <Target Name="_CopyAotSymbols" AfterTargets="Publish"
-          Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true'">
-    <!-- dotnet CLI produces managed debug symbols, which we will delete and copy native symbols instead -->
-    <Delete Files="$(PublishDir)\$(TargetName).pdb" />
-
-    <PropertyGroup>
-      <_symbolExt Condition="'$(OS)' == 'Windows_NT'">$(NativeSymbolExt)</_symbolExt>
-      <_symbolExt Condition="'$(OS)' != 'Windows_NT'">$(NativeBinaryExt)$(NativeSymbolExt)</_symbolExt>
-      <_symbolSourcePath>$(NativeOutputPath)$(TargetName)$(_symbolExt)</_symbolSourcePath>
-      <_symbolTargetPath>$(PublishDir)\$(TargetName)$(_symbolExt)</_symbolTargetPath>
-      <!-- If the symbol is a dSYM bundle, it's a folder not a file. -->
-      <_symbolIsFile Condition="'$(NativeSymbolExt)' == '.dSYM'">false</_symbolIsFile>
-      <_symbolIsFile Condition="'$(_symbolIsFile)' == ''">true</_symbolIsFile>
-    </PropertyGroup>
-
-    <ItemGroup>
-      <_symbolRecursivePath Include="$(NativeOutputPath)$(TargetName)$(_symbolExt)/**/*" />
-    </ItemGroup>
-
-    <!-- replace native symbol file if it exists. On Mac, the symbol path may be a folder-->
-    <Delete Files="$(_symbolTargetPath)" Condition="'$(_symbolIsFile)' == 'true' and Exists('$(_symbolTargetPath)')" />
-    <Copy SourceFiles="$(_symbolSourcePath)" DestinationFolder="$(PublishDir)"
-      Condition="'$(_symbolIsFile)' == 'true' and Exists('$(_symbolSourcePath)')" />
-
-    <!-- Copy folder otherwise -->
-    <RemoveDir Directories="$(_symbolTargetPath)" Condition="'$(_symbolIsFile)' == 'false' and Exists('$(_symbolTargetPath)')" />
-    <Copy SourceFiles="@(_symbolRecursivePath)" DestinationFolder="$(_symbolTargetPath)/%(RecursiveDir)"
-      Condition="'$(_symbolIsFile)' == 'false' and Exists('$(_symbolSourcePath)')" />
-  </Target>
-
 </Project>

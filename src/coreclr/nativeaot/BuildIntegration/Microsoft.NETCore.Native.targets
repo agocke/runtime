@@ -426,12 +426,40 @@ The .NET Foundation licenses this file to you under the MIT license.
 
     <ItemGroup>
       <!-- Add output binary to publish list. -->
-      <ResolvedFileToPublish Include="$(NativeBinary)" />
+      <ResolvedFileToPublish Include="$(NativeBinary)">
+        <RelativePath>$(TargetName)$(NativeBinaryExt)</RelativePath>
+      </ResolvedFileToPublish>
     </ItemGroup>
+
     <!-- If symbol copy is enabled, remove the existing symbols (which is the original managed PDB) and
          replace it with the native symbol file. -->
     <ItemGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true'">
       <ResolvedFileToPublish Remove="$(_DebugSymbolsIntermediatePath)" />
+    </ItemGroup>
+
+    <PropertyGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true'">
+      <_symbolExt Condition="'$(OS)' == 'Windows_NT'">$(NativeSymbolExt)</_symbolExt>
+      <_symbolExt Condition="'$(OS)' != 'Windows_NT'">$(NativeBinaryExt)$(NativeSymbolExt)</_symbolExt>
+      <_symbolSourcePath>$(NativeOutputPath)$(TargetName)$(_symbolExt)</_symbolSourcePath>
+      <!-- If the symbol is a dSYM bundle, it's a folder not a file. -->
+      <_symbolIsFile Condition="'$(NativeSymbolExt)' == '.dSYM'">false</_symbolIsFile>
+      <_symbolIsFile Condition="'$(_symbolIsFile)' == ''">true</_symbolIsFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_symbolRecursivePath Include="$(NativeOutputPath)$(TargetName)$(_symbolExt)/**/*" />
+    </ItemGroup>
+
+    <!-- replace native symbol file if it exists. On Mac, the symbol path may be a folder-->
+    <ItemGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true' and '$(_symbolIsFile)' == 'true'">
+      <ResolvedFileToPublish Include="$(_symbolSourcePath)">
+        <RelativePath>$(TargetName)$(_symbolExt)</RelativePath>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+
+    <!-- Copy folder otherwise -->
+    <ItemGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true' and '$(_symbolIsFile)' == 'false'">
+      <ResolvedFileToPublish Include="$(_symbolSourcePath)/**/*" />
     </ItemGroup>
   </Target>
 
