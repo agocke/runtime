@@ -53,7 +53,8 @@ public class SwapRuntimePacks : Microsoft.Build.Utilities.Task
 
             if (!swapped)
             {
-                newRuntimePacks.Add(pack);
+                Log.LogError($"Could not find a NativeAotRuntimePack to replace {pack.ItemSpec} ({pack.GetMetadata("RuntimeIdentifier")}, {pack.GetMetadata("NuGetPackageVersion")})");
+                return false;
             }
         }
 
