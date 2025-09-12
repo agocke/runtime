@@ -179,7 +179,6 @@ The .NET Foundation licenses this file to you under the MIT license.
     <ItemGroup>
       <ManagedBinary Condition="$(BuildingFrameworkLibrary) != 'true'" Include="@(IntermediateAssembly)" />
       <IlcCompileInput Include="@(ManagedBinary)" />
-      <IlcReference Include="@(DefaultFrameworkAssemblies)" />
     </ItemGroup>
   </Target>
 
@@ -204,7 +203,8 @@ The .NET Foundation licenses this file to you under the MIT license.
     <MSBuild Projects="@(ProjectToBuild)" BuildInParallel="true" />
   </Target>
 
-  <Target Name="WriteIlcRspFileForCompilation"
+  <Target Name="WriteIlcRspFile"
+      Inputs="@(ManagedAssemblyToLink)"
       Outputs="%(ManagedBinary.IlcRspFile)"
       DependsOnTargets="$(IlcCompileDependsOn)">
 
@@ -241,7 +241,7 @@ The .NET Foundation licenses this file to you under the MIT license.
     <ItemGroup>
       <IlcArg Include="@(IlcCompileInput)" />
       <IlcArg Include="-o:$(NativeIntermediateOutputPath)%(ManagedBinary.Filename)$(IlcOutputFileExt)" />
-      <IlcArg Include="@(IlcReference->'-r:%(Identity)')" />
+      <IlcArg Include="@(ManagedAssemblyToLink->'-r:%(Identity)')" />
       <IlcArg Include="@(IlcSatelliteAssembly->'--satellite:%(Identity)')" />
       <IlcArg Include="@(MibcFile->'--mibc:%(Identity)')" />
       <IlcArg Condition="$(IlcGenerateMetadataLog) == 'true'" Include="--metadatalog:$(NativeIntermediateOutputPath)%(ManagedBinary.Filename).metadata.csv" />
@@ -327,9 +327,9 @@ The .NET Foundation licenses this file to you under the MIT license.
   </Target>
 
   <Target Name="IlcCompile"
-      Inputs="@(IlcCompileInput);@(IlcReference);@(IlcSatelliteAssembly);@(RdXmlFile);$(IlcOrderFile);%(ManagedBinary.IlcRspFile)"
+      Inputs="@(IlcCompileInput);@(IlcSatelliteAssembly);@(RdXmlFile);$(IlcOrderFile);%(ManagedBinary.IlcRspFile)"
       Outputs="%(ManagedBinary.IlcOutputFile)"
-      DependsOnTargets="WriteIlcRspFileForCompilation;$(IlcCompileDependsOn)">
+      DependsOnTargets="WriteIlcRspFile;$(IlcCompileDependsOn)">
     <Message Text="Generating native code" Importance="high" />
 
     <PropertyGroup>

@@ -4,7 +4,6 @@
           BeforeTargets="ComputeIlcCompileInputs"
           DependsOnTargets="$(IlcDynamicBuildPropertyDependencies)">
     <ItemGroup>
-      <IlcReference Include="@(_ManagedResolvedAssembliesToPublish)" />
       <IlcSatelliteAssembly Include="@(_SatelliteAssembliesToPublish)" />
       <IlcSatelliteAssembly Include="@(IntermediateSatelliteAssembliesWithTargetPath)" />
     </ItemGroup>
