@@ -2,8 +2,9 @@
 
   <Target Name="_ComputeIlcCompileInputs"
           BeforeTargets="ComputeIlcCompileInputs"
-          DependsOnTargets="$(IlcDynamicBuildPropertyDependencies)">
+          DependsOnTargets="ILLink;$(IlcDynamicBuildPropertyDependencies)">
     <ItemGroup>
+      <IlcReference Include="@(ResolvedFileToPublish)" />
       <IlcSatelliteAssembly Include="@(_SatelliteAssembliesToPublish)" />
       <IlcSatelliteAssembly Include="@(IntermediateSatelliteAssembliesWithTargetPath)" />
     </ItemGroup>
