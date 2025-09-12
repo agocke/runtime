@@ -50,7 +50,7 @@
   <!-- The _IlcReferencedAsPackage check is only there for using live ILCompiler targets (not a supported scenario outside of dotnet/runtime). -->
   <ItemGroup Condition="'$(_IlcReferencedAsPackage)' != 'false'">
     <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler">
-      <ILCompilerPackVersion>10.0.0-rc.1.25406.102</ILCompilerPackVersion>
+      <ILCompilerPackVersion>10.0.100-rc.1.25451.107</ILCompilerPackVersion>
     </KnownILCompilerPack>
   </ItemGroup>
 
