@@ -155,7 +155,7 @@ namespace ILCompiler
             typeSystemContext.ReferenceFilePaths = Get(_command.ReferenceFiles);
             if (!typeSystemContext.InputFilePaths.ContainsKey(systemModuleName)
                 && !typeSystemContext.ReferenceFilePaths.ContainsKey(systemModuleName))
-                throw new CommandLineException($"System module {systemModuleName} does not exists. Make sure that you specify --systemmodule");
+                throw new CommandLineException($"System module {systemModuleName} does not exist. Make sure that you specify --systemmodule");
 
             typeSystemContext.SetSystemModule(typeSystemContext.GetModuleForSimpleName(systemModuleName));
 

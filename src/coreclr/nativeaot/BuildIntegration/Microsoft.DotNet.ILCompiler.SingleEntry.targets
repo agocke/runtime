@@ -42,8 +42,7 @@
   <PropertyGroup>
     <!-- If the NativeAOT toolchain is being consumed via package, runtime-specific properties must be set before compilation can proceed -->
     <ImportRuntimeIlcPackageTargetDependsOn>RunResolvePackageDependencies</ImportRuntimeIlcPackageTargetDependsOn>
-    <IlcSetupPropertiesDependsOn>ImportRuntimeIlcPackageTarget</IlcSetupPropertiesDependsOn>
-    <IlcDynamicBuildPropertyDependencies>SetupProperties</IlcDynamicBuildPropertyDependencies>
+    <IlcSetupPropertiesDependsOn>ImportRuntimeIlcPackageTarget;_ComputeAssembliesToPostprocessOnPublish;ILLink</IlcSetupPropertiesDependsOn>
   </PropertyGroup>
 
   <!-- Update the KnownILCompilerPack version to match the PackageReference, in case there's an explicit reference to a specific version. -->
@@ -73,6 +72,6 @@
 
   </Target>
 
-  <Import Project="$(MSBuildThisFileDirectory)\Microsoft.NETCore.Native.targets" />
+  <Import Project="$(MSBuildThisFileDirectory)\Microsoft.DotNet.ILCompiler.targets" />
 
 </Project>

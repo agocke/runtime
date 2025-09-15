@@ -1,19 +1,4 @@
-<!--
-***********************************************************************************************
-Microsoft.NETCore.Native.targets
-
-WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and have
-          created a backup copy.  Incorrect changes to this file will make it
-          impossible to load or build your projects from the command-line or the IDE.
-
-This file defines the steps in the build process for native AOT compilation.
-
-Licensed to the .NET Foundation under one or more agreements.
-The .NET Foundation licenses this file to you under the MIT license.
-***********************************************************************************************
--->
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-
+<Project>
   <!-- Set defaults for unspecified properties -->
   <PropertyGroup>
     <StripSymbols Condition="'$(StripSymbols)' == '' and '$(_targetOS)' != 'win'">true</StripSymbols>
@@ -94,15 +79,26 @@ The .NET Foundation licenses this file to you under the MIT license.
 
     <SharedLibrary Condition="'$(_targetOS)' == 'win'">$(FrameworkLibPath)\Framework$(LibFileExt)</SharedLibrary>
     <SharedLibrary Condition="'$(_targetOS)' != 'win'">$(FrameworkLibPath)\libframework$(LibFileExt)</SharedLibrary>
-    <IlcDynamicBuildPropertyDependencies>SetupProperties</IlcDynamicBuildPropertyDependencies>
+    <IlcDynamicBuildPropertyDependencies>_ComputeIlcInputs</IlcDynamicBuildPropertyDependencies>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(IlcCompileDependsOn)'=='' and '$(NativeCompilationDuringPublish)' != 'false'">
-    <IlcCompileDependsOn Condition="'$(BuildingFrameworkLibrary)' != 'true'">Compile;ComputeIlcCompileInputs</IlcCompileDependsOn>
-    <IlcCompileDependsOn Condition="'$(IlcMultiModule)' == 'true' and '$(BuildingFrameworkLibrary)' != 'true'">$(IlcCompileDependsOn);BuildFrameworkLib</IlcCompileDependsOn>
-    <IlcCompileDependsOn>$(IlcCompileDependsOn);SetupOSSpecificProps</IlcCompileDependsOn>
-    <IlcCompileDependsOn>$(IlcCompileDependsOn);PrepareForILLink</IlcCompileDependsOn>
-  </PropertyGroup>
+  <UsingTask TaskName="SwapRuntimePacks" AssemblyFile="$(IlcBuildTasksPath)" />
+  <Target Name="SwapRuntimePacks"
+          DependsOnTargets="ResolveFrameworkReferences"
+          BeforeTargets="ResolveRuntimePackAssets">
+
+      <SwapRuntimePacks
+        ResolvedRuntimePacks="@(ResolvedRuntimePack)"
+        NativeAotRuntimePacks="@(ResolvedTargetILCompilerPack)">
+          <Output TaskParameter="SwappedRuntimePacks" ItemName="SwappedRuntimePacks" />
+      </SwapRuntimePacks>
+
+      <ItemGroup>
+        <ResolvedRuntimePack Remove="@(ResolvedRuntimePack)" />
+        <ResolvedRuntimePack Include="@(SwappedRuntimePacks)" />
+      </ItemGroup>
+
+  </Target>
 
   <ItemGroup Condition="$(IlcSystemModule) == ''">
     <UnmanagedEntryPointsAssembly Include="System.Private.CoreLib,HIDDEN" />
@@ -113,100 +109,55 @@ The .NET Foundation licenses this file to you under the MIT license.
   </ItemGroup>
 
   <ItemDefinitionGroup>
-    <ManagedBinary>
+    <_IlcManagedBinary>
       <IlcRspFile>$(NativeIntermediateOutputPath)\%(Filename).ilc.rsp</IlcRspFile>
       <IlcOutputFile>$(NativeIntermediateOutputPath)\%(Filename)$(IlcOutputFileExt)</IlcOutputFile>
-    </ManagedBinary>
+    </_IlcManagedBinary>
   </ItemDefinitionGroup>
 
-  <Target Name="_ComputeManagedAssemblyForILLink"
-          AfterTargets="_ComputeManagedAssemblyToLink"
-          Condition="'$(NativeCompilationDuringPublish)' == 'true'">
-    <ItemGroup>
-      <ManagedAssemblyToLink Remove="@(ManagedAssemblyToLink)" />
-      <ManagedAssemblyToLink Include="@(DefaultFrameworkAssemblies);@(_ManagedResolvedAssembliesToPublish);@(ManagedBinary)" />
-    </ItemGroup>
-  </Target>
-
-  <!-- The properties below need to be defined only after we've found the correct runtime package reference -->
-  <Target Name="SetupProperties" DependsOnTargets="$(IlcSetupPropertiesDependsOn)" BeforeTargets="Publish">
-    <ItemGroup>
-      <_NETCoreAppFrameworkReference Include="@(ResolvedFrameworkReference)" Condition="'%(ResolvedFrameworkReference.RuntimePackName)' == 'Microsoft.NETCore.App.Runtime.NativeAOT.$(RuntimeIdentifier)'" />
-    </ItemGroup>
+  <!-- Setup properties for ILC-->
+  <Target Name="_ComputeIlcInputs"
+          DependsOnTargets="ILLink">
 
     <PropertyGroup>
-      <!--
-        If we're actually using the runtime pack from the ResolvedFrameworkReference, pull the path from there.
-        Otherwise pull it from the RuntimePackagePath.
-      -->
-      <_NETCoreAppRuntimePackPath Condition="'$(PublishAotUsingRuntimePack)' == 'true'">%(_NETCoreAppFrameworkReference.RuntimePackPath)/runtimes/$(RuntimeIdentifier)/</_NETCoreAppRuntimePackPath>
-      <_NETCoreAppRuntimePackPath Condition="'$(PublishAotUsingRuntimePack)' != 'true'">$(RuntimePackagePath)/runtimes/$(RuntimeIdentifier)/</_NETCoreAppRuntimePackPath>
-      <IlcFrameworkPath Condition="'$(IlcFrameworkPath)' == ''">$(_NETCoreAppRuntimePackPath)\lib\</IlcFrameworkPath>
-      <IlcFrameworkNativePath Condition="'$(IlcFrameworkNativePath)' == ''">$(_NETCoreAppRuntimePackPath)\native\</IlcFrameworkNativePath>
-      <IlcSdkPath Condition="'$(IlcSdkPath)' == ''">$(IlcFrameworkNativePath)</IlcSdkPath>
-    </PropertyGroup>
-
-    <PropertyGroup>
+      <IlcHostPackagePath Condition="'@(ResolvedILCompilerPack)' == '$(_hostPackageName)'">@(ResolvedILCompilerPack->'%(PackageDirectory)')</IlcHostPackagePath>
+      <RuntimePackagePath Condition="'@(ResolvedTargetILCompilerPack)' == ''">@(ResolvedILCompilerPack->'%(PackageDirectory)')</RuntimePackagePath>
+      <RuntimePackagePath Condition="'@(ResolvedTargetILCompilerPack)' != ''">@(ResolvedTargetILCompilerPack->'%(PackageDirectory)')</RuntimePackagePath>
       <!-- Define paths used in build targets to point to the runtime-specific ILCompiler implementation -->
       <IlcToolsPath Condition="'$(IlcToolsPath)' == ''">$(IlcHostPackagePath)\tools\</IlcToolsPath>
       <IlcMibcPath Condition="'$(IlcMibcPath)' == ''">$(RuntimePackagePath)\mibc\</IlcMibcPath>
     </PropertyGroup>
 
-    <ItemGroup>
-      <PrivateSdkAssemblies Include="$(IlcSdkPath)*.dll"/>
-      <FrameworkAssemblies Include="@(RuntimePackAsset)" Condition="'$(PublishAotUsingRuntimePack)' == 'true' and '%(Extension)' == '.dll'" />
-      <!-- When we aren't pulling in runtime pack assets, make sure we manually grab the assets that the SDK would select from within the package. -->
-      <FrameworkAssemblies Include="$(IlcFrameworkPath)**/*.dll" Condition="'$(PublishAotUsingRuntimePack)' != 'true'" />
-      <DefaultFrameworkAssemblies Include="@(FrameworkAssemblies)" />
-      <DefaultFrameworkAssemblies Include="@(PrivateSdkAssemblies)" Exclude="@(DefaultFrameworkAssemblies)" />
-    </ItemGroup>
 
     <ItemGroup>
-      <MibcFile Include="$(IlcMibcPath)*.mibc" Condition="'$(IlcPgoOptimize)' == 'true'" />
+      <_IlcManagedBinary Condition="$(BuildingFrameworkLibrary) != 'true'" Include="@(IntermediateAssembly)" />
+      <_IlcCompileInput Include="@(_IlcManagedBinary)" />
     </ItemGroup>
+
+    <ComputeManagedAssemblies Assemblies="@(ResolvedFileToPublish)">
+      <Output TaskParameter="ManagedAssemblies" ItemName="_IlcAssembly" />
+    </ComputeManagedAssemblies>
+
+    <ItemGroup>
+        <!-- Remove the output binary from the list of assemblies -->
+        <_IlcAssembly Remove="@(IntermediateAssembly)" />
+    </ItemGroup>
+
   </Target>
 
-  <Target Name="ComputeIlcCompileInputs" DependsOnTargets="$(IlcDynamicBuildPropertyDependencies)" BeforeTargets="Publish">
-    <ItemGroup>
-      <ManagedBinary Condition="$(BuildingFrameworkLibrary) != 'true'" Include="@(IntermediateAssembly)" />
-      <IlcCompileInput Include="@(ManagedBinary)" />
-      <IlcReference Include="@(DefaultFrameworkAssemblies)" />
-    </ItemGroup>
-  </Target>
-
-  <!--
-    BuildFrameworkLib is invoked before IlcCompile in multi-module builds to
-    produce the shared framework library on demand
-  -->
-  <Target Name="BuildFrameworkLib" Condition="'$(DisableFrameworkLibGeneration)' != 'true'" DependsOnTargets="$(IlcDynamicBuildPropertyDependencies)">
-    <ItemGroup>
-     <!-- This builds the project with the ILC implementation in the identified runtime package to avoid resolving it again  -->
-      <ProjectToBuild Include="$(MSBuildThisFileDirectory)BuildFrameworkNativeObjects.proj">
-        <AdditionalProperties>
-          IntermediateOutputPath=$(IntermediateOutputPath);
-          FrameworkLibPath=$(FrameworkLibPath);
-          FrameworkObjPath=$(FrameworkObjPath);
-          RuntimePackagePath=$(RuntimePackagePath);
-          IlcHostPackagePath=$(IlcHostPackagePath);
-          TargetArchitecture=$(_targetArchitecture);
-        </AdditionalProperties>
-      </ProjectToBuild>
-    </ItemGroup>
-    <MSBuild Projects="@(ProjectToBuild)" BuildInParallel="true" />
-  </Target>
-
-  <Target Name="WriteIlcRspFileForCompilation"
-      Outputs="%(ManagedBinary.IlcRspFile)"
-      DependsOnTargets="$(IlcCompileDependsOn)">
+  <Target Name="WriteIlcRspFile"
+      Inputs="@(_IlcCompileInput);@(_IlcAssembly)"
+      Outputs="%(_IlcManagedBinary.IlcRspFile)"
+      DependsOnTargets="_ComputeIlcInputs;$(IlcCompileDependsOn)">
 
     <ItemGroup>
       <!-- Grab the raw ItemGroup that ILLinker accepts in two form: as file names, and as assembly names -->
       <_IlcRootedAssembliesRaw Include="@(TrimmerRootAssembly)" Condition="%(TrimmerRootAssembly.RootMode) != 'EntryPoint'" />
-      <_IlcRootedAssembliesRaw Include="@(ManagedAssemblyToLink)" Condition="%(ManagedAssemblyToLink.TrimMode) == 'copy'" />
-      <_IlcConditionallyRootedAssembliesRaw Include="@(ManagedAssemblyToLink)" Condition="%(ManagedAssemblyToLink.TrimMode) == 'copyused'" />
-      <_IlcTrimmedAssembliesRaw Include="@(ManagedAssemblyToLink)" Condition="%(ManagedAssemblyToLink.TrimMode) == 'link'" />
-      <_IlcSingleWarnAssembliesRaw Include="@(ManagedAssemblyToLink)" Condition="%(ManagedAssemblyToLink.TrimmerSingleWarn) == 'true'" />
-      <_IlcNoSingleWarnAssembliesRaw Include="@(ManagedAssemblyToLink)" Condition="%(ManagedAssemblyToLink.TrimmerSingleWarn) == 'false'" />
+      <_IlcRootedAssembliesRaw Include="@(_IlcAssembly)" Condition="%(_IlcAssembly.TrimMode) == 'copy'" />
+      <_IlcConditionallyRootedAssembliesRaw Include="@(_IlcAssembly)" Condition="%(_IlcAssembly.TrimMode) == 'copyused'" />
+      <_IlcTrimmedAssembliesRaw Include="@(_IlcAssembly)" Condition="%(_IlcAssembly.TrimMode) == 'link'" />
+      <_IlcSingleWarnAssembliesRaw Include="@(_IlcAssembly)" Condition="%(_IlcAssembly.TrimmerSingleWarn) == 'true'" />
+      <_IlcNoSingleWarnAssembliesRaw Include="@(_IlcAssembly)" Condition="%(_IlcAssembly.TrimmerSingleWarn) == 'false'" />
 
       <!-- Now process the raw ItemGroup into the form that ILC accepts: assembly names only -->
       <!-- Use the logic that ILLinker uses: if the file exists, this is a file name. Otherwise it's an assembly name -->
@@ -230,11 +181,11 @@ The .NET Foundation licenses this file to you under the MIT license.
     </PropertyGroup>
 
     <ItemGroup>
-      <IlcArg Include="@(IlcCompileInput)" />
-      <IlcArg Include="-o:$(NativeIntermediateOutputPath)%(ManagedBinary.Filename)$(IlcOutputFileExt)" />
-      <IlcArg Include="@(IlcReference->'-r:%(Identity)')" />
+      <IlcArg Include="@(_IlcCompileInput)" />
+      <IlcArg Include="-o:$(NativeIntermediateOutputPath)%(_IlcManagedBinary.Filename)$(IlcOutputFileExt)" />
+      <IlcArg Include="@(_IlcAssembly->'-r:%(Identity)')" />
       <IlcArg Include="@(IlcSatelliteAssembly->'--satellite:%(Identity)')" />
-      <IlcArg Include="@(MibcFile->'--mibc:%(Identity)')" />
+      <IlcArg Include="@(_IlcMibcFile->'--mibc:%(Identity)')" />
       <IlcArg Condition="$(IlcGenerateMetadataLog) == 'true'" Include="--metadatalog:$(NativeIntermediateOutputPath)%(ManagedBinary.Filename).metadata.csv" />
       <!-- To the NativeAOT compiler, Android is just another linux -->
       <IlcArg Condition="'$(_targetOS)' == 'android'" Include="--targetos:linux" />
@@ -314,37 +265,36 @@ The .NET Foundation licenses this file to you under the MIT license.
     </ItemGroup>
 
     <MakeDir Directories="$(NativeIntermediateOutputPath)" />
-    <WriteLinesToFile File="%(ManagedBinary.IlcRspFile)" Lines="@(IlcArg)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <WriteLinesToFile File="%(_IlcManagedBinary.IlcRspFile)" Lines="@(IlcArg)" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>
 
+  <PropertyGroup Condition="'$(IlcCompileDependsOn)'=='' and '$(NativeCompilationDuringPublish)' != 'false'">
+    <IlcCompileDependsOn Condition="'$(BuildingFrameworkLibrary)' != 'true'">Compile;_ComputeIlcInputs</IlcCompileDependsOn>
+    <IlcCompileDependsOn Condition="'$(IlcMultiModule)' == 'true' and '$(BuildingFrameworkLibrary)' != 'true'">$(IlcCompileDependsOn);BuildFrameworkLib</IlcCompileDependsOn>
+    <IlcCompileDependsOn>$(IlcCompileDependsOn);SetupOSSpecificProps</IlcCompileDependsOn>
+    <IlcCompileDependsOn>$(IlcCompileDependsOn);PrepareForILLink</IlcCompileDependsOn>
+  </PropertyGroup>
+
   <Target Name="IlcCompile"
-      Inputs="@(IlcCompileInput);@(IlcReference);@(IlcSatelliteAssembly);@(RdXmlFile);$(IlcOrderFile);%(ManagedBinary.IlcRspFile)"
-      Outputs="%(ManagedBinary.IlcOutputFile)"
-      DependsOnTargets="WriteIlcRspFileForCompilation;$(IlcCompileDependsOn)">
+      Inputs="@(IlcCompileInput);@(IlcSatelliteAssembly);@(RdXmlFile);$(IlcOrderFile);%(_IlcManagedBinary.IlcRspFile)"
+      Outputs="%(_IlcManagedBinary.IlcOutputFile)"
+      DependsOnTargets="WriteIlcRspFile;$(IlcCompileDependsOn)">
     <Message Text="Generating native code" Importance="high" />
 
     <PropertyGroup>
       <_IlcEnvironmentVariables Condition="'$(IlcUseServerGc)' == 'false'">DOTNET_gcServer=0;$(_IlcEnvironmentVariables)</_IlcEnvironmentVariables>
     </PropertyGroup>
 
-    <Exec Command="&quot;$(IlcToolsPath)\ilc&quot; @&quot;$(NativeIntermediateOutputPath)%(ManagedBinary.Filename).ilc.rsp&quot;"
+    <Exec Command="&quot;$(IlcToolsPath)\ilc&quot; @&quot;$(NativeIntermediateOutputPath)%(_IlcManagedBinary.Filename).ilc.rsp&quot;"
           EnvironmentVariables="$(_IlcEnvironmentVariables)" />
-
-    <!-- Trick ILLinker into not actually running -->
-    <MakeDir Condition="$([MSBuild]::VersionLessThan('$(NETCoreSdkVersion)', '7.0.0'))" Directories="$(IntermediateLinkDir)" />
-    <Touch Condition="$([MSBuild]::VersionLessThan('$(NETCoreSdkVersion)', '7.0.0'))" Files="$(_LinkSemaphore)" AlwaysCreate="true" />
   </Target>
 
   <Import Project="$(MSBuildThisFileDirectory)Microsoft.NETCore.Native.Windows.targets" Condition="'$(_targetOS)' == 'win'" />
   <Import Project="$(MSBuildThisFileDirectory)Microsoft.NETCore.Native.Unix.targets" Condition="'$(_targetOS)' != 'win'" />
 
-  <Target Name="MultiFileCopyNative"
-      Inputs="@(NativeObjects)"
-      Outputs="$(NativeOutputPath)"
-      DependsOnTargets="GetNativeObjects">
-
-      <Copy SourceFiles="@(NativeObjects)" DestinationFolder="$(NativeOutputPath)" />
-  </Target>
+  <PropertyGroup>
+    <LinkNativeDependsOn>IlcCompile;@(LinkNativeDependsOn)</LinkNativeDependsOn>
+  </PropertyGroup>
 
   <Target Name="LinkNative"
       Inputs="$(NativeObject);@(NativeLibrary)"
@@ -414,6 +364,45 @@ The .NET Foundation licenses this file to you under the MIT license.
       Command="
         dsymutil $(DsymUtilOptions) &quot;$(NativeBinary)&quot; &amp;&amp;
         strip -no_code_signature_warning -x &quot;$(NativeBinary)&quot;" />
+
+    <!-- Fix up ResolvedFileToPublish -->
+    <ItemGroup>
+      <!-- Add output binary to publish list. -->
+      <ResolvedFileToPublish Include="$(NativeBinary)">
+        <RelativePath>$(TargetName)$(NativeBinaryExt)</RelativePath>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+
+    <!-- Always remove the original managed PDB -->
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(_DebugSymbolsIntermediatePath)" />
+    </ItemGroup>
+
+    <!-- If symbol copy is enabled, add the native symbol file. -->
+    <PropertyGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true'">
+      <_symbolExt Condition="'$(OS)' == 'Windows_NT'">$(NativeSymbolExt)</_symbolExt>
+      <_symbolExt Condition="'$(OS)' != 'Windows_NT'">$(NativeBinaryExt)$(NativeSymbolExt)</_symbolExt>
+      <_symbolSourcePath>$(NativeOutputPath)$(TargetName)$(_symbolExt)</_symbolSourcePath>
+      <!-- If the symbol is a dSYM bundle, it's a folder not a file. -->
+      <_symbolIsFile Condition="'$(NativeSymbolExt)' == '.dSYM'">false</_symbolIsFile>
+      <_symbolIsFile Condition="'$(_symbolIsFile)' == ''">true</_symbolIsFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_symbolRecursivePath Include="$(NativeOutputPath)$(TargetName)$(_symbolExt)/**/*" />
+    </ItemGroup>
+
+    <!-- replace native symbol file if it exists. On Mac, the symbol path may be a folder-->
+    <ItemGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true' and '$(_symbolIsFile)' == 'true'">
+      <ResolvedFileToPublish Include="$(_symbolSourcePath)">
+        <RelativePath>$(TargetName)$(_symbolExt)</RelativePath>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+
+    <!-- Copy folder otherwise -->
+    <ItemGroup Condition="'$(CopyOutputSymbolsToPublishDirectory)' == 'true' and '$(_symbolIsFile)' == 'false'">
+      <ResolvedFileToPublish Include="$(_symbolSourcePath)/**/*" />
+    </ItemGroup>
   </Target>
 
   <Target Name="CreateLib"
@@ -433,6 +422,13 @@ The .NET Foundation licenses this file to you under the MIT license.
     <Exec Command="&quot;$(CppLibCreator)&quot; @(CustomLibArg, ' ')" Condition="'$(_targetOS)' != 'win'" />
   </Target>
 
-  <Import Project="$(MSBuildThisFileDirectory)Microsoft.NETCore.Native.Publish.targets" Condition="'$(NativeCompilationDuringPublish)' != 'false'" />
+  <PropertyGroup>
+    <CompileNativeDependsOn>LinkNative;$(CompileNativeDependsOn)</CompileNativeDependsOn>
+  </PropertyGroup>
+
+  <Target Name="CompileNative"
+          DependsOnTargets="$(CompileNativeDependsOn)"
+          BeforeTargets="ComputeFilesToPublish">
+  </Target>
 
 </Project>
