@@ -119,6 +119,16 @@
   <Target Name="_ComputeIlcInputs"
           DependsOnTargets="ILLink">
 
+    <ItemGroup>
+      <_ILCompilerRuntimePack Include="@(ResolvedRuntimePack)" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <_NETCoreAppRuntimePackPath>%(_ILCompilerRuntimePack.PackageDirectory)/runtimes/$(RuntimeIdentifier)/</_NETCoreAppRuntimePackPath>
+      <IlcFrameworkNativePath Condition="'$(IlcFrameworkNativePath)' == ''">$(_NETCoreAppRuntimePackPath)/native/</IlcFrameworkNativePath>
+      <IlcSdkPath Condition="'$(IlcSdkPath)' == ''">$(IlcFrameworkNativePath)</IlcSdkPath>
+    </PropertyGroup>
+
     <PropertyGroup>
       <IlcHostPackagePath Condition="'@(ResolvedILCompilerPack)' == '$(_hostPackageName)'">@(ResolvedILCompilerPack->'%(PackageDirectory)')</IlcHostPackagePath>
       <RuntimePackagePath Condition="'@(ResolvedTargetILCompilerPack)' == ''">@(ResolvedILCompilerPack->'%(PackageDirectory)')</RuntimePackagePath>
