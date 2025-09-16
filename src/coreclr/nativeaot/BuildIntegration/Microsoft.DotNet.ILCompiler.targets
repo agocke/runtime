@@ -377,6 +377,8 @@
 
     <!-- Fix up ResolvedFileToPublish -->
     <ItemGroup>
+      <!-- Remove managed binaries -->
+      <ResolvedFileToPublish Remove="@(_IlcAssembly)" />
       <!-- Add output binary to publish list. -->
       <ResolvedFileToPublish Include="$(NativeBinary)">
         <RelativePath>$(TargetName)$(NativeBinaryExt)</RelativePath>
