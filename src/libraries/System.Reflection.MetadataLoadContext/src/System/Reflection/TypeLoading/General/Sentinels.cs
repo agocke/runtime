@@ -37,7 +37,9 @@ namespace System.Reflection.TypeLoading
             public sealed override MethodInfo GetGenericMethodDefinition() => throw null!;
             public sealed override int GetHashCode() => throw null!;
             public sealed override MethodBody GetMethodBody() => throw null!;
+#if NET
             [RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
+#endif
             public sealed override MethodInfo MakeGenericMethod(params Type[] typeArguments) => throw null!;
             protected sealed override MethodAttributes ComputeAttributes() => throw null!;
             protected sealed override CallingConventions ComputeCallingConvention() => throw null!;

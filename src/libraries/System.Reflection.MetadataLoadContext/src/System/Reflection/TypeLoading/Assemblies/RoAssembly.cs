@@ -60,8 +60,17 @@ namespace System.Reflection.TypeLoading
         public abstract override IEnumerable<CustomAttributeData> CustomAttributes { get; }
 
         // Apis to retrieved types physically defined in this module.
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Types might be removed")]
+#endif
         public sealed override Type[] GetTypes() => IsSingleModule ? ManifestModule.GetTypes() : base.GetTypes();
-        public sealed override IEnumerable<TypeInfo> DefinedTypes => GetDefinedRoTypes()!;
+        public sealed override IEnumerable<TypeInfo> DefinedTypes
+        {
+#if NET
+            [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Types might be removed")]
+#endif
+            get => GetDefinedRoTypes()!;
+        }
 
         private IEnumerable<RoType>? GetDefinedRoTypes() => IsSingleModule ? GetRoManifestModule().GetDefinedRoTypes() : MultiModuleGetDefinedRoTypes();
         private IEnumerable<RoType> MultiModuleGetDefinedRoTypes()
@@ -85,6 +94,9 @@ namespace System.Reflection.TypeLoading
 
         public sealed override IEnumerable<Type> ExportedTypes
         {
+            #if NET
+            [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Types might be removed")]
+            #endif
             get
             {
                 foreach (RoType type in GetDefinedRoTypes()!)
@@ -96,6 +108,9 @@ namespace System.Reflection.TypeLoading
         }
 
         // Api to retrieve types by name. Retrieves both types physically defined in this module and types this assembly forwards from another assembly.
+#if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Types might be removed by trimming. If the type name is a string literal, consider using Type.GetType instead.")]
+#endif
         public sealed override Type? GetType(string name, bool throwOnError, bool ignoreCase)
         {
             ArgumentNullException.ThrowIfNull(name);
@@ -136,6 +151,9 @@ namespace System.Reflection.TypeLoading
         }
 
         // Assembly dependencies
+#if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Assembly references might be removed")]
+#endif
         public sealed override AssemblyName[] GetReferencedAssemblies()
         {
             // For compat, this api only searches the manifest module. Tools normally ensure the manifest module's assemblyRef
@@ -209,6 +227,9 @@ namespace System.Reflection.TypeLoading
         public sealed override object[] GetCustomAttributes(Type attributeType, bool inherit) => throw new InvalidOperationException(SR.Arg_ReflectionOnlyCA);
         public sealed override bool IsDefined(Type attributeType, bool inherit) => throw new InvalidOperationException(SR.Arg_ReflectionOnlyCA);
         // Compat quirk: Why ArgumentException instead of InvalidOperationException?
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Assembly.CreateInstance is not supported with trimming. Use Type.GetType instead.")]
+#endif
         public sealed override object CreateInstance(string typeName, bool ignoreCase, BindingFlags bindingAttr, Binder? binder, object?[]? args, CultureInfo? culture, object?[]? activationAttributes) => throw new ArgumentException(SR.Arg_ReflectionOnlyInvoke);
 
         internal MetadataLoadContext Loader { get; }

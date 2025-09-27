@@ -188,10 +188,16 @@ namespace System.Reflection.TypeLoading
         //
         internal abstract RoType? ComputeBaseTypeWithoutDesktopQuirk();
 
+#if NET
+        [DynamicallyAccessedMembersAttribute(DynamicallyAccessedMemberTypes.Interfaces)]
+#endif
         public sealed override Type[] GetInterfaces() => GetInterfacesNoCopy().CloneArray<Type>();
 
         public sealed override IEnumerable<Type> ImplementedInterfaces
         {
+#if NET
+            [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.Interfaces)]
+#endif
             get
             {
                 foreach (Type ifc in GetInterfacesNoCopy())
@@ -241,7 +247,11 @@ namespace System.Reflection.TypeLoading
 
         private volatile RoType[]? _lazyInterfaces;
 
-        public sealed override InterfaceMapping GetInterfaceMap(Type interfaceType) => throw new NotSupportedException(SR.NotSupported_InterfaceMapping);
+        public sealed override InterfaceMapping GetInterfaceMap(
+            #if NET
+            [DynamicallyAccessedMembersAttribute(DynamicallyAccessedMemberTypes.NonPublicMethods | DynamicallyAccessedMemberTypes.PublicMethods)]
+            #endif
+            Type interfaceType) => throw new NotSupportedException(SR.NotSupported_InterfaceMapping);
 
         // Assignability
         public sealed override bool IsAssignableFrom(TypeInfo? typeInfo) => IsAssignableFrom((Type?)typeInfo);
@@ -285,6 +295,14 @@ namespace System.Reflection.TypeLoading
         public abstract override Guid GUID { get; }
         public abstract override StructLayoutAttribute? StructLayoutAttribute { get; }
 
+#if NET
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors
+            | DynamicallyAccessedMemberTypes.PublicEvents
+            | DynamicallyAccessedMemberTypes.PublicFields
+            | DynamicallyAccessedMemberTypes.PublicMethods
+            | DynamicallyAccessedMemberTypes.PublicNestedTypes
+            | DynamicallyAccessedMemberTypes.PublicProperties)]
+#endif
         public sealed override MemberInfo[] GetDefaultMembers()
         {
             string? defaultMemberName = GetDefaultMemberName();
@@ -307,7 +325,13 @@ namespace System.Reflection.TypeLoading
         }
 
         // Type Factories
+#if NET
+        [RequiresDynamicCodeAttribute("The code for an array of the specified type might not be available.")]
+#endif
         public sealed override Type MakeArrayType() => this.GetUniqueArrayType();
+#if NET
+        [RequiresDynamicCodeAttribute("The code for an array of the specified type might not be available.")]
+#endif
         public sealed override Type MakeArrayType(int rank)
         {
             if (rank <= 0)
@@ -318,18 +342,22 @@ namespace System.Reflection.TypeLoading
 
         public sealed override Type MakeByRefType() => this.GetUniqueByRefType();
         public sealed override Type MakePointerType() => this.GetUniquePointerType();
-        [RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
+#if NET
+        [RequiresDynamicCodeAttribute("The native code for this instantiation might not be available at runtime.")]
+        [RequiresUnreferencedCodeAttribute("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
+#endif
         public abstract override Type MakeGenericType(params Type[] typeArguments);
 
         // Enum methods
         public sealed override Type GetEnumUnderlyingType() => _lazyUnderlyingEnumType ??= ComputeEnumUnderlyingType();
         protected internal abstract RoType ComputeEnumUnderlyingType();
         private volatile RoType? _lazyUnderlyingEnumType;
+#if NET
+        [RequiresDynamicCodeAttribute("It might not be possible to create an array of the enum type at runtime. Use Enum.GetValues<T> or the GetEnumValuesAsUnderlyingType method instead.")]
+#endif
         public sealed override Array GetEnumValues() => throw new InvalidOperationException(SR.Arg_InvalidOperation_Reflection);
 
 #if NET
-        [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2085:UnrecognizedReflectionPattern",
-            Justification = "Enum Types are not trimmed.")]
         public override Array GetEnumValuesAsUnderlyingType()
         {
             if (!IsEnum)
@@ -369,6 +397,17 @@ namespace System.Reflection.TypeLoading
         public sealed override object[] GetCustomAttributes(bool inherit) => throw new InvalidOperationException(SR.Arg_ReflectionOnlyCA);
         public sealed override object[] GetCustomAttributes(Type attributeType, bool inherit) => throw new InvalidOperationException(SR.Arg_ReflectionOnlyCA);
         public sealed override bool IsDefined(Type attributeType, bool inherit) => throw new InvalidOperationException(SR.Arg_ReflectionOnlyCA);
+#if NET
+        [DynamicallyAccessedMembersAttribute(
+            DynamicallyAccessedMemberTypes.NonPublicConstructors
+            | DynamicallyAccessedMemberTypes.NonPublicFields
+            | DynamicallyAccessedMemberTypes.NonPublicMethods
+            | DynamicallyAccessedMemberTypes.NonPublicProperties
+            | DynamicallyAccessedMemberTypes.PublicConstructors
+            | DynamicallyAccessedMemberTypes.PublicFields
+            | DynamicallyAccessedMemberTypes.PublicMethods
+            | DynamicallyAccessedMemberTypes.PublicProperties)]
+#endif
         public sealed override object? InvokeMember(string name, BindingFlags invokeAttr, Binder? binder, object? target, object?[]? args, ParameterModifier[]? modifiers, CultureInfo? culture, string[]? namedParameters) => throw new InvalidOperationException(SR.Arg_ReflectionOnlyInvoke);
 
         // Low level support for the BindingFlag-driven enumerator apis. These return members declared (not inherited) on the current
@@ -381,6 +420,9 @@ namespace System.Reflection.TypeLoading
         internal abstract IEnumerable<RoType> GetNestedTypesCore(NameFilter? filter);
 
         // Backdoor for RoModule to invoke GetMethodImpl();
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicMethods | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods)]
+#endif
         internal MethodInfo? InternalGetMethodImpl(string name, BindingFlags bindingAttr, Binder? binder, CallingConventions callConvention, Type[]? types, ParameterModifier[]? modifiers)
         {
             return GetMethodImpl(name, bindingAttr, binder, callConvention, types, modifiers);

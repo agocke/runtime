@@ -109,12 +109,27 @@ namespace System.Reflection.TypeLoading.Ecma
         //
         // Search for members on <Module> type.
         //
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Fields might be removed")]
+#endif
         public sealed override FieldInfo? GetField(string name, BindingFlags bindingAttr) => GetModuleType().GetField(name, bindingAttr);
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Fields might be removed")]
+#endif
         public sealed override FieldInfo[] GetFields(BindingFlags bindingFlags) => GetModuleType().GetFields(bindingFlags);
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Methods might be removed")]
+#endif
         public sealed override MethodInfo[] GetMethods(BindingFlags bindingFlags) => GetModuleType().GetMethods(bindingFlags);
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Methods might be removed")]
+#endif
         protected sealed override MethodInfo? GetMethodImpl(string name, BindingFlags bindingAttr, Binder? binder, CallingConventions callConvention, Type[]? types, ParameterModifier[]? modifiers) => GetModuleType().InternalGetMethodImpl(name, bindingAttr, binder, callConvention, types, modifiers);
         private EcmaDefinitionType GetModuleType() => ModuleTypeToken.ToTypeDefinitionHandle().ResolveTypeDef(this);
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Types might be removed")]
+#endif
         public sealed override Type[] GetTypes()
         {
             // Note: we don't expect this process to generate any loader exceptions so no need to implement the ReflectionTypeLoadException

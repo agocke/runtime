@@ -67,10 +67,22 @@ namespace System.Reflection.TypeLoading
         public sealed override object[] GetCustomAttributes(Type attributeType, bool inherit) => throw new InvalidOperationException(SR.Arg_ReflectionOnlyCA);
         public sealed override bool IsDefined(Type attributeType, bool inherit) => throw new InvalidOperationException(SR.Arg_ReflectionOnlyCA);
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Fields might be removed")]
+#endif
         public abstract override FieldInfo? GetField(string name, BindingFlags bindingAttr);
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Fields might be removed")]
+#endif
         public abstract override FieldInfo[] GetFields(BindingFlags bindingFlags);
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Methods might be removed")]
+#endif
         public abstract override MethodInfo[] GetMethods(BindingFlags bindingFlags);
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Methods might be removed")]
         protected abstract override MethodInfo? GetMethodImpl(string name, BindingFlags bindingAttr, Binder? binder, CallingConventions callConvention, Type[]? types, ParameterModifier[]? modifiers);
+#endif
 
 #if NET
         [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
@@ -79,17 +91,41 @@ namespace System.Reflection.TypeLoading
         public sealed override void GetObjectData(SerializationInfo info, StreamingContext context) => throw new NotSupportedException();
         public abstract override void GetPEKind(out PortableExecutableKinds peKind, out ImageFileMachine machine);
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Fields might be removed")]
+#endif
         public abstract override Type[] GetTypes();
         internal abstract IEnumerable<RoType>? GetDefinedRoTypes();
         public abstract override bool IsResource();
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Trimming changes metadata tokens")]
+#endif
         public sealed override FieldInfo ResolveField(int metadataToken, Type[]? genericTypeArguments, Type[]? genericMethodArguments) => throw new NotSupportedException(SR.NotSupported_ResolvingTokens);
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Trimming changes metadata tokens")]
+#endif
         public sealed override MemberInfo ResolveMember(int metadataToken, Type[]? genericTypeArguments, Type[]? genericMethodArguments) => throw new NotSupportedException(SR.NotSupported_ResolvingTokens);
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Trimming changes metadata tokens")]
+#endif
         public sealed override MethodBase ResolveMethod(int metadataToken, Type[]? genericTypeArguments, Type[]? genericMethodArguments) => throw new NotSupportedException(SR.NotSupported_ResolvingTokens);
+#if NET
+        [RequiresUnreferencedCodeAttribute("Trimming changes metadata tokens")]
+#endif
         public sealed override byte[] ResolveSignature(int metadataToken) => throw new NotSupportedException(SR.NotSupported_ResolvingTokens);
+#if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Trimming changes metadata tokens")]
+#endif
         public sealed override string ResolveString(int metadataToken) => throw new NotSupportedException(SR.NotSupported_ResolvingTokens);
+#if NET
+        [RequiresUnreferencedCodeAttribute("Trimming changes metadata tokens")]
+#endif
         public sealed override Type ResolveType(int metadataToken, Type[]? genericTypeArguments, Type[]? genericMethodArguments) => throw new NotSupportedException(SR.NotSupported_ResolvingTokens);
 
+#if NET
+        [RequiresUnreferencedCode("Types might be removed by trimming. If the type name is a string literal, consider using Type.GetType instead.")]
+#endif
         public sealed override Type? GetType(string className, bool throwOnError, bool ignoreCase)
         {
             //

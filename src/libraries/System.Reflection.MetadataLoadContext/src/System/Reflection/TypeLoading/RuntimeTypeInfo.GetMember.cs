@@ -2,13 +2,44 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Runtime.BindingFlagSupport;
 
 namespace System.Reflection.TypeLoading
 {
     internal partial class RoType
     {
+#if NET
+        [DynamicallyAccessedMembersAttribute(
+            DynamicallyAccessedMemberTypes.NonPublicConstructors
+            | DynamicallyAccessedMemberTypes.NonPublicEvents
+            | DynamicallyAccessedMemberTypes.NonPublicFields
+            | DynamicallyAccessedMemberTypes.NonPublicMethods
+            | DynamicallyAccessedMemberTypes.NonPublicNestedTypes
+            | DynamicallyAccessedMemberTypes.NonPublicProperties
+            | DynamicallyAccessedMemberTypes.PublicConstructors
+            | DynamicallyAccessedMemberTypes.PublicEvents
+            | DynamicallyAccessedMemberTypes.PublicFields
+            | DynamicallyAccessedMemberTypes.PublicMethods
+            | DynamicallyAccessedMemberTypes.PublicNestedTypes
+            | DynamicallyAccessedMemberTypes.PublicProperties)]
+#endif
         public sealed override MemberInfo[] GetMembers(BindingFlags bindingAttr) => GetMemberImpl(null, MemberTypes.All, bindingAttr);
+#if NET
+        [DynamicallyAccessedMembersAttribute(
+            DynamicallyAccessedMemberTypes.NonPublicConstructors
+            | DynamicallyAccessedMemberTypes.NonPublicEvents
+            | DynamicallyAccessedMemberTypes.NonPublicFields
+            | DynamicallyAccessedMemberTypes.NonPublicMethods
+            | DynamicallyAccessedMemberTypes.NonPublicNestedTypes
+            | DynamicallyAccessedMemberTypes.NonPublicProperties
+            | DynamicallyAccessedMemberTypes.PublicConstructors
+            | DynamicallyAccessedMemberTypes.PublicEvents
+            | DynamicallyAccessedMemberTypes.PublicFields
+            | DynamicallyAccessedMemberTypes.PublicMethods
+            | DynamicallyAccessedMemberTypes.PublicNestedTypes
+            | DynamicallyAccessedMemberTypes.PublicProperties)]
+#endif
         public sealed override MemberInfo[] GetMember(string name, BindingFlags bindingAttr)
         {
             ArgumentNullException.ThrowIfNull(name);
@@ -16,6 +47,21 @@ namespace System.Reflection.TypeLoading
             return GetMemberImpl(name, MemberTypes.All, bindingAttr);
         }
 
+#if NET
+        [DynamicallyAccessedMembersAttribute(
+            DynamicallyAccessedMemberTypes.NonPublicConstructors
+            | DynamicallyAccessedMemberTypes.NonPublicEvents
+            | DynamicallyAccessedMemberTypes.NonPublicFields
+            | DynamicallyAccessedMemberTypes.NonPublicMethods
+            | DynamicallyAccessedMemberTypes.NonPublicNestedTypes
+            | DynamicallyAccessedMemberTypes.NonPublicProperties
+            | DynamicallyAccessedMemberTypes.PublicConstructors
+            | DynamicallyAccessedMemberTypes.PublicEvents
+            | DynamicallyAccessedMemberTypes.PublicFields
+            | DynamicallyAccessedMemberTypes.PublicMethods
+            | DynamicallyAccessedMemberTypes.PublicNestedTypes
+            | DynamicallyAccessedMemberTypes.PublicProperties)]
+#endif
         public sealed override MemberInfo[] GetMember(string name, MemberTypes type, BindingFlags bindingAttr)
         {
             ArgumentNullException.ThrowIfNull(name);

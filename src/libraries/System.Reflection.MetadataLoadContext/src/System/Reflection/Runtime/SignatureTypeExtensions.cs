@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.TypeLoading;
 
 namespace System.Reflection
@@ -162,6 +163,9 @@ namespace System.Reflection
             }
         }
 
+#if NET
+        [RequiresDynamicCodeAttribute("The code for an array of the specified type might not be available.")]
+#endif
         private static Type? TryMakeArrayType(this Type type)
         {
             try
@@ -210,6 +214,10 @@ namespace System.Reflection
             }
         }
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute("The native code for this instantiation might not be available at runtime.")]
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
+#endif
         private static Type? TryMakeGenericType(this Type type, Type[] instantiation)
         {
             try

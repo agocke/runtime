@@ -62,7 +62,11 @@ namespace System.Reflection.TypeLoading
             return types.ToArray();
         }
 
-        private static void AddPublicNestedTypes(Type type, List<Type> types)
+        private static void AddPublicNestedTypes(
+            #if NET
+            [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicNestedTypes | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicNestedTypes)]
+            #endif
+            Type type, List<Type> types)
         {
             foreach (Type nestedType in type.GetNestedTypes(BindingFlags.Public))
             {

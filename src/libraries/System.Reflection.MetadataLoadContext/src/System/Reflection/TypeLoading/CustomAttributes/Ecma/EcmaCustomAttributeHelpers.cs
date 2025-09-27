@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 
@@ -149,7 +150,12 @@ namespace System.Reflection.TypeLoading.Ecma
         /// Converts a System.Reflection.Metadata CustomAttributeNamedArgument&lt;&gt; into a freshly allocated CustomAttributeNamedArgument
         /// object suitable for direct return from the CustomAttributes api.
         /// </summary>
-        public static CustomAttributeNamedArgument ToApiForm(this CustomAttributeNamedArgument<RoType> cang, Type attributeType)
+        public static CustomAttributeNamedArgument ToApiForm(
+            this CustomAttributeNamedArgument<RoType> cang,
+#if NET
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)]
+#endif
+            Type attributeType)
         {
             MemberInfo? member;
             switch (cang.Kind)

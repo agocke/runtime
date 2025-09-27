@@ -43,13 +43,28 @@ namespace System.Reflection.TypeLoading
 
         public sealed override IEnumerable<CustomAttributeData> CustomAttributes => Array.Empty<CustomAttributeData>();
 
+#if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Fields might be removed")]
+#endif
         public sealed override FieldInfo? GetField(string name, BindingFlags bindingAttr) => null;
+#if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Fields might be removed")]
+#endif
         public sealed override FieldInfo[] GetFields(BindingFlags bindingFlags) => Array.Empty<FieldInfo>();
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Methods might be removed")]
+#endif
         public sealed override MethodInfo[] GetMethods(BindingFlags bindingFlags) => Array.Empty<MethodInfo>();
+#if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Methods might be removed")]
+#endif
         protected sealed override MethodInfo? GetMethodImpl(string name, BindingFlags bindingAttr, Binder? binder, CallingConventions callConvention, Type[]? types, ParameterModifier[]? modifiers) => null;
 
         public sealed override bool IsResource() => true;
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Types might be removed")]
+#endif
         public sealed override Type[] GetTypes() => Type.EmptyTypes;
         protected sealed override RoDefinitionType? GetTypeCoreNoCache(ReadOnlySpan<byte> ns, ReadOnlySpan<byte> name, out Exception? e)
         {

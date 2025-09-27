@@ -65,6 +65,9 @@ namespace System.Reflection.TypeLoading
         private volatile MethodImplAttributes _lazyMethodImplAttributes = MethodImplAttributesSentinel;
 
         public sealed override MethodImplAttributes GetMethodImplementationFlags() => MethodImplementationFlags;
+#if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Trimming may change method bodies. For example it can change some instructions, remove branches or local variables.")]
+#endif
         public abstract override MethodBody? GetMethodBody();
 
         public sealed override bool ContainsGenericParameters
@@ -105,7 +108,10 @@ namespace System.Reflection.TypeLoading
         internal abstract RoType[] GetGenericTypeParametersNoCopy();
         internal abstract RoType[] GetGenericTypeArgumentsNoCopy();
 
-        [RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
+#if NET
+        [System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute("The native code for this instantiation might not be available at runtime.")]
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
+#endif
         public abstract override MethodInfo MakeGenericMethod(params Type[] typeArguments);
 
         public sealed override string ToString() => Loader.GetDisposedString() ?? this.ToString(ComputeMethodSigStrings());

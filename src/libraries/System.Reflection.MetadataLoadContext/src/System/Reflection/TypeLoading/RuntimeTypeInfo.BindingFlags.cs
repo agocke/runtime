@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Runtime.BindingFlagSupport;
 using System.Reflection.Runtime.General;
 
@@ -9,8 +10,14 @@ namespace System.Reflection.TypeLoading
 {
     internal partial class RoType
     {
+#if NET
+                [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
         public sealed override ConstructorInfo[] GetConstructors(BindingFlags bindingAttr) => Query<ConstructorInfo>(bindingAttr).ToArray();
 
+#if NET
+        [DynamicallyAccessedMembersAttribute(DynamicallyAccessedMemberTypes.NonPublicConstructors | DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
         protected sealed override ConstructorInfo? GetConstructorImpl(BindingFlags bindingAttr, Binder? binder, CallingConventions callConvention, Type[]? types, ParameterModifier[]? modifiers)
         {
             Debug.Assert(types != null);
@@ -43,19 +50,40 @@ namespace System.Reflection.TypeLoading
             return binder.SelectMethod(bindingAttr, candidates.ToArray(), types, modifiers) as ConstructorInfo;
         }
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicEvents | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicEvents)]
+#endif
         public sealed override EventInfo[] GetEvents(BindingFlags bindingAttr) => Query<EventInfo>(bindingAttr).ToArray();
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicEvents | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicEvents)]
+#endif
         public sealed override EventInfo? GetEvent(string name, BindingFlags bindingAttr) => Query<EventInfo>(name, bindingAttr).Disambiguate();
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields)]
+#endif
         public sealed override FieldInfo[] GetFields(BindingFlags bindingAttr) => Query<FieldInfo>(bindingAttr).ToArray();
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields)]
+#endif
         public sealed override FieldInfo? GetField(string name, BindingFlags bindingAttr) => Query<FieldInfo>(name, bindingAttr).Disambiguate();
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicMethods | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods)]
+#endif
         public sealed override MethodInfo[] GetMethods(BindingFlags bindingAttr) => Query<MethodInfo>(bindingAttr).ToArray();
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicMethods | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods)]
+#endif
         protected sealed override MethodInfo? GetMethodImpl(string name, BindingFlags bindingAttr, Binder? binder, CallingConventions callConvention, Type[]? types, ParameterModifier[]? modifiers)
         {
             return GetMethodImplCommon(name, GenericParameterCountAny, bindingAttr, binder, callConvention, types, modifiers);
         }
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicMethods | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods)]
+#endif
         protected sealed override MethodInfo? GetMethodImpl(string name, int genericParameterCount, BindingFlags bindingAttr, Binder? binder, CallingConventions callConvention, Type[]? types, ParameterModifier[]? modifiers)
         {
             return GetMethodImplCommon(name, genericParameterCount, bindingAttr, binder, callConvention, types, modifiers);
@@ -100,11 +128,25 @@ namespace System.Reflection.TypeLoading
             }
         }
 
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicNestedTypes | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicNestedTypes)]
+#endif
         public sealed override Type[] GetNestedTypes(BindingFlags bindingAttr) => Query<Type>(bindingAttr).ToArray();
+#if NET
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicNestedTypes | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicNestedTypes)]
+#endif
         public sealed override Type? GetNestedType(string name, BindingFlags bindingAttr) => Query<Type>(name, bindingAttr).Disambiguate();
 
+#if NET
+        [DynamicallyAccessedMembersAttribute(
+            DynamicallyAccessedMemberTypes.NonPublicProperties
+            | DynamicallyAccessedMemberTypes.PublicProperties)]
+#endif
         public sealed override PropertyInfo[] GetProperties(BindingFlags bindingAttr) => Query<PropertyInfo>(bindingAttr).ToArray();
 
+#if NET
+        [DynamicallyAccessedMembersAttribute(DynamicallyAccessedMemberTypes.NonPublicProperties | DynamicallyAccessedMemberTypes.PublicProperties)]
+#endif
         protected sealed override PropertyInfo? GetPropertyImpl(string name, BindingFlags bindingAttr, Binder? binder, Type? returnType, Type[]? types, ParameterModifier[]? modifiers)
         {
             Debug.Assert(name != null);
