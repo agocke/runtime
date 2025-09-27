@@ -330,7 +330,11 @@ namespace System.Reflection.TypeLoading
         // T[] casts to IList<T>. This could be handled by the normal ancestor-walking code
         // but for one complication: T[] also casts to IList<U> if T[] casts to U[].
         //
-        private static bool CanCastArrayToInterface(this Type fromTypeInfo, Type toTypeInfo, CoreTypes coreTypes)
+        private static bool CanCastArrayToInterface(
+#if NET
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)]
+#endif
+            this Type fromTypeInfo, Type toTypeInfo, CoreTypes coreTypes)
         {
             Debug.Assert(fromTypeInfo.IsArray);
             Debug.Assert(toTypeInfo.IsInterface);
