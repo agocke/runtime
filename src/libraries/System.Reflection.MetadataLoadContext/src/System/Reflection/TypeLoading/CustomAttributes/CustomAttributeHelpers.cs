@@ -16,7 +16,13 @@ namespace System.Reflection.TypeLoading
         /// </summary>
         public static CustomAttributeNamedArgument ToCustomAttributeNamedArgument(
 #if NET
-            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)]
+            [DynamicallyAccessedMembers(
+                DynamicallyAccessedMemberTypes.PublicFields
+                | DynamicallyAccessedMemberTypes.PublicProperties
+                | DynamicallyAccessedMemberTypes.PublicConstructors
+                | DynamicallyAccessedMemberTypes.PublicMethods
+                | DynamicallyAccessedMemberTypes.PublicNestedTypes
+                | DynamicallyAccessedMemberTypes.PublicEvents)]
 #endif
             this Type attributeType, string name, Type? argumentType, object? value)
         {
@@ -106,6 +112,9 @@ namespace System.Reflection.TypeLoading
                 return null;
 
             Func<CustomAttributeArguments> argumentsPromise =
+#if NET
+                [RequiresUnreferencedCodeAttribute("ci.DeclaringType does not have DAM annotations")]
+#endif
                 () =>
                 {
                     // The expensive work goes in here. It will not execute unless someone invokes the Constructor/NamedArguments properties on

@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using RuntimeTypeInfo = System.Reflection.TypeLoading.RoType;
 
 namespace System.Reflection.Runtime.BindingFlagSupport
@@ -16,6 +17,9 @@ namespace System.Reflection.Runtime.BindingFlagSupport
     ///    There is no such thing as a "static" or "instanced" nested type. For enumeration purposes,
     ///    we'll arbitrarily denote all nested types as "static."
     /// </summary>
+    #if NET
+    [RequiresUnreferencedCode("GetDeclaredMembers has a DynamicallyAccessedMembers requirement.")]
+    #endif
     internal sealed class NestedTypePolicies : MemberPolicies<Type>
     {
         public sealed override IEnumerable<Type> GetDeclaredMembers(TypeInfo typeInfo)

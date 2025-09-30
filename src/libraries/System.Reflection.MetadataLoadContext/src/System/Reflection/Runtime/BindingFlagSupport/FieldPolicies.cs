@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using RuntimeTypeInfo = System.Reflection.TypeLoading.RoType;
 
@@ -9,6 +10,9 @@ namespace System.Reflection.Runtime.BindingFlagSupport
     /// <summary>
     /// Policies for fields.
     /// </summary>
+#if NET
+    [RequiresUnreferencedCode("GetDeclaredMembers has a DynamicallyAccessedMembers requirement.")]
+#endif
     internal sealed class FieldPolicies : MemberPolicies<FieldInfo>
     {
         public sealed override IEnumerable<FieldInfo> GetDeclaredMembers(TypeInfo typeInfo)

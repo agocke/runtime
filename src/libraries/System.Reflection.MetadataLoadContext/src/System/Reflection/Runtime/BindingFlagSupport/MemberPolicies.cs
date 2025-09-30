@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.TypeLoading;
 using RuntimeTypeInfo = System.Reflection.TypeLoading.RoType;
 
@@ -183,6 +184,7 @@ namespace System.Reflection.Runtime.BindingFlagSupport
         }
 
 #pragma warning disable CA1810 // explicit static cctor
+        [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Containing type is marked RequiresUnreferencedCode.")]
         static MemberPolicies()
         {
             Type t = typeof(M);

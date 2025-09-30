@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 
@@ -12,6 +13,7 @@ namespace System.Reflection.TypeLoading.Ecma
     /// Base class for all RoParameter's returned by MethodBase.GetParameters() that have an entry in the Param table
     /// and get their metadata from a PEReader.
     /// </summary>
+    [RequiresUnreferencedCode("ComputeMarshalAsAttribute uses RequiresUnreferencedCode.")]
     internal sealed class EcmaFatMethodParameter : RoFatMethodParameter
     {
         private readonly EcmaModule _module;

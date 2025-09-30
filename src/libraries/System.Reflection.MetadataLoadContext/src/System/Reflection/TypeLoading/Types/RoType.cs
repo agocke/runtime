@@ -11,6 +11,13 @@ namespace System.Reflection.TypeLoading
     /// <summary>
     /// Base class for all Type and TypeInfo objects created by a MetadataLoadContext.
     /// </summary>
+#if NET
+    [DynamicallyAccessedMembers(
+        DynamicallyAccessedMemberTypes.PublicFields
+        | DynamicallyAccessedMemberTypes.NonPublicFields
+        | DynamicallyAccessedMemberTypes.PublicConstructors
+        | DynamicallyAccessedMemberTypes.NonPublicConstructors)]
+#endif
     internal abstract partial class RoType : LeveledTypeInfo
     {
         private const TypeAttributes TypeAttributesSentinel = (TypeAttributes)(-1);
@@ -296,7 +303,8 @@ namespace System.Reflection.TypeLoading
         public abstract override StructLayoutAttribute? StructLayoutAttribute { get; }
 
 #if NET
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors
+        [DynamicallyAccessedMembers(
+            DynamicallyAccessedMemberTypes.PublicConstructors
             | DynamicallyAccessedMemberTypes.PublicEvents
             | DynamicallyAccessedMemberTypes.PublicFields
             | DynamicallyAccessedMemberTypes.PublicMethods

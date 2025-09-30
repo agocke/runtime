@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace System.Reflection.TypeLoading
@@ -57,6 +58,9 @@ namespace System.Reflection.TypeLoading
         private volatile MethodImplAttributes _lazyMethodImplAttributes = MethodImplAttributesSentinel;
 
         public sealed override MethodImplAttributes GetMethodImplementationFlags() => MethodImplementationFlags;
+#if NET
+        [RequiresUnreferencedCode("Trimming may change method bodies. For example it can change some instructions, remove branches or local variables.")]
+#endif
         public abstract override MethodBody? GetMethodBody();
 
         public sealed override bool ContainsGenericParameters => GetRoDeclaringType().ContainsGenericParameters;

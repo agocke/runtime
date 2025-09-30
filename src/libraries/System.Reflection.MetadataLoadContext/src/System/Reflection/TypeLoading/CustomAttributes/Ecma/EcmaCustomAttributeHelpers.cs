@@ -135,7 +135,12 @@ namespace System.Reflection.TypeLoading.Ecma
         /// Converts a list of System.Reflection.Metadata CustomAttributeNamedArgument&lt;&gt; into a freshly allocated CustomAttributeNamedArgument
         /// list suitable for direct return from the CustomAttributes api.
         /// </summary>
-        public static IList<CustomAttributeNamedArgument> ToApiForm(this IList<CustomAttributeNamedArgument<RoType>> cangs, Type attributeType)
+        public static IList<CustomAttributeNamedArgument> ToApiForm(
+            this IList<CustomAttributeNamedArgument<RoType>> cangs,
+            #if NET
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)]
+            #endif
+            Type attributeType)
         {
             int count = cangs.Count;
             CustomAttributeNamedArgument[] cans = count != 0 ? new CustomAttributeNamedArgument[count] : Array.Empty<CustomAttributeNamedArgument>();
@@ -181,6 +186,9 @@ namespace System.Reflection.TypeLoading.Ecma
         //
         // https://github.com/dotnet/runtime/blob/b908ecf514f32c7ba7d59ecc28fa3fdd64a10a1a/src/coreclr/vm/mlinfo.cpp#L469
         //
+#if NET
+        [RequiresUnreferencedCode("The type might be removed")]
+#endif
         public static MarshalAsAttribute ToMarshalAsAttribute(this BlobHandle blobHandle, EcmaModule module)
         {
             MetadataReader reader = module.Reader;

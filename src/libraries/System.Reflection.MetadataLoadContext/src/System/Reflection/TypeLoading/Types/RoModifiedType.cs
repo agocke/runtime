@@ -172,7 +172,10 @@ namespace System.Reflection
         internal override RoType[] GetGenericTypeParametersNoCopy() => _unmodifiedType.GetGenericTypeParametersNoCopy();
         internal override RoType[] GetGenericTypeArgumentsNoCopy() => _unmodifiedType.GetGenericTypeArgumentsNoCopy();
         protected internal override RoType[] GetGenericArgumentsNoCopy() => _unmodifiedType.GetGenericArgumentsNoCopy();
+        #if NET
         [RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
+                [System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute("The native code for this instantiation might not be available at runtime.")]
+        #endif
         public override Type MakeGenericType(params Type[] typeArguments) => throw new NotSupportedException(SR.NotSupported_ModifiedType);
 
         public override Type GetFunctionPointerReturnType() => throw new InvalidOperationException(SR.InvalidOperation_NotFunctionPointer);

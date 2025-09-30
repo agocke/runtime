@@ -85,6 +85,9 @@ namespace System.Reflection.TypeLoading
         }
 
         // Apis to retrieve public types physically defined in this module.
+        #if NET
+        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Types might be removed")]
+        #endif
         public sealed override Type[] GetExportedTypes()
         {
             // todo: use IEnumerable<T> extension instead: ExportedTypes.ToArray();

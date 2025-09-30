@@ -11,6 +11,9 @@ namespace System.Reflection.TypeLoading
     /// </summary>
     internal abstract partial class RoAssembly
     {
+        #if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Types might be removed")]
+                #endif
         public sealed override Type[] GetForwardedTypes()
         {
             List<Type> types = new List<Type>();

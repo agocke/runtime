@@ -36,9 +36,13 @@ namespace System.Reflection.TypeLoading
             public sealed override bool Equals(object? obj) => throw null!;
             public sealed override MethodInfo GetGenericMethodDefinition() => throw null!;
             public sealed override int GetHashCode() => throw null!;
+#if NET
+                [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Trimming may change method bodies. For example it can change some instructions, remove branches or local variables.")]
+#endif
             public sealed override MethodBody GetMethodBody() => throw null!;
 #if NET
             [RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
+                    [System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute("The native code for this instantiation might not be available at runtime.")]
 #endif
             public sealed override MethodInfo MakeGenericMethod(params Type[] typeArguments) => throw null!;
             protected sealed override MethodAttributes ComputeAttributes() => throw null!;

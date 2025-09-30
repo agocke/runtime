@@ -103,12 +103,18 @@ namespace System.Reflection
         /// the method we're looking for, we return null rather than let the TypeLoadException bubble up. The DefaultBinder will catch
         /// the null and continue its search for a better candidate.
         /// </summary>
+#if NET
+        [RequiresDynamicCode("The code for the generic type might not be available.")]
+#endif
         internal static Type? TryResolveAgainstGenericMethod(this Type signatureType, MethodInfo genericMethod)
         {
             Debug.Assert(signatureType.IsSignatureType());
             return signatureType.TryResolve(genericMethod.GetGenericArguments());
         }
 
+#if NET
+        [RequiresDynamicCode("The code for an array of the specified type might not be available.")]
+#endif
         private static Type? TryResolve(this Type signatureType, Type[] genericMethodParameters)
         {
             Debug.Assert(signatureType.IsSignatureType());
@@ -178,6 +184,9 @@ namespace System.Reflection
             }
         }
 
+        #if NET
+        [System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute("The code for an array of the specified type might not be available.")]
+        #endif
         private static Type? TryMakeArrayType(this Type type, int rank)
         {
             try

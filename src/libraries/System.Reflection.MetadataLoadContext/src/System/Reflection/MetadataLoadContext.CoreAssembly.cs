@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection.TypeLoading;
 
@@ -66,6 +67,9 @@ namespace System.Reflection
         /// if the core assembly name wasn't supplied, the core assembly could not be loaded for some reason or if the specified
         /// type does not exist in the core assembly.
         /// </summary>
+        #if NET
+        [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)]
+        #endif
         internal RoType? TryGetCoreType(CoreType coreType)
         {
             CoreTypes coreTypes = GetAllFoundCoreTypes();
