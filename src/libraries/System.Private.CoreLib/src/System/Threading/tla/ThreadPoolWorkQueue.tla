@@ -64,9 +64,10 @@ VARIABLES
     hasOutstandingThreadRequest, \* The synchronization flag (0 or 1)
     enqueuers,                   \* State of each enqueuer thread
     workers,                     \* State of each worker thread
-    workersRequested             \* Pending worker thread requests
+    workersRequested,            \* Pending worker thread requests
+    enqueuingStopped             \* TRUE when no more work will be enqueued (for liveness)
 
-vars == <<queueSize, hasOutstandingThreadRequest, enqueuers, workers, workersRequested>>
+vars == <<queueSize, hasOutstandingThreadRequest, enqueuers, workers, workersRequested, enqueuingStopped>>
 
 (***************************************************************************)
 (* WORKER STATES                                                           *)
@@ -101,6 +102,7 @@ TypeOK ==
     /\ enqueuers \in [1..NumEnqueuers -> {"idle", "enqueuing"}]
     /\ workers \in [1..NumWorkers -> WorkerStates]
     /\ workersRequested \in 0..NumWorkers
+    /\ enqueuingStopped \in BOOLEAN
 
 (***************************************************************************)
 (* INITIAL STATE                                                           *)
@@ -111,6 +113,7 @@ Init ==
     /\ enqueuers = [e \in 1..NumEnqueuers |-> "idle"]
     /\ workers = [w \in 1..NumWorkers |-> "idle"]
     /\ workersRequested = 0
+    /\ enqueuingStopped = FALSE
 
 (***************************************************************************)
 (* ENQUEUE OPERATIONS                                                      *)
@@ -126,12 +129,14 @@ Init ==
 (***************************************************************************)
 
 \* Step 1: Add item to queue (before calling EnsureThreadRequested)
+\* Disabled when enqueuingStopped = TRUE (for closed system liveness checking)
 EnqueueStart(e) ==
     /\ enqueuers[e] = "idle"
+    /\ ~enqueuingStopped
     /\ queueSize < MaxQueueSize
     /\ queueSize' = queueSize + 1
     /\ enqueuers' = [enqueuers EXCEPT ![e] = "enqueuing"]
-    /\ UNCHANGED <<hasOutstandingThreadRequest, workers, workersRequested>>
+    /\ UNCHANGED <<hasOutstandingThreadRequest, workers, workersRequested, enqueuingStopped>>
 
 (***************************************************************************)
 (* EnsureThreadRequested() - lines 612-618                                 *)
@@ -155,7 +160,7 @@ EnqueueEnsureRequested(e) ==
              THEN workersRequested' = workersRequested + 1
              ELSE UNCHANGED workersRequested
     /\ enqueuers' = [enqueuers EXCEPT ![e] = "idle"]
-    /\ UNCHANGED <<queueSize, workers>>
+    /\ UNCHANGED <<queueSize, workers, enqueuingStopped>>
 
 (***************************************************************************)
 (* WORKER OPERATIONS                                                       *)
@@ -170,7 +175,7 @@ WorkerStart(w) ==
     /\ workersRequested > 0
     /\ workersRequested' = workersRequested - 1
     /\ workers' = [workers EXCEPT ![w] = "starting"]
-    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers>>
+    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, enqueuingStopped>>
 
 (***************************************************************************)
 (* THE KEY OPERATION: Clear flag BEFORE checking queue                     *)
@@ -203,7 +208,7 @@ WorkerClearFlagAndCheck(w) ==
     /\ workers[w] = "starting"
     /\ hasOutstandingThreadRequest' = 0
     /\ workers' = [workers EXCEPT ![w] = "checking"]
-    /\ UNCHANGED <<queueSize, enqueuers, workersRequested>>
+    /\ UNCHANGED <<queueSize, enqueuers, workersRequested, enqueuingStopped>>
 
 (***************************************************************************)
 (* Worker dequeue operations                                               *)
@@ -223,7 +228,7 @@ WorkerFindWork(w) ==
     /\ queueSize > 0
     /\ queueSize' = queueSize - 1
     /\ workers' = [workers EXCEPT ![w] = "found_work"]
-    /\ UNCHANGED <<hasOutstandingThreadRequest, enqueuers, workersRequested>>
+    /\ UNCHANGED <<hasOutstandingThreadRequest, enqueuers, workersRequested, enqueuingStopped>>
 
 (***************************************************************************)
 (* WORK STEALING AND MISSED STEAL                                          *)
@@ -280,7 +285,7 @@ WorkerMissedSteal(w) ==
              THEN workersRequested' = workersRequested + 1
              ELSE UNCHANGED workersRequested
     /\ workers' = [workers EXCEPT ![w] = "idle"]
-    /\ UNCHANGED <<queueSize, enqueuers>>
+    /\ UNCHANGED <<queueSize, enqueuers, enqueuingStopped>>
 
 \* Worker finds no work - returns from Dispatch (lines 951-966)
 \* Any concurrent enqueue will have seen flag=0 and requested a worker
@@ -288,7 +293,7 @@ WorkerFindNoWork(w) ==
     /\ workers[w] = "checking"
     /\ queueSize = 0
     /\ workers' = [workers EXCEPT ![w] = "idle"]
-    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested>>
+    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested, enqueuingStopped>>
 
 (***************************************************************************)
 (* Worker ensures another thread requested before processing               *)
@@ -308,7 +313,7 @@ WorkerEnsureAnotherRequested(w) ==
              THEN workersRequested' = workersRequested + 1
              ELSE UNCHANGED workersRequested
     /\ workers' = [workers EXCEPT ![w] = "processing"]
-    /\ UNCHANGED <<queueSize, enqueuers>>
+    /\ UNCHANGED <<queueSize, enqueuers, enqueuingStopped>>
 
 (***************************************************************************)
 (* WORKER LOOP - Multiple work items per dispatch                          *)
@@ -339,7 +344,7 @@ WorkerEnsureAnotherRequested(w) ==
 WorkerFinishProcessing(w) ==
     /\ workers[w] = "processing"
     /\ workers' = [workers EXCEPT ![w] = "looping"]
-    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested>>
+    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested, enqueuingStopped>>
 
 \* Worker in loop finds more work
 WorkerLoopFindWork(w) ==
@@ -347,7 +352,7 @@ WorkerLoopFindWork(w) ==
     /\ queueSize > 0
     /\ queueSize' = queueSize - 1
     /\ workers' = [workers EXCEPT ![w] = "processing"]
-    /\ UNCHANGED <<hasOutstandingThreadRequest, enqueuers, workersRequested>>
+    /\ UNCHANGED <<hasOutstandingThreadRequest, enqueuers, workersRequested, enqueuingStopped>>
 
 \* Worker in loop misses steal (lock contention)
 WorkerLoopMissedSteal(w) ==
@@ -360,26 +365,44 @@ WorkerLoopMissedSteal(w) ==
              THEN workersRequested' = workersRequested + 1
              ELSE UNCHANGED workersRequested
     /\ workers' = [workers EXCEPT ![w] = "idle"]
-    /\ UNCHANGED <<queueSize, enqueuers>>
+    /\ UNCHANGED <<queueSize, enqueuers, enqueuingStopped>>
 
 \* Worker in loop finds no more work - exits Dispatch
 WorkerLoopNoWork(w) ==
     /\ workers[w] = "looping"
     /\ queueSize = 0
     /\ workers' = [workers EXCEPT ![w] = "idle"]
-    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested>>
+    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested, enqueuingStopped>>
 
 \* Worker in loop decides to yield (quantum expired or hill climbing)
 \* Models lines 1071-1095 where worker returns without finding work
 WorkerLoopYield(w) ==
     /\ workers[w] = "looping"
     /\ workers' = [workers EXCEPT ![w] = "idle"]
-    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested>>
+    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested, enqueuingStopped>>
+
+(***************************************************************************)
+(* STOP ENQUEUEING - For closed system liveness checking                   *)
+(*                                                                         *)
+(* This action models the scenario where new work items stop being added.  *)
+(* Once enqueuingStopped becomes TRUE, EnqueueStart is disabled.           *)
+(* This allows us to verify that the queue eventually drains.              *)
+(*                                                                         *)
+(* NOTE: We don't require all enqueuers to be idle - in-progress enqueues  *)
+(* will complete due to WF_vars(EnqueueEnsureRequested). This makes the    *)
+(* action enabled more often, allowing SF_vars(StopEnqueueing) to fire.    *)
+(***************************************************************************)
+StopEnqueueing ==
+    /\ ~enqueuingStopped
+    /\ enqueuingStopped' = TRUE
+    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workers, workersRequested>>
 
 (***************************************************************************)
 (* STATE MACHINE                                                           *)
 (***************************************************************************)
-Next ==
+
+\* Core next-state relation (open system - enqueuers run forever)
+NextOpen ==
     \/ \E e \in 1..NumEnqueuers:
         \/ EnqueueStart(e)
         \/ EnqueueEnsureRequested(e)
@@ -395,6 +418,9 @@ Next ==
         \/ WorkerLoopMissedSteal(w)
         \/ WorkerLoopNoWork(w)
         \/ WorkerLoopYield(w)
+
+\* Extended next-state relation (closed system - enqueuers can stop)
+Next == NextOpen \/ StopEnqueueing
 
 (***************************************************************************)
 (* FAIRNESS                                                                *)
@@ -433,7 +459,27 @@ Fairness ==
         /\ SF_vars(WorkerFindWork(w))
         /\ SF_vars(WorkerLoopFindWork(w))
 
-Spec == Init /\ [][Next]_vars /\ Fairness
+\* Open system spec - enqueuers run forever, no termination possible
+Spec == Init /\ [][NextOpen]_vars /\ Fairness
+
+(***************************************************************************)
+(* CLOSED SYSTEM FAIRNESS - For queue drain verification                   *)
+(*                                                                         *)
+(* ClosedFairness adds SF_vars(StopEnqueueing) which guarantees that       *)
+(* enqueuers will eventually stop adding work. This allows us to verify    *)
+(* that the queue eventually drains (AllWorkEventuallyProcessed).          *)
+(*                                                                         *)
+(* We need STRONG fairness (SF) here, not weak fairness (WF), because:     *)
+(* - StopEnqueueing requires ~enqueuingStopped (can fire anytime)          *)
+(* - But enqueuers may keep starting work, which we want to stop           *)
+(* - SF guarantees action if infinitely often enabled                      *)
+(***************************************************************************)
+ClosedFairness ==
+    /\ Fairness
+    /\ SF_vars(StopEnqueueing)
+
+\* Closed system spec - enqueuers eventually stop, system can terminate
+ClosedSpec == Init /\ [][Next]_vars /\ ClosedFairness
 
 (***************************************************************************)
 (* SAFETY PROPERTIES                                                       *)
