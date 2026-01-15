@@ -1,86 +1,160 @@
-# TLA+ Model for ThreadPool Work Queue
+# TLA+ Models for ThreadPool Work Queue
 
-This directory contains TLA+ specifications for modeling the ThreadPool work queue's
-worker thread request mechanism. The goal is to demonstrate how formal verification
-can catch concurrency bugs like the one fixed in PR #121887.
+This directory contains TLA+ specifications for formally verifying the
+ThreadPool work queue's synchronization protocol.
 
-## Background
+## Overview
 
-PR [#121887](https://github.com/dotnet/runtime/pull/121887) fixed a reliability bug
-in the ThreadPool where work items could be left stranded in the queue with no worker
-threads coming to process them. This led to deadlocks reported in:
-- Windows IO completion: #121608
-- General purpose ThreadPool: #119043
+The core challenge in the ThreadPool is ensuring **work items are never stranded**
+in the queue with no worker threads coming to process them. This requires careful
+coordination between:
 
-## The Bug
+- **Enqueuers**: Threads adding work to the queue
+- **Workers**: Threads processing work from the queue
+- **The synchronization flag**: `_hasOutstandingThreadRequest`
 
-The original implementation used a 3-state scheme:
-- `NotScheduled` → `Scheduled` (when work is enqueued)
-- `Scheduled` → `Determining` (before dequeuing)
-- `Determining` → `NotScheduled` (if queue empty) or `Scheduled` (if more work)
+## Directory Structure
 
-The race condition occurred when:
-1. Worker sets state to `Determining` and checks the queue
-2. Worker finds no work (or misses the item due to timing)
-3. Worker CAS from `Determining` to `NotScheduled` succeeds
-4. Meanwhile, enqueuer added work and saw state was `Determining` or `Scheduled`
-5. Enqueuer did NOT request a new worker (assuming existing worker would handle it)
-6. Result: Work item in queue, no worker scheduled to process it → **DEADLOCK**
-
-## The Fix
-
-The fix simplified to a 2-state boolean flag (`_hasOutstandingThreadRequest`):
-- Worker clears the flag BEFORE checking for work
-- Enqueuer always requests a worker if flag is 0
-- If work was added between flag clear and check, worker will see it
-- If worker misses it, the enqueuer will have requested another worker
-
-## TLC Model Checker Results
-
-### Buggy Model (`ThreadPoolRace.tla`)
 ```
-Invariant WorkNotStranded is violated.
+tla/
+├── ThreadPoolWorkQueue.tla    # Main model - evolves with the code
+├── ThreadPoolWorkQueue.cfg    # TLC configuration
+├── README.md                  # This file
+└── examples/
+    └── pr-121887/             # Bug fixed in PR #121887
+        ├── README.md          # Detailed explanation
+        ├── BuggyModel.tla     # 3-state buggy implementation
+        ├── BuggyModel.cfg
+        ├── FixedModel.tla     # 2-state fixed implementation
+        └── FixedModel.cfg
 ```
-TLC found a **10-step counterexample** showing exactly how work becomes stranded:
-1. Enqueuer adds work, sets stage to `Scheduled`, requests worker
-2. Worker starts, sets stage to `Determining`
-3. Worker checks queue, finds nothing (timing/race)
-4. Worker CAS succeeds: `Determining` → `NotScheduled`
-5. Worker exits
-6. **Final state**: `queue = 1`, `stage = NotScheduled`, no worker requested!
 
-### Fixed Model (`ThreadPoolFixed.tla`)
+## Quick Start
+
+### Prerequisites
+
+**Option 1: VS Code Extension (Recommended)**
+1. Install [TLA+ extension](https://marketplace.visualstudio.com/items?itemName=alygin.vscode-tlaplus)
+2. The extension includes TLC model checker
+
+**Option 2: Command Line**
+1. Install Java Runtime (JRE 11+)
+2. Download TLA+ tools from https://github.com/tlaplus/tlaplus/releases
+3. Add `tla2tools.jar` to your PATH or use full path
+
+### Running the Model Checker
+
+**VS Code:**
+1. Open `ThreadPoolWorkQueue.tla`
+2. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
+3. Run "TLA+: Check model with TLC"
+4. View results in the TLA+ output panel
+
+**Command Line:**
+```bash
+# From this directory
+tlc ThreadPoolWorkQueue.tla -config ThreadPoolWorkQueue.cfg
+
+# Or with explicit path to tla2tools.jar
+java -jar /path/to/tla2tools.jar ThreadPoolWorkQueue.tla -config ThreadPoolWorkQueue.cfg
 ```
+
+### Expected Output
+
+For the main model (fixed implementation):
+```
+TLC2 Version 2.xx ...
+Running breadth-first search...
 Model checking completed. No error has been found.
-78 states generated, 43 distinct states found.
+  Distinct states found: XX
 ```
 
-## Files
+For the buggy example (`examples/pr-121887/BuggyModel.tla`):
+```
+Error: Invariant NoStrandedWork is violated.
+The following sequence of states leads to the violation:
+...
+```
 
-- `ThreadPoolRace.tla` - Minimal model demonstrating the exact race condition
-- `ThreadPoolRace.cfg` - TLC configuration for the race model
-- `ThreadPoolBuggy.tla` - More detailed model of the buggy 3-state implementation
-- `ThreadPoolBuggy.cfg` - TLC configuration for the buggy model
-- `ThreadPoolFixed.tla` - Model of the fixed 2-state implementation
-- `ThreadPoolFixed.cfg` - TLC configuration for the fixed model
+## The Main Model
 
-## Running the Models
+`ThreadPoolWorkQueue.tla` models the current implementation with these key elements:
 
-Using VS Code with the TLA+ extension:
-1. Open a `.tla` file
-2. Press `Ctrl+Shift+P` and run "TLA+: Check model with TLC"
-3. Or use the TLA+ tools from command line
+### Variables
+| TLA+ Variable | C# Field | Description |
+|---------------|----------|-------------|
+| `queueSize` | `workItems`, etc. | Abstract count of all work items |
+| `hasOutstandingThreadRequest` | `_hasOutstandingThreadRequest` | Synchronization flag |
+| `workersRequested` | Pending `RequestWorkerThread()` | Worker requests in flight |
 
-## Key Insight
+### Key Operations
+| TLA+ Action | C# Method | Location |
+|-------------|-----------|----------|
+| `EnqueueStart` | `queue.Enqueue()` | Line ~640 |
+| `EnqueueEnsureRequested` | `EnsureThreadRequested()` | Lines 612-618 |
+| `WorkerClearFlagAndCheck` | Flag clear + barrier | Lines 944-947 |
+| `WorkerFindWork` | `Dequeue()` returns item | Line 949 |
+| `WorkerEnsureAnotherRequested` | `EnsureThreadRequested()` | Line 975 |
 
-The fundamental issue was the **order of operations**:
+### Safety Property
 
-**Buggy**: Set state → Memory barrier → Check queue
-- Window exists where enqueuer sees "active" state but worker exits
+```tla
+NoStrandedWork ==
+    (queueSize > 0 /\ ~EnqueueInProgress) =>
+        \/ Cardinality(ActiveWorkers) > 0
+        \/ workersRequested > 0
+        \/ hasOutstandingThreadRequest = 1
+```
 
-**Fixed**: Clear flag → Memory barrier → Check queue  
-- Any concurrent enqueue will see flag=0 and request a worker
-- Worker will either see the work OR enqueuer will have requested another worker
+This states: if there's work and no enqueue is in progress, either:
+- A worker is active (will check the queue), or
+- A worker has been requested (will start and check), or
+- The flag guarantees someone will check
 
-This is a classic example where formal verification can catch subtle concurrency bugs
-that are extremely difficult to reproduce and debug in production.
+## Modifying the Model
+
+When changing `ThreadPoolWorkQueue.cs`, consider updating the model:
+
+1. **New queue types**: Update `queueSize` abstraction if adding new queues
+2. **Protocol changes**: Update actions to match new synchronization logic
+3. **New operations**: Add new TLA+ actions for significant new code paths
+
+Run TLC after changes to verify the safety property still holds.
+
+## Advanced Usage
+
+### Checking Liveness
+
+To verify that all work eventually gets processed:
+
+1. Edit `ThreadPoolWorkQueue.cfg`
+2. Comment out `NEXT Next`
+3. Uncomment `SPECIFICATION Spec` and `PROPERTY AllWorkEventuallyProcessed`
+4. Run TLC (this is slower due to temporal logic checking)
+
+### Increasing State Space
+
+For more thorough checking, increase constants in `.cfg`:
+```
+CONSTANTS
+    MaxQueueSize = 3
+    NumEnqueuers = 2
+    NumWorkers = 2
+```
+
+Note: State space grows exponentially. Start small.
+
+### Debugging Violations
+
+When TLC finds a violation:
+1. Examine the state trace in the output
+2. Each state shows all variable values
+3. Identify which action led to the bad state
+4. Map back to C# code using comments in the TLA+ file
+
+## Related Resources
+
+- [TLA+ Video Course](https://lamport.azurewebsites.net/video/videos.html) by Leslie Lamport
+- [Learn TLA+](https://learntla.com/) - Interactive tutorial
+- [PR #121887](https://github.com/dotnet/runtime/pull/121887) - The fix this model verifies
+- [#121608](https://github.com/dotnet/runtime/issues/121608) - Original bug report
