@@ -400,14 +400,25 @@ Next ==
 (* FAIRNESS                                                                *)
 (*                                                                         *)
 (* Weak fairness ensures threads eventually make progress.                 *)
-(* Note: We don't add fairness to WorkerMissedSteal or WorkerLoopMissedSteal*)
-(* because missed steals are exceptional conditions, not guaranteed paths. *)
-(* We also don't add fairness to WorkerLoopYield as yielding is optional.  *)
+(*                                                                         *)
+(* IMPORTANT: We do NOT add fairness to EnqueueStart because for liveness  *)
+(* to hold (all work eventually processed), we must assume enqueuers       *)
+(* eventually stop adding work. With WF on EnqueueStart, the model allows  *)
+(* infinite enqueueing which prevents the queue from ever becoming empty.  *)
+(*                                                                         *)
+(* We also don't add fairness to:                                          *)
+(*   - WorkerMissedSteal / WorkerLoopMissedSteal: exceptional conditions   *)
+(*   - WorkerLoopYield: optional early exit                                *)
+(*                                                                         *)
+(* Strong fairness on WorkerFindWork/WorkerLoopFindWork ensures that if    *)
+(* work is available infinitely often, workers will eventually get it      *)
+(* (they won't miss steals forever).                                       *)
 (***************************************************************************)
 Fairness ==
+    \* Enqueuers: only EnsureRequested has fairness (completes started enqueues)
+    \* EnqueueStart does NOT have fairness - enqueuers may stop at any time
     /\ \A e \in 1..NumEnqueuers:
-        /\ WF_vars(EnqueueStart(e))
-        /\ WF_vars(EnqueueEnsureRequested(e))
+        WF_vars(EnqueueEnsureRequested(e))
     /\ \A w \in 1..NumWorkers:
         /\ WF_vars(WorkerStart(w))
         /\ WF_vars(WorkerClearFlagAndCheck(w))
@@ -417,6 +428,10 @@ Fairness ==
         /\ WF_vars(WorkerFinishProcessing(w))
         /\ WF_vars(WorkerLoopFindWork(w))
         /\ WF_vars(WorkerLoopNoWork(w))
+        \* Strong fairness: if work is available infinitely often,
+        \* workers will eventually get it (won't miss steals forever)
+        /\ SF_vars(WorkerFindWork(w))
+        /\ SF_vars(WorkerLoopFindWork(w))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -448,12 +463,25 @@ NoStrandedWork ==
         \/ hasOutstandingThreadRequest = 1
 
 (***************************************************************************)
-(* LIVENESS PROPERTY                                                       *)
+(* LIVENESS PROPERTIES                                                     *)
+(*                                                                         *)
+(* Note on liveness with continuous enqueueing:                            *)
+(* The property "all work eventually processed" cannot hold if enqueuers   *)
+(* keep adding work faster than workers consume it. This is expected -     *)
+(* real thread pools can have unbounded backlogs.                          *)
+(*                                                                         *)
+(* The SAFETY property NoStrandedWork guarantees that work is never        *)
+(* forgotten - there's always a mechanism to process it. Liveness          *)
+(* requires additional assumptions about the workload.                     *)
 (***************************************************************************)
 
-\* All work eventually gets processed (requires fairness)
-\* Note: This may not hold if WorkerLoopYield is taken infinitely often
-\* In practice, the runtime ensures workers make progress
+\* If no more work is enqueued, eventually all work gets processed
+\* This requires removing WF_vars(EnqueueStart) from Fairness
 AllWorkEventuallyProcessed == [](queueSize > 0 => <>(queueSize = 0))
+
+\* Weaker property: if there's work and a pending request, eventually
+\* a worker starts. This should always hold.
+WorkerEventuallyStarts ==
+    []((workersRequested > 0) => <>(\E w \in 1..NumWorkers: workers[w] # "idle"))
 
 =============================================================================
