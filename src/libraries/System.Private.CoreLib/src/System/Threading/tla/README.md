@@ -87,6 +87,16 @@ The following sequence of states leads to the violation:
 | `hasOutstandingThreadRequest` | `_hasOutstandingThreadRequest` | Synchronization flag |
 | `workersRequested` | Pending `RequestWorkerThread()` | Worker requests in flight |
 
+### Worker States
+| State | Description | C# Location |
+|-------|-------------|-------------|
+| `idle` | Not in Dispatch() | - |
+| `starting` | Before clearing flag | Line ~944 |
+| `checking` | After flag clear, checking queue | Lines 944-949 |
+| `found_work` | Dequeued item, about to ensure another request | Line 949+ |
+| `processing` | Executing work item callback | Line ~996+ |
+| `looping` | Finished one item, checking for more | Line ~1002 |
+
 ### Key Operations
 | TLA+ Action | C# Method | Location |
 |-------------|-----------|----------|
@@ -94,7 +104,29 @@ The following sequence of states leads to the violation:
 | `EnqueueEnsureRequested` | `EnsureThreadRequested()` | Lines 612-618 |
 | `WorkerClearFlagAndCheck` | Flag clear + barrier | Lines 944-947 |
 | `WorkerFindWork` | `Dequeue()` returns item | Line 949 |
+| `WorkerMissedSteal` | `TrySteal()` fails, `missedSteal=true` | Lines 327-370, 961-963 |
 | `WorkerEnsureAnotherRequested` | `EnsureThreadRequested()` | Line 975 |
+| `WorkerLoopFindWork` | Loop iteration finds more work | Line ~1004 |
+| `WorkerLoopMissedSteal` | Loop `missedSteal` handling | Lines 1020-1022 |
+
+### Modeled Features
+
+**1. Work Stealing with `missedSteal`** (C# lines 327-370, 961-963, 1020-1022)
+- `TrySteal()` can fail to acquire the lock on another thread's queue
+- When `missedSteal = true`, the worker calls `EnsureThreadRequested()`
+- This is a critical safety mechanism preventing work from being stranded
+
+**2. Worker Loop** (C# lines 996-1050)
+- Workers process multiple items per dispatch until:
+  - Queue is empty
+  - Quantum expires (~30ms)
+  - Hill climbing requests thread to park
+- Modeled via `looping` state and `WorkerLoop*` actions
+
+**3. Memory Barrier** (C# line 947)
+- `Interlocked.MemoryBarrier()` ensures the flag clear is visible before queue check
+- TLA+ implicitly models sequential consistency via atomic actions
+- The key insight is the ORDERING: clear flag BEFORE checking queue
 
 ### Safety Property
 

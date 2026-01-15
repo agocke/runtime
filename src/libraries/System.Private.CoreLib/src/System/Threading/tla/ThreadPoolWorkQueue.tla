@@ -11,6 +11,17 @@
 (*   ThreadPoolWorkQueue.cs                                                *)
 (*                                                                         *)
 (* LAST UPDATED: January 2026 (post PR #121887)                            *)
+(*                                                                         *)
+(* MEMORY MODEL NOTE:                                                      *)
+(*   TLA+ assumes sequential consistency by default. The real C# code      *)
+(*   uses Interlocked.MemoryBarrier() (line 947) to establish happens-     *)
+(*   before relationships between flag operations and queue checks.        *)
+(*   This model implicitly captures the intended semantics because:        *)
+(*   1. Each TLA+ action is atomic                                         *)
+(*   2. Variable reads/writes within an action see consistent state        *)
+(*   The key insight is that the ORDERING of operations (clear flag        *)
+(*   BEFORE checking queue) is what matters, and TLA+ correctly models     *)
+(*   this via the sequencing of actions.                                   *)
 (***************************************************************************)
 
 EXTENDS Integers, Sequences, FiniteSets
@@ -63,15 +74,23 @@ vars == <<queueSize, hasOutstandingThreadRequest, enqueuers, workers, workersReq
 (* Maps to code locations in Dispatch() method (line ~933):                *)
 (*                                                                         *)
 (* "idle"       - Worker not in Dispatch() method                          *)
+(*                                                                         *)
 (* "starting"   - Entered Dispatch(), before clearing flag (line ~944)     *)
+(*                                                                         *)
 (* "checking"   - After flag cleared + memory barrier, checking queue      *)
 (*                C#: lines 944-949                                        *)
+(*                                                                         *)
 (* "found_work" - Dequeued item, about to ensure another request           *)
-(*                C#: after line 949, workItem != null                     *)
+(*                C#: after line 949/1004, workItem != null                *)
+(*                                                                         *)
 (* "processing" - Executing the work item callback                         *)
 (*                C#: inside while loop, line ~996+                        *)
+(*                                                                         *)
+(* "looping"    - Finished one item, checking for more (worker loop)       *)
+(*                C#: line ~999, continuing while(true) loop               *)
+(*                Models that workers process multiple items per dispatch  *)
 (***************************************************************************)
-WorkerStates == {"idle", "starting", "checking", "found_work", "processing"}
+WorkerStates == {"idle", "starting", "checking", "found_work", "processing", "looping"}
 
 (***************************************************************************)
 (* TYPE INVARIANT                                                          *)
@@ -96,7 +115,7 @@ Init ==
 (***************************************************************************)
 (* ENQUEUE OPERATIONS                                                      *)
 (*                                                                         *)
-(* Models ThreadPoolWorkQueue.Enqueue() at lines 619-651:                  *)
+(* Models ThreadPoolWorkQueue.Enqueue() at lines 621-651:                  *)
 (*                                                                         *)
 (*   public void Enqueue(object callback, bool forceGlobal)                *)
 (*   {                                                                     *)
@@ -171,12 +190,32 @@ WorkerStart(w) ==
 (*                                                                         *)
 (* Any enqueue that happens AFTER step 1 will see flag=0 and request       *)
 (* a new worker. The barrier ensures this relationship holds.              *)
+(*                                                                         *)
+(* MEMORY BARRIER SEMANTICS:                                               *)
+(*   The Interlocked.MemoryBarrier() creates a full fence ensuring:        *)
+(*   - All writes before the barrier are visible to other threads          *)
+(*   - All reads after the barrier see the latest values                   *)
+(*   In TLA+, this is modeled by the atomic transition: the flag write     *)
+(*   and subsequent queue read happen in a well-defined order that other   *)
+(*   threads observe consistently.                                         *)
 (***************************************************************************)
 WorkerClearFlagAndCheck(w) ==
     /\ workers[w] = "starting"
     /\ hasOutstandingThreadRequest' = 0
     /\ workers' = [workers EXCEPT ![w] = "checking"]
     /\ UNCHANGED <<queueSize, enqueuers, workersRequested>>
+
+(***************************************************************************)
+(* Worker dequeue operations                                               *)
+(*                                                                         *)
+(* Models Dequeue() at lines 758-843, which checks:                        *)
+(*   1. Local work-stealing queue (LocalPop)                               *)
+(*   2. High-priority queue                                                *)
+(*   3. Assigned global queue                                              *)
+(*   4. Main global queue                                                  *)
+(*   5. Other assignable queues                                            *)
+(*   6. Other threads' work-stealing queues (TrySteal)                     *)
+(***************************************************************************)
 
 \* Worker finds work in queue (lines 949+, workItem != null)
 WorkerFindWork(w) ==
@@ -185,6 +224,63 @@ WorkerFindWork(w) ==
     /\ queueSize' = queueSize - 1
     /\ workers' = [workers EXCEPT ![w] = "found_work"]
     /\ UNCHANGED <<hasOutstandingThreadRequest, enqueuers, workersRequested>>
+
+(***************************************************************************)
+(* WORK STEALING AND MISSED STEAL                                          *)
+(*                                                                         *)
+(* Models TrySteal() at lines 327-370. Work stealing can FAIL to acquire   *)
+(* the lock on another thread's queue, setting missedSteal = true.         *)
+(*                                                                         *)
+(* C# lines 327-370 (TrySteal):                                            *)
+(*   public object? TrySteal(ref bool missedSteal)                         *)
+(*   {                                                                     *)
+(*       while (true)                                                      *)
+(*       {                                                                 *)
+(*           if (CanSteal)                                                 *)
+(*           {                                                             *)
+(*               bool taken = false;                                       *)
+(*               try                                                       *)
+(*               {                                                         *)
+(*                   m_foreignLock.TryEnter(ref taken);                    *)
+(*                   if (taken)                                            *)
+(*                   {                                                     *)
+(*                       // ... steal logic ...                            *)
+(*                   }                                                     *)
+(*               }                                                         *)
+(*               finally { if (taken) m_foreignLock.Exit(...); }           *)
+(*               missedSteal = true;  // <-- Lock contention!              *)
+(*           }                                                             *)
+(*           return null;                                                  *)
+(*       }                                                                 *)
+(*   }                                                                     *)
+(*                                                                         *)
+(* When missedSteal is true, Dispatch calls EnsureThreadRequested():       *)
+(*                                                                         *)
+(* C# lines 961-963 and 1020-1022:                                         *)
+(*   if (missedSteal)                                                      *)
+(*   {                                                                     *)
+(*       workQueue.EnsureThreadRequested();                                *)
+(*   }                                                                     *)
+(*                                                                         *)
+(* This is a CRITICAL safety mechanism: if we couldn't steal due to        *)
+(* lock contention, there might be work we couldn't see. Request another   *)
+(* worker to ensure that work doesn't get stranded.                        *)
+(***************************************************************************)
+
+\* Worker checks queue but misses work due to steal contention
+\* This can happen even if queueSize > 0 - models the race condition
+\* where TrySteal fails to acquire the lock (missedSteal = true)
+WorkerMissedSteal(w) ==
+    /\ workers[w] = "checking"
+    /\ queueSize > 0  \* Work exists but we couldn't get it
+    \* We must request another worker since we might have missed items
+    /\ LET oldValue == hasOutstandingThreadRequest
+       IN /\ hasOutstandingThreadRequest' = 1
+          /\ IF oldValue = 0
+             THEN workersRequested' = workersRequested + 1
+             ELSE UNCHANGED workersRequested
+    /\ workers' = [workers EXCEPT ![w] = "idle"]
+    /\ UNCHANGED <<queueSize, enqueuers>>
 
 \* Worker finds no work - returns from Dispatch (lines 951-966)
 \* Any concurrent enqueue will have seen flag=0 and requested a worker
@@ -214,9 +310,69 @@ WorkerEnsureAnotherRequested(w) ==
     /\ workers' = [workers EXCEPT ![w] = "processing"]
     /\ UNCHANGED <<queueSize, enqueuers>>
 
-\* Worker finishes processing work item
+(***************************************************************************)
+(* WORKER LOOP - Multiple work items per dispatch                          *)
+(*                                                                         *)
+(* Real workers loop in Dispatch() processing multiple items until:        *)
+(*   - Queue is empty                                                      *)
+(*   - Quantum expires (~30ms, DispatchQuantumMs)                          *)
+(*   - Hill climbing requests thread to park                               *)
+(*                                                                         *)
+(* C# lines 999-1050 (while loop):                                         *)
+(*   while (true)                                                          *)
+(*   {                                                                     *)
+(*       // ... process workItem ...                                       *)
+(*       workItem = workQueue.Dequeue(tl, ref missedSteal);                *)
+(*       if (workItem == null)                                             *)
+(*       {                                                                 *)
+(*           if (missedSteal) workQueue.EnsureThreadRequested();           *)
+(*           return true;                                                  *)
+(*       }                                                                 *)
+(*       // ... check quantum, continue loop ...                           *)
+(*   }                                                                     *)
+(*                                                                         *)
+(* This model captures the loop by having workers transition to "looping"  *)
+(* after processing, then back to checking for more work.                  *)
+(***************************************************************************)
+
+\* Worker finishes processing one item, will check for more
 WorkerFinishProcessing(w) ==
     /\ workers[w] = "processing"
+    /\ workers' = [workers EXCEPT ![w] = "looping"]
+    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested>>
+
+\* Worker in loop finds more work
+WorkerLoopFindWork(w) ==
+    /\ workers[w] = "looping"
+    /\ queueSize > 0
+    /\ queueSize' = queueSize - 1
+    /\ workers' = [workers EXCEPT ![w] = "processing"]
+    /\ UNCHANGED <<hasOutstandingThreadRequest, enqueuers, workersRequested>>
+
+\* Worker in loop misses steal (lock contention)
+WorkerLoopMissedSteal(w) ==
+    /\ workers[w] = "looping"
+    /\ queueSize > 0  \* Work exists but we couldn't get it
+    \* Request another worker since we might have missed items
+    /\ LET oldValue == hasOutstandingThreadRequest
+       IN /\ hasOutstandingThreadRequest' = 1
+          /\ IF oldValue = 0
+             THEN workersRequested' = workersRequested + 1
+             ELSE UNCHANGED workersRequested
+    /\ workers' = [workers EXCEPT ![w] = "idle"]
+    /\ UNCHANGED <<queueSize, enqueuers>>
+
+\* Worker in loop finds no more work - exits Dispatch
+WorkerLoopNoWork(w) ==
+    /\ workers[w] = "looping"
+    /\ queueSize = 0
+    /\ workers' = [workers EXCEPT ![w] = "idle"]
+    /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested>>
+
+\* Worker in loop decides to yield (quantum expired or hill climbing)
+\* Models lines 1071-1095 where worker returns without finding work
+WorkerLoopYield(w) ==
+    /\ workers[w] = "looping"
     /\ workers' = [workers EXCEPT ![w] = "idle"]
     /\ UNCHANGED <<queueSize, hasOutstandingThreadRequest, enqueuers, workersRequested>>
 
@@ -231,14 +387,22 @@ Next ==
         \/ WorkerStart(w)
         \/ WorkerClearFlagAndCheck(w)
         \/ WorkerFindWork(w)
+        \/ WorkerMissedSteal(w)
         \/ WorkerFindNoWork(w)
         \/ WorkerEnsureAnotherRequested(w)
         \/ WorkerFinishProcessing(w)
+        \/ WorkerLoopFindWork(w)
+        \/ WorkerLoopMissedSteal(w)
+        \/ WorkerLoopNoWork(w)
+        \/ WorkerLoopYield(w)
 
 (***************************************************************************)
 (* FAIRNESS                                                                *)
 (*                                                                         *)
 (* Weak fairness ensures threads eventually make progress.                 *)
+(* Note: We don't add fairness to WorkerMissedSteal or WorkerLoopMissedSteal*)
+(* because missed steals are exceptional conditions, not guaranteed paths. *)
+(* We also don't add fairness to WorkerLoopYield as yielding is optional.  *)
 (***************************************************************************)
 Fairness ==
     /\ \A e \in 1..NumEnqueuers:
@@ -251,6 +415,8 @@ Fairness ==
         /\ WF_vars(WorkerFindNoWork(w))
         /\ WF_vars(WorkerEnsureAnotherRequested(w))
         /\ WF_vars(WorkerFinishProcessing(w))
+        /\ WF_vars(WorkerLoopFindWork(w))
+        /\ WF_vars(WorkerLoopNoWork(w))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -269,6 +435,11 @@ EnqueueInProgress == \E e \in 1..NumEnqueuers: enqueuers[e] # "idle"
 (*   - Either a worker is active (will check queue), OR                    *)
 (*   - A worker has been requested (will start and check), OR              *)
 (*   - The flag is set (guarantees someone will check)                     *)
+(*                                                                         *)
+(* This property captures the bug fixed in PR #121887. The key insight:    *)
+(*   - Clearing flag BEFORE checking queue ensures no race window          *)
+(*   - missedSteal handling ensures contention doesn't strand work         *)
+(*   - Worker loop ensures continuous processing while work exists         *)
 (***************************************************************************)
 NoStrandedWork ==
     (queueSize > 0 /\ ~EnqueueInProgress) =>
@@ -281,6 +452,8 @@ NoStrandedWork ==
 (***************************************************************************)
 
 \* All work eventually gets processed (requires fairness)
+\* Note: This may not hold if WorkerLoopYield is taken infinitely often
+\* In practice, the runtime ensures workers make progress
 AllWorkEventuallyProcessed == [](queueSize > 0 => <>(queueSize = 0))
 
 =============================================================================
