@@ -1394,12 +1394,22 @@ namespace System.Diagnostics.Tracing
 
                     if (!SelfDescribingEvents)
                     {
-                        if (metadata.EnabledForETW && !m_etwProvider.WriteEvent(ref metadata.Descriptor, metadata.EventHandle, pActivityId, relatedActivityId, eventDataCount, (IntPtr)data))
-                            ThrowEventSourceException(metadata.Name);
+                        bool enabledForEventPipe = false;
 #if FEATURE_PERFTRACING
-                        if (metadata.EnabledForEventPipe && !m_eventPipeProvider.WriteEvent(ref metadata.Descriptor, metadata.EventHandle, pActivityId, relatedActivityId, eventDataCount, (IntPtr)data))
+                        enabledForEventPipe = metadata.EnabledForEventPipe;
+#endif
+                        if (!WriteToAllProviders(
+                                ref metadata.Descriptor,
+                                metadata.EventHandle,
+                                pActivityId,
+                                relatedActivityId,
+                                eventDataCount,
+                                data,
+                                metadata.EnabledForETW,
+                                enabledForEventPipe))
+                        {
                             ThrowEventSourceException(metadata.Name);
-#endif // FEATURE_PERFTRACING
+                        }
                     }
                     else if (metadata.EnabledForETW
 #if FEATURE_PERFTRACING
@@ -1442,6 +1452,33 @@ namespace System.Diagnostics.Tracing
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Writes event data directly to ETW and EventPipe providers without any reflection-based operations.
+        /// This is the core write path that has no trimmer/AOT dependencies.
+        /// </summary>
+        private unsafe bool WriteToAllProviders(
+            ref EventDescriptor descriptor,
+            IntPtr eventHandle,
+            Guid* activityId,
+            Guid* relatedActivityId,
+            int eventDataCount,
+            EventData* data,
+            bool enabledForETW,
+            bool enabledForEventPipe)
+        {
+            bool success = true;
+
+            if (enabledForETW && !m_etwProvider.WriteEvent(ref descriptor, eventHandle, activityId, relatedActivityId, eventDataCount, (IntPtr)data))
+                success = false;
+
+#if FEATURE_PERFTRACING
+            if (enabledForEventPipe && !m_eventPipeProvider.WriteEvent(ref descriptor, eventHandle, activityId, relatedActivityId, eventDataCount, (IntPtr)data))
+                success = false;
+#endif
+
+            return success;
         }
 
         /// <summary>
