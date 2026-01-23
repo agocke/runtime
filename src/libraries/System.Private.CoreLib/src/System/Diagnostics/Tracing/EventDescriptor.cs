@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 namespace System.Diagnostics.Tracing
 {
     [StructLayout(LayoutKind.Explicit, Size = 16)]
-    internal readonly struct EventDescriptor : IEquatable<EventDescriptor>
+    public readonly struct EventDescriptor : IEquatable<EventDescriptor>
     {
         #region private
         [FieldOffset(0)]

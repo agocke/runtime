@@ -162,6 +162,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -1369,23 +1370,16 @@ namespace System.Diagnostics.Tracing
                 {
                     ref EventMetadata metadata = ref CollectionsMarshal.GetValueRefOrNullRef(m_eventData, eventId);
 
-                    EventOpcode opcode = (EventOpcode)metadata.Descriptor.Opcode;
                     Guid* pActivityId = null;
-                    Guid activityId = Guid.Empty;
-                    Guid relActivityId = Guid.Empty;
-
-                    if (opcode != EventOpcode.Info && relatedActivityId == null &&
-                       ((metadata.ActivityOptions & EventActivityOptions.Disable) == 0))
+                    if (ProcessActivityTracking(
+                        (EventOpcode)metadata.Descriptor.Opcode,
+                        metadata.Name,
+                        metadata.Descriptor.Task,
+                        metadata.ActivityOptions,
+                        relatedActivityId,
+                        out Guid activityId,
+                        out Guid relActivityId))
                     {
-                        if (opcode == EventOpcode.Start)
-                        {
-                            m_activityTracker.OnStart(m_name, metadata.Name, metadata.Descriptor.Task, ref activityId, ref relActivityId, metadata.ActivityOptions);
-                        }
-                        else if (opcode == EventOpcode.Stop)
-                        {
-                            m_activityTracker.OnStop(m_name, metadata.Name, metadata.Descriptor.Task, ref activityId);
-                        }
-
                         if (activityId != Guid.Empty)
                             pActivityId = &activityId;
                         if (relActivityId != Guid.Empty)
@@ -1454,6 +1448,90 @@ namespace System.Diagnostics.Tracing
             }
         }
 
+        [CLSCompliant(false)]
+        protected unsafe void WriteManifestEvent(
+            string eventName,
+            ref EventDescriptor descriptor,
+            int eventId,
+            IntPtr eventHandle,
+            Guid* relatedActivityId,
+            int eventDataCount,
+            EventData* data,
+            EventActivityOptions activityOptions,
+            bool enabledForAnyListener,
+            bool enabledForETW,
+            bool enabledForEventPipe
+        )
+        {
+            if (SelfDescribingEvents)
+            {
+                throw new InvalidOperationException("WriteManifestEvent can only be used with manifest-based EventSources.");
+            }
+
+            if (!IsEnabled())
+            {
+                return;
+            }
+
+            try
+            {
+                Guid* pActivityId = null;
+                if (ProcessActivityTracking(
+                    (EventOpcode)descriptor.Opcode,
+                    eventName,
+                    descriptor.Task,
+                    activityOptions,
+                    relatedActivityId,
+                    out Guid activityId,
+                    out Guid relActivityId))
+                {
+                    if (activityId != Guid.Empty)
+                        pActivityId = &activityId;
+                    if (relActivityId != Guid.Empty)
+                        relatedActivityId = &relActivityId;
+                }
+
+#if !FEATURE_PERFTRACING
+                enabledForEventPipe = false;
+#endif
+                if (!WriteToAllProviders(
+                        ref descriptor,
+                        eventHandle,
+                        pActivityId,
+                        relatedActivityId,
+                        eventDataCount,
+                        data,
+                        enabledForETW,
+                        enabledForEventPipe))
+                {
+                    ThrowEventSourceException(eventName);
+                }
+
+                if (m_Dispatchers != null && enabledForAnyListener)
+                {
+#if MONO && !TARGET_WASI
+                    // On Mono, managed events from NativeRuntimeEventSource are written using WriteEventCore which can be
+                    // written doubly because EventPipe tries to pump it back up to EventListener via NativeRuntimeEventSource.ProcessEvents.
+                    // So we need to prevent this from getting written directly to the Listeners.
+                    if (this.GetType() != typeof(NativeRuntimeEventSource))
+#endif // MONO && !TARGET_WASI
+                    {
+                        var eventCallbackArgs = new EventWrittenEventArgs(this, eventId, pActivityId, relatedActivityId);
+                        WriteToAllListeners(eventCallbackArgs, eventDataCount, data);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ex is EventSourceException)
+                    throw;
+                else
+                {
+                    ThrowEventSourceException(eventName, ex);
+                }
+            }
+        }
+
         /// <summary>
         /// Writes event data directly to ETW and EventPipe providers without any reflection-based operations.
         /// This is the core write path that has no trimmer/AOT dependencies.
@@ -1479,6 +1557,42 @@ namespace System.Diagnostics.Tracing
 #endif
 
             return success;
+        }
+
+        /// <summary>
+        /// Handles activity tracking for Start/Stop opcodes by updating activity IDs.
+        /// Call the activity tracker's OnStart/OnStop methods as appropriate and update the activity IDs.
+        /// The caller is responsible for assigning pActivityId and relatedActivityId pointers based on the returned values.
+        /// </summary>
+        /// <returns>true if activity tracking was processed and the caller should update activity ID pointers.</returns>
+        private unsafe bool ProcessActivityTracking(
+            EventOpcode opcode,
+            string eventName,
+            int task,
+            EventActivityOptions activityOptions,
+            Guid* relatedActivityId,
+            out Guid activityId,
+            out Guid relActivityId)
+        {
+            activityId = Guid.Empty;
+            relActivityId = Guid.Empty;
+
+            if (opcode != EventOpcode.Info && relatedActivityId == null &&
+               ((activityOptions & EventActivityOptions.Disable) == 0))
+            {
+                if (opcode == EventOpcode.Start)
+                {
+                    m_activityTracker.OnStart(m_name, eventName, task, ref activityId, ref relActivityId, activityOptions);
+                }
+                else if (opcode == EventOpcode.Stop)
+                {
+                    m_activityTracker.OnStop(m_name, eventName, task, ref activityId);
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
