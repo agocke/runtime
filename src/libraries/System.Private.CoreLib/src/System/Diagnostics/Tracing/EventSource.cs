@@ -1424,7 +1424,18 @@ namespace System.Diagnostics.Tracing
                     WriteMultiMerge(metadata.Name, ref opt, metadata.TraceLoggingEventTypes, pActivityId, relatedActivityId, data);
                 }
 
-                DispatchToAllListeners(ref metadata, eventId, pActivityId, relatedActivityId, eventDataCount, data, metadata.EnabledForAnyListener);
+                DispatchToAllListeners(
+                    eventId,
+                    pActivityId,
+                    relatedActivityId,
+                    eventDataCount,
+                    data,
+                    metadata.EnabledForAnyListener,
+                    metadata.EventListenerParameterCount,
+                    metadata.Parameters.Length,
+                    metadata.AllParametersAreString,
+                    metadata.AllParametersAreInt32,
+                    metadata.ParameterTypes);
             }
             catch (Exception ex)
             {
@@ -1450,7 +1461,12 @@ namespace System.Diagnostics.Tracing
             EventActivityOptions activityOptions,
             bool enabledForAnyListener,
             bool enabledForETW,
-            bool enabledForEventPipe
+            bool enabledForEventPipe,
+            int eventListenerParameterCount,
+            int parameterCount,
+            bool allParametersAreString,
+            bool allParametersAreInt32,
+            Type[]? parameterTypes
         )
         {
             if (SelfDescribingEvents)
@@ -1497,7 +1513,18 @@ namespace System.Diagnostics.Tracing
                     ThrowEventSourceException(eventName);
                 }
 
-                DispatchToAllListeners(eventId, pActivityId, relatedActivityId, eventDataCount, data, enabledForAnyListener);
+                DispatchToAllListeners(
+                    eventId,
+                    pActivityId,
+                    relatedActivityId,
+                    eventDataCount,
+                    data,
+                    enabledForAnyListener,
+                    eventListenerParameterCount,
+                    parameterCount,
+                    allParametersAreString,
+                    allParametersAreInt32,
+                    parameterTypes);
             }
             catch (Exception ex)
             {
@@ -1577,13 +1604,17 @@ namespace System.Diagnostics.Tracing
         /// Dispatches an event to all registered EventListeners.
         /// </summary>
         private unsafe void DispatchToAllListeners(
-            ref EventMetadata metadata,
             int eventId,
             Guid* pActivityId,
             Guid* relatedActivityId,
             int eventDataCount,
             EventData* data,
-            bool enabledForAnyListener)
+            bool enabledForAnyListener,
+            int eventListenerParameterCount,
+            int parameterCount,
+            bool allParametersAreString,
+            bool allParametersAreInt32,
+            Type[]? parameterTypes)
         {
             if (m_Dispatchers != null && enabledForAnyListener)
             {
@@ -1595,7 +1626,15 @@ namespace System.Diagnostics.Tracing
 #endif // MONO && !TARGET_WASI
                 {
                     var eventCallbackArgs = new EventWrittenEventArgs(this, eventId, pActivityId, relatedActivityId);
-                    WriteToAllListeners(ref metadata, eventCallbackArgs, eventDataCount, data);
+                    WriteToAllListeners(
+                        eventCallbackArgs,
+                        eventDataCount,
+                        data,
+                        eventListenerParameterCount,
+                        parameterCount,
+                        allParametersAreString,
+                        allParametersAreInt32,
+                        parameterTypes);
                 }
             }
         }
@@ -2309,11 +2348,19 @@ namespace System.Diagnostics.Tracing
             }
         }
 
-        private unsafe void WriteToAllListeners(ref EventMetadata metadata, EventWrittenEventArgs eventCallbackArgs, int eventDataCount, EventData* data)
+        private unsafe void WriteToAllListeners(
+            EventWrittenEventArgs eventCallbackArgs,
+            int eventDataCount,
+            EventData* data,
+            int eventListenerParameterCount,
+            int parameterCount,
+            bool allParametersAreString,
+            bool allParametersAreInt32,
+            Type[]? parameterTypes)
         {
-            if (eventDataCount != metadata.EventListenerParameterCount)
+            if (eventDataCount != eventListenerParameterCount)
             {
-                ReportOutOfBandMessage(SR.Format(SR.EventSource_EventParametersMismatch, eventCallbackArgs.EventId, eventDataCount, metadata.Parameters.Length));
+                ReportOutOfBandMessage(SR.Format(SR.EventSource_EventParametersMismatch, eventCallbackArgs.EventId, eventDataCount, parameterCount));
             }
 
             object?[] args;
@@ -2323,9 +2370,9 @@ namespace System.Diagnostics.Tracing
             }
             else
             {
-                args = new object?[Math.Min(eventDataCount, metadata.Parameters.Length)];
+                args = new object?[Math.Min(eventDataCount, parameterCount)];
 
-                if (metadata.AllParametersAreString)
+                if (allParametersAreString)
                 {
                     for (int i = 0; i < args.Length; i++, data++)
                     {
@@ -2334,7 +2381,7 @@ namespace System.Diagnostics.Tracing
                         args[i] = dataPointer == IntPtr.Zero ? null : new string((char*)dataPointer, 0, (data->Size >> 1) - 1);
                     }
                 }
-                else if (metadata.AllParametersAreInt32)
+                else if (allParametersAreInt32)
                 {
                     for (int i = 0; i < args.Length; i++, data++)
                     {
@@ -2344,7 +2391,7 @@ namespace System.Diagnostics.Tracing
                 }
                 else
                 {
-                    DecodeObjects(args, metadata.ParameterTypes, data);
+                    DecodeObjects(args, parameterTypes, data);
                 }
 
                 eventCallbackArgs.Payload = new ReadOnlyCollection<object?>(args);
