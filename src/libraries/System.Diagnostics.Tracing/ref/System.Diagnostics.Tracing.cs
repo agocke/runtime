@@ -58,6 +58,26 @@ namespace System.Diagnostics.Tracing
         public EventDataAttribute() { }
         public string? Name { get { throw null; } set { } }
     }
+    [System.Runtime.InteropServices.StructLayoutAttribute(System.Runtime.InteropServices.LayoutKind.Explicit, Size=16)]
+    public readonly partial struct EventDescriptor : System.IEquatable<System.Diagnostics.Tracing.EventDescriptor>
+    {
+        [System.Runtime.InteropServices.FieldOffsetAttribute(0)]
+        private readonly int _dummyPrimitive;
+        public EventDescriptor(int traceloggingId, byte level, byte opcode, long keywords) { throw null; }
+        public EventDescriptor(int id, byte version, byte channel, byte level, byte opcode, int task, long keywords) { throw null; }
+        public byte Channel { get { throw null; } }
+        public int EventId { get { throw null; } }
+        public long Keywords { get { throw null; } }
+        public byte Level { get { throw null; } }
+        public byte Opcode { get { throw null; } }
+        public int Task { get { throw null; } }
+        public byte Version { get { throw null; } }
+        public bool Equals(System.Diagnostics.Tracing.EventDescriptor other) { throw null; }
+        public override bool Equals([System.Diagnostics.CodeAnalysis.NotNullWhenAttribute(true)] object? obj) { throw null; }
+        public override int GetHashCode() { throw null; }
+        public static bool operator ==(System.Diagnostics.Tracing.EventDescriptor event1, System.Diagnostics.Tracing.EventDescriptor event2) { throw null; }
+        public static bool operator !=(System.Diagnostics.Tracing.EventDescriptor event1, System.Diagnostics.Tracing.EventDescriptor event2) { throw null; }
+    }
     [System.AttributeUsageAttribute(System.AttributeTargets.Property)]
     public partial class EventFieldAttribute : System.Attribute
     {
@@ -211,7 +231,7 @@ namespace System.Diagnostics.Tracing
         [System.CLSCompliantAttribute(false)]
         protected unsafe void WriteEventWithRelatedActivityIdCore(int eventId, System.Guid* relatedActivityId, int eventDataCount, System.Diagnostics.Tracing.EventSource.EventData* data) { }
         [System.CLSCompliantAttribute(false)]
-        protected unsafe void WriteManifestEvent(int eventId, System.Diagnostics.Tracing.EventLevel level, System.Diagnostics.Tracing.EventKeywords keywords, System.Diagnostics.Tracing.EventOpcode opcode, System.Diagnostics.Tracing.EventTask task, System.IntPtr eventHandle, System.Guid* activityId, System.Guid* relatedActivityId, int eventDataCount, System.Diagnostics.Tracing.EventSource.EventData* data) { }
+        protected unsafe void WriteManifestEvent(string eventName, ref System.Diagnostics.Tracing.EventDescriptor descriptor, int eventId, System.IntPtr eventHandle, System.Guid* relatedActivityId, int eventDataCount, System.Diagnostics.Tracing.EventSource.EventData* data, System.Diagnostics.Tracing.EventActivityOptions activityOptions, bool enabledForAnyListener, bool enabledForETW, bool enabledForEventPipe) { }
         [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EventSource will serialize the whole object graph. Trimmer will not safely handle this case because properties may be trimmed. This can be suppressed if the object is a primitive type")]
         public void Write<[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties)] T>(string? eventName, System.Diagnostics.Tracing.EventSourceOptions options, T data) { }
         [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EventSource will serialize the whole object graph. Trimmer will not safely handle this case because properties may be trimmed. This can be suppressed if the object is a primitive type")]

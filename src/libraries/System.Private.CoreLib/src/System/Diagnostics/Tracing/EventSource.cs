@@ -1363,87 +1363,77 @@ namespace System.Diagnostics.Tracing
         [CLSCompliant(false)]
         protected unsafe void WriteEventWithRelatedActivityIdCore(int eventId, Guid* relatedActivityId, int eventDataCount, EventData* data)
         {
-            if (IsEnabled())
+            if (!IsEnabled())
             {
-                Debug.Assert(m_eventData != null);  // You must have initialized this if you enabled the source.
-                try
+                return;
+            }
+
+            Debug.Assert(m_eventData != null);  // You must have initialized this if you enabled the source.
+            try
+            {
+                ref EventMetadata metadata = ref CollectionsMarshal.GetValueRefOrNullRef(m_eventData, eventId);
+
+                Guid* pActivityId = null;
+                if (ProcessActivityTracking(
+                    (EventOpcode)metadata.Descriptor.Opcode,
+                    metadata.Name,
+                    metadata.Descriptor.Task,
+                    metadata.ActivityOptions,
+                    relatedActivityId,
+                    out Guid activityId,
+                    out Guid relActivityId))
                 {
-                    ref EventMetadata metadata = ref CollectionsMarshal.GetValueRefOrNullRef(m_eventData, eventId);
+                    if (activityId != Guid.Empty)
+                        pActivityId = &activityId;
+                    if (relActivityId != Guid.Empty)
+                        relatedActivityId = &relActivityId;
+                }
 
-                    Guid* pActivityId = null;
-                    if (ProcessActivityTracking(
-                        (EventOpcode)metadata.Descriptor.Opcode,
-                        metadata.Name,
-                        metadata.Descriptor.Task,
-                        metadata.ActivityOptions,
-                        relatedActivityId,
-                        out Guid activityId,
-                        out Guid relActivityId))
-                    {
-                        if (activityId != Guid.Empty)
-                            pActivityId = &activityId;
-                        if (relActivityId != Guid.Empty)
-                            relatedActivityId = &relActivityId;
-                    }
-
-                    if (!SelfDescribingEvents)
-                    {
-                        bool enabledForEventPipe = false;
+                if (!SelfDescribingEvents)
+                {
+                    bool enabledForEventPipe = false;
 #if FEATURE_PERFTRACING
                         enabledForEventPipe = metadata.EnabledForEventPipe;
 #endif
-                        if (!WriteToAllProviders(
-                                ref metadata.Descriptor,
-                                metadata.EventHandle,
-                                pActivityId,
-                                relatedActivityId,
-                                eventDataCount,
-                                data,
-                                metadata.EnabledForETW,
-                                enabledForEventPipe))
-                        {
-                            ThrowEventSourceException(metadata.Name);
-                        }
+                    if (!WriteToAllProviders(
+                            ref metadata.Descriptor,
+                            metadata.EventHandle,
+                            pActivityId,
+                            relatedActivityId,
+                            eventDataCount,
+                            data,
+                            metadata.EnabledForETW,
+                            enabledForEventPipe))
+                    {
+                        ThrowEventSourceException(metadata.Name);
                     }
-                    else if (metadata.EnabledForETW
+                }
+                else if (metadata.EnabledForETW
 #if FEATURE_PERFTRACING
                             || metadata.EnabledForEventPipe
 #endif // FEATURE_PERFTRACING
-                            )
-                    {
-                        EventSourceOptions opt = new EventSourceOptions
-                        {
-                            Keywords = (EventKeywords)metadata.Descriptor.Keywords,
-                            Level = (EventLevel)metadata.Descriptor.Level,
-                            Opcode = (EventOpcode)metadata.Descriptor.Opcode
-                        };
-
-                        WriteMultiMerge(metadata.Name, ref opt, metadata.TraceLoggingEventTypes, pActivityId, relatedActivityId, data);
-                    }
-
-                    if (m_Dispatchers != null && metadata.EnabledForAnyListener)
-                    {
-#if MONO && !TARGET_WASI
-                        // On Mono, managed events from NativeRuntimeEventSource are written using WriteEventCore which can be
-                        // written doubly because EventPipe tries to pump it back up to EventListener via NativeRuntimeEventSource.ProcessEvents.
-                        // So we need to prevent this from getting written directly to the Listeners.
-                        if (this.GetType() != typeof(NativeRuntimeEventSource))
-#endif // MONO && !TARGET_WASI
-                        {
-                            var eventCallbackArgs = new EventWrittenEventArgs(this, eventId, pActivityId, relatedActivityId);
-                            WriteToAllListeners(eventCallbackArgs, eventDataCount, data);
-                        }
-                    }
-                }
-                catch (Exception ex)
+                        )
                 {
-                    if (ex is EventSourceException)
-                        throw;
-                    else
+                    EventSourceOptions opt = new EventSourceOptions
                     {
-                        ref EventMetadata metadata = ref CollectionsMarshal.GetValueRefOrNullRef(m_eventData, eventId);
-                        ThrowEventSourceException(metadata.Name, ex);
-                    }
+                        Keywords = (EventKeywords)metadata.Descriptor.Keywords,
+                        Level = (EventLevel)metadata.Descriptor.Level,
+                        Opcode = (EventOpcode)metadata.Descriptor.Opcode
+                    };
+
+                    WriteMultiMerge(metadata.Name, ref opt, metadata.TraceLoggingEventTypes, pActivityId, relatedActivityId, data);
+                }
+
+                DispatchToAllListeners(ref metadata, eventId, pActivityId, relatedActivityId, eventDataCount, data, metadata.EnabledForAnyListener);
+            }
+            catch (Exception ex)
+            {
+                if (ex is EventSourceException)
+                    throw;
+                else
+                {
+                    ref EventMetadata metadata = ref CollectionsMarshal.GetValueRefOrNullRef(m_eventData, eventId);
+                    ThrowEventSourceException(metadata.Name, ex);
                 }
             }
         }
@@ -1507,19 +1497,7 @@ namespace System.Diagnostics.Tracing
                     ThrowEventSourceException(eventName);
                 }
 
-                if (m_Dispatchers != null && enabledForAnyListener)
-                {
-#if MONO && !TARGET_WASI
-                    // On Mono, managed events from NativeRuntimeEventSource are written using WriteEventCore which can be
-                    // written doubly because EventPipe tries to pump it back up to EventListener via NativeRuntimeEventSource.ProcessEvents.
-                    // So we need to prevent this from getting written directly to the Listeners.
-                    if (this.GetType() != typeof(NativeRuntimeEventSource))
-#endif // MONO && !TARGET_WASI
-                    {
-                        var eventCallbackArgs = new EventWrittenEventArgs(this, eventId, pActivityId, relatedActivityId);
-                        WriteToAllListeners(eventCallbackArgs, eventDataCount, data);
-                    }
-                }
+                DispatchToAllListeners(eventId, pActivityId, relatedActivityId, eventDataCount, data, enabledForAnyListener);
             }
             catch (Exception ex)
             {
@@ -1593,6 +1571,33 @@ namespace System.Diagnostics.Tracing
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Dispatches an event to all registered EventListeners.
+        /// </summary>
+        private unsafe void DispatchToAllListeners(
+            ref EventMetadata metadata,
+            int eventId,
+            Guid* pActivityId,
+            Guid* relatedActivityId,
+            int eventDataCount,
+            EventData* data,
+            bool enabledForAnyListener)
+        {
+            if (m_Dispatchers != null && enabledForAnyListener)
+            {
+#if MONO && !TARGET_WASI
+                // On Mono, managed events from NativeRuntimeEventSource are written using WriteEventCore which can be
+                // written doubly because EventPipe tries to pump it back up to EventListener via NativeRuntimeEventSource.ProcessEvents.
+                // So we need to prevent this from getting written directly to the Listeners.
+                if (this.GetType() != typeof(NativeRuntimeEventSource))
+#endif // MONO && !TARGET_WASI
+                {
+                    var eventCallbackArgs = new EventWrittenEventArgs(this, eventId, pActivityId, relatedActivityId);
+                    WriteToAllListeners(ref metadata, eventCallbackArgs, eventDataCount, data);
+                }
+            }
         }
 
         /// <summary>
@@ -2304,11 +2309,8 @@ namespace System.Diagnostics.Tracing
             }
         }
 
-        private unsafe void WriteToAllListeners(EventWrittenEventArgs eventCallbackArgs, int eventDataCount, EventData* data)
+        private unsafe void WriteToAllListeners(ref EventMetadata metadata, EventWrittenEventArgs eventCallbackArgs, int eventDataCount, EventData* data)
         {
-            Debug.Assert(m_eventData != null);
-            ref EventMetadata metadata = ref CollectionsMarshal.GetValueRefOrNullRef(m_eventData, eventCallbackArgs.EventId);
-
             if (eventDataCount != metadata.EventListenerParameterCount)
             {
                 ReportOutOfBandMessage(SR.Format(SR.EventSource_EventParametersMismatch, eventCallbackArgs.EventId, eventDataCount, metadata.Parameters.Length));
