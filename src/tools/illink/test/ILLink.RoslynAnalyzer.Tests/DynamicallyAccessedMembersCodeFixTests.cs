@@ -2602,7 +2602,7 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
             }
             """;
             // With variance, removing DAM from parameter is allowed - no warning
-            await VerifyCS.VerifyAnalyzerAsync(test);
+            await VerifyDynamicallyAccessedMembersCodeFix(test, test, Array.Empty<DiagnosticResult>(), Array.Empty<DiagnosticResult>());
         }
 
         [Fact]
@@ -2721,7 +2721,7 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
             }
             """;
             // With variance, removing DAM from parameter is allowed - no warning
-            await VerifyCS.VerifyAnalyzerAsync(test);
+            await VerifyDynamicallyAccessedMembersCodeFix(test, test, Array.Empty<DiagnosticResult>(), Array.Empty<DiagnosticResult>());
         }
 
         [Fact]
@@ -2851,7 +2851,7 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
             }
             """;
             // With variance, adding DAM to return value is allowed - no warning
-            await VerifyCS.VerifyAnalyzerAsync(test);
+            await VerifyDynamicallyAccessedMembersCodeFix(test, test, Array.Empty<DiagnosticResult>(), Array.Empty<DiagnosticResult>());
         }
 
         [Fact]
@@ -2921,7 +2921,7 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
             }
             """;
             // With variance, adding DAM to return value is allowed - no warning
-            await VerifyCS.VerifyAnalyzerAsync(test);
+            await VerifyDynamicallyAccessedMembersCodeFix(test, test, Array.Empty<DiagnosticResult>(), Array.Empty<DiagnosticResult>());
         }
     }
 }
