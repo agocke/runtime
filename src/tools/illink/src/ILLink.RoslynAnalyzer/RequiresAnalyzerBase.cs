@@ -88,7 +88,7 @@ namespace ILLink.RoslynAnalyzer
                     SymbolAnalysisContext symbolAnalysisContext,
                     ISymbol member)
                 {
-                    if ((member.IsVirtual || member.IsOverride) && member.TryGetOverriddenMember(out var overriddenMember) && HasMismatchingAttributes(member, overriddenMember))
+                    if ((member.IsVirtual || member.IsOverride) && member.TryGetOverriddenMember(out var overriddenMember) && HasMismatchingAttributes(baseMember: overriddenMember, derivedMember: member))
                         ReportMismatchInAttributesDiagnostic(symbolAnalysisContext, member, overriddenMember);
                 }
 
@@ -112,7 +112,7 @@ namespace ILLink.RoslynAnalyzer
                         if (!implementationType.IsInterface() && !SymbolEqualityComparer.Default.Equals(implementationType, type))
                             origin = type;
 
-                        if (HasMismatchingAttributes(memberpair.InterfaceMember, memberpair.ImplementationMember))
+                        if (HasMismatchingAttributes(baseMember: memberpair.InterfaceMember, derivedMember: memberpair.ImplementationMember))
                         {
                             ReportMismatchInAttributesDiagnostic(symbolAnalysisContext, memberpair.ImplementationMember, memberpair.InterfaceMember, isInterface: true, origin);
                         }
@@ -262,13 +262,21 @@ namespace ILLink.RoslynAnalyzer
                 message));
         }
 
-        private bool HasMismatchingAttributes(ISymbol member1, ISymbol member2)
+        /// <summary>
+        /// Checks if there's a mismatch in Requires* attributes between base and derived members.
+        /// With variance: removing a Requires* attribute in derived is allowed (weakening precondition),
+        /// but adding a Requires* attribute in derived when base lacks it is NOT allowed (strengthening precondition).
+        /// </summary>
+        private bool HasMismatchingAttributes(ISymbol baseMember, ISymbol derivedMember)
         {
-            bool member1CreatesRequirement = member1.DoesMemberRequire(RequiresAttributeName, out _);
-            bool member2CreatesRequirement = member2.DoesMemberRequire(RequiresAttributeName, out _);
-            bool member1FulfillsRequirement = member1.IsInRequiresScope(RequiresAttributeName);
-            bool member2FulfillsRequirement = member2.IsInRequiresScope(RequiresAttributeName);
-            return (member1CreatesRequirement && !member2FulfillsRequirement) || (member2CreatesRequirement && !member1FulfillsRequirement);
+            bool baseCreatesRequirement = baseMember.DoesMemberRequire(RequiresAttributeName, out _);
+            bool derivedCreatesRequirement = derivedMember.DoesMemberRequire(RequiresAttributeName, out _);
+            bool baseFulfillsRequirement = baseMember.IsInRequiresScope(RequiresAttributeName);
+
+            // With variance: only warn when derived ADDS a requirement that base doesn't have.
+            // Removing a requirement (base has, derived doesn't) is allowed.
+            // Adding a requirement (base doesn't have, derived adds) is NOT allowed.
+            return derivedCreatesRequirement && !baseFulfillsRequirement && !baseCreatesRequirement;
         }
 
         protected abstract string GetMessageFromAttribute(AttributeData requiresAttribute);

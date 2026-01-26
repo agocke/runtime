@@ -808,71 +808,83 @@ namespace Mono.Linker.Tests.Cases.DataFlow
         {
             class ImplIAnnotatedMethodsMismatch : Library.IAnnotatedMethods
             {
+                // Generic parameters are invariant - removing DAM is NOT allowed
                 // NativeAOT doesn't always validate static overrides when accessed through reflection because it's a direct call (non-virtual)
                 [ExpectedWarning("IL2095", Tool.Trimmer | Tool.Analyzer, "")]
                 public static void GenericWithMethodsStatic<T>() { }
 
-                [ExpectedWarning("IL2092")]
+                // Parameters are contravariant - removing DAM is allowed
                 public static void ParamWithMethodsStatic(Type t) { }
 
+                // Return values are covariant - removing DAM is NOT allowed
                 [ExpectedWarning("IL2093")]
                 public static Type ReturnWithMethodsStatic() => typeof(int);
 
+                // Generic parameters are invariant - removing DAM is NOT allowed
                 [ExpectedWarning("IL2095")]
                 public void GenericWithMethods<T>() { }
 
-                [ExpectedWarning("IL2092")]
+                // Parameters are contravariant - removing DAM is allowed
                 public void ParamWithMethods(Type t) { }
 
+                // Return values are covariant - removing DAM is NOT allowed
                 [ExpectedWarning("IL2093")]
                 public Type ReturnWithMethods() => typeof(int);
             }
 
             class ImplIUnannotatedMethodsMismatch : Library.IUnannotatedMethods
             {
+                // Generic parameters are invariant - adding DAM is NOT allowed
                 // NativeAOT doesn't always validate static overrides when accessed through reflection because it's a direct call (non-virtual)
                 [ExpectedWarning("IL2095", Tool.Trimmer | Tool.Analyzer, "")]
                 public static void GenericStatic<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>() { }
 
+                // Parameters are contravariant - adding DAM is NOT allowed
                 [ExpectedWarning("IL2092")]
                 public static void ParamStatic([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] Type t) { }
 
-                [ExpectedWarning("IL2093")]
+                // Return values are covariant - adding DAM is allowed
                 [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)]
                 public static Type ReturnStatic() => typeof(int);
 
+                // Generic parameters are invariant - adding DAM is NOT allowed
                 [ExpectedWarning("IL2095")]
                 public void Generic<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>() { }
 
+                // Parameters are contravariant - adding DAM is NOT allowed
                 [ExpectedWarning("IL2092")]
                 public void Param([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] Type t) { }
 
-                [ExpectedWarning("IL2093")]
+                // Return values are covariant - adding DAM is allowed
                 [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)]
                 public Type Return() => typeof(int);
             }
 
             class DerivedFromUnannotatedMismatch : Library.UnannotatedMethods
             {
+                // Generic parameters are invariant - adding DAM is NOT allowed
                 [ExpectedWarning("IL2095")]
                 public override void Generic<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>() { }
 
+                // Parameters are contravariant - adding DAM is NOT allowed
                 [ExpectedWarning("IL2092")]
                 public override void Param([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] Type t) { }
 
-                [ExpectedWarning("IL2093")]
+                // Return values are covariant - adding DAM is allowed
                 [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)]
                 public override Type Return() => typeof(int);
             }
 
             class DerivedFromAnnotatedMismatch : Library.AnnotatedMethods
             {
+                // Generic parameters are invariant - removing DAM is NOT allowed
                 [ExpectedWarning("IL2095")]
                 public override void GenericWithMethods<T>() { }
 
-                [ExpectedWarning("IL2092")]
+                // Parameters are contravariant - removing DAM is allowed
                 public override void ParamWithMethods(Type t) { }
 
+                // Return values are covariant - removing DAM is NOT allowed
                 [ExpectedWarning("IL2093")]
                 public override Type ReturnWithMethods() => typeof(int);
             }
@@ -975,26 +987,33 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 
             class Derived : Base
             {
+                // Param: PublicProperties not subset of base's PublicMethods - NOT allowed
+                // Return: Removing DAM (base has PublicMethods, derived has none) - NOT allowed (covariant)
                 [ExpectedWarning("IL2092")]
                 [ExpectedWarning("IL2093")]
                 public override Type NonGenericAbstract([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type type) => null;
 
-                [ExpectedWarning("IL2092")]
+                // Param: Removing DAM (base has PublicMethods) - now allowed (contravariant)
+                // Return: PublicProperties not superset of base's PublicMethods - NOT allowed (covariant)
                 [ExpectedWarning("IL2093")]
                 [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]
                 public override Type NonGenericVirtual(Type type) => null;
 
+                // Generic: Removing DAM - NOT allowed (invariant)
                 [ExpectedWarning("IL2095")]
                 public override void GenericAbstract<T>() { }
 
+                // Generic: PublicProperties != PublicMethods - NOT allowed (invariant)
                 [ExpectedWarning("IL2095")]
                 public override void GenericVirtual<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T>() { }
 
+                // Param: Adding PublicProperties where base has none - NOT allowed (contravariant)
+                // Return: Adding PublicMethods where base has none - allowed (covariant)
                 [ExpectedWarning("IL2092")]
-                [ExpectedWarning("IL2093")]
                 [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)]
                 public override Type UnannotatedAbstract([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type type) => null;
 
+                // Generic: Adding DAM - NOT allowed (invariant)
                 [ExpectedWarning("IL2095")]
                 public override void UnannotatedGenericAbstract<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T>() { }
             }
@@ -1028,26 +1047,36 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 
             class ImplIGvmBase : IGvmBase
             {
+                // Interface has no DAM, impl adds all three
+                // Param: Adding DAM - NOT allowed (contravariant)
+                // Return: Adding DAM - allowed (covariant)
+                // Generic: Adding DAM - NOT allowed (invariant)
                 // NativeAOT doesn't validate overrides when it can resolve them as direct calls
                 [ExpectedWarning("IL2092", Tool.Trimmer | Tool.Analyzer, "")]
-                [ExpectedWarning("IL2093", Tool.Trimmer | Tool.Analyzer, "")]
                 [ExpectedWarning("IL2095", Tool.Trimmer | Tool.Analyzer, "")]
                 [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)]
                 public Type UnannotatedGvm<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] Type type) => null;
 
+                // Same as above, but called through base
                 [ExpectedWarning("IL2092")]
-                [ExpectedWarning("IL2093")]
                 [ExpectedWarning("IL2095")]
                 [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)]
                 public Type UnannotatedGvmCalledThroughBase<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] Type type) => null;
 
-                [ExpectedWarning("IL2092")]
+                // Interface has: return=PublicMethods, param=PublicProperties, generic=PublicProperties
+                // Impl removes all:
+                // Param: Removing DAM - allowed (contravariant)
+                // Return: Removing DAM - NOT allowed (covariant)
+                // Generic: Removing DAM - NOT allowed (invariant)
                 [ExpectedWarning("IL2093")]
                 [ExpectedWarning("IL2095")]
                 public static Type AnnotatedStaticGvm<T>(Type type) => null;
 
+                // Interface has no DAM, impl adds different types
+                // Param: Adding DAM - NOT allowed (contravariant)
+                // Return: Adding DAM - allowed (covariant)
+                // Generic: Adding DAM - NOT allowed (invariant)
                 [ExpectedWarning("IL2092")]
-                [ExpectedWarning("IL2093")]
                 [ExpectedWarning("IL2095")]
                 [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)]
                 public static Type UnannotatedStaticGvm<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T>([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type type) => null;
@@ -1194,16 +1223,18 @@ namespace System
 
     class VirtualMethodHierarchyDataflowAnnotationValidationTypeTestDerived : VirtualMethodHierarchyDataflowAnnotationValidationTypeTestBase
     {
-        [ExpectedWarning("IL2094",
-            "System.VirtualMethodHierarchyDataflowAnnotationValidationTypeTestDerived.ThisBaseWithDerivedWithout()",
-            "System.VirtualMethodHierarchyDataflowAnnotationValidationTypeTestBase.ThisBaseWithDerivedWithout()")]
+        // 'this' parameter is contravariant - removing DAM is now allowed
+        [LogDoesNotContain("VirtualMethodHierarchyDataflowAnnotationValidationTypeTestDerived.ThisBaseWithDerivedWithout")]
         public override void ThisBaseWithDerivedWithout() { }
 
         [LogDoesNotContain("VirtualMethodHierarchyDataflowAnnotationValidationTypeTestDerived.ThisBaseWithDerivedWith_")]
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         public override void ThisBaseWithDerivedWith_() { }
 
-        [LogContains("VirtualMethodHierarchyDataflowAnnotationValidationTypeTestDerived.ThisBaseWithoutDerivedWith")]
+        // 'this' parameter is contravariant - adding DAM is NOT allowed
+        [ExpectedWarning("IL2094",
+            "System.VirtualMethodHierarchyDataflowAnnotationValidationTypeTestDerived.ThisBaseWithoutDerivedWith()",
+            "System.VirtualMethodHierarchyDataflowAnnotationValidationTypeTestBase.ThisBaseWithoutDerivedWith()")]
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         public override void ThisBaseWithoutDerivedWith() { }
     }

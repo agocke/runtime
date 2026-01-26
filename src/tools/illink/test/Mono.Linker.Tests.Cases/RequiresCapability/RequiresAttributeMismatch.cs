@@ -465,11 +465,10 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
             }
         }
 
+        // Interface has Requires* attributes, implementation removes them - now allowed with variance
         class ImplementationClassWithoutRequires : IBaseWithRequires
         {
-            [ExpectedWarning("IL2046", "ImplementationClassWithoutRequires.Method()", "IBaseWithRequires.Method()")]
-            [ExpectedWarning("IL3003", "ImplementationClassWithoutRequires.Method()", "IBaseWithRequires.Method()", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
-            [ExpectedWarning("IL3051", "ImplementationClassWithoutRequires.Method()", "IBaseWithRequires.Method()", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+            // Removing Requires* from interface is allowed (weakening precondition)
             public void Method()
             {
             }
@@ -477,44 +476,35 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
             private string name;
             public string PropertyAnnotationInAccesor
             {
-                [ExpectedWarning("IL2046", "ImplementationClassWithoutRequires.PropertyAnnotationInAccesor.get", "IBaseWithRequires.PropertyAnnotationInAccesor.get")]
-                [ExpectedWarning("IL3003", "ImplementationClassWithoutRequires.PropertyAnnotationInAccesor.get", "IBaseWithRequires.PropertyAnnotationInAccesor.get", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
-                [ExpectedWarning("IL3051", "ImplementationClassWithoutRequires.PropertyAnnotationInAccesor.get", "IBaseWithRequires.PropertyAnnotationInAccesor.get", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+                // Removing Requires* from interface is allowed (weakening precondition)
                 get { return name; }
                 set { name = value; }
             }
 
-            [ExpectedWarning("IL3003", "ImplementationClassWithoutRequires.PropertyAnnotationInProperty", "IBaseWithRequires.PropertyAnnotationInProperty", Tool.Analyzer, "")]
+            // Removing Requires* from interface is allowed (weakening precondition)
             public string PropertyAnnotationInProperty
             {
-                [ExpectedWarning("IL3003", "ImplementationClassWithoutRequires.PropertyAnnotationInProperty", "IBaseWithRequires.PropertyAnnotationInProperty", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
                 get;
-                [ExpectedWarning("IL3003", "ImplementationClassWithoutRequires.PropertyAnnotationInProperty", "IBaseWithRequires.PropertyAnnotationInProperty", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
                 set;
             }
 
-            [ExpectedWarning("IL3003", "ImplementationClassWithoutRequires.PropertyAnnotationInPropertyAndAccessor", "IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor", Tool.Analyzer, "")]
             public string PropertyAnnotationInPropertyAndAccessor
             {
+                // Interface getter inherits [RAF] from property level only
+                // Impl getter adds [RAF] (ok, same) and [RUC] (NOT ok, adding)
                 [RequiresAssemblyFiles("Message")]
                 [RequiresUnreferencedCode("Message")]
                 [ExpectedWarning("IL2046", "ImplementationClassWithoutRequires.PropertyAnnotationInPropertyAndAccessor.get", "IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor.get")]
                 get;
-                [ExpectedWarning("IL2046", "ImplementationClassWithoutRequires.PropertyAnnotationInPropertyAndAccessor.set", "IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor.set")]
-                [ExpectedWarning("IL3003", "ImplementationClassWithoutRequires.PropertyAnnotationInPropertyAndAccessor.set", "IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor.set", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+                // Interface setter has [RUC]/[RAF], impl removes them - allowed
                 set;
             }
         }
 
+        // Explicit implementation - same variance rules apply
         class ExplicitImplementationClassWithoutRequires : IBaseWithRequires
         {
-            // ILLink member string format includes namespace of explicit interface method.
-            [ExpectedWarning("IL2046", "IBaseWithRequires.Method()", "ExplicitImplementationClassWithoutRequires.Mono.Linker.Tests.Cases.RequiresCapability.RequiresAttributeMismatch.IBaseWithRequires.Method()", Tool.Trimmer | Tool.NativeAot, "")]
-            [ExpectedWarning("IL3003", "IBaseWithRequires.Method()", "ExplicitImplementationClassWithoutRequires.Mono.Linker.Tests.Cases.RequiresCapability.RequiresAttributeMismatch.IBaseWithRequires.Method()", Tool.NativeAot, "")]
-            [ExpectedWarning("IL3051", "IBaseWithRequires.Method()", "ExplicitImplementationClassWithoutRequires.Mono.Linker.Tests.Cases.RequiresCapability.RequiresAttributeMismatch.IBaseWithRequires.Method()", Tool.NativeAot, "")]
-            [ExpectedWarning("IL2046", "IBaseWithRequires.Method()", "ExplicitImplementationClassWithoutRequires.IBaseWithRequires.Method()", Tool.Analyzer, "")]
-            [ExpectedWarning("IL3003", "IBaseWithRequires.Method()", "ExplicitImplementationClassWithoutRequires.IBaseWithRequires.Method()", Tool.Analyzer, "")]
-            [ExpectedWarning("IL3051", "IBaseWithRequires.Method()", "ExplicitImplementationClassWithoutRequires.IBaseWithRequires.Method()", Tool.Analyzer, "")]
+            // Removing Requires* from interface is allowed (weakening precondition)
             void IBaseWithRequires.Method()
             {
             }
@@ -522,38 +512,31 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
             private string name;
             string IBaseWithRequires.PropertyAnnotationInAccesor
             {
-                [ExpectedWarning("IL2046", "PropertyAnnotationInAccesor.get", "IBaseWithRequires.PropertyAnnotationInAccesor.get")]
-                [ExpectedWarning("IL3003", "PropertyAnnotationInAccesor.get", "IBaseWithRequires.PropertyAnnotationInAccesor.get", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
-                [ExpectedWarning("IL3051", "PropertyAnnotationInAccesor.get", "IBaseWithRequires.PropertyAnnotationInAccesor.get", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+                // Removing Requires* from interface is allowed (weakening precondition)
                 get { return name; }
                 set { name = value; }
             }
 
-            [ExpectedWarning("IL3003", "ExplicitImplementationClassWithoutRequires.Mono.Linker.Tests.Cases.RequiresCapability.RequiresAttributeMismatch.IBaseWithRequires.PropertyAnnotationInProperty", "IBaseWithRequires.PropertyAnnotationInProperty", Tool.Analyzer, "")]
+            // Removing Requires* from interface is allowed (weakening precondition)
             string IBaseWithRequires.PropertyAnnotationInProperty
             {
-                [ExpectedWarning("IL3003", "Mono.Linker.Tests.Cases.RequiresCapability.RequiresAttributeMismatch.IBaseWithRequires.PropertyAnnotationInProperty", "IBaseWithRequires.PropertyAnnotationInProperty", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
                 get;
-                [ExpectedWarning("IL3003", "Mono.Linker.Tests.Cases.RequiresCapability.RequiresAttributeMismatch.IBaseWithRequires.PropertyAnnotationInProperty", "IBaseWithRequires.PropertyAnnotationInProperty", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
                 set;
             }
 
-            [ExpectedWarning("IL3003", "ExplicitImplementationClassWithoutRequires.Mono.Linker.Tests.Cases.RequiresCapability.RequiresAttributeMismatch.IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor", "IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor", Tool.Analyzer, "")]
             string IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor
             {
-                [ExpectedWarning("IL3003", "Mono.Linker.Tests.Cases.RequiresCapability.RequiresAttributeMismatch.IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor", "IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+                // Removing from interface is allowed
                 get;
-                [ExpectedWarning("IL2046", "PropertyAnnotationInPropertyAndAccessor.set", "IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor.set")]
-                [ExpectedWarning("IL3003", "PropertyAnnotationInPropertyAndAccessor.set", "IBaseWithRequires.PropertyAnnotationInPropertyAndAccessor.set", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+                // Removing from interface is allowed
                 set;
             }
         }
 
+        // Interface has Requires* attributes, implementation removes them - now allowed with variance
         class ImplementationClassWithoutRequiresInSource : ReferenceInterfaces.IBaseWithRequiresInReference
         {
-            [ExpectedWarning("IL2046", "ImplementationClassWithoutRequiresInSource.Method()", "IBaseWithRequiresInReference.Method()")]
-            [ExpectedWarning("IL3003", "ImplementationClassWithoutRequiresInSource.Method()", "IBaseWithRequiresInReference.Method()", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
-            [ExpectedWarning("IL3051", "ImplementationClassWithoutRequiresInSource.Method()", "IBaseWithRequiresInReference.Method()", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+            // Removing Requires* from interface is allowed (weakening precondition)
             public void Method()
             {
             }
@@ -561,19 +544,15 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
             private string name;
             public string PropertyAnnotationInAccesor
             {
-                [ExpectedWarning("IL2046", "ImplementationClassWithoutRequiresInSource.PropertyAnnotationInAccesor.get", "IBaseWithRequiresInReference.PropertyAnnotationInAccesor.get")]
-                [ExpectedWarning("IL3003", "ImplementationClassWithoutRequiresInSource.PropertyAnnotationInAccesor.get", "IBaseWithRequiresInReference.PropertyAnnotationInAccesor.get", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
-                [ExpectedWarning("IL3051", "ImplementationClassWithoutRequiresInSource.PropertyAnnotationInAccesor.get", "IBaseWithRequiresInReference.PropertyAnnotationInAccesor.get", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+                // Removing Requires* from interface is allowed (weakening precondition)
                 get { return name; }
                 set { name = value; }
             }
 
-            [ExpectedWarning("IL3003", "ImplementationClassWithoutRequiresInSource.PropertyAnnotationInProperty", "IBaseWithRequiresInReference.PropertyAnnotationInProperty", Tool.Analyzer, "")]
+            // Removing Requires* from interface is allowed (weakening precondition)
             public string PropertyAnnotationInProperty
             {
-                [ExpectedWarning("IL3003", "ImplementationClassWithoutRequiresInSource.PropertyAnnotationInProperty.get", "IBaseWithRequiresInReference.PropertyAnnotationInProperty.get", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
                 get;
-                [ExpectedWarning("IL3003", "ImplementationClassWithoutRequiresInSource.PropertyAnnotationInProperty.set", "IBaseWithRequiresInReference.PropertyAnnotationInProperty.set", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
                 set;
             }
         }
@@ -675,16 +654,13 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
                 public static void AbstractMethod() { }
             }
 
+            // Interface IRequires has Requires* attributes, implementation removes them - now allowed with variance
             class ImplIRequiresMismatching : IRequires
             {
-                [ExpectedWarning("IL2046", "ImplIRequiresMismatching.VirtualMethod", "IRequires.VirtualMethod")]
-                [ExpectedWarning("IL3003", "ImplIRequiresMismatching.VirtualMethod", "IRequires.VirtualMethod", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
-                [ExpectedWarning("IL3051", "ImplIRequiresMismatching.VirtualMethod", "IRequires.VirtualMethod", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+                // Removing Requires* from interface is allowed (weakening precondition)
                 public static void VirtualMethod() { }
 
-                [ExpectedWarning("IL2046", "ImplIRequiresMismatching.AbstractMethod", "IRequires.AbstractMethod")]
-                [ExpectedWarning("IL3003", "ImplIRequiresMismatching.AbstractMethod", "IRequires.AbstractMethod", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
-                [ExpectedWarning("IL3051", "ImplIRequiresMismatching.AbstractMethod", "IRequires.AbstractMethod", Tool.Analyzer | Tool.NativeAot, "NativeAOT-specific warning")]
+                // Removing Requires* from interface is allowed (weakening precondition)
                 public static void AbstractMethod() { }
             }
             class ImplINoRequiresMatching : INoRequires

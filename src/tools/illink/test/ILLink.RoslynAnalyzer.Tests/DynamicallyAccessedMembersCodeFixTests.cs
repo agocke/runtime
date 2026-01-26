@@ -2579,6 +2579,8 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
             await VerifyDynamicallyAccessedMembersCodeFix(test, test, diag, diag);
         }
 
+        // With variance: removing DAM from parameter is allowed (contravariant)
+        // This test was expected to warn, but now it shouldn't
         [Fact]
         public async Task CodeFix_IL2092_MismatchMethodParamBtOverride_NonPublicMethods()
         {
@@ -2599,35 +2601,8 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
                 }
             }
             """;
-            var fixtest = $$"""
-            using System;
-            using System.Diagnostics.CodeAnalysis;
-
-            public class Base
-            {
-                public virtual void M([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)] Type t) {}
-            }
-
-            public class C : Base
-            {
-                public override void M([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)] Type t) {}
-
-                public static void Main() {
-                }
-            }
-            """;
-            await VerifyDynamicallyAccessedMembersCodeFix(test, fixtest, new[] {
-                // /0/Test0.cs(11,30): warning IL2092: 'DynamicallyAccessedMemberTypes' in 'DynamicallyAccessedMembersAttribute' on the parameter 't' of method 'C.M(Type)'
-                // don't match overridden parameter 't' of method 'Base.M(Type)'.
-                // All overridden members must have the same 'DynamicallyAccessedMembersAttribute' usage.
-                VerifyCS.Diagnostic(DiagnosticId.DynamicallyAccessedMembersMismatchOnMethodParameterBetweenOverrides)
-                .WithSpan(11, 33, 11, 34)
-                .WithSpan(11, 33, 11, 34)
-                .WithArguments("t",
-                    "C.M(Type)",
-                    "t",
-                    "Base.M(Type)") },
-                fixedExpected: Array.Empty<DiagnosticResult>(), 1);
+            // With variance, removing DAM from parameter is allowed - no warning
+            await VerifyCS.VerifyAnalyzerAsync(test);
         }
 
         [Fact]
@@ -2722,6 +2697,8 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
             await VerifyDynamicallyAccessedMembersCodeFix(test, test, diag, diag);
         }
 
+        // With variance: removing DAM from parameter is allowed (contravariant)
+        // Base has DAM, override removes it - this is now allowed
         [Fact]
         public async Task CodeFix_IL2092_TwoAttributesTurnOffCodeFix()
         {
@@ -2743,19 +2720,8 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
                 }
             }
             """;
-            var diag = new[] {
-                // /0/Test0.cs(11,108): warning IL2092: 'DynamicallyAccessedMemberTypes' in 'DynamicallyAccessedMembersAttribute' on the parameter 't' of method 'C.M(Type)'
-                // don't match overridden parameter 't' of method 'Base.M(Type)'.
-                // All overridden members must have the same 'DynamicallyAccessedMembersAttribute' usage.
-                VerifyCS.Diagnostic(DiagnosticId.DynamicallyAccessedMembersMismatchOnMethodParameterBetweenOverrides)
-                .WithSpan(11, 33, 11, 34)
-                .WithSpan(11, 33, 11, 34)
-                .WithArguments("t",
-                    "C.M(Type)",
-                    "t",
-                    "Base.M(Type)")
-            };
-            await VerifyDynamicallyAccessedMembersCodeFix(test, test, diag, diag);
+            // With variance, removing DAM from parameter is allowed - no warning
+            await VerifyCS.VerifyAnalyzerAsync(test);
         }
 
         [Fact]
@@ -2857,6 +2823,8 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
                 fixedExpected: Array.Empty<DiagnosticResult>());
         }
 
+        // With variance: adding DAM to return value is allowed (covariant)
+        // Base has no return DAM, override adds - this is now allowed
         [Fact]
         public async Task CodeFix_IL2093_MismatchOnMethodReturnValueBetweenOverrides_Reversed()
         {
@@ -2882,43 +2850,8 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
                 }
             }
             """;
-            var fixtest = $$"""
-            using System;
-            using System.Diagnostics.CodeAnalysis;
-
-            public class Base
-            {
-                [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
-                public virtual Type M([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)] Type t) {
-                    return t;
-                }
-            }
-
-            public class C : Base
-            {
-                [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
-                public override Type M([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)] Type t) {
-                    return t;
-                }
-
-                public static void Main() {
-                }
-            }
-            """;
-            await VerifyDynamicallyAccessedMembersCodeFix(
-                source: test,
-                fixedSource: fixtest,
-                baselineExpected: new[] {
-                    // /0/Test0.cs(14,23): warning IL2093: 'DynamicallyAccessedMemberTypes' in 'DynamicallyAccessedMembersAttribute' on the return value of method 'C.M(Type)'
-                    // don't match overridden return value of method 'Base.M(Type)'.
-                    // All overridden members must have the same 'DynamicallyAccessedMembersAttribute' usage.
-                    VerifyCS.Diagnostic(DiagnosticId.DynamicallyAccessedMembersMismatchOnMethodReturnValueBetweenOverrides)
-                        .WithSpan(14, 26, 14, 27)
-                        .WithSpan(6, 25, 6, 26)
-                        .WithArguments("C.M(Type)",
-                        "Base.M(Type)")
-                },
-                fixedExpected: Array.Empty<DiagnosticResult>());
+            // With variance, adding DAM to return value is allowed - no warning
+            await VerifyCS.VerifyAnalyzerAsync(test);
         }
 
         [Fact]
@@ -2959,6 +2892,8 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
             await VerifyDynamicallyAccessedMembersCodeFix(test, test, diag, diag);
         }
 
+        // With variance: adding DAM to return value is allowed (covariant)
+        // Base has None on return, override adds NonPublicMethods - this is now allowed
         [Fact]
         public async Task CodeFix_IL2093_AttributesTurnOffCodeFix_None()
         {
@@ -2985,16 +2920,8 @@ build_property.{MSBuildPropertyOptionNames.EnableTrimAnalyzer} = true")));
                 }
             }
             """;
-            var diag = new[] {
-                // /0/Test0.cs(15,23): warning IL2093: 'DynamicallyAccessedMemberTypes' in 'DynamicallyAccessedMembersAttribute' on the return value of method 'C.M(Type)'
-                // don't match overridden return value of method 'Base.M(Type)'.
-                // All overridden members must have the same 'DynamicallyAccessedMembersAttribute' usage.
-                VerifyCS.Diagnostic(DiagnosticId.DynamicallyAccessedMembersMismatchOnMethodReturnValueBetweenOverrides)
-                    .WithSpan(15, 26, 15, 27)
-                    .WithArguments("C.M(Type)",
-                    "Base.M(Type)")
-            };
-            await VerifyDynamicallyAccessedMembersCodeFix(test, test, diag, diag);
+            // With variance, adding DAM to return value is allowed - no warning
+            await VerifyCS.VerifyAnalyzerAsync(test);
         }
     }
 }
