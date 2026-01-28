@@ -1466,7 +1466,7 @@ namespace System.Diagnostics.Tracing
             int parameterCount,
             bool allParametersAreString,
             bool allParametersAreInt32,
-            Type[]? parameterTypes
+            Type[] parameterTypes
         )
         {
             if (SelfDescribingEvents)
@@ -1614,7 +1614,7 @@ namespace System.Diagnostics.Tracing
             int parameterCount,
             bool allParametersAreString,
             bool allParametersAreInt32,
-            Type[]? parameterTypes)
+            Type[] parameterTypes)
         {
             if (m_Dispatchers != null && enabledForAnyListener)
             {
@@ -2356,7 +2356,7 @@ namespace System.Diagnostics.Tracing
             int parameterCount,
             bool allParametersAreString,
             bool allParametersAreInt32,
-            Type[]? parameterTypes)
+            Type[] parameterTypes)
         {
             if (eventDataCount != eventListenerParameterCount)
             {
