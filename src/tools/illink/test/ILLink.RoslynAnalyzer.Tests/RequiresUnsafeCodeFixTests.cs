@@ -1027,6 +1027,87 @@ build_property.{MSBuildPropertyOptionNames.EnableUnsafeAnalyzer} = true")));
             });
             await addAttributeTest.RunAsync();
         }
+
+        [Fact]
+        public async Task CodeFix_WrapInUnsafeBlock_NotOfferedForExpressionBodyWithPreprocessorDirectives()
+        {
+            // When an expression-bodied member has preprocessor directives (#if/#else/#endif),
+            // the "Wrap in unsafe block" fix should NOT be offered because it would destroy
+            // the conditional compilation structure. Only the "Add attribute" fix should be available.
+            var test = """
+                using System.Diagnostics.CodeAnalysis;
+
+                public class C
+                {
+                    [RequiresUnsafe]
+                    public static int M1() => 0;
+
+                    public int M2()
+                #if SOME_DEFINE
+                        => 42;
+                #else
+                        => M1();
+                #endif
+                }
+
+                namespace System.Diagnostics.CodeAnalysis
+                {
+                    [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor, Inherited = false)]
+                    public sealed class RequiresUnsafeAttribute : Attribute { }
+                }
+                """;
+
+            // The fix should add [RequiresUnsafe] attribute (CodeActionIndex = 0)
+            // The "Wrap in unsafe block" fix (CodeActionIndex = 1) should NOT be available
+            var fixedSource = """
+                using System.Diagnostics.CodeAnalysis;
+
+                public class C
+                {
+                    [RequiresUnsafe]
+                    public static int M1() => 0;
+
+                    [RequiresUnsafe()]
+                    public int M2()
+                #if SOME_DEFINE
+                        => 42;
+                #else
+                        => M1();
+                #endif
+                }
+
+                namespace System.Diagnostics.CodeAnalysis
+                {
+                    [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor, Inherited = false)]
+                    public sealed class RequiresUnsafeAttribute : Attribute { }
+                }
+                """;
+
+            var addAttributeTest = new VerifyCS.Test
+            {
+                TestCode = test,
+                FixedCode = fixedSource,
+                CodeActionIndex = 0,
+                NumberOfIncrementalIterations = 1,
+                NumberOfFixAllIterations = 1
+            };
+            addAttributeTest.ExpectedDiagnostics.Add(
+                VerifyCS.Diagnostic(DiagnosticId.RequiresUnsafe)
+                    .WithSpan(12, 12, 12, 14)
+                    .WithArguments("C.M1()", "", ""));
+            addAttributeTest.TestState.AnalyzerConfigFiles.Add(
+                ("/.editorconfig", SourceText.From(@$"
+is_global = true
+build_property.{MSBuildPropertyOptionNames.EnableUnsafeAnalyzer} = true")));
+            addAttributeTest.SolutionTransforms.Add((solution, projectId) =>
+            {
+                var project = solution.GetProject(projectId)!;
+                var compilationOptions = (CSharpCompilationOptions)project.CompilationOptions!;
+                compilationOptions = compilationOptions.WithAllowUnsafe(true);
+                return solution.WithProjectCompilationOptions(projectId, compilationOptions);
+            });
+            await addAttributeTest.RunAsync();
+        }
     }
 }
 #endif

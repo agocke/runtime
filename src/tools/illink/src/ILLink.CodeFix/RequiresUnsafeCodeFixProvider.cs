@@ -55,7 +55,7 @@ namespace ILLink.CodeFix
             {
                 // Try expression-bodied member
                 var arrowExpr = targetNode.AncestorsAndSelf().OfType<ArrowExpressionClauseSyntax>().FirstOrDefault();
-                if (arrowExpr != null)
+                if (arrowExpr != null && !HasDirectiveTrivia(arrowExpr))
                 {
                     context.RegisterCodeFix(CodeAction.Create(
                         title: WrapInUnsafeBlockTitle,
@@ -269,6 +269,27 @@ namespace ILLink.CodeFix
 
         protected override SyntaxNode[] GetAttributeArguments(ISymbol? attributableSymbol, ISymbol targetSymbol, SyntaxGenerator syntaxGenerator, Diagnostic diagnostic) =>
             RequiresHelpers.GetAttributeArgumentsForRequires(targetSymbol, syntaxGenerator, HasPublicAccessibility(attributableSymbol));
+
+        /// <summary>
+        /// Checks if the arrow expression clause or its expression has preprocessor directive trivia.
+        /// Converting expression bodies with directives to block bodies is error-prone, so we skip the fix.
+        /// </summary>
+        private static bool HasDirectiveTrivia(ArrowExpressionClauseSyntax arrowExpr)
+        {
+            // Check the arrow token's trailing trivia (e.g., #if right after =>)
+            if (arrowExpr.ArrowToken.TrailingTrivia.Any(t => t.IsDirective))
+                return true;
+
+            // Check the expression's leading trivia (e.g., #if before the expression)
+            if (arrowExpr.Expression.GetLeadingTrivia().Any(t => t.IsDirective))
+                return true;
+
+            // Check the expression's trailing trivia (e.g., #endif after the expression)
+            if (arrowExpr.Expression.GetTrailingTrivia().Any(t => t.IsDirective))
+                return true;
+
+            return false;
+        }
     }
 }
 #endif
