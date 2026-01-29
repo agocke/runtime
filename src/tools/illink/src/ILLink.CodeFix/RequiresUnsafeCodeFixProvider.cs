@@ -137,78 +137,178 @@ namespace ILLink.CodeFix
             if (semanticModel == null)
                 return document;
 
-            // Find the range of statements to wrap using data flow analysis
+            // Find the trigger statement in the block
             var statements = parentBlock.Statements;
             int triggerIndex = statements.IndexOf(triggerStatement);
             if (triggerIndex < 0)
                 return document;
 
-            // Start with just the trigger statement
-            int startIndex = triggerIndex;
-            int endIndex = triggerIndex;
-
-            // Expand the range until no variables flow out
-            bool expanded = true;
-            while (expanded && endIndex < statements.Count - 1)
+            // Check if any statement has directive trivia that would be lost or mangled
+            var leadingTrivia = triggerStatement.GetLeadingTrivia();
+            if (leadingTrivia.Any(t => t.IsDirective))
             {
-                expanded = false;
-
-                // Get the statements in our current range
-                var rangeStatements = statements.Skip(startIndex).Take(endIndex - startIndex + 1).ToList();
-
-                // Analyze data flow for the range
-                var dataFlow = semanticModel.AnalyzeDataFlow(rangeStatements.First(), rangeStatements.Last());
-                if (dataFlow == null || !dataFlow.Succeeded)
-                    break;
-
-                // Check if any variables defined in the range are used after the range
-                var definedInRange = dataFlow.VariablesDeclared;
-                var usedAfterRange = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
-
-                for (int i = endIndex + 1; i < statements.Count; i++)
-                {
-                    var afterFlow = semanticModel.AnalyzeDataFlow(statements[i]);
-                    if (afterFlow != null && afterFlow.Succeeded)
-                    {
-                        foreach (var used in afterFlow.DataFlowsIn)
-                        {
-                            usedAfterRange.Add(used);
-                        }
-                    }
-                }
-
-                // If any variable defined in range is used after, expand to include the next statement
-                if (definedInRange.Any(usedAfterRange.Contains))
-                {
-                    endIndex++;
-                    expanded = true;
-                }
+                // Skip the fix - directives in statement trivia would be lost or malformed
+                return document;
             }
 
-            // Now wrap the range [startIndex, endIndex] in an unsafe block
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
-
-            var statementsToWrap = statements.Skip(startIndex).Take(endIndex - startIndex + 1).ToList();
 
             // Create the TODO comment
             var todoComment = SyntaxFactory.Comment("// TODO(unsafe): Baselining unsafe usage");
-            var newLine = SyntaxFactory.CarriageReturnLineFeed;
+            var newLine = SyntaxFactory.ElasticCarriageReturnLineFeed;
+
+            // Check if we can use forward declaration strategy
+            // This applies when the trigger is a local declaration with a single variable
+            // Ref locals (including ref readonly and scoped ref) cannot be forward-declared
+            LocalDeclarationStatementSyntax? forwardDecl = null;
+            StatementSyntax statementToWrap = triggerStatement;
+            int endIndex = triggerIndex;  // For block expansion when forward decl not possible
+
+            bool isRefOrScopedLocal = triggerStatement is LocalDeclarationStatementSyntax localDeclCheck &&
+                (localDeclCheck.Declaration.Type is RefTypeSyntax || localDeclCheck.Declaration.Type is ScopedTypeSyntax);
+
+            if (triggerStatement is LocalDeclarationStatementSyntax localDecl &&
+                !localDecl.IsConst &&
+                !isRefOrScopedLocal &&
+                localDecl.Declaration.Variables.Count == 1 &&
+                localDecl.Declaration.Variables[0].Initializer != null)
+            {
+                var variable = localDecl.Declaration.Variables[0];
+                var typeSyntax = localDecl.Declaration.Type;
+
+                // If using 'var', resolve to explicit type
+                if (typeSyntax.IsVar)
+                {
+                    var typeInfo = semanticModel.GetTypeInfo(typeSyntax, cancellationToken);
+                    if (typeInfo.Type != null && typeInfo.Type is not IErrorTypeSymbol)
+                    {
+                        typeSyntax = SyntaxFactory.ParseTypeName(typeInfo.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat))
+                            .WithTrailingTrivia(SyntaxFactory.Space);
+                    }
+                    else
+                    {
+                        // Can't resolve type, fall back to wrapping the whole declaration
+                        typeSyntax = null!;
+                    }
+                }
+
+                if (typeSyntax != null)
+                {
+                    // Create forward declaration: Type varName;
+                    var forwardDeclVariable = SyntaxFactory.VariableDeclarator(variable.Identifier);
+                    var forwardDeclDeclaration = SyntaxFactory.VariableDeclaration(typeSyntax)
+                        .AddVariables(forwardDeclVariable);
+                    forwardDecl = SyntaxFactory.LocalDeclarationStatement(forwardDeclDeclaration)
+                        .WithLeadingTrivia(triggerStatement.GetLeadingTrivia())
+                        .WithTrailingTrivia(SyntaxFactory.TriviaList(SyntaxFactory.ElasticCarriageReturnLineFeed));
+
+                    // Create assignment: varName = initializer;
+                    var assignment = SyntaxFactory.AssignmentExpression(
+                        SyntaxKind.SimpleAssignmentExpression,
+                        SyntaxFactory.IdentifierName(variable.Identifier),
+                        variable.Initializer!.Value);
+                    statementToWrap = SyntaxFactory.ExpressionStatement(assignment)
+                        .WithTrailingTrivia(SyntaxFactory.TriviaList(SyntaxFactory.ElasticCarriageReturnLineFeed));
+                }
+            }
+            else if (isRefOrScopedLocal)
+            {
+                // For ref/scoped locals, we must expand the block until no variables
+                // declared inside are used outside. This handles chains of dependencies
+                // where ref locals lead to regular locals that are also used later.
+                var localDeclStmt = (LocalDeclarationStatementSyntax)triggerStatement;
+                if (localDeclStmt.Declaration.Variables.Count == 1)
+                {
+                    // Iteratively expand until no variables declared inside escape outside
+                    bool expanded = true;
+                    while (expanded && endIndex < statements.Count - 1)
+                    {
+                        expanded = false;
+
+                        // Collect all variables declared in the current range (using symbols for correct scoping)
+                        var declaredVariableSymbols = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+                        for (int i = triggerIndex; i <= endIndex; i++)
+                        {
+                            if (statements[i] is LocalDeclarationStatementSyntax rangeLocalDecl)
+                            {
+                                foreach (var variable in rangeLocalDecl.Declaration.Variables)
+                                {
+                                    var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
+                                    if (symbol is not null)
+                                        declaredVariableSymbols.Add(symbol);
+                                }
+                            }
+                        }
+
+                        // Check ALL remaining statements - does any use a declared variable?
+                        for (int nextIndex = endIndex + 1; nextIndex < statements.Count; nextIndex++)
+                        {
+                            var stmt = statements[nextIndex];
+
+                            bool usesAnyDeclaredVariable = stmt.DescendantNodes()
+                                .OfType<IdentifierNameSyntax>()
+                                .Any(id =>
+                                {
+                                    var symbolInfo = semanticModel.GetSymbolInfo(id, cancellationToken);
+                                    return symbolInfo.Symbol is not null && declaredVariableSymbols.Contains(symbolInfo.Symbol);
+                                });
+
+                            if (usesAnyDeclaredVariable)
+                            {
+                                // Check for directive trivia that would be mangled
+                                if (stmt.GetLeadingTrivia().Any(t => t.IsDirective))
+                                {
+                                    // Stop expansion here - don't include statements with directives
+                                    break;
+                                }
+
+                                // Expand to include this statement
+                                endIndex = nextIndex;
+                                expanded = true;
+                                break; // Restart the outer loop to recollect variables
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Build the statements to wrap
+            List<StatementSyntax> statementsToWrap;
+            if (forwardDecl != null)
+            {
+                statementsToWrap = new List<StatementSyntax> { statementToWrap };
+            }
+            else
+            {
+                statementsToWrap = statements.Skip(triggerIndex).Take(endIndex - triggerIndex + 1).ToList();
+            }
 
             // Create the unsafe block
+            var wrappedStatements = statementsToWrap.Select(s =>
+                s.WithoutTrivia()
+                 .WithTrailingTrivia(SyntaxFactory.TriviaList(SyntaxFactory.ElasticCarriageReturnLineFeed)));
             var unsafeBlock = SyntaxFactory.UnsafeStatement(
-                SyntaxFactory.Block(statementsToWrap.Select(s => s.WithoutTrivia())))
-                .WithLeadingTrivia(statementsToWrap[0].GetLeadingTrivia().InsertRange(0, new[] { todoComment, newLine }))
-                .WithTrailingTrivia(statementsToWrap[statementsToWrap.Count - 1].GetTrailingTrivia());
+                SyntaxFactory.Block(wrappedStatements))
+                .WithLeadingTrivia(forwardDecl != null
+                    ? SyntaxFactory.TriviaList(todoComment, newLine)
+                    : triggerStatement.GetLeadingTrivia().InsertRange(0, new[] { todoComment, newLine }))
+                .WithTrailingTrivia(forwardDecl != null
+                    ? triggerStatement.GetTrailingTrivia()
+                    : statementsToWrap.Last().GetTrailingTrivia());
 
             // Build the new list of statements
             var newStatements = new List<StatementSyntax>();
             for (int i = 0; i < statements.Count; i++)
             {
-                if (i == startIndex)
+                if (i == triggerIndex)
                 {
+                    if (forwardDecl != null)
+                    {
+                        newStatements.Add(forwardDecl);
+                    }
                     newStatements.Add(unsafeBlock);
                 }
-                else if (i > startIndex && i <= endIndex)
+                else if (i > triggerIndex && i <= endIndex)
                 {
                     // Skip - already included in unsafe block
                 }
