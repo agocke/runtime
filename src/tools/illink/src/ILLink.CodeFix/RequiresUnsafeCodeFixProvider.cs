@@ -51,6 +51,20 @@ namespace ILLink.CodeFix
 
             // Find the statement containing the unsafe call
             var containingStatement = targetNode.AncestorsAndSelf().OfType<StatementSyntax>().FirstOrDefault();
+
+            // Check if this is a local function with expression body - treat it like expression-bodied member
+            if (containingStatement is LocalFunctionStatementSyntax localFunc && localFunc.ExpressionBody != null)
+            {
+                if (!HasDirectiveTrivia(localFunc.ExpressionBody))
+                {
+                    context.RegisterCodeFix(CodeAction.Create(
+                        title: WrapInUnsafeBlockTitle,
+                        createChangedDocument: ct => ConvertExpressionBodyToUnsafeBlockAsync(document, localFunc.ExpressionBody, ct),
+                        equivalenceKey: WrapInUnsafeBlockTitle), diagnostic);
+                }
+                return;
+            }
+
             if (containingStatement is null || containingStatement is BlockSyntax)
             {
                 // Try expression-bodied member
@@ -67,13 +81,50 @@ namespace ILLink.CodeFix
 
             // Find the parent block containing this statement
             var parentBlock = containingStatement.Parent as BlockSyntax;
-            if (parentBlock == null)
+            if (parentBlock != null)
+            {
+                context.RegisterCodeFix(CodeAction.Create(
+                    title: WrapInUnsafeBlockTitle,
+                    createChangedDocument: ct => WrapStatementsInUnsafeBlockAsync(document, parentBlock, containingStatement, ct),
+                    equivalenceKey: WrapInUnsafeBlockTitle), diagnostic);
                 return;
+            }
 
-            context.RegisterCodeFix(CodeAction.Create(
-                title: WrapInUnsafeBlockTitle,
-                createChangedDocument: ct => WrapStatementsInUnsafeBlockAsync(document, parentBlock, containingStatement, ct),
-                equivalenceKey: WrapInUnsafeBlockTitle), diagnostic);
+            // Handle switch case sections
+            var switchSection = containingStatement.Parent as SwitchSectionSyntax;
+            if (switchSection != null)
+            {
+                context.RegisterCodeFix(CodeAction.Create(
+                    title: WrapInUnsafeBlockTitle,
+                    createChangedDocument: ct => WrapSwitchSectionStatementInUnsafeBlockAsync(document, switchSection, containingStatement, ct),
+                    equivalenceKey: WrapInUnsafeBlockTitle), diagnostic);
+                return;
+            }
+
+            // Handle embedded statements (if/else/while/for without braces)
+            if (IsEmbeddedStatement(containingStatement))
+            {
+                context.RegisterCodeFix(CodeAction.Create(
+                    title: WrapInUnsafeBlockTitle,
+                    createChangedDocument: ct => WrapEmbeddedStatementInUnsafeBlockAsync(document, containingStatement, ct),
+                    equivalenceKey: WrapInUnsafeBlockTitle), diagnostic);
+                return;
+            }
+        }
+
+        private static bool IsEmbeddedStatement(StatementSyntax statement)
+        {
+            // An embedded statement is a statement that is the direct child of a control flow statement
+            // without being wrapped in a block (e.g., "if (x) return;" instead of "if (x) { return; }")
+            return statement.Parent is IfStatementSyntax
+                || statement.Parent is ElseClauseSyntax
+                || statement.Parent is WhileStatementSyntax
+                || statement.Parent is ForStatementSyntax
+                || statement.Parent is ForEachStatementSyntax
+                || statement.Parent is DoStatementSyntax
+                || statement.Parent is UsingStatementSyntax
+                || statement.Parent is LockStatementSyntax
+                || statement.Parent is FixedStatementSyntax;
         }
 
         private static async Task<Document> WrapStatementsInUnsafeBlockAsync(
@@ -169,6 +220,56 @@ namespace ILLink.CodeFix
 
             var newBlock = parentBlock.WithStatements(SyntaxFactory.List(newStatements));
             editor.ReplaceNode(parentBlock, newBlock);
+
+            return editor.GetChangedDocument();
+        }
+
+        private static async Task<Document> WrapSwitchSectionStatementInUnsafeBlockAsync(
+            Document document,
+            SwitchSectionSyntax _,
+            StatementSyntax triggerStatement,
+            CancellationToken cancellationToken)
+        {
+            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+
+            // Create the TODO comment
+            var todoComment = SyntaxFactory.Comment("// TODO(unsafe): Baselining unsafe usage");
+            var newLine = SyntaxFactory.CarriageReturnLineFeed;
+
+            // Create the unsafe block wrapping just the trigger statement
+            var unsafeBlock = SyntaxFactory.UnsafeStatement(
+                SyntaxFactory.Block(triggerStatement.WithoutTrivia()))
+                .WithLeadingTrivia(triggerStatement.GetLeadingTrivia().InsertRange(0, new[] { todoComment, newLine }))
+                .WithTrailingTrivia(triggerStatement.GetTrailingTrivia());
+
+            // Replace the trigger statement with the unsafe block
+            editor.ReplaceNode(triggerStatement, unsafeBlock);
+
+            return editor.GetChangedDocument();
+        }
+
+        private static async Task<Document> WrapEmbeddedStatementInUnsafeBlockAsync(
+            Document document,
+            StatementSyntax embeddedStatement,
+            CancellationToken cancellationToken)
+        {
+            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+
+            // Create the TODO comment
+            var todoComment = SyntaxFactory.Comment("// TODO(unsafe): Baselining unsafe usage");
+            var newLine = SyntaxFactory.CarriageReturnLineFeed;
+
+            // Create the unsafe block wrapping the statement
+            var unsafeBlock = SyntaxFactory.UnsafeStatement(
+                SyntaxFactory.Block(embeddedStatement.WithoutTrivia()))
+                .WithLeadingTrivia(todoComment, newLine);
+
+            // Wrap in a block to replace the embedded statement
+            var wrappingBlock = SyntaxFactory.Block(unsafeBlock)
+                .WithLeadingTrivia(embeddedStatement.GetLeadingTrivia())
+                .WithTrailingTrivia(embeddedStatement.GetTrailingTrivia());
+
+            editor.ReplaceNode(embeddedStatement, wrappingBlock);
 
             return editor.GetChangedDocument();
         }
@@ -276,6 +377,10 @@ namespace ILLink.CodeFix
         /// </summary>
         private static bool HasDirectiveTrivia(ArrowExpressionClauseSyntax arrowExpr)
         {
+            // Check the arrow expression clause's leading trivia (e.g., #if or #else before =>)
+            if (arrowExpr.GetLeadingTrivia().Any(t => t.IsDirective))
+                return true;
+
             // Check the arrow token's trailing trivia (e.g., #if right after =>)
             if (arrowExpr.ArrowToken.TrailingTrivia.Any(t => t.IsDirective))
                 return true;
@@ -287,6 +392,35 @@ namespace ILLink.CodeFix
             // Check the expression's trailing trivia (e.g., #endif after the expression)
             if (arrowExpr.Expression.GetTrailingTrivia().Any(t => t.IsDirective))
                 return true;
+
+            // Check the arrow expression clause's trailing trivia
+            if (arrowExpr.GetTrailingTrivia().Any(t => t.IsDirective))
+                return true;
+
+            // Check the parent member for directives between the signature and the arrow
+            // e.g., method() #if FOO => expr1; #else => expr2; #endif
+            if (arrowExpr.Parent is MethodDeclarationSyntax method)
+            {
+                // Check trivia after the parameter list (where #if might appear)
+                if (method.ParameterList.GetTrailingTrivia().Any(t => t.IsDirective))
+                    return true;
+                // Check constraint clauses if present
+                foreach (var constraint in method.ConstraintClauses)
+                {
+                    if (constraint.GetTrailingTrivia().Any(t => t.IsDirective))
+                        return true;
+                }
+            }
+            else if (arrowExpr.Parent is LocalFunctionStatementSyntax localFunc)
+            {
+                if (localFunc.ParameterList.GetTrailingTrivia().Any(t => t.IsDirective))
+                    return true;
+            }
+            else if (arrowExpr.Parent is PropertyDeclarationSyntax prop)
+            {
+                if (prop.Identifier.TrailingTrivia.Any(t => t.IsDirective))
+                    return true;
+            }
 
             return false;
         }
