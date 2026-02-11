@@ -210,6 +210,8 @@ namespace System.Diagnostics.Tracing
         [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EventSource will serialize the whole object graph. Trimmer will not safely handle this case because properties may be trimmed. This can be suppressed if the object is a primitive type")]
         [System.CLSCompliantAttribute(false)]
         protected unsafe void WriteEventWithRelatedActivityIdCore(int eventId, System.Guid* relatedActivityId, int eventDataCount, System.Diagnostics.Tracing.EventSource.EventData* data) { }
+        [System.CLSCompliantAttribute(false)]
+        protected unsafe void WriteEventDirect(System.Diagnostics.Tracing.EventDescriptorInfo info, int eventDataCount, System.Diagnostics.Tracing.EventSource.EventData* data) { }
         [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EventSource will serialize the whole object graph. Trimmer will not safely handle this case because properties may be trimmed. This can be suppressed if the object is a primitive type")]
         public void Write<[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties)] T>(string? eventName, System.Diagnostics.Tracing.EventSourceOptions options, T data) { }
         [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EventSource will serialize the whole object graph. Trimmer will not safely handle this case because properties may be trimmed. This can be suppressed if the object is a primitive type")]
@@ -335,5 +337,43 @@ namespace System.Diagnostics.Tracing
     public sealed partial class NonEventAttribute : System.Attribute
     {
         public NonEventAttribute() { }
+    }
+    public enum EventFieldType : byte
+    {
+        Boolean = 0,
+        Int8 = 1,
+        UInt8 = 2,
+        Int16 = 3,
+        UInt16 = 4,
+        Char = 5,
+        Int32 = 6,
+        UInt32 = 7,
+        Int64 = 8,
+        UInt64 = 9,
+        Float = 10,
+        Double = 11,
+        String = 12,
+        Guid = 13,
+        DateTime = 14,
+        Decimal = 15,
+        IntPtr = 16,
+        ByteArray = 17,
+    }
+    public readonly partial struct EventFieldDescriptor
+    {
+        public EventFieldDescriptor(string name, System.Diagnostics.Tracing.EventFieldType fieldType) { throw null; }
+        public string Name { get { throw null; } }
+        public System.Diagnostics.Tracing.EventFieldType FieldType { get { throw null; } }
+    }
+    public sealed partial class EventDescriptorInfo
+    {
+        public EventDescriptorInfo(string eventName, System.Diagnostics.Tracing.EventLevel level, System.Diagnostics.Tracing.EventKeywords keywords, System.Diagnostics.Tracing.EventFieldDescriptor[] fields, System.Diagnostics.Tracing.EventOpcode opcode = System.Diagnostics.Tracing.EventOpcode.Info, System.Diagnostics.Tracing.EventTags tags = System.Diagnostics.Tracing.EventTags.None, int eventId = -1) { }
+        public string EventName { get { throw null; } }
+        public System.Diagnostics.Tracing.EventLevel Level { get { throw null; } }
+        public System.Diagnostics.Tracing.EventKeywords Keywords { get { throw null; } }
+        public System.Diagnostics.Tracing.EventOpcode Opcode { get { throw null; } }
+        public System.Diagnostics.Tracing.EventTags Tags { get { throw null; } }
+        public int EventId { get { throw null; } }
+        public System.Diagnostics.Tracing.EventFieldDescriptor[] Fields { get { throw null; } }
     }
 }

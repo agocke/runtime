@@ -1790,167 +1790,75 @@ namespace System.Diagnostics.Tracing
         {
             for (int i = 0; i < decodedObjects.Length; i++, data++)
             {
-                IntPtr dataPointer = data->DataPointer;
                 Type dataType = parameterTypes[i];
-                object? decoded;
+                EventFieldType? fieldType = GetEventFieldType(dataType);
 
-                if (dataType == typeof(string))
+                if (fieldType.HasValue)
                 {
-                    goto String;
+                    decodedObjects[i] = DecodeFieldValue(fieldType.Value, ref data);
+                    continue;
                 }
-                else if (dataType == typeof(int))
-                {
-                    Debug.Assert(data->Size == 4);
-                    decoded = *(int*)dataPointer;
-                }
-                else
-                {
-                    TypeCode typeCode = Type.GetTypeCode(dataType);
-                    int size = data->Size;
 
-                    if (size == 4)
+                // Types that don't map to EventFieldType: enums, byte*, and unknown types.
+                IntPtr dataPointer = data->DataPointer;
+
+                if (dataType.IsEnum)
+                {
+                    // Enums less than 4 bytes in size are written as 4-byte integers.
+                    decodedObjects[i] = *(int*)dataPointer;
+                }
+                else if (dataType == typeof(byte*))
+                {
+                    if (data->Size == 0)
                     {
-                        if ((uint)(typeCode - TypeCode.SByte) <= TypeCode.Int32 - TypeCode.SByte)
-                        {
-                            Debug.Assert(dataType.IsEnum);
-                            // Enums less than 4 bytes in size should be treated as int.
-                            decoded = *(int*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.UInt32)
-                        {
-                            decoded = *(uint*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.Single)
-                        {
-                            decoded = *(float*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.Boolean)
-                        {
-                            // The manifest defines a bool as a 32bit type (WIN32 BOOL), not 1 bit as CLR Does.
-                            decoded = *(int*)dataPointer == 1;
-                        }
-                        else if (dataType == typeof(byte[]))
-                        {
-                            // byte[] are written to EventData* as an int followed by a blob
-                            Debug.Assert(*(int*)dataPointer == (data + 1)->Size);
-                            data++;
-                            goto BytePtr;
-                        }
-                        else if (IntPtr.Size == 4 && dataType == typeof(IntPtr))
-                        {
-                            decoded = *(IntPtr*)dataPointer;
-                        }
-                        else
-                        {
-                            goto Unknown;
-                        }
-                    }
-                    else if (size <= 2)
-                    {
-                        Debug.Assert(!dataType.IsEnum);
-                        if (typeCode == TypeCode.Byte)
-                        {
-                            Debug.Assert(size == 1);
-                            decoded = *(byte*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.SByte)
-                        {
-                            Debug.Assert(size == 1);
-                            decoded = *(sbyte*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.Int16)
-                        {
-                            Debug.Assert(size == 2);
-                            decoded = *(short*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.UInt16)
-                        {
-                            Debug.Assert(size == 2);
-                            decoded = *(ushort*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.Char)
-                        {
-                            Debug.Assert(size == 2);
-                            decoded = *(char*)dataPointer;
-                        }
-                        else
-                        {
-                            goto Unknown;
-                        }
-                    }
-                    else if (size == 8)
-                    {
-                        if (typeCode == TypeCode.Int64)
-                        {
-                            decoded = *(long*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.UInt64)
-                        {
-                            decoded = *(ulong*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.Double)
-                        {
-                            decoded = *(double*)dataPointer;
-                        }
-                        else if (typeCode == TypeCode.DateTime)
-                        {
-                            decoded = DateTime.FromFileTimeUtc(*(long*)dataPointer);
-                        }
-                        else if (IntPtr.Size == 8 && dataType == typeof(IntPtr))
-                        {
-                            decoded = *(IntPtr*)dataPointer;
-                        }
-                        else
-                        {
-                            goto Unknown;
-                        }
-                    }
-                    else if (typeCode == TypeCode.Decimal)
-                    {
-                        Debug.Assert(size == 16);
-                        decoded = *(decimal*)dataPointer;
-                    }
-                    else if (dataType == typeof(Guid))
-                    {
-                        Debug.Assert(size == 16);
-                        decoded = *(Guid*)dataPointer;
+                        decodedObjects[i] = Array.Empty<byte>();
                     }
                     else
                     {
-                        goto Unknown;
+                        var blob = new byte[data->Size];
+                        Marshal.Copy(data->DataPointer, blob, 0, blob.Length);
+                        decodedObjects[i] = blob;
                     }
-                }
-
-                goto Store;
-
-            Unknown:
-                if (dataType != typeof(byte*))
-                {
-                    // Everything else is marshaled as a string.
-                    goto String;
-                }
-
-            BytePtr:
-                if (data->Size == 0)
-                {
-                    decoded = Array.Empty<byte>();
                 }
                 else
                 {
-                    var blob = new byte[data->Size];
-                    Marshal.Copy(data->DataPointer, blob, 0, blob.Length);
-                    decoded = blob;
+                    // Everything else is marshaled as a string.
+                    AssertValidString(data);
+                    decodedObjects[i] = dataPointer == IntPtr.Zero
+                        ? null
+                        : new string((char*)dataPointer, 0, (data->Size >> 1) - 1);
                 }
-                goto Store;
-
-            String:
-                // ETW strings are NULL-terminated, so marshal everything up to the first null in the string.
-                AssertValidString(data);
-                decoded = dataPointer == IntPtr.Zero ? null : new string((char*)dataPointer, 0, (data->Size >> 1) - 1);
-
-            Store:
-                decodedObjects[i] = decoded;
             }
+        }
+
+        /// <summary>
+        /// Maps a <see cref="Type"/> to the corresponding
+        /// <see cref="EventFieldType"/> for use with <see cref="DecodeFieldValue"/>.
+        /// Returns <c>null</c> for types that require special handling
+        /// (enums, <c>byte*</c>, and unknown types).
+        /// </summary>
+        private static EventFieldType? GetEventFieldType(Type type)
+        {
+            if (type == typeof(string)) return EventFieldType.String;
+            if (type == typeof(int)) return EventFieldType.Int32;
+            if (type == typeof(uint)) return EventFieldType.UInt32;
+            if (type == typeof(long)) return EventFieldType.Int64;
+            if (type == typeof(ulong)) return EventFieldType.UInt64;
+            if (type == typeof(byte)) return EventFieldType.UInt8;
+            if (type == typeof(sbyte)) return EventFieldType.Int8;
+            if (type == typeof(short)) return EventFieldType.Int16;
+            if (type == typeof(ushort)) return EventFieldType.UInt16;
+            if (type == typeof(char)) return EventFieldType.Char;
+            if (type == typeof(bool)) return EventFieldType.Boolean;
+            if (type == typeof(float)) return EventFieldType.Float;
+            if (type == typeof(double)) return EventFieldType.Double;
+            if (type == typeof(IntPtr)) return EventFieldType.IntPtr;
+            if (type == typeof(DateTime)) return EventFieldType.DateTime;
+            if (type == typeof(decimal)) return EventFieldType.Decimal;
+            if (type == typeof(Guid)) return EventFieldType.Guid;
+            if (type == typeof(byte[])) return EventFieldType.ByteArray;
+
+            return null;
         }
 
         [Conditional("DEBUG")]

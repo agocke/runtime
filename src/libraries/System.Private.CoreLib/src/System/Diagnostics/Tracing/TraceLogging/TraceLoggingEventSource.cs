@@ -12,6 +12,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 namespace System.Diagnostics.Tracing
 {
@@ -850,6 +851,218 @@ namespace System.Diagnostics.Tracing
             }
 
             throw new ArgumentException(SR.Format(SR.EventSource_BadHexDigit, c), "traits");
+        }
+
+        /// <summary>
+        /// Writes an event directly using caller-provided metadata, bypassing
+        /// reflection and the <c>m_eventData</c> infrastructure entirely.
+        /// The event is emitted in manifest-based format to ETW and EventPipe,
+        /// and decoded for <see cref="EventListener"/> consumers via the
+        /// field descriptors on <paramref name="info"/>.
+        /// </summary>
+        /// <param name="info">
+        /// Pre-built event metadata. Must not be null. Callers should construct
+        /// one instance per event shape and cache it.
+        /// <see cref="EventDescriptorInfo.EventId"/> must be non-negative.
+        /// </param>
+        /// <param name="eventDataCount">
+        /// Number of <see cref="EventData"/> entries pointed to by
+        /// <paramref name="data"/>.
+        /// </param>
+        /// <param name="data">
+        /// Pointer to the first <see cref="EventData"/> entry.
+        /// </param>
+        [CLSCompliant(false)]
+        protected unsafe void WriteEventDirect(EventDescriptorInfo info, int eventDataCount, EventData* data)
+        {
+            ArgumentNullException.ThrowIfNull(info);
+            ArgumentOutOfRangeException.ThrowIfNegative(info.EventId, "info.EventId");
+
+            if (!IsEnabled(info.Level, info.Keywords))
+            {
+                return;
+            }
+
+            try
+            {
+                // ── Activity tracking ──
+                Guid* pActivityId = null;
+                Guid activityId = Guid.Empty;
+                Guid relatedActivityId = Guid.Empty;
+
+                if (info.Opcode == EventOpcode.Start)
+                {
+                    m_activityTracker.OnStart(m_name, info.EventName, 0,
+                        ref activityId, ref relatedActivityId, EventActivityOptions.None);
+                }
+                else if (info.Opcode == EventOpcode.Stop)
+                {
+                    m_activityTracker.OnStop(m_name, info.EventName, 0, ref activityId);
+                }
+
+                if (activityId != Guid.Empty)
+                    pActivityId = &activityId;
+                Guid* pRelatedActivityId = relatedActivityId != Guid.Empty
+                    ? &relatedActivityId
+                    : null;
+
+                // ── Build manifest-style EventDescriptor ──
+                EventDescriptor descriptor = new EventDescriptor(
+                    info.EventId,
+                    0,  // version
+                    0,  // channel
+                    (byte)info.Level,
+                    (byte)info.Opcode,
+                    0,  // task
+                    (long)info.Keywords);
+
+                // ── Write to ETW ──
+                if (m_etwProvider != null &&
+                    !m_etwProvider.WriteEvent(ref descriptor, IntPtr.Zero, pActivityId, pRelatedActivityId, eventDataCount, (IntPtr)data))
+                {
+                    ThrowEventSourceException(info.EventName);
+                }
+
+#if FEATURE_PERFTRACING
+                // ── Write to EventPipe ──
+                if (m_eventPipeProvider != null)
+                {
+                    // Lazily create and cache EventPipe handle on the caller's object
+                    IntPtr eventHandle = info.EventPipeEventHandle;
+                    if (eventHandle == IntPtr.Zero)
+                    {
+                        byte[] epMetadata = info.GenerateEventPipeMetadata();
+                        uint epMetadataLen = (uint)epMetadata.Length;
+                        fixed (byte* pEpMeta = epMetadata)
+                        {
+                            eventHandle = m_eventPipeProvider._eventProvider.DefineEventHandle(
+                                (uint)info.EventId,
+                                info.EventName,
+                                (long)info.Keywords,
+                                0, // version
+                                (uint)info.Level,
+                                pEpMeta,
+                                epMetadataLen);
+                        }
+                        Interlocked.CompareExchange(ref info.EventPipeEventHandle, eventHandle, IntPtr.Zero);
+                        eventHandle = info.EventPipeEventHandle;
+                    }
+
+                    if (!m_eventPipeProvider.WriteEvent(ref descriptor, eventHandle, pActivityId, pRelatedActivityId, eventDataCount, (IntPtr)data))
+                    {
+                        ThrowEventSourceException(info.EventName);
+                    }
+                }
+#endif
+
+                // ── EventListener dispatch ──
+                if (m_Dispatchers != null)
+                {
+                    var eventCallbackArgs = new EventWrittenEventArgs(this, info.EventId, pActivityId, pRelatedActivityId)
+                    {
+                        EventName = info.EventName,
+                        Level = info.Level,
+                        Keywords = info.Keywords,
+                        Opcode = info.Opcode,
+                        Tags = info.Tags,
+                    };
+
+                    DecodeObjectsDirect(info.Fields, data,
+                        out object?[] payload, out string[] names);
+
+                    eventCallbackArgs.Payload = new ReadOnlyCollection<object?>(payload);
+                    eventCallbackArgs.PayloadNames = new ReadOnlyCollection<string>(names);
+
+                    DispatchToAllListeners(eventCallbackArgs);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ex is EventSourceException)
+                    throw;
+                else
+                    ThrowEventSourceException(info.EventName, ex);
+            }
+        }
+
+        /// <summary>
+        /// Decodes <see cref="EventData"/> entries into boxed objects using
+        /// <see cref="EventFieldType"/> instead of <see cref="Type"/>.
+        /// This is the reflection-free equivalent of
+        /// <see cref="DecodeObjects"/>.
+        /// </summary>
+        private static unsafe void DecodeObjectsDirect(
+            EventFieldDescriptor[] fields,
+            EventData* data,
+            out object?[] payload,
+            out string[] names)
+        {
+            payload = new object?[fields.Length];
+            names = new string[fields.Length];
+
+            for (int i = 0; i < fields.Length; i++, data++)
+            {
+                names[i] = fields[i].Name;
+                payload[i] = DecodeFieldValue(fields[i].FieldType, ref data);
+            }
+        }
+
+        /// <summary>
+        /// Decodes a single value from an <see cref="EventData"/> entry based
+        /// on the <see cref="EventFieldType"/>. This is the shared decode
+        /// logic used by both <see cref="DecodeObjectsDirect"/> and
+        /// <see cref="DecodeObjects"/>.
+        /// For <see cref="EventFieldType.ByteArray"/>, this advances
+        /// <paramref name="data"/> by one additional entry (the blob).
+        /// </summary>
+        private static unsafe object? DecodeFieldValue(EventFieldType fieldType, ref EventData* data)
+        {
+            IntPtr dataPointer = data->DataPointer;
+
+            return fieldType switch
+            {
+                EventFieldType.String => dataPointer == IntPtr.Zero
+                    ? null
+                    : new string((char*)dataPointer, 0, (data->Size >> 1) - 1),
+                EventFieldType.Int32 => *(int*)dataPointer,
+                EventFieldType.UInt32 => *(uint*)dataPointer,
+                EventFieldType.Int64 => *(long*)dataPointer,
+                EventFieldType.UInt64 => *(ulong*)dataPointer,
+                EventFieldType.Boolean => *(int*)dataPointer != 0,
+                EventFieldType.Float => *(float*)dataPointer,
+                EventFieldType.Double => *(double*)dataPointer,
+                EventFieldType.Int8 => *(sbyte*)dataPointer,
+                EventFieldType.UInt8 => *(byte*)dataPointer,
+                EventFieldType.Int16 => *(short*)dataPointer,
+                EventFieldType.UInt16 => *(ushort*)dataPointer,
+                EventFieldType.Char => *(char*)dataPointer,
+                EventFieldType.Guid => *(Guid*)dataPointer,
+                EventFieldType.DateTime => DateTime.FromFileTimeUtc(*(long*)dataPointer),
+                EventFieldType.Decimal => *(decimal*)dataPointer,
+                EventFieldType.IntPtr => *(IntPtr*)dataPointer,
+                EventFieldType.ByteArray => DecodeByteArrayField(ref data),
+                _ => null,
+            };
+        }
+
+        /// <summary>
+        /// Decodes a <see cref="EventFieldType.ByteArray"/> field which
+        /// consumes two <see cref="EventData"/> entries: a 4-byte length prefix
+        /// followed by the blob.
+        /// </summary>
+        private static unsafe byte[] DecodeByteArrayField(ref EventData* data)
+        {
+            // First EventData is the int length.
+            // Advance to the second EventData which holds the actual blob.
+            data++;
+            if (data->Size == 0)
+            {
+                return Array.Empty<byte>();
+            }
+
+            var blob = new byte[data->Size];
+            Marshal.Copy(data->DataPointer, blob, 0, blob.Length);
+            return blob;
         }
 
         private NameInfo? UpdateDescriptor(
