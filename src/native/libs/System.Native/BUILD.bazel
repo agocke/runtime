@@ -1,0 +1,61 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+# System.Native for linux-x64
+# Produces libSystem.Native.so (shared) and libSystem.Native.a (static)
+
+cc_library(
+    name = "System.Native_lib",
+    srcs = [
+        "entrypoints.c",
+        "pal_autoreleasepool.c",
+        "pal_console.c",
+        "pal_crossprocessmutex.c",
+        "pal_datetime.c",
+        "pal_dynamicload.c",
+        "pal_environment.c",
+        "pal_errno.c",
+        "pal_interfaceaddresses.c",
+        "pal_io.c",
+        "pal_iossupportversion.c",
+        "pal_log.c",
+        "pal_maphardwaretype.c",
+        "pal_memory.c",
+        "pal_mount.c",
+        "pal_networkchange.c",
+        "pal_networking.c",
+        "pal_networkstatistics.c",
+        "pal_process.c",
+        "pal_random.c",
+        "pal_runtimeinformation.c",
+        "pal_searchpath.c",
+        "pal_signal.c",
+        "pal_string.c",
+        "pal_sysctl.c",
+        "pal_tcpstate.c",
+        "pal_threading.c",
+        "pal_time.c",
+        "pal_uid.c",
+    ] + glob(["*.h"]),
+    copts = [
+        "-Wno-declaration-after-statement",
+        "-Isrc/native",
+        "-Isrc/native/libs/Common",
+        "-Isrc/native/libs/bazel",
+    ],
+    defines = [
+        "HAS_CONSOLE_SIGNALS",
+    ],
+    linkopts = ["-lrt"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/native/libs:common",
+        "//src/native/minipal",
+    ],
+)
+
+cc_shared_library(
+    name = "System.Native",
+    shared_lib_name = "libSystem.Native.so",
+    visibility = ["//visibility:public"],
+    deps = [":System.Native_lib"],
+)

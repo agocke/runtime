@@ -1,0 +1,19 @@
+#ifndef HAVE_MINIPAL_MINIPALCONFIG_H
+#define HAVE_MINIPAL_MINIPALCONFIG_H
+
+// Hardcoded for linux-x64 (matching CMake configure results)
+#define HAVE_ARC4RANDOM_BUF 0
+#define HAVE_GETRANDOM 1
+#define HAVE_AUXV_HWCAP_H 0
+#define HAVE_HWPROBE_H 0
+#define HAVE_RESOURCE_H 1
+#define HAVE_O_CLOEXEC 1
+#define HAVE_SYSCTLBYNAME 0
+#define HAVE_CLOCK_MONOTONIC 1
+#define HAVE_CLOCK_MONOTONIC_COARSE 1
+#define HAVE_CLOCK_GETTIME_NSEC_NP 0
+#define BIGENDIAN 0
+#define HAVE_BCRYPT_H 0
+#define HAVE_FSYNC 1
+
+#endif

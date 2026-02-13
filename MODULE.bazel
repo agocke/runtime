@@ -1,0 +1,6 @@
+module(
+    name = "dotnet_native_libs",
+    version = "0.1",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.14")

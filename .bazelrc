@@ -1,0 +1,55 @@
+# Bazel configuration for dotnet/runtime native libs (linux-x64)
+
+# Match CMake configurecompiler.cmake settings
+build --copt=-std=gnu11
+build --copt=-O3
+build --copt=-D_GNU_SOURCE
+build --copt=-fPIC
+build --copt=-Werror
+build --copt=-fno-omit-frame-pointer
+build --copt=-fno-strict-overflow
+build --copt=-fno-strict-aliasing
+build --copt=-fstack-protector-strong
+build --copt=-ffp-contract=off
+build --copt=-fsigned-char
+build --copt=-fvisibility=hidden
+build --copt=-ffunction-sections
+build --copt=-g
+
+# Defines matching CMake configurecompiler.cmake and configureplatform.cmake
+build --copt=-D_GNU_SOURCE
+build --copt=-DNDEBUG
+build --copt=-DDISABLE_CONTRACTS
+build --copt=-DURTBLDENV_FRIENDLY=Retail
+build --copt=-DHOST_64BIT
+build --copt=-DHOST_AMD64
+build --copt=-DHOST_UNIX
+build --copt=-DTARGET_64BIT
+build --copt=-DTARGET_AMD64
+build --copt=-DTARGET_UNIX
+build --copt=-DTARGET_LINUX
+build --copt=-D_FILE_OFFSET_BITS=64
+build --copt=-D_TIME_BITS=64
+
+# Warning flags matching CMake configurecompiler.cmake
+build --copt=-Wall
+build --copt=-Wno-unused-variable
+build --copt=-Wno-unused-value
+build --copt=-Wno-unused-function
+build --copt=-Wno-tautological-compare
+build --copt=-Wno-unknown-pragmas
+build --copt=-Wimplicit-fallthrough
+build --copt=-Wno-unused-but-set-variable
+build --copt=-Wno-uninitialized
+build --copt=-Wno-strict-aliasing
+build --copt=-Wno-array-bounds
+build --copt=-Wno-stringop-truncation
+
+# Disable warnings that CMake also suppresses for vendored code
+build --per_file_copt=src/native/external/.*@-w
+
+# Preserve debug symbols (match CMake behavior of always including -g)
+build --strip=never
+
+# linux-x64 target
+build --cpu=k8

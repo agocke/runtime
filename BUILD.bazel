@@ -1,0 +1,2 @@
+# Root BUILD file required by Bazel.
+# Native library targets are defined under src/native/.

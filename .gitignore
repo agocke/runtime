@@ -1,5 +1,9 @@
 syntax: glob
 
+### Bazel ###
+/bazel-*
+/MODULE.bazel.lock
+
 ### VisualStudio ###
 
 # Tool Runtime Dir

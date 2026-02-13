@@ -1,0 +1,26 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "minipal",
+    srcs = [
+        "cpufeatures.c",
+        "debugger.c",
+        "descriptorlimit.c",
+        "guid.c",
+        "log.c",
+        "memorybarrierprocesswide.c",
+        "mutex.c",
+        "random.c",
+        "strings.c",
+        "time.c",
+        "unicodedata.c",
+        "utf8.c",
+        "xoshiro128pp.c",
+        "bazel/minipalconfig.h",
+    ] + glob(["*.h"]),
+    copts = [
+        "-Isrc/native",
+        "-Isrc/native/minipal/bazel",
+    ],
+    visibility = ["//src/native:__subpackages__"],
+)
