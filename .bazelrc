@@ -1,7 +1,8 @@
 # Bazel configuration for dotnet/runtime native libs (linux-x64)
 
 # Match CMake configurecompiler.cmake settings
-build --copt=-std=gnu11
+build --conlyopt=-std=gnu11
+build --cxxopt=-std=c++17
 build --copt=-O3
 build --copt=-D_GNU_SOURCE
 build --copt=-fPIC

@@ -124,48 +124,50 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
   - [ ] Used by coreclr for stack unwinding
 - [ ] `src/native/external/llvm-libunwind/BUILD.bazel`
   - [ ] LLVM's libunwind, alternative to GNU libunwind
-- [ ] `src/native/external/rapidjson/BUILD.bazel`
-  - [ ] Header-only JSON library, used by corehost
+
+### 2.8 rapidjson — ✅ DONE
+- [x] `src/native/external/rapidjson/BUILD.bazel`
+  - [x] Header-only JSON library, used by corehost
+  - [x] Consumers include via `#include <rapidjson/document.h>` etc.
 
 ---
 
-## 3. Core Host (`src/native/corehost/`)
+## 3. Core Host (`src/native/corehost/`) — ✅ DONE (linux-x64)
 
 The .NET host (dotnet CLI, apphost, hostfxr, hostpolicy). C++ codebase, 25 CMakeLists.txt files.
 
-### 3.1 hostcommon (static lib)
-- [ ] `src/native/corehost/hostcommon/BUILD.bazel`
+### 3.1 hostmisc (static lib) — ✅ DONE
+- [x] Platform abstraction (trace, utils, PAL, fx_ver)
 
-### 3.2 hostmisc (static lib)
-- [ ] `src/native/corehost/hostmisc/BUILD.bazel`
+### 3.2 libhostcommon (static lib) — ✅ DONE
+- [x] JSON parsing, runtime config, bundle support
 
-### 3.3 hostfxr (shared lib)
-- [ ] `src/native/corehost/fxr/BUILD.bazel`
-  - [ ] `src/native/corehost/fxr/standalone/BUILD.bazel`
-  - [ ] `src/native/corehost/fxr/staticlib/BUILD.bazel`
+### 3.3 hostfxr (shared lib) — ✅ DONE
+- [x] `libhostfxr.so` (18 exports, matches CMake)
+- [x] Version script via genrule from `hostfxr_unixexports.src`
 
-### 3.4 hostpolicy (shared lib)
-- [ ] `src/native/corehost/hostpolicy/BUILD.bazel`
-  - [ ] `src/native/corehost/hostpolicy/standalone/BUILD.bazel`
+### 3.4 hostpolicy (shared lib) — ✅ DONE
+- [x] `libhostpolicy.so` (7 exports, matches CMake)
+- [x] Version script via genrule from `hostpolicy_unixexports.src`
 
-### 3.5 dotnet host executable
-- [ ] `src/native/corehost/dotnet/BUILD.bazel`
+### 3.5 dotnet host executable — ✅ DONE
+- [x] `dotnet` binary
 
-### 3.6 apphost
-- [ ] `src/native/corehost/apphost/BUILD.bazel`
-  - [ ] `src/native/corehost/apphost/standalone/BUILD.bazel`
-  - [ ] `src/native/corehost/apphost/static/BUILD.bazel`
+### 3.6 apphost — ✅ DONE
+- [x] `apphost` binary (with `FEATURE_APPHOST` define)
 
-### 3.7 nethost (static/shared lib)
-- [ ] `src/native/corehost/nethost/BUILD.bazel`
+### 3.7 nethost (shared lib) — ✅ DONE
+- [x] `libnethost.so` (1 export: `get_hostfxr_path`)
 
 ### 3.8 comhost / ijwhost (Windows only)
 - [ ] `src/native/corehost/comhost/BUILD.bazel` (Windows COM hosting)
 - [ ] `src/native/corehost/ijwhost/BUILD.bazel` (Windows IJW/C++CLI)
 
-### 3.9 corehost tests
+### 3.9 apphost/static (single-file host)
+- [ ] Depends on CoreCLR being Bazel-built
+
+### 3.10 corehost tests
 - [ ] `src/native/corehost/test/BUILD.bazel` (7 test CMakeLists)
-  - [ ] nativehost, mockcoreclr, mockhostfxr, mockhostpolicy, fx_ver, etc.
 
 ---
 
@@ -248,7 +250,7 @@ The Mono runtime engine. 13 CMakeLists.txt files.
 - [x] `MODULE.bazel` — Bzlmod workspace, depends on rules_cc@0.2.14
 - [x] `.bazelrc` — Compiler flags matching CMake for linux-x64
 - [x] `BUILD.bazel` (root) — Root package file
-- [x] Compiler flag parity verified against CMake (`-g`, `-O3`, `-std=gnu11`, all warning flags, all defines)
+- [x] Compiler flag parity verified against CMake (`-g`, `-O3`, `-std=gnu11`/`-std=c++17`, all warning flags, all defines)
 - [ ] `.bazelrc` platform configs for other OS/arch targets (e.g., `build:linux-arm64`, `build:macos-x64`)
 - [ ] Bazel toolchain definitions for cross-compilation
 - [ ] Bazel `select()` rules for platform-conditional source files and defines
@@ -261,4 +263,4 @@ The Mono runtime engine. 13 CMakeLists.txt files.
 - Config headers (`pal_config.h`, `minipalconfig.h`, `config.h`, `pal_crypto_config.h`) live in platform-specific subdirectories under `bazel/` (e.g., `bazel/linux-glibc-x64/`). The directory name encodes the relevant dimensions (OS, libc, arch). Multi-platform support will add sibling directories and `select()` rules to pick the right one.
 - CoreCLR is the largest component (~86 CMakeLists.txt) and will require the most effort
 - Platform-specific libraries (Browser, Android, Apple) each need their own platform toolchains before they can be ported
-- Build command (linux-x64): `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`
+- Build command (linux-x64): `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
