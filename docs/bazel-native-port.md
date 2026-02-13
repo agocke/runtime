@@ -107,13 +107,19 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
 - [x] `src/native/external/zstd/BUILD.bazel`
 - [x] `src/native/external/brotli/BUILD.bazel` (updated for Bazel 9)
 
-### 2.4 containers
-- [ ] `src/native/containers/BUILD.bazel`
-  - [ ] Utility container library used by other native code
+### 2.4 containers — ✅ DONE
+- [x] `src/native/containers/BUILD.bazel`
+  - [x] Two variants: `dn-containers` and `dn-containers-no-lto` (LTO-incompatible scenarios like NativeAOT)
+  - [x] `src/native/containers/bazel/linux-glibc-x64/dn-config.h` (hardcoded linux-x64)
 
-### 2.5 eventpipe
-- [ ] `src/native/eventpipe/BUILD.bazel`
-  - [ ] EventPipe tracing infrastructure, used by coreclr and mono
+### 2.5 eventpipe — ✅ DONE (linux-x64)
+- [x] `src/native/eventpipe/BUILD.bazel`
+  - [x] `dn-eventpipe-srcs` filegroup (20 source files)
+  - [x] `dn-diagnosticserver-srcs` filegroup (8 source files)
+  - [x] `dn-diagnosticserver-pal-srcs` filegroup (socket PAL for linux)
+  - [x] `eventpipe-headers` cc_library (headers + include paths)
+  - [x] Interface library pattern: sources exposed as filegroups for consuming runtimes (CoreCLR, Mono, NativeAOT) to compile with their own `ep-rt.h`/`ds-rt.h`
+- [x] `src/native/eventpipe/bazel/linux-glibc-x64/ep-shared-config.h` (hardcoded linux-x64)
 
 ### 2.6 watchdog
 - [ ] `src/native/watchdog/BUILD.bazel`
@@ -166,8 +172,14 @@ The .NET host (dotnet CLI, apphost, hostfxr, hostpolicy). C++ codebase, 25 CMake
 ### 3.9 apphost/static (single-file host)
 - [ ] Depends on CoreCLR being Bazel-built
 
-### 3.10 corehost tests
-- [ ] `src/native/corehost/test/BUILD.bazel` (7 test CMakeLists)
+### 3.10 corehost tests (cross-platform) — ✅ DONE (linux-x64)
+- [x] `src/native/corehost/test/BUILD.bazel`
+  - [x] `test_fx_ver` executable (framework version parsing tests)
+  - [x] `mockcoreclr` shared library (mock CoreCLR)
+  - [x] `mockhostfxr_2_2` / `mockhostfxr_5_0` shared libraries (mock hostfxr, two API versions)
+  - [x] `mockhostpolicy` shared library (mock hostpolicy)
+  - [x] `nativehost` executable (native hosting API tests)
+- [ ] Windows-only tests: comsxs, ijw, typelibs (require Windows toolchain)
 
 ---
 
