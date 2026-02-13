@@ -1,0 +1,31 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+# System.IO.Ports.Native for linux-x64
+# Produces libSystem.IO.Ports.Native.so (shared) and libSystem.IO.Ports.Native.a (static)
+
+cc_library(
+    name = "System.IO.Ports.Native_lib",
+    srcs = [
+        "pal_serial.c",
+        "pal_termios.c",
+        "pal_termios2.c",
+    ] + glob(["*.h"]),
+    copts = [
+        "-Isrc/native",
+        "-Isrc/native/libs/Common",
+        "-Isrc/native/libs/bazel",
+        "-Isrc/native/libs/System.IO.Ports.Native",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/native/libs:common",
+        "//src/native/minipal",
+    ],
+)
+
+cc_shared_library(
+    name = "System.IO.Ports.Native",
+    shared_lib_name = "libSystem.IO.Ports.Native.so",
+    visibility = ["//visibility:public"],
+    deps = [":System.IO.Ports.Native_lib"],
+)

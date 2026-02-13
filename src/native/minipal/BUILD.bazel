@@ -16,11 +16,11 @@ cc_library(
         "unicodedata.c",
         "utf8.c",
         "xoshiro128pp.c",
-        "bazel/minipalconfig.h",
+        "bazel/linux-glibc-x64/minipalconfig.h",
     ] + glob(["*.h"]),
     copts = [
         "-Isrc/native",
-        "-Isrc/native/minipal/bazel",
+        "-Isrc/native/minipal/bazel/linux-glibc-x64",
     ],
     visibility = ["//src/native:__subpackages__"],
 )

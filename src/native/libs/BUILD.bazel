@@ -6,11 +6,11 @@ cc_library(
     name = "common",
     srcs = [],
     hdrs = glob(["Common/*.h"]) + [
-        "//src/native/libs/bazel:pal_config.h",
+        "//src/native/libs/bazel:linux-glibc-x64/pal_config.h",
     ],
     includes = [
         "Common",
-        "bazel",
+        "bazel/linux-glibc-x64",
     ],
     visibility = ["//src/native:__subpackages__"],
 )

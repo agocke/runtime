@@ -61,27 +61,26 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
 - [x] `src/native/libs/System.IO.Compression.Native/BUILD.bazel`
 - [x] Produces `libSystem.IO.Compression.Native.so` (472 exports, matches CMake)
 
-### 1.3 System.Globalization.Native
-- [ ] `src/native/libs/System.Globalization.Native/BUILD.bazel`
-  - [ ] Depends on system ICU (`libicuuc`, `libicui18n`, `libicudata`)
-  - [ ] Needs ICU header detection or hardcoded include path
-  - [ ] Sources: ~20 `pal_*.c` files
+### 1.3 System.IO.Ports.Native — ✅ DONE
+- [x] `src/native/libs/System.IO.Ports.Native/BUILD.bazel`
+- [x] Produces `libSystem.IO.Ports.Native.so` (19 exports, matches CMake)
 
-### 1.4 System.Security.Cryptography.Native.OpenSsl
-- [ ] `src/native/libs/System.Security.Cryptography.Native/BUILD.bazel`
-  - [ ] Depends on system OpenSSL (`libssl`, `libcrypto`)
-  - [ ] Needs OpenSSL header detection or hardcoded include path
-  - [ ] Sources: ~30 `pal_*.c` files
+### 1.4 System.Net.Security.Native — ✅ DONE
+- [x] `src/native/libs/System.Net.Security.Native/BUILD.bazel`
+- [x] Produces `libSystem.Net.Security.Native.so` (21 exports, matches CMake)
+- [x] Uses `GSS_SHIM` on Linux (loads `libgssapi_krb5` via dlopen at runtime)
 
-### 1.5 System.Net.Security.Native
-- [ ] `src/native/libs/System.Net.Security.Native/BUILD.bazel`
-  - [ ] Depends on system GSSAPI (`libgssapi_krb5`)
-  - [ ] Sources: ~5 `pal_*.c` files
+### 1.5 System.Globalization.Native — ✅ DONE
+- [x] `src/native/libs/System.Globalization.Native/BUILD.bazel`
+- [x] `src/native/libs/System.Globalization.Native/bazel/config.h` (hardcoded linux-x64)
+- [x] Produces `libSystem.Globalization.Native.so` (36 exports, matches CMake)
+- [x] Uses `pal_icushim.c` on Linux (loads ICU via dlopen at runtime)
 
-### 1.6 System.IO.Ports.Native
-- [ ] `src/native/libs/System.IO.Ports.Native/BUILD.bazel`
-  - [ ] No external deps on Linux
-  - [ ] Sources: ~3 files
+### 1.6 System.Security.Cryptography.Native.OpenSsl — ✅ DONE
+- [x] `src/native/libs/System.Security.Cryptography.Native/BUILD.bazel`
+- [x] `src/native/libs/System.Security.Cryptography.Native/bazel/linux-glibc-x64/pal_crypto_config.h` (hardcoded linux-x64)
+- [x] Produces `libSystem.Security.Cryptography.Native.OpenSsl.so` (379 exports, matches CMake)
+- [x] Uses `FEATURE_DISTRO_AGNOSTIC_SSL` on Linux (loads OpenSSL via dlopen at runtime; `opensslshim.h` overrides all `HAVE_OPENSSL_*` to 1, making the binary OpenSSL-version-independent)
 
 ### 1.7 Platform-specific libs
 - [ ] System.Native.Browser (Browser/WASM only)
@@ -95,12 +94,12 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
 
 ### 2.1 minipal — 🔨 linux-x64 done
 - [x] `src/native/minipal/BUILD.bazel`
-- [x] `src/native/minipal/bazel/minipalconfig.h` (hardcoded linux-x64)
+- [x] `src/native/minipal/bazel/linux-glibc-x64/minipalconfig.h` (hardcoded linux-x64)
 - [ ] Platform-specific `minipalconfig.h` for other OS/arch combinations (or genrule)
 
 ### 2.2 Common headers — 🔨 linux-x64 done
 - [x] `src/native/libs/BUILD.bazel` (Common headers)
-- [x] `src/native/libs/bazel/pal_config.h` (hardcoded linux-x64)
+- [x] `src/native/libs/bazel/linux-glibc-x64/pal_config.h` (hardcoded linux-x64)
 - [ ] Platform-specific `pal_config.h` for other OS/arch combinations (or genrule)
 
 ### 2.3 Vendored external deps — ✅ DONE
@@ -259,7 +258,7 @@ The Mono runtime engine. 13 CMakeLists.txt files.
 ## Notes
 
 - **No CMake files are modified or deleted** — Bazel files are purely additive
-- Config headers (`pal_config.h`, `minipalconfig.h`) are currently hardcoded for linux-x64; multi-platform support will require either per-platform header files with `select()`, or genrules that replicate CMake's `configure.cmake` checks
+- Config headers (`pal_config.h`, `minipalconfig.h`, `config.h`, `pal_crypto_config.h`) live in platform-specific subdirectories under `bazel/` (e.g., `bazel/linux-glibc-x64/`). The directory name encodes the relevant dimensions (OS, libc, arch). Multi-platform support will add sibling directories and `select()` rules to pick the right one.
 - CoreCLR is the largest component (~86 CMakeLists.txt) and will require the most effort
 - Platform-specific libraries (Browser, Android, Apple) each need their own platform toolchains before they can be ported
-- Build command (linux-x64): `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native`
+- Build command (linux-x64): `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`

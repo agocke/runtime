@@ -1,6 +1,14 @@
 #pragma once
 
-// Hardcoded for linux-x64 (matching CMake configure results)
+// Hardcoded for linux-x64 (matching CMake configure results from
+// src/native/libs/configure.cmake).
+//
+// This is the Bazel equivalent of the CMake-generated pal_config.h.
+// Contains ~150 feature-detection flags probed via check_symbol_exists,
+// check_c_source_compiles, etc. against system headers and libraries.
+//
+// When adding new platforms, create a per-platform copy of this file
+// and use select() in BUILD.bazel to pick the right one.
 
 #define HAVE_LSEEK64 1
 #define HAVE_MMAP64 1

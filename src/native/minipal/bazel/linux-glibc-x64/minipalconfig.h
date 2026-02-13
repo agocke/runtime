@@ -1,7 +1,14 @@
 #ifndef HAVE_MINIPAL_MINIPALCONFIG_H
 #define HAVE_MINIPAL_MINIPALCONFIG_H
 
-// Hardcoded for linux-x64 (matching CMake configure results)
+// Hardcoded for linux-x64 (matching CMake configure results from
+// src/native/minipal/configure.cmake).
+//
+// Probes system headers for feature availability (arc4random, getrandom,
+// auxv, sysctl, clock functions, etc.).
+//
+// When adding new platforms, create a per-platform copy of this file
+// and use select() in BUILD.bazel to pick the right one.
 #define HAVE_ARC4RANDOM_BUF 0
 #define HAVE_GETRANDOM 1
 #define HAVE_AUXV_HWCAP_H 0
