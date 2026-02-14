@@ -26,5 +26,6 @@ cc_library(
         ".",
         "inc",
     ],
+    alwayslink = True,
     deps = ["//src/coreclr/inc:coreclr_inc"],
 )

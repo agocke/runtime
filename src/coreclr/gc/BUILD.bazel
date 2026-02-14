@@ -4,6 +4,9 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
+# GC source files used by the VM (cee_wks_core links GC sources directly).
+exports_files(glob(["*.cpp"]))
+
 # --- Headers ---
 
 cc_library(

@@ -33,5 +33,6 @@ cc_library(
         "-Isrc/coreclr/interop/inc",
     ],
     includes = ["."],
+    alwayslink = True,
     deps = ["//src/coreclr/inc:coreclr_inc"],
 )

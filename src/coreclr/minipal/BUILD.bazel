@@ -28,4 +28,5 @@ cc_library(
         "//src/coreclr/inc:coreclr_inc",
         "//src/native/minipal",
     ],
+    alwayslink = True,
 )

@@ -1,0 +1,5 @@
+# Expose files needed by native code textual includes.
+
+exports_files([
+    "src/System/Runtime/ExceptionServices/AsmOffsets.cs",
+])

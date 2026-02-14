@@ -68,7 +68,7 @@ filegroup(
 # Consumers depend on this to get include paths and the generated config header.
 cc_library(
     name = "eventpipe-headers",
-    hdrs = glob(["*.h"]),
+    hdrs = glob(["*.h"]) + glob(["bazel/linux-glibc-x64/*.h"]),
     includes = [
         ".",
         "bazel/linux-glibc-x64",

@@ -78,6 +78,10 @@ cc_library(
     ],
     copts = COREHOST_COPTS,
     defines = COREHOST_DEFINES,
+    visibility = [
+        "//src/coreclr:__subpackages__",
+        "//src/native/corehost:__subpackages__",
+    ],
 )
 
 # --- hostmisc (static library) ---

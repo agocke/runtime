@@ -16,5 +16,6 @@ cc_library(
     hdrs = glob(["*.h"]),
     copts = CORECLR_COPTS,
     includes = ["."],
+    alwayslink = True,
     deps = ["//src/coreclr/inc:coreclr_inc"],
 )

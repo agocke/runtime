@@ -5,6 +5,7 @@
 # Currently uses pre-generated files; a Bazel genrule can replace this later.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -23,6 +24,19 @@ cc_library(
     strip_include_prefix = "bazel/linux-glibc-x64",
 )
 
+# --- EventPipe CoreCLR shim headers ---
+# Runtime-specific shim headers for EventPipe/DiagnosticServer.
+cc_library(
+    name = "eventpipe_shim_headers",
+    hdrs = [
+        "eventpipe/ds-rt-coreclr.h",
+        "eventpipe/ds-rt-types-coreclr.h",
+        "eventpipe/ep-rt-config-coreclr.h",
+        "eventpipe/ep-rt-coreclr.h",
+        "eventpipe/ep-rt-types-coreclr.h",
+    ],
+)
+
 # --- Generated eventpipe sources ---
 # Output of: genEventPipe.py --man ClrEtwAll.man --exc ClrEtwAllMeta.lst --intermediate <out>
 
@@ -34,5 +48,60 @@ filegroup(
         "bazel/linux-glibc-x64/eventpipe/dotnetruntimerundown.cpp",
         "bazel/linux-glibc-x64/eventpipe/dotnetruntimestress.cpp",
         "bazel/linux-glibc-x64/eventpipe/eventpipehelpers.cpp",
+    ],
+)
+
+# --- EventPipe CoreCLR OBJECT library ---
+# Matches CMake: src/coreclr/vm/eventing/eventpipe/CMakeLists.txt
+# Native EventPipe/DiagnosticServer .c files are compiled as C++ via a unity wrapper
+# (CMake uses set_source_files_properties(... PROPERTIES LANGUAGE CXX) + UNITY_BUILD).
+
+_EP_COPTS = [
+    "-Isrc/coreclr/vm",
+    "-Isrc/coreclr/vm/amd64",
+    "-Isrc/coreclr",
+    "-Isrc/coreclr/gc",
+    "-Isrc/coreclr/gc/env",
+    "-Isrc/coreclr/runtime",
+    "-Isrc/coreclr/vm/eventing/eventpipe",
+    "-Isrc/native/eventpipe",
+    "-Isrc/native/corehost",
+] + CORECLR_COPTS + [
+    "-include", "src/coreclr/vm/common.h",
+    "-Wno-error",
+]
+
+_EP_DEFINES = CORECLR_DEFINES + [
+    "FEATURE_VIRTUAL_STUB_DISPATCH",
+    "FEATURE_SIMD",
+    "FEATURE_HW_INTRINSICS",
+    "FEATURE_MASKED_HW_INTRINSICS",
+]
+
+cc_library(
+    name = "eventpipe",
+    srcs = [
+        "eventpipe/ep-rt-coreclr.cpp",
+        "eventpipe/bazel/eventpipe_native.cpp",
+        ":eventpipe_gen_srcs",
+    ],
+    textual_hdrs = [
+        "//src/native/eventpipe:dn-eventpipe-srcs",
+        "//src/native/eventpipe:dn-diagnosticserver-srcs",
+        "//src/native/eventpipe:dn-diagnosticserver-pal-srcs",
+    ],
+    copts = _EP_COPTS,
+    defines = _EP_DEFINES,
+    alwayslink = True,
+    linkstatic = True,
+    deps = [
+        ":eventpipe_shim_headers",
+        ":eventing_headers",
+        "//src/coreclr/gc:gc_headers",
+        "//src/coreclr/inc:coreclr_inc",
+        "//src/coreclr/interop",
+        "//src/coreclr/runtime:runtime_headers",
+        "//src/native/corehost:corehost_headers",
+        "//src/native/eventpipe:eventpipe-headers",
     ],
 )

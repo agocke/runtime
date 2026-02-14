@@ -43,6 +43,26 @@ cc_library(
     ],
 )
 
+# corguids — prebuilt GUID definition files (Unix: prebuilt .cpp from IDL).
+# Matches CMake: add_library_clr(corguids OBJECT ...) in src/coreclr/inc/CMakeLists.txt
+cc_library(
+    name = "corguids",
+    srcs = [
+        "//src/coreclr/pal:prebuilt/idl/clrdata_i.cpp",
+        "//src/coreclr/pal:prebuilt/idl/clrinternal_i.cpp",
+        "//src/coreclr/pal:prebuilt/idl/cordebug_i.cpp",
+        "//src/coreclr/pal:prebuilt/idl/corprof_i.cpp",
+        "//src/coreclr/pal:prebuilt/idl/corsym_i.cpp",
+        "//src/coreclr/pal:prebuilt/idl/sospriv_i.cpp",
+        "//src/coreclr/pal:prebuilt/idl/xclrdata_i.cpp",
+        "//src/coreclr/pal:prebuilt/idl/xcordebug_i.cpp",
+    ],
+    copts = CORECLR_COPTS + ["-D_MIDL_USE_GUIDDEF_"],
+    defines = CORECLR_DEFINES,
+    alwayslink = True,
+    deps = [":coreclr_inc"],
+)
+
 # Lightweight header-only target for components that only need the inc/
 # header files without the full transitive dependency graph (e.g., PAL).
 cc_library(

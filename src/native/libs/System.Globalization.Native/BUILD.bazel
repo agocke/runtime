@@ -44,6 +44,7 @@ cc_library(
         "//src/native/libs:common",
         "//src/native/minipal",
     ],
+    alwayslink = True,
 )
 
 cc_shared_library(

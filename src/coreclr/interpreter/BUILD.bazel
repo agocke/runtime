@@ -7,6 +7,7 @@ cc_library(
     name = "interpreter_headers",
     hdrs = glob(
         [
+            "*.h",
             "inc/*.h",
             "inc/*.def",
         ],

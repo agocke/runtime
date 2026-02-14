@@ -218,18 +218,23 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 - [x] `clrgcexp` cc_shared_library — Standalone GC with regions (`libclrgcexp.so`, 2 exports + USE_REGIONS)
 - [x] `src/coreclr/gc/unix/bazel/linux-glibc-x64/config.gc.h` (hardcoded linux-x64)
 
-### 4.5 JIT compiler — 🔨 headers done
+### 4.5 JIT compiler — ✅ DONE (linux-x64)
 - [x] `src/coreclr/jit/BUILD.bazel` — `jit_headers` (headers + hpp + defs + jitstd/)
-  - [ ] Compiled JIT library (pending)
-  - [ ] `src/coreclr/jit/static/BUILD.bazel`
+- [x] `clrjit_static` cc_library (105 .cpp AMD64 sources, compiled as static archive)
 
-### 4.6 VM (execution engine) — 🔨 headers done
+### 4.6 VM (execution engine) — ✅ DONE (linux-x64)
 - [x] `src/coreclr/vm/BUILD.bazel` — `vm_headers` (headers + hpp + inlines + amd64/ + i386/)
-  - [ ] Compiled VM library (pending)
-  - [ ] `src/coreclr/vm/wks/BUILD.bazel` (workstation GC variant)
+- [x] `cee_wks_asm` cc_library (23 .S assembly files, separate target without PCH)
+- [x] `cee_wks_core` cc_library (~220 .cpp VM core sources)
+- [x] `cee_wks` cc_library (ceemain.cpp, codeman.cpp, peimagelayout.cpp)
 - [x] `src/coreclr/vm/eventing/BUILD.bazel`
   - [x] `eventing_headers` — pre-generated event headers for linux-glibc-x64
   - [x] `eventpipe_gen_srcs` — pre-generated eventpipe C++ sources (5 files)
+  - [x] `eventpipe_shim_headers` — CoreCLR-specific eventpipe shim headers
+  - [x] `eventpipe` cc_library — native eventpipe/diagnosticserver (unity build .c→C++) + shim + generated sources
+- [x] `src/coreclr/vm/datadescriptor/BUILD.bazel`
+  - [x] `cdac_contract_descriptor`, `gc_wks_descriptor`, `gc_svr_descriptor` stubs
+- [x] `src/coreclr/runtime/BUILD.bazel` — `runtime_headers` + exported .cpp/.S
 
 ### 4.7 PAL (Platform Abstraction Layer) — ✅ DONE (linux-x64)
 - [x] `src/coreclr/pal/BUILD.bazel`
@@ -237,13 +242,16 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
   - [x] `tracepointprovider` object library
   - [x] Pre-generated `config.h` for linux-glibc-x64
 
-### 4.8 Binder (assembly loading) — 🔨 headers done
+### 4.8 Binder (assembly loading) — ✅ DONE (linux-x64)
 - [x] `src/coreclr/binder/BUILD.bazel` — `binder_headers` (inc/*.h, inc/*.hpp, inc/*.inl)
-  - [ ] Compiled binder library (pending)
+- [x] `v3binder` cc_library (11 .cpp assembly binder sources)
 
-### 4.9 Metadata (IL metadata reader) — 🔨 headers done
+### 4.9 Metadata (IL metadata reader) — ✅ DONE (linux-x64)
 - [x] `src/coreclr/md/BUILD.bazel` — `md_inc` (inc/*.h, *.inl)
-  - [ ] Compiled metadata libraries (pending)
+- [x] `mdcompiler_wks` cc_library (18 .cpp compiler sources)
+- [x] `mdruntime_wks` cc_library (12 .cpp runtime sources)
+- [x] `mdruntimerw_wks` cc_library (10 .cpp ENC sources)
+- [x] `src/coreclr/md/ceefilegen/BUILD.bazel` — `ceefgen` cc_library (5 .cpp)
 
 ### 4.10 Utility code — ✅ DONE (linux-x64)
 - [x] `src/coreclr/utilcode/BUILD.bazel` — `utilcode` (OBJECT) + `utilcodestaticnohost` (STATIC)
@@ -253,14 +261,22 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 - [x] `src/coreclr/gcdump/BUILD.bazel` — `gcdump_headers` (headers done, compiled lib pending)
 - [x] `src/coreclr/interpreter/BUILD.bazel` — `interpreter_headers` (headers done, compiled lib pending)
 
-### 4.11 Debug support — 🔨 headers done
+### 4.11 Debug support — ✅ DONE (linux-x64)
 - [x] `src/coreclr/debug/BUILD.bazel` — `debug_inc` (inc/ + ee/ + daccess/ + dbgutil/ + di/ headers)
-  - [ ] Compiled debug libraries (debugger, diagnostics, DAC pending)
+- [x] `debug-pal` cc_library (2 .cpp debug PAL sources)
+- [x] `cordbee_wks` cc_library (16 sources — debugger EE, workstation)
+  - [ ] DAC, DBI, dbgutil (diagnostic tooling — pending)
 
-### 4.12 Hosts & DLLs — 🔨 headers done
+### 4.12 Hosts & DLLs — ✅ libcoreclr DONE (linux-x64)
 - [x] `src/coreclr/hosts/BUILD.bazel` — `hosts_inc` (inc/*.h)
 - [x] `src/coreclr/dlls/BUILD.bazel` — `dlls_headers` (**/*.h)
-  - [ ] Compiled host/DLL libraries (mscoree, mscordac, mscordbi pending)
+- [x] `src/coreclr/dlls/mscorrc/BUILD.bazel` — `mscorrc` cc_library (pre-generated resource strings, 795 entries)
+- [x] `src/coreclr/dlls/mscoree/coreclr/BUILD.bazel` — `libcoreclr.so` (209 MB, 12 exported symbols with V1.0 versioning)
+  - [x] Version script from `mscorwks_unixexports.src` (pre-generated `coreclr.exports`)
+  - [x] Links all component libraries: VM, JIT, metadata, binder, debug, GC, PAL, eventpipe, etc.
+  - [x] 737 total Bazel actions, ~79s clean build
+- [x] `src/coreclr/pal/BUILD.bazel` — `eventprovider` cc_library (pre-generated dummy LTTng stubs)
+  - [ ] mscordac, mscordbi (diagnostic tooling — pending)
 
 ### 4.13 IL Assembler / Disassembler
 - [ ] `src/coreclr/ilasm/BUILD.bazel`
@@ -312,3 +328,4 @@ The Mono runtime engine. 13 CMakeLists.txt files.
   - Corehost: `bazel --nohome_rc build //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
   - CoreCLR foundation: `bazel --nohome_rc build //src/coreclr/pal:coreclrpal //src/coreclr/utilcode //src/coreclr/utilcode:utilcodestaticnohost //src/coreclr/gcinfo //src/coreclr/unwinder:unwinder_wks //src/coreclr/interop //src/coreclr/nativeresources:nativeresourcestring //src/coreclr/pal:tracepointprovider`
   - CoreCLR GC: `bazel --nohome_rc build //src/coreclr/gc:clrgc //src/coreclr/gc:clrgcexp`
+  - **libcoreclr.so**: `bazel --nohome_rc build //src/coreclr/dlls/mscoree/coreclr:libcoreclr.so`
