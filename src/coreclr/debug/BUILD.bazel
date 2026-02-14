@@ -1,0 +1,24 @@
+# CoreCLR debug headers and libraries.
+# Currently provides header-only targets; compiled debug libraries will be added later.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "debug_inc",
+    hdrs = glob([
+        "inc/*.h",
+        "inc/*.inl",
+        "inc/amd64/*.h",
+        "inc/dump/*.h",
+        # Headers from debug subdirectories used by other coreclr components
+        "ee/*.h",
+        "ee/*.inl",
+        "ee/amd64/*.h",
+        "daccess/*.h",
+        "dbgutil/*.h",
+        "di/*.hpp",
+        "di/*.inl",
+    ]),
+)

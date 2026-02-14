@@ -1,0 +1,11 @@
+# CoreCLR hosts headers.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "hosts_inc",
+    hdrs = glob(["inc/*.h"]),
+    includes = ["inc"],
+)

@@ -1,0 +1,14 @@
+# Headers for the dlls subdirectories.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "dlls_headers",
+    hdrs = glob(
+        [
+            "**/*.h",
+        ],
+        allow_empty = True,
+    ),
+)

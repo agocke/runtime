@@ -1,0 +1,16 @@
+# Headers for the assembly binder.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "binder_headers",
+    hdrs = glob(
+        [
+            "inc/*.h",
+            "inc/*.hpp",
+            "inc/*.inl",
+        ],
+        allow_empty = True,
+    ),
+)

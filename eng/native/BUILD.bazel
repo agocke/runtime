@@ -17,6 +17,9 @@ cc_library(
         "version/runtime_version.h",
     ],
     strip_include_prefix = "version",
-    visibility = ["//src/native:__subpackages__"],
+    visibility = [
+        "//src/coreclr:__subpackages__",
+        "//src/native:__subpackages__",
+    ],
 )
 

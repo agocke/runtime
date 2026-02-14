@@ -1,0 +1,38 @@
+# CoreCLR eventing — generated event headers and eventpipe sources.
+# Matches CMake: src/coreclr/vm/eventing/CMakeLists.txt
+#
+# Generated from ClrEtwAll.man by scripts/genEventing.py and scripts/genEventPipe.py.
+# Currently uses pre-generated files; a Bazel genrule can replace this later.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+# --- Generated eventing headers ---
+# Output of: genEventing.py --man ClrEtwAll.man --incdir <out> --dummy <out>/etmdummy.h
+
+cc_library(
+    name = "eventing_headers",
+    hdrs = [
+        "bazel/linux-glibc-x64/clretwallmain.h",
+        "bazel/linux-glibc-x64/clreventpipewriteevents.h",
+        "bazel/linux-glibc-x64/clrproviders.h",
+        "bazel/linux-glibc-x64/clrxplatevents.h",
+        "bazel/linux-glibc-x64/etmdummy.h",
+    ],
+    strip_include_prefix = "bazel/linux-glibc-x64",
+)
+
+# --- Generated eventpipe sources ---
+# Output of: genEventPipe.py --man ClrEtwAll.man --exc ClrEtwAllMeta.lst --intermediate <out>
+
+filegroup(
+    name = "eventpipe_gen_srcs",
+    srcs = [
+        "bazel/linux-glibc-x64/eventpipe/dotnetruntime.cpp",
+        "bazel/linux-glibc-x64/eventpipe/dotnetruntimeprivate.cpp",
+        "bazel/linux-glibc-x64/eventpipe/dotnetruntimerundown.cpp",
+        "bazel/linux-glibc-x64/eventpipe/dotnetruntimestress.cpp",
+        "bazel/linux-glibc-x64/eventpipe/eventpipehelpers.cpp",
+    ],
+)

@@ -1,0 +1,14 @@
+# CoreCLR metadata headers and libraries.
+# Currently provides header-only targets; compiled metadata libraries will be added later.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "md_inc",
+    hdrs = glob([
+        "inc/*.h",
+        "*.inl",
+    ]),
+)

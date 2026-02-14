@@ -1,0 +1,15 @@
+# Headers for the interpreter.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "interpreter_headers",
+    hdrs = glob(
+        [
+            "inc/*.h",
+            "inc/*.def",
+        ],
+        allow_empty = True,
+    ),
+)

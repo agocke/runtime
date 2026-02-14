@@ -1,0 +1,20 @@
+# GC info encoding for linux-x64.
+# Matches CMake: src/coreclr/gcinfo/CMakeLists.txt
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "gcinfo",
+    srcs = [
+        "arraylist.cpp",
+        "gcinfoencoder.cpp",
+        "simplerhash.cpp",
+    ],
+    hdrs = glob(["*.h"]),
+    copts = CORECLR_COPTS,
+    includes = ["."],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)

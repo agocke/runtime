@@ -1,0 +1,18 @@
+# Headers for the VM subsystem.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "vm_headers",
+    hdrs = glob(
+        [
+            "*.h",
+            "*.hpp",
+            "*.inl",
+            "amd64/*.h",
+            "i386/*.h",
+        ],
+        allow_empty = True,
+    ),
+)

@@ -1,0 +1,20 @@
+# Headers for the GC subsystem.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "gc_headers",
+    hdrs = glob(
+        [
+            "*.h",
+            "*.inl",
+            "*.def",
+            "env/*.h",
+            "env/*.inl",
+            "vxsort/*.h",
+            "unix/*.h",
+        ],
+        allow_empty = True,
+    ),
+)

@@ -126,10 +126,16 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
   - [ ] Small watchdog utility
 
 ### 2.7 Vendored external deps (remaining)
-- [ ] `src/native/external/libunwind/BUILD.bazel`
-  - [ ] Used by coreclr for stack unwinding
 - [ ] `src/native/external/llvm-libunwind/BUILD.bazel`
   - [ ] LLVM's libunwind, alternative to GNU libunwind
+
+### 2.8 Bundled GNU libunwind — ✅ DONE (linux-x64)
+- [x] `src/native/external/libunwind/BUILD.bazel`
+  - [x] `libunwind_generic` cc_library (G-prefix sources: remote/generic unwind)
+  - [x] `libunwind_local` cc_library (L-prefix sources: local-only unwind)
+  - [x] `libunwind` combined cc_library
+  - [x] `bazel/linux-glibc-x64/include/config.h` (hardcoded linux-x64)
+  - [x] Generated `libunwind-common.h`, `libunwind.h`, `tdep/libunwind_i.h`
 
 ### 2.8 rapidjson — ✅ DONE
 - [x] `src/native/external/rapidjson/BUILD.bazel`
@@ -187,62 +193,85 @@ The .NET host (dotnet CLI, apphost, hostfxr, hostpolicy). C++ codebase, 25 CMake
 
 The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 
-### 4.1 GC
-- [ ] `src/coreclr/gc/BUILD.bazel`
+### 4.1 Common headers and defines — ✅ DONE (linux-x64)
+- [x] `src/coreclr/inc/BUILD.bazel`
+  - [x] `coreclr_inc` cc_library (161 headers + CORECLR_DEFINES + global copts); depends on all component header targets (binder, debug, dlls, gc, gcdump, hosts, interpreter, jit, md, minipal, pal, vm, eventing, native_inc, native minipal, version_headers)
+  - [x] `coreclr_inc_headers_only` lightweight header-only target (no transitive deps, used by PAL)
+  - [x] `CORECLR_DEFINES` constant list (~60 defines for linux-x64 retail)
+  - [x] `CORECLR_COPTS` constant list (global include paths + warning suppression)
+
+### 4.2 CoreCLR minipal — ✅ DONE (linux-x64)
+- [x] `src/coreclr/minipal/BUILD.bazel`
+  - [x] `coreclrminipal_headers` (dn-u16.h, dn-stdio.h, minipal.h)
+  - [x] `coreclrminipal` (4 C++ sources: doublemapping, dn-u16, dn-stdio, memory)
+
+### 4.3 Native resources — ✅ DONE (linux-x64)
+- [x] `src/coreclr/nativeresources/BUILD.bazel`
+  - [x] `nativeresourcestring` static lib (resourcestring.cpp)
+
+### 4.4 GC — 🔨 headers done
+- [x] `src/coreclr/gc/BUILD.bazel` — `gc_headers` (headers + inlines + defs + env/ + vxsort/ + unix/)
+  - [ ] Compiled GC library (pending)
   - [ ] `src/coreclr/gc/unix/BUILD.bazel` (PAL for unix)
   - [ ] `src/coreclr/gc/vxsort/BUILD.bazel` (vectorized sort)
 
-### 4.2 JIT compiler
-- [ ] `src/coreclr/jit/BUILD.bazel`
+### 4.5 JIT compiler — 🔨 headers done
+- [x] `src/coreclr/jit/BUILD.bazel` — `jit_headers` (headers + hpp + defs + jitstd/)
+  - [ ] Compiled JIT library (pending)
   - [ ] `src/coreclr/jit/static/BUILD.bazel`
 
-### 4.3 VM (execution engine)
-- [ ] `src/coreclr/vm/BUILD.bazel`
+### 4.6 VM (execution engine) — 🔨 headers done
+- [x] `src/coreclr/vm/BUILD.bazel` — `vm_headers` (headers + hpp + inlines + amd64/ + i386/)
+  - [ ] Compiled VM library (pending)
   - [ ] `src/coreclr/vm/wks/BUILD.bazel` (workstation GC variant)
-  - [ ] `src/coreclr/vm/eventing/BUILD.bazel` (EventPipe integration)
+- [x] `src/coreclr/vm/eventing/BUILD.bazel`
+  - [x] `eventing_headers` — pre-generated event headers for linux-glibc-x64
+  - [x] `eventpipe_gen_srcs` — pre-generated eventpipe C++ sources (5 files)
 
-### 4.4 PAL (Platform Abstraction Layer)
-- [ ] `src/coreclr/pal/BUILD.bazel`
-  - [ ] Large POSIX compatibility layer (~50 source files)
+### 4.7 PAL (Platform Abstraction Layer) — ✅ DONE (linux-x64)
+- [x] `src/coreclr/pal/BUILD.bazel`
+  - [x] `coreclrpal` static library (~50 C/C++ + 4 assembly files)
+  - [x] `tracepointprovider` object library
+  - [x] Pre-generated `config.h` for linux-glibc-x64
 
-### 4.5 Binder (assembly loading)
-- [ ] `src/coreclr/binder/BUILD.bazel`
+### 4.8 Binder (assembly loading) — 🔨 headers done
+- [x] `src/coreclr/binder/BUILD.bazel` — `binder_headers` (inc/*.h, inc/*.hpp, inc/*.inl)
+  - [ ] Compiled binder library (pending)
 
-### 4.6 Metadata (IL metadata reader)
-- [ ] `src/coreclr/md/BUILD.bazel`
+### 4.9 Metadata (IL metadata reader) — 🔨 headers done
+- [x] `src/coreclr/md/BUILD.bazel` — `md_inc` (inc/*.h, *.inl)
+  - [ ] Compiled metadata libraries (pending)
 
-### 4.7 Utility code
-- [ ] `src/coreclr/utilcode/BUILD.bazel`
-- [ ] `src/coreclr/gcinfo/BUILD.bazel`
-- [ ] `src/coreclr/gcdump/BUILD.bazel`
-- [ ] `src/coreclr/unwinder/BUILD.bazel`
-- [ ] `src/coreclr/interop/BUILD.bazel`
-- [ ] `src/coreclr/interpreter/BUILD.bazel`
+### 4.10 Utility code — ✅ DONE (linux-x64)
+- [x] `src/coreclr/utilcode/BUILD.bazel` — `utilcode` (OBJECT) + `utilcodestaticnohost` (STATIC)
+- [x] `src/coreclr/gcinfo/BUILD.bazel` — `gcinfo` static library
+- [x] `src/coreclr/unwinder/BUILD.bazel` — `unwinder_wks` OBJECT library
+- [x] `src/coreclr/interop/BUILD.bazel` — `interop` OBJECT library
+- [x] `src/coreclr/gcdump/BUILD.bazel` — `gcdump_headers` (headers done, compiled lib pending)
+- [x] `src/coreclr/interpreter/BUILD.bazel` — `interpreter_headers` (headers done, compiled lib pending)
 
-### 4.8 Debug support
-- [ ] `src/coreclr/debug/BUILD.bazel` (debugger, diagnostics, DAC)
+### 4.11 Debug support — 🔨 headers done
+- [x] `src/coreclr/debug/BUILD.bazel` — `debug_inc` (inc/ + ee/ + daccess/ + dbgutil/ + di/ headers)
+  - [ ] Compiled debug libraries (debugger, diagnostics, DAC pending)
 
-### 4.9 Hosts & DLLs
-- [ ] `src/coreclr/hosts/BUILD.bazel` (coreclr host)
-- [ ] `src/coreclr/dlls/BUILD.bazel` (mscoree, mscordac, mscordbi)
+### 4.12 Hosts & DLLs — 🔨 headers done
+- [x] `src/coreclr/hosts/BUILD.bazel` — `hosts_inc` (inc/*.h)
+- [x] `src/coreclr/dlls/BUILD.bazel` — `dlls_headers` (**/*.h)
+  - [ ] Compiled host/DLL libraries (mscoree, mscordac, mscordbi pending)
 
-### 4.10 IL Assembler / Disassembler
+### 4.13 IL Assembler / Disassembler
 - [ ] `src/coreclr/ilasm/BUILD.bazel`
 - [ ] `src/coreclr/ildasm/BUILD.bazel`
 
-### 4.11 NativeAOT
+### 4.14 NativeAOT
 - [ ] `src/coreclr/nativeaot/BUILD.bazel`
   - [ ] `src/coreclr/nativeaot/Runtime/BUILD.bazel`
   - [ ] `src/coreclr/nativeaot/Bootstrap/BUILD.bazel`
 
-### 4.12 Tools
+### 4.15 Tools
 - [ ] `src/coreclr/tools/BUILD.bazel`
   - [ ] `src/coreclr/tools/aot/jitinterface/BUILD.bazel`
   - [ ] `src/coreclr/tools/superpmi/BUILD.bazel` (5 sub-components)
-
-### 4.13 Inc / nativeresources
-- [ ] `src/coreclr/inc/BUILD.bazel` (headers)
-- [ ] `src/coreclr/nativeresources/BUILD.bazel`
 
 ---
 
@@ -275,4 +304,7 @@ The Mono runtime engine. 13 CMakeLists.txt files.
 - Config headers (`pal_config.h`, `minipalconfig.h`, `config.h`, `pal_crypto_config.h`) live in platform-specific subdirectories under `bazel/` (e.g., `bazel/linux-glibc-x64/`). The directory name encodes the relevant dimensions (OS, libc, arch). Multi-platform support will add sibling directories and `select()` rules to pick the right one.
 - CoreCLR is the largest component (~86 CMakeLists.txt) and will require the most effort
 - Platform-specific libraries (Browser, Android, Apple) each need their own platform toolchains before they can be ported
-- Build command (linux-x64): `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
+- Build commands (linux-x64):
+  - Native libs: `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`
+  - Corehost: `bazel --nohome_rc build //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
+  - CoreCLR foundation: `bazel --nohome_rc build //src/coreclr/pal:coreclrpal //src/coreclr/utilcode //src/coreclr/utilcode:utilcodestaticnohost //src/coreclr/gcinfo //src/coreclr/unwinder:unwinder_wks //src/coreclr/interop //src/coreclr/nativeresources:nativeresourcestring //src/coreclr/pal:tracepointprovider`

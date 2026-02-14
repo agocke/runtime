@@ -17,10 +17,17 @@ cc_library(
         "utf8.c",
         "xoshiro128pp.c",
         "bazel/linux-glibc-x64/minipalconfig.h",
-    ] + glob(["*.h"]),
+    ] + glob(
+        ["*.h", "**/*.h"],
+        exclude = ["bazel/**"],
+    ),
     copts = [
         "-Isrc/native",
         "-Isrc/native/minipal/bazel/linux-glibc-x64",
     ],
-    visibility = ["//src/native:__subpackages__"],
+    includes = [".."],
+    visibility = [
+        "//src/coreclr:__subpackages__",
+        "//src/native:__subpackages__",
+    ],
 )

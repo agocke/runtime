@@ -1,7 +1,7 @@
 # Corehost test targets for linux-x64.
 # Cross-platform tests only; Windows-only tests (comsxs, ijw, typelibs) are excluded.
 
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library", "cc_test")
 
 COREHOST_TEST_COPTS = [
     "-Isrc/native/corehost",
@@ -19,14 +19,15 @@ COREHOST_TEST_DEFINES = [
     "TARGET_64BIT",
 ]
 
-# --- test_fx_ver (executable) ---
+# --- test_fx_ver (test) ---
 # Tests framework version parsing.
 
-cc_binary(
+cc_test(
     name = "test_fx_ver",
     srcs = ["fx_ver/test_fx_ver.cpp"],
     copts = COREHOST_TEST_COPTS,
     defines = COREHOST_TEST_DEFINES,
+    linkstatic = True,
     deps = [
         "//src/native/corehost:hostcommon",
         "//src/native/corehost:hostmisc",
