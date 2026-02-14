@@ -1,2 +1,9 @@
 # Root BUILD file required by Bazel.
 # Native library targets are defined under src/native/.
+
+# Compiler detection: set --define compiler=clang in .bazelrc config:clang.
+config_setting(
+    name = "compiler_clang",
+    define_values = {"compiler": "clang"},
+    visibility = ["//visibility:public"],
+)

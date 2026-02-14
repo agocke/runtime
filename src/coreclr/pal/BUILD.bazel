@@ -182,8 +182,11 @@ cc_library(
         "-Isrc/native",
         "-Isrc/native/inc",
         # GCC amd64 assembly needs --divide for the / operator in .S files
-        "-Wa,--divide",
-    ],
+        # Clang's integrated assembler doesn't support this flag.
+    ] + select({
+        "//:compiler_clang": [],
+        "//conditions:default": ["-Wa,--divide"],
+    }),
     defines = [
         # Platform defines
         "HOST_64BIT",
