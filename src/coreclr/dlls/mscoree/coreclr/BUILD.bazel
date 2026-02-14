@@ -3,6 +3,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//eng/bazel:strip_symbols.bzl", "strip_symbols")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -81,4 +82,9 @@ cc_binary(
         "//src/native/eventpipe:eventpipe-headers",
         "//src/coreclr/nativeresources:nativeresourcestring",
     ],
+)
+
+strip_symbols(
+    name = "libcoreclr",
+    src = ":libcoreclr.so",
 )
