@@ -8,3 +8,9 @@ cc_library(
     hdrs = glob(["*.h"], allow_empty = True),
     includes = ["."],
 )
+
+# Expose source files for cross-arch gcinfo_win_x86 variant.
+exports_files([
+    "gcdump.cpp",
+    "i386/gcdumpx86.cpp",
+])

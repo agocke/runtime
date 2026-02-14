@@ -79,4 +79,11 @@ cc_library(
         allow_empty = True,
     ) + ["mpl/type_list"],
     textual_hdrs = glob(["*.cpp"]),
+    includes = ["."],
+    deps = [
+        "//src/coreclr/minipal:coreclrminipal_headers",
+        "//src/coreclr/pal:pal_headers",
+        "//src/native:native_inc",
+        "//src/native/minipal",
+    ],
 )
