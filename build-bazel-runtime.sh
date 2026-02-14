@@ -17,7 +17,7 @@ scriptroot="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 build_native=true
 build_managed=true
 rebuild_managed=false
-config="release"
+config="debug"
 run_smoke_test=false
 bazel_config_args=()
 
