@@ -87,36 +87,10 @@ managed_dlls_dir="$scriptroot/artifacts/bin/microsoft.netcore.app.runtime.${rid}
 # ----- Bazel output paths -----
 bazel_bin="$scriptroot/bazel-bin"
 
-# Bazel targets for native build
+# Bazel target for native build — produces a pre-assembled runtime layout
+# at bazel-bin/runtime_native/ matching the standard .NET hosting structure.
 bazel_targets=(
-    "//src/coreclr/dlls/mscoree/coreclr:libcoreclr.so"
-    "//src/native/corehost:dotnet"
-    "//src/native/corehost:hostfxr"
-    "//src/native/corehost:hostpolicy"
-    "//src/native/libs/System.Native:System.Native"
-    "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native"
-    "//src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native"
-    "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native"
-    "//src/native/libs/System.Globalization.Native:System.Globalization.Native"
-    "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl"
-)
-
-# Mapping: bazel output path -> destination directory
-# Format: "source_relative_path|dest_dir_variable|dest_filename"
-declare -A native_files=(
-    # CoreCLR
-    ["src/coreclr/dlls/mscoree/coreclr/libcoreclr.so"]="framework"
-    # Corehost
-    ["src/native/corehost/dotnet"]="root"
-    ["src/native/corehost/libhostfxr.so"]="fxr"
-    ["src/native/corehost/libhostpolicy.so"]="framework"
-    # Native libs
-    ["src/native/libs/System.Native/libSystem.Native.so"]="framework"
-    ["src/native/libs/System.IO.Compression.Native/libSystem.IO.Compression.Native.so"]="framework"
-    ["src/native/libs/System.IO.Ports.Native/libSystem.IO.Ports.Native.so"]="framework"
-    ["src/native/libs/System.Net.Security.Native/libSystem.Net.Security.Native.so"]="framework"
-    ["src/native/libs/System.Globalization.Native/libSystem.Globalization.Native.so"]="framework"
-    ["src/native/libs/System.Security.Cryptography.Native/libSystem.Security.Cryptography.Native.OpenSsl.so"]="framework"
+    "//:runtime_native"
 )
 
 # ----- Helper functions -----
@@ -175,29 +149,18 @@ assemble_runtime() {
     rm -rf "$output_dir"
     mkdir -p "$output_dir" "$fxr_dir" "$framework_dir"
 
-    # Copy native files from Bazel
-    if [[ "$build_native" == "true" ]] || [[ -d "$bazel_bin" ]]; then
-        log "Copying native components from Bazel..."
-        for src_rel in "${!native_files[@]}"; do
-            local src="$bazel_bin/$src_rel"
-            local dest_type="${native_files[$src_rel]}"
-            local dest_dir
-
-            case "$dest_type" in
-                root)      dest_dir="$output_dir" ;;
-                fxr)       dest_dir="$fxr_dir" ;;
-                framework) dest_dir="$framework_dir" ;;
-            esac
-
-            if [[ -f "$src" ]]; then
-                cp "$src" "$dest_dir/"
-            else
-                log_error "Native file not found: $src"
-                exit 1
-            fi
-        done
-
-        chmod +x "$output_dir/dotnet"
+    # Copy native runtime layout from Bazel
+    if [[ "$build_native" == "true" ]] || [[ -d "$bazel_bin/runtime_native" ]]; then
+        log "Copying native runtime layout from Bazel..."
+        local layout_dir="$bazel_bin/runtime_native"
+        if [[ -d "$layout_dir" ]]; then
+            cp -r "$layout_dir/." "$output_dir/"
+            chmod +x "$output_dir/dotnet"
+        else
+            log_error "Runtime layout not found at: $layout_dir"
+            log_error "Run: bazel build //:runtime_native"
+            exit 1
+        fi
     fi
 
     # Copy managed DLLs from MSBuild

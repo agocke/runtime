@@ -1,9 +1,44 @@
 # Root BUILD file required by Bazel.
 # Native library targets are defined under src/native/.
 
+load("//eng/bazel:runtime_layout.bzl", "runtime_layout")
+load("//eng/bazel:version.bzl", "PRODUCT_VERSION")
+
 # Compiler detection: set --define compiler=clang in .bazelrc config:clang.
 config_setting(
     name = "compiler_clang",
     define_values = {"compiler": "clang"},
     visibility = ["//visibility:public"],
+)
+
+# ── Assembled native runtime layout ──────────────────────────────────
+# Produces a directory tree at bazel-bin/runtime_native/ matching the
+# standard .NET runtime hosting layout:
+#
+#   runtime_native/
+#       dotnet
+#       host/fxr/{version}/libhostfxr.so
+#       shared/Microsoft.NETCore.App/{version}/
+#           libcoreclr.so, libhostpolicy.so, libSystem.*.so
+#
+# Usage:  bazel build //:runtime_native
+runtime_layout(
+    name = "runtime_native",
+    version = PRODUCT_VERSION,
+    root_files = [
+        "//src/native/corehost:dotnet",
+    ],
+    fxr_files = [
+        "//src/native/corehost:hostfxr",
+    ],
+    framework_files = [
+        "//src/coreclr/dlls/mscoree/coreclr:libcoreclr.so",
+        "//src/native/corehost:hostpolicy",
+        "//src/native/libs/System.Globalization.Native:System.Globalization.Native",
+        "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native",
+        "//src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native",
+        "//src/native/libs/System.Native:System.Native",
+        "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
+        "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl",
+    ],
 )
