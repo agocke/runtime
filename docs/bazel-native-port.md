@@ -209,11 +209,14 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 - [x] `src/coreclr/nativeresources/BUILD.bazel`
   - [x] `nativeresourcestring` static lib (resourcestring.cpp)
 
-### 4.4 GC — 🔨 headers done
+### 4.4 GC — ✅ DONE (linux-x64)
 - [x] `src/coreclr/gc/BUILD.bazel` — `gc_headers` (headers + inlines + defs + env/ + vxsort/ + unix/)
-  - [ ] Compiled GC library (pending)
-  - [ ] `src/coreclr/gc/unix/BUILD.bazel` (PAL for unix)
-  - [ ] `src/coreclr/gc/vxsort/BUILD.bazel` (vectorized sort)
+- [x] `gc_pal` cc_library (OBJECT) — Unix PAL (gcenv.unix.cpp, numasupport.cpp, events.cpp, cgroup.cpp)
+- [x] `gc_vxsort` cc_library (OBJECT) — Vectorized sorting (AMD64 AVX2/AVX512 sources with `-mavx2`)
+- [x] Data descriptor stubs (gc_dll_wks_descriptor, gc_dll_svr_descriptor, gcexp_dll_wks_descriptor, gcexp_dll_svr_descriptor)
+- [x] `clrgc` cc_shared_library — Standalone GC with segments (`libclrgc.so`, 2 exports: GC_Initialize, GC_VersionInfo)
+- [x] `clrgcexp` cc_shared_library — Standalone GC with regions (`libclrgcexp.so`, 2 exports + USE_REGIONS)
+- [x] `src/coreclr/gc/unix/bazel/linux-glibc-x64/config.gc.h` (hardcoded linux-x64)
 
 ### 4.5 JIT compiler — 🔨 headers done
 - [x] `src/coreclr/jit/BUILD.bazel` — `jit_headers` (headers + hpp + defs + jitstd/)
@@ -308,3 +311,4 @@ The Mono runtime engine. 13 CMakeLists.txt files.
   - Native libs: `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`
   - Corehost: `bazel --nohome_rc build //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
   - CoreCLR foundation: `bazel --nohome_rc build //src/coreclr/pal:coreclrpal //src/coreclr/utilcode //src/coreclr/utilcode:utilcodestaticnohost //src/coreclr/gcinfo //src/coreclr/unwinder:unwinder_wks //src/coreclr/interop //src/coreclr/nativeresources:nativeresourcestring //src/coreclr/pal:tracepointprovider`
+  - CoreCLR GC: `bazel --nohome_rc build //src/coreclr/gc:clrgc //src/coreclr/gc:clrgcexp`

@@ -22,3 +22,19 @@ cc_library(
         "di/*.inl",
     ]),
 )
+
+# --- cDAC data descriptor shared infrastructure ---
+# Used by GC (and later VM) data descriptor stubs.
+
+# Header-only target for contract-descriptor.h
+cc_library(
+    name = "datadescriptor_shared_inc",
+    hdrs = ["datadescriptor-shared/inc/contract-descriptor.h"],
+    strip_include_prefix = "datadescriptor-shared/inc",
+)
+
+# Stub contract descriptor source (exported as a filegroup so multiple
+# cc_library targets can each compile their own copy with different defines).
+exports_files(
+    ["datadescriptor-shared/contractdescriptorstub.c"],
+)
