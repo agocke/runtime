@@ -10,6 +10,7 @@ cc_library(
     name = "md_inc",
     hdrs = glob([
         "inc/*.h",
+        "inc/*.inc",
         "*.h",
         "*.inl",
         "heaps/*.h",
@@ -24,6 +25,16 @@ cc_library(
 _MD_COPTS = CORECLR_COPTS + [
     "-Isrc/coreclr/md/inc",
     "-Isrc/coreclr/md",
+]
+
+# Directory-level defines from src/coreclr/md/CMakeLists.txt
+# (non-DAC, non-DBI variant for the VM build)
+_MD_DEFINES = CORECLR_DEFINES + [
+    "FEATURE_METADATA_EMIT",
+    "FEATURE_METADATA_EMIT_ALL",
+    "FEATURE_METADATA_INTERNAL_APIS",
+    "FEATURE_METADATA_IN_VM",
+    "FEATURE_METADATA_VERIFY_LAYOUTS",
 ]
 
 # --- mdcompiler_wks (metadata compiler, workstation) ---
@@ -55,7 +66,7 @@ cc_library(
         "-Isrc/coreclr/md/compiler",
         "-include", "src/coreclr/md/compiler/stdafx.h",
     ],
-    defines = CORECLR_DEFINES + ["FEATURE_METADATA_EMIT_ALL"],
+    defines = _MD_DEFINES,
     alwayslink = True,
     deps = ["//src/coreclr/inc:coreclr_inc"],
 )
@@ -83,9 +94,8 @@ cc_library(
         "-Isrc/coreclr/md/runtime",
         "-include", "src/coreclr/md/runtime/stdafx.h",
     ],
-    defines = CORECLR_DEFINES + [
+    defines = _MD_DEFINES + [
         "NO_COR",
-        "FEATURE_METADATA_EMIT_ALL",
     ],
     alwayslink = True,
     deps = ["//src/coreclr/inc:coreclr_inc"],
@@ -112,7 +122,7 @@ cc_library(
         "-Isrc/coreclr/md/enc",
         "-include", "src/coreclr/md/enc/stdafx.h",
     ],
-    defines = CORECLR_DEFINES + ["FEATURE_METADATA_EMIT_ALL"],
+    defines = _MD_DEFINES,
     alwayslink = True,
     deps = ["//src/coreclr/inc:coreclr_inc"],
 )

@@ -1,10 +1,23 @@
 # Bazel configuration for dotnet/runtime native libs (linux-x64)
+#
+# Use --compilation_mode (-c) to select optimization level:
+#   -c dbg       Debug (matches CMake Debug: -O0, debug symbols)
+#   -c opt       Release (matches CMake Release: -O2, -DNDEBUG)
+#   -c fastbuild Default (fast incremental builds)
+#
+# Runtime-specific defines are layered via --config:
+#   --config=debug   adds DEBUG, _DEBUG, interpreter, etc.
+#   --config=release adds NDEBUG, DISABLE_CONTRACTS, etc.
+#   (default)        uses release defines
+#
+# Examples:
+#   bazel build -c dbg --config=debug //target    # CMake Debug equivalent
+#   bazel build -c opt --config=release //target   # CMake Release equivalent
+#   bazel build //target                           # fastbuild + release defines
 
-# Match CMake configurecompiler.cmake settings
+# Match CMake configurecompiler.cmake settings (config-independent)
 build --conlyopt=-std=gnu11
 build --cxxopt=-std=c++17
-build --copt=-O3
-build --copt=-D_GNU_SOURCE
 build --copt=-fPIC
 build --copt=-Werror
 build --copt=-fno-omit-frame-pointer
@@ -15,13 +28,9 @@ build --copt=-ffp-contract=off
 build --copt=-fsigned-char
 build --copt=-fvisibility=hidden
 build --copt=-ffunction-sections
-build --copt=-g
 
-# Defines matching CMake configurecompiler.cmake and configureplatform.cmake
+# Platform defines (config-independent)
 build --copt=-D_GNU_SOURCE
-build --copt=-DNDEBUG
-build --copt=-DDISABLE_CONTRACTS
-build --copt=-DURTBLDENV_FRIENDLY=Retail
 build --copt=-DHOST_64BIT
 build --copt=-DHOST_AMD64
 build --copt=-DHOST_UNIX
@@ -54,3 +63,32 @@ build --strip=never
 
 # linux-x64 target
 build --cpu=k8
+
+# --- Release defines (default) ---
+# Matches CMake Release/Retail config defines.
+build --copt=-DNDEBUG
+build --copt=-DDISABLE_CONTRACTS
+build --copt=-DURTBLDENV_FRIENDLY=Retail
+
+# --- Debug defines (--config=debug) ---
+# Matches CMake Debug config defines.
+# Use -U to undefine the Release defaults set above, then -D to set Debug values.
+build:debug --copt=-UNDEBUG
+build:debug --copt=-UDISABLE_CONTRACTS
+build:debug --copt=-UURTBLDENV_FRIENDLY
+build:debug --copt=-DDEBUG
+build:debug --copt=-D_DEBUG
+build:debug --copt=-D_DBG
+build:debug --copt=-DBUILDENV_DEBUG=1
+build:debug --copt=-DDISABLE_CONTRACTS
+build:debug --copt=-DURTBLDENV_FRIENDLY=Debug
+build:debug --copt=-DFEATURE_INTERPRETER
+build:debug --copt=-DFEATURE_JAVAMARSHAL
+build:debug --copt=-mcx16
+
+# VM- and debug-specific debug defines are in their BUILD.bazel files
+# via per_file_copt (FEATURE_CACHED_INTERFACE_DISPATCH, WRITE_BARRIER_CHECK)
+build:debug --per_file_copt=src/coreclr/vm/.*,src/coreclr/debug/.*,src/coreclr/runtime/.*@-DFEATURE_CACHED_INTERFACE_DISPATCH
+# WRITE_BARRIER_CHECK applies to VM and GC (compiled together in CMake's cee_wks_core).
+# The standalone GC (clrgc.so) removes it, but the in-process GC keeps it.
+build:debug --per_file_copt=src/coreclr/vm/.*,src/coreclr/gc/.*@-DWRITE_BARRIER_CHECK
