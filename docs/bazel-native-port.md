@@ -6,7 +6,7 @@ Add a Bazel build alongside the existing CMake build for all native C/C++ code i
 
 ## Overall Status
 
-Bazel infrastructure is in place: `MODULE.bazel`, `.bazelrc` (with compiler flags matching CMake), root `BUILD.bazel`. Compiler flags have been verified identical to CMake for linux-x64.
+All native C/C++ components needed for a working .NET runtime on linux-x64 are now building with Bazel: CoreCLR (`libcoreclr.so` with statically-linked JIT), corehost (`dotnet`, `libhostfxr.so`, `libhostpolicy.so`), and all 6 native interop libraries. A hybrid build script (`build-bazel-runtime.sh`) assembles Bazel-built native components with MSBuild-built managed C# libraries into a functional `dotnet` runtime layout. Total: 1,020 Bazel actions, ~77s clean build for all native targets.
 
 ## Platform Support Status
 
@@ -317,6 +317,60 @@ The Mono runtime engine. 13 CMakeLists.txt files.
 
 ---
 
+## 7. Hybrid Runtime Build (`build-bazel-runtime.sh`) — ✅ DONE (linux-x64)
+
+Assembles a working .NET runtime from Bazel-built native components + MSBuild-built managed libraries.
+
+### Usage
+
+```bash
+# Full build (managed + native) — first run takes 15-30 min for MSBuild, subsequent runs use cached artifacts
+./build-bazel-runtime.sh
+
+# Native-only rebuild (fast iteration on C++ changes, ~77s clean)
+./build-bazel-runtime.sh --native-only
+
+# Managed-only rebuild
+./build-bazel-runtime.sh --managed-only
+
+# Force managed rebuild even if artifacts exist
+./build-bazel-runtime.sh --rebuild-managed
+
+# Debug configuration
+./build-bazel-runtime.sh --config debug
+
+# Run smoke test after build
+./build-bazel-runtime.sh --smoke-test
+```
+
+### Output Layout
+
+```
+artifacts/bazel-dotnet/
+├── dotnet                                          (host executable)
+├── host/fxr/11.0.0/libhostfxr.so                  (framework resolver)
+└── shared/Microsoft.NETCore.App/11.0.0/
+    ├── libcoreclr.so                               (runtime + JIT, statically linked)
+    ├── libhostpolicy.so                            (host policy)
+    ├── libSystem.Native.so                         (+ 5 other native interop libs)
+    ├── System.Private.CoreLib.dll                  (+ ~150 managed framework DLLs)
+    └── Microsoft.NETCore.App.deps.json             (framework manifest)
+```
+
+### Running an App
+
+```bash
+DOTNET_ROOT=artifacts/bazel-dotnet artifacts/bazel-dotnet/dotnet <app.dll>
+```
+
+### Build Flow
+
+1. **MSBuild** (one-time, cached): `./build.sh clr.corelib+libs -rc Release -lc Release` → produces System.Private.CoreLib.dll + managed framework DLLs
+2. **Bazel** (fast incremental): builds libcoreclr.so, dotnet, hostfxr, hostpolicy, and 6 native interop libs (1,020 actions, ~77s clean)
+3. **Assembly**: copies Bazel native outputs + MSBuild managed DLLs into the `dotnet` runtime directory layout
+
+---
+
 ## Notes
 
 - **No CMake files are modified or deleted** — Bazel files are purely additive
@@ -324,6 +378,7 @@ The Mono runtime engine. 13 CMakeLists.txt files.
 - CoreCLR is the largest component (~86 CMakeLists.txt) and will require the most effort
 - Platform-specific libraries (Browser, Android, Apple) each need their own platform toolchains before they can be ported
 - Build commands (linux-x64):
+  - **Full runtime (hybrid)**: `./build-bazel-runtime.sh` (or `--native-only` for fast C++ iteration)
   - Native libs: `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`
   - Corehost: `bazel --nohome_rc build //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
   - CoreCLR foundation: `bazel --nohome_rc build //src/coreclr/pal:coreclrpal //src/coreclr/utilcode //src/coreclr/utilcode:utilcodestaticnohost //src/coreclr/gcinfo //src/coreclr/unwinder:unwinder_wks //src/coreclr/interop //src/coreclr/nativeresources:nativeresourcestring //src/coreclr/pal:tracepointprovider`
