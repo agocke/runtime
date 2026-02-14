@@ -5,8 +5,7 @@
 #   ./build-bazel-runtime.sh                     # Build everything (managed + native) and assemble
 #   ./build-bazel-runtime.sh --native-only       # Only rebuild native code with Bazel
 #   ./build-bazel-runtime.sh --managed-only      # Only rebuild managed code with MSBuild
-#   ./build-bazel-runtime.sh --rebuild-managed    # Force MSBuild managed rebuild even if artifacts exist
-#   ./build-bazel-runtime.sh --config debug      # Use debug configuration (default: release)
+#   ./build-bazel-runtime.sh --config release     # Use release configuration (default: debug)
 #   ./build-bazel-runtime.sh --smoke-test        # Run smoke test after build
 
 set -euo pipefail
@@ -16,7 +15,6 @@ scriptroot="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ----- Defaults -----
 build_native=true
 build_managed=true
-rebuild_managed=false
 config="debug"
 run_smoke_test=false
 bazel_config_args=()
@@ -32,10 +30,6 @@ while [[ $# -gt 0 ]]; do
             build_native=false
             shift
             ;;
-        --rebuild-managed)
-            rebuild_managed=true
-            shift
-            ;;
         --config)
             config="${2,,}" # lowercase
             shift 2
@@ -45,7 +39,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            head -9 "${BASH_SOURCE[0]}" | tail -8
+            head -8 "${BASH_SOURCE[0]}" | tail -7
             exit 0
             ;;
         *)
@@ -102,16 +96,6 @@ log_success() { echo -e "\033[1;32m==>\033[0m $*"; }
 build_managed_libs() {
     if [[ "$build_managed" != "true" ]]; then
         return
-    fi
-
-    # Check if managed artifacts already exist
-    if [[ "$rebuild_managed" != "true" ]] && [[ -f "$corelib_dll" ]] && [[ -d "$managed_dlls_dir" ]]; then
-        local dll_count
-        dll_count=$(find "$managed_dlls_dir" -name "*.dll" 2>/dev/null | wc -l)
-        if [[ "$dll_count" -gt 100 ]]; then
-            log "Managed artifacts already exist ($dll_count DLLs). Skipping MSBuild. Use --rebuild-managed to force."
-            return
-        fi
     fi
 
     log "Building managed libraries with MSBuild (clr.corelib+libs, ${msbuild_rc})..."
