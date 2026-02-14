@@ -187,8 +187,7 @@ assemble_runtime() {
         fi
     fi
 
-    # Generate minimal Microsoft.NETCore.App.deps.json if not present
-    generate_deps_json
+    copy_deps_json
 
     log_success "Runtime layout assembled at: $output_dir"
     log "  dotnet:          $output_dir/dotnet"
@@ -196,77 +195,18 @@ assemble_runtime() {
     log "  shared framework: $framework_dir/"
 }
 
-# ----- Generate deps.json -----
-generate_deps_json() {
+# ----- Copy deps.json from MSBuild -----
+copy_deps_json() {
     local deps_json="$framework_dir/Microsoft.NETCore.App.deps.json"
-
-    # If MSBuild produced a deps.json, use it
     local msbuild_deps="$scriptroot/artifacts/bin/microsoft.netcore.app.runtime.${rid}/${msbuild_lc}/runtimes/${rid}/lib/${tfm}/Microsoft.NETCore.App.deps.json"
+
     if [[ -f "$msbuild_deps" ]]; then
         cp "$msbuild_deps" "$deps_json"
-        return
+    else
+        log_error "Microsoft.NETCore.App.deps.json not found at: $msbuild_deps"
+        log_error "Run the managed build first: ./build.sh clr.corelib+libs -rc $msbuild_rc -lc $msbuild_lc"
+        exit 1
     fi
-
-    log "Generating minimal Microsoft.NETCore.App.deps.json..."
-
-    # Build the runtime libraries entries from the DLLs present in framework_dir
-    local runtime_entries=""
-    local first=true
-    for dll in "$framework_dir"/*.dll; do
-        [[ -f "$dll" ]] || continue
-        local name
-        name=$(basename "$dll" .dll)
-        local separator=""
-        if [[ "$first" != "true" ]]; then
-            separator=","
-        fi
-        first=false
-        runtime_entries+="${separator}
-            \"${name}.dll\": {}"
-    done
-
-    # Build the native libraries entries
-    local native_entries=""
-    first=true
-    for so in "$framework_dir"/*.so; do
-        [[ -f "$so" ]] || continue
-        local name
-        name=$(basename "$so")
-        local separator=""
-        if [[ "$first" != "true" ]]; then
-            separator=","
-        fi
-        first=false
-        native_entries+="${separator}
-            \"${name}\": {}"
-    done
-
-    cat > "$deps_json" << DEPS_EOF
-{
-  "runtimeTarget": {
-    "name": ".NETCoreApp,Version=v${major_version}.${minor_version}/linux-x64",
-    "signature": ""
-  },
-  "compilationOptions": {},
-  "targets": {
-    ".NETCoreApp,Version=v${major_version}.${minor_version}/linux-x64": {
-      "Microsoft.NETCore.App/${product_version}": {
-        "runtime": {${runtime_entries}
-        },
-        "native": {${native_entries}
-        }
-      }
-    }
-  },
-  "libraries": {
-    "Microsoft.NETCore.App/${product_version}": {
-      "type": "package",
-      "serviceable": false,
-      "sha512": ""
-    }
-  }
-}
-DEPS_EOF
 }
 
 # ----- Smoke test -----
