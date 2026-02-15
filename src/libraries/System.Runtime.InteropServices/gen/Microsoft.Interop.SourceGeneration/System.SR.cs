@@ -539,6 +539,10 @@ namespace System
         internal static string @BaseInterfaceDefinedInOtherAssemblyMessage => GetResourceString("BaseInterfaceDefinedInOtherAssemblyMessage", @"The type '{0}' has a base interface '{1}' defined in a different assembly. This can cause a variety of difficult to diagnose issues in some scenarios");
         /// <summary>Specifying 'GeneratedComInterfaceAttribute' on an interface that has a base interface defined in another assembly is not supported</summary>
         internal static string @BaseInterfaceDefinedInOtherAssemblyTitle => GetResourceString("BaseInterfaceDefinedInOtherAssemblyTitle", @"Specifying 'GeneratedComInterfaceAttribute' on an interface that has a base interface defined in another assembly is not supported");
+        internal static string @GenericDelegatesNotSupported => "Marshalling a generic delegate is not supported. Consider using a function pointer instead.";
+        internal static string @MarshallerInOverlappingNativePositionMustMatchNativeType => "All marshallers for values that are passed as the unmanaged return value or parameter must have the same unmanaged type.";
+        internal static string @ExceptionToUnmanagedMarshallerNotAccessibleByGeneratedCode => "The type '{0}' specified as 'GeneratedComInterfaceAttribute.ExceptionToUnmanagedMarshaller' is not accessible by generated code. The type must have at least 'internal' accessibility. {1}";
+        internal static string @InvalidExceptionToUnmanagedMarshallerType => "The type specified as 'GeneratedComInterfaceAttribute.ExceptionToUnmanagedMarshaller' is not a valid marshaller type.";
 
     }
 }

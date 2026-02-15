@@ -121,6 +121,12 @@ COMMON_ATTRS = {
         doc = "Additional analyzer assemblies.",
         providers = [DotnetAssemblyCompileInfo, DotnetAssemblyRuntimeInfo],
     ),
+    "analyzer_configs": attr.label_list(
+        doc = "A list of analyzer configuration files.",
+        allow_files = True,
+        allow_empty = True,
+        cfg = default_transition,
+    ),
     "treat_warnings_as_errors": attr.bool(
         doc = "Treat all compiler warnings as errors. Note that this attribute can not be used in conjunction with warnings_as_errors.",
         mandatory = False,

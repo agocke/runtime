@@ -32,9 +32,13 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.PathConf.cs",
         "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.MountPoints.cs",
         "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.MountPoints.FormatInfo.cs",
+        "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.RealPath.cs",
+        "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcMountInfo.cs",
+        "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcMountInfo.TryParseMountInfoLine.cs",
     ],
     deps = [
         "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries/System.Memory:ref_System.Memory",
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
     ],

@@ -31,6 +31,7 @@ netcoreapp_impl_assembly(
     deps = [
         "//src/libraries/System.Collections:ref_System.Collections",
         "//src/libraries/System.Linq:ref_System.Linq",
+        "//src/libraries/System.Memory:ref_System.Memory",
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
         "//src/libraries/System.Threading:ref_System.Threading",

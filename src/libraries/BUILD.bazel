@@ -208,6 +208,8 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Net/IPv4AddressHelper.Common.cs",
         "//src/libraries/Common:src/System/Net/IPv6AddressHelper.Common.cs",
         "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
+        "//src/libraries/System.Private.CoreLib:src/System/Collections/Generic/ValueListBuilder.cs",
+        "//src/libraries/System.Private.CoreLib:src/System/Collections/Generic/ValueListBuilder.Pop.cs",
 
         "System.Private.Uri/src/System/DomainNameHelper.cs",
         "System.Private.Uri/src/System/GenericUriParser.cs",
@@ -335,10 +337,13 @@ netcoreapp_impl_assembly(
 
             "//src/libraries/Common:src/Interop/Linux/cgroups/Interop.cgroups.cs",
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.MountPoints.FormatInfo.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.RealPath.cs",
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.UnixFileSystemTypes.cs",
             "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.cs",
             "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.ParseMapModules.cs",
             "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.TryReadStatusFile.cs",
+            "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcMountInfo.cs",
+            "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcMountInfo.TryParseMountInfoLine.cs",
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetBootTimeTicks.cs",
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SchedGetSetAffinity.cs",
 
