@@ -39,7 +39,7 @@ netcoreapp_ref_assembly(
         "//src/libraries/shims/stubs:ref_System.Security.Permissions",
         "//src/libraries/shims/stubs:ref_System.Threading.AccessControl",
     ],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/ECMA.snk"
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/ECMA.snk"
 )
 
 netcoreapp_impl_assembly(
@@ -79,5 +79,5 @@ netcoreapp_impl_assembly(
         "//src/libraries/shims/stubs:ref_System.Threading.AccessControl",
     ],
     exclude_sr = True,
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/ECMA.snk",
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/ECMA.snk",
 )

@@ -10,6 +10,7 @@ nowarn = [ "CS8500", "CS8969", "SYSLIB1092", "CS0419" ]
 common_imports = [
     "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
     "//src/libraries/Common:src/System/Experimentals.cs",
+    "//src/libraries/Common:src/Internal/VersionResilientHashCode.cs",
     "//src/libraries/Common:src/Interop/Interop.Calendar.cs",
     "//src/libraries/Common:src/Interop/Interop.Casing.cs",
     "//src/libraries/Common:src/Interop/Interop.Collation.cs",
@@ -167,6 +168,9 @@ macos_srcs = [
 csharp_library(
     name = "impl_System.Private.CoreLib",
     out = "System.Private.CoreLib",
+    additionalfiles = [
+        "//:src/coreclr/vm/ClrEtwAll.man",
+    ],
     analyzers = [
         "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
@@ -176,6 +180,7 @@ csharp_library(
         "src/Internal/Runtime/CompilerHelpers/ThrowHelpers.cs",
         "src/Internal/Runtime/InteropServices/ComActivationContextInternal.cs",
         "src/Internal/Runtime/InteropServices/ComponentActivator.CoreCLR.cs",
+        "src/Internal/VersionResilientHashCode.CoreCLR.cs",
         "src/System/__Canon.cs",
         "src/System/ArgIterator.cs",
         "src/System/Array.CoreCLR.cs",
@@ -232,6 +237,7 @@ csharp_library(
         "src/System/Reflection/Emit/SignatureHelper.cs",
         "src/System/Reflection/Emit/SymbolMethod.cs",
         "src/System/Reflection/FieldInfo.CoreCLR.cs",
+        "src/System/Reflection/InstanceCalliHelper.cs",
         "src/System/Reflection/LoaderAllocator.cs",
         "src/System/Reflection/MdConstant.cs",
         "src/System/Reflection/MdFieldInfo.cs",
@@ -263,6 +269,8 @@ csharp_library(
         "src/System/Runtime/CompilerServices/InitHelpers.cs",
         "src/System/Runtime/CompilerServices/RuntimeHelpers.CoreCLR.cs",
         "src/System/Runtime/CompilerServices/StaticsHelpers.cs",
+        "src/System/Runtime/CompilerServices/GenericsHelpers.cs",
+        "src/System/Runtime/CompilerServices/VirtualDispatchHelpers.cs",
         "src/System/Runtime/ControlledExecution.CoreCLR.cs",
         "src/System/Runtime/DependentHandle.cs",
 
@@ -278,6 +286,7 @@ csharp_library(
         "src/System/Runtime/JitInfo.CoreCLR.cs",
         "src/System/Runtime/InteropServices/DynamicInterfaceCastableHelpers.cs",
         "src/System/Runtime/InteropServices/GCHandle.CoreCLR.cs",
+        "src/System/Runtime/InteropServices/Java/JavaMarshal.CoreCLR.cs",
         "src/System/Runtime/InteropServices/Marshal.CoreCLR.cs",
         "src/System/Runtime/InteropServices/MemoryMarshal.CoreCLR.cs",
         "src/System/Runtime/InteropServices/NativeLibrary.CoreCLR.cs",
@@ -317,9 +326,6 @@ csharp_library(
         "//src/libraries/System.Reflection.Metadata:src/System/Reflection/Metadata/TypeNameParser.cs",
         "//src/libraries/System.Reflection.Metadata:src/System/Reflection/Metadata/TypeNameParserHelpers.cs",
 
-        # Prebuilt copy of event source data
-        "src/NativeRuntimeEventSource.Generated.cs",
-
     ] + common_imports + [ "//src/libraries/System.Private.CoreLib:src/%s" % x for x in coreclr_files ] +
     select({
         "@platforms//os:linux": [ "//src/libraries/System.Private.CoreLib:src/%s" % x for x in coreclr_linux_files ],
@@ -330,6 +336,7 @@ csharp_library(
         "@platforms//os:macos": macos_srcs,
     }),
     resx_file = "//src/libraries/System.Private.CoreLib:src/Resources/Strings.resx",
+    resource_name = "System.Private.CoreLib.Strings",
     assembly_version = "10.0.0.0",
     nullable = "enable",
     allow_unsafe_blocks = True,
@@ -341,11 +348,19 @@ csharp_library(
         "/checksumalgorithm:SHA256",
         "/publicsign+",
     ],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/SilverlightPlatformPublicKey.snk",
     defines = [
         "SYSTEM_PRIVATE_CORELIB",
         "CORECLR",
+        "NETCOREAPP",
+        "FEATURE_COMWRAPPERS",
+        "FEATURE_EH_FUNCLETS",
+        "FEATURE_EVENTSOURCE_XPLAT",
+        "FEATURE_INTERPRETER",
+        "FEATURE_JAVAMARSHAL",
         "FEATURE_PERFTRACING",
+        "PROFILING_SUPPORTED",
+        "_LOGGING",
     ] + select({
         "@platforms//cpu:x86_64": [ "TARGET_AMD64", "TARGET_64BIT" ],
         "@platforms//cpu:aarch64": [ "TARGET_ARM64", "TARGET_64BIT" ],

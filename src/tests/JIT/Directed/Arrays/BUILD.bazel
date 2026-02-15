@@ -40,4 +40,8 @@ coreclr_test(
     name = "nintindexoutofrange",
     srcs = ["nintindexoutofrange.cs"],
     allow_unsafe_blocks = True,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
