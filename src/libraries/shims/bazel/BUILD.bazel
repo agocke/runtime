@@ -1,0 +1,4 @@
+exports_files([
+    "System.Security.Permissions.ForwardedTypes.cs",
+    "System.Threading.AccessControl.ForwardedTypes.cs",
+])
