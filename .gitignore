@@ -374,3 +374,5 @@ bazel-bin
 bazel-out
 bazel-runtime
 bazel-testlogs
+bazel-bazel-libs
+user.bazelrc

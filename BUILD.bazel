@@ -20,8 +20,8 @@ copy_to_directory(
                 "artifacts/bin/coreclr/linux.x64.Debug/*.dbg",
                 "artifacts/bin/native/net9.0-linux-Debug-x64/*.so",
                 "artifacts/bin/native/net9.0-linux-Debug-x64/*.dbg",
-            ]),
-            "@platforms//os:macos": glob(["artifacts/bin/coreclr/osx.arm64.Debug/*.dylib"]),
+            ], allow_empty = True),
+            "@platforms//os:macos": glob(["artifacts/bin/coreclr/osx.arm64.Debug/*.dylib"], allow_empty = True),
         })
         + [
             "//src/libraries:impl_netcoreapp",

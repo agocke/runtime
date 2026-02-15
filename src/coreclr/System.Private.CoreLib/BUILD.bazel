@@ -336,7 +336,7 @@ csharp_library(
         "/checksumalgorithm:SHA256",
         "/publicsign+",
     ],
-    keyfile = "@@_main~main_extension~nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v9.0.0-beta.24423.2//:tools/snk/MSFT.snk",
     defines = [
         "SYSTEM_PRIVATE_CORELIB",
         "CORECLR",

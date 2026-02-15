@@ -162,7 +162,7 @@ def _il_test_impl(ctx):
 
     default_info = DefaultInfo(
         executable = launcher,
-        runfiles = ctx.runfiles(files = additional_runfiles),
+        runfiles = ctx.runfiles(files = additional_runfiles).merge(ctx.attr._bash_runfiles[DefaultInfo].default_runfiles),
         files = depset([dll]),
     )
 
@@ -206,7 +206,7 @@ _il_test = rule(
         ),
         "_bash_runfiles": attr.label(
             default = "@bazel_tools//tools/bash/runfiles",
-            allow_single_file = True,
+            allow_files = True,
         ),
     },
     test = True,

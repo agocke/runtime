@@ -201,7 +201,7 @@ COMMON_ATTRS = {
     ),
     "_bash_runfiles": attr.label(
         default = "@bazel_tools//tools/bash/runfiles",
-        allow_single_file = True,
+        allow_files = True,
     ),
     "_targeting_pack": attr.label(
         default = "@rules_dotnet//dotnet/private/sdk/targeting_packs:targeting_pack",
@@ -265,7 +265,7 @@ def create_launcher(ctx, runfiles, entry_dll):
         is_executable = True,
     )
     runfiles.append(ctx.file._core_root)
-    runfiles.append(ctx.file._bash_runfiles)
+    runfiles.extend(ctx.files._bash_runfiles)
 
     return launcher
 
@@ -384,7 +384,7 @@ def build_binary(ctx, compile_action):
 
     default_info = DefaultInfo(
         executable = launcher,
-        runfiles = collect_transitive_runfiles(ctx, runtime_provider, ctx.attr.deps).merge(ctx.runfiles(files = additional_runfiles)),
+        runfiles = collect_transitive_runfiles(ctx, runtime_provider, ctx.attr.deps).merge(ctx.runfiles(files = additional_runfiles)).merge(ctx.attr._bash_runfiles[DefaultInfo].default_runfiles),
         files = depset(default_info_files),
     )
 
