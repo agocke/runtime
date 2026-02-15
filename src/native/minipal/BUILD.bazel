@@ -1,0 +1,36 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+exports_files(
+    ["xoshiro128pp.c"],
+    visibility = ["//src/coreclr:__subpackages__"],
+)
+
+cc_library(
+    name = "minipal",
+    srcs = [
+        "cpufeatures.c",
+        "debugger.c",
+        "guid.c",
+        "log.c",
+        "mutex.c",
+        "random.c",
+        "strings.c",
+        "time.c",
+        "unicodedata.c",
+        "utf8.c",
+        "xoshiro128pp.c",
+        "bazel/linux-glibc-x64/minipalconfig.h",
+    ] + glob(
+        ["*.h", "**/*.h"],
+        exclude = ["bazel/**"],
+    ),
+    copts = [
+        "-Isrc/native",
+        "-Isrc/native/minipal/bazel/linux-glibc-x64",
+    ],
+    includes = [".."],
+    visibility = [
+        "//src/coreclr:__subpackages__",
+        "//src/native:__subpackages__",
+    ],
+)

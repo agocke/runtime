@@ -1,0 +1,1 @@
+exports_files(["linux-glibc-x64/pal_config.h"])

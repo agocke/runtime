@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "common",
+    srcs = [],
+    hdrs = glob(["Common/*.h"]) + [
+        "//src/native/libs/bazel:linux-glibc-x64/pal_config.h",
+    ],
+    includes = [
+        "Common",
+        "bazel/linux-glibc-x64",
+    ],
+    visibility = ["//src/native:__subpackages__"],
+)

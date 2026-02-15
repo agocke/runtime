@@ -26,6 +26,7 @@ copy_to_directory(
         })
         + [
             "//src/libraries:impl_netcoreapp",
+            "//src/native/libs/System.Native",
         ],
     root_paths = [ "**" ],
     visibility = ["//visibility:public"],
