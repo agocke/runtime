@@ -4,6 +4,15 @@
 
 Add a Bazel build alongside the existing CMake build for all native C/C++ code in dotnet/runtime. The goal is to eventually support all platforms CMake currently compiles for. The Bazel build must produce the same output binaries as CMake.
 
+## Alignment Goal
+
+The Bazel build must achieve **compilation parity** with the CMake+MSBuild build:
+every compilation unit should receive the same input files and equivalent command-line
+options (defines, include paths, warnings, optimization level, language standard, etc.).
+Differences in compiler invocations are the root cause of binary mismatches and runtime
+failures. Use `compare-bazel-cmake.sh` for native binaries and compare source file lists
+and defines for managed assemblies (System.Private.CoreLib) to verify alignment.
+
 ## Verifying Bazel ↔ CMake Equivalence
 
 `compare-bazel-cmake.sh` automates binary comparison between Bazel and CMake outputs. It compares all 10 native binaries on:
