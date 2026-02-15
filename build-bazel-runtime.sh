@@ -183,11 +183,16 @@ assemble_runtime() {
 copy_deps_json() {
     local deps_json="$framework_dir/Microsoft.NETCore.App.deps.json"
     local msbuild_deps="$scriptroot/artifacts/bin/microsoft.netcore.app.runtime.${rid}/${msbuild_lc}/runtimes/${rid}/lib/${tfm}/Microsoft.NETCore.App.deps.json"
+    local testhost_deps="$scriptroot/artifacts/bin/testhost/${tfm}-linux-${msbuild_lc}-x64/shared/Microsoft.NETCore.App/${product_version}/Microsoft.NETCore.App.deps.json"
 
     if [[ -f "$msbuild_deps" ]]; then
         cp "$msbuild_deps" "$deps_json"
+    elif [[ -f "$testhost_deps" ]]; then
+        cp "$testhost_deps" "$deps_json"
     else
-        log_error "Microsoft.NETCore.App.deps.json not found at: $msbuild_deps"
+        log_error "Microsoft.NETCore.App.deps.json not found at:"
+        log_error "  $msbuild_deps"
+        log_error "  $testhost_deps"
         log_error "Run the managed build first: ./build.sh clr.corelib+libs -rc $msbuild_rc -lc $msbuild_lc"
         exit 1
     fi
