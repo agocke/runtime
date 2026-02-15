@@ -1,0 +1,44 @@
+# CoreCLR hosts headers and executables.
+
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "hosts_inc",
+    hdrs = glob(["inc/*.h"]),
+    includes = ["inc"],
+)
+
+# Pre-generated config.h for linux-x64 (HAVE_GETAUXVAL=1, HAVE_DIRENT_D_TYPE=1)
+cc_library(
+    name = "corerun_config",
+    hdrs = ["corerun/bazel/linux-glibc-x64/config.h"],
+    strip_include_prefix = "corerun/bazel/linux-glibc-x64",
+)
+
+cc_binary(
+    name = "corerun",
+    srcs = [
+        "corerun/corerun.cpp",
+        "corerun/corerun.hpp",
+        "corerun/dotenv.cpp",
+        "corerun/dotenv.hpp",
+    ],
+    copts = [
+        "-Isrc/coreclr/hosts/corerun",
+        "-Isrc/native",
+    ],
+    linkopts = [
+        "-ldl",
+        "-lpthread",
+        "-rdynamic",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":corerun_config",
+        ":hosts_inc",
+        "//src/native/corehost:corehost_headers",
+        "//src/native/minipal",
+    ],
+)

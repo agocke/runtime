@@ -234,7 +234,7 @@ _live_csharp_binary_rule = rule(
     attrs = dicts.add(COMMON_ATTRS, {
         "_launcher_sh": attr.label(
             doc = "A template file for the launcher on Linux/MacOS",
-            default = "//:eng/run_binary.sh.tpl",
+            default = "//eng:run_binary.sh.tpl",
             allow_single_file = True,
         )}),
     executable = True,

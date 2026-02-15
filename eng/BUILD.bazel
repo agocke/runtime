@@ -1,0 +1,6 @@
+# Package for eng/ (enables subpackage references)
+
+exports_files([
+    "run_binary.sh.tpl",
+    "run_test.sh.tpl",
+])

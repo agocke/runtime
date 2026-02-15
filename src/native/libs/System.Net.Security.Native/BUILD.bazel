@@ -1,0 +1,35 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+# System.Net.Security.Native for linux-x64
+# Produces libSystem.Net.Security.Native.so (shared) and libSystem.Net.Security.Native.a (static)
+# On Linux, GSS_SHIM is defined so libgssapi_krb5 is loaded via dlopen at runtime.
+
+cc_library(
+    name = "System.Net.Security.Native_lib",
+    srcs = [
+        "entrypoints.c",
+        "pal_gssapi.c",
+    ] + glob(["*.h"]),
+    copts = [
+        "-Isrc/native",
+        "-Isrc/native/libs/Common",
+        "-Isrc/native/libs/bazel",
+        "-Isrc/native/libs/System.Net.Security.Native",
+    ],
+    defines = [
+        "GSS_SHIM",
+    ],
+    linkopts = ["-ldl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/native/libs:common",
+        "//src/native/minipal",
+    ],
+)
+
+cc_shared_library(
+    name = "System.Net.Security.Native",
+    shared_lib_name = "libSystem.Net.Security.Native.so",
+    visibility = ["//visibility:public"],
+    deps = [":System.Net.Security.Native_lib"],
+)

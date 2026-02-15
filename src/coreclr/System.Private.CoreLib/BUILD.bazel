@@ -1,3 +1,9 @@
+# Expose files needed by native code textual includes.
+
+exports_files([
+    "src/System/Runtime/ExceptionServices/AsmOffsets.cs",
+])
+
 load(
     "//src/libraries/System.Private.CoreLib:src/files.bzl",
     "coreclr_files", "coreclr_linux_files", "coreclr_macos_files"
@@ -169,7 +175,7 @@ csharp_library(
     name = "impl_System.Private.CoreLib",
     out = "System.Private.CoreLib",
     additionalfiles = [
-        "//:src/coreclr/vm/ClrEtwAll.man",
+        "//src/coreclr/vm:ClrEtwAll.man",
     ],
     analyzers = [
         "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",

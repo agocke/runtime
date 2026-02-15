@@ -37,7 +37,7 @@ _live_csharp_test = rule(
         {
             "_launcher_sh": attr.label(
                 doc = "A template file for the launcher on Linux/MacOS",
-                default = "//:eng/run_test.sh.tpl",
+                default = "//eng:run_test.sh.tpl",
                 allow_single_file = True,
             ),
         }),
@@ -200,7 +200,7 @@ _il_test = rule(
         ),
         "_launcher_sh": attr.label(
             doc = "A template file for the launcher on Linux/MacOS",
-            default = "//:eng/run_test.sh.tpl",
+            default = "//eng:run_test.sh.tpl",
             allow_single_file = True,
         ),
         "_windows_constraint": attr.label(default = "@platforms//os:windows"),

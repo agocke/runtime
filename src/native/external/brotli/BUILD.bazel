@@ -154,6 +154,7 @@ cc_binary(
     ],
 )
 
+
 filegroup(
     name = "dictionary",
     srcs = glob(["c/common/dictionary.bin"], allow_empty = True),

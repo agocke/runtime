@@ -1,0 +1,127 @@
+# Bazel configuration for dotnet/runtime native libs (linux-x64)
+#
+# Use --compilation_mode (-c) to select optimization level:
+#   -c dbg       Debug (matches CMake Debug: -O0, debug symbols)
+#   -c opt       Release (matches CMake Release: -O2, -DNDEBUG)
+#   -c fastbuild Default (fast incremental builds)
+#
+# Use --config=clang to build with Clang (matching CMake default).
+# Without --config=clang, builds use the system default (GCC).
+#
+# Runtime-specific defines are layered via --config:
+#   --config=debug   adds DEBUG, _DEBUG, interpreter, etc.
+#   (default)        uses release defines (NDEBUG, DISABLE_CONTRACTS)
+#
+# Examples:
+#   bazel build --config=clang -c dbg --config=debug //target  # CMake Debug equivalent
+#   bazel build --config=clang //target                        # CMake Release equivalent
+#   bazel build //target                                       # GCC fastbuild + release
+
+# Match CMake configurecompiler.cmake settings (config-independent)
+build --conlyopt=-std=gnu11
+build --cxxopt=-std=c++17
+build --copt=-fPIC
+build --copt=-Werror
+build --copt=-fno-omit-frame-pointer
+build --copt=-fno-strict-overflow
+build --copt=-fno-strict-aliasing
+build --copt=-fstack-protector-strong
+build --copt=-ffp-contract=off
+build --copt=-fsigned-char
+build --copt=-fvisibility=hidden
+build --copt=-ffunction-sections
+build --cxxopt=-fno-rtti
+
+# Platform defines (config-independent)
+build --copt=-D_GNU_SOURCE
+build --copt=-DHOST_64BIT
+build --copt=-DHOST_AMD64
+build --copt=-DHOST_UNIX
+build --copt=-DTARGET_64BIT
+build --copt=-DTARGET_AMD64
+build --copt=-DTARGET_UNIX
+build --copt=-DTARGET_LINUX
+build --copt=-D_FILE_OFFSET_BITS=64
+build --copt=-D_TIME_BITS=64
+
+# Warning flags shared between GCC and Clang (configurecompiler.cmake)
+build --copt=-Wall
+build --copt=-Wno-unused-variable
+build --copt=-Wno-unused-value
+build --copt=-Wno-unused-function
+build --copt=-Wno-tautological-compare
+build --copt=-Wno-unknown-pragmas
+build --copt=-Wimplicit-fallthrough
+build --copt=-Wno-unused-but-set-variable
+
+# --- GCC-specific warning flags (default compiler) ---
+# These are in an else() branch in configurecompiler.cmake (not Clang).
+build --copt=-Wno-uninitialized
+build --copt=-Wno-strict-aliasing
+build --copt=-Wno-array-bounds
+build --cxxopt=-Wno-misleading-indentation
+build --cxxopt=-Wno-stringop-overflow
+build --cxxopt=-Wno-restrict
+build --copt=-Wno-stringop-truncation
+build --cxxopt=-Wno-class-memaccess
+
+# --- Clang compiler (--config=clang) ---
+# Matches CMake default: uses clang/clang++ with lld linker.
+build:clang --repo_env=CC=clang-18
+build:clang --repo_env=CXX=clang++-18
+build:clang --linkopt=-fuse-ld=lld
+build:clang --define compiler=clang
+# Undo GCC-specific flags (not recognized by Clang with -Werror)
+build:clang --copt=-Wno-unknown-warning-option
+build:clang --copt=-ferror-limit=4096
+# Clang-specific warnings from configurecompiler.cmake
+build:clang --copt=-Wno-unused-private-field
+build:clang --copt=-Wno-constant-logical-operand
+build:clang --copt=-Wno-pragma-pack
+build:clang --copt=-Wno-incompatible-ms-struct
+build:clang --copt=-Wno-reserved-identifier
+build:clang --copt=-Wno-unsafe-buffer-usage
+build:clang --copt=-Wno-single-bit-bitfield-constant-conversion
+build:clang --copt=-Wno-cast-function-type-strict
+build:clang --copt=-Wno-switch-default
+build:clang --cxxopt=-Wno-nontrivial-memaccess
+
+# Disable warnings that CMake also suppresses for vendored code
+build --per_file_copt=src/native/external/.*@-w
+
+# safecrt_input_s.cpp is the non-unicode scanf variant — _UNICODE must not be defined
+build --per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
+
+# Preserve debug symbols (match CMake behavior of always including -g)
+build --strip=never
+
+# linux-x64 target
+build --cpu=k8
+
+# --- Release defines (default) ---
+# Matches CMake Release/Retail config defines.
+build --copt=-DNDEBUG
+build --copt=-DDISABLE_CONTRACTS
+build --copt=-DURTBLDENV_FRIENDLY=Retail
+
+# --- Debug defines (--config=debug) ---
+# Matches CMake Debug config defines.
+# Use -U to undefine the Release defaults set above, then -D to set Debug values.
+build:debug --copt=-UNDEBUG
+build:debug --copt=-UDISABLE_CONTRACTS
+build:debug --copt=-UURTBLDENV_FRIENDLY
+build:debug --copt=-DDEBUG
+build:debug --copt=-D_DEBUG
+build:debug --copt=-D_DBG
+build:debug --copt=-DBUILDENV_DEBUG=1
+build:debug --copt=-DDISABLE_CONTRACTS
+build:debug --copt=-DURTBLDENV_FRIENDLY=Debug
+build:debug --copt=-DFEATURE_INTERPRETER
+build:debug --copt=-DFEATURE_JAVAMARSHAL
+build:debug --copt=-mcx16
+
+# VM- and debug-specific debug defines
+build:debug --per_file_copt=src/coreclr/vm/.*,src/coreclr/debug/.*,src/coreclr/runtime/.*@-DFEATURE_CACHED_INTERFACE_DISPATCH
+# WRITE_BARRIER_CHECK applies to VM and GC (compiled together in CMake's cee_wks_core).
+# The standalone GC (clrgc.so) removes it, but the in-process GC keeps it.
+build:debug --per_file_copt=src/coreclr/vm/.*,src/coreclr/gc/.*@-DWRITE_BARRIER_CHECK

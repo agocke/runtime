@@ -1,5 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
+# Common headers shared across native libraries
+
 cc_library(
     name = "common",
     srcs = [],
