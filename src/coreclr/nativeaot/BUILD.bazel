@@ -87,8 +87,6 @@ _NATIVEAOT_RUNTIME_SRCS = [
 # Shared runtime sources from src/coreclr/runtime/
 _CORECLR_RUNTIME_SRCS = [
     "//src/coreclr/runtime:CachedInterfaceDispatch.cpp",
-    "//src/coreclr/runtime:MiscNativeHelpers.cpp",
-    "//src/coreclr/runtime:SignalSafeThreadMap.cpp",
 ]
 
 # GC sources (recompiled with NativeAOT defines)

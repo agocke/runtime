@@ -9,7 +9,6 @@ cc_library(
         "entrypoints.c",
         "pal_autoreleasepool.c",
         "pal_console.c",
-        "pal_crossprocessmutex.c",
         "pal_datetime.c",
         "pal_dynamicload.c",
         "pal_environment.c",

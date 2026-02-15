@@ -411,20 +411,6 @@ cc_binary(
     visibility = ["//visibility:public"],
 )
 
-# --- clrjit_universal_wasm_x64 ---
-cc_binary(
-    name = "libclrjit_universal_wasm_x64.so",
-    srcs = _JIT_COMMON_SOURCES + _JIT_WASM_SOURCES,
-    linkshared = True,
-    linkstatic = True,
-    copts = _JIT_COPTS + _CROSS_JIT_UNDEF_COPTS + [
-        "-DTARGET_WASM",
-        "-DTARGET_WASM32",
-        "-DFEATURE_INTERPRETER",
-    ],
-    defines = _CROSS_JIT_DEFINES,
-    linkopts = _CROSS_JIT_LINKOPTS,
-    additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
-    deps = _CROSS_JIT_DEPS + ["//src/coreclr/gcinfo:gcinfo_unix_wasm"],
-    visibility = ["//visibility:public"],
-)
+# NOTE: WASM cross-target JIT does not exist on release/10.0.
+# It was added in main branch. WASM JIT sources exist but are only
+# used when building on a WASM host target (mono browser builds).

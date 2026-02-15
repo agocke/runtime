@@ -132,6 +132,7 @@ cc_library(
     copts = CORECLR_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
         "-DTARGET_WASM",
         "-DTARGET_WASM32",
+        "-DTARGET_BROWSER",
         "-DFEATURE_INTERPRETER",
     ],
     defines = _HOST_DEFINES,

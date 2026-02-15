@@ -24,6 +24,13 @@ cc_library(
     strip_include_prefix = "bazel/linux-glibc-x64",
 )
 
+# --- User events shim header ---
+cc_library(
+    name = "userevents_headers",
+    hdrs = ["userevents/user_events.h"],
+    strip_include_prefix = "userevents",
+)
+
 # --- EventPipe CoreCLR shim headers ---
 # Runtime-specific shim headers for EventPipe/DiagnosticServer.
 cc_library(

@@ -8,7 +8,6 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 cc_library(
     name = "coreclrminipal_headers",
     hdrs = [
-        "dn-stdio.h",
         "dn-u16.h",
         "minipal.h",
     ],
@@ -18,10 +17,8 @@ cc_library(
 cc_library(
     name = "coreclrminipal",
     srcs = [
-        "Unix/dn-stdio.cpp",
         "Unix/dn-u16.cpp",
         "Unix/doublemapping.cpp",
-        "Unix/memory.cpp",
     ],
     deps = [
         ":coreclrminipal_headers",

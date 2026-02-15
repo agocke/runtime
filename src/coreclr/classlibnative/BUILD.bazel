@@ -1,0 +1,13 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_library(
+    name = "classlibnative_headers",
+    hdrs = glob([
+        "bcltype/*.h",
+        "bcltype/*.inl",
+        "inc/*.h",
+    ]),
+    includes = ["bcltype", "inc"],
+)

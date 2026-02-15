@@ -64,6 +64,8 @@ CORECLR_DEFINES = [
     # FEATURE_CORECLR_CACHED_INTERFACE_DISPATCH is OFF for linux-x64 release.
     "FEATURE_CORECLR_VIRTUAL_STUB_DISPATCH=1",
     "FEATURE_CORECLR_FLUSH_INSTRUCTION_CACHE_TO_PROTECT_STUB_READS=1",
+    "FEATURE_EH_FUNCLETS",
+    "FEATURE_PORTABLE_SHUFFLE_THUNKS",
 ]
 
 # --- Global include paths for all coreclr components ---
@@ -89,7 +91,9 @@ CORECLR_COPTS = [
     "-Isrc/coreclr/debug/inc/dump",
     "-Isrc/coreclr/md/inc",
     "-Isrc/coreclr/hosts/inc",
-    "-Isrc/coreclr/interpreter/inc",
+    "-Isrc/coreclr/interpreter",
+    "-Isrc/coreclr/classlibnative/bcltype",
+    "-Isrc/coreclr/classlibnative/inc",
     "-Isrc/coreclr/minipal",
     "-Isrc/native",
     "-Isrc/native/inc",

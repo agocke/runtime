@@ -7945,3 +7945,13 @@ inline ULONG FireEtwMonoProfilerGCHeapDumpVTableClassReference(
     return status;
 }
 
+
+// User Events stubs for release/10.0 (user_events feature present but
+// genEventing.py was not run with --userevents on this platform)
+inline BOOL UserEventsEventEnabledBGCBegin() { return FALSE; }
+inline BOOL UserEventsEventEnabledGCGenerationRange() { return FALSE; }
+inline BOOL UserEventsEventEnabledGCJoin_V2() { return FALSE; }
+inline BOOL UserEventsEventEnabledGCStart() { return FALSE; }
+inline BOOL UserEventsEventEnabledPinPlugAtGCTime() { return FALSE; }
+inline BOOL UserEventsEventEnabledPrvSetGCHandle() { return FALSE; }
+inline BOOL UserEventsEventEnabledSetGCHandle() { return FALSE; }

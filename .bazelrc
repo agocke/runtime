@@ -89,6 +89,9 @@ build:clang --cxxopt=-Wno-nontrivial-memaccess
 # Disable warnings that CMake also suppresses for vendored code
 build --per_file_copt=src/native/external/.*@-w
 
+# safecrt_input_s.cpp is the non-unicode scanf variant — _UNICODE must not be defined
+build --per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
+
 # Preserve debug symbols (match CMake behavior of always including -g)
 build --strip=never
 
