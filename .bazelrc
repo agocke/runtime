@@ -124,6 +124,6 @@ build:debug --copt=-mcx16
 
 # VM- and debug-specific debug defines
 build:debug --per_file_copt=src/coreclr/vm/.*,src/coreclr/debug/.*,src/coreclr/runtime/.*@-DFEATURE_CACHED_INTERFACE_DISPATCH
-# WRITE_BARRIER_CHECK applies to VM and GC (compiled together in CMake's cee_wks_core).
-# The standalone GC (clrgc.so) removes it, but the in-process GC keeps it.
-build:debug --per_file_copt=src/coreclr/vm/.*,src/coreclr/gc/.*@-DWRITE_BARRIER_CHECK
+# WRITE_BARRIER_CHECK is added via select() on the VM cee_wks_core target
+# (not per_file_copt) because GC sources compiled by VM have gc/ paths that
+# would also match standalone GC targets which must NOT have this define.

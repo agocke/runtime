@@ -70,6 +70,18 @@ _GC_COPTS = [
     "-Isrc/native",
 ]
 
+# The standalone GC always builds as retail, even in debug builds.
+# These copts override --config=debug globals (copts come after --copt)
+# and per_file_copt (rule copts come last in the command line).
+_GC_STANDALONE_COPTS = _GC_COPTS + [
+    "-UNDEBUG", "-UDEBUG", "-U_DEBUG", "-U_DBG",
+    "-UDISABLE_CONTRACTS", "-UURTBLDENV_FRIENDLY",
+    "-UWRITE_BARRIER_CHECK",
+    "-DNDEBUG",
+    "-DDISABLE_CONTRACTS",
+    "-DURTBLDENV_FRIENDLY=Retail",
+]
+
 # --- gc_pal (OBJECT library) — Unix platform abstraction ---
 
 cc_library(
@@ -214,7 +226,7 @@ cc_library(
     name = "clrgc_lib",
     srcs = _GC_SOURCES,
     textual_hdrs = _GC_TEXTUAL_HDRS,
-    copts = _GC_COPTS,
+    copts = _GC_STANDALONE_COPTS,
     defines = _GC_STANDALONE_DEFINES,
     alwayslink = True,
     deps = [
@@ -242,7 +254,7 @@ cc_library(
     name = "clrgcexp_lib",
     srcs = _GC_SOURCES,
     textual_hdrs = _GC_TEXTUAL_HDRS,
-    copts = _GC_COPTS,
+    copts = _GC_STANDALONE_COPTS,
     defines = _GC_STANDALONE_DEFINES + ["USE_REGIONS"],
     alwayslink = True,
     deps = [

@@ -327,7 +327,10 @@ cc_library(
         "//src/coreclr/System.Private.CoreLib:src/System/Runtime/ExceptionServices/AsmOffsets.cs",
     ],
     copts = _VM_COPTS,
-    defines = _VM_DEFINES + ["GC_DESCRIPTOR"],
+    defines = _VM_DEFINES + ["GC_DESCRIPTOR"] + select({
+        "//:debug_mode": ["WRITE_BARRIER_CHECK"],
+        "//conditions:default": [],
+    }),
     alwayslink = True,
     linkstatic = True,
     deps = [
