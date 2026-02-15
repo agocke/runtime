@@ -8,7 +8,25 @@ Produces a tree artifact matching the standard .NET runtime hosting layout:
             libcoreclr.so
             libhostpolicy.so
             libSystem.*.so
+
+Shared libraries and executables are stripped during assembly, with debug
+symbols extracted to separate .dbg files — matching CMake's
+install_with_stripped_symbols() from eng/native/functions.cmake.
 """
+
+def _strip_commands(dst):
+    """Generate objcopy commands to split debug symbols, matching CMake strip_symbols().
+
+    Produces:
+        {dst}      - stripped binary with .gnu_debuglink
+        {dst}.dbg  - extracted debug symbols
+    """
+    return [
+        "chmod u+w \"{dst}\"".format(dst = dst),
+        "objcopy --only-keep-debug \"{dst}\" \"{dst}.dbg\"".format(dst = dst),
+        "objcopy --strip-debug --strip-unneeded \"{dst}\"".format(dst = dst),
+        "objcopy --add-gnu-debuglink=\"{dst}.dbg\" \"{dst}\"".format(dst = dst),
+    ]
 
 def _runtime_layout_impl(ctx):
     output_dir = ctx.actions.declare_directory(ctx.label.name)
@@ -26,26 +44,29 @@ def _runtime_layout_impl(ctx):
             dst = "{dir}/{name}".format(dir = output_dir.path, name = f.basename)
             commands.append("cp \"{src}\" \"{dst}\"".format(src = f.path, dst = dst))
             commands.append("chmod +x \"{dst}\"".format(dst = dst))
+            commands.extend(_strip_commands(dst))
 
     for dep in ctx.attr.fxr_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append("cp \"{src}\" \"{dir}/host/fxr/{ver}/{name}\"".format(
-                src = f.path,
+            dst = "{dir}/host/fxr/{ver}/{name}".format(
                 dir = output_dir.path,
                 ver = version,
                 name = f.basename,
-            ))
+            )
+            commands.append("cp \"{src}\" \"{dst}\"".format(src = f.path, dst = dst))
+            commands.extend(_strip_commands(dst))
 
     for dep in ctx.attr.framework_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append("cp \"{src}\" \"{dir}/shared/Microsoft.NETCore.App/{ver}/{name}\"".format(
-                src = f.path,
+            dst = "{dir}/shared/Microsoft.NETCore.App/{ver}/{name}".format(
                 dir = output_dir.path,
                 ver = version,
                 name = f.basename,
-            ))
+            )
+            commands.append("cp \"{src}\" \"{dst}\"".format(src = f.path, dst = dst))
+            commands.extend(_strip_commands(dst))
 
     ctx.actions.run_shell(
         inputs = inputs,

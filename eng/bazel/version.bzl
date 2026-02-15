@@ -3,4 +3,4 @@
 Keep in sync with eng/Versions.props.
 """
 
-PRODUCT_VERSION = "11.0.0"
+PRODUCT_VERSION = "10.0.4"

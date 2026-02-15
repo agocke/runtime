@@ -30,6 +30,7 @@ cc_library(
 cc_shared_library(
     name = "System.Net.Security.Native",
     shared_lib_name = "libSystem.Net.Security.Native.so",
+    user_link_flags = ["-Wl,-soname,libSystem.Net.Security.Native.so"],
     visibility = ["//visibility:public"],
     deps = [":System.Net.Security.Native_lib"],
 )

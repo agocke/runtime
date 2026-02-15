@@ -374,6 +374,9 @@ csharp_library(
         "@platforms//os:windows": [ "TARGET_WINDOWS" ],
         "@platforms//os:linux": [ "TARGET_LINUX", "TARGET_UNIX" ],
         "@platforms//os:macos": [ "TARGET_OSX", "TARGET_UNIX" ],
+    }) + select({
+        "//:debug_mode": [ "DEBUG" ],
+        "//conditions:default": [],
     }),
     nowarn = nowarn,
     visibility = ["//visibility:public"]

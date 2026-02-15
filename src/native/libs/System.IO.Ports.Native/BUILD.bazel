@@ -26,6 +26,7 @@ cc_library(
 cc_shared_library(
     name = "System.IO.Ports.Native",
     shared_lib_name = "libSystem.IO.Ports.Native.so",
+    user_link_flags = ["-Wl,-soname,libSystem.IO.Ports.Native.so"],
     visibility = ["//visibility:public"],
     deps = [":System.IO.Ports.Native_lib"],
 )

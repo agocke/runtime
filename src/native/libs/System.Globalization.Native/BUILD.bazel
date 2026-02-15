@@ -50,6 +50,7 @@ cc_library(
 cc_shared_library(
     name = "System.Globalization.Native",
     shared_lib_name = "libSystem.Globalization.Native.so",
+    user_link_flags = ["-Wl,-soname,libSystem.Globalization.Native.so"],
     visibility = ["//visibility:public"],
     deps = [":System.Globalization.Native_lib"],
 )

@@ -31,6 +31,7 @@ cc_library(
 cc_shared_library(
     name = "System.IO.Compression.Native",
     shared_lib_name = "libSystem.IO.Compression.Native.so",
+    user_link_flags = ["-Wl,-soname,libSystem.IO.Compression.Native.so"],
     visibility = ["//visibility:public"],
     deps = [":System.IO.Compression.Native_lib"],
 )

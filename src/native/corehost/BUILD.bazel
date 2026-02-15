@@ -219,6 +219,7 @@ cc_shared_library(
     user_link_flags = [
         "-Wl,--version-script,$(location :hostfxr_exports)",
         "-Wl,-Bsymbolic",
+        "-Wl,-soname,libhostfxr.so",
     ],
     visibility = ["//visibility:public"],
     deps = [":hostfxr_lib"],
@@ -277,6 +278,7 @@ cc_shared_library(
     user_link_flags = [
         "-Wl,--version-script,$(location :hostpolicy_exports)",
         "-Wl,-Bsymbolic",
+        "-Wl,-soname,libhostpolicy.so",
     ],
     visibility = ["//visibility:public"],
     deps = [":hostpolicy_lib"],
@@ -359,7 +361,7 @@ cc_library(
 cc_shared_library(
     name = "nethost",
     shared_lib_name = "libnethost.so",
-    user_link_flags = ["-Wl,-Bsymbolic"],
+    user_link_flags = ["-Wl,-Bsymbolic", "-Wl,-soname,libnethost.so"],
     visibility = ["//visibility:public"],
     deps = [":nethost_lib"],
     dynamic_deps = [],

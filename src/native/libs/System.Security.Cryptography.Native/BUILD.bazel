@@ -75,6 +75,7 @@ cc_library(
 cc_shared_library(
     name = "System.Security.Cryptography.Native.OpenSsl",
     shared_lib_name = "libSystem.Security.Cryptography.Native.OpenSsl.so",
+    user_link_flags = ["-Wl,-soname,libSystem.Security.Cryptography.Native.OpenSsl.so"],
     visibility = ["//visibility:public"],
     deps = [":System.Security.Cryptography.Native.OpenSsl_lib"],
 )

@@ -19,9 +19,8 @@
 
 # Match CMake configurecompiler.cmake settings (config-independent)
 build --conlyopt=-std=gnu11
-build --cxxopt=-std=c++17
+build --cxxopt=-std=gnu++11
 build --copt=-fPIC
-build --copt=-Werror
 build --copt=-fno-omit-frame-pointer
 build --copt=-fno-strict-overflow
 build --copt=-fno-strict-aliasing
@@ -94,6 +93,9 @@ build --per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
 
 # Preserve debug symbols (match CMake behavior of always including -g)
 build --strip=never
+
+# Linker hardening flags (configurecompiler.cmake: add_linker_flag)
+build --linkopt=-Wl,--build-id=sha1
 
 # linux-x64 target
 build --cpu=k8

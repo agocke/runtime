@@ -366,6 +366,7 @@ compare_filesize() {
     tmpdir=$(mktemp -d)
     cp "$cmake_bin" "$tmpdir/cmake"
     cp "$bazel_bin" "$tmpdir/bazel"
+    chmod +w "$tmpdir/cmake" "$tmpdir/bazel"
     strip --strip-debug --strip-unneeded "$tmpdir/cmake" 2>/dev/null || true
     strip --strip-debug --strip-unneeded "$tmpdir/bazel" 2>/dev/null || true
 

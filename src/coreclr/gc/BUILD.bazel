@@ -61,6 +61,9 @@ _GC_STANDALONE_DEFINES = [
 _GC_COPTS = [
     "-Wno-invalid-offsetof",
     "-Wno-unused-but-set-parameter",
+    # -iquote ensures GC's own env/ headers (e.g. volatile.h) are found
+    # before coreclr/inc/ headers for #include "..." directives.
+    "-iquote", "src/coreclr/gc/env",
     "-Isrc/coreclr/gc",
     "-Isrc/coreclr/gc/env",
     "-Isrc/coreclr/gc/unix/bazel/linux-glibc-x64",
@@ -228,6 +231,7 @@ cc_library(
 cc_shared_library(
     name = "clrgc",
     shared_lib_name = "libclrgc.so",
+    user_link_flags = ["-Wl,-soname,libclrgc.so"],
     deps = [":clrgc_lib"],
     dynamic_deps = [],
     visibility = ["//visibility:public"],
@@ -255,6 +259,7 @@ cc_library(
 cc_shared_library(
     name = "clrgcexp",
     shared_lib_name = "libclrgcexp.so",
+    user_link_flags = ["-Wl,-soname,libclrgcexp.so"],
     deps = [":clrgcexp_lib"],
     dynamic_deps = [],
     visibility = ["//visibility:public"],
