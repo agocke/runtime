@@ -76,6 +76,7 @@ def csharp_library(
     resx_file = None,
     resource_name = None,
     resources = [],
+    resource_logical_names = {},
     nowarn = [],
     **kwargs
 ):
@@ -95,6 +96,10 @@ def csharp_library(
             resx_file = resx_file,
         )
         resources = resources + [ ":" + resgen_target ]
+        # Use resource_logical_names to set the manifest name directly,
+        # matching MSBuild's EmbeddedResource LogicalName metadata.
+        resource_logical_names = dict(resource_logical_names)
+        resource_logical_names[resgen_out] = _resource_name + ".resources"
 
         resx_target = "resx_" + name
         gen_resx_source(
@@ -111,6 +116,12 @@ def csharp_library(
         srcs = srcs,
         out = out,
         resources = resources,
-        nowarn = nowarn + [ "CS1701" ],
+        resource_logical_names = resource_logical_names,
+        nowarn = nowarn + [
+            "CS1701",
+            # Match Directory.Build.props global NoWarn
+            "CS8500",
+            "CS8969",
+        ],
         **kwargs
     )

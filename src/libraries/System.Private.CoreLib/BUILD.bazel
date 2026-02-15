@@ -29,7 +29,18 @@ csharp_library(
         "@paket.main//system.memory",
         "@paket.main//system.buffers",
     ],
-    nowarn = [ "CS3003" ],
+    nowarn = [
+        "CS3001",
+        "CS3003",
+        # MSBuild does not generate XML docs for generator projects
+        "CS1572",
+        "CS1574",
+        "CS1734",
+        # Nullable warnings from IntrinsicsInSystemPrivateCoreLibAnalyzer.cs (#nullable enable)
+        "CS8600",
+        "CS8602",
+        "CS8604",
+    ],
     defines = [ "MICROSOFT_INTEROP_SOURCEGENERATION", "BAZEL" ],
     visibility = ["//visibility:public"],
 )

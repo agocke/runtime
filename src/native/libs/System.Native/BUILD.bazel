@@ -35,6 +35,8 @@ cc_library(
     copts = [
         "-std=gnu99",
         "-Wno-declaration-after-statement",
+        "-Wno-unknown-pragmas",
+        "-Wno-unused-variable",
         "-Isrc/native",
         "-Isrc/native/libs/Common",
         "-Isrc/native/libs/bazel",

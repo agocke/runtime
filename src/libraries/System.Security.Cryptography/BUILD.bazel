@@ -5,6 +5,10 @@ netcoreapp_ref_assembly(
     srcs = [
         "ref/System.Security.Cryptography.cs",
     ],
+    nowarn = [
+        "SYSLIB0026",
+        "CS0809",
+    ],
     deps = [
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries/System.Formats.Asn1:ref_System.Formats.Asn1",

@@ -14,6 +14,9 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Runtime.Serialization.Formatters",
+    nowarn = [
+        "SYSLIB0050",
+    ],
     srcs = [
         "src/System.Runtime.Serialization.Formatters.TypeForwards.cs",
         "src/System/Runtime/Serialization/DeserializationEventHandler.cs",

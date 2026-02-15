@@ -9,6 +9,15 @@ load("//src/libraries:defs.bzl", "live_csharp_library", "LIVE_REFPACK_DEPS")
 load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary", "create_launcher")
 load("@rules_dotnet//dotnet/private:common.bzl", "to_rlocation_path",)
 
+# Match src/tests/Directory.Build.props NoWarn
+_TEST_NOWARN = [
+    "CS0078", "CS0162", "CS0164", "CS0168", "CS0169", "CS0219",
+    "CS0251", "CS0252", "CS0414", "CS0429", "CS0618", "CS0642",
+    "CS0649", "CS0652", "CS0659", "CS0675", "CS1691", "CS1717",
+    "CS1718", "CS3001", "CS3002", "CS3003", "CS3005", "CS3008",
+    "CS3016", "CS8981",
+]
+
 def _live_csharp_test_impl(ctx):
     result = build_binary(ctx, compile_csharp_exe)
     return result
@@ -55,7 +64,7 @@ def live_csharp_test(
         deps = deps,
         analyzers = analyzers,
         target_frameworks = [NETCOREAPP_CURRENT],
-        nowarn = nowarn + [ "CS1701" ],
+        nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
         **kwargs
     )
 
@@ -85,11 +94,7 @@ def coreclr_test(
     live_csharp_library(
         name = name + "_lib",
         deps = deps,
-        nowarn = [
-            "CS3001",
-            "CS3002",
-            "CS3003",
-        ],
+        nowarn = _TEST_NOWARN,
         tags = tags,
         visibility = ["//visibility:public"],
         compiler_options = compiler_options,

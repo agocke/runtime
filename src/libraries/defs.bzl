@@ -57,7 +57,13 @@ def netcoreapp_ref_assembly(
         "/publicsign+",
     ]
     nowarn = nowarn + [
+        # Match Directory.Build.props IsReferenceAssemblyProject NoWarn
         "CS0169",
+        "CS0649",
+        "CS8618",
+        "CS8597",
+        "CS8625",
+        "CS8617",
     ]
     base_name = name[len("ref_"):]
     csharp_library(

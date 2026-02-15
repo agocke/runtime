@@ -16,6 +16,11 @@ csharp_library(
     visibility = ["//visibility:public"],
     nullable = "enable",
     cls_compliant = False,
+    nowarn = [
+        "CS8600",
+        "CS8765",
+        "CS8767",
+    ],
 )
 
 live_csharp_library(
@@ -35,5 +40,10 @@ live_csharp_library(
         "CS3001",
         "CS3002",
         "CS3003",
+        # XML doc warnings from AssertExtensions.cs
+        "CS0419",
+        "CS1572",
+        "CS1574",
+        "CS1710",
     ],
 )

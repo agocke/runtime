@@ -39,7 +39,13 @@ csharp_library(
         "@paket.main//system.collections.immutable",
         "@paket.main//system.memory",
     ],
-    nowarn = [ "CS3003" ],
+    nowarn = [
+        "CS3003",
+        # MSBuild does not generate XML docs for generator projects
+        "CS1572",
+        "CS1574",
+        "CS1734",
+    ],
     cls_compliant = False,
     defines = [ "MICROSOFT_INTEROP_SOURCEGENERATION", "BAZEL" ],
     visibility = ["//visibility:public"],
@@ -78,7 +84,11 @@ csharp_library(
         "@paket.main//system.memory",
     ],
     resx_file = "gen/Common/Resources/Strings.resx",
-    nowarn = [ "CS3003" ],
+    nowarn = [
+        "CS3003",
+        # MSBuild does not generate XML docs for generator projects
+        "CS1574",
+    ],
     visibility = ["//visibility:public"],
 )
 
