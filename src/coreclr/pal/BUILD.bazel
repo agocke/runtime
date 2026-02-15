@@ -35,6 +35,14 @@ cc_library(
     includes = ["prebuilt/inc"],
 )
 
+# Just the inc/rt/ headers (sal.h etc.) without inc/ (which has
+# unixasmmacros.inc that conflicts with NativeAOT's versions).
+cc_library(
+    name = "pal_rt_inc",
+    hdrs = glob(["inc/rt/*.h"]),
+    includes = ["inc/rt"],
+)
+
 cc_library(
     name = "pal_safecrt",
     hdrs = glob(["src/safecrt/*.h"]),

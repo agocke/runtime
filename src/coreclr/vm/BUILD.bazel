@@ -6,6 +6,11 @@ load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
+exports_files([
+    "gcinfodecoder.cpp",
+    "yieldprocessornormalizedshared.cpp",
+])
+
 cc_library(
     name = "vm_headers",
     hdrs = glob(

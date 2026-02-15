@@ -1,5 +1,10 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
+exports_files(
+    ["xoshiro128pp.c"],
+    visibility = ["//src/coreclr:__subpackages__"],
+)
+
 cc_library(
     name = "minipal",
     srcs = [

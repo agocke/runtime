@@ -87,3 +87,19 @@ cc_library(
         "//src/native/minipal",
     ],
 )
+
+# Filegroup of coreclr/inc headers for targets that need the files available
+# in the sandbox but do NOT want -Isrc/coreclr/inc on the include path
+# (e.g., NativeAOT, which has its own shadowing headers in Runtime/inc/).
+filegroup(
+    name = "coreclr_inc_files",
+    srcs = glob(
+        [
+            "*.h",
+            "*.inl",
+            "*.def",
+            "clr/**/*.h",
+        ],
+        allow_empty = True,
+    ),
+)

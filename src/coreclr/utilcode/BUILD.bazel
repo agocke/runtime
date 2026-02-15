@@ -7,6 +7,8 @@ load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
+exports_files(["yieldprocessornormalized.cpp"])
+
 _UTILCODE_COMMON_SOURCES = [
     "clrhost_nodependencies.cpp",
     "ccomprc.cpp",
