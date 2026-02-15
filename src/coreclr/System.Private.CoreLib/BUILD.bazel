@@ -113,6 +113,7 @@ common_imports = [
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.MkdTemp.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.MksTemps.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.MountPoints.cs",
+    "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetLowResolutionTimestamp.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Open.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.OpenFlags.cs",
     "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.PathConf.cs",
@@ -152,6 +153,8 @@ common_imports = [
 
 linux_srcs = [
     "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcFsStat.TryReadStatusFile.cs",
+    "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcMountInfo.cs",
+    "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcMountInfo.TryParseMountInfoLine.cs",
 ]
 
 macos_srcs = [
@@ -256,7 +259,10 @@ csharp_library(
         "src/System/Reflection/TypeNameResolver.CoreCLR.cs",
         "src/System/Reflection/Metadata/RuntimeTypeMetadataUpdateHandler.cs",
         "src/System/Runtime/CompilerServices/CastHelpers.cs",
+        "src/System/Runtime/CompilerServices/AsyncHelpers.CoreCLR.cs",
+        "src/System/Runtime/CompilerServices/InitHelpers.cs",
         "src/System/Runtime/CompilerServices/RuntimeHelpers.CoreCLR.cs",
+        "src/System/Runtime/CompilerServices/StaticsHelpers.cs",
         "src/System/Runtime/ControlledExecution.CoreCLR.cs",
         "src/System/Runtime/DependentHandle.cs",
 
@@ -298,6 +304,7 @@ csharp_library(
         "src/System/RuntimeType.CreateUninitializedCache.CoreCLR.cs",
         "src/System/RuntimeType.GenericCache.cs",
         "src/System/Runtime/InteropServices/ComWrappers.CoreCLR.cs",
+        "src/System/Runtime/InteropServices/TrackerObjectManager.CoreCLR.cs",
         "src/Internal/Runtime/InteropServices/ComActivator.PlatformNotSupported.cs",
         "src/Internal/Runtime/InteropServices/InMemoryAssemblyLoader.PlatformNotSupported.cs",
         "src/Interop/Unix/Interop.Libraries.cs",
@@ -323,10 +330,10 @@ csharp_library(
         "@platforms//os:macos": macos_srcs,
     }),
     resx_file = "//src/libraries/System.Private.CoreLib:src/Resources/Strings.resx",
-    assembly_version = "9.0.0.0",
+    assembly_version = "10.0.0.0",
     nullable = "enable",
     allow_unsafe_blocks = True,
-    target_frameworks = [ "net9.0" ],
+    target_frameworks = [ "net10.0" ],
     disable_implicit_framework_refs = True,
     cls_compliant = False,
     compiler_options = [

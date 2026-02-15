@@ -3,7 +3,7 @@ load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
 netcoreapp_ref_assembly(
     name = "ref_System.Security.Permissions",
     srcs = [
-        "System.Security.Permissions.ForwardedTypes.cs",
+        "bazel/System.Security.Permissions.ForwardedTypes.cs",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
@@ -13,7 +13,7 @@ netcoreapp_ref_assembly(
 netcoreapp_ref_assembly(
     name = "ref_System.Threading.AccessControl",
     srcs = [
-        "System.Threading.AccessControl.ForwardedTypes.cs",
+        "bazel/System.Threading.AccessControl.ForwardedTypes.cs",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",

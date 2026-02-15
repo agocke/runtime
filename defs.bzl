@@ -1,9 +1,9 @@
 load("@rules_dotnet//dotnet:defs.bzl", _base_csharp_library="csharp_library")
 
 # The TFM that we're building
-NETCOREAPP_CURRENT = "net9.0"
+NETCOREAPP_CURRENT = "net10.0"
 # The TFM used by our LKG SDK
-NETCOREAPP_TOOL_CURRENT = "net9.0"
+NETCOREAPP_TOOL_CURRENT = "net10.0"
 
 def from_coreclr_artifacts(file):
     return select({

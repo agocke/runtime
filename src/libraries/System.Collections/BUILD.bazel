@@ -18,13 +18,11 @@ netcoreapp_ref_assembly(
 netcoreapp_impl_assembly(
     name = "impl_System.Collections",
     srcs = [
-        "src/System/Collections/BitArray.cs",
         "src/System/Collections/ThrowHelper.cs",
         "src/System/Collections/Generic/LinkedList.cs",
         "src/System/Collections/Generic/OrderedDictionary.cs",
         "src/System/Collections/Generic/PriorityQueue.cs",
         "src/System/Collections/Generic/PriorityQueueDebugView.cs",
-        "src/System/Collections/Generic/ReadOnlySet.cs",
         "src/System/Collections/Generic/SortedDictionary.cs",
         "src/System/Collections/Generic/SortedList.cs",
         "src/System/Collections/Generic/SortedSet.cs",

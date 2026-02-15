@@ -18,8 +18,8 @@ copy_to_directory(
             "@platforms//os:linux": glob([
                 "artifacts/bin/coreclr/linux.x64.Debug/*.so",
                 "artifacts/bin/coreclr/linux.x64.Debug/*.dbg",
-                "artifacts/bin/native/net9.0-linux-Debug-x64/*.so",
-                "artifacts/bin/native/net9.0-linux-Debug-x64/*.dbg",
+                "artifacts/bin/native/net10.0-linux-Debug-x64/*.so",
+                "artifacts/bin/native/net10.0-linux-Debug-x64/*.dbg",
             ], allow_empty = True),
             "@platforms//os:macos": glob(["artifacts/bin/coreclr/osx.arm64.Debug/*.dylib"], allow_empty = True),
         })
