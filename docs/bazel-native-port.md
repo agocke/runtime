@@ -4,6 +4,29 @@
 
 Add a Bazel build alongside the existing CMake build for all native C/C++ code in dotnet/runtime. The goal is to eventually support all platforms CMake currently compiles for. The Bazel build must produce the same output binaries as CMake.
 
+## Verifying Bazel ↔ CMake Equivalence
+
+`compare-bazel-cmake.sh` automates binary comparison between Bazel and CMake outputs. It compares all 10 native binaries on:
+
+- **Exported symbols** (`nm -D`, stripping version tags for fair comparison)
+- **Dynamic dependencies** (`NEEDED` entries)
+- **SONAME**
+- **ELF section layout** (filtering strip-related sections like `.gnu_debuglink`)
+- **Stripped file size** (strips both to temp files for fair comparison)
+
+```bash
+# Prerequisites: build both systems first
+./build.sh clr+libs+host                              # CMake
+bazel --nohome_rc build //:runtime_native              # Bazel
+
+# Run comparison
+./compare-bazel-cmake.sh                               # default (debug)
+./compare-bazel-cmake.sh --config release              # release mode
+./compare-bazel-cmake.sh --verbose                     # show diffs
+./compare-bazel-cmake.sh --section-tolerance 10        # allow 10% size variance
+./compare-bazel-cmake.sh --build                       # build both first, then compare
+```
+
 ## Overall Status
 
 All native C/C++ components needed for a working .NET runtime on linux-x64 are now building with Bazel: CoreCLR (`libcoreclr.so` with statically-linked JIT), corehost (`dotnet`, `libhostfxr.so`, `libhostpolicy.so`), and all 6 native interop libraries. A hybrid build script (`build-bazel-runtime.sh`) assembles Bazel-built native components with MSBuild-built managed C# libraries into a functional `dotnet` runtime layout. Total: 1,020 Bazel actions, ~77s clean build for all native targets.
