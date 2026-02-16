@@ -1,17 +1,61 @@
-# Plan: Port All Native C/C++ Code to Bazel
+# Bazel Build for dotnet/runtime
 
-## Problem Statement
+## Goal
 
-Add a Bazel build alongside the existing CMake build for all native C/C++ code in dotnet/runtime. The goal is to eventually support all platforms CMake currently compiles for. The Bazel build must produce the same output binaries as CMake.
+Build all artifacts in dotnet/runtime with Bazel — native C/C++ components,
+managed C# libraries, and the assembled runtime layout — eventually replacing
+the CMake + MSBuild build pipeline. The Bazel build must produce equivalent
+output binaries and support all platforms CMake/MSBuild currently targets.
 
-## Alignment Goal
+## Current Status
 
-The Bazel build must achieve **compilation parity** with the CMake+MSBuild build:
-every compilation unit should receive the same input files and equivalent command-line
-options (defines, include paths, warnings, optimization level, language standard, etc.).
-Differences in compiler invocations are the root cause of binary mismatches and runtime
-failures. Use `compare-bazel-cmake.sh` for native binaries and compare source file lists
-and defines for managed assemblies (System.Private.CoreLib) to verify alignment.
+The Bazel build produces a fully functional .NET runtime on **linux-x64**.
+All native C/C++ components build with Bazel (CoreCLR, corehost, 6 native
+interop libs, NativeAOT runtime). Managed C# libraries (System.Private.CoreLib,
+~45 framework assemblies) also build with Bazel via `rules_dotnet`.
+A hybrid build script assembles everything into a standard `dotnet` runtime
+layout.
+
+### What Works
+
+- **Native C++**: libcoreclr.so (with statically-linked JIT), dotnet host,
+  hostfxr, hostpolicy, apphost, nethost, 6 native interop libraries,
+  NativeAOT runtime, standalone GC, AOT JIT interface
+- **Managed C#**: System.Private.CoreLib, ~45 framework assemblies
+  (System.Runtime, System.Collections, System.Console, System.Linq, etc.),
+  ref assemblies, source generators
+- **Build tools**: ResGen, GenerateResxSource, GenFacades, LibraryImportGenerator
+- **Tests**: corehost native tests, xUnit-based managed test infrastructure
+- **Per-component configuration**: independent debug/checked/release for
+  CoreCLR and Libraries (matching MSBuild's `-rc`/`-lc` flags)
+- **Runtime layout**: `runtime_layout` rule assembles stripped binaries into
+  standard .NET hosting directory structure
+
+### What's Next
+
+- Remaining managed libraries (~100+ assemblies not yet in Bazel)
+- Additional platforms (linux-arm64, macOS, Windows)
+- Mono runtime
+- Full test suite integration
+- Eliminate MSBuild dependency for managed builds
+
+## Per-Component Configuration
+
+CoreCLR and Libraries have independent build configurations, matching
+MSBuild's `-rc` (runtime configuration) and `-lc` (libraries configuration):
+
+| Config flags | CoreCLR | Libraries |
+|---|---|---|
+| *(default)* | Debug | Debug |
+| `--config=release` | Release | Release |
+| `--config=clr_release` | Release | Debug |
+| `--config=clr_checked` | Checked | Debug |
+| `--config=libs_release` | Debug | Release |
+| `--config=clr_checked --config=libs_release` | Checked | Release |
+
+Implementation uses modern Bazel `string_flag` build settings (`//:clr_config`,
+`//:libs_config`) with `per_file_copt` scoping C++ defines by source path.
+Clang is the default compiler (matching CMake).
 
 ## Verifying Bazel ↔ CMake Equivalence
 
@@ -26,7 +70,7 @@ and defines for managed assemblies (System.Private.CoreLib) to verify alignment.
 ```bash
 # Prerequisites: build both systems first
 ./build.sh clr+libs+host                              # CMake
-bazel --nohome_rc build //:runtime_native              # Bazel
+bazel build //:runtime_native                          # Bazel
 
 # Run comparison
 ./compare-bazel-cmake.sh                               # default (debug)
@@ -35,10 +79,6 @@ bazel --nohome_rc build //:runtime_native              # Bazel
 ./compare-bazel-cmake.sh --section-tolerance 10        # allow 10% size variance
 ./compare-bazel-cmake.sh --build                       # build both first, then compare
 ```
-
-## Overall Status
-
-All native C/C++ components needed for a working .NET runtime on linux-x64 are now building with Bazel: CoreCLR (`libcoreclr.so` with statically-linked JIT), corehost (`dotnet`, `libhostfxr.so`, `libhostpolicy.so`), and all 6 native interop libraries. A hybrid build script (`build-bazel-runtime.sh`) assembles Bazel-built native components with MSBuild-built managed C# libraries into a functional `dotnet` runtime layout. Total: 1,020 Bazel actions, ~77s clean build for all native targets.
 
 ## Platform Support Status
 
@@ -314,21 +354,45 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 - [ ] `src/coreclr/ilasm/BUILD.bazel`
 - [ ] `src/coreclr/ildasm/BUILD.bazel`
 
-### 4.14 NativeAOT
-- [ ] `src/coreclr/nativeaot/BUILD.bazel`
-  - [ ] `src/coreclr/nativeaot/Runtime/BUILD.bazel`
-  - [ ] `src/coreclr/nativeaot/Bootstrap/BUILD.bazel`
+### 4.14 NativeAOT — ✅ DONE (linux-x64)
+- [x] `src/coreclr/nativeaot/BUILD.bazel` (451 lines)
+  - [x] NativeAOT runtime: nativeaot_runtime_wks, nativeaot_runtime_svr
+  - [x] Standalone GC: standalonegc_disabled, standalonegc_enabled
+  - [x] VxSort: nativeaot_vxsort_enabled, nativeaot_vxsort_disabled
+  - [x] Bootstrapper, bootstrapperdll, stdc_compat, eventpipe_disabled
+  - [x] Per-file copt strips debug defines to avoid REGDISPLAY conflicts
 
-### 4.15 Tools
-- [ ] `src/coreclr/tools/BUILD.bazel`
-  - [ ] `src/coreclr/tools/aot/jitinterface/BUILD.bazel`
-  - [ ] `src/coreclr/tools/superpmi/BUILD.bazel` (5 sub-components)
+### 4.15 Tools — 🔨 Partial
+- [x] `src/coreclr/tools/aot/jitinterface/BUILD.bazel` — AOT JIT interface shared library
+- [ ] `src/coreclr/tools/superpmi/BUILD.bazel` (5 sub-components)
 
 ---
 
-## 5. Mono Runtime (`src/mono/`)
+## 5. Managed Libraries (`src/libraries/`) — 🔨 In Progress
 
-The Mono runtime engine. 13 CMakeLists.txt files.
+Managed C# framework assemblies built with `rules_dotnet`. Currently ~45
+assemblies build with Bazel; the full framework has ~150+.
+
+### 5.1 System.Private.CoreLib — ✅ DONE
+- [x] `src/coreclr/System.Private.CoreLib/BUILD.bazel`
+  - [x] `impl_System.Private.CoreLib` — full CoreLib with NativeRuntimeEventSource generator
+  - [x] Debug/release feature alignment with C++ side via `//:clr_config` select()
+  - [x] `src/libraries/System.Private.CoreLib/src/files.bzl` — source file lists
+
+### 5.2 Framework ref + impl assemblies — 🔨 In Progress
+- [x] `src/libraries/BUILD.bazel` — ~45 ref/impl assemblies, `impl_netcoreapp` aggregate
+- [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
+- [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration
+- [ ] Remaining ~100+ managed framework assemblies
+
+### 5.3 Build Tools — ✅ DONE
+- [x] `src/tools/GenerateResxSource` — resource source generator
+- [x] `src/tools/ResGen` — resource compiler
+- [x] `src/tools/GenFacades` — type-forward facade generator
+
+---
+
+## 6. Mono Runtime (`src/mono/`)
 
 - [ ] `src/mono/mono/BUILD.bazel`
   - [ ] Core Mono runtime (mini, metadata, utils, eglib, sgen)
@@ -337,27 +401,37 @@ The Mono runtime engine. 13 CMakeLists.txt files.
 
 ---
 
-## 6. Bazel Infrastructure — 🔨 linux-x64 done
+## 7. Bazel Infrastructure — 🔨 linux-x64 done
 
-- [x] `MODULE.bazel` — Bzlmod workspace, depends on rules_cc@0.2.14
-- [x] `.bazelrc` — Compiler flags matching CMake for linux-x64
-- [x] `BUILD.bazel` (root) — Root package file
+- [x] `MODULE.bazel` — Bzlmod workspace, depends on rules_cc@0.2.14, rules_dotnet, bazel_skylib@1.8.2
+- [x] `.bazelrc` — Compiler flags matching CMake for linux-x64, per-component config system
+- [x] `BUILD.bazel` (root) — Root package, string_flag build settings, config_settings, runtime layout
+- [x] `defs.bzl` — Shared macros (csharp_library wrapper, gen_resx_source, resgen)
+- [x] `src/libraries/defs.bzl` — Library macros (netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair)
+- [x] `src/tests/defs.bzl` — Test infrastructure (live_csharp_library, test runner)
 - [x] Compiler flag parity verified against CMake (`-g`, `-O3`, `-std=gnu11`/`-std=c++17`, all warning flags, all defines)
+- [x] Clang is the default compiler (matching CMake), with GCC available via `--repo_env=CC=gcc`
+- [x] Per-component configuration: `//:clr_config` (debug/checked/release) + `//:libs_config` (debug/release)
 - [ ] `.bazelrc` platform configs for other OS/arch targets (e.g., `build:linux-arm64`, `build:macos-x64`)
 - [ ] Bazel toolchain definitions for cross-compilation
 - [ ] Bazel `select()` rules for platform-conditional source files and defines
 
 ---
 
-## 7. Hybrid Runtime Build (`build-bazel-runtime.sh`) — ✅ DONE (linux-x64)
+## 8. Hybrid Runtime Build (`build-bazel-runtime.sh`) — ✅ DONE (linux-x64)
 
 Assembles a working .NET runtime from Bazel-built native components + MSBuild-built managed libraries.
 
 ### Usage
 
 ```bash
-# Full build (managed + native) — first run takes 15-30 min for MSBuild, subsequent runs use cached artifacts
+# Full build (managed + native) — first run takes 15-30 min for MSBuild
 ./build-bazel-runtime.sh
+
+# Per-component configuration (mirrors build.sh -rc / -lc flags)
+./build-bazel-runtime.sh -rc checked -lc release      # Checked CLR + release libs
+./build-bazel-runtime.sh -rc release                   # Release CLR, debug libs
+./build-bazel-runtime.sh -c release                    # Release everything
 
 # Native-only rebuild (fast iteration on C++ changes, ~77s clean)
 ./build-bazel-runtime.sh --native-only
@@ -365,14 +439,24 @@ Assembles a working .NET runtime from Bazel-built native components + MSBuild-bu
 # Managed-only rebuild
 ./build-bazel-runtime.sh --managed-only
 
-# Force managed rebuild even if artifacts exist
-./build-bazel-runtime.sh --rebuild-managed
-
-# Debug configuration
-./build-bazel-runtime.sh --config debug
-
 # Run smoke test after build
 ./build-bazel-runtime.sh --smoke-test
+```
+
+Or use Bazel directly:
+
+```bash
+# Build everything, debug (default)
+bazel build //...
+
+# Per-component configuration
+bazel build --config=clr_checked --config=libs_release //...
+
+# Build just native runtime layout
+bazel build //:runtime_native
+
+# Build a specific library
+bazel build //src/native/libs/System.Native:System.Native
 ```
 
 ### Output Layout
@@ -407,12 +491,14 @@ DOTNET_ROOT=artifacts/bazel-dotnet artifacts/bazel-dotnet/dotnet <app.dll>
 
 - **No CMake files are modified or deleted** — Bazel files are purely additive
 - Config headers (`pal_config.h`, `minipalconfig.h`, `config.h`, `pal_crypto_config.h`) live in platform-specific subdirectories under `bazel/` (e.g., `bazel/linux-glibc-x64/`). The directory name encodes the relevant dimensions (OS, libc, arch). Multi-platform support will add sibling directories and `select()` rules to pick the right one.
-- CoreCLR is the largest component (~86 CMakeLists.txt) and will require the most effort
 - Platform-specific libraries (Browser, Android, Apple) each need their own platform toolchains before they can be ported
+- Clang is the default compiler (matching CMake). Override with `--repo_env=CC=gcc` if needed.
 - Build commands (linux-x64):
   - **Full runtime (hybrid)**: `./build-bazel-runtime.sh` (or `--native-only` for fast C++ iteration)
-  - Native libs: `bazel --nohome_rc build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`
-  - Corehost: `bazel --nohome_rc build //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
-  - CoreCLR foundation: `bazel --nohome_rc build //src/coreclr/pal:coreclrpal //src/coreclr/utilcode //src/coreclr/utilcode:utilcodestaticnohost //src/coreclr/gcinfo //src/coreclr/unwinder:unwinder_wks //src/coreclr/interop //src/coreclr/nativeresources:nativeresourcestring //src/coreclr/pal:tracepointprovider`
-  - CoreCLR GC: `bazel --nohome_rc build //src/coreclr/gc:clrgc //src/coreclr/gc:clrgcexp`
-  - **libcoreclr.so**: `bazel --nohome_rc build //src/coreclr/dlls/mscoree/coreclr:libcoreclr.so`
+  - **Everything**: `bazel build //...`
+  - Native libs: `bazel build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`
+  - Corehost: `bazel build //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
+  - **libcoreclr.so**: `bazel build //src/coreclr/dlls/mscoree/coreclr:libcoreclr.so`
+  - **Managed libs**: `bazel build //src/libraries:impl_netcoreapp`
+  - **Runtime layout**: `bazel build //:runtime_native`
+  - **Core_Root (test runtime)**: `bazel build //:Core_Root`
