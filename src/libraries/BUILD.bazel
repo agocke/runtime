@@ -41,6 +41,7 @@ filegroup(
         "//src/libraries/System.Runtime.Intrinsics:impl_System.Runtime.Intrinsics",
         "//src/libraries/System.Threading:impl_System.Threading",
         "//src/libraries/System.Runtime.InteropServices:impl_System.Runtime.InteropServices",
+        "//src/libraries/System.Runtime.Numerics:impl_System.Runtime.Numerics",
     ],
     visibility = ["//visibility:public"],
 )

@@ -139,3 +139,49 @@ import_library(
     ],
     visibility = ["//visibility:public"]
 )
+
+# ── Pre-built test infrastructure libraries ──────────────────────────
+# These are built by MSBuild and imported for use in Bazel-based tests.
+import_library(
+    name = "TestUtilities",
+    library_name = "TestUtilities",
+    libs = [
+        "artifacts/bin/TestUtilities/Debug/net8.0/TestUtilities.dll",
+    ],
+    refs = [
+        "artifacts/bin/TestUtilities/Debug/net8.0/TestUtilities.dll",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+import_library(
+    name = "RemoteExecutor",
+    library_name = "Microsoft.DotNet.RemoteExecutor",
+    libs = [
+        "artifacts/bin/System.Runtime.Numerics.Tests/Debug/net10.0/Microsoft.DotNet.RemoteExecutor.dll",
+    ],
+    refs = [
+        "artifacts/bin/System.Runtime.Numerics.Tests/Debug/net10.0/Microsoft.DotNet.RemoteExecutor.dll",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# ── Additional framework ref assemblies for test projects ────────────
+# These supplement LIVE_REFPACK_DEPS for tests needing broader framework surface.
+import_library(
+    name = "ref_System.Text.RegularExpressions",
+    library_name = "System.Text.RegularExpressions",
+    refs = [
+        "artifacts/bin/microsoft.netcore.app.ref/ref/net10.0/System.Text.RegularExpressions.dll",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+import_library(
+    name = "ref_System.Net.Mail",
+    library_name = "System.Net.Mail",
+    refs = [
+        "artifacts/bin/microsoft.netcore.app.ref/ref/net10.0/System.Net.Mail.dll",
+    ],
+    visibility = ["//visibility:public"],
+)

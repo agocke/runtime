@@ -68,6 +68,27 @@ def live_csharp_test(
         **kwargs
     )
 
+def library_test(
+    name,
+    deps = [],
+    analyzers = [],
+    nowarn = [],
+    **kwargs
+):
+    """Test macro for library tests that uses a reflection-based runner instead of XUnitWrapperGenerator."""
+    deps = deps + LIVE_REFPACK_DEPS
+    _live_csharp_test(
+        name = name,
+        deps = deps,
+        analyzers = analyzers,
+        srcs = kwargs.pop("srcs", []) + [
+            "//src/libraries/Common/tests:LibraryTestRunner.cs",
+        ],
+        target_frameworks = [NETCOREAPP_CURRENT],
+        nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
+        **kwargs
+    )
+
 def coreclr_test(
     name,
     deps = [],
