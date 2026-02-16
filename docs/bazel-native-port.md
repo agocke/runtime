@@ -33,7 +33,12 @@ layout.
 
 ### What's Next
 
-- Remaining managed libraries (~100+ assemblies not yet in Bazel)
+- Remaining managed libraries (~162 assemblies not yet in Bazel, out of ~207 total)
+- CoreCLR diagnostic tooling: DAC (mscordac), DBI (mscordbi), createdump, SOS
+- CoreCLR tools: SuperPMI, ilasm, ildasm
+- ILC (NativeAOT ahead-of-time compiler) and crossgen2 (ReadyToRun compiler)
+- ILLink (IL trimmer/linker)
+- Installer/packaging (NuGet packs, runtime packs, targeting packs)
 - Additional platforms (linux-arm64, macOS, Windows)
 - Mono runtime
 - Full test suite integration
@@ -333,11 +338,15 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 - [x] `src/coreclr/gcdump/BUILD.bazel` — `gcdump_headers` (headers done, compiled lib pending)
 - [x] `src/coreclr/interpreter/BUILD.bazel` — `interpreter_headers` (headers done, compiled lib pending)
 
-### 4.11 Debug support — ✅ DONE (linux-x64)
+### 4.11 Debug support — 🔨 Partial (linux-x64)
 - [x] `src/coreclr/debug/BUILD.bazel` — `debug_inc` (inc/ + ee/ + daccess/ + dbgutil/ + di/ headers)
 - [x] `debug-pal` cc_library (2 .cpp debug PAL sources)
 - [x] `cordbee_wks` cc_library (16 sources — debugger EE, workstation)
-  - [ ] DAC, DBI, dbgutil (diagnostic tooling — pending)
+- [ ] DAC (`mscordac`) — data access component for debugging/diagnostics
+- [ ] DBI (`mscordbi`) — debug interface library
+- [ ] dbgutil — debug utility library
+- [ ] createdump — crash dump generation tool
+- [ ] runtimeinfo — runtime info for debuggers
 
 ### 4.12 Hosts & DLLs — ✅ libcoreclr DONE (linux-x64)
 - [x] `src/coreclr/hosts/BUILD.bazel` — `hosts_inc` (inc/*.h)
@@ -366,15 +375,23 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 - [ ] End-to-end AOT compilation pipeline
 
 ### 4.15 Tools — 🔨 Partial
-- [x] `src/coreclr/tools/aot/jitinterface/BUILD.bazel` — AOT JIT interface shared library
-- [ ] `src/coreclr/tools/superpmi/BUILD.bazel` (5 sub-components)
+- [x] `src/coreclr/tools/aot/jitinterface/BUILD.bazel` — AOT JIT interface shared library (native C++)
+- [ ] SuperPMI — JIT method replay/diff tool (5 native C++ sub-components)
+- [ ] SOS — debugging extension (native C++)
+- [ ] crossgen2 — ReadyToRun AOT compiler (managed C#)
+- [ ] ILC — NativeAOT ahead-of-time compiler (managed C#, ~15 projects)
+- [ ] R2RDump — ReadyToRun image dumper (managed C#)
+
+### 4.16 IL Assembler / Disassembler
+- [ ] `src/coreclr/ilasm/` — IL assembler (native C++)
+- [ ] `src/coreclr/ildasm/` — IL disassembler (native C++)
 
 ---
 
 ## 5. Managed Libraries (`src/libraries/`) — 🔨 In Progress
 
-Managed C# framework assemblies built with `rules_dotnet`. Currently ~45
-assemblies build with Bazel; the full framework has ~150+.
+Managed C# framework assemblies built with `rules_dotnet`. Currently ~45 of
+~207 library directories have Bazel BUILD files (~162 remaining).
 
 ### 5.1 System.Private.CoreLib — ✅ DONE
 - [x] `src/coreclr/System.Private.CoreLib/BUILD.bazel`
@@ -386,12 +403,24 @@ assemblies build with Bazel; the full framework has ~150+.
 - [x] `src/libraries/BUILD.bazel` — ~45 ref/impl assemblies, `impl_netcoreapp` aggregate
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
 - [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration
-- [ ] Remaining ~100+ managed framework assemblies
+- [ ] Remaining ~162 managed framework assemblies
 
-### 5.3 Build Tools — ✅ DONE
+### 5.3 Build Tools — 🔨 Partial
 - [x] `src/tools/GenerateResxSource` — resource source generator
 - [x] `src/tools/ResGen` — resource compiler
 - [x] `src/tools/GenFacades` — type-forward facade generator
+- [ ] ILLink / IL trimmer (`src/tools/illink/`) — IL linker, Roslyn analyzers, tasks
+- [ ] StressLogAnalyzer (`src/tools/StressLogAnalyzer/`)
+
+### 5.4 Tests — 🔨 Partial
+- [x] `src/tests/defs.bzl` — test infrastructure, live_csharp_library, xUnit runner
+- [x] 18 test BUILD files (JIT directed tests, common infrastructure)
+- [ ] Remaining CoreCLR test suite (~thousands of tests)
+- [ ] Library unit tests
+
+### 5.5 Installer / Packaging
+- [ ] `src/installer/` — runtime packs, NuGet packaging, SDK integration
+- [ ] Targeting packs, runtime packs, host packs
 
 ---
 
