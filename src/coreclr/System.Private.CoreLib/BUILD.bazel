@@ -362,8 +362,6 @@ csharp_library(
         "FEATURE_COMWRAPPERS",
         "FEATURE_EH_FUNCLETS",
         "FEATURE_EVENTSOURCE_XPLAT",
-        "FEATURE_INTERPRETER",
-        "FEATURE_JAVAMARSHAL",
         "FEATURE_PERFTRACING",
         "PROFILING_SUPPORTED",
         "_LOGGING",
@@ -375,7 +373,11 @@ csharp_library(
         "@platforms//os:linux": [ "TARGET_LINUX", "TARGET_UNIX" ],
         "@platforms//os:macos": [ "TARGET_OSX", "TARGET_UNIX" ],
     }) + select({
-        "//:debug_mode": [ "DEBUG" ],
+        # Debug-only features and defines must match the native C++ side
+        # (--config=debug sets --define runtime_debug=1).
+        # FEATURE_JAVAMARSHAL and FEATURE_INTERPRETER change the QCall/FCall
+        # entry-point tables; a mismatch crashes the runtime at startup.
+        "//:runtime_debug": [ "DEBUG", "FEATURE_INTERPRETER", "FEATURE_JAVAMARSHAL" ],
         "//conditions:default": [],
     }),
     nowarn = nowarn,

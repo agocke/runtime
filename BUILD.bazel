@@ -22,6 +22,16 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+# Runtime debug mode: matches --config=debug (which sets --define runtime_debug=1).
+# Both C++ (via .bazelrc --copt) and C# (via select() in BUILD files) use this
+# so that coreclr and System.Private.CoreLib always agree on debug-only features
+# like FEATURE_JAVAMARSHAL and FEATURE_INTERPRETER.
+config_setting(
+    name = "runtime_debug",
+    define_values = {"runtime_debug": "1"},
+    visibility = ["//visibility:public"],
+)
+
 # ── Assembled native runtime layout ──────────────────────────────────
 runtime_layout(
     name = "runtime_native",
