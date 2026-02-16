@@ -354,13 +354,16 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 - [ ] `src/coreclr/ilasm/BUILD.bazel`
 - [ ] `src/coreclr/ildasm/BUILD.bazel`
 
-### 4.14 NativeAOT — ✅ DONE (linux-x64)
-- [x] `src/coreclr/nativeaot/BUILD.bazel` (451 lines)
-  - [x] NativeAOT runtime: nativeaot_runtime_wks, nativeaot_runtime_svr
-  - [x] Standalone GC: standalonegc_disabled, standalonegc_enabled
-  - [x] VxSort: nativeaot_vxsort_enabled, nativeaot_vxsort_disabled
-  - [x] Bootstrapper, bootstrapperdll, stdc_compat, eventpipe_disabled
+### 4.14 NativeAOT — 🔨 Native runtime only (linux-x64)
+- [x] `src/coreclr/nativeaot/BUILD.bazel` — native runtime static libraries
+  - [x] nativeaot_runtime_wks, nativeaot_runtime_svr (workstation/server GC variants)
+  - [x] standalonegc_disabled, standalonegc_enabled
+  - [x] nativeaot_vxsort_enabled, nativeaot_vxsort_disabled
+  - [x] bootstrapper, bootstrapperdll, stdc_compat, eventpipe_disabled
   - [x] Per-file copt strips debug defines to avoid REGDISPLAY conflicts
+- [ ] ILC compiler (managed C# AOT compiler, `BuildIntegration/`)
+- [ ] NativeAOT managed libraries (System.Private.CoreLib, Reflection.Execution, StackTraceMetadata, TypeLoader, Runtime.Base)
+- [ ] End-to-end AOT compilation pipeline
 
 ### 4.15 Tools — 🔨 Partial
 - [x] `src/coreclr/tools/aot/jitinterface/BUILD.bazel` — AOT JIT interface shared library
