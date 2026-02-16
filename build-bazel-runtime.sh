@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # build-bazel-runtime.sh — Build the .NET runtime using Bazel (native) + MSBuild (managed)
 #
-# Usage:
-#   ./build-bazel-runtime.sh                     # Build everything (managed + native) and assemble
-#   ./build-bazel-runtime.sh --native-only       # Only rebuild native code with Bazel
-#   ./build-bazel-runtime.sh --managed-only      # Only rebuild managed code with MSBuild
-#   ./build-bazel-runtime.sh --config release     # Use release configuration (default: debug)
-#   ./build-bazel-runtime.sh --smoke-test        # Run smoke test after build
+# Usage (mirrors build.sh conventions):
+#   ./build-bazel-runtime.sh                              # Build everything, debug
+#   ./build-bazel-runtime.sh -rc release                  # Release CLR, debug libs
+#   ./build-bazel-runtime.sh -rc checked -lc release      # Checked CLR, release libs
+#   ./build-bazel-runtime.sh --native-only                # Only rebuild native code with Bazel
+#   ./build-bazel-runtime.sh --managed-only               # Only rebuild managed code with MSBuild
+#   ./build-bazel-runtime.sh --smoke-test                 # Run smoke test after build
 
 set -euo pipefail
 
@@ -15,13 +16,16 @@ scriptroot="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ----- Defaults -----
 build_native=true
 build_managed=true
-config="debug"
+config=""
+clr_config=""
+libs_config=""
 run_smoke_test=false
 bazel_config_args=()
 
 # ----- Parse arguments -----
 while [[ $# -gt 0 ]]; do
-    case "$1" in
+    opt="${1,,}" # lowercase for case-insensitive matching
+    case "$opt" in
         --native-only)
             build_managed=false
             shift
@@ -30,8 +34,19 @@ while [[ $# -gt 0 ]]; do
             build_native=false
             shift
             ;;
-        --config)
-            config="${2,,}" # lowercase
+        # Match build.sh flags: -rc / --runtimeconfiguration
+        -rc|--runtimeconfiguration)
+            clr_config="${2,,}"
+            shift 2
+            ;;
+        # Match build.sh flags: -lc / --librariesconfiguration
+        -lc|--librariesconfiguration)
+            libs_config="${2,,}"
+            shift 2
+            ;;
+        # Match build.sh flags: -c / --configuration (sets both)
+        -c|--configuration)
+            config="${2,,}"
             shift 2
             ;;
         --smoke-test)
@@ -39,7 +54,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            head -8 "${BASH_SOURCE[0]}" | tail -7
+            head -10 "${BASH_SOURCE[0]}" | tail -9
             exit 0
             ;;
         *)
@@ -59,14 +74,43 @@ tfm="net${major_version}.${minor_version}"
 
 rid="linux-x64"
 
-if [[ "$config" == "debug" ]]; then
-    msbuild_rc="Debug"
-    msbuild_lc="Debug"
-    bazel_config_args=(-c dbg --config=debug)
+# Resolve per-component configs.
+# -c sets both; -rc / -lc override individually.
+if [[ -n "$config" ]]; then
+    clr_config="${clr_config:-$config}"
+    libs_config="${libs_config:-$config}"
+fi
+clr_config="${clr_config:-debug}"
+libs_config="${libs_config:-debug}"
+
+# Validate config values
+case "$clr_config" in
+    debug|checked|release) ;;
+    *) echo "Invalid -rc: $clr_config (must be debug, checked, or release)"; exit 1 ;;
+esac
+case "$libs_config" in
+    debug|release) ;;
+    *) echo "Invalid -lc: $libs_config (must be debug or release)"; exit 1 ;;
+esac
+
+# Map to MSBuild config names (for managed build)
+case "$clr_config" in
+    debug)   msbuild_rc="Debug" ;;
+    checked) msbuild_rc="Checked" ;;
+    release) msbuild_rc="Release" ;;
+esac
+case "$libs_config" in
+    debug)   msbuild_lc="Debug" ;;
+    release) msbuild_lc="Release" ;;
+esac
+
+# Map to Bazel --config flags
+if [[ "$clr_config" == "release" && "$libs_config" == "release" ]]; then
+    bazel_config_args=(--config=release)
 else
-    msbuild_rc="Release"
-    msbuild_lc="Release"
-    bazel_config_args=(-c opt)
+    bazel_config_args=()
+    [[ "$clr_config" != "debug" ]] && bazel_config_args+=(--config=clr_${clr_config})
+    [[ "$libs_config" != "debug" ]] && bazel_config_args+=(--config=libs_${libs_config})
 fi
 
 # ----- Output layout paths -----
@@ -271,7 +315,8 @@ RTCFG_EOF
 main() {
     log "Bazel + MSBuild hybrid runtime build"
     log "  Product version: $product_version"
-    log "  Configuration:   $config ($msbuild_rc)"
+    log "  CLR config:      $clr_config ($msbuild_rc)"
+    log "  Libs config:     $libs_config ($msbuild_lc)"
     log "  Build native:    $build_native"
     log "  Build managed:   $build_managed"
     log "  Output:          $output_dir"

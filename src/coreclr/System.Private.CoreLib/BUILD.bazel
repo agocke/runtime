@@ -373,12 +373,12 @@ csharp_library(
         "@platforms//os:linux": [ "TARGET_LINUX", "TARGET_UNIX" ],
         "@platforms//os:macos": [ "TARGET_OSX", "TARGET_UNIX" ],
     }) + select({
-        # Debug-only features and defines must match the native C++ side
-        # (--config=debug sets --define runtime_debug=1).
+        # Debug/Checked features must match the native C++ side.
         # FEATURE_JAVAMARSHAL and FEATURE_INTERPRETER change the QCall/FCall
         # entry-point tables; a mismatch crashes the runtime at startup.
-        "//:runtime_debug": [ "DEBUG", "FEATURE_INTERPRETER", "FEATURE_JAVAMARSHAL" ],
-        "//conditions:default": [],
+        # Both debug and checked configs enable these features.
+        "//:clr_release": [],
+        "//conditions:default": [ "DEBUG", "FEATURE_INTERPRETER", "FEATURE_JAVAMARSHAL" ],
     }),
     nowarn = nowarn,
     visibility = ["//visibility:public"]

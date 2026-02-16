@@ -1,21 +1,30 @@
-# Bazel configuration for dotnet/runtime native libs (linux-x64)
+# Bazel configuration for dotnet/runtime native builds (linux-x64)
 #
-# Use --compilation_mode (-c) to select optimization level:
+# Per-component configuration (matching MSBuild's -rc / -lc flags):
+#
+#   CoreCLR (clr_config):   debug (default), checked, release
+#   Libraries (libs_config): debug (default), release
+#
+# Use --config flags to select:
+#   --config=clr_checked     Checked CLR (debug asserts + release optimization)
+#   --config=clr_release     Release CLR
+#   --config=libs_release    Release libraries
+#   --config=release         Release everything (= clr_release + libs_release)
+#
+# Use --compilation_mode (-c) for optimization:
 #   -c dbg       Debug (matches CMake Debug: -O0, debug symbols)
 #   -c opt       Release (matches CMake Release: -O2, -DNDEBUG)
 #   -c fastbuild Default (fast incremental builds)
 #
-# Use --config=clang to build with Clang (matching CMake default).
-# Without --config=clang, builds use the system default (GCC).
-#
-# Runtime-specific defines are layered via --config:
-#   --config=debug   adds DEBUG, _DEBUG, interpreter, etc.
-#   (default)        uses release defines (NDEBUG, DISABLE_CONTRACTS)
-#
 # Examples:
-#   bazel build --config=clang -c dbg --config=debug //target  # CMake Debug equivalent
-#   bazel build --config=clang //target                        # CMake Release equivalent
-#   bazel build //target                                       # GCC fastbuild + release
+#   bazel build //...                                          # debug everything
+#   bazel build --config=release //...                         # release everything
+#   bazel build --config=clr_checked --config=libs_release //... # checked CLR + release libs
+#   bazel build -c opt --config=clr_checked //...              # checked CLR + debug libs + -O2
+
+# --- Default compiler: Clang (matching CMake) ---
+# Uses clang/clang++ with lld linker. Override with --repo_env=CC=gcc if needed.
+build --config=clang
 
 # Match CMake configurecompiler.cmake settings (config-independent)
 build --conlyopt=-std=gnu11
@@ -64,7 +73,7 @@ build --cxxopt=-Wno-restrict
 build --copt=-Wno-stringop-truncation
 build --cxxopt=-Wno-class-memaccess
 
-# --- Clang compiler (--config=clang) ---
+# --- Clang compiler (config:clang) ---
 # Matches CMake default: uses clang/clang++ with lld linker.
 build:clang --repo_env=CC=clang-18
 build:clang --repo_env=CXX=clang++-18
@@ -100,47 +109,70 @@ build --linkopt=-Wl,--build-id=sha1
 # linux-x64 target
 build --cpu=k8
 
-# --- Debug defines (default) ---
-# Matches CMake Debug config.  build.sh and the CMake baseline both default
-# to Debug, so the Bazel default must match.
-# runtime_debug is the single flag that both C++ (via --copt) and C#
-# (via select() in BUILD files) key off, ensuring coreclr and
-# System.Private.CoreLib always agree on debug-only features like
-# FEATURE_JAVAMARSHAL and FEATURE_INTERPRETER.
-build --define runtime_debug=1
-build --copt=-DDEBUG
-build --copt=-D_DEBUG
-build --copt=-D_DBG
-build --copt=-DBUILDENV_DEBUG=1
-build --copt=-DDISABLE_CONTRACTS
-build --copt=-DURTBLDENV_FRIENDLY=Debug
-build --copt=-DFEATURE_INTERPRETER
-build --copt=-DFEATURE_JAVAMARSHAL
-build --copt=-mcx16
+# =====================================================================
+# Per-component configuration
+# =====================================================================
+#
+# CoreCLR and libraries have independent debug/release configurations,
+# matching MSBuild's -rc (runtime config) and -lc (libraries config).
+#
+# Mechanism: per_file_copt scopes C++ defines by source path.  The
+# //:clr_config and //:libs_config string_flag build settings control
+# which config_setting rules match in BUILD files (for select()).
+# .bazelrc --config sections bundle both the flag value and the
+# per_file_copt overrides.
+
+# --- CoreCLR debug defines (default) ---
+# Matches CMake Debug config for src/coreclr/**. build.sh defaults to
+# Debug, so the Bazel default must match.
+build --//:clr_config=debug
+build --per_file_copt=src/coreclr/.*@-DDEBUG,-D_DEBUG,-D_DBG,-DBUILDENV_DEBUG=1,-DDISABLE_CONTRACTS,-DURTBLDENV_FRIENDLY=Debug,-DFEATURE_INTERPRETER,-DFEATURE_JAVAMARSHAL,-mcx16
 
 # NativeAOT has its own struct definitions (e.g. REGDISPLAY) that conflict
 # with coreclr's _DEBUG-conditional fields.  Strip debug defines for those
 # sources so the shared code (gcinfodecoder etc.) compiles correctly.
 build --per_file_copt=src/coreclr/nativeaot/.*@-UDEBUG,-U_DEBUG,-U_DBG,-UBUILDENV_DEBUG,-UFEATURE_INTERPRETER,-UFEATURE_JAVAMARSHAL
 
-# VM- and debug-specific debug defines
+# VM- and debug-specific debug defines (only for vm/debug/runtime paths)
 build --per_file_copt=src/coreclr/vm/.*,src/coreclr/debug/.*,src/coreclr/runtime/.*@-DFEATURE_CACHED_INTERFACE_DISPATCH
 # WRITE_BARRIER_CHECK is added via select() on the VM cee_wks_core target
 # (not per_file_copt) because GC sources compiled by VM have gc/ paths that
 # would also match standalone GC targets which must NOT have this define.
 
-# --- Release defines (--config=release) ---
-# Matches CMake Release/Retail config defines.
-# Undo the debug defaults above, then set release values.
-build:release --define runtime_debug=0
-build:release --copt=-UDEBUG
-build:release --copt=-U_DEBUG
-build:release --copt=-U_DBG
-build:release --copt=-UBUILDENV_DEBUG
-build:release --copt=-UDISABLE_CONTRACTS
-build:release --copt=-UURTBLDENV_FRIENDLY
-build:release --copt=-UFEATURE_INTERPRETER
-build:release --copt=-UFEATURE_JAVAMARSHAL
-build:release --copt=-DNDEBUG
-build:release --copt=-DDISABLE_CONTRACTS
-build:release --copt=-DURTBLDENV_FRIENDLY=Retail
+# --- Libraries native debug defines (default) ---
+# Lighter set for src/native/libs/** and src/native/corehost/**.
+build --//:libs_config=debug
+build --per_file_copt=src/native/libs/.*,src/native/corehost/.*@-DDEBUG,-D_DEBUG
+
+# =====================================================================
+# --config=clr_checked: Checked CoreCLR
+# =====================================================================
+# Like Debug but with release optimization (-O2).  Assertions and debug
+# defines remain, but BUILDENV_DEBUG→BUILDENV_CHECKED.
+build:clr_checked --//:clr_config=checked
+# Undo BUILDENV_DEBUG, set BUILDENV_CHECKED; undo URTBLDENV_FRIENDLY=Debug, set =Checked.
+# Add -O2 to override any default optimization level for coreclr sources.
+build:clr_checked --per_file_copt=src/coreclr/.*@-UBUILDENV_DEBUG,-DBUILDENV_CHECKED=1,-UURTBLDENV_FRIENDLY=Debug,-DURTBLDENV_FRIENDLY=Checked,-O2
+
+# =====================================================================
+# --config=clr_release: Release CoreCLR
+# =====================================================================
+# Undo all debug defines, set release defines.
+build:clr_release --//:clr_config=release
+# Undo debug defines, then set release values.
+build:clr_release --per_file_copt=src/coreclr/.*@-UDEBUG,-U_DEBUG,-U_DBG,-UBUILDENV_DEBUG,-UDISABLE_CONTRACTS,-UURTBLDENV_FRIENDLY=Debug,-UFEATURE_INTERPRETER,-UFEATURE_JAVAMARSHAL,-DNDEBUG,-DDISABLE_CONTRACTS,-DURTBLDENV_FRIENDLY=Retail
+# Also undo the VM/debug-specific debug defines.
+build:clr_release --per_file_copt=src/coreclr/vm/.*,src/coreclr/debug/.*,src/coreclr/runtime/.*@-UFEATURE_CACHED_INTERFACE_DISPATCH
+
+# =====================================================================
+# --config=libs_release: Release libraries
+# =====================================================================
+build:libs_release --//:libs_config=release
+# Undo debug defines, set release values for native libs and corehost.
+build:libs_release --per_file_copt=src/native/libs/.*,src/native/corehost/.*@-UDEBUG,-U_DEBUG,-DNDEBUG
+
+# =====================================================================
+# --config=release: Release everything (convenience)
+# =====================================================================
+build:release --config=clr_release
+build:release --config=libs_release
