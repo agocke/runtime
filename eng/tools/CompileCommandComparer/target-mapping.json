@@ -1,0 +1,66 @@
+{
+  "native": [
+    {
+      "name": "coreclr_vm_core",
+      "bazel_label": "//src/coreclr/vm:cee_wks_core",
+      "cmake_output_pattern": "cee_wks_core"
+    },
+    {
+      "name": "coreclr_vm",
+      "bazel_label": "//src/coreclr/vm:cee_wks",
+      "cmake_output_pattern": "^cee_wks$"
+    },
+    {
+      "name": "clrjit",
+      "bazel_label": "//src/coreclr/jit:clrjit_static",
+      "cmake_output_pattern": "clrjit_static"
+    },
+    {
+      "name": "coreclrpal",
+      "bazel_label": "//src/coreclr/pal:coreclrpal",
+      "cmake_output_pattern": "coreclrpal"
+    },
+    {
+      "name": "hostfxr",
+      "bazel_label": "//src/native/corehost:hostfxr",
+      "cmake_output_pattern": "^hostfxr$"
+    },
+    {
+      "name": "hostpolicy",
+      "bazel_label": "//src/native/corehost:hostpolicy",
+      "cmake_output_pattern": "^hostpolicy$"
+    },
+    {
+      "name": "System.Native",
+      "bazel_label": "//src/native/libs/System.Native:System.Native",
+      "cmake_output_pattern": "^System\\.Native$"
+    },
+    {
+      "name": "System.IO.Compression.Native",
+      "bazel_label": "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native",
+      "cmake_output_pattern": "^System\\.IO\\.Compression\\.Native$"
+    },
+    {
+      "name": "System.Globalization.Native",
+      "bazel_label": "//src/native/libs/System.Globalization.Native:System.Globalization.Native",
+      "cmake_output_pattern": "^System\\.Globalization\\.Native$"
+    },
+    {
+      "name": "System.Security.Cryptography.Native.OpenSsl",
+      "bazel_label": "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl",
+      "cmake_output_pattern": "^System\\.Security\\.Cryptography\\.Native\\.OpenSsl$"
+    },
+    {
+      "name": "System.Net.Security.Native",
+      "bazel_label": "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
+      "cmake_output_pattern": "^System\\.Net\\.Security\\.Native$"
+    }
+  ],
+  "managed": [
+    {
+      "name": "System.Private.CoreLib",
+      "bazel_label": "//src/coreclr/System.Private.CoreLib:System.Private.CoreLib",
+      "msbuild_project": "src/coreclr/System.Private.CoreLib/System.Private.CoreLib.csproj"
+    }
+  ]
+}

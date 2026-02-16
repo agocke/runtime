@@ -84,6 +84,32 @@ bazel build //:runtime_native                          # Bazel
 ./compare-bazel-cmake.sh --build                       # build both first, then compare
 ```
 
+### Compile Command Comparison
+
+`compare-compile-commands.sh` is a white-box complement to the binary comparison above. It verifies that each Bazel compilation action uses the same **source files**, **preprocessor defines**, **include paths**, and **compiler flags** as the corresponding CMake (C/C++) or MSBuild (C#) compilation.
+
+The tool works by:
+1. Parsing CMake's `compile_commands.json` and MSBuild `.binlog` for baseline compilations
+2. Parsing `bazel aquery --output=jsonproto` for Bazel compilations
+3. Matching targets via a JSON mapping config (`eng/tools/CompileCommandComparer/target-mapping.json`)
+4. Normalizing paths and diffing per-target
+
+```bash
+# Prerequisites: build both systems first
+./build.sh clr+libs+host                              # CMake/MSBuild
+bazel build //:runtime_native                          # Bazel
+
+# Run comparison (auto-generates Bazel aquery output)
+./compare-compile-commands.sh                          # default (debug)
+./compare-compile-commands.sh --config release         # release mode
+./compare-compile-commands.sh --json                   # machine-readable output
+./compare-compile-commands.sh --native-only            # only C/C++ targets
+./compare-compile-commands.sh --managed-only           # only C# targets
+./compare-compile-commands.sh --build                  # build both first, then compare
+```
+
+To add new targets to the comparison, edit `eng/tools/CompileCommandComparer/target-mapping.json`.
+
 ## Platform Support Status
 
 CMake currently supports all of these OS × architecture combinations. Bazel support status is tracked below.
