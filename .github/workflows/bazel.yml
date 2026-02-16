@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -qq -y clang-18 lld
+          sudo apt-get install -qq -y clang-18 lld libkrb5-dev
 
       - name: Mount Bazel cache
         uses: actions/cache@v4
