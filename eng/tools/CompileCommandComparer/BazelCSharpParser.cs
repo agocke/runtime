@@ -18,6 +18,15 @@ static class BazelCSharpParser
         "DotnetCompile",
     };
 
+    static string GetId(JsonElement elem, string propName = "id")
+    {
+        if (!elem.TryGetProperty(propName, out var prop))
+            return "";
+        return prop.ValueKind == JsonValueKind.Number
+            ? prop.GetInt64().ToString()
+            : prop.GetString() ?? "";
+    }
+
     public static Dictionary<string, CompilationTarget> Parse(string path, string repoRoot)
     {
         if (!File.Exists(path))
@@ -36,7 +45,7 @@ static class BazelCSharpParser
         {
             foreach (var t in targets.EnumerateArray())
             {
-                string id = t.GetProperty("id").GetString() ?? "";
+                string id = GetId(t);
                 string label = t.GetProperty("label").GetString() ?? "";
                 targetLabels[id] = label;
             }
@@ -54,8 +63,7 @@ static class BazelCSharpParser
                 if (!s_csharpMnemonics.Contains(mnemonic))
                     continue;
 
-                string targetId = action.TryGetProperty("targetId", out var tid)
-                    ? tid.GetString() ?? "" : "";
+                string targetId = GetId(action, "targetId");
                 string label = targetLabels.GetValueOrDefault(targetId, targetId);
 
                 var arguments = new List<string>();

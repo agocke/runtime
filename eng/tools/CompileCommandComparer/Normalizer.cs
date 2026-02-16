@@ -17,6 +17,15 @@ static class Normalizer
         "bazel-out/",
     ];
 
+    // Defines that differ by design between build systems and should be ignored.
+    static readonly HashSet<string> s_ignoreDefines = new(StringComparer.Ordinal)
+    {
+        "__DATE__=\"redacted\"",       // Bazel deterministic build
+        "__TIME__=\"redacted\"",       // Bazel deterministic build
+        "__TIMESTAMP__=\"redacted\"",  // Bazel deterministic build
+        "-U_FORTIFY_SOURCE",          // Bazel default, not a real define difference
+    };
+
     // Flags that differ by design between build systems and should be ignored.
     static readonly HashSet<string> s_ignoreFlags = new(StringComparer.Ordinal)
     {
@@ -29,6 +38,7 @@ static class Normalizer
         "-fcolor-diagnostics",
         "-fno-canonical-system-headers",
         "-no-canonical-prefixes",
+        "-Wno-builtin-macro-redefined",  // Bazel uses this alongside __DATE__=redacted
     };
 
     // Prefixes of flags that take a value as the next arg and should be ignored.
@@ -39,6 +49,7 @@ static class Normalizer
         "-MQ",
         "--target=",
         "-fdiagnostics-color",
+        "-frandom-seed=",      // Bazel per-file random seed, not a real compilation difference
     ];
 
     /// <summary>Normalize a file path to a repo-relative form.</summary>
@@ -115,7 +126,7 @@ static class Normalizer
             if (arg.StartsWith("-D", StringComparison.Ordinal))
             {
                 string define = arg.Length > 2 ? arg[2..] : (i + 1 < args.Count ? args[++i] : "");
-                if (define.Length > 0)
+                if (define.Length > 0 && !s_ignoreDefines.Contains(define))
                     defines.Add(define);
                 continue;
             }
@@ -124,8 +135,9 @@ static class Normalizer
             if (arg.StartsWith("-U", StringComparison.Ordinal))
             {
                 string undef = arg.Length > 2 ? arg[2..] : (i + 1 < args.Count ? args[++i] : "");
-                if (undef.Length > 0)
-                    defines.Add($"-U{undef}");
+                string undefKey = $"-U{undef}";
+                if (undef.Length > 0 && !s_ignoreDefines.Contains(undefKey))
+                    defines.Add(undefKey);
                 continue;
             }
 

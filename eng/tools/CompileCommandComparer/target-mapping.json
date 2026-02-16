@@ -32,7 +32,7 @@
     },
     {
       "name": "System.Native",
-      "bazel_label": "//src/native/libs/System.Native:System.Native",
+      "bazel_label": "//src/native/libs/System.Native:System.Native_lib",
       "cmake_output_pattern": "^System\\.Native$"
     },
     {

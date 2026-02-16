@@ -11,6 +11,23 @@ namespace CompileCommandComparer;
 /// </summary>
 static class BazelNativeParser
 {
+    static string GetId(JsonElement elem, string propName)
+    {
+        var prop = elem.GetProperty(propName);
+        return prop.ValueKind == JsonValueKind.Number
+            ? prop.GetInt64().ToString()
+            : prop.GetString() ?? "";
+    }
+
+    static string TryGetId(JsonElement elem, string propName)
+    {
+        if (!elem.TryGetProperty(propName, out var prop))
+            return "";
+        return prop.ValueKind == JsonValueKind.Number
+            ? prop.GetInt64().ToString()
+            : prop.GetString() ?? "";
+    }
+
     public static Dictionary<string, CompilationTarget> Parse(string path, string repoRoot)
     {
         if (!File.Exists(path))
@@ -29,11 +46,10 @@ static class BazelNativeParser
         {
             foreach (var artifact in artifacts.EnumerateArray())
             {
-                string id = artifact.GetProperty("id").GetString() ?? "";
+                string id = GetId(artifact, "id");
                 string fragPath = artifact.TryGetProperty("execPath", out var ep)
                     ? ep.GetString() ?? ""
                     : artifact.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "";
-                // Also check pathFragments for newer aquery format
                 if (string.IsNullOrEmpty(fragPath) && artifact.TryGetProperty("pathFragment", out _))
                 {
                     fragPath = ResolvePathFragment(root, artifact);
@@ -49,12 +65,12 @@ static class BazelNativeParser
         {
             foreach (var ds in depSetsElem.EnumerateArray())
             {
-                string id = ds.GetProperty("id").GetString() ?? "";
+                string id = GetId(ds, "id");
                 var fileIds = new List<string>();
                 if (ds.TryGetProperty("directArtifactIds", out var directIds))
                 {
                     foreach (var fid in directIds.EnumerateArray())
-                        fileIds.Add(fid.GetString() ?? "");
+                        fileIds.Add(fid.ValueKind == JsonValueKind.Number ? fid.GetInt64().ToString() : fid.GetString() ?? "");
                 }
                 depSets[id] = fileIds;
             }
@@ -66,7 +82,7 @@ static class BazelNativeParser
         {
             foreach (var t in targets.EnumerateArray())
             {
-                string id = t.GetProperty("id").GetString() ?? "";
+                string id = GetId(t, "id");
                 string label = t.GetProperty("label").GetString() ?? "";
                 targetLabels[id] = label;
             }
@@ -84,8 +100,7 @@ static class BazelNativeParser
                 if (mnemonic is not ("CppCompile" or "CCompile"))
                     continue;
 
-                string targetId = action.TryGetProperty("targetId", out var tid)
-                    ? tid.GetString() ?? "" : "";
+                string targetId = TryGetId(action, "targetId");
                 string label = targetLabels.GetValueOrDefault(targetId, targetId);
 
                 var arguments = new List<string>();
@@ -101,7 +116,8 @@ static class BazelNativeParser
                 {
                     foreach (var dsId in inputIds.EnumerateArray())
                     {
-                        string dsIdStr = dsId.GetString() ?? "";
+                        string dsIdStr = dsId.ValueKind == JsonValueKind.Number
+                            ? dsId.GetInt64().ToString() : dsId.GetString() ?? "";
                         if (depSets.TryGetValue(dsIdStr, out var fileIds))
                         {
                             foreach (var fid in fileIds)
