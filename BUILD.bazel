@@ -6,7 +6,6 @@ load("//eng/bazel:version.bzl", "PRODUCT_VERSION")
 
 exports_files([
     "artifacts/obj/coreclr/System.Private.CoreLib/linux.x64.Debug/System.Private.CoreLib.Strings.resources",
-    "artifacts/bin/coreclr/linux.x64.Debug/ilasm",
 ])
 
 # ── Per-component build configuration flags ──────────────────────────

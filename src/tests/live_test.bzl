@@ -193,7 +193,7 @@ _il_test = rule(
             default = False,
         ),
         "ilasm_exe": attr.label(
-            default = Label("//:artifacts/bin/coreclr/linux.x64.Debug/ilasm"),
+            default = Label("//src/coreclr/ilasm"),
             cfg = "exec",
             executable = True,
             allow_files = True,

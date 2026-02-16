@@ -52,6 +52,20 @@ build --copt=-DTARGET_LINUX
 build --copt=-D_FILE_OFFSET_BITS=64
 build --copt=-D_TIME_BITS=64
 
+# Exec/tool platform defines (for tools like ilasm built with cfg = "exec")
+build --host_conlyopt=-std=gnu11
+build --host_cxxopt=-std=gnu++11
+build --host_copt=-D_GNU_SOURCE
+build --host_copt=-DHOST_64BIT
+build --host_copt=-DHOST_AMD64
+build --host_copt=-DHOST_UNIX
+build --host_copt=-DTARGET_64BIT
+build --host_copt=-DTARGET_AMD64
+build --host_copt=-DTARGET_UNIX
+build --host_copt=-DTARGET_LINUX
+build --host_copt=-D_FILE_OFFSET_BITS=64
+build --host_copt=-D_TIME_BITS=64
+
 # Warning flags shared between GCC and Clang (configurecompiler.cmake)
 build --copt=-Wall
 build --copt=-Wno-unused-variable
@@ -96,9 +110,11 @@ build:clang --cxxopt=-Wno-nontrivial-memaccess
 
 # Disable warnings that CMake also suppresses for vendored code
 build --per_file_copt=src/native/external/.*@-w
+build --host_per_file_copt=src/native/external/.*@-w
 
 # safecrt_input_s.cpp is the non-unicode scanf variant — _UNICODE must not be defined
 build --per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
+build --host_per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
 
 # Preserve debug symbols (match CMake behavior of always including -g)
 build --strip=never
@@ -176,3 +192,8 @@ build:libs_release --per_file_copt=src/native/libs/.*,src/native/corehost/.*@-UD
 # =====================================================================
 build:release --config=clr_release
 build:release --config=libs_release
+# Enable compiler optimizations and switch C# from /define:DEBUG to
+# /define:RELEASE.  Without this, Bazel's default "fastbuild" mode
+# injects /define:DEBUG into C# compilations, causing AsmOffsets.cs to
+# pick debug struct sizes that don't match the release C++ layout.
+build:release -c opt
