@@ -192,3 +192,8 @@ build:libs_release --per_file_copt=src/native/libs/.*,src/native/corehost/.*@-UD
 # =====================================================================
 build:release --config=clr_release
 build:release --config=libs_release
+# Enable compiler optimizations and switch C# from /define:DEBUG to
+# /define:RELEASE.  Without this, Bazel's default "fastbuild" mode
+# injects /define:DEBUG into C# compilations, causing AsmOffsets.cs to
+# pick debug struct sizes that don't match the release C++ layout.
+build:release -c opt
