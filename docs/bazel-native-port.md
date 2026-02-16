@@ -40,7 +40,6 @@ layout.
 - ILLink (IL trimmer/linker)
 - Installer/packaging (NuGet packs, runtime packs, targeting packs)
 - Additional platforms (linux-arm64, macOS, Windows)
-- Mono runtime
 - Full test suite integration
 - Eliminate MSBuild dependency for managed builds
 
@@ -106,9 +105,9 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
 | iOS / iOS Simulator | ✅ | ❌ Not started | |
 | tvOS / tvOS Simulator | ✅ | ❌ Not started | |
 | Mac Catalyst | ✅ | ❌ Not started | |
-| Browser (Emscripten/WASM) | ✅ | ❌ Not started | Mono/WASM only |
-| WASI | ✅ | ❌ Not started | |
-| Tizen | ✅ | ❌ Not started | |
+| Browser (Emscripten/WASM) | ✅ | ⊘ Out of scope | Mono only |
+| WASI | ✅ | ⊘ Out of scope | Mono only |
+| Tizen | ✅ | ⊘ Out of scope | Mono only |
 
 ### Architectures
 
@@ -124,7 +123,7 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
 | s390x | ✅ | ❌ Not started | |
 | PowerPC64 (ppc64le) | ✅ | ❌ Not started | |
 | MIPS64 | ✅ | ❌ Not started | |
-| WASM | ✅ | ❌ Not started | Browser/WASI only |
+| WASM | ✅ | ⊘ Out of scope | Mono only |
 
 ---
 
@@ -160,10 +159,10 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
 - [x] Uses `FEATURE_DISTRO_AGNOSTIC_SSL` on Linux (loads OpenSSL via dlopen at runtime; `opensslshim.h` overrides all `HAVE_OPENSSL_*` to 1, making the binary OpenSSL-version-independent)
 
 ### 1.7 Platform-specific libs
-- [ ] System.Native.Browser (Browser/WASM only)
-- [ ] System.Runtime.InteropServices.JavaScript.Native (Browser/WASM only)
 - [ ] System.Security.Cryptography.Native.Android (Android only)
 - [ ] System.Security.Cryptography.Native.Apple (macOS/iOS/tvOS/Mac Catalyst only)
+- ⊘ System.Native.Browser — out of scope (Mono/WASM only)
+- ⊘ System.Runtime.InteropServices.JavaScript.Native — out of scope (Mono/WASM only)
 
 ---
 
@@ -195,7 +194,7 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
   - [x] `dn-diagnosticserver-srcs` filegroup (8 source files)
   - [x] `dn-diagnosticserver-pal-srcs` filegroup (socket PAL for linux)
   - [x] `eventpipe-headers` cc_library (headers + include paths)
-  - [x] Interface library pattern: sources exposed as filegroups for consuming runtimes (CoreCLR, Mono, NativeAOT) to compile with their own `ep-rt.h`/`ds-rt.h`
+  - [x] Interface library pattern: sources exposed as filegroups for consuming runtimes (CoreCLR, NativeAOT) to compile with their own `ep-rt.h`/`ds-rt.h`
 - [x] `src/native/eventpipe/bazel/linux-glibc-x64/ep-shared-config.h` (hardcoded linux-x64)
 
 ### 2.6 watchdog
@@ -424,12 +423,10 @@ Managed C# framework assemblies built with `rules_dotnet`. Currently ~45 of
 
 ---
 
-## 6. Mono Runtime (`src/mono/`)
+## 6. Mono Runtime — ⊘ Out of Scope
 
-- [ ] `src/mono/mono/BUILD.bazel`
-  - [ ] Core Mono runtime (mini, metadata, utils, eglib, sgen)
-  - [ ] Mono CMake structure under `src/mono/cmake/`
-  - [ ] Depends on `src/mono/mono/` sources
+The Mono runtime (`src/mono/`) is explicitly out of scope for the Bazel build.
+Mono-only platforms (Browser/WASM, WASI, Tizen) are also excluded.
 
 ---
 
