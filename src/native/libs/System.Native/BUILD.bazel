@@ -3,7 +3,6 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
 cc_library(
     name = "System.Native_lib",
     srcs = [
-        "entrypoints.c",
         "pal_autoreleasepool.c",
         "pal_console.c",
         "pal_datetime.c",
@@ -37,6 +36,7 @@ cc_library(
         "-Isrc/native",
         "-Isrc/native/libs/Common",
         "-Isrc/native/libs/bazel",
+        "-Isrc/native/libs/System.Native",
     ],
     defines = [
         "HAS_CONSOLE_SIGNALS",

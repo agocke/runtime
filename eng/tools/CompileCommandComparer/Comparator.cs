@@ -26,9 +26,13 @@ static class Comparator
 
         var diffs = new List<SetDiff>();
 
-        diffs.Add(ComputeDiff("Source Files", baseline.SourceFiles, bazel.SourceFiles));
+        diffs.Add(ComputeDiff("Source Files",
+            FilterSet(baseline.SourceFiles, Normalizer.IsIgnoredSourceFile),
+            FilterSet(bazel.SourceFiles, Normalizer.IsIgnoredSourceFile)));
         diffs.Add(ComputeDiff("Defines", baseline.Defines, bazel.Defines));
-        diffs.Add(ComputeDiff("Include Paths", baseline.IncludePaths, bazel.IncludePaths));
+        diffs.Add(ComputeDiff("Include Paths",
+            FilterSet(baseline.IncludePaths, Normalizer.IsIgnoredIncludePath),
+            FilterSet(bazel.IncludePaths, Normalizer.IsIgnoredIncludePath)));
         diffs.Add(ComputeDiff("Compiler Flags", baseline.CompilerFlags, bazel.CompilerFlags));
 
         if (baseline.References.Count > 0 || bazel.References.Count > 0)
@@ -57,5 +61,17 @@ static class Comparator
             OnlyInBaseline = onlyInBaseline,
             OnlyInBazel = onlyInBazel,
         };
+    }
+
+    static SortedSet<string> FilterSet(SortedSet<string> set, Func<string, bool> shouldIgnore)
+    {
+        var filtered = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var item in set)
+        {
+            if (!shouldIgnore(item))
+                filtered.Add(item);
+        }
+
+        return filtered;
     }
 }

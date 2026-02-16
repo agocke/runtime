@@ -93,9 +93,17 @@ build:clang --copt=-Wno-single-bit-bitfield-constant-conversion
 build:clang --copt=-Wno-cast-function-type-strict
 build:clang --copt=-Wno-switch-default
 build:clang --cxxopt=-Wno-nontrivial-memaccess
+# Feature detection define: clang-18 supports -Wreserved-identifier
+# (configurecompiler.cmake:984-986 does check_c_compiler_flag then add_compile_definitions)
+build:clang --copt=-DCOMPILER_SUPPORTS_W_RESERVED_IDENTIFIER
 
 # Disable warnings that CMake also suppresses for vendored code
 build --per_file_copt=src/native/external/.*@-w
+
+# Native libs: match src/native/libs/CMakeLists.txt warning and language flags.
+# CMake sets -std=gnu99 (overriding the global gnu11), -O0 for debug, and
+# -Weverything with specific suppressions (lines 38, 77, 127-135).
+build --per_file_copt=src/native/libs/.*\\.c$@-std=gnu99,-O0,-Weverything,-Wno-format-nonliteral,-Wno-disabled-macro-expansion,-Wno-padded,-Wno-empty-translation-unit,-Wno-cast-align,-Wno-typedef-redefinition,-Wno-thread-safety-analysis,-Wno-c11-extensions,-Wno-pre-c11-compat
 
 # safecrt_input_s.cpp is the non-unicode scanf variant — _UNICODE must not be defined
 build --per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
@@ -141,8 +149,11 @@ build --per_file_copt=src/coreclr/vm/.*,src/coreclr/debug/.*,src/coreclr/runtime
 
 # --- Libraries native debug defines (default) ---
 # Lighter set for src/native/libs/** and src/native/corehost/**.
+# Matches configurecompiler.cmake generator expression for DEBUG config
+# (DEBUG, _DEBUG, _DBG, URTBLDENV_FRIENDLY=Debug, BUILDENV_DEBUG=1)
+# plus DISABLE_CONTRACTS (set globally for TARGET_UNIX in configurecompiler.cmake:739).
 build --//:libs_config=debug
-build --per_file_copt=src/native/libs/.*,src/native/corehost/.*@-DDEBUG,-D_DEBUG
+build --per_file_copt=src/native/libs/.*,src/native/corehost/.*@-DDEBUG,-D_DEBUG,-D_DBG,-DBUILDENV_DEBUG=1,-DURTBLDENV_FRIENDLY=Debug,-DDISABLE_CONTRACTS
 
 # =====================================================================
 # --config=clr_checked: Checked CoreCLR
@@ -169,7 +180,7 @@ build:clr_release --per_file_copt=src/coreclr/vm/.*,src/coreclr/debug/.*,src/cor
 # =====================================================================
 build:libs_release --//:libs_config=release
 # Undo debug defines, set release values for native libs and corehost.
-build:libs_release --per_file_copt=src/native/libs/.*,src/native/corehost/.*@-UDEBUG,-U_DEBUG,-DNDEBUG
+build:libs_release --per_file_copt=src/native/libs/.*,src/native/corehost/.*@-UDEBUG,-U_DEBUG,-U_DBG,-UBUILDENV_DEBUG,-UURTBLDENV_FRIENDLY=Debug,-DNDEBUG,-DURTBLDENV_FRIENDLY=Retail
 
 # =====================================================================
 # --config=release: Release everything (convenience)

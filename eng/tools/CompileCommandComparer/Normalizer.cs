@@ -26,6 +26,26 @@ static class Normalizer
         "-U_FORTIFY_SOURCE",          // Bazel default, not a real define difference
     };
 
+    // Define patterns to ignore (checked via StartsWith/EndsWith).
+    static bool IsIgnoredDefine(string define) =>
+        s_ignoreDefines.Contains(define) ||
+        define.EndsWith("_EXPORTS", StringComparison.Ordinal);  // CMake auto-generated for shared libs
+
+    /// <summary>Source files that should be ignored in comparison (build-system artifacts).</summary>
+    public static bool IsIgnoredSourceFile(string path) =>
+        path.EndsWith("/_version.c", StringComparison.Ordinal) ||
+        path == "_version.c" ||
+        path.StartsWith("artifacts/obj/", StringComparison.Ordinal);
+
+    /// <summary>Include paths that are build-system artifacts and should be ignored.</summary>
+    public static bool IsIgnoredIncludePath(string path) =>
+        path.StartsWith("artifacts/obj/", StringComparison.Ordinal) ||
+        path.StartsWith("(quote).", StringComparison.Ordinal) ||       // Bazel -iquote .
+        path.StartsWith("(quote)k8-", StringComparison.Ordinal) ||     // Bazel -iquote bazel-out/
+        path.StartsWith("(quote)bazel-out/", StringComparison.Ordinal) ||
+        path.Contains("/bazel/linux-glibc-", StringComparison.Ordinal) || // Bazel generated config headers
+        path.EndsWith("/bazel", StringComparison.Ordinal);                // Bazel generated config dir
+
     // Flags that differ by design between build systems and should be ignored.
     static readonly HashSet<string> s_ignoreFlags = new(StringComparer.Ordinal)
     {
@@ -39,6 +59,19 @@ static class Normalizer
         "-fno-canonical-system-headers",
         "-no-canonical-prefixes",
         "-Wno-builtin-macro-redefined",  // Bazel uses this alongside __DATE__=redacted
+        // Bazel CC toolchain injects these by default; redundant when -Weverything is present
+        "-Wself-assign",
+        "-Wthread-safety",
+        "-Wunused-but-set-parameter",
+        "-fstack-protector",             // Bazel toolchain default (we set -fstack-protector-strong)
+        // GCC-specific -Wno-* flags from .bazelrc that Clang accepts silently
+        // via -Wno-unknown-warning-option. Redundant with -Weverything.
+        "-Wno-array-bounds",
+        "-Wno-free-nonheap-object",
+        "-Wno-strict-aliasing",
+        "-Wno-stringop-truncation",
+        "-Wno-uninitialized",
+        "-Wno-pre-c11-compat",        // Conditional in CMake (check_c_compiler_flag), always in Bazel
     };
 
     // Prefixes of flags that take a value as the next arg and should be ignored.
@@ -126,7 +159,7 @@ static class Normalizer
             if (arg.StartsWith("-D", StringComparison.Ordinal))
             {
                 string define = arg.Length > 2 ? arg[2..] : (i + 1 < args.Count ? args[++i] : "");
-                if (define.Length > 0 && !s_ignoreDefines.Contains(define))
+                if (define.Length > 0 && !IsIgnoredDefine(define))
                     defines.Add(define);
                 continue;
             }
@@ -136,7 +169,7 @@ static class Normalizer
             {
                 string undef = arg.Length > 2 ? arg[2..] : (i + 1 < args.Count ? args[++i] : "");
                 string undefKey = $"-U{undef}";
-                if (undef.Length > 0 && !s_ignoreDefines.Contains(undefKey))
+                if (undef.Length > 0 && !IsIgnoredDefine(undefKey))
                     defines.Add(undefKey);
                 continue;
             }
