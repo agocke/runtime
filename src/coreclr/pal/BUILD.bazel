@@ -3,7 +3,7 @@
 # and global include_directories in src/coreclr/CMakeLists.txt (for headers).
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -287,7 +287,7 @@ cc_library(
         "src/include/**/*.hpp",
         "src/include/**/*.inl",
     ]),
-    copts = CORECLR_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/pal/src/include",
     ],
     local_defines = CLR_CONFIG_DEFINES,
