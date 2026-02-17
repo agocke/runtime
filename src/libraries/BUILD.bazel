@@ -41,6 +41,7 @@ filegroup(
         "//src/libraries/System.Runtime.Intrinsics:impl_System.Runtime.Intrinsics",
         "//src/libraries/System.Threading:impl_System.Threading",
         "//src/libraries/System.Runtime.InteropServices:impl_System.Runtime.InteropServices",
+        "//src/libraries/System.Runtime.Numerics:impl_System.Runtime.Numerics",
     ],
     visibility = ["//visibility:public"],
 )
@@ -417,4 +418,39 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "System.ComponentModel.Primitives/src/Resources/Strings.resx",
+)
+
+# ── Ref assemblies for TestUtilities dependencies ────────────────────
+netcoreapp_ref_assembly(
+    name = "ref_System.Linq.Expressions",
+    srcs = [
+        "System.Linq.Expressions/ref/System.Linq.Expressions.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
+    ],
+)
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Text.RegularExpressions",
+    srcs = [
+        "System.Text.RegularExpressions/ref/System.Text.RegularExpressions.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+        "//src/libraries/System.Reflection.Emit.ILGeneration:ref_System.Reflection.Emit.ILGeneration",
+    ],
+)
+
+# Minimal ref assembly with just the System.Net.Mime namespace (MediaTypeNames etc.)
+# The full System.Net.Mail ref has too many transitive deps for our needs.
+netcoreapp_ref_assembly(
+    name = "ref_System.Net.Mime",
+    srcs = [
+        "System.Net.Mail/ref/System.Net.Mail.Mime.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+    ],
 )
