@@ -257,6 +257,11 @@ public static class BazelAqueryParser
                 foreach (var d in arg[8..].Split(';', StringSplitOptions.RemoveEmptyEntries))
                     defines.Add(d);
             }
+            else if (arg.StartsWith("/d:"))
+            {
+                foreach (var d in arg[3..].Split(';', StringSplitOptions.RemoveEmptyEntries))
+                    defines.Add(d);
+            }
             else if (arg.StartsWith("/nowarn:"))
             {
                 foreach (var w in arg[8..].Split(',', StringSplitOptions.RemoveEmptyEntries))
