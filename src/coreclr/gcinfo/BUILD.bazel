@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/gcinfo/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -46,7 +46,7 @@ cc_library(
     name = "gcinfo",
     srcs = _GCINFO_ALLARCH_SOURCES,
     hdrs = glob(["*.h"]),
-    copts = CORECLR_COPTS,
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
     local_defines = CLR_CONFIG_DEFINES,
     includes = ["."],
     alwayslink = True,
@@ -63,7 +63,7 @@ cc_library(
     name = "gcinfo_universal_arm64",
     srcs = _GCINFO_ALLARCH_SOURCES,
     hdrs = glob(["*.h"]),
-    copts = CORECLR_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
         "-DTARGET_64BIT",
         "-DTARGET_ARM64",
     ],
@@ -76,7 +76,7 @@ cc_library(
     name = "gcinfo_unix_x64",
     srcs = _GCINFO_ALLARCH_SOURCES,
     hdrs = glob(["*.h"]),
-    copts = CORECLR_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
         "-DTARGET_64BIT",
         "-DTARGET_AMD64",
         "-DTARGET_UNIX",
@@ -91,7 +91,7 @@ cc_library(
     name = "gcinfo_win_x64",
     srcs = _GCINFO_ALLARCH_SOURCES,
     hdrs = glob(["*.h"]),
-    copts = CORECLR_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
         "-DTARGET_64BIT",
         "-DTARGET_AMD64",
         "-DTARGET_WINDOWS",
@@ -105,7 +105,7 @@ cc_library(
     name = "gcinfo_universal_arm",
     srcs = _GCINFO_ALLARCH_SOURCES,
     hdrs = glob(["*.h"]),
-    copts = CORECLR_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
         "-DTARGET_ARM",
     ],
     defines = _HOST_DEFINES,
@@ -117,7 +117,7 @@ cc_library(
     name = "gcinfo_win_x86",
     srcs = _GCINFO_ALLARCH_SOURCES + _GCINFO_I386_SOURCES,
     hdrs = glob(["*.h"]),
-    copts = CORECLR_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
         "-DTARGET_X86",
         "-DTARGET_WINDOWS",
     ],
@@ -130,7 +130,7 @@ cc_library(
     name = "gcinfo_unix_wasm",
     srcs = _GCINFO_ALLARCH_SOURCES,
     hdrs = glob(["*.h"]),
-    copts = CORECLR_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
         "-DTARGET_WASM",
         "-DTARGET_WASM32",
         "-DTARGET_BROWSER",

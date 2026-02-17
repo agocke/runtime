@@ -3,7 +3,7 @@
 #                src/coreclr/nativeaot/Runtime/Full/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_BASE_CONFIG_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_BASE_CONFIG_DEFINES", "CLR_CONFIG_COPTS")
 load("//src/coreclr/nativeaot:nativeaot_defs.bzl", "NATIVEAOT_COPTS", "NATIVEAOT_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
@@ -299,7 +299,7 @@ cc_library(
     ] + _GENERATED_SRCS + _CORECLR_INC_FILES,
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
-    copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -319,7 +319,7 @@ cc_library(
     srcs = _ALL_COMMON + _ALL_FULL + _ALL_ASM + _ASM_INCLUDES + _GENERATED_SRCS + _CORECLR_INC_FILES,
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
-    copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS + _LLVM_LIBUNWIND_COPTS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS + _LLVM_LIBUNWIND_COPTS,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -337,7 +337,7 @@ cc_library(
     srcs = _ALL_COMMON + _ALL_FULL + _ALL_ASM + _ASM_INCLUDES + _SERVER_GC_SRCS + _GENERATED_SRCS + _CORECLR_INC_FILES,
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
-    copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS + _LLVM_LIBUNWIND_COPTS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS + _LLVM_LIBUNWIND_COPTS,
     defines = NATIVEAOT_DEFINES + ["FEATURE_SVR_GC"],
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -355,7 +355,7 @@ cc_library(
     srcs = ["Runtime/clrgc.disabled.cpp"] + _GENERATED_SRCS + _CORECLR_INC_FILES,
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
-    copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -367,7 +367,7 @@ cc_library(
     srcs = ["Runtime/clrgc.enabled.cpp"] + _GENERATED_SRCS + _CORECLR_INC_FILES,
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
-    copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -393,7 +393,7 @@ _VXSORT_SRCS = [
 cc_library(
     name = "nativeaot_vxsort_enabled",
     srcs = _VXSORT_SRCS,
-    copts = NATIVEAOT_COPTS + [
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/gc/vxsort",
         "-Isrc/coreclr/gc/vxsort/smallsort",
         "-mavx2",
@@ -410,7 +410,7 @@ cc_library(
 cc_library(
     name = "nativeaot_vxsort_disabled",
     srcs = ["//src/coreclr/gc:vxsort/dummy.cpp"],
-    copts = NATIVEAOT_COPTS + [
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/gc/vxsort",
     ],
     defines = NATIVEAOT_DEFINES,
@@ -428,7 +428,7 @@ cc_library(
 cc_library(
     name = "bootstrapper",
     srcs = ["Bootstrap/main.cpp"],
-    copts = NATIVEAOT_COPTS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -438,7 +438,7 @@ cc_library(
 cc_library(
     name = "bootstrapperdll",
     srcs = ["Bootstrap/main.cpp"],
-    copts = NATIVEAOT_COPTS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
     defines = NATIVEAOT_DEFINES + ["NATIVEAOT_DLL"],
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -448,7 +448,7 @@ cc_library(
 cc_library(
     name = "stdc_compat",
     srcs = ["Bootstrap/stdcppshim.cpp"],
-    copts = NATIVEAOT_COPTS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,

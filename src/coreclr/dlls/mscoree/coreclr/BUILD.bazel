@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/dlls/mscoree/coreclr/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,7 +23,7 @@ cc_binary(
         "-Isrc/coreclr/runtime",
         "-Isrc/coreclr/vm/eventing/eventpipe",
         "-Isrc/native/corehost",
-    ] + CORECLR_COPTS + [
+    ] + CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-include", "src/coreclr/vm/common.h",
         "-Wno-error",
     ],

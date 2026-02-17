@@ -3,7 +3,7 @@
 # Matches CMake: src/coreclr/jit/CMakeLists.txt + jit/static/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -202,7 +202,7 @@ _JIT_WASM_SOURCES = [
 _JIT_COPTS = [
     "-Isrc/coreclr/jit",
     "-Isrc/coreclr/jit/jitstd",
-] + CORECLR_COPTS + [
+] + CORECLR_COPTS + CLR_CONFIG_COPTS + [
     "-include", "src/coreclr/jit/jitpch.h",
     "-Wno-error",
     "-Wno-endif-labels",
