@@ -14,10 +14,12 @@ public static class BazelAqueryParser
     public static List<NativeCompilationRecord> ParseNativeActions(string aqueryJsonPath, string repoRoot)
     {
         var records = new List<NativeCompilationRecord>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         using var doc = JsonDocument.Parse(File.ReadAllText(aqueryJsonPath));
         var root = doc.RootElement;
 
         var targets = ParseTargets(root);
+        var execConfigs = DetectExecConfigurations(root);
         var actions = root.GetProperty("actions");
 
         foreach (var action in actions.EnumerateArray())
@@ -26,11 +28,19 @@ public static class BazelAqueryParser
             if (mnemonic is not "CppCompile")
                 continue;
 
+            // Skip exec/tool configuration actions (e.g. ilasm, mscorpe built for host)
+            var configId = action.GetProperty("configurationId").ToString();
+            if (execConfigs.Contains(configId))
+                continue;
+
             var targetId = action.GetProperty("targetId").ToString();
             var targetLabel = targets.GetValueOrDefault(targetId, "");
             var args = ParseArguments(action);
             var record = ParseNativeArguments(args, targetLabel, repoRoot);
-            if (record is not null)
+
+            // Deduplicate: keep only the first action per source file
+            // (transition-variant configs produce duplicate actions with identical flags)
+            if (record is not null && seen.Add(record.SourceFile))
                 records.Add(record);
         }
 
@@ -40,10 +50,12 @@ public static class BazelAqueryParser
     public static List<ManagedCompilationRecord> ParseManagedActions(string aqueryJsonPath, string repoRoot)
     {
         var records = new List<ManagedCompilationRecord>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         using var doc = JsonDocument.Parse(File.ReadAllText(aqueryJsonPath));
         var root = doc.RootElement;
 
         var targets = ParseTargets(root);
+        var execConfigs = DetectExecConfigurations(root);
         var actions = root.GetProperty("actions");
 
         foreach (var action in actions.EnumerateArray())
@@ -52,11 +64,16 @@ public static class BazelAqueryParser
             if (mnemonic is not "CSharpCompile")
                 continue;
 
+            var configId = action.GetProperty("configurationId").ToString();
+            if (execConfigs.Contains(configId))
+                continue;
+
             var targetId = action.GetProperty("targetId").ToString();
             var targetLabel = targets.GetValueOrDefault(targetId, "");
             var args = ParseArguments(action);
             var record = ParseManagedArguments(args, targetLabel, repoRoot);
-            if (record is not null)
+
+            if (record is not null && seen.Add(record.AssemblyName))
                 records.Add(record);
         }
 
@@ -77,6 +94,49 @@ public static class BazelAqueryParser
         }
 
         return targets;
+    }
+
+    /// <summary>
+    /// Detect exec-configuration actions by scanning output paths for "exec" in the
+    /// config directory (e.g. "bazel-out/k8-opt-exec/bin/..."). Bazel aquery doesn't
+    /// expose configuration metadata directly, but the output path config prefix is
+    /// reliable.
+    /// </summary>
+    private static HashSet<string> DetectExecConfigurations(JsonElement root)
+    {
+        var execConfigs = new HashSet<string>();
+        if (!root.TryGetProperty("actions", out var actions))
+            return execConfigs;
+
+        // Build a map of configurationId -> output path config prefix
+        var configPrefixes = new Dictionary<string, string>();
+        foreach (var action in actions.EnumerateArray())
+        {
+            var configId = action.GetProperty("configurationId").ToString();
+            if (configPrefixes.ContainsKey(configId))
+                continue;
+
+            var args = ParseArguments(action);
+            for (int i = 0; i < args.Count; i++)
+            {
+                if (args[i] == "-o" && i + 1 < args.Count)
+                {
+                    var outPath = args[i + 1];
+                    // bazel-out/<CONFIG_PREFIX>/bin/...
+                    var parts = outPath.Split('/');
+                    if (parts.Length >= 3 && parts[0] == "bazel-out")
+                    {
+                        configPrefixes[configId] = parts[1];
+                        if (parts[1].Contains("exec", StringComparison.OrdinalIgnoreCase))
+                            execConfigs.Add(configId);
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return execConfigs;
     }
 
     private static List<string> ParseArguments(JsonElement action)
@@ -137,16 +197,24 @@ public static class BazelAqueryParser
             {
                 sourceFile = NormalizeBazelPath(args[++i], repoRoot);
             }
-            else if (arg == "-o" || arg == "-MF" || arg == "-MD" || arg == "-MQ" || arg == "-MT" || arg == "-frandom-seed")
+            else if (arg is "-o" or "-MF" or "-MQ" or "-MT")
             {
                 if (i + 1 < args.Count)
                     i++; // skip argument
+            }
+            else if (arg is "-MD" or "-MMD")
+            {
+                // standalone flags, no argument to skip
+            }
+            else if (arg == "-frandom-seed" && i + 1 < args.Count)
+            {
+                i++; // skip argument
             }
             else if (arg.StartsWith("-frandom-seed="))
             {
                 // skip
             }
-            else if (arg.StartsWith("-W") || arg.StartsWith("-f") || arg == "-g" || arg.StartsWith("-g"))
+            else if (arg.StartsWith("-W") || arg.StartsWith("-f") || arg.StartsWith("-g") || arg.StartsWith("-m"))
             {
                 flags.Add(arg);
             }

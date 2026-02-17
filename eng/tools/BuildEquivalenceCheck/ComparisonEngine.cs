@@ -83,11 +83,10 @@ public static class ComparisonEngine
         "__TIME__=\"redacted\"",
     ];
 
-    // CMake defines not relevant to Bazel
+    // CMake defines not relevant to Bazel (CMake configure-time detection only)
     private static readonly HashSet<string> CMakeToolchainDefines =
     [
         "COMPILER_SUPPORTS_W_RESERVED_IDENTIFIER",
-        "FALLBACK_OS_IS_SAME_AS_TARGET_OS",
     ];
 
     public static EquivalenceReport CompareNative(

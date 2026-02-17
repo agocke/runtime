@@ -70,12 +70,16 @@ public static class CMakeParser
             {
                 target = InferTargetFromOutput(tokens[++i]);
             }
-            else if (tok == "-c" || tok == "-MF" || tok == "-MD" || tok == "-MQ" || tok == "-MT")
+            else if (tok is "-c" or "-MF" or "-MQ" or "-MT")
             {
                 if (i + 1 < tokens.Count && !tokens[i + 1].StartsWith('-'))
                     i++; // skip argument
             }
-            else if (tok.StartsWith("-W") || tok.StartsWith("-f") || tok == "-g" || tok.StartsWith("-g"))
+            else if (tok is "-MD" or "-MMD")
+            {
+                // standalone flags, no argument to skip
+            }
+            else if (tok.StartsWith("-W") || tok.StartsWith("-f") || tok.StartsWith("-g") || tok.StartsWith("-m"))
             {
                 flags.Add(tok);
             }
