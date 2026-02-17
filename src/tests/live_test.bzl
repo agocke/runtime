@@ -191,12 +191,12 @@ def _xunit_library_test_impl(ctx):
     dotnet_file = dotnet_files[0]
     sdk_version = toolchain.dotnetinfo.runtime_version
 
-    # RemoteExecutor spawns child processes via "dotnet exec
-    # Microsoft.DotNet.RemoteExecutor.dll". Without a runtimeconfig.json the
-    # host treats it as self-contained and fails to find libhostpolicy.so.
-    # Generate a framework-dependent runtimeconfig so the child resolves the
-    # framework (and libhostpolicy) from the testhost.
-    _generate_remote_executor_runtimeconfig(ctx, tfm, sdk_version, additional_runfiles)
+    # Generate runtimeconfig.json files:
+    # 1. For the test assembly - RemoteExecutor.InitializePaths() walks the stack
+    #    to find a runtimeconfig.json from calling assemblies.
+    # 2. For Microsoft.DotNet.RemoteExecutor.dll - so "dotnet exec" child
+    #    processes resolve libhostpolicy.so from the testhost.
+    _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles)
 
     testhost = ctx.actions.declare_directory("%s/testhost" % ctx.label.name)
     _build_testhost(ctx, testhost, dotnet_file, sdk_version, additional_runfiles)
@@ -224,28 +224,20 @@ def _xunit_library_test_impl(ctx):
 
     return [default_info, compile_provider, runtime_provider]
 
-def _generate_remote_executor_runtimeconfig(ctx, tfm, sdk_version, additional_runfiles):
-    """Generate a runtimeconfig.json for Microsoft.DotNet.RemoteExecutor.
+def _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles):
+    """Generate runtimeconfig.json files needed by the test and RemoteExecutor.
 
-    RemoteExecutor spawns child processes that need this file so the dotnet host
-    treats them as framework-dependent and resolves libhostpolicy.so from the
-    testhost's shared framework directory.
+    Two runtimeconfig files are generated:
+    1. <test_assembly>.runtimeconfig.json - RemoteExecutor.InitializePaths() walks
+       the stack trace looking for runtimeconfig files from calling assemblies
+       (excluding itself). Without this, RuntimeConfigPath is null and
+       RemoteExecutor.Invoke with RuntimeConfigurationOptions throws.
+    2. Microsoft.DotNet.RemoteExecutor.runtimeconfig.json - needed by the dotnet
+       host when RemoteExecutor spawns child processes via "dotnet exec
+       Microsoft.DotNet.RemoteExecutor.dll" so it resolves libhostpolicy.so from
+       the testhost's shared framework directory.
     """
-    has_remote_executor = False
-    for f in additional_runfiles:
-        if f.basename == "Microsoft.DotNet.RemoteExecutor.dll":
-            has_remote_executor = True
-            break
-
-    if not has_remote_executor:
-        return
-
-    runtimeconfig = ctx.actions.declare_file(
-        "%s/%s/Microsoft.DotNet.RemoteExecutor.runtimeconfig.json" % (ctx.label.name, tfm),
-    )
-    ctx.actions.write(
-        output = runtimeconfig,
-        content = """\
+    runtimeconfig_content = """\
 {{
   "runtimeOptions": {{
     "tfm": "{tfm}",
@@ -255,9 +247,29 @@ def _generate_remote_executor_runtimeconfig(ctx, tfm, sdk_version, additional_ru
     }}
   }}
 }}
-""".format(tfm = tfm, version = sdk_version),
+""".format(tfm = tfm, version = sdk_version)
+
+    # Always generate a runtimeconfig for the test assembly itself.
+    test_name = dll.basename.replace(".dll", "")
+    test_runtimeconfig = ctx.actions.declare_file(
+        "%s/%s/%s.runtimeconfig.json" % (ctx.label.name, tfm, test_name),
     )
-    additional_runfiles.append(runtimeconfig)
+    ctx.actions.write(output = test_runtimeconfig, content = runtimeconfig_content)
+    additional_runfiles.append(test_runtimeconfig)
+
+    # Also generate one for RemoteExecutor if it's a dependency.
+    has_remote_executor = False
+    for f in additional_runfiles:
+        if f.basename == "Microsoft.DotNet.RemoteExecutor.dll":
+            has_remote_executor = True
+            break
+
+    if has_remote_executor:
+        re_runtimeconfig = ctx.actions.declare_file(
+            "%s/%s/Microsoft.DotNet.RemoteExecutor.runtimeconfig.json" % (ctx.label.name, tfm),
+        )
+        ctx.actions.write(output = re_runtimeconfig, content = runtimeconfig_content)
+        additional_runfiles.append(re_runtimeconfig)
 
 def _build_testhost(ctx, testhost, dotnet_file, sdk_version, test_deps):
     """Assemble a testhost directory with a shared framework from live-built bits.
