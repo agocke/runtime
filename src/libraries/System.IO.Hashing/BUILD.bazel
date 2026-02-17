@@ -1,0 +1,18 @@
+load("//src/libraries:defs.bzl", "live_csharp_library")
+
+live_csharp_library(
+    name = "live_System.IO.Hashing",
+    srcs = glob(
+        ["src/**/*.cs"],
+        exclude = [
+            # BitOperations.cs is only for non-.NETCoreApp targets
+            "src/System/IO/Hashing/BitOperations.cs",
+        ],
+    ) + [
+        "//src/libraries/Common:src/System/SR.cs",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+    allow_unsafe_blocks = True,
+    nullable = "annotations",
+    visibility = ["//visibility:public"],
+)
