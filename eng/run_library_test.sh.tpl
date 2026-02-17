@@ -11,9 +11,11 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
   { echo>&2 "ERROR: cannot find $f"; exit 1; }; f=; set -e
 # --- end runfiles.bash initialization v3 ---
 
-# Use the dotnet binary from the rules_dotnet SDK toolchain.
-DOTNET=$(rlocation TEMPLATED_dotnet)
-DOTNET_ROOT=$(dirname "$(readlink -f "$DOTNET")")
-export DOTNET_ROOT
+# Run the dotnet binary from the testhost directory. The testhost contains a
+# shared framework built from Bazel-built (live) assemblies, matching how
+# MSBuild's testhost uses live-built bits. Because dotnet resolves frameworks
+# relative to its own location, using the testhost's copy ensures our
+# DEBUG-built assemblies are loaded instead of the SDK's RELEASE versions.
+TESTHOST=$(rlocation TEMPLATED_testhost)
 
-"$DOTNET" exec $(rlocation TEMPLATED_xunit_console) $(rlocation TEMPLATED_entry_dll) -nologo "$@"
+"$TESTHOST/dotnet" exec "$(rlocation TEMPLATED_xunit_console)" "$(rlocation TEMPLATED_entry_dll)" -nologo "$@"

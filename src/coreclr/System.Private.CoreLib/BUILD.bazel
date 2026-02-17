@@ -178,6 +178,9 @@ csharp_library(
     additionalfiles = [
         "//src/coreclr/vm:ClrEtwAll.man",
     ],
+    analyzer_configs = [
+        "//eng/bazel:product_version_globalconfig",
+    ],
     analyzers = [
         "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",

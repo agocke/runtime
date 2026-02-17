@@ -164,29 +164,6 @@ def _xunit_library_test_impl(ctx):
     if xunit_console_dll == None:
         fail("xunit.console.dll not found in xunit runner files")
 
-    # Use the dotnet binary from the rules_dotnet toolchain SDK.
-    # The SDK includes a full shared framework with facade assemblies
-    # needed by xunit.console.dll.
-    toolchain = get_toolchain(ctx)
-    dotnet_files = toolchain.dotnetinfo.runtime_files
-    dotnet_file = dotnet_files[0]
-
-    # Create the launcher using dotnet exec from the SDK toolchain
-    windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
-    launcher = ctx.actions.declare_file("{}.{}".format(dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = dll)
-    ctx.actions.expand_template(
-        template = ctx.file._launcher_sh,
-        output = launcher,
-        substitutions = {
-            "TEMPLATED_dotnet": to_rlocation_path(ctx, dotnet_file),
-            "TEMPLATED_xunit_console": to_rlocation_path(ctx, xunit_console_dll),
-            "TEMPLATED_entry_dll": to_rlocation_path(ctx, dll),
-        },
-        is_executable = True,
-    )
-    additional_runfiles.extend(dotnet_files)
-    additional_runfiles.extend(ctx.files._bash_runfiles)
-
     # Copy transitive runtime deps to the output directory
     transitive_runtime_deps = runtime_provider.deps.to_list()
     for dep in transitive_runtime_deps:
@@ -205,6 +182,33 @@ def _xunit_library_test_impl(ctx):
                 )
                 additional_runfiles.append(dst)
 
+    # Build a testhost: a directory layout with a shared framework containing
+    # Bazel-built assemblies, matching how MSBuild's testhost uses live-built
+    # bits. This ensures the real dotnet hosting pipeline is tested, and that
+    # DEBUG-built assemblies are loaded instead of the SDK's RELEASE versions.
+    toolchain = get_toolchain(ctx)
+    dotnet_files = toolchain.dotnetinfo.runtime_files
+    dotnet_file = dotnet_files[0]
+    sdk_version = toolchain.dotnetinfo.runtime_version
+
+    testhost = ctx.actions.declare_directory("%s/testhost" % ctx.label.name)
+    _build_testhost(ctx, testhost, dotnet_file, sdk_version, additional_runfiles)
+
+    windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
+    launcher = ctx.actions.declare_file("{}.{}".format(dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = dll)
+    ctx.actions.expand_template(
+        template = ctx.file._launcher_sh,
+        output = launcher,
+        substitutions = {
+            "TEMPLATED_testhost": to_rlocation_path(ctx, testhost),
+            "TEMPLATED_xunit_console": to_rlocation_path(ctx, xunit_console_dll),
+            "TEMPLATED_entry_dll": to_rlocation_path(ctx, dll),
+        },
+        is_executable = True,
+    )
+    additional_runfiles.append(testhost)
+    additional_runfiles.extend(ctx.files._bash_runfiles)
+
     default_info = DefaultInfo(
         executable = launcher,
         runfiles = collect_transitive_runfiles(ctx, runtime_provider, ctx.attr.deps).merge(ctx.runfiles(files = additional_runfiles)).merge(ctx.attr._bash_runfiles[DefaultInfo].default_runfiles),
@@ -212,6 +216,65 @@ def _xunit_library_test_impl(ctx):
     )
 
     return [default_info, compile_provider, runtime_provider]
+
+def _build_testhost(ctx, testhost, dotnet_file, sdk_version, test_deps):
+    """Assemble a testhost directory with a shared framework from live-built bits.
+
+    Layout:
+        testhost/
+          dotnet                               (copied from SDK)
+          host/fxr/<version>/libhostfxr.so     (from SDK)
+          shared/Microsoft.NETCore.App/<version>/
+            <SDK assemblies as base>
+            <Core_Root assemblies override SDK>
+            <test dep assemblies override all>
+
+    The dotnet binary must be a real file (not symlink) inside the testhost
+    so that the host resolves frameworks from this directory, not the SDK's.
+    """
+    core_root = ctx.file._core_root
+
+    # Gather test dep DLLs for the override step.
+    test_dep_args = []
+    for f in test_deps:
+        if f.path.endswith(".dll"):
+            test_dep_args.append(f.path)
+
+    ctx.actions.run_shell(
+        inputs = [core_root, dotnet_file] + test_deps,
+        outputs = [testhost],
+        command = """\
+SDK_ROOT=$(dirname "$(readlink -f "$1")")
+VERSION="$2"
+OUT="$3"
+CORE_ROOT="$4"
+shift 4
+
+FW_DIR="$OUT/shared/Microsoft.NETCore.App/$VERSION"
+mkdir -p "$FW_DIR"
+mkdir -p "$OUT/host/fxr/$VERSION"
+
+# Copy the dotnet host binary so it resolves frameworks from this directory.
+cp -a "$SDK_ROOT/dotnet" "$OUT/dotnet"
+
+# SDK host framework resolver
+cp -a "$SDK_ROOT/host/fxr/$VERSION/"* "$OUT/host/fxr/$VERSION/"
+
+# SDK shared framework as base (lowest priority)
+cp -a "$SDK_ROOT/shared/Microsoft.NETCore.App/$VERSION/"* "$FW_DIR/"
+
+# Core_Root: Bazel-built runtime + managed assemblies override SDK
+cp -af "$CORE_ROOT/"* "$FW_DIR/"
+
+# Test dep assemblies have highest priority
+for f in "$@"; do
+  cp -af "$f" "$FW_DIR/"
+done
+""",
+        arguments = [dotnet_file.path, sdk_version, testhost.path, core_root.path] + test_dep_args,
+        mnemonic = "BuildTestHost",
+        progress_message = "Building testhost for %s" % ctx.label.name,
+    )
 
 _xunit_library_test = rule(
     _xunit_library_test_impl,
