@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/dlls/mscoree/coreclr/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -27,6 +27,7 @@ cc_binary(
         "-include", "src/coreclr/vm/common.h",
         "-Wno-error",
     ],
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + [
         "FX_VER_INTERNALNAME_STR=CoreCLR.dll",
         "FEATURE_VIRTUAL_STUB_DISPATCH",

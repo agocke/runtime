@@ -3,7 +3,7 @@
 # Matches CMake: src/coreclr/jit/CMakeLists.txt + jit/static/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -208,6 +208,8 @@ _JIT_COPTS = [
     "-Wno-endif-labels",
     "-Wno-changes-meaning",
     "-Wno-sizeof-pointer-div",
+    # emitarm64.h uses static_assert without message (C++17) in a C++11 build.
+    "-Wno-c++17-extensions",
 ]
 
 _JIT_DEFINES_BASE = [
@@ -229,6 +231,7 @@ cc_library(
     srcs = _JIT_COMMON_SOURCES + _JIT_AMD64_SOURCES,
     textual_hdrs = ["smcommon.cpp"],
     copts = _JIT_COPTS,
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + _JIT_DEFINES_BASE + _JIT_SIMD_DEFINES,
     deps = [
         "//src/coreclr/inc:coreclr_inc",

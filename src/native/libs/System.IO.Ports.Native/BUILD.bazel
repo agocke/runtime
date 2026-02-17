@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
 # System.IO.Ports.Native for linux-x64
 # Produces libSystem.IO.Ports.Native.so (shared) and libSystem.IO.Ports.Native.a (static)
@@ -16,6 +17,7 @@ cc_library(
         "-Isrc/native/libs/bazel",
         "-Isrc/native/libs/System.IO.Ports.Native",
     ],
+    local_defines = NATIVE_CONFIG_DEFINES,
     visibility = ["//visibility:public"],
     deps = [
         "//src/native/libs:common",

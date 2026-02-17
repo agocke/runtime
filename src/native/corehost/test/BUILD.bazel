@@ -2,6 +2,7 @@
 # Cross-platform tests only; Windows-only tests (comsxs, ijw, typelibs) are excluded.
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library", "cc_test")
+load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
 COREHOST_TEST_COPTS = [
     "-Isrc/native/corehost",
@@ -27,6 +28,7 @@ cc_test(
     srcs = ["fx_ver/test_fx_ver.cpp"],
     copts = COREHOST_TEST_COPTS,
     defines = COREHOST_TEST_DEFINES,
+    local_defines = NATIVE_CONFIG_DEFINES,
     linkstatic = True,
     deps = [
         "//src/native/corehost:hostcommon",
@@ -45,6 +47,7 @@ cc_library(
     ],
     copts = COREHOST_TEST_COPTS,
     defines = COREHOST_TEST_DEFINES + ["EXPORT_SHARED_API"],
+    local_defines = NATIVE_CONFIG_DEFINES,
     deps = ["//src/native/corehost:hostmisc"],
 )
 
@@ -68,6 +71,7 @@ cc_library(
         "MOCKHOSTFXR_2_2",
         "EXPORT_SHARED_API",
     ],
+    local_defines = NATIVE_CONFIG_DEFINES,
     deps = [
         "//src/native/corehost:hostcommon",
         "//src/native/corehost:nethost_lib",
@@ -91,6 +95,7 @@ cc_library(
         "MOCKHOSTFXR_5_0",
         "EXPORT_SHARED_API",
     ],
+    local_defines = NATIVE_CONFIG_DEFINES,
     deps = [
         "//src/native/corehost:hostcommon",
         "//src/native/corehost:nethost_lib",
@@ -111,6 +116,7 @@ cc_library(
     srcs = ["mockhostpolicy/mockhostpolicy.cpp"],
     copts = COREHOST_TEST_COPTS,
     defines = COREHOST_TEST_DEFINES + ["EXPORT_SHARED_API"],
+    local_defines = NATIVE_CONFIG_DEFINES,
     deps = ["//src/native/corehost:hostmisc"],
 )
 
@@ -145,6 +151,7 @@ cc_binary(
         "-Isrc/native/corehost/nethost",
     ],
     defines = COREHOST_TEST_DEFINES,
+    local_defines = NATIVE_CONFIG_DEFINES,
     linkopts = [
         "-lpthread",
         "-Wl,-rpath,$$ORIGIN",

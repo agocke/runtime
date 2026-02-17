@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
 # System.Globalization.Native for linux-x64
 # Produces libSystem.Globalization.Native.so (shared) and libSystem.Globalization.Native.a (static)
@@ -39,6 +40,7 @@ cc_library(
         "-Isrc/native/libs/System.Globalization.Native/bazel/linux-glibc-x64",
     ],
     linkopts = ["-ldl"],
+    local_defines = NATIVE_CONFIG_DEFINES,
     visibility = ["//visibility:public"],
     deps = [
         "//src/native/libs:common",

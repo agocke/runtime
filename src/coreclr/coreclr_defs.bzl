@@ -1,6 +1,7 @@
 # Shared constants for CoreCLR Bazel builds (linux-x64).
 # Import into BUILD.bazel files with:
 #   load("//src/coreclr:coreclr_defs.bzl", "CORECLR_DEFINES", "CORECLR_COPTS")
+#   load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CLR_CONFIG_COPTS")
 
 # --- Feature defines for linux-x64 retail ---
 # Derived from clrdefinitions.cmake and clrfeatures.cmake.
@@ -101,3 +102,70 @@ CORECLR_COPTS = [
     "-Isrc/native",
     "-Isrc/native/inc",
 ]
+
+# --- Debug/checked/release defines ---
+# Matches CMake's per-config compile_definitions from configurecompiler.cmake.
+#
+# CLR_BASE_CONFIG_DEFINES: base defines from configurecompiler.cmake (lines 60-62)
+#   that apply to ALL coreclr targets, including NativeAOT.
+#
+# CLR_CONFIG_DEFINES: full set including clrdefinitions.cmake additions
+#   (FEATURE_INTERPRETER, FEATURE_JAVAMARSHAL) that only apply to coreclr
+#   proper (not NativeAOT — CMake includes clrdefinitions.cmake AFTER
+#   add_subdirectory(nativeaot)).
+#
+# Standalone GC targets must NOT use either — they are always retail and get
+# their own defines via _GC_STANDALONE_DEFINES in gc/BUILD.bazel.
+
+_BASE_DEBUG = [
+    "DEBUG",
+    "_DEBUG",
+    "_DBG",
+    "DISABLE_CONTRACTS",
+]
+
+_BASE_RELEASE = [
+    "NDEBUG",
+    "DISABLE_CONTRACTS",
+]
+
+CLR_BASE_CONFIG_DEFINES = select({
+    "//:clr_debug": _BASE_DEBUG + [
+        "BUILDENV_DEBUG=1",
+        "URTBLDENV_FRIENDLY=Debug",
+    ],
+    "//:clr_checked": _BASE_DEBUG + [
+        "BUILDENV_CHECKED=1",
+        "URTBLDENV_FRIENDLY=Checked",
+    ],
+    "//:clr_release": _BASE_RELEASE + [
+        "URTBLDENV_FRIENDLY=Retail",
+    ],
+})
+
+CLR_CONFIG_DEFINES = select({
+    "//:clr_debug": _BASE_DEBUG + [
+        "BUILDENV_DEBUG=1",
+        "URTBLDENV_FRIENDLY=Debug",
+        "FEATURE_INTERPRETER",
+        "FEATURE_JAVAMARSHAL",
+    ],
+    "//:clr_checked": _BASE_DEBUG + [
+        "BUILDENV_CHECKED=1",
+        "URTBLDENV_FRIENDLY=Checked",
+        "FEATURE_INTERPRETER",
+        "FEATURE_JAVAMARSHAL",
+    ],
+    "//:clr_release": _BASE_RELEASE + [
+        "URTBLDENV_FRIENDLY=Retail",
+    ],
+})
+
+# --- Debug/checked/release copts ---
+# Flags that vary by config but aren't -D defines (e.g. optimization level).
+# Checked adds -O2; release is handled by Bazel's -c opt.
+CLR_CONFIG_COPTS = select({
+    "//:clr_debug": [],
+    "//:clr_checked": ["-O2"],
+    "//:clr_release": [],
+})

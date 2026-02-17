@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/ilasm/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
 
 # grammar_before.cpp / grammar_after.cpp are #included by prebuilt/asmparse.cpp
 # (bison-generated parser) — they must be available but not compiled separately.
@@ -38,6 +38,7 @@ cc_binary(
         "-Wno-array-bounds",
         "-Wno-unused-label",
     ],
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + [
         "__ILASM__",
         "_FEATURE_NO_HOST",

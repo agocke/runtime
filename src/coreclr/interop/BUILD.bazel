@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/interop/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -22,6 +22,7 @@ cc_library(
     copts = CORECLR_COPTS + [
         "-Isrc/coreclr/interop/inc",
     ],
+    local_defines = CLR_CONFIG_DEFINES,
     includes = [
         ".",
         "inc",

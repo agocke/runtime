@@ -96,7 +96,7 @@ cc_library(
     copts = _GC_COPTS + [
         "-Isrc/coreclr/gc/unix",
     ],
-    defines = _GC_STANDALONE_DEFINES,
+    local_defines = _GC_STANDALONE_DEFINES,
     alwayslink = True,
     deps = [
         ":gc_headers",
@@ -132,7 +132,7 @@ cc_library(
         "-mavx2",
         "-Wno-unused-but-set-parameter",
     ],
-    defines = _GC_STANDALONE_DEFINES,
+    local_defines = _GC_STANDALONE_DEFINES,
     alwayslink = True,
     deps = [
         ":gc_headers",
