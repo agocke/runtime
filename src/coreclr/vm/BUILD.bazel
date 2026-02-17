@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/vm/CMakeLists.txt + vm/wks/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -83,6 +83,11 @@ cc_library(
         "-Isrc/coreclr/vm/amd64",
         "-Isrc/coreclr",
     ] + CORECLR_COPTS,
+    local_defines = CLR_CONFIG_DEFINES + select({
+        "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//conditions:default": [],
+    }),
     defines = _VM_DEFINES,
     linkstatic = True,
     deps = [
@@ -326,7 +331,16 @@ cc_library(
         "//src/coreclr/gc:gcee.cpp",
         "//src/coreclr/System.Private.CoreLib:src/System/Runtime/ExceptionServices/AsmOffsets.cs",
     ],
-    copts = _VM_COPTS,
+    copts = _VM_COPTS + select({
+        "//:clr_debug": ["-mcx16"],
+        "//:clr_checked": ["-mcx16"],
+        "//conditions:default": [],
+    }),
+    local_defines = CLR_CONFIG_DEFINES + select({
+        "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//conditions:default": [],
+    }),
     defines = _VM_DEFINES + ["GC_DESCRIPTOR"] + select({
         "//:debug_mode": ["WRITE_BARRIER_CHECK"],
         "//conditions:default": [],
@@ -357,7 +371,16 @@ cc_library(
         "codeman.cpp",
         "peimagelayout.cpp",
     ],
-    copts = _VM_COPTS,
+    copts = _VM_COPTS + select({
+        "//:clr_debug": ["-mcx16"],
+        "//:clr_checked": ["-mcx16"],
+        "//conditions:default": [],
+    }),
+    local_defines = CLR_CONFIG_DEFINES + select({
+        "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//conditions:default": [],
+    }),
     defines = _VM_DEFINES,
     alwayslink = True,
     deps = [

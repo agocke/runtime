@@ -3,6 +3,7 @@
 #                src/coreclr/nativeaot/Runtime/Full/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_BASE_CONFIG_DEFINES")
 load("//src/coreclr/nativeaot:nativeaot_defs.bzl", "NATIVEAOT_COPTS", "NATIVEAOT_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
@@ -300,6 +301,7 @@ cc_library(
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
     defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = _RUNTIME_DEPS,
 )
@@ -319,6 +321,7 @@ cc_library(
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS + _LLVM_LIBUNWIND_COPTS,
     defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = _RUNTIME_DEPS + [
         ":eventpipe_disabled",
@@ -336,6 +339,7 @@ cc_library(
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS + _LLVM_LIBUNWIND_COPTS,
     defines = NATIVEAOT_DEFINES + ["FEATURE_SVR_GC"],
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = _RUNTIME_DEPS + [
         ":eventpipe_disabled",
@@ -353,6 +357,7 @@ cc_library(
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
     defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = _RUNTIME_DEPS,
 )
@@ -364,6 +369,7 @@ cc_library(
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + _GENDIR_COPTS + _GC_UNIX_COPTS + _EVENTING_COPTS,
     defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = _RUNTIME_DEPS,
 )
@@ -393,6 +399,7 @@ cc_library(
         "-mavx2",
     ],
     defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = [
         "//src/coreclr/gc:gc_headers",
@@ -407,6 +414,7 @@ cc_library(
         "-Isrc/coreclr/gc/vxsort",
     ],
     defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = [
         "//src/coreclr/gc:gc_headers",
@@ -422,6 +430,7 @@ cc_library(
     srcs = ["Bootstrap/main.cpp"],
     copts = NATIVEAOT_COPTS,
     defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = ["//src/native/minipal"],
 )
@@ -431,6 +440,7 @@ cc_library(
     srcs = ["Bootstrap/main.cpp"],
     copts = NATIVEAOT_COPTS,
     defines = NATIVEAOT_DEFINES + ["NATIVEAOT_DLL"],
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
     deps = ["//src/native/minipal"],
 )
@@ -440,6 +450,7 @@ cc_library(
     srcs = ["Bootstrap/stdcppshim.cpp"],
     copts = NATIVEAOT_COPTS,
     defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
 )
 
