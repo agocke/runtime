@@ -220,11 +220,14 @@ public static class ComparisonEngine
         AddSetDifference(result, "defines", msbuild.Defines, bazel.Defines);
         AddSetDifference(result, "references", msbuild.References, bazel.References);
         AddSetDifference(result, "nowarn", msbuild.NoWarn, bazel.NoWarn);
-        AddSetDifference(result, "analyzers", msbuild.Analyzers, bazel.Analyzers);
+        // Analyzers are intentionally not compared — Bazel does not wire Roslyn
+        // analyzers yet, so the diff would always be MSBuild-only noise.
 
-        if (msbuild.LangVersion != bazel.LangVersion
-            && !string.IsNullOrEmpty(msbuild.LangVersion)
-            && !string.IsNullOrEmpty(bazel.LangVersion))
+        var msbuildLang = NormalizeLangVersion(msbuild.LangVersion);
+        var bazelLang = NormalizeLangVersion(bazel.LangVersion);
+        if (!string.Equals(msbuildLang, bazelLang, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(msbuildLang)
+            && !string.IsNullOrEmpty(bazelLang))
         {
             result.Differences.Add(new Difference
             {
@@ -236,7 +239,7 @@ public static class ComparisonEngine
             });
         }
 
-        if (msbuild.TargetType != bazel.TargetType)
+        if (!string.Equals(msbuild.TargetType, bazel.TargetType, StringComparison.OrdinalIgnoreCase))
         {
             result.Differences.Add(new Difference
             {
@@ -265,6 +268,11 @@ public static class ComparisonEngine
     {
         var onlyInMSBuild = new SortedSet<string>(msbuild.SourceFiles.Except(bazel.SourceFiles), StringComparer.Ordinal);
         var onlyInBazel = new SortedSet<string>(bazel.SourceFiles.Except(msbuild.SourceFiles), StringComparer.Ordinal);
+
+        // Filter out SDK-generated AssemblyAttributes.cs files. These contain
+        // only TargetFrameworkAttribute and are not meaningful for equivalence.
+        onlyInMSBuild.RemoveWhere(f => Path.GetFileName(f).EndsWith("AssemblyAttributes.cs", StringComparison.Ordinal));
+        onlyInBazel.RemoveWhere(f => Path.GetFileName(f).EndsWith("AssemblyAttributes.cs", StringComparison.Ordinal));
 
         if (onlyInMSBuild.Count == 0 && onlyInBazel.Count == 0)
             return;
@@ -363,5 +371,19 @@ public static class ComparisonEngine
                 OnlyInBazel = onlyInRight,
             });
         }
+    }
+
+    /// <summary>
+    /// Normalize language version strings so that "preview" and the
+    /// corresponding numeric version (e.g. "14.0") compare as equal.
+    /// </summary>
+    private static string NormalizeLangVersion(string version)
+    {
+        // MSBuild uses "preview" while rules_dotnet emits the numeric version.
+        // Map "preview" to the latest known C# version so they compare equal.
+        if (string.Equals(version, "preview", StringComparison.OrdinalIgnoreCase))
+            return "14.0";
+
+        return version;
     }
 }

@@ -65,13 +65,16 @@ public static class BinlogParser
                         break;
                     case "NoWarn":
                         foreach (var w in prop.Value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries))
-                            noWarn.Add(w.Trim());
+                            noWarn.Add(NormalizeWarningCode(w.Trim()));
                         break;
                     case "TargetType":
                         targetType = prop.Value;
                         break;
                     case "LangVersion":
                         langVersion = prop.Value;
+                        break;
+                    case "CommandLineArguments":
+                        ParseCommandLineArguments(prop.Value, noWarn);
                         break;
                     case "Nullable":
                     case "Unsafe":
@@ -114,6 +117,28 @@ public static class BinlogParser
         if (assemblyName is null)
             return null;
 
+        // The modern Csc task puts /nowarn flags in CommandLineArguments
+        // which appears as a Message in the task, not a Property in Parameters.
+        // Fall back to parsing messages if we didn't find NoWarn as a property.
+        if (noWarn.Count == 0)
+        {
+            task.VisitAllChildren<Property>(p =>
+            {
+                if (p.Name == "CommandLineArguments")
+                    ParseCommandLineArguments(p.Value, noWarn);
+            });
+        }
+
+        // Also check task messages for the response file content
+        if (noWarn.Count == 0)
+        {
+            task.VisitAllChildren<Message>(msg =>
+            {
+                if (msg.Text?.Contains("/nowarn:", StringComparison.Ordinal) == true)
+                    ParseCommandLineArguments(msg.Text, noWarn);
+            });
+        }
+
         return new ManagedCompilationRecord
         {
             AssemblyName = assemblyName,
@@ -145,5 +170,44 @@ public static class BinlogParser
             return normalized[root.Length..];
 
         return normalized;
+    }
+
+    /// <summary>
+    /// Parse /nowarn: flags from the Csc CommandLineArguments or response file text.
+    /// Modern MSBuild puts NoWarn values here rather than as a separate property.
+    /// </summary>
+    private static void ParseCommandLineArguments(string commandLine, SortedSet<string> noWarn)
+    {
+        var span = commandLine.AsSpan();
+        int idx;
+        while ((idx = span.IndexOf("/nowarn:", StringComparison.Ordinal)) >= 0)
+        {
+            span = span[(idx + 8)..];
+            // Read until whitespace or end of string
+            var end = span.IndexOfAny([' ', '\t', '\r', '\n']);
+            var value = end >= 0 ? span[..end] : span;
+            foreach (var range in value.Split(','))
+            {
+                var code = value[range].Trim();
+                if (!code.IsEmpty)
+                    noWarn.Add(NormalizeWarningCode(code.ToString()));
+            }
+            if (end >= 0) span = span[end..];
+            else break;
+        }
+    }
+
+    /// <summary>
+    /// Normalize warning codes to a consistent CS-prefixed format.
+    /// MSBuild sometimes emits bare numbers (e.g. "1701") and sometimes
+    /// prefixed codes (e.g. "CS1701"). Normalize to always use "CS" prefix
+    /// for numeric codes so they match Bazel's format.
+    /// </summary>
+    private static string NormalizeWarningCode(string code)
+    {
+        if (code.Length > 0 && char.IsDigit(code[0]))
+            return "CS" + code;
+
+        return code;
     }
 }
