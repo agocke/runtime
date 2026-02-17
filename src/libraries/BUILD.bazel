@@ -433,6 +433,18 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
+    name = "ref_System.Linq.Queryable",
+    srcs = [
+        "System.Linq.Queryable/ref/System.Linq.Queryable.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+        ":ref_System.Linq.Expressions",
+        "//src/libraries/System.Linq:ref_System.Linq",
+    ],
+)
+
+netcoreapp_ref_assembly(
     name = "ref_System.Text.RegularExpressions",
     srcs = [
         "System.Text.RegularExpressions/ref/System.Text.RegularExpressions.cs",

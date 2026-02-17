@@ -26,7 +26,10 @@ layout.
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
-  2 library test suites (System.Runtime.Numerics, System.Diagnostics.Contracts)
+  10 library test suites (System.Collections, System.Collections.Concurrent,
+  System.ComponentModel, System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
+  System.Diagnostics.Tracing, System.Formats.Asn1, System.Linq, System.Memory,
+  System.Runtime.Numerics)
 - **Per-component configuration**: independent debug/checked/release for
   CoreCLR and Libraries (matching MSBuild's `-rc`/`-lc` flags)
 - **Runtime layout**: `runtime_layout` rule assembles stripped binaries into
@@ -35,7 +38,7 @@ layout.
 ### What's Next
 
 - Remaining managed libraries (~156 assemblies not yet in Bazel, out of ~200 total)
-- Library unit tests (2 of ~187 libraries have Bazel test BUILD files)
+- Library unit tests (10 of ~187 libraries have Bazel test BUILD files)
 - CoreCLR diagnostic tooling: DAC (mscordac), DBI (mscordbi), createdump, SOS
 - CoreCLR tools: SuperPMI, ildasm (full binary), crossgen2
 - ILC (NativeAOT ahead-of-time compiler) and crossgen2 (ReadyToRun compiler)
@@ -435,9 +438,12 @@ Managed C# framework assemblies built with `rules_dotnet`. Currently 44 of
 - [x] `src/tests/defs.bzl` — test infrastructure, live_csharp_library, xUnit runner
 - [x] `src/tests/live_test.bzl` — `library_test` macro for library unit tests
 - [x] 18 test BUILD files (JIT directed tests, common infrastructure)
-- [x] 2 library test suites (System.Runtime.Numerics, System.Diagnostics.Contracts)
+- [x] 10 library test suites (System.Collections, System.Collections.Concurrent,
+  System.ComponentModel, System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
+  System.Diagnostics.Tracing, System.Formats.Asn1, System.Linq, System.Memory,
+  System.Runtime.Numerics)
 - [ ] Remaining CoreCLR test suite (~thousands of tests)
-- [ ] Remaining library unit tests (~185 libraries)
+- [ ] Remaining library unit tests (~177 libraries)
 
 ### 5.5 Installer / Packaging
 - [ ] `src/installer/` — runtime packs, NuGet packaging, SDK integration
@@ -544,7 +550,7 @@ Library tests use the `library_test` macro from `src/tests/live_test.bzl`, which
 runs a reflection-based test runner (`LibraryTestRunner.cs`) under `corerun`.
 Each library test needs a `tests/BUILD.bazel` file.
 
-**Summary**: 2 of ~187 libraries have Bazel test BUILD files.
+**Summary**: 10 of ~187 libraries have Bazel test BUILD files.
 
 ### Tiers
 
@@ -560,22 +566,22 @@ Libraries are grouped by implementation complexity:
 | Library | Source BUILD | Test BUILD | Notes |
 |---------|:-----------:|:----------:|-------|
 | Microsoft.Win32.Registry | ✅ | ❌ | Windows-specific tests may need filtering |
-| System.Collections | ✅ | ❌ | |
-| System.Collections.Concurrent | ✅ | ❌ | |
-| System.Collections.Immutable | ✅ | ❌ | |
+| System.Collections | ✅ | ✅ | Large; common collection tests; serialization |
+| System.Collections.Concurrent | ✅ | ✅ | 2454 tests; uses live_ ref_impl_pair |
+| System.Collections.Immutable | ✅ | ❌ | Needs impl_ BUILD; tests reference internal src |
 | System.Collections.NonGeneric | ✅ | ❌ | Needs System.Net.Primitives impl for PlatformDetection |
-| System.ComponentModel | ✅ | ❌ | |
-| System.Console | ✅ | ❌ | |
+| System.ComponentModel | ✅ | ✅ | Trivial; 2 test files |
+| System.Console | ✅ | ❌ | Needs StringResources/resx for linked src files |
 | System.Diagnostics.Contracts | ✅ | ✅ | Facade; uses ref_impl_pair; 22 tests pass |
-| System.Diagnostics.StackTrace | ✅ | ❌ | |
-| System.Diagnostics.Tracing | ✅ | ❌ | |
-| System.Formats.Asn1 | ✅ | ❌ | |
+| System.Diagnostics.StackTrace | ✅ | ✅ | 140 tests; uses live_ ref_impl_pair |
+| System.Diagnostics.Tracing | ✅ | ✅ | 40 tests; ETW/Windows tests excluded |
+| System.Formats.Asn1 | ✅ | ✅ | 46 test files; ref-only dep |
 | System.IO.FileSystem.AccessControl | ✅ | ❌ | Windows-specific tests |
 | System.IO.FileSystem.DriveInfo | ✅ | ❌ | |
 | System.IO.IsolatedStorage | ✅ | ❌ | |
 | System.IO.MemoryMappedFiles | ✅ | ❌ | |
-| System.Linq | ✅ | ❌ | |
-| System.Memory | ✅ | ❌ | |
+| System.Linq | ✅ | ✅ | 71 test files |
+| System.Memory | ✅ | ✅ | 52143 tests (very large) |
 | System.Net.Primitives | ✅ (ref only) | ❌ | Needs impl build; many tests depend on this |
 | System.Numerics.Vectors | ✅ | ❌ | |
 | System.ObjectModel | ✅ | ❌ | |
