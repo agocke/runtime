@@ -207,8 +207,10 @@ build:libs_release --//:libs_config=release
 # =====================================================================
 build:release --config=clr_release
 build:release --config=libs_release
-# Enable compiler optimizations and switch C# from /define:DEBUG to
-# /define:RELEASE.  Without this, Bazel's default "fastbuild" mode
-# injects /define:DEBUG into C# compilations, causing AsmOffsets.cs to
-# pick debug struct sizes that don't match the release C++ layout.
+# Enable compiler optimizations.  System.Private.CoreLib uses
+# override_debug to control its own DEBUG/RELEASE defines via
+# select() on //:clr_config, so it is safe to mix CLR and library
+# configurations.  The -c opt here switches the default C# compilation
+# from /define:DEBUG to /define:RELEASE for library targets and enables
+# native optimizations.
 build:release -c opt
