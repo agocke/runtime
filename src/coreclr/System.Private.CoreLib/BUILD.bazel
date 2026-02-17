@@ -357,9 +357,10 @@ csharp_library(
     ] + select({
         # override_debug skips /debug and /optimize; set them per CLR config.
         # MSBuild: Debug → /optimize-, Checked → /optimize+, Release → /optimize+
-        "//:clr_release": [ "/debug-", "/optimize+" ],
-        "//:clr_checked": [ "/debug+", "/optimize+" ],
-        "//conditions:default": [ "/debug+", "/optimize-" ],
+        # Always use /debug:portable so PDBs are produced in all configs.
+        "//:clr_release": [ "/debug:portable", "/optimize+" ],
+        "//:clr_checked": [ "/debug:portable", "/optimize+" ],
+        "//conditions:default": [ "/debug:portable", "/optimize-" ],
     }),
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/SilverlightPlatformPublicKey.snk",
     defines = [
