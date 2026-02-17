@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/vm/CMakeLists.txt + vm/wks/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -38,7 +38,7 @@ _VM_COPTS = [
     "-Isrc/coreclr/runtime",
     "-Isrc/coreclr/vm/eventing/eventpipe",
     "-Isrc/native/corehost",
-] + CORECLR_COPTS + [
+] + CORECLR_COPTS + CLR_CONFIG_COPTS + [
     "-include", "src/coreclr/vm/common.h",
     "-Wno-error",
 ]
@@ -82,7 +82,7 @@ cc_library(
         "-Isrc/coreclr/vm",
         "-Isrc/coreclr/vm/amd64",
         "-Isrc/coreclr",
-    ] + CORECLR_COPTS,
+    ] + CORECLR_COPTS + CLR_CONFIG_COPTS,
     local_defines = CLR_CONFIG_DEFINES + select({
         "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
         "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],

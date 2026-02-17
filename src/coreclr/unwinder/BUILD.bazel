@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/unwinder/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -23,7 +23,7 @@ cc_library(
         # Must come before CORECLR_COPTS so that <common.h> resolves to vm/common.h
         "-Isrc/coreclr/vm",
         "-Isrc/coreclr/vm/amd64",
-    ] + CORECLR_COPTS + [
+    ] + CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/unwinder",
         "-Isrc/coreclr/unwinder/amd64",
         "-Isrc/coreclr/debug/ee",

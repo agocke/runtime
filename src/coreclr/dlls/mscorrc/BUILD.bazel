@@ -5,7 +5,7 @@
 # by processrc.sh. We use a pre-generated .cpp for Bazel builds.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -14,7 +14,7 @@ exports_files(["resource.h"])
 cc_library(
     name = "mscorrc",
     srcs = ["bazel/mscorrc.cpp"],
-    copts = CORECLR_COPTS,
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
     alwayslink = True,
