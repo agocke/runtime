@@ -216,7 +216,7 @@ public static class ComparisonEngine
     {
         var result = new ComparisonResult { Name = name, Category = "managed" };
 
-        AddSetDifference(result, "source_files", msbuild.SourceFiles, bazel.SourceFiles);
+        AddSourceFileDifference(result, msbuild.SourceFiles, bazel.SourceFiles, name);
         AddSetDifference(result, "defines", msbuild.Defines, bazel.Defines);
         AddSetDifference(result, "references", msbuild.References, bazel.References);
         AddSetDifference(result, "nowarn", msbuild.NoWarn, bazel.NoWarn);
@@ -249,6 +249,52 @@ public static class ComparisonEngine
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Compare source file sets with special handling for generated files.
+    /// Generated files may live in different directories across build systems
+    /// (e.g. artifacts/obj/ vs bazel-out/). After exact-path matching,
+    /// unmatched files are matched by filename alone.
+    /// </summary>
+    private static void AddSourceFileDifference(
+        ComparisonResult result,
+        SortedSet<string> msbuildFiles,
+        SortedSet<string> bazelFiles,
+        string assemblyName)
+    {
+        var onlyInMSBuild = new SortedSet<string>(msbuildFiles.Except(bazelFiles), StringComparer.Ordinal);
+        var onlyInBazel = new SortedSet<string>(bazelFiles.Except(msbuildFiles), StringComparer.Ordinal);
+
+        if (onlyInMSBuild.Count == 0 && onlyInBazel.Count == 0)
+            return;
+
+        // Match remaining files by filename (ignoring directory).
+        var msbuildByName = onlyInMSBuild
+            .GroupBy(f => Path.GetFileName(f)!)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var bazelByName = onlyInBazel
+            .GroupBy(f => Path.GetFileName(f)!)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var key in msbuildByName.Keys.Intersect(bazelByName.Keys).ToList())
+        {
+            if (msbuildByName[key].Count == 1 && bazelByName[key].Count == 1)
+            {
+                onlyInMSBuild.Remove(msbuildByName[key][0]);
+                onlyInBazel.Remove(bazelByName[key][0]);
+            }
+        }
+
+        if (onlyInMSBuild.Count > 0 || onlyInBazel.Count > 0)
+        {
+            result.Differences.Add(new Difference
+            {
+                Field = "source_files",
+                OnlyInCMake = onlyInMSBuild,
+                OnlyInBazel = onlyInBazel,
+            });
+        }
     }
 
     private static void AddSetDifference(ComparisonResult result, string field, SortedSet<string> left, SortedSet<string> right)

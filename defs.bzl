@@ -104,7 +104,7 @@ def csharp_library(
         resx_target = "resx_" + name
         gen_resx_source(
             name = resx_target,
-            out = out + ".System.SR.cs",
+            out = name + "/System.SR.cs",
             assembly_name = out,
             resource_name = _resource_name,
             resx_file = resx_file,
