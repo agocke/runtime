@@ -191,6 +191,13 @@ def _xunit_library_test_impl(ctx):
     dotnet_file = dotnet_files[0]
     sdk_version = toolchain.dotnetinfo.runtime_version
 
+    # RemoteExecutor spawns child processes via "dotnet exec
+    # Microsoft.DotNet.RemoteExecutor.dll". Without a runtimeconfig.json the
+    # host treats it as self-contained and fails to find libhostpolicy.so.
+    # Generate a framework-dependent runtimeconfig so the child resolves the
+    # framework (and libhostpolicy) from the testhost.
+    _generate_remote_executor_runtimeconfig(ctx, tfm, sdk_version, additional_runfiles)
+
     testhost = ctx.actions.declare_directory("%s/testhost" % ctx.label.name)
     _build_testhost(ctx, testhost, dotnet_file, sdk_version, additional_runfiles)
 
@@ -216,6 +223,41 @@ def _xunit_library_test_impl(ctx):
     )
 
     return [default_info, compile_provider, runtime_provider]
+
+def _generate_remote_executor_runtimeconfig(ctx, tfm, sdk_version, additional_runfiles):
+    """Generate a runtimeconfig.json for Microsoft.DotNet.RemoteExecutor.
+
+    RemoteExecutor spawns child processes that need this file so the dotnet host
+    treats them as framework-dependent and resolves libhostpolicy.so from the
+    testhost's shared framework directory.
+    """
+    has_remote_executor = False
+    for f in additional_runfiles:
+        if f.basename == "Microsoft.DotNet.RemoteExecutor.dll":
+            has_remote_executor = True
+            break
+
+    if not has_remote_executor:
+        return
+
+    runtimeconfig = ctx.actions.declare_file(
+        "%s/%s/Microsoft.DotNet.RemoteExecutor.runtimeconfig.json" % (ctx.label.name, tfm),
+    )
+    ctx.actions.write(
+        output = runtimeconfig,
+        content = """\
+{{
+  "runtimeOptions": {{
+    "tfm": "{tfm}",
+    "framework": {{
+      "name": "Microsoft.NETCore.App",
+      "version": "{version}"
+    }}
+  }}
+}}
+""".format(tfm = tfm, version = sdk_version),
+    )
+    additional_runfiles.append(runtimeconfig)
 
 def _build_testhost(ctx, testhost, dotnet_file, sdk_version, test_deps):
     """Assemble a testhost directory with a shared framework from live-built bits.
