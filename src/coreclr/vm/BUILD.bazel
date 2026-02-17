@@ -83,6 +83,11 @@ cc_library(
         "-Isrc/coreclr/vm/amd64",
         "-Isrc/coreclr",
     ] + CORECLR_COPTS,
+    local_defines = CLR_CONFIG_DEFINES + select({
+        "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//conditions:default": [],
+    }),
     defines = _VM_DEFINES,
     linkstatic = True,
     deps = [
