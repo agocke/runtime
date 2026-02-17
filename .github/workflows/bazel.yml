@@ -12,10 +12,10 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - name: debug
-            flags: ''
-          - name: release
-            flags: '--config=release'
+          - name: release_clr+debug_libs
+            flags: '--config=clr_release'
+          - name: checked_clr+debug_libs
+            flags: '--config=clr_checked'
 
     name: Bazel ${{ matrix.config.name }}
     runs-on: ubuntu-latest
