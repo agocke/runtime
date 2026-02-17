@@ -25,6 +25,7 @@ COREHOST_TEST_DEFINES = [
 
 cc_test(
     name = "test_fx_ver",
+    size = "small",
     srcs = ["fx_ver/test_fx_ver.cpp"],
     copts = COREHOST_TEST_COPTS,
     defines = COREHOST_TEST_DEFINES,

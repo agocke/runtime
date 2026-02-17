@@ -209,6 +209,7 @@ _LIBUNWIND_TEST_DEFINES = [
 
 cc_test(
     name = "test_flush_cache",
+    size = "small",
     srcs = ["tests/test-flush-cache.c"],
     copts = _LIBUNWIND_TEST_COPTS,
     defines = _LIBUNWIND_TEST_DEFINES,

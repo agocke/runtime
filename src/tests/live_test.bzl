@@ -53,6 +53,7 @@ def live_csharp_test(
     deps = [],
     analyzers = [],
     nowarn = [],
+    size = "small",
     **kwargs
 ):
     analyzers = analyzers + [
@@ -65,6 +66,7 @@ def live_csharp_test(
         analyzers = analyzers,
         target_frameworks = [NETCOREAPP_CURRENT],
         nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
+        size = size,
         **kwargs
     )
 
@@ -73,6 +75,7 @@ def library_test(
     deps = [],
     analyzers = [],
     nowarn = [],
+    size = "medium",
     **kwargs
 ):
     """Test macro for library tests that uses a reflection-based runner instead of XUnitWrapperGenerator."""
@@ -86,6 +89,7 @@ def library_test(
         ],
         target_frameworks = [NETCOREAPP_CURRENT],
         nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
+        size = size,
         **kwargs
     )
 
@@ -258,6 +262,7 @@ def coreclr_merged_test(
     name,
     deps = [],
     test_deps = [],
+    size = "medium",
     tags = [],
     **kwargs
 ):
@@ -289,6 +294,7 @@ def coreclr_merged_test(
     live_csharp_test(
         name = name,
         deps = deps + transformed_deps,
+        size = size,
         tags = tags + ["merged", "manual"],
         **kwargs
     )
