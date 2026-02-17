@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# compare-bazel-msbuild.sh — Compare Bazel and CMake/MSBuild build inputs
+# compare-bazel.sh — Compare Bazel and CMake/MSBuild build inputs
 #
 # Verifies that the Bazel build compiles the same source files with the same
 # compiler options as the CMake/MSBuild build.  Compares both native C/C++
@@ -7,12 +7,12 @@
 # bazel aquery).
 #
 # Usage:
-#   ./compare-bazel-msbuild.sh                    # Debug config (default)
-#   ./compare-bazel-msbuild.sh --config release   # Release config
-#   ./compare-bazel-msbuild.sh --config both      # Both configs
-#   ./compare-bazel-msbuild.sh --skip-build       # Use existing build artifacts
-#   ./compare-bazel-msbuild.sh --verbose          # Show all differences
-#   ./compare-bazel-msbuild.sh --json-output report.json
+#   ./compare-bazel.sh                    # Debug config (default)
+#   ./compare-bazel.sh --config release   # Release config
+#   ./compare-bazel.sh --config both      # Both configs
+#   ./compare-bazel.sh --skip-build       # Use existing build artifacts
+#   ./compare-bazel.sh --verbose          # Show all differences
+#   ./compare-bazel.sh --json-output report.json
 
 set -euo pipefail
 
@@ -23,7 +23,6 @@ config="debug"
 skip_build=false
 verbose=false
 json_output=""
-extra_args=()
 
 # ----- Parse arguments -----
 while [[ $# -gt 0 ]]; do
@@ -45,7 +44,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            head -15 "${BASH_SOURCE[0]}" | tail -14
+            head -16 "${BASH_SOURCE[0]}" | tail -15
             exit 0
             ;;
         *)
