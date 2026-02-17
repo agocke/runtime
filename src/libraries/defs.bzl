@@ -188,7 +188,7 @@ def netcoreapp_impl_assembly(
     ]
 
     if generate_facades:
-        forwards_cs = name + ".Forwards.cs"
+        forwards_cs = name + "/" + base_name + ".Forwards.cs"
         gen_facades(
             name = "facade_" + base_name,
             srcs = srcs,

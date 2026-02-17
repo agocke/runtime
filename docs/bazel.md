@@ -63,28 +63,44 @@ Implementation uses modern Bazel `string_flag` build settings (`//:clr_config`,
 `//:libs_config`) with `per_file_copt` scoping C++ defines by source path.
 Clang is the default compiler (matching CMake).
 
-## Verifying Bazel ↔ CMake Equivalence
+## Verifying Build Equivalence
 
-`compare-bazel-cmake.sh` automates binary comparison between Bazel and CMake outputs. It compares all 10 native binaries on:
-
-- **Exported symbols** (`nm -D`, stripping version tags for fair comparison)
-- **Dynamic dependencies** (`NEEDED` entries)
-- **SONAME**
-- **ELF section layout** (filtering strip-related sections like `.gnu_debuglink`)
-- **Stripped file size** (strips both to temp files for fair comparison)
+`compare-bazel.sh` automates build-input equivalence checking between Bazel and
+CMake/MSBuild. It compares every compilation unit's source files, preprocessor
+defines, compiler flags, references, and other inputs.
 
 ```bash
 # Prerequisites: build both systems first
-./build.sh clr+libs+host                              # CMake
-bazel build //:runtime_native                          # Bazel
+./build.sh clr+libs -rc release                         # MSBuild + CMake
+bazel build //...                                       # Bazel
 
 # Run comparison
-./compare-bazel-cmake.sh                               # default (debug)
-./compare-bazel-cmake.sh --config release              # release mode
-./compare-bazel-cmake.sh --verbose                     # show diffs
-./compare-bazel-cmake.sh --section-tolerance 10        # allow 10% size variance
-./compare-bazel-cmake.sh --build                       # build both first, then compare
+./compare-bazel.sh                                      # default (debug)
+./compare-bazel.sh --config release                     # release mode
+./compare-bazel.sh --skip-build                         # reuse existing build artifacts
+./compare-bazel.sh --verbose                            # show full diffs
+./compare-bazel.sh --json-output results.json           # machine-readable output
 ```
+
+The tool lives in `eng/tools/BuildEquivalenceCheck/`. It parses MSBuild `.binlog`
+files, CMake `compile_commands.json`, and Bazel `aquery` output to extract and
+normalize compilation records, then compares them field-by-field.
+
+### Known equivalence gaps
+
+See [build-equivalence-TODO.md](build-equivalence-TODO.md) for the full list. Key
+areas:
+
+- **Native defines** (1000 files): Boolean define normalization needed (`-DFOO` vs
+  `-DFOO=1`), plus missing/extra defines in `coreclr_defs.bzl` and `native_defs.bzl`
+- **Native flags/optimization** (1000 files): Warning flags and optimization level
+  mismatches between `.bazelrc` and `CMakeLists.txt`
+- **Managed source files** (23 assemblies): Missing `SkipLocalsInit.cs`, `Forwards.cs`
+  generation gaps, facade build strategy differences
+- **Managed nowarn** (23 assemblies): MSBuild's `Directory.Build.props` suppressions
+  not replicated in Bazel
+- **Unmatched compilations**: 640 CMake-only + 405 MSBuild-only units not yet ported
+  to Bazel
 
 ## Platform Support Status
 
