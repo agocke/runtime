@@ -35,6 +35,7 @@ public static class BinlogParser
         var projectDirectory = task.GetNearestParent<Project>()?.ProjectDirectory ?? repoRoot;
 
         var sourceFiles = new SortedSet<string>(StringComparer.Ordinal);
+        var sourceFileOriginalPaths = new Dictionary<string, string>(StringComparer.Ordinal);
         var defines = new SortedSet<string>(StringComparer.Ordinal);
         var references = new SortedSet<string>(StringComparer.Ordinal);
         var noWarn = new SortedSet<string>(StringComparer.Ordinal);
@@ -89,7 +90,14 @@ public static class BinlogParser
                 {
                     case "Sources":
                         foreach (var item in param.Children.OfType<Item>())
-                            sourceFiles.Add(NormalizePath(item.Text, repoRoot, projectDirectory));
+                        {
+                            var normalized = NormalizePath(item.Text, repoRoot, projectDirectory);
+                            sourceFiles.Add(normalized);
+                            var diskPath = Path.IsPathRooted(item.Text)
+                                ? item.Text
+                                : Path.GetFullPath(Path.Combine(projectDirectory, item.Text));
+                            sourceFileOriginalPaths.TryAdd(normalized, diskPath);
+                        }
                         break;
                     case "References" or "ReferencePath":
                         foreach (var item in param.Children.OfType<Item>())
@@ -110,6 +118,7 @@ public static class BinlogParser
         {
             AssemblyName = assemblyName,
             SourceFiles = sourceFiles,
+            SourceFileOriginalPaths = sourceFileOriginalPaths,
             Defines = defines,
             References = references,
             NoWarn = noWarn,

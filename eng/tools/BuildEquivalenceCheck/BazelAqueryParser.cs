@@ -240,6 +240,7 @@ public static class BazelAqueryParser
     private static ManagedCompilationRecord? ParseManagedArguments(List<string> args, string targetLabel, string repoRoot)
     {
         var sourceFiles = new SortedSet<string>(StringComparer.Ordinal);
+        var sourceFileOriginalPaths = new Dictionary<string, string>(StringComparer.Ordinal);
         var defines = new SortedSet<string>(StringComparer.Ordinal);
         var references = new SortedSet<string>(StringComparer.Ordinal);
         var noWarn = new SortedSet<string>(StringComparer.Ordinal);
@@ -289,7 +290,10 @@ public static class BazelAqueryParser
             }
             else if (!arg.StartsWith('-') && (arg.EndsWith(".cs") || arg.Contains(".cs")))
             {
-                sourceFiles.Add(NormalizeBazelPath(arg, repoRoot));
+                var normalized = NormalizeBazelPath(arg, repoRoot);
+                sourceFiles.Add(normalized);
+                // Bazel paths are relative to the execution root (repo root).
+                sourceFileOriginalPaths.TryAdd(normalized, Path.GetFullPath(Path.Combine(repoRoot, arg)));
             }
         }
 
@@ -300,6 +304,7 @@ public static class BazelAqueryParser
         {
             AssemblyName = assemblyName,
             SourceFiles = sourceFiles,
+            SourceFileOriginalPaths = sourceFileOriginalPaths,
             Defines = defines,
             References = references,
             NoWarn = noWarn,

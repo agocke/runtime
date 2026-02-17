@@ -26,6 +26,11 @@ public sealed class ManagedCompilationRecord
 {
     public required string AssemblyName { get; init; }
     public required SortedSet<string> SourceFiles { get; init; }
+    /// <summary>
+    /// Maps normalized (repo-relative) source paths to their original disk paths,
+    /// used for content comparison of generated files.
+    /// </summary>
+    public Dictionary<string, string> SourceFileOriginalPaths { get; init; } = [];
     public required SortedSet<string> Defines { get; init; }
     public required SortedSet<string> References { get; init; }
     public required SortedSet<string> NoWarn { get; init; }

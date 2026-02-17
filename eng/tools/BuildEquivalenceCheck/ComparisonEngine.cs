@@ -216,7 +216,7 @@ public static class ComparisonEngine
     {
         var result = new ComparisonResult { Name = name, Category = "managed" };
 
-        AddSourceFileDifference(result, msbuild.SourceFiles, bazel.SourceFiles, name);
+        AddSourceFileDifference(result, msbuild, bazel);
         AddSetDifference(result, "defines", msbuild.Defines, bazel.Defines);
         AddSetDifference(result, "references", msbuild.References, bazel.References);
         AddSetDifference(result, "nowarn", msbuild.NoWarn, bazel.NoWarn);
@@ -255,16 +255,16 @@ public static class ComparisonEngine
     /// Compare source file sets with special handling for generated files.
     /// Generated files may live in different directories across build systems
     /// (e.g. artifacts/obj/ vs bazel-out/). After exact-path matching,
-    /// unmatched files are matched by filename alone.
+    /// unmatched files are matched by filename. Filename-matched pairs are
+    /// verified by content; mismatches are reported.
     /// </summary>
     private static void AddSourceFileDifference(
         ComparisonResult result,
-        SortedSet<string> msbuildFiles,
-        SortedSet<string> bazelFiles,
-        string assemblyName)
+        ManagedCompilationRecord msbuild,
+        ManagedCompilationRecord bazel)
     {
-        var onlyInMSBuild = new SortedSet<string>(msbuildFiles.Except(bazelFiles), StringComparer.Ordinal);
-        var onlyInBazel = new SortedSet<string>(bazelFiles.Except(msbuildFiles), StringComparer.Ordinal);
+        var onlyInMSBuild = new SortedSet<string>(msbuild.SourceFiles.Except(bazel.SourceFiles), StringComparer.Ordinal);
+        var onlyInBazel = new SortedSet<string>(bazel.SourceFiles.Except(msbuild.SourceFiles), StringComparer.Ordinal);
 
         if (onlyInMSBuild.Count == 0 && onlyInBazel.Count == 0)
             return;
@@ -277,12 +277,23 @@ public static class ComparisonEngine
             .GroupBy(f => Path.GetFileName(f)!)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var contentMismatches = new SortedSet<string>(StringComparer.Ordinal);
+
         foreach (var key in msbuildByName.Keys.Intersect(bazelByName.Keys).ToList())
         {
             if (msbuildByName[key].Count == 1 && bazelByName[key].Count == 1)
             {
-                onlyInMSBuild.Remove(msbuildByName[key][0]);
-                onlyInBazel.Remove(bazelByName[key][0]);
+                var msbuildPath = msbuildByName[key][0];
+                var bazelPath = bazelByName[key][0];
+
+                // Verify content matches via original disk paths.
+                if (!GeneratedContentMatches(msbuildPath, bazelPath, msbuild, bazel))
+                {
+                    contentMismatches.Add($"{key} (content differs: msbuild={msbuildPath}, bazel={bazelPath})");
+                }
+
+                onlyInMSBuild.Remove(msbuildPath);
+                onlyInBazel.Remove(bazelPath);
             }
         }
 
@@ -294,6 +305,47 @@ public static class ComparisonEngine
                 OnlyInCMake = onlyInMSBuild,
                 OnlyInBazel = onlyInBazel,
             });
+        }
+
+        if (contentMismatches.Count > 0)
+        {
+            result.Differences.Add(new Difference
+            {
+                Field = "generated_file_content",
+                OnlyInCMake = contentMismatches,
+                OnlyInBazel = [],
+            });
+        }
+    }
+
+    /// <summary>
+    /// Compare the content of two generated files using their original disk paths.
+    /// Returns true if content matches or if either file cannot be read.
+    /// </summary>
+    private static bool GeneratedContentMatches(
+        string msbuildNormalized,
+        string bazelNormalized,
+        ManagedCompilationRecord msbuild,
+        ManagedCompilationRecord bazel)
+    {
+        if (!msbuild.SourceFileOriginalPaths.TryGetValue(msbuildNormalized, out var msbuildDisk)
+            || !bazel.SourceFileOriginalPaths.TryGetValue(bazelNormalized, out var bazelDisk))
+            return true; // Can't verify — assume match
+
+        try
+        {
+            if (!File.Exists(msbuildDisk) || !File.Exists(bazelDisk))
+                return true; // Can't verify — assume match
+
+            // Normalize line endings — MSBuild may produce \r\n, Bazel produces \n.
+            var msbuildContent = File.ReadAllText(msbuildDisk).ReplaceLineEndings("\n");
+            var bazelContent = File.ReadAllText(bazelDisk).ReplaceLineEndings("\n");
+
+            return msbuildContent == bazelContent;
+        }
+        catch
+        {
+            return true; // Can't verify — assume match
         }
     }
 
