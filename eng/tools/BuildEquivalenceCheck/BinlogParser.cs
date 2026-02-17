@@ -31,6 +31,9 @@ public static class BinlogParser
 
     private static ManagedCompilationRecord? ExtractFromCscTask(MSBuildTask task, string repoRoot)
     {
+        // Resolve relative source paths against the project directory, not CWD.
+        var projectDirectory = task.GetNearestParent<Project>()?.ProjectDirectory ?? repoRoot;
+
         var sourceFiles = new SortedSet<string>(StringComparer.Ordinal);
         var defines = new SortedSet<string>(StringComparer.Ordinal);
         var references = new SortedSet<string>(StringComparer.Ordinal);
@@ -86,7 +89,7 @@ public static class BinlogParser
                 {
                     case "Sources":
                         foreach (var item in param.Children.OfType<Item>())
-                            sourceFiles.Add(NormalizePath(item.Text, repoRoot));
+                            sourceFiles.Add(NormalizePath(item.Text, repoRoot, projectDirectory));
                         break;
                     case "References" or "ReferencePath":
                         foreach (var item in param.Children.OfType<Item>())
@@ -118,12 +121,16 @@ public static class BinlogParser
         };
     }
 
-    private static string NormalizePath(string path, string repoRoot)
+    private static string NormalizePath(string path, string repoRoot, string projectDirectory)
     {
         if (string.IsNullOrEmpty(path))
             return path;
 
-        var normalized = Path.GetFullPath(path);
+        // Resolve relative paths against the project directory (not CWD) so that
+        // paths like "System/Collections/Generic/LinkedList.cs" recorded in the
+        // binlog relative to the .csproj become fully repo-relative.
+        var basePath = Path.IsPathRooted(path) ? path : Path.Combine(projectDirectory, path);
+        var normalized = Path.GetFullPath(basePath);
         var root = Path.GetFullPath(repoRoot).TrimEnd('/') + "/";
         if (normalized.StartsWith(root, StringComparison.Ordinal))
             return normalized[root.Length..];
