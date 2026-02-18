@@ -18,4 +18,4 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
 # DEBUG-built assemblies are loaded instead of the SDK's RELEASE versions.
 TESTHOST=$(rlocation TEMPLATED_testhost)
 
-"$TESTHOST/dotnet" exec "$(rlocation TEMPLATED_xunit_console)" "$(rlocation TEMPLATED_entry_dll)" -nologo -notrait "category=failing" "$@"
+"$TESTHOST/dotnet" exec "$(rlocation TEMPLATED_xunit_console)" "$(rlocation TEMPLATED_entry_dll)" -nologo -notrait "category=failing" -notrait "category=OuterLoop" "$@"
