@@ -1,6 +1,7 @@
 # GC subsystem — Bazel build (linux-x64).
 # Matches CMake: src/coreclr/gc/CMakeLists.txt
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -73,7 +74,7 @@ _GC_COPTS = [
 # The standalone GC always builds as retail, even in debug builds.
 # These copts override --config=debug globals (copts come after --copt)
 # and per_file_copt (rule copts come last in the command line).
-_GC_STANDALONE_COPTS = _GC_COPTS + [
+_GC_STANDALONE_COPTS = _GC_COPTS + CLR_CONFIG_COPTS + [
     "-UNDEBUG", "-UDEBUG", "-U_DEBUG", "-U_DBG",
     "-UDISABLE_CONTRACTS", "-UURTBLDENV_FRIENDLY",
     "-UWRITE_BARRIER_CHECK",
@@ -93,7 +94,7 @@ cc_library(
         "unix/cgroup.cpp",
         "unix/bazel/linux-glibc-x64/config.gc.h",
     ],
-    copts = _GC_COPTS + [
+    copts = _GC_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/gc/unix",
     ],
     local_defines = _GC_STANDALONE_DEFINES,
@@ -126,7 +127,7 @@ cc_library(
         "vxsort/*.h",
         "vxsort/smallsort/*.h",
     ]),
-    copts = _GC_COPTS + [
+    copts = _GC_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/gc/vxsort",
         "-Isrc/coreclr/gc/vxsort/smallsort",
         "-mavx2",

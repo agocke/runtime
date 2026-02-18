@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 exports_files(
     ["xoshiro128pp.c"],
@@ -24,7 +25,7 @@ cc_library(
         ["*.h", "**/*.h"],
         exclude = ["bazel/**"],
     ),
-    copts = [
+    copts = CLR_CONFIG_COPTS + [
         "-Isrc/native",
         "-Isrc/native/minipal/bazel/linux-glibc-x64",
     ],

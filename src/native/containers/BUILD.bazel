@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 # dn-containers for linux-x64
 # Utility container library (allocator, list, queue, vector, umap, simdhash)
@@ -29,7 +30,7 @@ cc_library(
     srcs = _SOURCES + [
         "bazel/linux-glibc-x64/dn-config.h",
     ] + _HEADERS,
-    copts = [
+    copts = CLR_CONFIG_COPTS + [
         "-Isrc/native",
         "-Isrc/native/containers/bazel/linux-glibc-x64",
     ],
@@ -45,7 +46,7 @@ cc_library(
     srcs = _SOURCES + [
         "bazel/linux-glibc-x64/dn-config.h",
     ] + _HEADERS,
-    copts = [
+    copts = CLR_CONFIG_COPTS + [
         "-Isrc/native",
         "-Isrc/native/containers/bazel/linux-glibc-x64",
         "-fno-lto",
