@@ -6,7 +6,7 @@ library_test(
         "//src/libraries/Common/tests:System/ShouldNotBeInvokedException.cs",
     ],
     deps = [
-        "//src/libraries/System.Diagnostics.Contracts:live_System.Diagnostics.Contracts",
+        "//src/libraries/System.Diagnostics.Contracts:ref_System.Diagnostics.Contracts",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/Common/tests:TestUtilities",

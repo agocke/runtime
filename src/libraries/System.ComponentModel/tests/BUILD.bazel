@@ -4,7 +4,6 @@ library_test(
     name = "System.ComponentModel.Tests",
     srcs = glob(["*.cs"]),
     deps = [
-        "//src/libraries/System.ComponentModel:impl_System.ComponentModel",
         "//src/libraries/Common/tests:TestUtilities",
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//microsoft.dotnet.xunitextensions",

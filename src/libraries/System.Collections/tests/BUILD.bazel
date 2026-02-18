@@ -32,7 +32,6 @@ library_test(
         "//src/libraries/Common/tests:System/Diagnostics/DebuggerAttributes.cs",
     ],
     deps = [
-        "//src/libraries/System.Collections:impl_System.Collections",
         "//src/libraries/System.Runtime.Serialization.Formatters:impl_System.Runtime.Serialization.Formatters",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",

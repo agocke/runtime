@@ -31,7 +31,7 @@ library_test(
         "//src/libraries/Common/tests:System/Runtime/Serialization/Formatters/BinaryFormatterHelpers.cs",
     ],
     deps = [
-        "//src/libraries/System.Collections.Concurrent:live_System.Collections.Concurrent",
+        "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
         "//src/libraries/System.Diagnostics.Tracing:ref_System.Diagnostics.Tracing",
         "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
