@@ -3,6 +3,7 @@
 # Matches CMake: src/native/external/libunwind_extras/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -176,7 +177,7 @@ cc_library(
         # elf64.c includes elfxx.c
         "src/elfxx.c",
     ],
-    copts = LIBUNWIND_COPTS,
+    copts = LIBUNWIND_COPTS + CLR_CONFIG_COPTS,
     defines = LIBUNWIND_DEFINES,
     hdrs = glob([
         "include/*.h",

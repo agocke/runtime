@@ -175,7 +175,7 @@ cc_library(
         "inc/*.inc",
         "inc/rt/*.h",
     ]),
-    copts = [
+    copts = CLR_CONFIG_COPTS + [
         # Warning suppression (matching configurecompiler.cmake for GCC C++)
         "-Wno-invalid-offsetof",
         "-Wno-class-memaccess",
@@ -248,7 +248,7 @@ cc_library(
     ) + [
         "src/bazel/linux-glibc-x64/config.h",
     ],
-    copts = [
+    copts = CLR_CONFIG_COPTS + [
         "-Wno-invalid-offsetof",
         "-Isrc/coreclr/pal/src/include",
         "-Isrc/coreclr/pal/inc",
