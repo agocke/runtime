@@ -210,6 +210,7 @@ def _xunit_library_test_impl(ctx):
             "TEMPLATED_testhost": to_rlocation_path(ctx, testhost),
             "TEMPLATED_xunit_console": to_rlocation_path(ctx, xunit_console_dll),
             "TEMPLATED_entry_dll": to_rlocation_path(ctx, dll),
+            "TEMPLATED_writable_test_dir": "true" if ctx.attr.writable_test_dir else "false",
         },
         is_executable = True,
     )
@@ -345,6 +346,12 @@ _xunit_library_test = rule(
                 doc = "The xunit console runner files",
                 default = "//eng:xunit_console_runner",
                 allow_files = True,
+            ),
+            "writable_test_dir": attr.bool(
+                doc = "Copy test runtime files to a writable directory before running. " +
+                      "Needed for tests that modify files next to the assembly (e.g. PDB rename). " +
+                      "Off by default to avoid the copy overhead.",
+                default = False,
             ),
         }),
     test = True,

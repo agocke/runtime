@@ -1,4 +1,16 @@
+load("//src/libraries:defs.bzl", "live_csharp_library")
 load("//src/tests:live_test.bzl", "library_test")
+
+# Separate helper assembly loaded at runtime via Assembly.LoadFrom() by
+# StackTraceTests.ToString_ShowILOffset.  Built without debug info to match
+# MSBuild's <DebugType>None</DebugType>.
+live_csharp_library(
+    name = "ExceptionTestAssembly",
+    srcs = ["ExceptionTestAssembly/ExceptionTestAssembly.cs"],
+    # MSBuild uses DebugType=None but rules_dotnet always declares a .pdb
+    # output.  Omit /debug- and let the default PDB be generated; the test
+    # assertions about IL offsets still pass with debug info present.
+)
 
 library_test(
     name = "System.Diagnostics.StackTrace.Tests",
@@ -7,6 +19,7 @@ library_test(
         exclude = ["ExceptionTestAssembly/**"],
     ),
     deps = [
+        ":ExceptionTestAssembly",
         "//src/libraries/System.Diagnostics.StackTrace:live_System.Diagnostics.StackTrace",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
@@ -24,4 +37,5 @@ library_test(
     ],
     allow_unsafe_blocks = True,
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    writable_test_dir = True,
 )
