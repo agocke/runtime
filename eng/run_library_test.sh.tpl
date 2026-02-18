@@ -17,5 +17,30 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
 # relative to its own location, using the testhost's copy ensures our
 # DEBUG-built assemblies are loaded instead of the SDK's RELEASE versions.
 TESTHOST=$(rlocation TEMPLATED_testhost)
+XUNIT_CONSOLE="$(rlocation TEMPLATED_xunit_console)"
+ENTRY_DLL="$(rlocation TEMPLATED_entry_dll)"
+DEPSFILE="$(rlocation TEMPLATED_depsfile)"
 
-"$TESTHOST/dotnet" exec "$(rlocation TEMPLATED_xunit_console)" "$(rlocation TEMPLATED_entry_dll)" -nologo "$@"
+RESOLVED_DIR="$(dirname "$(readlink -f "$XUNIT_CONSOLE")")"
+
+if [ "TEMPLATED_writable_test_dir" = "true" ]; then
+    # Copy all runtime files to a writable directory.  Bazel's linux-sandbox
+    # bind-mounts build outputs read-only, which breaks tests that call
+    # File.Move on files next to the assembly (e.g. PDB rename).
+    WORK_DIR="${TEST_TMPDIR:-/tmp}/testdir"
+    mkdir -p "$WORK_DIR"
+    for ext in dll pdb json xml; do
+        for f in "$RESOLVED_DIR"/*."$ext"; do
+            [ -f "$f" ] && cp "$f" "$WORK_DIR/"
+        done
+    done
+    cd "$WORK_DIR"
+    XUNIT_CONSOLE="$WORK_DIR/$(basename "$XUNIT_CONSOLE")"
+    ENTRY_DLL="$WORK_DIR/$(basename "$ENTRY_DLL")"
+    DEPSFILE="$WORK_DIR/$(basename "$DEPSFILE")"
+else
+    # Run directly from the build output directory.
+    cd "$RESOLVED_DIR"
+fi
+
+"$TESTHOST/dotnet" exec --depsfile "$DEPSFILE" "$XUNIT_CONSOLE" "$ENTRY_DLL" -nologo -notrait "category=failing" -notrait "category=OuterLoop" "$@"

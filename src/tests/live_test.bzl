@@ -164,6 +164,23 @@ def _xunit_library_test_impl(ctx):
     if xunit_console_dll == None:
         fail("xunit.console.dll not found in xunit runner files")
 
+    # Copy xunit.runner.json next to the test DLL to match MSBuild behavior.
+    # Key settings: preEnumerateTheories=false avoids expensive upfront theory
+    # enumeration, and diagnosticMessages=true enables long-running test warnings.
+    xunit_runner_json = ctx.file._xunit_runner_config
+    dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, xunit_runner_json.basename))
+    ctx.actions.run_shell(
+        inputs = [xunit_runner_json],
+        outputs = [dst],
+        command = "cp -f \"$1\" \"$2\"",
+        arguments = [xunit_runner_json.path, dst.path],
+        mnemonic = "CopyFile",
+        progress_message = "Copying %s" % xunit_runner_json.basename,
+        use_default_shell_env = True,
+        execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+    )
+    additional_runfiles.append(dst)
+
     # Copy transitive runtime deps to the output directory
     transitive_runtime_deps = runtime_provider.deps.to_list()
     for dep in transitive_runtime_deps:
@@ -191,6 +208,14 @@ def _xunit_library_test_impl(ctx):
     dotnet_file = dotnet_files[0]
     sdk_version = toolchain.dotnetinfo.runtime_version
 
+    # Generate runtimeconfig.json files:
+    # 1. For the test assembly - RemoteExecutor.InitializePaths() walks the stack
+    #    to find a runtimeconfig.json from calling assemblies.
+    # 2. For Microsoft.DotNet.RemoteExecutor.dll - so "dotnet exec" child
+    #    processes resolve libhostpolicy.so from the testhost.
+    _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles)
+    test_depsfile = _generate_test_depsfile(ctx, dll, tfm, additional_runfiles)
+
     testhost = ctx.actions.declare_directory("%s/testhost" % ctx.label.name)
     _build_testhost(ctx, testhost, dotnet_file, sdk_version, additional_runfiles)
 
@@ -203,6 +228,8 @@ def _xunit_library_test_impl(ctx):
             "TEMPLATED_testhost": to_rlocation_path(ctx, testhost),
             "TEMPLATED_xunit_console": to_rlocation_path(ctx, xunit_console_dll),
             "TEMPLATED_entry_dll": to_rlocation_path(ctx, dll),
+            "TEMPLATED_depsfile": to_rlocation_path(ctx, test_depsfile),
+            "TEMPLATED_writable_test_dir": "true" if ctx.attr.writable_test_dir else "false",
         },
         is_executable = True,
     )
@@ -216,6 +243,92 @@ def _xunit_library_test_impl(ctx):
     )
 
     return [default_info, compile_provider, runtime_provider]
+
+def _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles):
+    """Generate runtimeconfig.json files needed by the test and RemoteExecutor.
+
+    Two runtimeconfig files are generated:
+    1. <test_assembly>.runtimeconfig.json - RemoteExecutor.InitializePaths() walks
+       the stack trace looking for runtimeconfig files from calling assemblies
+       (excluding itself). Without this, RuntimeConfigPath is null and
+       RemoteExecutor.Invoke with RuntimeConfigurationOptions throws.
+    2. Microsoft.DotNet.RemoteExecutor.runtimeconfig.json - needed by the dotnet
+       host when RemoteExecutor spawns child processes via "dotnet exec
+       Microsoft.DotNet.RemoteExecutor.dll" so it resolves libhostpolicy.so from
+       the testhost's shared framework directory.
+    """
+    runtimeconfig_content = """\
+{{
+  "runtimeOptions": {{
+    "tfm": "{tfm}",
+    "framework": {{
+      "name": "Microsoft.NETCore.App",
+      "version": "{version}"
+    }}
+  }}
+}}
+""".format(tfm = tfm, version = sdk_version)
+
+    # Always generate a runtimeconfig for the test assembly itself.
+    test_name = dll.basename.replace(".dll", "")
+    test_runtimeconfig = ctx.actions.declare_file(
+        "%s/%s/%s.runtimeconfig.json" % (ctx.label.name, tfm, test_name),
+    )
+    ctx.actions.write(output = test_runtimeconfig, content = runtimeconfig_content)
+    additional_runfiles.append(test_runtimeconfig)
+
+    # Also generate one for RemoteExecutor if it's a dependency.
+    has_remote_executor = False
+    for f in additional_runfiles:
+        if f.basename == "Microsoft.DotNet.RemoteExecutor.dll":
+            has_remote_executor = True
+            break
+
+    if has_remote_executor:
+        re_runtimeconfig = ctx.actions.declare_file(
+            "%s/%s/Microsoft.DotNet.RemoteExecutor.runtimeconfig.json" % (ctx.label.name, tfm),
+        )
+        ctx.actions.write(output = re_runtimeconfig, content = runtimeconfig_content)
+        additional_runfiles.append(re_runtimeconfig)
+
+def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
+    """Generate a deps.json for the test assembly so dotnet adds it to TPA.
+
+    Without --depsfile, the host cannot locate the test assembly and xunit
+    throws FileNotFoundException.
+    """
+    test_name = dll.basename.replace(".dll", "")
+    test_depsfile = ctx.actions.declare_file(
+        "%s/%s/%s.deps.json" % (ctx.label.name, tfm, test_name),
+    )
+    depsfile_content = """\
+{{
+  "runtimeTarget": {{
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  }},
+  "targets": {{
+    ".NETCoreApp,Version=v10.0": {{
+      "{test_name}/1.0.0": {{
+        "runtime": {{
+          "{test_dll}": {{}}
+        }}
+      }}
+    }}
+  }},
+  "libraries": {{
+    "{test_name}/1.0.0": {{
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }}
+  }}
+}}
+""".format(test_name = test_name, test_dll = dll.basename)
+    ctx.actions.write(output = test_depsfile, content = depsfile_content)
+    additional_runfiles.append(test_depsfile)
+
+    return test_depsfile
 
 def _build_testhost(ctx, testhost, dotnet_file, sdk_version, test_deps):
     """Assemble a testhost directory with a shared framework from live-built bits.
@@ -270,6 +383,33 @@ cp -af "$CORE_ROOT/"* "$FW_DIR/"
 for f in "$@"; do
   cp -af "$f" "$FW_DIR/"
 done
+
+# Generate a version-free deps.json matching MSBuild's testhost pattern.
+# The SDK's deps.json contains assemblyVersion/fileVersion constraints that
+# don't match Bazel-built assemblies (which have different versions than the
+# SDK's R2R copies). A version-free deps.json lets the host resolve assemblies
+# from the framework directory without version-checking.
+{
+  printf '{"runtimeTarget":{"name":".NETCoreApp,Version=v0.0/rid","signature":""},'
+  printf '"compilationOptions":{},"targets":{".NETCoreApp,Version=v0.0":{},'
+  printf '".NETCoreApp,Version=v0.0/rid":{"Microsoft.NETCore.App/%s":{"runtime":{' "$VERSION"
+  first=true
+  for dll in "$FW_DIR"/*.dll; do
+    [ -f "$dll" ] || continue
+    base=$(basename "$dll")
+    if $first; then first=false; else printf ','; fi
+    printf '"runtimes/rid/lib/netcoreapp0.0/%s":{}' "$base"
+  done
+  printf '},"native":{'
+  first=true
+  for so in "$FW_DIR"/*.so; do
+    [ -f "$so" ] || continue
+    base=$(basename "$so")
+    if $first; then first=false; else printf ','; fi
+    printf '"runtimes/rid/native/%s":{}' "$base"
+  done
+  printf '}}}},"libraries":{"Microsoft.NETCore.App/%s":{"type":"package","serviceable":false,"sha512":""}}}' "$VERSION"
+} > "$FW_DIR/Microsoft.NETCore.App.deps.json"
 """,
         arguments = [dotnet_file.path, sdk_version, testhost.path, core_root.path] + test_dep_args,
         mnemonic = "BuildTestHost",
@@ -291,6 +431,17 @@ _xunit_library_test = rule(
                 doc = "The xunit console runner files",
                 default = "//eng:xunit_console_runner",
                 allow_files = True,
+            ),
+            "_xunit_runner_config": attr.label(
+                doc = "The xunit.runner.json configuration file",
+                default = "//eng:testing/xunit/xunit.runner.json",
+                allow_single_file = True,
+            ),
+            "writable_test_dir": attr.bool(
+                doc = "Copy test runtime files to a writable directory before running. " +
+                      "Needed for tests that modify files next to the assembly (e.g. PDB rename). " +
+                      "Off by default to avoid the copy overhead.",
+                default = False,
             ),
         }),
     test = True,
