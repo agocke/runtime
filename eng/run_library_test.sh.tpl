@@ -19,6 +19,7 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
 TESTHOST=$(rlocation TEMPLATED_testhost)
 XUNIT_CONSOLE="$(rlocation TEMPLATED_xunit_console)"
 ENTRY_DLL="$(rlocation TEMPLATED_entry_dll)"
+DEPSFILE="$(rlocation TEMPLATED_depsfile)"
 
 RESOLVED_DIR="$(dirname "$(readlink -f "$XUNIT_CONSOLE")")"
 
@@ -36,9 +37,10 @@ if [ "TEMPLATED_writable_test_dir" = "true" ]; then
     cd "$WORK_DIR"
     XUNIT_CONSOLE="$WORK_DIR/$(basename "$XUNIT_CONSOLE")"
     ENTRY_DLL="$WORK_DIR/$(basename "$ENTRY_DLL")"
+    DEPSFILE="$WORK_DIR/$(basename "$DEPSFILE")"
 else
     # Run directly from the build output directory.
     cd "$RESOLVED_DIR"
 fi
 
-"$TESTHOST/dotnet" exec "$XUNIT_CONSOLE" "$ENTRY_DLL" -nologo -notrait "category=failing" -notrait "category=OuterLoop" "$@"
+"$TESTHOST/dotnet" exec --depsfile "$DEPSFILE" "$XUNIT_CONSOLE" "$ENTRY_DLL" -nologo -notrait "category=failing" -notrait "category=OuterLoop" "$@"
