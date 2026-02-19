@@ -44,9 +44,7 @@ cc_library(
         "pal_x509_root.c",
         "pal_x509ext.c",
     ] + glob(["*.h"]),
-    hdrs = [
-        "bazel/linux-glibc-x64/pal_crypto_config.h",
-    ],
+    hdrs = ["bazel/linux-glibc-x64/pal_crypto_config.h"],
     copts = [
         "-Wno-cast-align",
         "-Wno-reserved-id-macro",
@@ -64,11 +62,9 @@ cc_library(
         "FEATURE_DISTRO_AGNOSTIC_SSL",
     ],
     local_defines = NATIVE_CONFIG_DEFINES,
-    linkopts = [
-        "-ldl",
-        "-pthread",
-    ],
+    linkopts = ["-ldl", "-pthread"],
     visibility = ["//visibility:public"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//src/native/libs:common",
         "//src/native/minipal",
@@ -80,5 +76,6 @@ cc_shared_library(
     shared_lib_name = "libSystem.Security.Cryptography.Native.OpenSsl.so",
     user_link_flags = ["-Wl,-soname,libSystem.Security.Cryptography.Native.OpenSsl.so"],
     visibility = ["//visibility:public"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [":System.Security.Cryptography.Native.OpenSsl_lib"],
 )

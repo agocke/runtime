@@ -4,6 +4,7 @@ load(
     "import_library",
 )
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("defs.bzl",
     "netcoreapp_ref_assembly",
     "netcoreapp_impl_assembly",
@@ -293,8 +294,9 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/Interop/Windows/Interop.Errors.cs",
         "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
         "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
-    ] + select({
-        "@platforms//os:linux": [
+    ] + selects.with_or({
+        # Common Unix files shared between Linux and macOS
+        ("@platforms//os:linux", "@platforms//os:macos"): [
             "System.Diagnostics.Process/src/Microsoft/Win32/SafeHandles/SafeProcessHandle.Unix.cs",
             "System.Diagnostics.Process/src/System/Diagnostics/Process.Unix.cs",
             "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.Unix.cs",
@@ -332,6 +334,11 @@ netcoreapp_impl_assembly(
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.ConfigureTerminalForChildProcess.cs",
 
             "System.Diagnostics.Process/src/System/Diagnostics/Process.ConfigureTerminalForChildProcesses.Unix.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/Process.NonUap.cs",
+        ],
+    }) + select({
+        # Linux-specific files
+        "@platforms//os:linux": [
             "System.Diagnostics.Process/src/System/Diagnostics/Process.Linux.cs",
             "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.Linux.cs",
             "System.Diagnostics.Process/src/System/Diagnostics/ProcessThread.Linux.cs",
@@ -347,9 +354,21 @@ netcoreapp_impl_assembly(
             "//src/libraries/Common:src/Interop/Linux/procfs/Interop.ProcMountInfo.TryParseMountInfoLine.cs",
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.GetBootTimeTicks.cs",
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SchedGetSetAffinity.cs",
-
-            "System.Diagnostics.Process/src/System/Diagnostics/Process.NonUap.cs",
         ],
+        # macOS-specific files (BSD + OSX)
+        "@platforms//os:macos": [
+            "System.Diagnostics.Process/src/System/Diagnostics/Process.BSD.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/Process.OSX.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.BSD.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.OSX.cs",
+            "System.Diagnostics.Process/src/System/Diagnostics/ProcessThread.OSX.cs",
+
+            "//src/libraries/Common:src/Interop/OSX/Interop.libproc.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.libproc.GetProcessInfoById.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.libSystem.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.Libraries.cs",
+        ],
+        "//conditions:default": [],
     }),
     resx_file = "System.Diagnostics.Process/src/Resources/Strings.resx",
     deps = [

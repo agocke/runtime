@@ -421,9 +421,9 @@ done
   done
   printf '},"native":{'
   first=true
-  for so in "$FW_DIR"/*.so; do
-    [ -f "$so" ] || continue
-    base=$(basename "$so")
+  for native in "$FW_DIR"/*.so "$FW_DIR"/*.dylib; do
+    [ -f "$native" ] || continue
+    base=$(basename "$native")
     if $first; then first=false; else printf ','; fi
     printf '"runtimes/rid/native/%s":{}' "$base"
   done
