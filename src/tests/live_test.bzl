@@ -141,7 +141,7 @@ def _xunit_library_test_impl(ctx):
 
     (compile_provider, runtime_provider) = _compile_csharp_library(ctx, tfm)
     dll = runtime_provider.libs[0]
-    additional_runfiles = []
+    additional_runfiles = list(runtime_provider.pdbs)
 
     # Copy the xunit console runner files to the same output directory as the test DLL.
     xunit_console_dll = None

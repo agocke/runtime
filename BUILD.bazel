@@ -123,7 +123,13 @@ copy_to_directory(
         "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
         "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl",
         "//src/libraries:impl_netcoreapp",
+        "//src/coreclr/System.Private.CoreLib:crossgen_System.Private.CoreLib",
     ],
+    # The R2R CoreLib (listed last) overwrites the IL version from impl_netcoreapp.
+    allow_overwrites = True,
+    replace_prefixes = {
+        "System.Private.CoreLib.r2r.dll": "System.Private.CoreLib.dll",
+    },
     root_paths = [ "**" ],
     visibility = ["//visibility:public"],
 )

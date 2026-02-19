@@ -395,3 +395,18 @@ csharp_library(
     nowarn = nowarn,
     visibility = ["//visibility:public"]
 )
+
+load("//src/coreclr:crossgen2.bzl", "crossgen_corelib")
+
+crossgen_corelib(
+    name = "crossgen_System.Private.CoreLib",
+    assembly = ":impl_System.Private.CoreLib",
+    out = "System.Private.CoreLib.r2r.dll",
+    clrjit = "//src/coreclr/jit:libclrjit_unix_x64_x64.so",
+    jitinterface = "//src/coreclr/tools/aot/jitinterface:libjitinterface_x64.so",
+    verify_type_and_field_layout = select({
+        "//:clr_release": False,
+        "//conditions:default": True,
+    }),
+    visibility = ["//visibility:public"],
+)
