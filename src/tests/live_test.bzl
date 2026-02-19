@@ -181,11 +181,14 @@ def _xunit_library_test_impl(ctx):
     )
     additional_runfiles.append(dst)
 
-    # Copy transitive runtime deps to the output directory
+    # Copy non-framework transitive runtime deps to the output directory.
+    # Framework assemblies are already in the testhost via Core_Root, so only
+    # test helpers (TestUtilities, RemoteExecutor, etc.) need to be copied.
+    framework_basenames = {f.basename: True for f in ctx.files._framework_assemblies}
     transitive_runtime_deps = runtime_provider.deps.to_list()
     for dep in transitive_runtime_deps:
         for lib in dep.libs:
-            if lib.extension == "dll":
+            if lib.extension == "dll" and lib.basename not in framework_basenames:
                 dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, lib.basename))
                 ctx.actions.run_shell(
                     inputs = [lib],
@@ -452,6 +455,12 @@ _xunit_library_test = rule(
                 doc = "The xunit.runner.json configuration file",
                 default = "//eng:testing/xunit/xunit.runner.json",
                 allow_single_file = True,
+            ),
+            "_framework_assemblies": attr.label(
+                doc = "Framework impl assemblies already present in Core_Root. " +
+                      "DLLs matching these basenames are excluded from the test " +
+                      "output directory since the testhost provides them.",
+                default = "//src/libraries:impl_netcoreapp",
             ),
             "writable_test_dir": attr.bool(
                 doc = "Copy test runtime files to a writable directory before running. " +

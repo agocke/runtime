@@ -20,7 +20,7 @@ library_test(
     ),
     deps = [
         ":ExceptionTestAssembly",
-        "//src/libraries/System.Diagnostics.StackTrace:live_System.Diagnostics.StackTrace",
+        "//src/libraries/System.Diagnostics.StackTrace:ref_System.Diagnostics.StackTrace",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
         "//src/libraries/System.Reflection.Emit:ref_System.Reflection.Emit",

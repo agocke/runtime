@@ -1,4 +1,16 @@
-load("//src/libraries:defs.bzl", "live_csharp_library")
+load("//src/libraries:defs.bzl", "live_csharp_library", "netcoreapp_ref_assembly")
+
+netcoreapp_ref_assembly(
+    name = "ref_System.IO.Hashing",
+    srcs = [
+        "ref/System.IO.Hashing.cs",
+        "ref/System.IO.Hashing.netcoreapp.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+    ],
+    nowarn = ["CS0809"],
+)
 
 live_csharp_library(
     name = "live_System.IO.Hashing",
