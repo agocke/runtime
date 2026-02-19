@@ -1,6 +1,6 @@
 load("//src/libraries:defs.bzl", "live_csharp_library")
 
-exports_files(glob(["**/*.cs"]))
+exports_files(glob(["**/*.cs"]) + glob(["Data/**"]))
 
 live_csharp_library(
     name = "TestUtilities",
