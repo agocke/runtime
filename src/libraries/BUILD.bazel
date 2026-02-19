@@ -466,3 +466,28 @@ netcoreapp_ref_assembly(
         ":ref_System.Runtime",
     ],
 )
+
+# Type-forwarder shim: xunit references Task from this assembly name.
+netcoreapp_ref_assembly(
+    name = "ref_System.Threading.Tasks",
+    srcs = [
+        "shims/System.Threading.Tasks/src/System.Threading.Tasks.cs",
+    ],
+    deps = [
+        ":ref_System.Runtime",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
+)
+
+# Import pre-built Microsoft.CSharp.dll — needed for tests that use 'dynamic'.
+# Uses the MSBuild-built impl so the runtime Binder works; a Bazel-compiled
+# ref-only assembly would overwrite the SDK's working copy in the testhost
+# framework dir with throw-null stubs.
+import_library(
+    name = "ref_Microsoft.CSharp",
+    library_name = "Microsoft.CSharp",
+    refs = [
+        "Microsoft.CSharp/ref/Microsoft.CSharp.dll",
+    ],
+    visibility = ["//visibility:public"],
+)

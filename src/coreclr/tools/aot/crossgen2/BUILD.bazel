@@ -1,0 +1,44 @@
+load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary")
+load("//:defs.bzl", "gen_resx_source", "resgen")
+
+genrule(
+    name = "AssemblyInfo",
+    outs = ["AssemblyInfo.g.cs"],
+    cmd = "echo '[assembly: System.Reflection.AssemblyFileVersion(\"10.0.0.0\")]' > $@",
+)
+
+gen_resx_source(
+    name = "SR",
+    out = "SR.g.cs",
+    assembly_name = "crossgen2",
+    resource_name = "System.SR",
+    resx_file = "Properties/Resources.resx",
+)
+
+resgen(
+    name = "Resources",
+    out = "crossgen2.Properties.Resources.resources",
+    resx_file = "Properties/Resources.resx",
+)
+
+csharp_binary(
+    name = "crossgen2",
+    srcs = glob(["*.cs"]) + [
+        "//src/coreclr/tools/Common:CommandLineHelpers.cs",
+        "//src/coreclr/tools/Common:InstructionSetHelpers.cs",
+        "//src/libraries/Common:src/System/SR.cs",
+        ":SR",
+        ":AssemblyInfo",
+    ],
+    resources = [":Resources"],
+    defines = ["READYTORUN"],
+    compiler_options = ["/unsafe"],
+    deps = [
+        "//src/coreclr/tools/aot/ILCompiler.DependencyAnalysisFramework",
+        "//src/coreclr/tools/aot/ILCompiler.ReadyToRun",
+        "//src/coreclr/tools/aot/ILCompiler.TypeSystem",
+        "@paket.main//system.commandline",
+    ],
+    target_frameworks = ["net10.0"],
+    visibility = ["//visibility:public"],
+)

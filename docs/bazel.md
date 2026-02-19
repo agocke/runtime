@@ -26,10 +26,15 @@ layout.
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
-  10 library test suites (System.Collections, System.Collections.Concurrent,
+  20 library test suites (System.Collections, System.Collections.Concurrent,
   System.ComponentModel, System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
-  System.Diagnostics.Tracing, System.Formats.Asn1, System.Linq, System.Memory,
-  System.Runtime.Numerics)
+  System.Diagnostics.Tracing, System.Formats.Asn1, System.IO.FileSystem.DriveInfo,
+  System.IO.Hashing, System.Linq, System.Memory, System.Numerics.Vectors,
+  System.ObjectModel, System.Reflection.Emit.ILGeneration,
+  System.Reflection.Emit.Lightweight, System.Reflection.TypeExtensions,
+  System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
+  System.Runtime.Numerics, System.Security.Claims,
+  System.Text.Encoding.Extensions)
 - **Per-component configuration**: independent debug/checked/release for
   CoreCLR and Libraries (matching MSBuild's `-rc`/`-lc` flags)
 - **Runtime layout**: `runtime_layout` rule assembles stripped binaries into
@@ -38,7 +43,7 @@ layout.
 ### What's Next
 
 - Remaining managed libraries (~156 assemblies not yet in Bazel, out of ~200 total)
-- Library unit tests (10 of ~187 libraries have Bazel test BUILD files)
+- Library unit tests (20 of ~187 libraries have Bazel test BUILD files)
 - CoreCLR diagnostic tooling: DAC (mscordac), DBI (mscordbi), createdump, SOS
 - CoreCLR tools: SuperPMI, ildasm (full binary), crossgen2
 - ILC (NativeAOT ahead-of-time compiler) and crossgen2 (ReadyToRun compiler)
@@ -413,7 +418,7 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 
 Managed C# framework assemblies built with `rules_dotnet`. Currently 44 of
 ~200 library directories have Bazel BUILD files (~156 remaining).
-2 libraries have Bazel test BUILD files (out of ~187 with test projects).
+12 libraries have Bazel test BUILD files (out of ~187 with test projects).
 
 ### 5.1 System.Private.CoreLib — ✅ DONE
 - [x] `src/coreclr/System.Private.CoreLib/BUILD.bazel`
@@ -438,12 +443,17 @@ Managed C# framework assemblies built with `rules_dotnet`. Currently 44 of
 - [x] `src/tests/defs.bzl` — test infrastructure, live_csharp_library, xUnit runner
 - [x] `src/tests/live_test.bzl` — `library_test` macro for library unit tests
 - [x] 18 test BUILD files (JIT directed tests, common infrastructure)
-- [x] 10 library test suites (System.Collections, System.Collections.Concurrent,
+- [x] 20 library test suites (System.Collections, System.Collections.Concurrent,
   System.ComponentModel, System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
-  System.Diagnostics.Tracing, System.Formats.Asn1, System.Linq, System.Memory,
-  System.Runtime.Numerics)
+  System.Diagnostics.Tracing, System.Formats.Asn1, System.IO.FileSystem.DriveInfo,
+  System.IO.Hashing, System.Linq, System.Memory, System.Numerics.Vectors,
+  System.ObjectModel, System.Reflection.Emit.ILGeneration,
+  System.Reflection.Emit.Lightweight, System.Reflection.TypeExtensions,
+  System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
+  System.Runtime.Numerics, System.Security.Claims,
+  System.Text.Encoding.Extensions)
 - [ ] Remaining CoreCLR test suite (~thousands of tests)
-- [ ] Remaining library unit tests (~177 libraries)
+- [ ] Remaining library unit tests (~167 libraries)
 
 ### 5.5 Installer / Packaging
 - [ ] `src/installer/` — runtime packs, NuGet packaging, SDK integration
@@ -550,7 +560,7 @@ Library tests use the `library_test` macro from `src/tests/live_test.bzl`, which
 runs a reflection-based test runner (`LibraryTestRunner.cs`) under `corerun`.
 Each library test needs a `tests/BUILD.bazel` file.
 
-**Summary**: 10 of ~187 libraries have Bazel test BUILD files.
+**Summary**: 20 of ~187 libraries have Bazel test BUILD files.
 
 ### Tiers
 
@@ -577,31 +587,31 @@ Libraries are grouped by implementation complexity:
 | System.Diagnostics.Tracing | ✅ | ✅ | 40 tests; ETW/Windows tests excluded |
 | System.Formats.Asn1 | ✅ | ✅ | 46 test files; ref-only dep |
 | System.IO.FileSystem.AccessControl | ✅ | ❌ | Windows-specific tests |
-| System.IO.FileSystem.DriveInfo | ✅ | ❌ | |
+| System.IO.FileSystem.DriveInfo | ✅ | ✅ | |
 | System.IO.IsolatedStorage | ✅ | ❌ | |
 | System.IO.MemoryMappedFiles | ✅ | ❌ | |
 | System.Linq | ✅ | ✅ | 71 test files |
 | System.Memory | ✅ | ✅ | 52143 tests (very large) |
 | System.Net.Primitives | ✅ (ref only) | ❌ | Needs impl build; many tests depend on this |
-| System.Numerics.Vectors | ✅ | ❌ | |
-| System.ObjectModel | ✅ | ❌ | |
+| System.Numerics.Vectors | ✅ | ✅ | |
+| System.ObjectModel | ✅ | ✅ | |
 | System.Reflection.Emit | ✅ | ❌ | |
-| System.Reflection.Emit.ILGeneration | ✅ | ❌ | |
-| System.Reflection.Emit.Lightweight | ✅ | ❌ | |
+| System.Reflection.Emit.ILGeneration | ✅ | ✅ | |
+| System.Reflection.Emit.Lightweight | ✅ | ✅ | |
 | System.Reflection.Metadata | ✅ | ❌ | |
-| System.Reflection.TypeExtensions | ✅ | ❌ | |
-| System.Resources.Writer | ✅ | ❌ | |
-| System.Runtime.CompilerServices.VisualC | ✅ | ❌ | |
+| System.Reflection.TypeExtensions | ✅ | ✅ | 1 test skipped (TinyAssembly.dll content file) |
+| System.Resources.Writer | ✅ | ✅ | |
+| System.Runtime.CompilerServices.VisualC | ✅ | ✅ | |
 | System.Runtime.InteropServices | ✅ | ❌ | |
 | System.Runtime.Intrinsics | ✅ | ❌ | |
 | System.Runtime.Loader | ✅ | ❌ | |
 | System.Runtime.Numerics | ✅ | ✅ | 176 tests pass (large) |
 | System.Runtime.Serialization.Formatters | ✅ | ❌ | |
 | System.Security.AccessControl | ✅ | ❌ | Windows-specific tests |
-| System.Security.Claims | ✅ | ❌ | |
+| System.Security.Claims | ✅ | ✅ | |
 | System.Security.Cryptography | ✅ | ❌ | |
 | System.Security.Principal.Windows | ✅ | ❌ | Windows-specific tests |
-| System.Text.Encoding.Extensions | ✅ | ❌ | |
+| System.Text.Encoding.Extensions | ✅ | ✅ | |
 | System.Threading | ✅ | ❌ | |
 | System.Threading.Overlapped | ✅ | ❌ | |
 | System.Threading.Tasks.Parallel | ✅ | ❌ | |

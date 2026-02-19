@@ -141,7 +141,7 @@ def _xunit_library_test_impl(ctx):
 
     (compile_provider, runtime_provider) = _compile_csharp_library(ctx, tfm)
     dll = runtime_provider.libs[0]
-    additional_runfiles = []
+    additional_runfiles = list(runtime_provider.pdbs)
 
     # Copy the xunit console runner files to the same output directory as the test DLL.
     xunit_console_dll = None
@@ -201,6 +201,22 @@ def _xunit_library_test_impl(ctx):
                     execution_requirements = COPY_EXECUTION_REQUIREMENTS,
                 )
                 additional_runfiles.append(dst)
+
+    # Copy data files (e.g., test content like TinyAssembly.dll) to the output
+    # directory next to the test DLL so Assembly.Load can find them.
+    for f in ctx.files.data:
+        dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, f.basename))
+        ctx.actions.run_shell(
+            inputs = [f],
+            outputs = [dst],
+            command = "cp -f \"$1\" \"$2\"",
+            arguments = [f.path, dst.path],
+            mnemonic = "CopyFile",
+            progress_message = "Copying %s" % f.basename,
+            use_default_shell_env = True,
+            execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+        )
+        additional_runfiles.append(dst)
 
     # Build a testhost: a directory layout with a shared framework containing
     # Bazel-built assemblies, matching how MSBuild's testhost uses live-built
