@@ -14,7 +14,7 @@ netcoreapp_ref_assembly(
 netcoreapp_impl_assembly(
     name = "impl_System.Collections.NonGeneric",
     srcs = [
-        "//src/libraries/System.Collections.NonGeneric:src/System/Collections/Specialized/CollectionsUtil.cs",
+        # Match MSBuild source file order (Compile items in csproj order)
         "//src/libraries/System.Collections.NonGeneric:src/System/Collections/CaseInsensitiveComparer.cs",
         "//src/libraries/System.Collections.NonGeneric:src/System/Collections/CaseInsensitiveHashCodeProvider.cs",
         "//src/libraries/System.Collections.NonGeneric:src/System/Collections/CollectionBase.cs",
@@ -23,6 +23,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Collections.NonGeneric:src/System/Collections/ReadOnlyCollectionBase.cs",
         "//src/libraries/System.Collections.NonGeneric:src/System/Collections/SortedList.cs",
         "//src/libraries/System.Collections.NonGeneric:src/System/Collections/Stack.cs",
+        "//src/libraries/System.Collections.NonGeneric:src/System/Collections/Specialized/CollectionsUtil.cs",
 
         "//src/libraries/System.Private.CoreLib:src/System/Collections/Generic/DebugViewDictionaryItem.cs",
     ],
@@ -32,4 +33,6 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "src/Resources/Strings.resx",
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Collections.NonGeneric",
 )

@@ -25,7 +25,6 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Security/Cryptography/Asn1Reader/AsnValueReader.cs",
         "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
         "//src/libraries/Common:src/Internal/Cryptography/PkcsHelpers.cs",
-        "//src/libraries/Common:src/SkipLocalsInit.cs",
         "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeHandleCache.cs",
         "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeX509ChainHandle.cs",
         "//src/libraries/Common:src/System/HexConverter.cs",
