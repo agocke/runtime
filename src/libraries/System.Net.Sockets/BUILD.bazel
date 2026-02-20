@@ -1,0 +1,12 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Net.Sockets",
+    srcs = [
+        "ref/System.Net.Sockets.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Net.Primitives:ref_System.Net.Primitives",
+    ],
+)

@@ -560,7 +560,7 @@ Library tests use the `library_test` macro from `src/tests/live_test.bzl`, which
 runs a reflection-based test runner (`LibraryTestRunner.cs`) under `corerun`.
 Each library test needs a `tests/BUILD.bazel` file.
 
-**Summary**: 20 of ~187 libraries have Bazel test BUILD files.
+**Summary**: 28 of ~187 libraries have Bazel test BUILD files.
 
 ### Tiers
 
@@ -588,35 +588,35 @@ Libraries are grouped by implementation complexity:
 | System.Formats.Asn1 | ✅ | ✅ | 46 test files; ref-only dep |
 | System.IO.FileSystem.AccessControl | ✅ | ❌ | Windows-specific tests |
 | System.IO.FileSystem.DriveInfo | ✅ | ✅ | |
-| System.IO.IsolatedStorage | ✅ | ❌ | |
-| System.IO.MemoryMappedFiles | ✅ | ❌ | |
+| System.IO.IsolatedStorage | ✅ | ❌ | Linked src files use SR (generated string resources) |
+| System.IO.MemoryMappedFiles | ✅ | ❌ | Unix tests use LibraryImport partial methods needing source generator |
 | System.Linq | ✅ | ✅ | 71 test files |
 | System.Memory | ✅ | ✅ | 52143 tests (very large) |
 | System.Net.Primitives | ✅ (ref only) | ❌ | Needs impl build; many tests depend on this |
 | System.Numerics.Vectors | ✅ | ✅ | |
 | System.ObjectModel | ✅ | ✅ | |
-| System.Reflection.Emit | ✅ | ❌ | |
+| System.Reflection.Emit | ✅ | ✅ | 2027/2625 pass; 598 need MetadataLoadContext impl at runtime |
 | System.Reflection.Emit.ILGeneration | ✅ | ✅ | |
 | System.Reflection.Emit.Lightweight | ✅ | ✅ | |
-| System.Reflection.Metadata | ✅ | ❌ | |
+| System.Reflection.Metadata | ✅ | ❌ | 22 embedded resource DLLs need resource embedding support |
 | System.Reflection.TypeExtensions | ✅ | ✅ | 1 test skipped (TinyAssembly.dll content file) |
 | System.Resources.Writer | ✅ | ✅ | |
 | System.Runtime.CompilerServices.VisualC | ✅ | ✅ | |
-| System.Runtime.InteropServices | ✅ | ❌ | |
-| System.Runtime.Intrinsics | ✅ | ❌ | |
-| System.Runtime.Loader | ✅ | ❌ | |
+| System.Runtime.InteropServices | ✅ | ✅ | UnitTests; 2504/2505 pass; Windows/Drawing tests excluded |
+| System.Runtime.Intrinsics | ✅ | ✅ | 12704 tests; Wasm PackedSimd tests excluded |
+| System.Runtime.Loader | ✅ | ❌ | 34 ProjectReferences to sub-projects need separate builds |
 | System.Runtime.Numerics | ✅ | ✅ | 176 tests pass (large) |
-| System.Runtime.Serialization.Formatters | ✅ | ❌ | |
+| System.Runtime.Serialization.Formatters | ✅ | ❌ | Needs ~10 external library builds (CodeDom, Composition, etc.) |
 | System.Security.AccessControl | ✅ | ❌ | Windows-specific tests |
 | System.Security.Claims | ✅ | ✅ | |
 | System.Security.Cryptography | ✅ | ❌ | |
 | System.Security.Principal.Windows | ✅ | ❌ | Windows-specific tests |
 | System.Text.Encoding.Extensions | ✅ | ✅ | |
-| System.Threading | ✅ | ❌ | |
-| System.Threading.Overlapped | ✅ | ❌ | |
-| System.Threading.Tasks.Parallel | ✅ | ❌ | |
-| System.Threading.Thread | ✅ | ❌ | |
-| System.Threading.ThreadPool | ✅ | ❌ | |
+| System.Threading | ✅ | ✅ | 591 tests pass |
+| System.Threading.Overlapped | ✅ | ✅ | 21 tests; 2 skipped |
+| System.Threading.Tasks.Parallel | ✅ | ✅ | 262 tests pass |
+| System.Threading.Thread | ✅ | ✅ | 45/53 pass; 8 need ApartmentState sub-project binaries |
+| System.Threading.ThreadPool | ✅ | ✅ | 69 tests; 1 skipped |
 
 ### Tier 2 — Self-contained, need source BUILD first
 
