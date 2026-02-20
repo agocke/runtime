@@ -232,7 +232,7 @@ def _xunit_library_test_impl(ctx):
     #    to find a runtimeconfig.json from calling assemblies.
     # 2. For Microsoft.DotNet.RemoteExecutor.dll - so "dotnet exec" child
     #    processes resolve libhostpolicy.so from the testhost.
-    _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles)
+    test_runtimeconfig = _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles)
     test_depsfile = _generate_test_depsfile(ctx, dll, tfm, additional_runfiles)
 
     testhost = ctx.actions.declare_directory("%s/testhost" % ctx.label.name)
@@ -248,6 +248,7 @@ def _xunit_library_test_impl(ctx):
             "TEMPLATED_xunit_console": to_rlocation_path(ctx, xunit_console_dll),
             "TEMPLATED_entry_dll": to_rlocation_path(ctx, dll),
             "TEMPLATED_depsfile": to_rlocation_path(ctx, test_depsfile),
+            "TEMPLATED_runtimeconfig": to_rlocation_path(ctx, test_runtimeconfig),
             "TEMPLATED_writable_test_dir": "true" if ctx.attr.writable_test_dir else "false",
         },
         is_executable = True,
@@ -283,6 +284,9 @@ def _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles):
     "framework": {{
       "name": "Microsoft.NETCore.App",
       "version": "{version}"
+    }},
+    "configProperties": {{
+      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": true
     }}
   }}
 }}
@@ -309,6 +313,8 @@ def _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles):
         )
         ctx.actions.write(output = re_runtimeconfig, content = runtimeconfig_content)
         additional_runfiles.append(re_runtimeconfig)
+
+    return test_runtimeconfig
 
 def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
     """Generate a deps.json for the test assembly so dotnet adds it to TPA.
