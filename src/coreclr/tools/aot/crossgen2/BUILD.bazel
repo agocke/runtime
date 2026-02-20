@@ -33,6 +33,8 @@ csharp_binary(
     resources = [":Resources"],
     defines = ["READYTORUN"],
     compiler_options = ["/unsafe"],
+    cls_compliant = False,
+    generate_documentation_file = False,
     deps = [
         "//src/coreclr/tools/aot/ILCompiler.DependencyAnalysisFramework",
         "//src/coreclr/tools/aot/ILCompiler.ReadyToRun",

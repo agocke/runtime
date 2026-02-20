@@ -230,6 +230,8 @@ csharp_library(
         "//src/coreclr/tools/Common:TypeSystem/Sorting/TypeSystemComparer.cs",
     ],
     compiler_options = ["/unsafe"],
+    cls_compliant = False,
+    generate_documentation_file = False,
     deps = [
         "@paket.main//microsoft.diasymreader",
     ],

@@ -294,6 +294,9 @@ csharp_library(
     ],
     defines = ["READYTORUN"],
     compiler_options = ["/unsafe"],
+    cls_compliant = False,
+    generate_documentation_file = False,
+    nowarn = ["CS8500"],
     deps = [
         "//src/coreclr/tools/aot/ILCompiler.DependencyAnalysisFramework",
         "//src/coreclr/tools/aot/ILCompiler.Diagnostics",

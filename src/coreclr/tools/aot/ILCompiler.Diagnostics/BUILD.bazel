@@ -5,6 +5,8 @@ csharp_library(
     srcs = glob(["*.cs"]),
     defines = ["READYTORUN"],
     compiler_options = ["/unsafe"],
+    cls_compliant = False,
+    generate_documentation_file = False,
     deps = [
         "//src/coreclr/tools/aot/ILCompiler.TypeSystem",
     ],
