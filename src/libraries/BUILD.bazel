@@ -12,6 +12,10 @@ load("defs.bzl",
 
 nowarn = [ "CS8500", "CS8969" ]
 
+exports_files([
+    "System.Runtime/ref/System.Runtime.cs",
+])
+
 ref_assembly_nowarns = [
     # Ref assemblies use 'throw null'
     "CS8597",
@@ -115,16 +119,6 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "ref_System.IO.Pipes",
-    srcs = [
-        "System.IO.Pipes/ref/System.IO.Pipes.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
-
-netcoreapp_ref_assembly(
     name = "ref_Microsoft.Win32.Primitives",
     srcs = [
         "Microsoft.Win32.Primitives/ref/Microsoft.Win32.Primitives.cs",
@@ -151,15 +145,6 @@ ref_impl_pair(
     visibility = [ "//visibility:public" ],
 )
 
-netcoreapp_ref_assembly(
-    name = "ref_System.Diagnostics.FileVersionInfo",
-    srcs = [
-        "System.Diagnostics.FileVersionInfo/ref/System.Diagnostics.FileVersionInfo.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
 
 netcoreapp_ref_assembly(
     name = "ref_System.ComponentModel.Primitives",
@@ -175,17 +160,6 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "ref_System.Collections.Specialized",
-    srcs = [
-        "System.Collections.Specialized/ref/System.Collections.Specialized.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        "//src/libraries:ref_System.ComponentModel.Primitives",
-    ],
-)
-
-netcoreapp_ref_assembly(
     name = "ref_System.Diagnostics.Process",
     srcs = [
         "System.Diagnostics.Process/ref/System.Diagnostics.Process.cs",
@@ -194,9 +168,9 @@ netcoreapp_ref_assembly(
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries:ref_System.ComponentModel.Primitives",
-        ":ref_System.Collections.Specialized",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
-        ":ref_System.Diagnostics.FileVersionInfo",
+        "//src/libraries/System.Diagnostics.FileVersionInfo:ref_System.Diagnostics.FileVersionInfo",
     ],
 )
 
@@ -358,12 +332,12 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Collections:ref_System.Collections",
 #        ":ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
-        ":ref_System.Collections.Specialized",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
         "//src/libraries:ref_System.ComponentModel.Primitives",
-        ":ref_System.Diagnostics.FileVersionInfo",
+        "//src/libraries/System.Diagnostics.FileVersionInfo:ref_System.Diagnostics.FileVersionInfo",
         "//src/libraries/System.IO.FileSystem.DriveInfo:ref_System.IO.FileSystem.DriveInfo",
         "//src/libraries/System.Memory:ref_System.Memory",
-        ":ref_System.IO.Pipes",
+        "//src/libraries/System.IO.Pipes:ref_System.IO.Pipes",
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
 #        ":ref_System.Text.Encoding.Extensions",
@@ -421,38 +395,16 @@ netcoreapp_impl_assembly(
 )
 
 # ── Ref assemblies for TestUtilities dependencies ────────────────────
-netcoreapp_ref_assembly(
+alias(
     name = "ref_System.Linq.Expressions",
-    srcs = [
-        "System.Linq.Expressions/ref/System.Linq.Expressions.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
-    ],
+    actual = "//src/libraries/System.Linq.Expressions:ref_System.Linq.Expressions",
+    visibility = ["//visibility:public"],
 )
 
-netcoreapp_ref_assembly(
-    name = "ref_System.Linq.Queryable",
-    srcs = [
-        "System.Linq.Queryable/ref/System.Linq.Queryable.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        ":ref_System.Linq.Expressions",
-        "//src/libraries/System.Linq:ref_System.Linq",
-    ],
-)
-
-netcoreapp_ref_assembly(
+alias(
     name = "ref_System.Text.RegularExpressions",
-    srcs = [
-        "System.Text.RegularExpressions/ref/System.Text.RegularExpressions.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        "//src/libraries/System.Reflection.Emit.ILGeneration:ref_System.Reflection.Emit.ILGeneration",
-    ],
+    actual = "//src/libraries/System.Text.RegularExpressions:ref_System.Text.RegularExpressions",
+    visibility = ["//visibility:public"],
 )
 
 # Minimal ref assembly with just the System.Net.Mime namespace (MediaTypeNames etc.)
@@ -471,7 +423,7 @@ netcoreapp_ref_assembly(
 netcoreapp_ref_assembly(
     name = "ref_System.Threading.Tasks",
     srcs = [
-        "shims/System.Threading.Tasks/src/System.Threading.Tasks.cs",
+        "//src/libraries/shims/System.Threading.Tasks:src/System.Threading.Tasks.cs",
     ],
     deps = [
         ":ref_System.Runtime",

@@ -34,14 +34,14 @@ LIVE_REFPACK_DEPS = [
     "//src/libraries/System.Linq:ref_System.Linq",
     "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
     "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
-    "//src/libraries:ref_System.Diagnostics.FileVersionInfo",
+    "//src/libraries/System.Diagnostics.FileVersionInfo:ref_System.Diagnostics.FileVersionInfo",
     "//src/libraries:ref_System.Diagnostics.Process",
     "//src/libraries/System.Memory:ref_System.Memory",
     "//src/libraries/System.Runtime.Intrinsics:ref_System.Runtime.Intrinsics",
     "//src/libraries/System.Numerics.Vectors:ref_System.Numerics.Vectors",
     "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
     "//src/libraries:ref_System.ComponentModel.Primitives",
-    "//src/libraries:ref_System.Collections.Specialized",
+    "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
     "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
 ]
 
