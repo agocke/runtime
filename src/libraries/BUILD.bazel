@@ -46,6 +46,22 @@ filegroup(
         "//src/libraries/System.Threading:impl_System.Threading",
         "//src/libraries/System.Runtime.InteropServices:impl_System.Runtime.InteropServices",
         "//src/libraries/System.Runtime.Numerics:impl_System.Runtime.Numerics",
+
+        # Tier 2 libraries
+        "//src/libraries/Microsoft.CSharp:impl_Microsoft.CSharp",
+        "//src/libraries/Microsoft.Extensions.Primitives:impl_Microsoft.Extensions.Primitives",
+        "//src/libraries/shims/System.Reflection.Extensions:impl_System.Reflection.Extensions",
+        "//src/libraries/shims/System.Security.Cryptography.OpenSsl:impl_System.Security.Cryptography.OpenSsl",
+        "//src/libraries/System.CodeDom:impl_System.CodeDom",
+        "//src/libraries/System.Formats.Cbor:impl_System.Formats.Cbor",
+        "//src/libraries/System.Formats.Nrbf:impl_System.Formats.Nrbf",
+        "//src/libraries/System.Linq.AsyncEnumerable:impl_System.Linq.AsyncEnumerable",
+        "//src/libraries/System.Resources.Extensions:impl_System.Resources.Extensions",
+        "//src/libraries/System.Security.Cryptography.Pkcs:impl_System.Security.Cryptography.Pkcs",
+        "//src/libraries/System.Security.Cryptography.Xml:impl_System.Security.Cryptography.Xml",
+        "//src/libraries/System.Text.Encoding.CodePages:impl_System.Text.Encoding.CodePages",
+        "//src/libraries/System.Text.Json:impl_System.Text.Json",
+        "//src/libraries/System.Threading.RateLimiting:impl_System.Threading.RateLimiting",
     ],
     visibility = ["//visibility:public"],
 )
@@ -439,7 +455,7 @@ import_library(
     name = "ref_Microsoft.CSharp",
     library_name = "Microsoft.CSharp",
     refs = [
-        "Microsoft.CSharp/ref/Microsoft.CSharp.dll",
+        "//src/libraries/Microsoft.CSharp:ref/Microsoft.CSharp.dll",
     ],
     visibility = ["//visibility:public"],
 )

@@ -1,0 +1,17 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
+
+exports_files([
+    "ref/System.Xml.ReaderWriter.cs",
+])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Xml.ReaderWriter",
+    srcs = [
+        "ref/System.Xml.ReaderWriter.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.Net.Primitives:ref_System.Net.Primitives",
+    ],
+)
