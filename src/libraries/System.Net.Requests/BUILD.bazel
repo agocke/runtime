@@ -1,0 +1,24 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
+
+exports_files([
+    "ref/System.Net.Requests.cs",
+])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Net.Requests",
+    srcs = [
+        "ref/System.Net.Requests.cs",
+        "ref/System.Net.Requests.Forwards.cs",
+    ],
+    nowarn = [
+        "SYSLIB0014",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
+        "//src/libraries/System.Net.Primitives:ref_System.Net.Primitives",
+        "//src/libraries/System.Net.Security:ref_System.Net.Security",
+        "//src/libraries/System.Net.WebHeaderCollection:ref_System.Net.WebHeaderCollection",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+    ],
+)

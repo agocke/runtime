@@ -12,7 +12,7 @@ output binaries and support all platforms CMake/MSBuild currently targets.
 The Bazel build produces a fully functional .NET runtime on **linux-x64**.
 All native C/C++ components build with Bazel (CoreCLR, corehost, 6 native
 interop libs, NativeAOT runtime). Managed C# libraries (System.Private.CoreLib,
-44 framework assemblies) also build with Bazel via `rules_dotnet`.
+58 framework assemblies) also build with Bazel via `rules_dotnet`.
 A hybrid build script assembles everything into a standard `dotnet` runtime
 layout.
 
@@ -42,7 +42,7 @@ layout.
 
 ### What's Next
 
-- Remaining managed libraries (~156 assemblies not yet in Bazel, out of ~200 total)
+- Remaining managed libraries (~142 assemblies not yet in Bazel, out of ~200 total)
 - Library unit tests (20 of ~187 libraries have Bazel test BUILD files)
 - CoreCLR diagnostic tooling: DAC (mscordac), DBI (mscordbi), createdump, SOS
 - CoreCLR tools: SuperPMI, ildasm (full binary), crossgen2
@@ -571,8 +571,8 @@ Each library test needs a `tests/BUILD.bazel` file.
 
 Libraries are grouped by implementation complexity:
 
-- **Tier 1** — Source already Bazel-built; just add `tests/BUILD.bazel` (74 libraries)
-- **Tier 2** — Self-contained; need source `BUILD.bazel` first, then tests (~29 libraries)
+- **Tier 1** — Source already Bazel-built; just add `tests/BUILD.bazel` (89 libraries)
+- **Tier 2** — Self-contained; need source `BUILD.bazel` first, then tests (~11 libraries)
 - **Tier 3** — Complex dependency chains; need multiple source builds resolved (~39 libraries)
 - **Tier 4** — Platform-specific / Windows-only; deferred until platform support (~24 libraries)
 
@@ -654,40 +654,36 @@ Libraries are grouped by implementation complexity:
 | System.Threading.Thread | ✅ | ✅ | 45/53 pass; 8 need ApartmentState sub-project binaries |
 | System.Threading.ThreadPool | ✅ | ✅ | 69 tests; 1 skipped |
 | System.Web.HttpUtility | ✅ | ❌ | |
+| Microsoft.CSharp | ✅ | ❌ | 152 source files; runtime binder |
+| Microsoft.Extensions.Primitives | ✅ | ❌ | |
+| System.CodeDom | ✅ | ❌ | 104 source files |
+| System.Formats.Cbor | ✅ | ❌ | |
+| System.Formats.Nrbf | ✅ | ❌ | |
+| System.Linq.AsyncEnumerable | ✅ | ❌ | 64 source files |
+| System.Reflection.Extensions | ✅ | ❌ | Type-forward shim (in shims/) |
+| System.Resources.Extensions | ✅ | ❌ | Depends on System.Formats.Nrbf |
+| System.Security.Cryptography.OpenSsl | ✅ | ❌ | Type-forward shim (in shims/) |
+| System.Security.Cryptography.Pkcs | ✅ | ❌ | 130+ source files; AnyOS PAL |
+| System.Security.Cryptography.Xml | ✅ | ❌ | 76 source files |
+| System.Text.Encoding.CodePages | ✅ | ❌ | Embedded codepages.nlp resource |
+| System.Text.Json | ✅ | ❌ | 280+ source files; uses RegexGenerator |
+| System.Threading.RateLimiting | ✅ | ❌ | |
 
 ### Tier 2 — Self-contained, need source BUILD first
 
 | Library | Notes |
 |---------|-------|
-| Microsoft.Bcl.AsyncInterfaces | |
-| Microsoft.Bcl.Memory | |
-| Microsoft.Bcl.Numerics | |
-| Microsoft.Bcl.TimeProvider | |
-| Microsoft.CSharp | |
-| Microsoft.Extensions.Primitives | |
-| Microsoft.Win32.Primitives | |
-| System.CodeDom | |
-| System.ComponentModel.Annotations | |
-| System.ComponentModel.Primitives | |
-| System.Formats.Cbor | |
-| System.Formats.Nrbf | |
-| System.Linq.AsyncEnumerable | |
-| System.Memory.Data | |
-| System.Net.WebProxy | |
-| System.Private.Uri | |
-| System.Reflection.Context | |
-| System.Reflection.Extensions | |
-| System.Resources.Extensions | |
-| System.Runtime | |
-| System.Security.Cryptography.Cose | |
-| System.Security.Cryptography.OpenSsl | |
-| System.Security.Cryptography.Pkcs | |
-| System.Security.Cryptography.Xml | |
-| System.ServiceModel.Syndication | |
-| System.Text.Encoding.CodePages | |
-| System.Text.Json | |
-| System.Threading.RateLimiting | |
-| System.Transactions.Local | |
+| Microsoft.Bcl.AsyncInterfaces | Not in NetCoreApp; polyfill |
+| Microsoft.Bcl.Memory | Not in NetCoreApp; polyfill |
+| Microsoft.Bcl.Numerics | Not in NetCoreApp; polyfill |
+| Microsoft.Bcl.TimeProvider | Not in NetCoreApp; polyfill |
+| System.ComponentModel.Annotations | Needs System.ComponentModel.TypeConverter impl |
+| System.Memory.Data | Not in NetCoreApp |
+| System.Net.WebProxy | Needs System.Net.NameResolution, NetworkInformation (Tier 3) |
+| System.Reflection.Context | Not in NetCoreApp |
+| System.Security.Cryptography.Cose | Not in NetCoreApp |
+| System.ServiceModel.Syndication | Not in NetCoreApp |
+| System.Transactions.Local | Needs System.Xml.ReaderWriter (Tier 3) |
 
 ### Tier 3 — Complex dependency chains
 
@@ -708,7 +704,7 @@ Libraries are grouped by implementation complexity:
 | Microsoft.Extensions.Options | + ConfigurationExtensions, DataAnnotations |
 | Microsoft.VisualBasic.Core | |
 | System.ComponentModel.Composition | + Registration |
-| System.ComponentModel.TypeConverter | |
+| System.ComponentModel.TypeConverter | Ref-only BUILD exists; needs impl |
 | System.Composition.* | 5 sub-libraries |
 | System.Configuration.ConfigurationManager | |
 | System.Data.Common | |
@@ -728,9 +724,9 @@ Libraries are grouped by implementation complexity:
 | System.Runtime.Serialization.Json | |
 | System.Runtime.Serialization.Schema | |
 | System.Runtime.Serialization.Xml | |
-| System.Xml.ReaderWriter | |
+| System.Xml.ReaderWriter | Ref-only BUILD exists; needs impl |
 | System.Xml.XDocument | |
-| System.Xml.XPath | + XDocument |
+| System.Xml.XPath | Ref-only BUILD exists; needs impl; + XDocument |
 | System.Xml.XmlSerializer | |
 
 ### Tier 4 — Platform-specific / Windows-only (deferred)

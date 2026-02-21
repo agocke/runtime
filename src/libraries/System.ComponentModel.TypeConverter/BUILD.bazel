@@ -1,0 +1,24 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
+
+exports_files([
+    "ref/System.ComponentModel.TypeConverter.cs",
+    "ref/System.ComponentModel.TypeConverter.Forwards.cs",
+    "ref/System.ComponentModel.manual.cs",
+])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.ComponentModel.TypeConverter",
+    srcs = [
+        "ref/System.ComponentModel.manual.cs",
+        "ref/System.ComponentModel.TypeConverter.cs",
+        "ref/System.ComponentModel.TypeConverter.Forwards.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
+        "//src/libraries/System.Resources.Writer:ref_System.Resources.Writer",
+    ],
+)
