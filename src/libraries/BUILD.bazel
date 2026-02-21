@@ -187,6 +187,22 @@ filegroup(
         "//src/libraries/System.Reflection.Emit:impl_System.Reflection.Emit",
         "//src/libraries/System.Reflection.Metadata:impl_System.Reflection.Metadata",
         "//src/libraries/System.Transactions.Local:impl_System.Transactions.Local",
+
+        # ── Layer 2+ real libraries ──
+        "//src/libraries/System.ComponentModel.Annotations:impl_System.ComponentModel.Annotations",
+        "//src/libraries/System.Net.Http.Json:impl_System.Net.Http.Json",
+        "//src/libraries/System.Net.HttpListener:impl_System.Net.HttpListener",
+        "//src/libraries/System.Net.Mail:impl_System.Net.Mail",
+        "//src/libraries/System.Net.Ping:impl_System.Net.Ping",
+        "//src/libraries/System.Net.Requests:impl_System.Net.Requests",
+        "//src/libraries/System.Net.WebClient:impl_System.Net.WebClient",
+        "//src/libraries/System.Net.WebProxy:impl_System.Net.WebProxy",
+        "//src/libraries/System.Net.WebSockets.Client:impl_System.Net.WebSockets.Client",
+
+        # ── Additional shims ──
+        "//src/libraries/shims/System.Data.DataSetExtensions:impl_System.Data.DataSetExtensions",
+        "//src/libraries/shims/System.Net.ServicePoint:impl_System.Net.ServicePoint",
+        "//src/libraries/shims/netstandard:impl_netstandard",
     ],
     visibility = ["//visibility:public"],
 )
@@ -553,7 +569,7 @@ alias(
 netcoreapp_ref_assembly(
     name = "ref_System.Net.Mime",
     srcs = [
-        "System.Net.Mail/ref/System.Net.Mail.Mime.cs",
+        "//src/libraries/System.Net.Mail:ref/System.Net.Mail.Mime.cs",
     ],
     deps = [
         ":ref_System.Runtime",
