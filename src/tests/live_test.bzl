@@ -314,6 +314,17 @@ def _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles):
         ctx.actions.write(output = re_runtimeconfig, content = runtimeconfig_content)
         additional_runfiles.append(re_runtimeconfig)
 
+    # Generate runtimeconfig.json for data DLLs (helper executables like
+    # STAMain.dll, MTAMain.dll) so they can be launched with "dotnet exec".
+    for f in ctx.files.data:
+        if f.basename.endswith(".dll"):
+            helper_name = f.basename.replace(".dll", "")
+            helper_runtimeconfig = ctx.actions.declare_file(
+                "%s/%s/%s.runtimeconfig.json" % (ctx.label.name, tfm, helper_name),
+            )
+            ctx.actions.write(output = helper_runtimeconfig, content = runtimeconfig_content)
+            additional_runfiles.append(helper_runtimeconfig)
+
     return test_runtimeconfig
 
 def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
