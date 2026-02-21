@@ -255,5 +255,6 @@ live_csharp_library(
         "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
     ],
     resx_file = "src/Resources/Strings.resx",
+    allow_unsafe_blocks = True,
     visibility = ["//visibility:public"],
 )

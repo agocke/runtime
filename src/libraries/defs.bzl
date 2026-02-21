@@ -41,7 +41,7 @@ LIVE_REFPACK_DEPS = [
     "//src/libraries/System.Numerics.Vectors:ref_System.Numerics.Vectors",
     "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
     "//src/libraries:ref_System.ComponentModel.Primitives",
-    "//src/libraries:ref_System.Collections.Specialized",
+    "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
     "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
 ]
 
