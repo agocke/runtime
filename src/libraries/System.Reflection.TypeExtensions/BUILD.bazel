@@ -10,3 +10,16 @@ netcoreapp_ref_assembly(
         "//src/libraries:ref_System.Runtime",
     ]
 )
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Reflection.TypeExtensions",
+    srcs = [
+        "src/System/Reflection/TypeExtensions.cs",
+    ],
+    deps = [
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
+    ],
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Reflection.TypeExtensions",
+    resx_file = "src/Resources/Strings.resx",
+)

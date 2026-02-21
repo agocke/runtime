@@ -15,3 +15,14 @@ netcoreapp_ref_assembly(
     ],
     allow_unsafe_blocks = True,
 )
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Threading.ThreadPool",
+    srcs = [],
+    deps = [
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
+    ],
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Threading.ThreadPool",
+    exclude_sr = True,
+)
