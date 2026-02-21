@@ -14,6 +14,7 @@ netcoreapp_ref_assembly(
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Memory:ref_System.Memory",
+        "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
     ],
 )
 

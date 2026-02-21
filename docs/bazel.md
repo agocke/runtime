@@ -768,10 +768,13 @@ Libraries are grouped by implementation complexity:
 - Clang is the default compiler (matching CMake). Override with `--repo_env=CC=gcc` if needed.
 - Build commands (linux-x64):
   - **Full runtime (hybrid)**: `./build-bazel-runtime.sh` (or `--native-only` for fast C++ iteration)
-  - **Everything**: `bazel build //...`
+  - **Everything**: `bazel build //... --config=clr_checked`
   - Native libs: `bazel build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`
   - Corehost: `bazel build //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
   - **libcoreclr.so**: `bazel build //src/coreclr/dlls/mscoree/coreclr:libcoreclr.so`
   - **Managed libs**: `bazel build //src/libraries:impl_netcoreapp`
   - **Runtime layout**: `bazel build //:runtime_native`
   - **Core_Root (test runtime)**: `bazel build //:Core_Root`
+- Test commands (linux-x64):
+  - **All tests**: `bazel test //... --config=clr_checked`
+  - **Library tests**: `bazel test //src/tests:all --config=clr_checked`
