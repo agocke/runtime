@@ -405,26 +405,16 @@ netcoreapp_impl_assembly(
 )
 
 # ── Ref assemblies for TestUtilities dependencies ────────────────────
-netcoreapp_ref_assembly(
+alias(
     name = "ref_System.Linq.Expressions",
-    srcs = [
-        "System.Linq.Expressions/ref/System.Linq.Expressions.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
-    ],
+    actual = "//src/libraries/System.Linq.Expressions:ref_System.Linq.Expressions",
+    visibility = ["//visibility:public"],
 )
 
-netcoreapp_ref_assembly(
+alias(
     name = "ref_System.Text.RegularExpressions",
-    srcs = [
-        "System.Text.RegularExpressions/ref/System.Text.RegularExpressions.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        "//src/libraries/System.Reflection.Emit.ILGeneration:ref_System.Reflection.Emit.ILGeneration",
-    ],
+    actual = "//src/libraries/System.Text.RegularExpressions:ref_System.Text.RegularExpressions",
+    visibility = ["//visibility:public"],
 )
 
 # Minimal ref assembly with just the System.Net.Mime namespace (MediaTypeNames etc.)
