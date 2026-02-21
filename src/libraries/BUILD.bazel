@@ -471,7 +471,7 @@ netcoreapp_ref_assembly(
 netcoreapp_ref_assembly(
     name = "ref_System.Threading.Tasks",
     srcs = [
-        "shims/System.Threading.Tasks/src/System.Threading.Tasks.cs",
+        "//src/libraries/shims/System.Threading.Tasks:src/System.Threading.Tasks.cs",
     ],
     deps = [
         ":ref_System.Runtime",
