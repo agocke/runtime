@@ -15,7 +15,7 @@ library_test(
         "//src/libraries/System.Reflection.Emit:ref_System.Reflection.Emit",
         "//src/libraries/System.Reflection.Emit.ILGeneration:ref_System.Reflection.Emit.ILGeneration",
         "//src/libraries/System.Reflection.Emit.Lightweight:ref_System.Reflection.Emit.Lightweight",
-        "//src/libraries/System.Reflection.MetadataLoadContext:ref_System.Reflection.MetadataLoadContext",
+        "//src/libraries/System.Reflection.MetadataLoadContext:live_System.Reflection.MetadataLoadContext",
         "//src/libraries/System.Reflection.Metadata:ref_System.Reflection.Metadata",
         "//src/libraries/System.Reflection.Primitives:ref_System.Reflection.Primitives",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",

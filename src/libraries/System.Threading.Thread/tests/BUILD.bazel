@@ -1,9 +1,33 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary")
+
+csharp_binary(
+    name = "STAMain",
+    srcs = ["STAMain/STAMain.cs"],
+    target_frameworks = ["net10.0"],
+)
+
+csharp_binary(
+    name = "MTAMain",
+    srcs = ["MTAMain/MTAMain.cs"],
+    target_frameworks = ["net10.0"],
+)
+
+csharp_binary(
+    name = "DefaultApartmentStateMain",
+    srcs = ["DefaultApartmentStateMain/DefaultApartmentStateMain.cs"],
+    target_frameworks = ["net10.0"],
+)
 
 library_test(
     name = "System.Threading.Thread.Tests",
     srcs = glob(["*.cs"]) + [
         "//src/libraries/Common/tests:System/Threading/ThreadTestHelpers.cs",
+    ],
+    data = [
+        ":STAMain",
+        ":MTAMain",
+        ":DefaultApartmentStateMain",
     ],
     deps = [
         "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
