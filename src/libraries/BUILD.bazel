@@ -12,6 +12,10 @@ load("defs.bzl",
 
 nowarn = [ "CS8500", "CS8969" ]
 
+exports_files([
+    "System.Runtime/ref/System.Runtime.cs",
+])
+
 ref_assembly_nowarns = [
     # Ref assemblies use 'throw null'
     "CS8597",
@@ -151,15 +155,6 @@ ref_impl_pair(
     visibility = [ "//visibility:public" ],
 )
 
-netcoreapp_ref_assembly(
-    name = "ref_System.Diagnostics.FileVersionInfo",
-    srcs = [
-        "System.Diagnostics.FileVersionInfo/ref/System.Diagnostics.FileVersionInfo.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-    ],
-)
 
 netcoreapp_ref_assembly(
     name = "ref_System.ComponentModel.Primitives",
@@ -175,17 +170,6 @@ netcoreapp_ref_assembly(
 )
 
 netcoreapp_ref_assembly(
-    name = "ref_System.Collections.Specialized",
-    srcs = [
-        "System.Collections.Specialized/ref/System.Collections.Specialized.cs",
-    ],
-    deps = [
-        ":ref_System.Runtime",
-        "//src/libraries:ref_System.ComponentModel.Primitives",
-    ],
-)
-
-netcoreapp_ref_assembly(
     name = "ref_System.Diagnostics.Process",
     srcs = [
         "System.Diagnostics.Process/ref/System.Diagnostics.Process.cs",
@@ -194,9 +178,9 @@ netcoreapp_ref_assembly(
         ":ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries:ref_System.ComponentModel.Primitives",
-        ":ref_System.Collections.Specialized",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
-        ":ref_System.Diagnostics.FileVersionInfo",
+        "//src/libraries/System.Diagnostics.FileVersionInfo:ref_System.Diagnostics.FileVersionInfo",
     ],
 )
 
@@ -358,9 +342,9 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Collections:ref_System.Collections",
 #        ":ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
-        ":ref_System.Collections.Specialized",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
         "//src/libraries:ref_System.ComponentModel.Primitives",
-        ":ref_System.Diagnostics.FileVersionInfo",
+        "//src/libraries/System.Diagnostics.FileVersionInfo:ref_System.Diagnostics.FileVersionInfo",
         "//src/libraries/System.IO.FileSystem.DriveInfo:ref_System.IO.FileSystem.DriveInfo",
         "//src/libraries/System.Memory:ref_System.Memory",
         ":ref_System.IO.Pipes",
