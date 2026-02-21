@@ -1,8 +1,84 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+load("//:defs.bzl", "csharp_library", "gen_resx_source")
 
 exports_files([
     "ref/System.Text.RegularExpressions.cs",
 ])
+
+gen_resx_source(
+    name = "gen_resx_RegexGenerator",
+    out = "RegexGenerator/SR.g.cs",
+    assembly_name = "System.Text.RegularExpressions.Generator",
+    resx_file = "gen/Resources/Strings.resx",
+)
+
+csharp_library(
+    name = "RegexGenerator",
+    out = "System.Text.RegularExpressions.Generator",
+    srcs = [
+        "gen/RegexGenerator.cs",
+        "gen/RegexGenerator.Emitter.cs",
+        "gen/RegexGenerator.Parser.cs",
+        "gen/DiagnosticDescriptors.cs",
+        "gen/UpgradeToGeneratedRegexAnalyzer.cs",
+        "gen/UpgradeToGeneratedRegexCodeFixer.cs",
+        "gen/Stubs.cs",
+        ":gen_resx_RegexGenerator",
+
+        # Common Roslyn helpers
+        "//src/libraries/Common:src/Roslyn/DiagnosticDescriptorHelper.cs",
+        "//src/libraries/Common:src/Roslyn/GetBestTypeByMetadataName.cs",
+        "//src/libraries/System.Private.CoreLib:src/System/Runtime/CompilerServices/IsExternalInit.cs",
+        "//src/libraries/System.Private.CoreLib:src/System/Diagnostics/CodeAnalysis/NullableAttributes.cs",
+        "//src/libraries/Common:src/System/SR.cs",
+
+        # Shared production sources
+        "//src/libraries/Common:src/System/HexConverter.cs",
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+        "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
+        "//src/libraries/System.Private.CoreLib:src/System/Collections/Generic/ValueListBuilder.cs",
+        "//src/libraries/System.Private.CoreLib:src/System/Collections/Generic/ValueListBuilder.Pop.cs",
+        "src/System/Threading/StackHelper.cs",
+        "src/System/Text/RegularExpressions/RegexCaseEquivalences.Data.cs",
+        "src/System/Text/RegularExpressions/RegexCaseEquivalences.cs",
+        "src/System/Text/RegularExpressions/RegexCaseBehavior.cs",
+        "src/System/Text/RegularExpressions/RegexCharClass.cs",
+        "src/System/Text/RegularExpressions/RegexFindOptimizations.cs",
+        "src/System/Text/RegularExpressions/RegexNode.cs",
+        "src/System/Text/RegularExpressions/RegexNodeKind.cs",
+        "src/System/Text/RegularExpressions/RegexOpcode.cs",
+        "src/System/Text/RegularExpressions/RegexOptions.cs",
+        "src/System/Text/RegularExpressions/RegexParseError.cs",
+        "src/System/Text/RegularExpressions/RegexParseException.cs",
+        "src/System/Text/RegularExpressions/RegexParser.cs",
+        "src/System/Text/RegularExpressions/RegexPrefixAnalyzer.cs",
+        "src/System/Text/RegularExpressions/RegexTree.cs",
+        "src/System/Text/RegularExpressions/RegexTreeAnalyzer.cs",
+        "src/System/Collections/HashtableExtensions.cs",
+    ],
+    target_frameworks = ["netstandard2.0"],
+    langversion = "preview",
+    cls_compliant = False,
+    nullable = "annotations",
+    allow_unsafe_blocks = True,
+    deps = [
+        "@paket.main//microsoft.codeanalysis.common",
+        "@paket.main//microsoft.codeanalysis.csharp",
+        "@paket.main//microsoft.codeanalysis.workspaces.common",
+        "@paket.main//microsoft.codeanalysis.csharp.workspaces",
+        "@paket.main//system.composition.attributedmodel",
+        "@paket.main//system.collections.immutable",
+        "@paket.main//system.memory",
+        "@paket.main//system.buffers",
+        "@paket.main//system.runtime.compilerservices.unsafe",
+    ],
+    nowarn = [
+        "CS0436",
+        "CS0649",
+        "CA1872",
+    ],
+    visibility = ["//visibility:public"],
+)
 
 netcoreapp_ref_assembly(
     name = "ref_System.Text.RegularExpressions",
