@@ -417,9 +417,12 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 ## 5. Managed Libraries (`src/libraries/`) — 🔨 In Progress
 
 Managed C# framework assemblies built with `rules_dotnet`. The NetCoreApp shared
-framework contains 150 assemblies (per `NetCoreAppLibrary.props`). Of those, 99
-have `impl_` targets in Bazel and are in the `impl_netcoreapp` aggregate; 51 still
-need `impl_` targets. 29 libraries have Bazel test BUILD files (out of ~187 with
+framework contains 150 assemblies (per `NetCoreAppLibrary.props`). Of those, **145
+have `impl_` targets** in Bazel and are in the `impl_netcoreapp` aggregate. The
+remaining 5 need special support: Microsoft.VisualBasic.Core (VB compiler),
+System.IO.Pipes.AccessControl and System.Threading.AccessControl (Windows PNSE stubs),
+System.Net.Quic (msquic native library), and System.Runtime.InteropServices.JavaScript
+(Browser/WASM-only). 29 libraries have Bazel test BUILD files (out of ~187 with
 test projects).
 
 ### 5.1 System.Private.CoreLib — ✅ DONE
@@ -429,7 +432,7 @@ test projects).
   - [x] `src/libraries/System.Private.CoreLib/src/files.bzl` — source file lists
 
 ### 5.2 Framework ref + impl assemblies — 🔨 In Progress
-- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (99 assemblies)
+- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (145 assemblies)
 - [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
 - [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator
@@ -562,138 +565,29 @@ DOTNET_ROOT=artifacts/bazel-dotnet artifacts/bazel-dotnet/dotnet <app.dll>
 ## 9. NetCoreApp Assembly Tracking
 
 The NetCoreApp shared framework (`NetCoreAppLibrary.props`) contains 150
-assemblies. Of those, **99 are Bazel-built** and in the `impl_netcoreapp`
-aggregate; **51 still need `impl_` targets**.
+assemblies. Of those, **145 are Bazel-built** and in the `impl_netcoreapp`
+aggregate; **5 still need special support**.
 
 ### 9.1 Status Summary
 
 | Category | Count | Description |
 |----------|------:|-------------|
-| ✅ In `impl_netcoreapp` | 99 | Built and aggregated (incl. CoreLib, shims, per-library impl) |
-| ❌ Facade — no deps | 13 | `IsPartialFacadeAssembly`; all types in CoreLib or already-built libs |
-| ❌ Facade — blocked | 6 | Facade but depends on still-missing impl assemblies |
-| ❌ Shim | 4 | Hand-written type forwarders in `shims/` dir; need BUILD |
-| ❌ Real — no deps | 8 | Source assembly; all deps already Bazel-built |
-| ❌ Real — blocked | 18 | Source assembly; depends on other still-missing libraries |
-| ❌ Special | 2 | VB project or platform-only |
+| ✅ In `impl_netcoreapp` | 145 | Built and aggregated (incl. CoreLib, shims, per-library impl) |
+| ❌ VB project | 1 | Microsoft.VisualBasic.Core — needs VB compiler in Bazel |
+| ❌ Windows PNSE | 2 | System.IO.Pipes.AccessControl, System.Threading.AccessControl — need PNSE stub generation |
+| ❌ Native deps | 1 | System.Net.Quic — needs msquic native library |
+| ❌ Browser-only | 1 | System.Runtime.InteropServices.JavaScript — WASM/Browser platform only |
 
-### 9.2 Remaining 51 Assemblies — Dependency Layers
 
-Libraries are grouped by dependency order. Each layer can only be built after
-all prior layers are complete.
+### 9.2 Remaining 5 Assemblies
 
-#### Layer 0 — No missing dependencies (27 libraries)
-
-These can be built immediately; all their deps are already Bazel-built.
-
-| Library | Kind | Src | BUILD | Notes |
-|---------|------|----:|:-----:|-------|
-| System.Diagnostics.Tracing | FACADE | 0 | Y | Facade to CoreLib |
-| System.Reflection.Primitives | FACADE | 0 | Y | Facade to CoreLib |
-| System.Text.Encoding.Extensions | FACADE | 0 | Y | Facade to CoreLib |
-| System.Threading.Overlapped | FACADE | 0 | Y | Facade to CoreLib |
-| System.Threading.Thread | FACADE | 0 | Y | Facade to CoreLib |
-| System.Threading.ThreadPool | FACADE | 0 | Y | Facade to CoreLib |
-| System.Reflection.Emit.ILGeneration | FACADE | 0 | Y | Facade to CoreLib |
-| System.Reflection.Emit.Lightweight | FACADE | 0 | Y | Facade to CoreLib |
-| System.Reflection.TypeExtensions | FACADE | 1 | Y | 1 source file + facade to CoreLib |
-| System.Xml.ReaderWriter | FACADE | 0 | Y | Forwards to System.Private.Xml |
-| System.Xml.XPath | FACADE | 0 | Y | Forwards to System.Private.Xml |
-| System.Xml.XmlSerializer | FACADE | 0 | N | Forwards to System.Private.Xml |
-| System.IO.Pipes.AccessControl | FACADE | 0 | N | Windows-only; facade on non-Windows |
-| System.Data.DataSetExtensions | SHIM | 0 | N | In `shims/`; forwards to System.Data.Common |
-| System.Net.ServicePoint | SHIM | 0 | N | In `shims/`; forwards to System.Net.Requests |
-| System.Security.SecureString | SHIM | 0 | N | In `shims/`; forwards to System.Runtime |
-| System.Xml.XmlDocument | SHIM | 0 | N | In `shims/`; forwards to System.Private.Xml |
-| System.Formats.Asn1 | REAL | 38 | Y | Self-contained |
-| System.IO.MemoryMappedFiles | REAL | 18 | Y | Self-contained |
-| System.Collections.Immutable | REAL | 136 | Y | Self-contained |
-| System.Net.Primitives | REAL | 34 | Y | Self-contained; ref-only BUILD exists |
-| System.Private.Xml.Linq | REAL | 31 | N | Depends on System.Private.Xml (built) |
-| System.Private.DataContractSerialization | REAL | 126 | N | Depends on System.Private.Xml (built) |
-| System.Transactions.Local | REAL | 88 | N | Self-contained |
-| System.Threading.AccessControl | REAL | 11 | N | Windows-only |
-| System.Runtime.InteropServices.JavaScript | REAL | 39 | N | Browser/WASM-only |
-| Microsoft.VisualBasic.Core | VB | 0 | N | `.vbproj` — needs VB compilation support |
-
-#### Layer 1 — Depends on Layer 0 (11 libraries)
-
-| Library | Kind | Src | BUILD | Blocked by |
-|---------|------|----:|:-----:|------------|
-| System.Reflection.Metadata | REAL | 224 | Y | Collections.Immutable, IO.MemoryMappedFiles |
-| System.Net.NameResolution | REAL | 8 | N | Net.Primitives |
-| System.Net.NetworkInformation | REAL | 120 | N | Net.Primitives |
-| System.Net.WebSockets | REAL | 21 | N | Net.Primitives |
-| System.Xml.XDocument | FACADE | 0 | N | Private.Xml.Linq |
-| System.Xml.XPath.XDocument | FACADE | 1 | N | Private.Xml.Linq |
-| System.Runtime.Serialization.Json | FACADE | 0 | N | Private.DataContractSerialization |
-| System.Runtime.Serialization.Xml | FACADE | 0 | N | Private.DataContractSerialization |
-| System.ComponentModel.TypeConverter | FACADE+REAL | 225 | Y | (Net.Security — can skip for facade-only) |
-| System.Net.WebProxy | REAL | 4 | N | Net.NameResolution, Net.NetworkInformation, Net.Primitives |
-| System.Net.Ping | REAL | 13 | N | Net.NameResolution, Net.Primitives |
-
-#### Layer 2 — Depends on Layers 0–1 (7 libraries)
-
-| Library | Kind | Src | BUILD | Blocked by |
-|---------|------|----:|:-----:|------------|
-| System.Reflection.Emit | FACADE | 19 | Y | Collections.Immutable, Reflection.Metadata |
-| System.Net.Sockets | REAL | 49 | Y | Net.NameResolution, Net.Primitives |
-| System.ComponentModel.Annotations | REAL | 51 | N | ComponentModel.TypeConverter |
-| System.Net.Security | REAL | 74 | Y | Formats.Asn1, Net.Primitives, Net.Sockets |
-| System.Data.Common | REAL | 261 | N | ComponentModel.TypeConverter, Transactions.Local |
-| System.Net.Quic | REAL | 36 | N | Net.NameResolution, Net.Primitives, Net.Security, Net.Sockets |
-| System.Net.Http | REAL | 190 | Y | Formats.Asn1, Net.NameRes, Net.NetInfo, Net.Primitives, Net.Quic, Net.Security, Net.Sockets |
-
-#### Layer 3 — Depends on Layers 0–2 (6 libraries)
-
-| Library | Kind | Src | BUILD | Blocked by |
-|---------|------|----:|:-----:|------------|
-| System.Net.Requests | REAL | 45 | Y | Net.Http, Net.NameResolution, Net.Primitives, Net.Security, Net.Sockets |
-| System.Net.Http.Json | REAL | 19 | N | Net.Http, Net.Primitives |
-| System.Net.WebSockets.Client | REAL | 9 | N | Net.Http, Net.Primitives, Net.Security, Net.WebSockets |
-| System.Net.WebClient | REAL | 1 | N | Net.Primitives, Net.Requests |
-| System.Net.Mail | REAL | 70 | N | Net.NetworkInformation, Net.Primitives, Net.Requests, Net.Security, Net.Sockets |
-| System.Net.HttpListener | REAL | 62 | N | Net.NameRes, Net.Primitives, Net.Requests, Net.Security, Net.Sockets, Net.WebSockets, Net.WebSockets.Client |
-
-### 9.3 Library Test Tracking
-
-Library tests use the `library_test` macro from `src/tests/live_test.bzl`, which
-runs a reflection-based test runner (`LibraryTestRunner.cs`) under `corerun`.
-Each library test needs a `tests/BUILD.bazel` file.
-
-**Summary**: 29 of ~187 libraries have Bazel test BUILD files.
-
-| Library | Test BUILD | Notes |
-|---------|:----------:|-------|
-| System.Collections | ✅ | Large; common collection tests; serialization |
-| System.Collections.Concurrent | ✅ | 2454 tests; uses live_ ref_impl_pair |
-| System.ComponentModel | ✅ | Trivial; 2 test files |
-| System.Diagnostics.Contracts | ✅ | Facade; uses ref_impl_pair; 22 tests pass |
-| System.Diagnostics.StackTrace | ✅ | 140 tests; uses live_ ref_impl_pair |
-| System.Diagnostics.Tracing | ✅ | 40 tests; ETW/Windows tests excluded |
-| System.Formats.Asn1 | ✅ | 46 test files; ref-only dep |
-| System.IO.FileSystem.DriveInfo | ✅ | |
-| System.IO.Hashing | ✅ | |
-| System.Linq | ✅ | 71 test files |
-| System.Memory | ✅ | 52143 tests (very large) |
-| System.Numerics.Vectors | ✅ | |
-| System.ObjectModel | ✅ | |
-| System.Reflection.Emit | ✅ | 2027/2625 pass; 598 need MetadataLoadContext impl at runtime |
-| System.Reflection.Emit.ILGeneration | ✅ | |
-| System.Reflection.Emit.Lightweight | ✅ | |
-| System.Reflection.TypeExtensions | ✅ | 1 test skipped (TinyAssembly.dll content file) |
-| System.Resources.Writer | ✅ | |
-| System.Runtime.CompilerServices.VisualC | ✅ | |
-| System.Runtime.InteropServices | ✅ | UnitTests; 2504/2505 pass; Windows/Drawing tests excluded |
-| System.Runtime.Intrinsics | ✅ | 12704 tests; Wasm PackedSimd tests excluded |
-| System.Runtime.Numerics | ✅ | 176 tests pass (large) |
-| System.Security.Claims | ✅ | |
-| System.Text.Encoding.Extensions | ✅ | |
-| System.Threading | ✅ | 591 tests pass |
-| System.Threading.Overlapped | ✅ | 21 tests; 2 skipped |
-| System.Threading.Tasks.Parallel | ✅ | 262 tests pass |
-| System.Threading.Thread | ✅ | 45/53 pass; 8 need ApartmentState sub-project binaries |
-| System.Threading.ThreadPool | ✅ | 69 tests; 1 skipped |
+| Library | Reason | Notes |
+|---------|--------|-------|
+| Microsoft.VisualBasic.Core | VB compiler | Needs VB compilation support in rules_dotnet |
+| System.IO.Pipes.AccessControl | Windows PNSE | Needs PlatformNotSupportedException stub generator |
+| System.Net.Quic | Native deps | Needs msquic native library for Linux build |
+| System.Runtime.InteropServices.JavaScript | Browser-only | WASM/Browser platform, PNSE on other platforms |
+| System.Threading.AccessControl | Windows PNSE | Needs PlatformNotSupportedException stub generator |
 
 ---
 
