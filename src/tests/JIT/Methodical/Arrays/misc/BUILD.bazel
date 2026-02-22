@@ -30,6 +30,11 @@ coreclr_test(
     name = "arrres_r",
     srcs = ["arrres.cs"],
     pri = 1,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 il_coreclr_test(
@@ -102,6 +107,11 @@ coreclr_test(
     srcs = ["arrres.cs"],
     pri = 1,
     optimize = True,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -110,6 +120,11 @@ coreclr_test(
     pri = 1,
     debug_type = "full",
     optimize = True,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -118,6 +133,11 @@ coreclr_test(
     pri = 1,
     debug_type = "full",
     optimize = False,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 il_coreclr_test(

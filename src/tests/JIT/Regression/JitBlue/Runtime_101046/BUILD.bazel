@@ -8,7 +8,7 @@ coreclr_test(
 )
 
 il_coreclr_test(
-    name = "Runtime_101046",
+    name = "Runtime_101046_il",
     srcs = ["Runtime_101046.il"],
     optimize = True,
 )

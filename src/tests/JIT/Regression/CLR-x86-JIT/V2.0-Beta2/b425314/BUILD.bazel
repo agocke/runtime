@@ -4,4 +4,8 @@ coreclr_test(
     name = "b425314",
     srcs = ["b425314.cs"],
     debug_type = "full",
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )

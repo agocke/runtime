@@ -4,4 +4,8 @@ coreclr_test(
     name = "Runtime_45557",
     srcs = ["Runtime_45557.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )

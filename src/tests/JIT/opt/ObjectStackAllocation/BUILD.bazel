@@ -4,12 +4,22 @@ coreclr_test(
     name = "Fields",
     srcs = ["Fields.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    ],
 )
 
 coreclr_test(
     name = "ObjectStackAllocationTests",
     srcs = ["ObjectStackAllocationTests.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    ],
 )
 
 coreclr_test(
@@ -64,10 +74,19 @@ coreclr_test(
     name = "Runtime_111922v2",
     srcs = ["Runtime_111922v2.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
     name = "Delegates",
     srcs = ["Delegates.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    ],
 )

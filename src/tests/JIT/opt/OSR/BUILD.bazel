@@ -210,6 +210,10 @@ coreclr_test(
     name = "synchronized",
     srcs = ["synchronized.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(

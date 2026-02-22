@@ -12,6 +12,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_MOD"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -19,6 +23,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_AND"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -132,6 +140,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_ADD"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -248,6 +260,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_XOR"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -277,6 +293,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_MUL"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -284,6 +304,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_SHR"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -357,6 +381,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_OR"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -390,6 +418,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_SUB"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -412,6 +444,10 @@ coreclr_test(
     srcs = ["VolatileTest.cs"],
     pri = 1,
     defines = ["OP_DIV"],
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(

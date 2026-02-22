@@ -8,8 +8,6 @@ coreclr_merged_test(
         "@paket.main//xunit.extensibility.core",
     ],
     test_deps = [
-        "//src/tests/JIT/Stress/ABI:pinvokes_d",
-        "//src/tests/JIT/Stress/ABI:tailcalls_d",
     ],
 )
 
@@ -21,9 +19,6 @@ coreclr_merged_test(
         "@paket.main//xunit.extensibility.core",
     ],
     test_deps = [
-        "//src/tests/JIT/Stress/ABI:pinvokes_do",
-        "//src/tests/JIT/Stress/ABI:stubs_do",
-        "//src/tests/JIT/Stress/ABI:tailcalls_do",
     ],
 )
 
@@ -35,22 +30,13 @@ coreclr_merged_test(
         "@paket.main//xunit.extensibility.core",
     ],
     test_deps = [
-        "//src/tests/JIT/BBT/Scenario4:Not-Int32",
-        "//src/tests/JIT/Intrinsics:BitCast",
-        "//src/tests/JIT/Intrinsics:CreateSpan_il",
-        "//src/tests/JIT/Intrinsics:TypeIntrinsicsEnums",
-        "//src/tests/JIT/Intrinsics:TypeIntrinsics_il",
         "//src/tests/JIT/PGO/InstrumentedTiers:InstrumentedTiers",
         "//src/tests/JIT/PGO/ProfileCastClassAndIsInst:ProfileCastClassAndIsInst",
         "//src/tests/JIT/PGO/ProfileCastClassAndIsInst:ProfileCastClassAndIsInst_random1",
         "//src/tests/JIT/PGO/ProfileCastClassAndIsInst:ProfileCastClassAndIsInst_random2",
         "//src/tests/JIT/PGO/ProfileCastClassAndIsInst:ProfileCastClassAndIsInst_random3",
         "//src/tests/JIT/RyuJIT:DoWhileBndChk",
-        "//src/tests/JIT/common:eh_common",
-        "//src/tests/JIT/common:localloc_common",
-        "//src/tests/JIT/interpreter:Interpreter",
         "//src/tests/JIT/interpreter:InterpreterTester",
-        "//src/tests/JIT/superpmi:superpmicollect",
     ],
 )
 
@@ -77,7 +63,6 @@ coreclr_merged_test(
         "//src/tests/JIT/Intrinsics:MemoryMarshalGetArrayDataReference_r",
         "//src/tests/JIT/Intrinsics:TypeEqualitySealed_r",
         "//src/tests/JIT/Intrinsics:TypeEquality_r",
-        "//src/tests/JIT/Intrinsics:TypeIntrinsics_r",
         "//src/tests/JIT/Math/Functions:Functions_r",
     ],
 )
@@ -105,7 +90,6 @@ coreclr_merged_test(
         "//src/tests/JIT/Intrinsics:MemoryMarshalGetArrayDataReference_ro",
         "//src/tests/JIT/Intrinsics:TypeEqualitySealed_ro",
         "//src/tests/JIT/Intrinsics:TypeEquality_ro",
-        "//src/tests/JIT/Intrinsics:TypeIntrinsics_ro",
         "//src/tests/JIT/Math/Functions:Functions_ro",
     ],
 )

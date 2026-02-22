@@ -5,6 +5,9 @@ coreclr_test(
     srcs = ["reverse-complement-1.cs", "harness-helpers.cs"],
     debug_type = "pdbonly",
     optimize = True,
+    deps = [
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+    ],
 )
 
 coreclr_test(
@@ -12,4 +15,11 @@ coreclr_test(
     srcs = ["reverse-complement-6.cs", "harness-helpers.cs"],
     debug_type = "pdbonly",
     optimize = True,
+    deps = [
+        "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+    ],
 )

@@ -5,6 +5,9 @@ coreclr_test(
     srcs = ["k-nucleotide-9.cs", "harness-helpers.cs"],
     debug_type = "pdbonly",
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading.Tasks.Parallel:ref_System.Threading.Tasks.Parallel",
+    ],
 )
 
 coreclr_test(

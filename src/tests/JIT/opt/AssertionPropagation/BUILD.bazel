@@ -18,6 +18,7 @@ coreclr_test(
     name = "LocalMorphBackedge",
     srcs = ["LocalMorphBackedge.cs"],
     optimize = True,
+    allow_unsafe_blocks = True,
 )
 
 coreclr_test(

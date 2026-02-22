@@ -13,14 +13,30 @@ coreclr_test(
     srcs = ["threads2.cs"],
     pri = 1,
     optimize = True,
-    deps = [":testlib_misc"],
+    deps = [":testlib_misc"
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
     name = "threads2_cs_r",
     srcs = ["threads2.cs"],
     pri = 1,
-    deps = [":testlib_misc"],
+    deps = [":testlib_misc"
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -28,7 +44,15 @@ coreclr_test(
     srcs = ["threads1.cs"],
     pri = 1,
     debug_type = "full",
-    deps = [":testlib_misc"],
+    deps = [":testlib_misc"
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 il_coreclr_test(
@@ -43,7 +67,15 @@ coreclr_test(
     srcs = ["threads2.cs"],
     pri = 1,
     debug_type = "full",
-    deps = [":testlib_misc"],
+    deps = [":testlib_misc"
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -52,7 +84,15 @@ coreclr_test(
     pri = 1,
     debug_type = "full",
     optimize = True,
-    deps = [":testlib_misc"],
+    deps = [":testlib_misc"
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 il_coreclr_test(
@@ -74,7 +114,15 @@ coreclr_test(
     srcs = ["threads1.cs"],
     debug_type = "full",
     optimize = True,
-    deps = [":testlib_misc"],
+    deps = [":testlib_misc"
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 il_coreclr_test(
@@ -88,7 +136,15 @@ coreclr_test(
     name = "threads1_cs_r",
     srcs = ["threads1.cs"],
     pri = 1,
-    deps = [":testlib_misc"],
+    deps = [":testlib_misc"
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -96,5 +152,13 @@ coreclr_test(
     srcs = ["threads1.cs"],
     pri = 1,
     optimize = True,
-    deps = [":testlib_misc"],
+    deps = [":testlib_misc"
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    
+        "//src/libraries/System.Threading:ref_System.Threading",
+    
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )

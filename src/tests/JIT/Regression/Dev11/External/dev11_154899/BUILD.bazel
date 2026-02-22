@@ -5,4 +5,7 @@ coreclr_test(
     srcs = ["DynamicStaticAlignment1.cs"],
     pri = 1,
     debug_type = "pdbonly",
+    deps = [
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )

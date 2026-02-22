@@ -4,4 +4,5 @@ coreclr_test(
     name = "Runtime_116689",
     srcs = ["Runtime_116689.cs"],
     optimize = True,
+    allow_unsafe_blocks = True,
 )

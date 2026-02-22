@@ -18,7 +18,11 @@ coreclr_test(
     srcs = ["test1.cs"],
     pri = 1,
     defines = ["XASSEM"],
-    deps = [":teststr", ":testgenstr"],
+    deps = [":teststr", ":testgenstr"
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -26,7 +30,11 @@ coreclr_test(
     srcs = ["test4.cs"],
     pri = 1,
     defines = ["XASSEM"],
-    deps = [":teststr", ":testgenstr"],
+    deps = [":teststr", ":testgenstr"
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -34,5 +42,9 @@ coreclr_test(
     srcs = ["test2.cs"],
     pri = 1,
     defines = ["XASSEM"],
-    deps = [":teststr", ":testgenstr"],
+    deps = [":teststr", ":testgenstr"
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )

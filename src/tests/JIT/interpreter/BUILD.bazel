@@ -5,6 +5,5 @@ coreclr_test(
     srcs = ["InterpreterTester.cs"],
     deps = [
         "//src/tests/Common:TestLibrary",
-        ":$(MSBuildThisFileDirectory)Interpreter",
     ],
 )

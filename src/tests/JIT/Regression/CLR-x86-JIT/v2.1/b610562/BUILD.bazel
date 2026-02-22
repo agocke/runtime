@@ -6,4 +6,7 @@ coreclr_test(
     pri = 1,
     debug_type = "full",
     optimize = False,
+    deps = [
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )

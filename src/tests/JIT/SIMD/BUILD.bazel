@@ -262,6 +262,9 @@ coreclr_test(
 coreclr_test(
     name = "Vector3Interop_r",
     srcs = ["Vector3Interop.cs"],
+    deps = [
+        "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
+    ],
 )
 
 coreclr_test(
@@ -551,6 +554,9 @@ coreclr_test(
     name = "Vector3Interop_ro",
     srcs = ["Vector3Interop.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
+    ],
 )
 
 coreclr_test(
@@ -710,10 +716,6 @@ coreclr_merged_test(
         "//src/tests/JIT/SIMD:VectorCast_ro",
         "//src/tests/JIT/SIMD:VectorCeilFloor_r",
         "//src/tests/JIT/SIMD:VectorCeilFloor_ro",
-        "//src/tests/JIT/SIMD:VectorConvert_r_Target_32Bit",
-        "//src/tests/JIT/SIMD:VectorConvert_r_Target_64Bit",
-        "//src/tests/JIT/SIMD:VectorConvert_ro_Target_32Bit",
-        "//src/tests/JIT/SIMD:VectorConvert_ro_Target_64Bit",
         "//src/tests/JIT/SIMD:VectorCopyToArray_r",
         "//src/tests/JIT/SIMD:VectorCopyToArray_ro",
         "//src/tests/JIT/SIMD:VectorDiv_r",

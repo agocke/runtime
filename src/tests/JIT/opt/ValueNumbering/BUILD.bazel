@@ -44,6 +44,10 @@ coreclr_test(
     srcs = ["ExposedLocalsNumbering.cs"],
     optimize = True,
     allow_unsafe_blocks = True,
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 il_coreclr_test(
@@ -57,4 +61,8 @@ coreclr_test(
     name = "ConstStringConstIndexOptimizations",
     srcs = ["ConstStringConstIndexOptimizations.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )

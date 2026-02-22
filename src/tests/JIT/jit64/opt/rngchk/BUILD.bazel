@@ -12,6 +12,9 @@ coreclr_test(
     srcs = ["ArrayWithThread.cs"],
     debug_type = "pdbonly",
     optimize = True,
+    deps = ["//src/libraries/System.Threading:ref_System.Threading",
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+    ],
 )
 
 coreclr_test(

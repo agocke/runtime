@@ -1,5 +1,7 @@
 load("//src/tests:live_test.bzl", "coreclr_test")
 
+exports_files(["StructDefinitions.cs"])
+
 coreclr_test(
     name = "nullcomparaison_r",
     srcs = ["nullcomparaison.cs", "StructDefinitions.cs"],

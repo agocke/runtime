@@ -13,6 +13,11 @@ coreclr_test(
     ],
     optimize = True,
     allow_unsafe_blocks = True,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -27,4 +32,9 @@ coreclr_test(
         "VectorUnused.cs",
     ],
     allow_unsafe_blocks = True,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )

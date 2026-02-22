@@ -4,4 +4,7 @@ coreclr_test(
     name = "GitHub_25020",
     srcs = ["GitHub_25020.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Reflection.Emit:ref_System.Reflection.Emit",
+    ],
 )

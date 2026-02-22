@@ -26,4 +26,9 @@ coreclr_test(
     debug_type = "pdbonly",
     optimize = True,
     allow_unsafe_blocks = True,
+    deps = [
+        "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
+    
+        "//src/libraries/System.Threading.Tasks.Parallel:ref_System.Threading.Tasks.Parallel",
+    ],
 )

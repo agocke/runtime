@@ -5,6 +5,9 @@ coreclr_test(
     srcs = ["spectralnorm-3.cs"],
     debug_type = "pdbonly",
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(

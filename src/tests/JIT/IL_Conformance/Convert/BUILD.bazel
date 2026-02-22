@@ -5,4 +5,7 @@ coreclr_test(
     srcs = ["TestConvertFromIntegral.cs"],
     pri = 1,
     optimize = True,
+    deps = [
+        "//src/libraries/System.Reflection.Emit:ref_System.Reflection.Emit",
+    ],
 )

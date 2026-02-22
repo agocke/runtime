@@ -4,4 +4,7 @@ coreclr_test(
     name = "Runtime_41100",
     srcs = ["Runtime_41100.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
+    ],
 )

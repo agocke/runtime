@@ -4,4 +4,9 @@ coreclr_test(
     name = "Runtime_106338",
     srcs = ["Runtime_106338.cs"],
     optimize = True,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )

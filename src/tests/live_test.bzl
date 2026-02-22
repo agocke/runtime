@@ -612,6 +612,24 @@ def _il_test_impl(ctx):
         executable = ctx.executable.ilasm_exe,
     )
 
+    # Copy runtime DLLs from deps alongside the test DLL
+    for dep in ctx.attr.deps:
+        runtime_info = dep[DotnetAssemblyRuntimeInfo]
+        for lib in runtime_info.libs:
+            if lib.extension == "dll":
+                dst = ctx.actions.declare_file(lib.basename, sibling = dll)
+                ctx.actions.run_shell(
+                    inputs = [lib],
+                    outputs = [dst],
+                    command = "cp -f \"$1\" \"$2\"",
+                    arguments = [lib.path, dst.path],
+                    mnemonic = "CopyFile",
+                    progress_message = "Copying %s" % lib.basename,
+                    use_default_shell_env = True,
+                    execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+                )
+                additional_runfiles.append(dst)
+
     launcher = create_launcher(ctx, additional_runfiles, dll)
 
     default_info = DefaultInfo(
@@ -632,6 +650,11 @@ _il_test = rule(
         "out": attr.output(
             mandatory = True,
             doc = "The output DLL.",
+        ),
+        "deps": attr.label_list(
+            doc = "Runtime dependencies (DLLs copied alongside the test assembly)",
+            providers = [DotnetAssemblyRuntimeInfo],
+            default = [],
         ),
         "debug_type": attr.string(
             doc = "The debug type",

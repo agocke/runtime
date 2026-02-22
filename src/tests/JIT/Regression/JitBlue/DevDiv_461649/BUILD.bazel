@@ -4,4 +4,7 @@ coreclr_test(
     name = "DevDiv_461649",
     srcs = ["DevDiv_461649.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Private.Xml:ref_System.Private.Xml",
+    ],
 )

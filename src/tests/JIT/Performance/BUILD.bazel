@@ -79,7 +79,6 @@ coreclr_merged_test(
         "//src/tests/JIT/Performance/CodeQuality/Benchstones/MDBenchF/MDSqMtx:MDSqMtx",
         "//src/tests/JIT/Performance/CodeQuality/Benchstones/MDBenchI/MDAddArray2:MDAddArray2",
         "//src/tests/JIT/Performance/CodeQuality/Benchstones/MDBenchI/MDArray2:MDArray2",
-        "//src/tests/JIT/Performance/CodeQuality/Benchstones/MDBenchI/MDGeneralArray:MDGeneralArray",
         "//src/tests/JIT/Performance/CodeQuality/Benchstones/MDBenchI/MDLogicArray:MDLogicArray",
         "//src/tests/JIT/Performance/CodeQuality/Benchstones/MDBenchI/MDMidpoint:MDMidpoint",
         "//src/tests/JIT/Performance/CodeQuality/Benchstones/MDBenchI/MDMulMatrix:MDMulMatrix",

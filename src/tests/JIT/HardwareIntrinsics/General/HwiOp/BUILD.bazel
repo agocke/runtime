@@ -11,11 +11,21 @@ coreclr_test(
     name = "CompareVectorWithZero_ro",
     srcs = ["CompareVectorWithZero.cs"],
     optimize = True,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
     name = "CompareVectorWithZero_r",
     srcs = ["CompareVectorWithZero.cs"],
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )
 
 coreclr_test(
@@ -23,4 +33,9 @@ coreclr_test(
     srcs = ["HwiSideEffects.cs"],
     optimize = True,
     allow_unsafe_blocks = True,
+    deps = [
+        "//src/tests/Common:TestLibrary",
+    
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ],
 )

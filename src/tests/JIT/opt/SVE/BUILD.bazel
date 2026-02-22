@@ -17,12 +17,17 @@ coreclr_test(
     name = "EmbeddedLoads",
     srcs = ["EmbeddedLoads.cs"],
     optimize = True,
+    allow_unsafe_blocks = True,
 )
 
 coreclr_test(
     name = "ChangeMaskUse",
     srcs = ["ChangeMaskUse.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
 
 coreclr_test(
@@ -47,4 +52,8 @@ coreclr_test(
     name = "MaskUse",
     srcs = ["MaskUse.cs"],
     optimize = True,
+    deps = [
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading:ref_System.Threading",
+    ],
 )
