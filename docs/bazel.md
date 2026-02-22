@@ -26,15 +26,29 @@ layout.
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
-  20 library test suites (System.Collections, System.Collections.Concurrent,
-  System.ComponentModel, System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
-  System.Diagnostics.Tracing, System.Formats.Asn1, System.IO.FileSystem.DriveInfo,
-  System.IO.Hashing, System.Linq, System.Memory, System.Numerics.Vectors,
-  System.ObjectModel, System.Reflection.Emit.ILGeneration,
-  System.Reflection.Emit.Lightweight, System.Reflection.TypeExtensions,
+  48 library test suites (System.CodeDom, System.Collections,
+  System.Collections.Concurrent, System.Collections.NonGeneric,
+  System.Collections.Specialized, System.ComponentModel,
+  System.ComponentModel.Annotations, System.ComponentModel.EventBasedAsync,
+  System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
+  System.Diagnostics.TextWriterTraceListener, System.Diagnostics.Tracing,
+  System.Drawing.Primitives, System.Formats.Asn1,
+  System.IO.FileSystem.DriveInfo, System.IO.Hashing, System.Linq,
+  System.Linq.AsyncEnumerable, System.Linq.Parallel,
+  System.Linq.Queryable, System.Memory, System.Numerics.Vectors,
+  System.ObjectModel, System.Reflection.Emit,
+  System.Reflection.Emit.ILGeneration, System.Reflection.Emit.Lightweight,
+  System.Reflection.Extensions, System.Reflection.TypeExtensions,
   System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
+  System.Runtime.InteropServices (UnitTests), System.Runtime.Intrinsics,
   System.Runtime.Numerics, System.Security.Claims,
-  System.Text.Encoding.Extensions)
+  System.Text.Encoding.CodePages, System.Text.Encoding.Extensions,
+  System.Threading, System.Threading.Channels, System.Threading.Overlapped,
+  System.Threading.RateLimiting, System.Threading.Tasks.Dataflow,
+  System.Threading.Tasks.Parallel, System.Threading.Thread,
+  System.Threading.ThreadPool, System.Net.WebHeaderCollection,
+  System.Net.WebProxy, System.Web.HttpUtility,
+  Microsoft.CSharp)
 - **Per-component configuration**: independent debug/checked/release for
   CoreCLR and Libraries (matching MSBuild's `-rc`/`-lc` flags)
 - **Runtime layout**: `runtime_layout` rule assembles stripped binaries into
@@ -43,7 +57,7 @@ layout.
 ### What's Next
 
 - Remaining managed libraries (~142 assemblies not yet in Bazel, out of ~200 total)
-- Library unit tests (20 of ~187 libraries have Bazel test BUILD files)
+- Library unit tests (48 of ~187 libraries have Bazel test BUILD files)
 - CoreCLR diagnostic tooling: DAC (mscordac), DBI (mscordbi), createdump, SOS
 - CoreCLR tools: SuperPMI, ildasm (full binary), crossgen2
 - ILC (NativeAOT ahead-of-time compiler) and crossgen2 (ReadyToRun compiler)
@@ -422,7 +436,7 @@ have `impl_` targets** in Bazel and are in the `impl_netcoreapp` aggregate. The
 remaining 5 need special support: Microsoft.VisualBasic.Core (VB compiler),
 System.IO.Pipes.AccessControl and System.Threading.AccessControl (Windows PNSE stubs),
 System.Net.Quic (msquic native library), and System.Runtime.InteropServices.JavaScript
-(Browser/WASM-only). 29 libraries have Bazel test BUILD files (out of ~187 with
+(Browser/WASM-only). 48 libraries have Bazel test BUILD files (out of ~187 with
 test projects).
 
 ### 5.1 System.Private.CoreLib — ✅ DONE
@@ -449,19 +463,30 @@ test projects).
 - [x] `src/tests/defs.bzl` — test infrastructure, live_csharp_library, xUnit runner
 - [x] `src/tests/live_test.bzl` — `library_test` macro for library unit tests
 - [x] 18 test BUILD files (JIT directed tests, common infrastructure)
-- [x] 29 library test suites (System.Collections, System.Collections.Concurrent,
-  System.ComponentModel, System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
-  System.Diagnostics.Tracing, System.Formats.Asn1, System.IO.FileSystem.DriveInfo,
-  System.IO.Hashing, System.Linq, System.Memory, System.Numerics.Vectors,
-  System.ObjectModel, System.Reflection.Emit, System.Reflection.Emit.ILGeneration,
-  System.Reflection.Emit.Lightweight, System.Reflection.TypeExtensions,
-  System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
+- [x] 48 library test suites (Microsoft.CSharp, System.CodeDom,
+  System.Collections, System.Collections.Concurrent,
+  System.Collections.NonGeneric, System.Collections.Specialized,
+  System.ComponentModel, System.ComponentModel.Annotations,
+  System.ComponentModel.EventBasedAsync, System.Diagnostics.Contracts,
+  System.Diagnostics.StackTrace, System.Diagnostics.TextWriterTraceListener,
+  System.Diagnostics.Tracing, System.Drawing.Primitives,
+  System.Formats.Asn1, System.IO.FileSystem.DriveInfo, System.IO.Hashing,
+  System.Linq, System.Linq.AsyncEnumerable, System.Linq.Parallel,
+  System.Linq.Queryable, System.Memory, System.Net.WebHeaderCollection,
+  System.Net.WebProxy, System.Numerics.Vectors, System.ObjectModel,
+  System.Reflection.Emit, System.Reflection.Emit.ILGeneration,
+  System.Reflection.Emit.Lightweight, System.Reflection.Extensions,
+  System.Reflection.TypeExtensions, System.Resources.Writer,
+  System.Runtime.CompilerServices.VisualC,
   System.Runtime.InteropServices (UnitTests), System.Runtime.Intrinsics,
-  System.Runtime.Numerics, System.Security.Claims, System.Text.Encoding.Extensions,
-  System.Threading, System.Threading.Overlapped, System.Threading.Tasks.Parallel,
-  System.Threading.Thread, System.Threading.ThreadPool)
+  System.Runtime.Numerics, System.Security.Claims,
+  System.Text.Encoding.CodePages, System.Text.Encoding.Extensions,
+  System.Threading, System.Threading.Channels, System.Threading.Overlapped,
+  System.Threading.RateLimiting, System.Threading.Tasks.Dataflow,
+  System.Threading.Tasks.Parallel, System.Threading.Thread,
+  System.Threading.ThreadPool, System.Web.HttpUtility)
 - [ ] Remaining CoreCLR test suite (~thousands of tests)
-- [ ] Remaining library unit tests (~158 libraries)
+- [ ] Remaining library unit tests (~139 libraries)
 
 ### 5.5 Installer / Packaging
 - [ ] `src/installer/` — runtime packs, NuGet packaging, SDK integration
