@@ -129,7 +129,6 @@ coreclr_merged_test(
         "//src/tests/JIT/jit64/regress/vsw/560402:opadd",
         "//src/tests/JIT/jit64/regress/vsw/560402:opmul",
         "//src/tests/JIT/jit64/regress/vsw/560402:opsub",
-        "//src/tests/JIT/jit64/regress/vsw/568666:test_568666",
         "//src/tests/JIT/jit64/regress/vsw/601425:stret",
         "//src/tests/JIT/jit64/regress/vsw/610378:vsw610378",
         "//src/tests/JIT/jit64/rtchecks/overflow:overflow01_add",

@@ -5,6 +5,7 @@ coreclr_test(
     srcs = ["DevDiv_461649.cs"],
     optimize = True,
     deps = [
-        "//src/libraries/System.Private.Xml:ref_System.Private.Xml",
+        "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
+        "//src/libraries/System.Xml.XPath:ref_System.Xml.XPath",
     ],
 )

@@ -35,6 +35,7 @@ coreclr_test(
     name = "BinaryPrimitivesReverseEndianness_r",
     srcs = ["BinaryPrimitivesReverseEndianness.cs"],
     allow_unsafe_blocks = True,
+    tags = ["manual"],  # Uses Internal namespace from CoreLib
 )
 
 il_coreclr_test(
@@ -107,6 +108,7 @@ coreclr_test(
     srcs = ["BinaryPrimitivesReverseEndianness.cs"],
     optimize = True,
     allow_unsafe_blocks = True,
+    tags = ["manual"],  # Uses Internal namespace from CoreLib
 )
 
 il_coreclr_test(

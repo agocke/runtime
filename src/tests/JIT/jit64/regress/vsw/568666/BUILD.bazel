@@ -20,5 +20,6 @@ coreclr_test(
     srcs = ["use.cs"],
     pri = 1,
     debug_type = "pdbonly",
+    tags = ["manual"],  # Requires extern alias support
     deps = [":library1", ":library2"],
 )

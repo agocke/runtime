@@ -49,7 +49,6 @@ coreclr_merged_test(
     ],
     test_deps = [
         "//src/tests/JIT/Intrinsics:BMI1Intrinsicss_r",
-        "//src/tests/JIT/Intrinsics:BinaryPrimitivesReverseEndianness_r",
         "//src/tests/JIT/Intrinsics:BitOperationsIntrinsics_r",
         "//src/tests/JIT/Intrinsics:Interlocked_r",
         "//src/tests/JIT/Intrinsics:MathCeilingDouble_r",
@@ -76,7 +75,6 @@ coreclr_merged_test(
     ],
     test_deps = [
         "//src/tests/JIT/Intrinsics:BMI1Intrinsics_ro",
-        "//src/tests/JIT/Intrinsics:BinaryPrimitivesReverseEndianness_ro",
         "//src/tests/JIT/Intrinsics:BitOperationsIntrinsics_ro",
         "//src/tests/JIT/Intrinsics:Interlocked_ro",
         "//src/tests/JIT/Intrinsics:MathCeilingDouble_ro",

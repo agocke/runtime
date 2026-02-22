@@ -5,6 +5,7 @@ coreclr_test(
     srcs = ["Serialize.cs"],
     debug_type = "pdbonly",
     optimize = True,
+    tags = ["manual"],  # Requires Newtonsoft.Json NuGet package
     deps = [
         "//src/libraries/System.Runtime.Serialization.Primitives:ref_System.Runtime.Serialization.Primitives",
     ],
@@ -15,6 +16,7 @@ coreclr_test(
     srcs = ["Deserialize.cs"],
     debug_type = "pdbonly",
     optimize = True,
+    tags = ["manual"],  # Requires Newtonsoft.Json NuGet package
     deps = [
         "//src/libraries/System.Runtime.Serialization.Primitives:ref_System.Runtime.Serialization.Primitives",
     ],

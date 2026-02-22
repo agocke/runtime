@@ -32,7 +32,7 @@ coreclr_test(
     srcs = ["MemsetMemcpyNullref.cs"],
     optimize = True,
     allow_unsafe_blocks = True,
-    deps = ["//src/tests/Common:TestLibrary"
+    deps = ["//src/tests/Common:TestLibrary",
         "@paket.main//microsoft.dotnet.xunitextensions",
     ],
 )

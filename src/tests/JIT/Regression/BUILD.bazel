@@ -1111,7 +1111,6 @@ coreclr_merged_test(
         "//src/tests/JIT/Regression/JitBlue/GitHub_24253:GitHub_24253",
         "//src/tests/JIT/Regression/JitBlue/GitHub_24657:GitHub_24657",
         "//src/tests/JIT/Regression/JitBlue/GitHub_24846:GitHub_24846",
-        "//src/tests/JIT/Regression/JitBlue/GitHub_25020:GitHub_25020",
         "//src/tests/JIT/Regression/JitBlue/GitHub_25039:GitHub_25039",
         "//src/tests/JIT/Regression/JitBlue/GitHub_25134:GitHub_25134",
         "//src/tests/JIT/Regression/JitBlue/GitHub_2580:GitHub_2580",

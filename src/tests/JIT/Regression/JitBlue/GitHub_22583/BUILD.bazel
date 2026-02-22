@@ -4,6 +4,7 @@ live_csharp_library(
     name = "lib",
     srcs = ["lib.cs"],
     visibility = ["//visibility:public"],
+    deps = [":base"],
 )
 
 live_csharp_library(

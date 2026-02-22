@@ -4,6 +4,7 @@ coreclr_test(
     name = "ConditionalSelectConstants",
     srcs = ["ConditionalSelectConstants.cs"],
     optimize = True,
+    compiler_options = ["/nowarn:SYSLIB5003"],
 )
 
 coreclr_test(
@@ -11,6 +12,7 @@ coreclr_test(
     srcs = ["PredicateInstructions.cs"],
     optimize = True,
     allow_unsafe_blocks = True,
+    compiler_options = ["/nowarn:SYSLIB5003"],
 )
 
 coreclr_test(
@@ -18,6 +20,7 @@ coreclr_test(
     srcs = ["EmbeddedLoads.cs"],
     optimize = True,
     allow_unsafe_blocks = True,
+    compiler_options = ["/nowarn:SYSLIB5003"],
 )
 
 coreclr_test(
@@ -28,24 +31,28 @@ coreclr_test(
         "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
+    compiler_options = ["/nowarn:SYSLIB5003"],
 )
 
 coreclr_test(
     name = "ConstantVectors",
     srcs = ["ConstantVectors.cs"],
     optimize = True,
+    compiler_options = ["/nowarn:SYSLIB5003"],
 )
 
 coreclr_test(
     name = "ConstantMasksOp2Fixed",
     srcs = ["ConstantMasksOp2Fixed.cs"],
     optimize = True,
+    compiler_options = ["/nowarn:SYSLIB5003"],
 )
 
 coreclr_test(
     name = "ConstantMasks",
     srcs = ["ConstantMasks.cs"],
     optimize = True,
+    compiler_options = ["/nowarn:SYSLIB5003"],
 )
 
 coreclr_test(
@@ -56,4 +63,5 @@ coreclr_test(
         "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
+    compiler_options = ["/nowarn:SYSLIB5003"],
 )
