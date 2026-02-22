@@ -27,9 +27,5 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_cc", version = "0.2.14")
 
 # ICU4C headers for System.Globalization.Native (macOS: homebrew, Linux: system)
-new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
-new_local_repository(
-    name = "icu4c",
-    path = "/opt/homebrew/opt/icu4c",
-    build_file = "//eng/bazel:icu4c.BUILD",
-)
+icu4c_repository = use_repo_rule("//eng/bazel:icu4c_repository.bzl", "icu4c_repository")
+icu4c_repository(name = "icu4c")
