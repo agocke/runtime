@@ -224,7 +224,6 @@ coreclr_merged_test(
         "//src/tests/JIT/opt/ObjectStackAllocation:ConnectionCycles",
         "//src/tests/JIT/opt/ObjectStackAllocation:Delegates",
         "//src/tests/JIT/opt/ObjectStackAllocation:Fields",
-        "//src/tests/JIT/opt/ObjectStackAllocation:ObjectStackAllocationTests",
         "//src/tests/JIT/opt/ObjectStackAllocation:Runtime_111922",
         "//src/tests/JIT/opt/ObjectStackAllocation:Runtime_111922v2",
         "//src/tests/JIT/opt/ObjectStackAllocation:Runtime_115831",

@@ -32,6 +32,7 @@ il_coreclr_test(
     srcs = ["AttributeConflict.il"],
     pri = 1,
     debug_type = "pdbonly",
+    env = {"DOTNET_TieredCompilation": "0"},
 )
 
 il_coreclr_test(
@@ -39,4 +40,5 @@ il_coreclr_test(
     srcs = ["PositiveCases.il"],
     pri = 1,
     debug_type = "pdbonly",
+    env = {"DOTNET_TieredCompilation": "0"},
 )

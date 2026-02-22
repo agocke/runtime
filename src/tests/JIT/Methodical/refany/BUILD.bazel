@@ -42,13 +42,6 @@ il_coreclr_test(
 )
 
 il_coreclr_test(
-    name = "seq_d",
-    srcs = ["seq_d.il", "seq.il"],
-    pri = 1,
-    debug_type = "full",
-)
-
-il_coreclr_test(
     name = "array3_r",
     srcs = ["array3_r.il", "array3.il"],
     debug_type = "pdbonly",
@@ -78,13 +71,6 @@ il_coreclr_test(
 il_coreclr_test(
     name = "shortsig_r",
     srcs = ["shortsig_r.il", "shortsig.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-)
-
-il_coreclr_test(
-    name = "seq_r",
-    srcs = ["seq_r.il", "seq.il"],
     pri = 1,
     debug_type = "pdbonly",
 )

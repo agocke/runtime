@@ -5,6 +5,7 @@ il_coreclr_test(
     srcs = ["arrres.il"],
     pri = 1,
     debug_type = "pdbonly",
+    env = {"DOTNET_TieredCompilation": "0"},
 )
 
 il_coreclr_test(

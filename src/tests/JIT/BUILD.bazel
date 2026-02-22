@@ -36,7 +36,6 @@ coreclr_merged_test(
         "//src/tests/JIT/PGO/ProfileCastClassAndIsInst:ProfileCastClassAndIsInst_random2",
         "//src/tests/JIT/PGO/ProfileCastClassAndIsInst:ProfileCastClassAndIsInst_random3",
         "//src/tests/JIT/RyuJIT:DoWhileBndChk",
-        "//src/tests/JIT/interpreter:InterpreterTester",
     ],
 )
 

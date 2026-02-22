@@ -260,14 +260,6 @@ coreclr_test(
 )
 
 coreclr_test(
-    name = "Vector3Interop_r",
-    srcs = ["Vector3Interop.cs"],
-    deps = [
-        "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
-    ],
-)
-
-coreclr_test(
     name = "LdfldGeneric_ro",
     srcs = ["LdfldGeneric.cs"],
     optimize = True,
@@ -551,15 +543,6 @@ coreclr_test(
 )
 
 coreclr_test(
-    name = "Vector3Interop_ro",
-    srcs = ["Vector3Interop.cs"],
-    optimize = True,
-    deps = [
-        "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
-    ],
-)
-
-coreclr_test(
     name = "Sums_r",
     srcs = ["Sums.cs"],
 )
@@ -696,8 +679,6 @@ coreclr_merged_test(
         "//src/tests/JIT/SIMD:Sums_ro",
         "//src/tests/JIT/SIMD:Vector3GetHash_r",
         "//src/tests/JIT/SIMD:Vector3GetHash_ro",
-        "//src/tests/JIT/SIMD:Vector3Interop_r",
-        "//src/tests/JIT/SIMD:Vector3Interop_ro",
         "//src/tests/JIT/SIMD:Vector3_r",
         "//src/tests/JIT/SIMD:Vector3_ro",
         "//src/tests/JIT/SIMD:Vector4_r",

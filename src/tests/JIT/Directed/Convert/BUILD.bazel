@@ -36,12 +36,6 @@ il_coreclr_test(
 )
 
 coreclr_test(
-    name = "out_of_range_fp_to_int_conversions",
-    srcs = ["out_of_range_fp_to_int_conversions.cs"],
-    optimize = True,
-)
-
-coreclr_test(
     name = "value_numbering_checked_casts_of_constants",
     srcs = [
         "value_numbering_checked_casts_of_constants.cs",

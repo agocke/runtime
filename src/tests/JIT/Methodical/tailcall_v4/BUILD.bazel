@@ -12,6 +12,7 @@ il_coreclr_test(
     srcs = ["hijacking.il"],
     debug_type = "pdbonly",
     optimize = True,
+    env = {"DOTNET_TieredCompilation": "0"},
 )
 
 il_coreclr_test(

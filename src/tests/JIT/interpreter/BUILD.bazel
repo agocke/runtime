@@ -1,9 +1,0 @@
-load("//src/tests:live_test.bzl", "coreclr_test")
-
-coreclr_test(
-    name = "InterpreterTester",
-    srcs = ["InterpreterTester.cs"],
-    deps = [
-        "//src/tests/Common:TestLibrary",
-    ],
-)

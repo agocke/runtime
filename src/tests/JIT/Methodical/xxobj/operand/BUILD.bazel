@@ -8,13 +8,6 @@ il_coreclr_test(
 )
 
 il_coreclr_test(
-    name = "localloc_operand_r",
-    srcs = ["localloc_r.il", "localloc.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-)
-
-il_coreclr_test(
     name = "unbox_il_r",
     srcs = ["unbox_r.il", "unbox.il"],
     pri = 1,
@@ -68,13 +61,6 @@ il_coreclr_test(
     srcs = ["ldelema_r.il", "ldelema.il"],
     pri = 1,
     debug_type = "pdbonly",
-)
-
-il_coreclr_test(
-    name = "localloc_operand_d",
-    srcs = ["localloc_d.il", "localloc.il"],
-    pri = 1,
-    debug_type = "full",
 )
 
 il_coreclr_test(

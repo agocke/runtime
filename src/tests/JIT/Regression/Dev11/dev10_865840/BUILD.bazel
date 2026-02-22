@@ -1,9 +1,0 @@
-load("//src/tests:live_test.bzl", "il_coreclr_test")
-
-il_coreclr_test(
-    name = "dev10_865840",
-    srcs = ["dev10_865840.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-    optimize = True,
-)

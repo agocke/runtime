@@ -638,7 +638,11 @@ def _il_test_impl(ctx):
         files = depset([dll]),
     )
 
-    return [ default_info ]
+    providers = [default_info]
+    if ctx.attr.env:
+        providers.append(testing.TestEnvironment(ctx.attr.env))
+
+    return providers
 
 _il_test = rule(
     implementation = _il_test_impl,
@@ -684,6 +688,9 @@ _il_test = rule(
         "_bash_runfiles": attr.label(
             default = "@bazel_tools//tools/bash/runfiles",
             allow_files = True,
+        ),
+        "env": attr.string_dict(
+            doc = "Environment variables to set when running the test.",
         ),
     },
     test = True,
@@ -738,9 +745,18 @@ def coreclr_merged_test(
         )
         transformed_deps.append(":" + transform_label_name)
 
+    # Test deps may reference types from common test infrastructure (e.g.,
+    # PlatformDetection in TestLibrary via [ActiveIssue] attributes). With strict
+    # deps these transitive references are not visible to the merged compilation,
+    # so include them explicitly.
+    merged_deps = deps + [
+        "//src/tests/Common:TestLibrary",
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ]
+
     live_csharp_test(
         name = name,
-        deps = deps + transformed_deps,
+        deps = merged_deps + transformed_deps,
         size = size,
         tags = tags + ["merged", "manual"],
         **kwargs
