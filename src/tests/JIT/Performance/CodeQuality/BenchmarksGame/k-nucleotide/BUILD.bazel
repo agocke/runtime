@@ -1,0 +1,15 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "k-nucleotide-9",
+    srcs = ["k-nucleotide-9.cs", "harness-helpers.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+coreclr_test(
+    name = "k-nucleotide-1",
+    srcs = ["k-nucleotide-1.cs", "harness-helpers.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+)

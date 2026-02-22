@@ -1,0 +1,50 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "ConditionalSelectConstants",
+    srcs = ["ConditionalSelectConstants.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "PredicateInstructions",
+    srcs = ["PredicateInstructions.cs"],
+    optimize = True,
+    allow_unsafe_blocks = True,
+)
+
+coreclr_test(
+    name = "EmbeddedLoads",
+    srcs = ["EmbeddedLoads.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "ChangeMaskUse",
+    srcs = ["ChangeMaskUse.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "ConstantVectors",
+    srcs = ["ConstantVectors.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "ConstantMasksOp2Fixed",
+    srcs = ["ConstantMasksOp2Fixed.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "ConstantMasks",
+    srcs = ["ConstantMasks.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "MaskUse",
+    srcs = ["MaskUse.cs"],
+    optimize = True,
+)

@@ -1,0 +1,25 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "ProfileCastClassAndIsInst",
+    srcs = ["ProfileCastClassAndIsInst.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "ProfileCastClassAndIsInst_random3",
+    srcs = ["ProfileCastClassAndIsInst.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "ProfileCastClassAndIsInst_random2",
+    srcs = ["ProfileCastClassAndIsInst.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "ProfileCastClassAndIsInst_random1",
+    srcs = ["ProfileCastClassAndIsInst.cs"],
+    optimize = True,
+)

@@ -1,0 +1,13 @@
+load("//src/libraries:defs.bzl", "live_csharp_library")
+
+live_csharp_library(
+    name = "lib",
+    srcs = ["lib.cs"],
+    visibility = ["//visibility:public"],
+)
+
+live_csharp_library(
+    name = "base",
+    srcs = ["base.cs"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,15 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "Serialize",
+    srcs = ["Serialize.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+coreclr_test(
+    name = "Deserialize",
+    srcs = ["Deserialize.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+)

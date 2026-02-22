@@ -1,0 +1,23 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "fannkuch-redux-5",
+    srcs = ["fannkuch-redux-5.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+coreclr_test(
+    name = "fannkuch-redux-9",
+    srcs = ["fannkuch-redux-9.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+    allow_unsafe_blocks = True,
+)
+
+coreclr_test(
+    name = "fannkuch-redux-2",
+    srcs = ["fannkuch-redux-2.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+)

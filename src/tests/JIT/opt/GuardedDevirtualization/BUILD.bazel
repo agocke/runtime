@@ -1,0 +1,13 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "typetestcloning",
+    srcs = ["typetestcloning.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "enumerablecloning",
+    srcs = ["enumerablecloning.cs"],
+    optimize = True,
+)

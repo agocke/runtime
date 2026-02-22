@@ -1,0 +1,24 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "MultiplyWideningAndAdd_r",
+    srcs = [
+        "MultiplyWideningAndAdd.Byte.cs",
+        "MultiplyWideningAndAdd.Int16.cs",
+        "MultiplyWideningAndAddSaturate.Byte.cs",
+        "MultiplyWideningAndAddSaturate.Int16.cs",
+    ],
+    allow_unsafe_blocks = True,
+)
+
+coreclr_test(
+    name = "MultiplyWideningAndAdd_ro",
+    srcs = [
+        "MultiplyWideningAndAdd.Byte.cs",
+        "MultiplyWideningAndAdd.Int16.cs",
+        "MultiplyWideningAndAddSaturate.Byte.cs",
+        "MultiplyWideningAndAddSaturate.Int16.cs",
+    ],
+    optimize = True,
+    allow_unsafe_blocks = True,
+)

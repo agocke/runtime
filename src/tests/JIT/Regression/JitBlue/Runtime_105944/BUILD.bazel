@@ -1,0 +1,15 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "Runtime_105944",
+    srcs = [
+        "Runtime_105944.cs",
+        "$(RepoRoot)src/libraries/Common/tests/TestUtilities/System/Buffers/BoundedMemory.cs",
+        "$(RepoRoot)src/libraries/Common/tests/TestUtilities/System/Buffers/BoundedMemory.Creation.cs",
+        "$(RepoRoot)src/libraries/Common/tests/TestUtilities/System/Buffers/BoundedMemory.Unix.cs",
+        "$(RepoRoot)src/libraries/Common/tests/TestUtilities/System/Buffers/BoundedMemory.Windows.cs",
+        "$(RepoRoot)src/libraries/Common/tests/TestUtilities/System/Buffers/BoundedMemory.Default.cs",
+        "$(RepoRoot)src/libraries/Common/tests/TestUtilities/System/Buffers/PoisonPagePlacement.cs",
+    ],
+    optimize = True,
+)

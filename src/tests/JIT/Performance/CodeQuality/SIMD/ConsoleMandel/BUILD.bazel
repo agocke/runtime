@@ -1,0 +1,19 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "ConsoleMandel",
+    srcs = [
+        "ConsoleMandel.cs",
+        "Abstractions.cs",
+        "Interfaces.cs",
+        "ScalarDouble.cs",
+        "ScalarFloat.cs",
+        "VectorDouble.cs",
+        "VectorDoubleStrict.cs",
+        "VectorFloat.cs",
+        "VectorFloatStrict.cs",
+        "VectorHelpers.cs",
+    ],
+    debug_type = "pdbonly",
+    optimize = True,
+)

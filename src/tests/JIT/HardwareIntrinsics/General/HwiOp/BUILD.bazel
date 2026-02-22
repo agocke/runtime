@@ -1,0 +1,26 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "HwiValueNumbering",
+    srcs = ["HwiValueNumbering.cs"],
+    optimize = True,
+    allow_unsafe_blocks = True,
+)
+
+coreclr_test(
+    name = "CompareVectorWithZero_ro",
+    srcs = ["CompareVectorWithZero.cs"],
+    optimize = True,
+)
+
+coreclr_test(
+    name = "CompareVectorWithZero_r",
+    srcs = ["CompareVectorWithZero.cs"],
+)
+
+coreclr_test(
+    name = "HwiSideEffects",
+    srcs = ["HwiSideEffects.cs"],
+    optimize = True,
+    allow_unsafe_blocks = True,
+)

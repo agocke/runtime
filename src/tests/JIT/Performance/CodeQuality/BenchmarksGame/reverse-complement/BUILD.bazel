@@ -1,0 +1,15 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "reverse-complement-1",
+    srcs = ["reverse-complement-1.cs", "harness-helpers.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+coreclr_test(
+    name = "reverse-complement-6",
+    srcs = ["reverse-complement-6.cs", "harness-helpers.cs"],
+    debug_type = "pdbonly",
+    optimize = True,
+)

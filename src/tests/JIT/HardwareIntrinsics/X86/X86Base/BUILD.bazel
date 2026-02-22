@@ -1,0 +1,27 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "CpuId_r",
+    srcs = ["CpuId.cs"],
+    allow_unsafe_blocks = True,
+)
+
+coreclr_test(
+    name = "Pause_r",
+    srcs = ["Pause.cs"],
+    allow_unsafe_blocks = True,
+)
+
+coreclr_test(
+    name = "Pause_ro",
+    srcs = ["Pause.cs"],
+    optimize = True,
+    allow_unsafe_blocks = True,
+)
+
+coreclr_test(
+    name = "CpuId_ro",
+    srcs = ["CpuId.cs"],
+    optimize = True,
+    allow_unsafe_blocks = True,
+)

@@ -1,0 +1,77 @@
+load("//src/tests:live_test.bzl", "coreclr_test", "il_coreclr_test")
+
+il_coreclr_test(
+    name = "rva_rvastatic1",
+    srcs = ["rva_rvaStatic1.il"],
+    pri = 1,
+    debug_type = "pdbonly",
+)
+
+coreclr_test(
+    name = "regalloc1",
+    srcs = ["regalloc1.cs"],
+    pri = 1,
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+coreclr_test(
+    name = "IntrinsicTest_Overflow",
+    srcs = ["IntrinsicTest_Overflow.cs"],
+    pri = 1,
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+coreclr_test(
+    name = "nullchecksuppress",
+    srcs = ["nullchecksuppress.cs"],
+    pri = 1,
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+il_coreclr_test(
+    name = "rva_rvastatic2",
+    srcs = ["rva_rvaStatic2.il"],
+    pri = 1,
+    debug_type = "pdbonly",
+)
+
+il_coreclr_test(
+    name = "rva_rvastatic4",
+    srcs = ["rva_rvaStatic4.il"],
+    pri = 1,
+    debug_type = "pdbonly",
+)
+
+coreclr_test(
+    name = "cse_cmpxchg",
+    srcs = ["cse_cmpxchg.cs"],
+    pri = 1,
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+il_coreclr_test(
+    name = "rva_rvastatic3",
+    srcs = ["rva_rvaStatic3.il"],
+    pri = 1,
+    debug_type = "pdbonly",
+)
+
+coreclr_test(
+    name = "regalloc2",
+    srcs = ["regalloc2.cs"],
+    pri = 1,
+    debug_type = "pdbonly",
+    optimize = True,
+)
+
+coreclr_test(
+    name = "cmpxchg",
+    srcs = ["cmpxchg.cs"],
+    pri = 1,
+    debug_type = "full",
+    optimize = False,
+)
