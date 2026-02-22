@@ -12,7 +12,7 @@ output binaries and support all platforms CMake/MSBuild currently targets.
 The Bazel build produces a fully functional .NET runtime on **linux-x64**.
 All native C/C++ components build with Bazel (CoreCLR, corehost, 6 native
 interop libs, NativeAOT runtime). Managed C# libraries (System.Private.CoreLib,
-44 framework assemblies) also build with Bazel via `rules_dotnet`.
+58 framework assemblies) also build with Bazel via `rules_dotnet`.
 A hybrid build script assembles everything into a standard `dotnet` runtime
 layout.
 
@@ -42,7 +42,7 @@ layout.
 
 ### What's Next
 
-- Remaining managed libraries (~156 assemblies not yet in Bazel, out of ~200 total)
+- Remaining managed libraries (~142 assemblies not yet in Bazel, out of ~200 total)
 - Library unit tests (20 of ~187 libraries have Bazel test BUILD files)
 - CoreCLR diagnostic tooling: DAC (mscordac), DBI (mscordbi), createdump, SOS
 - CoreCLR tools: SuperPMI, ildasm (full binary), crossgen2
@@ -416,9 +416,14 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 
 ## 5. Managed Libraries (`src/libraries/`) — 🔨 In Progress
 
-Managed C# framework assemblies built with `rules_dotnet`. Currently 44 of
-~200 library directories have Bazel BUILD files (~156 remaining).
-12 libraries have Bazel test BUILD files (out of ~187 with test projects).
+Managed C# framework assemblies built with `rules_dotnet`. The NetCoreApp shared
+framework contains 150 assemblies (per `NetCoreAppLibrary.props`). Of those, **145
+have `impl_` targets** in Bazel and are in the `impl_netcoreapp` aggregate. The
+remaining 5 need special support: Microsoft.VisualBasic.Core (VB compiler),
+System.IO.Pipes.AccessControl and System.Threading.AccessControl (Windows PNSE stubs),
+System.Net.Quic (msquic native library), and System.Runtime.InteropServices.JavaScript
+(Browser/WASM-only). 29 libraries have Bazel test BUILD files (out of ~187 with
+test projects).
 
 ### 5.1 System.Private.CoreLib — ✅ DONE
 - [x] `src/coreclr/System.Private.CoreLib/BUILD.bazel`
@@ -427,10 +432,11 @@ Managed C# framework assemblies built with `rules_dotnet`. Currently 44 of
   - [x] `src/libraries/System.Private.CoreLib/src/files.bzl` — source file lists
 
 ### 5.2 Framework ref + impl assemblies — 🔨 In Progress
-- [x] `src/libraries/BUILD.bazel` — 44 ref/impl assemblies, `impl_netcoreapp` aggregate
+- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (145 assemblies)
+- [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
-- [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration
-- [ ] Remaining ~156 managed framework assemblies
+- [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator
+- [ ] Remaining 51 NetCoreApp assemblies (see §9 for breakdown)
 
 ### 5.3 Build Tools — 🔨 Partial
 - [x] `src/tools/GenerateResxSource` — resource source generator
@@ -443,17 +449,19 @@ Managed C# framework assemblies built with `rules_dotnet`. Currently 44 of
 - [x] `src/tests/defs.bzl` — test infrastructure, live_csharp_library, xUnit runner
 - [x] `src/tests/live_test.bzl` — `library_test` macro for library unit tests
 - [x] 18 test BUILD files (JIT directed tests, common infrastructure)
-- [x] 20 library test suites (System.Collections, System.Collections.Concurrent,
+- [x] 29 library test suites (System.Collections, System.Collections.Concurrent,
   System.ComponentModel, System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
   System.Diagnostics.Tracing, System.Formats.Asn1, System.IO.FileSystem.DriveInfo,
   System.IO.Hashing, System.Linq, System.Memory, System.Numerics.Vectors,
-  System.ObjectModel, System.Reflection.Emit.ILGeneration,
+  System.ObjectModel, System.Reflection.Emit, System.Reflection.Emit.ILGeneration,
   System.Reflection.Emit.Lightweight, System.Reflection.TypeExtensions,
   System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
-  System.Runtime.Numerics, System.Security.Claims,
-  System.Text.Encoding.Extensions)
+  System.Runtime.InteropServices (UnitTests), System.Runtime.Intrinsics,
+  System.Runtime.Numerics, System.Security.Claims, System.Text.Encoding.Extensions,
+  System.Threading, System.Threading.Overlapped, System.Threading.Tasks.Parallel,
+  System.Threading.Thread, System.Threading.ThreadPool)
 - [ ] Remaining CoreCLR test suite (~thousands of tests)
-- [ ] Remaining library unit tests (~167 libraries)
+- [ ] Remaining library unit tests (~158 libraries)
 
 ### 5.5 Installer / Packaging
 - [ ] `src/installer/` — runtime packs, NuGet packaging, SDK integration
@@ -554,208 +562,32 @@ DOTNET_ROOT=artifacts/bazel-dotnet artifacts/bazel-dotnet/dotnet <app.dll>
 
 ---
 
-## 9. Library Test Tracking
+## 9. NetCoreApp Assembly Tracking
 
-Library tests use the `library_test` macro from `src/tests/live_test.bzl`, which
-runs a reflection-based test runner (`LibraryTestRunner.cs`) under `corerun`.
-Each library test needs a `tests/BUILD.bazel` file.
+The NetCoreApp shared framework (`NetCoreAppLibrary.props`) contains 150
+assemblies. Of those, **145 are Bazel-built** and in the `impl_netcoreapp`
+aggregate; **5 still need special support**.
 
-**Summary**: 20 of ~187 libraries have Bazel test BUILD files.
+### 9.1 Status Summary
 
-### Tiers
+| Category | Count | Description |
+|----------|------:|-------------|
+| ✅ In `impl_netcoreapp` | 145 | Built and aggregated (incl. CoreLib, shims, per-library impl) |
+| ❌ VB project | 1 | Microsoft.VisualBasic.Core — needs VB compiler in Bazel |
+| ❌ Windows PNSE | 2 | System.IO.Pipes.AccessControl, System.Threading.AccessControl — need PNSE stub generation |
+| ❌ Native deps | 1 | System.Net.Quic — needs msquic native library |
+| ❌ Browser-only | 1 | System.Runtime.InteropServices.JavaScript — WASM/Browser platform only |
 
-Libraries are grouped by implementation complexity:
 
-- **Tier 1** — Source already Bazel-built; just add `tests/BUILD.bazel` (42 libraries)
-- **Tier 2** — Self-contained; need source `BUILD.bazel` first, then tests (~57 libraries)
-- **Tier 3** — Complex dependency chains; need multiple source builds resolved (~42 libraries)
-- **Tier 4** — Platform-specific / Windows-only; deferred until platform support (~23 libraries)
+### 9.2 Remaining 5 Assemblies
 
-### Tier 1 — Source Bazel-built, add test BUILD only
-
-| Library | Source BUILD | Test BUILD | Notes |
-|---------|:-----------:|:----------:|-------|
-| Microsoft.Win32.Registry | ✅ | ❌ | Windows-specific tests may need filtering |
-| System.Collections | ✅ | ✅ | Large; common collection tests; serialization |
-| System.Collections.Concurrent | ✅ | ✅ | 2454 tests; uses live_ ref_impl_pair |
-| System.Collections.Immutable | ✅ | ❌ | Needs impl_ BUILD; tests reference internal src |
-| System.Collections.NonGeneric | ✅ | ❌ | Needs System.Net.Primitives impl for PlatformDetection |
-| System.ComponentModel | ✅ | ✅ | Trivial; 2 test files |
-| System.Console | ✅ | ❌ | Needs StringResources/resx for linked src files |
-| System.Diagnostics.Contracts | ✅ | ✅ | Facade; uses ref_impl_pair; 22 tests pass |
-| System.Diagnostics.StackTrace | ✅ | ✅ | 140 tests; uses live_ ref_impl_pair |
-| System.Diagnostics.Tracing | ✅ | ✅ | 40 tests; ETW/Windows tests excluded |
-| System.Formats.Asn1 | ✅ | ✅ | 46 test files; ref-only dep |
-| System.IO.FileSystem.AccessControl | ✅ | ❌ | Windows-specific tests |
-| System.IO.FileSystem.DriveInfo | ✅ | ✅ | |
-| System.IO.IsolatedStorage | ✅ | ❌ | |
-| System.IO.MemoryMappedFiles | ✅ | ❌ | |
-| System.Linq | ✅ | ✅ | 71 test files |
-| System.Memory | ✅ | ✅ | 52143 tests (very large) |
-| System.Net.Primitives | ✅ (ref only) | ❌ | Needs impl build; many tests depend on this |
-| System.Numerics.Vectors | ✅ | ✅ | |
-| System.ObjectModel | ✅ | ✅ | |
-| System.Reflection.Emit | ✅ | ❌ | |
-| System.Reflection.Emit.ILGeneration | ✅ | ✅ | |
-| System.Reflection.Emit.Lightweight | ✅ | ✅ | |
-| System.Reflection.Metadata | ✅ | ❌ | |
-| System.Reflection.TypeExtensions | ✅ | ✅ | 1 test skipped (TinyAssembly.dll content file) |
-| System.Resources.Writer | ✅ | ✅ | |
-| System.Runtime.CompilerServices.VisualC | ✅ | ✅ | |
-| System.Runtime.InteropServices | ✅ | ❌ | |
-| System.Runtime.Intrinsics | ✅ | ❌ | |
-| System.Runtime.Loader | ✅ | ❌ | |
-| System.Runtime.Numerics | ✅ | ✅ | 176 tests pass (large) |
-| System.Runtime.Serialization.Formatters | ✅ | ❌ | |
-| System.Security.AccessControl | ✅ | ❌ | Windows-specific tests |
-| System.Security.Claims | ✅ | ✅ | |
-| System.Security.Cryptography | ✅ | ❌ | |
-| System.Security.Principal.Windows | ✅ | ❌ | Windows-specific tests |
-| System.Text.Encoding.Extensions | ✅ | ✅ | |
-| System.Threading | ✅ | ❌ | |
-| System.Threading.Overlapped | ✅ | ❌ | |
-| System.Threading.Tasks.Parallel | ✅ | ❌ | |
-| System.Threading.Thread | ✅ | ❌ | |
-| System.Threading.ThreadPool | ✅ | ❌ | |
-
-### Tier 2 — Self-contained, need source BUILD first
-
-| Library | Notes |
-|---------|-------|
-| Microsoft.Bcl.AsyncInterfaces | |
-| Microsoft.Bcl.Memory | |
-| Microsoft.Bcl.Numerics | |
-| Microsoft.Bcl.TimeProvider | |
-| Microsoft.CSharp | |
-| Microsoft.Extensions.Primitives | |
-| Microsoft.Win32.Primitives | |
-| System.CodeDom | |
-| System.Collections.Specialized | |
-| System.ComponentModel.Annotations | |
-| System.ComponentModel.EventBasedAsync | |
-| System.ComponentModel.Primitives | |
-| System.Diagnostics.DiagnosticSource | |
-| System.Diagnostics.FileVersionInfo | |
-| System.Diagnostics.TextWriterTraceListener | |
-| System.Diagnostics.TraceSource | |
-| System.Drawing.Primitives | |
-| System.Formats.Cbor | |
-| System.Formats.Nrbf | |
-| System.Formats.Tar | |
-| System.IO.Compression | |
-| System.IO.Compression.Brotli | |
-| System.IO.Compression.ZipFile | |
-| System.IO.FileSystem.Watcher | |
-| System.IO.Hashing | |
-| System.IO.Pipelines | |
-| System.IO.Pipes | |
-| System.Linq.AsyncEnumerable | |
-| System.Linq.Expressions | |
-| System.Linq.Parallel | |
-| System.Linq.Queryable | |
-| System.Memory.Data | |
-| System.Net.ServerSentEvents | |
-| System.Net.WebHeaderCollection | |
-| System.Net.WebProxy | |
-| System.Private.Uri | |
-| System.Reflection.Context | |
-| System.Reflection.DispatchProxy | |
-| System.Reflection.Extensions | |
-| System.Reflection.MetadataLoadContext | |
-| System.Resources.Extensions | |
-| System.Runtime | |
-| System.Runtime.Serialization.Primitives | |
-| System.Security.Cryptography.Cose | |
-| System.Security.Cryptography.OpenSsl | |
-| System.Security.Cryptography.Pkcs | |
-| System.Security.Cryptography.Xml | |
-| System.ServiceModel.Syndication | |
-| System.Text.Encoding.CodePages | |
-| System.Text.Encodings.Web | |
-| System.Text.Json | |
-| System.Text.RegularExpressions | |
-| System.Threading.Channels | |
-| System.Threading.RateLimiting | |
-| System.Threading.Tasks.Dataflow | |
-| System.Transactions.Local | |
-| System.Web.HttpUtility | |
-
-### Tier 3 — Complex dependency chains
-
-| Library | Notes |
-|---------|-------|
-| Microsoft.Bcl.Cryptography | |
-| Microsoft.Extensions.Caching.Memory | + Abstractions |
-| Microsoft.Extensions.Configuration | 8 sub-libraries |
-| Microsoft.Extensions.DependencyInjection | + Abstractions |
-| Microsoft.Extensions.DependencyModel | |
-| Microsoft.Extensions.Diagnostics | + Abstractions |
-| Microsoft.Extensions.FileProviders.Composite | + Abstractions, Physical |
-| Microsoft.Extensions.FileSystemGlobbing | |
-| Microsoft.Extensions.HostFactoryResolver | |
-| Microsoft.Extensions.Hosting | + Abstractions, Systemd |
-| Microsoft.Extensions.Http | |
-| Microsoft.Extensions.Logging | 7 sub-libraries |
-| Microsoft.Extensions.Options | + ConfigurationExtensions, DataAnnotations |
-| Microsoft.VisualBasic.Core | |
-| System.ComponentModel.Composition | + Registration |
-| System.ComponentModel.TypeConverter | |
-| System.Composition.* | 5 sub-libraries |
-| System.Configuration.ConfigurationManager | |
-| System.Data.Common | |
-| System.Diagnostics.Process | |
-| System.IO.Packaging | |
-| System.Net.Http | + Json, WinHttpHandler |
-| System.Net.HttpListener | |
-| System.Net.Mail | |
-| System.Net.NameResolution | |
-| System.Net.NetworkInformation | |
-| System.Net.Ping | |
-| System.Net.Requests | |
-| System.Net.Security | |
-| System.Net.Sockets | |
-| System.Net.WebClient | |
-| System.Net.WebSockets | + Client |
-| System.Numerics.Tensors | |
-| System.Private.DataContractSerialization | |
-| System.Private.Xml | + Linq |
-| System.Runtime.Caching | |
-| System.Runtime.Serialization.Json | |
-| System.Runtime.Serialization.Schema | |
-| System.Runtime.Serialization.Xml | |
-| System.Xml.ReaderWriter | |
-| System.Xml.XDocument | |
-| System.Xml.XPath | + XDocument |
-| System.Xml.XmlSerializer | |
-
-### Tier 4 — Platform-specific / Windows-only (deferred)
-
-| Library | Platform |
-|---------|----------|
-| Microsoft.Extensions.Hosting.WindowsServices | Windows |
-| Microsoft.Win32.Registry.AccessControl | Windows |
-| Microsoft.Win32.SystemEvents | Windows |
-| Microsoft.XmlSerializer.Generator | Windows |
-| System.Data.Odbc | Windows |
-| System.Data.OleDb | Windows |
-| System.Diagnostics.EventLog | Windows |
-| System.Diagnostics.PerformanceCounter | Windows |
-| System.DirectoryServices | Windows |
-| System.DirectoryServices.AccountManagement | Windows |
-| System.DirectoryServices.Protocols | Windows |
-| System.IO.Pipes.AccessControl | Windows |
-| System.IO.Ports | Windows |
-| System.Management | Windows |
-| System.Net.Quic | Windows |
-| System.Runtime.InteropServices.JavaScript | Browser/WASM |
-| System.Security.Cryptography.Cng | Windows |
-| System.Security.Cryptography.Csp | Windows |
-| System.Security.Cryptography.ProtectedData | Windows |
-| System.Security.Permissions | Windows |
-| System.ServiceProcess.ServiceController | Windows |
-| System.Speech | Windows |
-| System.Threading.AccessControl | Windows |
-| System.Windows.Extensions | Windows |
+| Library | Reason | Notes |
+|---------|--------|-------|
+| Microsoft.VisualBasic.Core | VB compiler | Needs VB compilation support in rules_dotnet |
+| System.IO.Pipes.AccessControl | Windows PNSE | Needs PlatformNotSupportedException stub generator |
+| System.Net.Quic | Native deps | Needs msquic native library for Linux build |
+| System.Runtime.InteropServices.JavaScript | Browser-only | WASM/Browser platform, PNSE on other platforms |
+| System.Threading.AccessControl | Windows PNSE | Needs PlatformNotSupportedException stub generator |
 
 ---
 
@@ -767,10 +599,13 @@ Libraries are grouped by implementation complexity:
 - Clang is the default compiler (matching CMake). Override with `--repo_env=CC=gcc` if needed.
 - Build commands (linux-x64):
   - **Full runtime (hybrid)**: `./build-bazel-runtime.sh` (or `--native-only` for fast C++ iteration)
-  - **Everything**: `bazel build //...`
+  - **Everything**: `bazel build //... --config=clr_checked`
   - Native libs: `bazel build //src/native/libs/System.Native:System.Native //src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native //src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native //src/native/libs/System.Net.Security.Native:System.Net.Security.Native //src/native/libs/System.Globalization.Native:System.Globalization.Native //src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl`
   - Corehost: `bazel build //src/native/corehost:hostfxr //src/native/corehost:hostpolicy //src/native/corehost:dotnet //src/native/corehost:apphost //src/native/corehost:nethost`
   - **libcoreclr.so**: `bazel build //src/coreclr/dlls/mscoree/coreclr:libcoreclr.so`
   - **Managed libs**: `bazel build //src/libraries:impl_netcoreapp`
   - **Runtime layout**: `bazel build //:runtime_native`
   - **Core_Root (test runtime)**: `bazel build //:Core_Root`
+- Test commands (linux-x64):
+  - **All tests**: `bazel test //... --config=clr_checked`
+  - **Library tests**: `bazel test //src/tests:all --config=clr_checked`
