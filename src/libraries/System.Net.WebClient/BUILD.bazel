@@ -1,4 +1,22 @@
-load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
+
+exports_files(["ref/System.Net.WebClient.cs"])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Net.WebClient",
+    srcs = [
+        "ref/System.Net.WebClient.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
+        "//src/libraries/System.ComponentModel.EventBasedAsync:ref_System.ComponentModel.EventBasedAsync",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.Net.Primitives:ref_System.Net.Primitives",
+        "//src/libraries/System.Net.Requests:ref_System.Net.Requests",
+        "//src/libraries/System.Net.WebHeaderCollection:ref_System.Net.WebHeaderCollection",
+    ],
+)
 
 netcoreapp_impl_assembly(
     name = "impl_System.Net.WebClient",

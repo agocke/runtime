@@ -32,4 +32,6 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
         "//src/libraries/System.Reflection.Metadata:ref_System.Reflection.Metadata",
     ],
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Reflection.Emit",
 )
