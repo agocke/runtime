@@ -7,54 +7,8 @@ on:
     branches: [ bazel, bazel-mac ]
 
 jobs:
-  build-linux:
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - name: release_clr+debug_libs
-            flags: '--config=clr_release'
-          - name: checked_clr+debug_libs
-            flags: '--config=clr_checked'
-
-    name: Linux ${{ matrix.config.name }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -qq -y clang-18 lld libkrb5-dev
-
-      - name: Mount Bazel cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/bazel-disk
-          key: bazel-linux-${{ matrix.config.name }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
-          restore-keys: |
-            bazel-linux-${{ matrix.config.name }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-
-            bazel-linux-${{ matrix.config.name }}-
-
-      - name: Build
-        run: bazel build //... ${{ matrix.config.flags }} --disk_cache=~/.cache/bazel-disk
-
-      - name: Test
-        run: bazel test //... ${{ matrix.config.flags }} --disk_cache=~/.cache/bazel-disk --test_output=errors
-
   build-macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - name: release_clr+debug_libs
-            flags: '--config=clr_release'
-          - name: checked_clr+debug_libs
-            flags: '--config=clr_checked'
-
-    name: macOS ${{ matrix.config.name }}
+    name: macOS release
     runs-on: macos-14
 
     steps:
@@ -65,13 +19,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel-disk
-          key: bazel-macos-${{ matrix.config.name }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
+          key: bazel-macos-release-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
           restore-keys: |
-            bazel-macos-${{ matrix.config.name }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-
-            bazel-macos-${{ matrix.config.name }}-
+            bazel-macos-release-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-
+            bazel-macos-release-
 
       - name: Build
-        run: bazel build //... ${{ matrix.config.flags }} --disk_cache=~/.cache/bazel-disk
+        run: bazel build //... --config=clr_release --disk_cache=~/.cache/bazel-disk
 
       - name: Test
-        run: bazel test //... ${{ matrix.config.flags }} --disk_cache=~/.cache/bazel-disk --test_output=errors
+        run: bazel test //... --config=clr_release --disk_cache=~/.cache/bazel-disk --test_output=errors

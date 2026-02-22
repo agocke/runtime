@@ -45,6 +45,7 @@ LIBUNWIND_COPTS = [
 ]
 
 LIBUNWIND_DEFINES = [
+    "_GNU_SOURCE",
     "HAVE___THREAD=0",
     "PACKAGE_STRING=\\\"\\\"",
     "PACKAGE_BUGREPORT=\\\"\\\"",
