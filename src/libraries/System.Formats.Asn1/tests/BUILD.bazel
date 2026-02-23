@@ -21,4 +21,7 @@ library_test(
     allow_unsafe_blocks = True,
     size = "large",
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    # TODO: Enable on macOS once System.Security.Cryptography uses Apple crypto instead of OpenSSL.
+    # Some tests use X509KeyUsageExtension which requires the native crypto library.
+    target_compatible_with = ["@platforms//os:linux"],
 )

@@ -1,10 +1,10 @@
-# NativeAOT runtime — Bazel build (linux-x64).
+# NativeAOT runtime — Bazel build.
 # Matches CMake: src/coreclr/nativeaot/Runtime/CMakeLists.txt
 #                src/coreclr/nativeaot/Runtime/Full/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_BASE_CONFIG_DEFINES", "CLR_CONFIG_COPTS")
-load("//src/coreclr/nativeaot:nativeaot_defs.bzl", "NATIVEAOT_COPTS", "NATIVEAOT_DEFINES")
+load("//src/coreclr/nativeaot:nativeaot_defs.bzl", "NATIVEAOT_COMMON_DEFINES", "NATIVEAOT_COPTS", "NATIVEAOT_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,19 +17,37 @@ genrule(
     srcs = [
         "Runtime/unix/AsmOffsets.cpp",
         "Runtime/AsmOffsets.h",
-        "Runtime/amd64/AsmOffsetsCpu.h",
-    ],
+    ] + select({
+        "@platforms//cpu:arm64": ["Runtime/arm64/AsmOffsetsCpu.h"],
+        "//conditions:default": ["Runtime/amd64/AsmOffsetsCpu.h"],
+    }),
     outs = ["AsmOffsets.inc"],
-    cmd = " ".join([
-        "$(CC)",
-        "-x c++",
-        "-E -P",
-    ] + ["-D" + d for d in NATIVEAOT_DEFINES] + [
-        "-I$$(dirname $(location Runtime/AsmOffsets.h))",
-        "-I$$(dirname $(location Runtime/amd64/AsmOffsetsCpu.h))",
-        "$(location Runtime/unix/AsmOffsets.cpp)",
-        "> $@",
-    ]),
+    cmd = select({
+        "@platforms//cpu:arm64": " ".join([
+            "$(CC)",
+            "-x c++",
+            "-E -P",
+            "-DHOST_64BIT",
+            "-DHOST_ARM64",
+        ] + ["-D" + d for d in NATIVEAOT_COMMON_DEFINES] + [
+            "-I$$(dirname $(location Runtime/AsmOffsets.h))",
+            "-I$$(dirname $(location Runtime/arm64/AsmOffsetsCpu.h))",
+            "$(location Runtime/unix/AsmOffsets.cpp)",
+            "> $@",
+        ]),
+        "//conditions:default": " ".join([
+            "$(CC)",
+            "-x c++",
+            "-E -P",
+            "-DHOST_64BIT",
+            "-DHOST_AMD64",
+        ] + ["-D" + d for d in NATIVEAOT_COMMON_DEFINES] + [
+            "-I$$(dirname $(location Runtime/AsmOffsets.h))",
+            "-I$$(dirname $(location Runtime/amd64/AsmOffsetsCpu.h))",
+            "$(location Runtime/unix/AsmOffsets.cpp)",
+            "> $@",
+        ]),
+    }),
     toolchains = ["@bazel_tools//tools/cpp:current_cc_toolchain"],
 )
 
@@ -38,9 +56,15 @@ genrule(
 # include paths (which would cause infinite include loops).
 genrule(
     name = "gen_config_h",
-    srcs = ["Runtime/unix/bazel/config.h"],
+    srcs = select({
+        "@platforms//os:macos": ["Runtime/unix/bazel/darwin-arm64/config.h"],
+        "//conditions:default": ["Runtime/unix/bazel/config.h"],
+    }),
     outs = ["config.h"],
-    cmd = "cp $(location Runtime/unix/bazel/config.h) $@",
+    cmd = select({
+        "@platforms//os:macos": "cp $(location Runtime/unix/bazel/darwin-arm64/config.h) $@",
+        "//conditions:default": "cp $(location Runtime/unix/bazel/config.h) $@",
+    }),
 )
 
 # ---------------------------------------------------------------------------
@@ -129,8 +153,10 @@ _GC_UNIX_SRCS = [
     "//src/coreclr/gc:unix/numasupport.cpp",
     "//src/coreclr/gc:unix/events.cpp",
     "//src/coreclr/gc:unix/cgroup.cpp",
-    "//src/coreclr/gc:unix/bazel/linux-glibc-x64/config.gc.h",
-]
+] + select({
+    "@platforms//os:macos": ["//src/coreclr/gc:unix/bazel/darwin-arm64/config.gc.h"],
+    "//conditions:default": ["//src/coreclr/gc:unix/bazel/linux-glibc-x64/config.gc.h"],
+})
 
 # Unix runtime sources
 _UNIX_RUNTIME_SRCS = [
@@ -167,24 +193,43 @@ _LLVM_LIBUNWIND_ASM_SRCS = [
     "//src/native/external/llvm-libunwind:src/UnwindRegistersSave.S",
 ]
 
-# Assembly sources from nativeaot/Runtime/amd64/
+# Assembly sources from nativeaot/Runtime/{arch}/
 # ThunkPoolThunks.S is Apple-only; on Linux FEATURE_RX_THUNKS is used.
-_NATIVEAOT_ASM_SRCS = [
-    "Runtime/amd64/CachedInterfaceDispatchAot.S",
-    "Runtime/amd64/ExceptionHandling.S",
-    "Runtime/amd64/GcProbe.S",
-    "Runtime/amd64/InteropThunksHelpers.S",
-    "Runtime/amd64/MiscStubs.S",
-    "Runtime/amd64/PInvoke.S",
-    "Runtime/amd64/UniversalTransition.S",
-]
+_NATIVEAOT_ASM_SRCS = select({
+    "@platforms//cpu:arm64": [
+        "Runtime/arm64/CachedInterfaceDispatchAot.S",
+        "Runtime/arm64/ExceptionHandling.S",
+        "Runtime/arm64/GcProbe.S",
+        "Runtime/arm64/InteropThunksHelpers.S",
+        "Runtime/arm64/MiscStubs.S",
+        "Runtime/arm64/PInvoke.S",
+        "Runtime/arm64/ThunkPoolThunks.S",
+        "Runtime/arm64/UniversalTransition.S",
+    ],
+    "//conditions:default": [
+        "Runtime/amd64/CachedInterfaceDispatchAot.S",
+        "Runtime/amd64/ExceptionHandling.S",
+        "Runtime/amd64/GcProbe.S",
+        "Runtime/amd64/InteropThunksHelpers.S",
+        "Runtime/amd64/MiscStubs.S",
+        "Runtime/amd64/PInvoke.S",
+        "Runtime/amd64/UniversalTransition.S",
+    ],
+})
 
-# Assembly sources from src/coreclr/runtime/amd64/
-_CORECLR_ASM_SRCS = [
-    "//src/coreclr/runtime:amd64/AllocFast.S",
-    "//src/coreclr/runtime:amd64/StubDispatch.S",
-    "//src/coreclr/runtime:amd64/WriteBarriers.S",
-]
+# Assembly sources from src/coreclr/runtime/{arch}/
+_CORECLR_ASM_SRCS = select({
+    "@platforms//cpu:arm64": [
+        "//src/coreclr/runtime:arm64/AllocFast.S",
+        "//src/coreclr/runtime:arm64/StubDispatch.S",
+        "//src/coreclr/runtime:arm64/WriteBarriers.S",
+    ],
+    "//conditions:default": [
+        "//src/coreclr/runtime:amd64/AllocFast.S",
+        "//src/coreclr/runtime:amd64/StubDispatch.S",
+        "//src/coreclr/runtime:amd64/WriteBarriers.S",
+    ],
+})
 
 # SERVER_GC_SOURCES
 _SERVER_GC_SRCS = [
@@ -215,11 +260,16 @@ _ALL_FULL = (
 _ALL_ASM = _NATIVEAOT_ASM_SRCS + _CORECLR_ASM_SRCS
 
 # Assembly include files that must be in the sandbox for .S preprocessing
-_ASM_INCLUDES = glob([
-    "Runtime/unix/*.inc",
-    "Runtime/amd64/*.inc",
-    "Runtime/amd64/AsmMacros_Shared.h",
-])
+_ASM_INCLUDES = glob(
+    [
+        "Runtime/unix/*.inc",
+        "Runtime/amd64/*.inc",
+        "Runtime/amd64/AsmMacros_Shared.h",
+        "Runtime/arm64/*.inc",
+        "Runtime/arm64/AsmMacros_Shared.h",
+    ],
+    allow_empty = True,
+)
 
 # Headers visible to the runtime build
 _RUNTIME_HDRS = glob(
@@ -234,6 +284,8 @@ _RUNTIME_HDRS = glob(
         "Runtime/unix/bazel/*.h",
         "Runtime/amd64/*.h",
         "Runtime/amd64/*.inc",
+        "Runtime/arm64/*.h",
+        "Runtime/arm64/*.inc",
         "Runtime/eventpipe/*.h",
         "Runtime/eventpipe/bazel/inc/*.h",
     ],
@@ -260,8 +312,10 @@ _LLVM_LIBUNWIND_COPTS = [
 # GC unix config header path
 _GC_UNIX_COPTS = [
     "-Isrc/coreclr/gc/unix",
-    "-Isrc/coreclr/gc/unix/bazel/linux-glibc-x64",
-]
+] + select({
+    "@platforms//os:macos": ["-Isrc/coreclr/gc/unix/bazel/darwin-arm64"],
+    "//conditions:default": ["-Isrc/coreclr/gc/unix/bazel/linux-glibc-x64"],
+})
 
 # Pre-generated eventing headers (from genEventing.py)
 _EVENTING_COPTS = [
@@ -378,17 +432,22 @@ cc_library(
 # VxSort (AMD64)
 # ---------------------------------------------------------------------------
 
-_VXSORT_SRCS = [
-    "//src/coreclr/gc:vxsort/isa_detection.cpp",
-    "//src/coreclr/gc:vxsort/do_vxsort_avx2.cpp",
-    "//src/coreclr/gc:vxsort/do_vxsort_avx512.cpp",
-    "//src/coreclr/gc:vxsort/machine_traits.avx2.cpp",
-    "//src/coreclr/gc:vxsort/smallsort/bitonic_sort.AVX2.int64_t.generated.cpp",
-    "//src/coreclr/gc:vxsort/smallsort/bitonic_sort.AVX2.int32_t.generated.cpp",
-    "//src/coreclr/gc:vxsort/smallsort/bitonic_sort.AVX512.int64_t.generated.cpp",
-    "//src/coreclr/gc:vxsort/smallsort/bitonic_sort.AVX512.int32_t.generated.cpp",
-    "//src/coreclr/gc:vxsort/smallsort/avx2_load_mask_tables.cpp",
-]
+_VXSORT_SRCS = select({
+    "@platforms//cpu:arm64": [
+        "//src/coreclr/gc:vxsort/dummy.cpp",
+    ],
+    "//conditions:default": [
+        "//src/coreclr/gc:vxsort/isa_detection.cpp",
+        "//src/coreclr/gc:vxsort/do_vxsort_avx2.cpp",
+        "//src/coreclr/gc:vxsort/do_vxsort_avx512.cpp",
+        "//src/coreclr/gc:vxsort/machine_traits.avx2.cpp",
+        "//src/coreclr/gc:vxsort/smallsort/bitonic_sort.AVX2.int64_t.generated.cpp",
+        "//src/coreclr/gc:vxsort/smallsort/bitonic_sort.AVX2.int32_t.generated.cpp",
+        "//src/coreclr/gc:vxsort/smallsort/bitonic_sort.AVX512.int64_t.generated.cpp",
+        "//src/coreclr/gc:vxsort/smallsort/bitonic_sort.AVX512.int32_t.generated.cpp",
+        "//src/coreclr/gc:vxsort/smallsort/avx2_load_mask_tables.cpp",
+    ],
+})
 
 cc_library(
     name = "nativeaot_vxsort_enabled",
@@ -396,8 +455,10 @@ cc_library(
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/gc/vxsort",
         "-Isrc/coreclr/gc/vxsort/smallsort",
-        "-mavx2",
-    ],
+    ] + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mavx2"],
+    }),
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,

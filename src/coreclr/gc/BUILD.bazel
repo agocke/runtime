@@ -1,4 +1,4 @@
-# GC subsystem — Bazel build (linux-x64).
+# GC subsystem — Bazel build.
 # Matches CMake: src/coreclr/gc/CMakeLists.txt
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
@@ -32,13 +32,6 @@ cc_library(
 # It uses its own env/ headers instead.
 
 _GC_STANDALONE_DEFINES = [
-    "HOST_64BIT",
-    "HOST_AMD64",
-    "HOST_UNIX",
-    "TARGET_64BIT",
-    "TARGET_AMD64",
-    "TARGET_UNIX",
-    "TARGET_LINUX",
     "FEATURE_SVR_GC",
     "FEATURE_EVENT_TRACE=1",
     "FEATURE_PERFTRACING=1",
@@ -56,8 +49,30 @@ _GC_STANDALONE_DEFINES = [
     "DISABLE_CONTRACTS",
     "URTBLDENV_FRIENDLY=Retail",
     "_FILE_OFFSET_BITS=64",
-    "_TIME_BITS=64",
-]
+] + select({
+    "@platforms//os:macos": [
+        "HOST_64BIT",
+        "HOST_ARM64",
+        "HOST_UNIX",
+        "HOST_APPLE",
+        "HOST_OSX",
+        "TARGET_64BIT",
+        "TARGET_ARM64",
+        "TARGET_UNIX",
+        "TARGET_APPLE",
+        "TARGET_OSX",
+    ],
+    "//conditions:default": [
+        "HOST_64BIT",
+        "HOST_AMD64",
+        "HOST_UNIX",
+        "TARGET_64BIT",
+        "TARGET_AMD64",
+        "TARGET_UNIX",
+        "TARGET_LINUX",
+        "_TIME_BITS=64",
+    ],
+})
 
 _GC_COPTS = [
     "-Wno-invalid-offsetof",
@@ -67,9 +82,11 @@ _GC_COPTS = [
     "-iquote", "src/coreclr/gc/env",
     "-Isrc/coreclr/gc",
     "-Isrc/coreclr/gc/env",
-    "-Isrc/coreclr/gc/unix/bazel/linux-glibc-x64",
     "-Isrc/native",
-]
+] + select({
+    "@platforms//os:macos": ["-Isrc/coreclr/gc/unix/bazel/darwin-arm64"],
+    "//conditions:default": ["-Isrc/coreclr/gc/unix/bazel/linux-glibc-x64"],
+})
 
 # The standalone GC always builds as retail, even in debug builds.
 # These copts override --config=debug globals (copts come after --copt)
@@ -92,8 +109,10 @@ cc_library(
         "unix/numasupport.cpp",
         "unix/events.cpp",
         "unix/cgroup.cpp",
-        "unix/bazel/linux-glibc-x64/config.gc.h",
-    ],
+    ] + select({
+        "@platforms//os:macos": ["unix/bazel/darwin-arm64/config.gc.h"],
+        "//conditions:default": ["unix/bazel/linux-glibc-x64/config.gc.h"],
+    }),
     copts = _GC_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/gc/unix",
     ],
@@ -106,8 +125,9 @@ cc_library(
     ],
 )
 
-# --- gc_vxsort (OBJECT library) — Vectorized sorting (AMD64) ---
+# --- gc_vxsort (OBJECT library) — Vectorized sorting (AMD64-only) ---
 # All AMD64 vxsort sources require -mavx2.
+# On arm64, use the dummy vxsort stub instead.
 
 _VXSORT_AVX2_SRCS = [
     "vxsort/isa_detection.cpp",
@@ -123,16 +143,21 @@ _VXSORT_AVX2_SRCS = [
 
 cc_library(
     name = "gc_vxsort",
-    srcs = _VXSORT_AVX2_SRCS + glob([
+    srcs = select({
+        "@platforms//cpu:arm64": ["vxsort/dummy.cpp"],
+        "//conditions:default": _VXSORT_AVX2_SRCS,
+    }) + glob([
         "vxsort/*.h",
         "vxsort/smallsort/*.h",
     ]),
     copts = _GC_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/gc/vxsort",
         "-Isrc/coreclr/gc/vxsort/smallsort",
-        "-mavx2",
         "-Wno-unused-but-set-parameter",
-    ],
+    ] + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mavx2"],
+    }),
     local_defines = _GC_STANDALONE_DEFINES,
     alwayslink = True,
     deps = [
@@ -243,8 +268,14 @@ cc_library(
 
 cc_shared_library(
     name = "clrgc",
-    shared_lib_name = "libclrgc.so",
-    user_link_flags = ["-Wl,-soname,libclrgc.so"],
+    shared_lib_name = select({
+        "@platforms//os:macos": "libclrgc.dylib",
+        "//conditions:default": "libclrgc.so",
+    }),
+    user_link_flags = select({
+        "@platforms//os:macos": ["-Wl,-install_name,@rpath/libclrgc.dylib"],
+        "//conditions:default": ["-Wl,-soname,libclrgc.so"],
+    }),
     deps = [":clrgc_lib"],
     dynamic_deps = [],
     visibility = ["//visibility:public"],
@@ -271,8 +302,14 @@ cc_library(
 
 cc_shared_library(
     name = "clrgcexp",
-    shared_lib_name = "libclrgcexp.so",
-    user_link_flags = ["-Wl,-soname,libclrgcexp.so"],
+    shared_lib_name = select({
+        "@platforms//os:macos": "libclrgcexp.dylib",
+        "//conditions:default": "libclrgcexp.so",
+    }),
+    user_link_flags = select({
+        "@platforms//os:macos": ["-Wl,-install_name,@rpath/libclrgcexp.dylib"],
+        "//conditions:default": ["-Wl,-soname,libclrgcexp.so"],
+    }),
     deps = [":clrgcexp_lib"],
     dynamic_deps = [],
     visibility = ["//visibility:public"],

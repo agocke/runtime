@@ -46,6 +46,17 @@ netcoreapp_impl_assembly(
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
             "//src/libraries/Common:src/System/IO/Archiving.Utils.Unix.cs",
         ],
+        "@platforms//os:macos": [
+            # Unix-specific files (shared with Linux)
+            "src/System/IO/Compression/ZipFile.Create.Unix.cs",
+            "src/System/IO/Compression/ZipFileExtensions.ZipArchive.Create.Unix.cs",
+            "//src/libraries/Common:src/System/IO/Compression/ZipArchiveEntryConstants.Unix.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.IOErrors.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Errors.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
+            "//src/libraries/Common:src/System/IO/Archiving.Utils.Unix.cs",
+        ],
     }),
     deps = [
         "//src/libraries:ref_System.Runtime",

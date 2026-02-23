@@ -6,6 +6,7 @@ load("//eng/bazel:version.bzl", "PRODUCT_VERSION")
 
 exports_files([
     "artifacts/obj/coreclr/System.Private.CoreLib/linux.x64.Debug/System.Private.CoreLib.Strings.resources",
+    "artifacts/obj/coreclr/System.Private.CoreLib/osx.arm64.Debug/System.Private.CoreLib.Strings.resources",
 ])
 
 # ── Per-component build configuration flags ──────────────────────────
@@ -96,16 +97,20 @@ runtime_layout(
     fxr_files = [
         "//src/native/corehost:hostfxr",
     ],
-    framework_files = [
-        "//src/coreclr/dlls/mscoree/coreclr:libcoreclr.so",
+    framework_files = select({
+        "@platforms//os:macos": ["//src/coreclr/dlls/mscoree/coreclr:libcoreclr_dylib"],
+        "//conditions:default": ["//src/coreclr/dlls/mscoree/coreclr:libcoreclr.so"],
+    }) + [
         "//src/native/corehost:hostpolicy",
         "//src/native/libs/System.Globalization.Native:System.Globalization.Native",
         "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native",
         "//src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native",
         "//src/native/libs/System.Native:System.Native",
         "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
-        "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl",
-    ],
+    ] + select({
+        "@platforms//os:linux": ["//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl"],
+        "//conditions:default": [],
+    }),
 )
 
 # ── Core_Root: full test runtime ─────────────────────────────────────
@@ -114,17 +119,26 @@ copy_to_directory(
     out = "Core_Root",
     srcs = [
         "//src/coreclr/hosts:corerun",
-        "//src/coreclr/dlls/mscoree/coreclr:libcoreclr.so",
         "//src/native/corehost:hostpolicy",
         "//src/native/libs/System.Native:System.Native",
         "//src/native/libs/System.Globalization.Native:System.Globalization.Native",
         "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native",
         "//src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native",
         "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
-        "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl",
         "//src/libraries:impl_netcoreapp",
-        "//src/coreclr/System.Private.CoreLib:crossgen_System.Private.CoreLib",
-    ],
+    ] + select({
+        "@platforms//os:macos": ["//src/coreclr/dlls/mscoree/coreclr:libcoreclr_dylib"],
+        "//conditions:default": ["//src/coreclr/dlls/mscoree/coreclr:libcoreclr.so"],
+    }) + select({
+        "@platforms//os:linux": [
+            "//src/coreclr/System.Private.CoreLib:crossgen_System.Private.CoreLib",
+            "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl",
+        ],
+        # macOS: skip OpenSSL (not available on macOS)
+        # Skip R2R crossgen on macOS for now (R2R segfaults at runtime, needs investigation)
+        # The IL CoreLib from impl_netcoreapp is used directly.
+        "@platforms//os:macos": [],
+    }),
     # The R2R CoreLib (listed last) overwrites the IL version from impl_netcoreapp.
     allow_overwrites = True,
     replace_prefixes = {

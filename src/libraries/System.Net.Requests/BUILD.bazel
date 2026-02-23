@@ -51,6 +51,10 @@ netcoreapp_impl_assembly(
             "src/System/Net/WebExceptionPal.Unix.cs",
             "//src/libraries/Common:src/System/Net/ContextAwareResult.Unix.cs",
         ],
+        "@platforms//os:macos": [
+            "src/System/Net/WebExceptionPal.Unix.cs",
+            "//src/libraries/Common:src/System/Net/ContextAwareResult.Unix.cs",
+        ],
     }),
     resx_file = "src/Resources/Strings.resx",
     allow_unsafe_blocks = True,

@@ -55,6 +55,31 @@ netcoreapp_impl_assembly(
             "//src/libraries/Common:src/Interop/Unix/Interop.Poll.Structs.cs",
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
         ],
+        "@platforms//os:macos": [
+            # Unix common
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Read.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Errors.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.IOErrors.cs",
+            "//src/libraries/Common:src/System/IO/PathInternal.Unix.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.PathConf.cs",
+
+            # macOS FSEvents
+            "src/System/IO/FileSystemWatcher.OSX.cs",
+            "//src/libraries/System.Private.CoreLib:src/System/IO/FileSystem.Exists.Unix.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.DefaultPathBufferSize.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.EventStream.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.RunLoop.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.RealPath.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.Span.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Sync.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeCreateHandle.OSX.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeEventStreamHandle.OSX.cs",
+            "//src/libraries/Common:src/System/Text/ValueUtf8Converter.cs",
+        ],
     }),
     deps = [
         "//src/libraries:ref_Microsoft.Win32.Primitives",

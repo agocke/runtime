@@ -30,7 +30,9 @@ netcoreapp_impl_assembly(
             "src/System/Net/Http/SocketsHttpHandler/HttpWindowsProxy.cs",
             "src/System/Net/Http/SocketsHttpHandler/WinInetProxyHelper.cs",
             "src/System/Net/Http/SocketsHttpHandler/CurrentUserIdentityProvider.Windows.cs",
-            # OSX/Apple-only
+            # Unix-only (added conditionally for Linux)
+            "src/System/Net/Http/SocketsHttpHandler/SystemProxyInfo.Unix.cs",
+            # OSX/Apple-only (added conditionally for macOS)
             "src/System/Net/Http/SocketsHttpHandler/SystemProxyInfo.OSX.cs",
             "src/System/Net/Http/SocketsHttpHandler/MacProxy.cs",
             # Mobile-only (Android/iOS/macCatalyst/tvOS)
@@ -99,6 +101,8 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Net/Http/aspnetcore/Http3/QPack/H3StaticTable.Http3.cs",
     ] + select({
         "@platforms//os:linux": [
+            # Linux-specific proxy support
+            "src/System/Net/Http/SocketsHttpHandler/SystemProxyInfo.Unix.cs",
             # Unix Common sources (non-windows, non-browser, non-wasi)
             "//src/libraries/Common:src/System/StrongToWeakReference.cs",
             "//src/libraries/Common:src/System/Net/UriScheme.cs",
@@ -112,6 +116,35 @@ netcoreapp_impl_assembly(
             "//src/libraries/Common:src/System/Net/Security/CertificateHelper.Unix.cs",
             # Unix non-Apple OpenSSL init
             "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.Initialization.cs",
+        ],
+        "@platforms//os:macos": [
+            # macOS-specific proxy support
+            "src/System/Net/Http/SocketsHttpHandler/SystemProxyInfo.OSX.cs",
+            "src/System/Net/Http/SocketsHttpHandler/MacProxy.cs",
+            # Unix Common sources (non-windows, non-browser, non-wasi)
+            "//src/libraries/Common:src/System/StrongToWeakReference.cs",
+            "//src/libraries/Common:src/System/Net/UriScheme.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+            "//src/libraries/Common:src/System/CharArrayHelpers.cs",
+            "//src/libraries/Common:src/System/Net/HttpKnownHeaderNames.cs",
+            "//src/libraries/Common:src/System/Net/HttpKnownHeaderNames.TryGetHeaderName.cs",
+            "//src/libraries/Common:src/System/Net/HttpStatusDescription.cs",
+            "//src/libraries/Common:src/System/Net/Http/HttpHandlerDefaults.cs",
+            "//src/libraries/Common:src/System/Net/Security/CertificateHelper.cs",
+            "//src/libraries/Common:src/System/Net/Security/CertificateHelper.Unix.cs",
+            # OSX interop for proxy support
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.CFArray.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.CFData.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.CFDictionary.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.CFProxy.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.CFUrl.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.CFString.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.CFNumber.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.CoreFoundation.CFError.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.RunLoop.cs",
+            "//src/libraries/Common:src/Interop/OSX/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeCreateHandle.OSX.cs",
         ],
     }),
     resx_file = "src/Resources/Strings.resx",

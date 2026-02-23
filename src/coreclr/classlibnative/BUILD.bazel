@@ -17,7 +17,10 @@ cc_library(
 # since bcltype/comfloat compile with the VM's common.h precompiled header.
 _CLN_COPTS = [
     "-Isrc/coreclr/vm",
-    "-Isrc/coreclr/vm/amd64",
+] + select({
+    "@platforms//cpu:arm64": ["-Isrc/coreclr/vm/arm64"],
+    "//conditions:default": ["-Isrc/coreclr/vm/amd64"],
+}) + [
     "-Isrc/coreclr",
     "-Isrc/coreclr/gc",
     "-Isrc/coreclr/gc/env",

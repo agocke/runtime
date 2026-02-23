@@ -1,9 +1,11 @@
-# Corehost Bazel build for linux-x64.
+# Corehost Bazel build.
 # Produces: dotnet (exe), apphost (exe), hostfxr (shared), hostpolicy (shared),
 #           nethost (shared+static).
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
+
+load("//:defs.bzl", "PLATFORM_DEFINES")
 
 package(default_visibility = ["//src/native/corehost:__subpackages__"])
 
@@ -11,17 +13,32 @@ package(default_visibility = ["//src/native/corehost:__subpackages__"])
 
 cc_library(
     name = "configure_headers",
-    hdrs = [
-        "bazel/linux-glibc-x64/_version.c",
-        "bazel/linux-glibc-x64/configure.h",
-    ],
-    strip_include_prefix = "bazel/linux-glibc-x64",
+    hdrs = select({
+        "@platforms//os:macos": [
+            "bazel/darwin-arm64/_version.c",
+            "bazel/darwin-arm64/configure.h",
+        ],
+        "//conditions:default": [
+            "bazel/linux-glibc-x64/_version.c",
+            "bazel/linux-glibc-x64/configure.h",
+        ],
+    }),
+    strip_include_prefix = select({
+        "@platforms//os:macos": "bazel/darwin-arm64",
+        "//conditions:default": "bazel/linux-glibc-x64",
+    }),
 )
 
 cc_library(
     name = "hostmisc_config",
-    hdrs = ["bazel/linux-glibc-x64/config.h"],
-    strip_include_prefix = "bazel/linux-glibc-x64",
+    hdrs = select({
+        "@platforms//os:macos": ["bazel/darwin-arm64/config.h"],
+        "//conditions:default": ["bazel/linux-glibc-x64/config.h"],
+    }),
+    strip_include_prefix = select({
+        "@platforms//os:macos": "bazel/darwin-arm64",
+        "//conditions:default": "bazel/linux-glibc-x64",
+    }),
 )
 
 # --- Shared copts and defines for all corehost targets ---
@@ -32,13 +49,9 @@ COREHOST_COPTS = [
     "-fno-use-cxa-atexit",
 ]
 
-COREHOST_DEFINES = [
+COREHOST_DEFINES = PLATFORM_DEFINES + [
     "RAPIDJSON_HAS_CXX17",
     "FALLBACK_OS_IS_SAME_AS_TARGET_OS",
-    "TARGET_UNIX",
-    "TARGET_LINUX",
-    "TARGET_AMD64",
-    "TARGET_64BIT",
 ]
 
 # --- Common headers shared by multiple corehost targets ---
@@ -106,10 +119,15 @@ cc_library(
     ],
     defines = COREHOST_DEFINES,
     local_defines = NATIVE_CONFIG_DEFINES,
-    linkopts = [
-        "-ldl",
-        "-lpthread",
-    ],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-lpthread",
+        ],
+        "//conditions:default": [
+            "-ldl",
+            "-lpthread",
+        ],
+    }),
     deps = [
         ":configure_headers",
         ":corehost_headers",
@@ -220,16 +238,27 @@ cc_library(
 
 cc_shared_library(
     name = "hostfxr",
-    shared_lib_name = "libhostfxr.so",
-    user_link_flags = [
-        "-Wl,--version-script,$(location :hostfxr_exports)",
-        "-Wl,-Bsymbolic",
-        "-Wl,-soname,libhostfxr.so",
-    ],
+    shared_lib_name = select({
+        "@platforms//os:macos": "libhostfxr.dylib",
+        "//conditions:default": "libhostfxr.so",
+    }),
+    user_link_flags = select({
+        "@platforms//os:macos": [
+            "-Wl,-install_name,@rpath/libhostfxr.dylib",
+        ],
+        "//conditions:default": [
+            "-Wl,--version-script,$(location :hostfxr_exports)",
+            "-Wl,-Bsymbolic",
+            "-Wl,-soname,libhostfxr.so",
+        ],
+    }),
     visibility = ["//visibility:public"],
     deps = [":hostfxr_lib"],
     dynamic_deps = [],
-    additional_linker_inputs = [":hostfxr_exports"],
+    additional_linker_inputs = select({
+        "@platforms//os:macos": [],
+        "//conditions:default": [":hostfxr_exports"],
+    }),
 )
 
 # --- hostpolicy (shared library) ---
@@ -280,16 +309,27 @@ cc_library(
 
 cc_shared_library(
     name = "hostpolicy",
-    shared_lib_name = "libhostpolicy.so",
-    user_link_flags = [
-        "-Wl,--version-script,$(location :hostpolicy_exports)",
-        "-Wl,-Bsymbolic",
-        "-Wl,-soname,libhostpolicy.so",
-    ],
+    shared_lib_name = select({
+        "@platforms//os:macos": "libhostpolicy.dylib",
+        "//conditions:default": "libhostpolicy.so",
+    }),
+    user_link_flags = select({
+        "@platforms//os:macos": [
+            "-Wl,-install_name,@rpath/libhostpolicy.dylib",
+        ],
+        "//conditions:default": [
+            "-Wl,--version-script,$(location :hostpolicy_exports)",
+            "-Wl,-Bsymbolic",
+            "-Wl,-soname,libhostpolicy.so",
+        ],
+    }),
     visibility = ["//visibility:public"],
     deps = [":hostpolicy_lib"],
     dynamic_deps = [],
-    additional_linker_inputs = [":hostpolicy_exports"],
+    additional_linker_inputs = select({
+        "@platforms//os:macos": [],
+        "//conditions:default": [":hostpolicy_exports"],
+    }),
 )
 
 # --- dotnet (executable) ---
@@ -309,7 +349,10 @@ cc_binary(
     ],
     defines = COREHOST_DEFINES,
     local_defines = NATIVE_CONFIG_DEFINES,
-    linkopts = ["-Wl,-Bsymbolic"],
+    linkopts = select({
+        "@platforms//os:macos": [],
+        "//conditions:default": ["-Wl,-Bsymbolic"],
+    }),
     visibility = ["//visibility:public"],
     deps = [
         ":fxr_resolver",
@@ -336,7 +379,10 @@ cc_binary(
     ],
     defines = COREHOST_DEFINES + ["FEATURE_APPHOST"],
     local_defines = NATIVE_CONFIG_DEFINES,
-    linkopts = ["-Wl,-Bsymbolic"],
+    linkopts = select({
+        "@platforms//os:macos": [],
+        "//conditions:default": ["-Wl,-Bsymbolic"],
+    }),
     visibility = ["//visibility:public"],
     deps = [
         ":fxr_resolver",
@@ -369,8 +415,19 @@ cc_library(
 
 cc_shared_library(
     name = "nethost",
-    shared_lib_name = "libnethost.so",
-    user_link_flags = ["-Wl,-Bsymbolic", "-Wl,-soname,libnethost.so"],
+    shared_lib_name = select({
+        "@platforms//os:macos": "libnethost.dylib",
+        "//conditions:default": "libnethost.so",
+    }),
+    user_link_flags = select({
+        "@platforms//os:macos": [
+            "-Wl,-install_name,@rpath/libnethost.dylib",
+        ],
+        "//conditions:default": [
+            "-Wl,-Bsymbolic",
+            "-Wl,-soname,libnethost.so",
+        ],
+    }),
     visibility = ["//visibility:public"],
     deps = [":nethost_lib"],
     dynamic_deps = [],

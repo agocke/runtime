@@ -1,4 +1,4 @@
-# Bazel configuration for dotnet/runtime native builds (linux-x64)
+# Bazel configuration for dotnet/runtime native builds (linux-x64, osx-arm64)
 #
 # Per-component configuration (matching MSBuild's -rc / -lc flags):
 #
@@ -23,7 +23,8 @@
 #   bazel build -c opt --config=clr_checked //...              # checked CLR + debug libs + -O2
 
 # --- Default compiler: Clang (matching CMake) ---
-# Uses clang/clang++ with lld linker. Override with --repo_env=CC=gcc if needed.
+# Uses clang/clang++ with lld linker on Linux.
+# On macOS, Apple Clang is the default; lld is not used.
 build --config=clang
 
 # Match CMake configurecompiler.cmake settings (config-independent)
@@ -41,28 +42,14 @@ build --copt=-ffunction-sections
 build --cxxopt=-fno-rtti
 
 # Platform defines (config-independent)
-build --copt=-D_GNU_SOURCE
-build --copt=-DHOST_64BIT
-build --copt=-DHOST_AMD64
-build --copt=-DHOST_UNIX
-build --copt=-DTARGET_64BIT
-build --copt=-DTARGET_AMD64
-build --copt=-DTARGET_UNIX
-build --copt=-DTARGET_LINUX
+# Platform-specific arch/OS defines are in PLATFORM_DEFINES (defs.bzl)
+# and used via select() in BUILD files. Only universal defines go here.
 build --copt=-D_FILE_OFFSET_BITS=64
 build --copt=-D_TIME_BITS=64
 
 # Exec/tool platform defines (for tools like ilasm built with cfg = "exec")
 build --host_conlyopt=-std=gnu11
 build --host_cxxopt=-std=gnu++11
-build --host_copt=-D_GNU_SOURCE
-build --host_copt=-DHOST_64BIT
-build --host_copt=-DHOST_AMD64
-build --host_copt=-DHOST_UNIX
-build --host_copt=-DTARGET_64BIT
-build --host_copt=-DTARGET_AMD64
-build --host_copt=-DTARGET_UNIX
-build --host_copt=-DTARGET_LINUX
 build --host_copt=-D_FILE_OFFSET_BITS=64
 build --host_copt=-D_TIME_BITS=64
 
@@ -143,12 +130,12 @@ build --host_copt=-Wno-switch-default
 build --host_cxxopt=-Wno-nontrivial-memaccess
 
 # --- Clang compiler (config:clang) ---
-# Matches CMake default: uses clang/clang++ with lld linker.
+# Matches CMake default: uses clang/clang++ with lld linker on Linux.
+# On macOS, Apple Clang + default ld are used (no lld).
 # NOTE: Only compiler/linker selection goes here. Warning flags MUST go
 # in plain "build" lines above to avoid config expansion ordering issues.
-build:clang --repo_env=CC=clang-18
-build:clang --repo_env=CXX=clang++-18
-build:clang --linkopt=-fuse-ld=lld
+build:clang --repo_env=CC=clang
+build:clang --repo_env=CXX=clang++
 build:clang --define compiler=clang
 
 # Disable warnings that CMake also suppresses for vendored code
@@ -162,11 +149,18 @@ build --host_per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
 # Preserve debug symbols (match CMake behavior of always including -g)
 build --strip=never
 
-# Linker hardening flags (configurecompiler.cmake: add_linker_flag)
-build --linkopt=-Wl,--build-id=sha1
+# --- Linux-specific settings ---
+# Linker hardening, shared object naming, and lld.
+# These are no-ops or harmful on macOS, so they live behind --config=linux.
+build:linux --linkopt=-Wl,--build-id=sha1
+build:linux --linkopt=-fuse-ld=lld
 
-# linux-x64 target
-build --cpu=k8
+# macOS deployment target — match CMake's eng/native/configureplatform.cmake
+build:macos --macos_minimum_os=12.0
+
+# Enable automatic platform config selection (applies build:linux on Linux,
+# build:macos on macOS, etc.).
+build --enable_platform_specific_config
 
 # =====================================================================
 # Per-component configuration

@@ -12,8 +12,11 @@ def _crossgen_corelib_impl(ctx):
     runtime_info = ctx.attr.assembly[DotnetAssemblyRuntimeInfo]
     il_assembly = runtime_info.libs[0]
 
+    jitinterface_file = ctx.file.jitinterface
+    clrjit_file = ctx.file.clrjit
+
     args = [
-        "--jitpath:%s" % ctx.file.clrjit.path,
+        "--jitpath:%s" % clrjit_file.path,
         "-o:%s" % output.path,
         "--targetarch:%s" % ctx.attr.target_arch,
         "--targetos:%s" % ctx.attr.target_os,
@@ -26,19 +29,42 @@ def _crossgen_corelib_impl(ctx):
 
     args.append(il_assembly.path)
 
-    inputs = [il_assembly, ctx.file.clrjit, ctx.file.jitinterface]
+    inputs = [il_assembly, clrjit_file, jitinterface_file]
 
-    # jitinterface is loaded by name "jitinterface_<arch>" via NativeLibrary.Load
-    env = {
-        "LD_LIBRARY_PATH": ctx.file.jitinterface.dirname,
-    }
+    crossgen2_exe = ctx.executable._crossgen2
+    args_str = " ".join(["'%s'" % a for a in args])
 
-    ctx.actions.run(
-        executable = ctx.executable._crossgen2,
-        inputs = inputs,
+    # Collect all runfiles from crossgen2 as inputs
+    runfiles = ctx.attr._crossgen2[DefaultInfo].default_runfiles
+    all_inputs = inputs + [crossgen2_exe]
+    if runfiles and runfiles.files:
+        all_inputs = all_inputs + runfiles.files.to_list()
+
+    # Add runfiles.bash from rules_shell as an explicit input
+    runfiles_bash_files = ctx.attr._runfiles_bash[DefaultInfo].files.to_list()
+    all_inputs = all_inputs + runfiles_bash_files
+
+    # NativeLibrary.Load searches next to the calling assembly. Copy the
+    # jitinterface library next to ILCompiler.ReadyToRun.dll in the runfiles.
+    # This works on both Linux and macOS (where DYLD_LIBRARY_PATH is stripped by SIP).
+    # The wrapper script needs RUNFILES_DIR set to find runfiles.bash.
+    cmd = (
+        "RUNFILES_DIR=\"{exe}.runfiles\" && ".format(exe = crossgen2_exe.path) +
+        "export RUNFILES_DIR && " +
+        # Copy jitinterface next to ILCompiler.ReadyToRun.dll
+        "ILC_DIR=$(find \"$RUNFILES_DIR\" -name 'ILCompiler.ReadyToRun.dll' -print -quit 2>/dev/null | xargs dirname 2>/dev/null) && " +
+        "if [ -n \"$ILC_DIR\" ]; then cp -f \"{src}\" \"$ILC_DIR/{basename}\" 2>/dev/null || true; fi && ".format(src = jitinterface_file.path, basename = jitinterface_file.basename) +
+        # Also copy next to the shared framework DLLs
+        "FX_DIR=$(find \"$RUNFILES_DIR\" -path '*/Microsoft.NETCore.App/*' -name 'System.Private.CoreLib.dll' -print -quit 2>/dev/null | xargs dirname 2>/dev/null) && " +
+        "if [ -n \"$FX_DIR\" ]; then cp -f \"{src}\" \"$FX_DIR/{basename}\" 2>/dev/null || true; fi && ".format(src = jitinterface_file.path, basename = jitinterface_file.basename) +
+        "{exe} {args}".format(exe = crossgen2_exe.path, args = args_str)
+    )
+
+    ctx.actions.run_shell(
+        command = cmd,
+        inputs = all_inputs,
         outputs = [output],
-        arguments = args,
-        env = env,
+        tools = [ctx.executable._crossgen2],
         mnemonic = "Crossgen2",
         progress_message = "Crossgen2 compiling %s" % il_assembly.short_path,
     )
@@ -81,6 +107,10 @@ crossgen_corelib = rule(
             default = Label("//src/coreclr/tools/aot/crossgen2"),
             cfg = "exec",
             executable = True,
+        ),
+        "_runfiles_bash": attr.label(
+            default = Label("@bazel_tools//tools/bash/runfiles"),
+            cfg = "exec",
         ),
     },
 )

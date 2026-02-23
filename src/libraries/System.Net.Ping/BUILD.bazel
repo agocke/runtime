@@ -24,6 +24,8 @@ netcoreapp_impl_assembly(
         exclude = [
             "src/System/Net/NetworkInformation/Ping.OSX.cs",
             "src/System/Net/NetworkInformation/Ping.Windows.cs",
+            "src/System/Net/NetworkInformation/Ping.Unix.cs",
+            "src/System/Net/NetworkInformation/Ping.PingUtility.cs",
         ],
     ) + [
         # Common sources
@@ -32,7 +34,33 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Net/SocketProtocolSupportPal.cs",
     ] + select({
         "@platforms//os:linux": [
+            # Linux-specific Ping impl
+            "src/System/Net/NetworkInformation/Ping.Unix.cs",
+            "src/System/Net/NetworkInformation/Ping.PingUtility.cs",
             # Unix src Common files
+            "//src/libraries/Common:src/System/Net/RawSocketPermissions.cs",
+            "//src/libraries/Common:src/System/Net/SocketProtocolSupportPal.Unix.cs",
+            "//src/libraries/Common:src/System/Net/NetworkInformation/UnixCommandLinePing.cs",
+            "//src/libraries/Common:src/System/Net/IPEndPointExtensions.cs",
+            "//src/libraries/Common:src/System/Net/SocketAddressPal.Unix.cs",
+            "//src/libraries/Common:src/System/Net/IPAddressParserStatics.cs",
+            "//src/libraries/Common:src/System/Net/Sockets/SocketErrorPal.Unix.cs",
+            "//src/libraries/Common:src/System/Text/ValueUtf8Converter.cs",
+            # Interop Unix
+            "//src/libraries/Common:src/Interop/Unix/Interop.DefaultPathBufferSize.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Errors.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.IOVector.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.ReceiveSocketError.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Close.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.MessageHeader.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Socket.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.SocketAddress.cs",
+        ],
+        "@platforms//os:macos": [
+            # macOS-specific Ping impl
+            "src/System/Net/NetworkInformation/Ping.OSX.cs",
+            # Unix src Common files (shared with Linux)
             "//src/libraries/Common:src/System/Net/RawSocketPermissions.cs",
             "//src/libraries/Common:src/System/Net/SocketProtocolSupportPal.Unix.cs",
             "//src/libraries/Common:src/System/Net/NetworkInformation/UnixCommandLinePing.cs",
