@@ -77,6 +77,14 @@ netcoreapp_impl_assembly(
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.PathConf.cs",
             "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
         ],
+        "@platforms//os:macos": [
+            # Unix-specific files (shared with Linux)
+            "src/System/IO/Compression/ZipArchiveEntry.Unix.cs",
+            "//src/libraries/Common:src/System/IO/Compression/ZipArchiveEntryConstants.Unix.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.PathConf.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Native/Interop.Stat.cs",
+        ],
     }),
     deps = [
         "//src/libraries/System.Collections:ref_System.Collections",

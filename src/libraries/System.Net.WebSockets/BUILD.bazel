@@ -34,6 +34,9 @@ netcoreapp_impl_assembly(
         "@platforms//os:linux": [
             "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
         ],
+        "@platforms//os:macos": [
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+        ],
     }),
     resx_file = "src/Resources/Strings.resx",
     allow_unsafe_blocks = True,

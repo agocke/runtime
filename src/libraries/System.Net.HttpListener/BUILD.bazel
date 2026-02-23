@@ -71,6 +71,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Obsoletions.cs",
     ] + select({
         "@platforms//os:linux": glob(["src/System/Net/Managed/**/*.cs"]),
+        "@platforms//os:macos": glob(["src/System/Net/Managed/**/*.cs"]),
     }),
     resx_file = "src/Resources/Strings.resx",
     allow_unsafe_blocks = True,

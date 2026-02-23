@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:defs.bzl", "PLATFORM_DEFINES")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 exports_files(
@@ -20,15 +21,20 @@ cc_library(
         "unicodedata.c",
         "utf8.c",
         "xoshiro128pp.c",
-        "bazel/linux-glibc-x64/minipalconfig.h",
-    ] + glob(
+    ] + select({
+        "@platforms//os:macos": ["bazel/darwin-arm64/minipalconfig.h"],
+        "//conditions:default": ["bazel/linux-glibc-x64/minipalconfig.h"],
+    }) + glob(
         ["*.h", "**/*.h"],
         exclude = ["bazel/**"],
     ),
     copts = CLR_CONFIG_COPTS + [
         "-Isrc/native",
-        "-Isrc/native/minipal/bazel/linux-glibc-x64",
-    ],
+    ] + select({
+        "@platforms//os:macos": ["-Isrc/native/minipal/bazel/darwin-arm64"],
+        "//conditions:default": ["-Isrc/native/minipal/bazel/linux-glibc-x64"],
+    }),
+    local_defines = PLATFORM_DEFINES,
     includes = [".."],
     visibility = [
         "//src/coreclr:__subpackages__",

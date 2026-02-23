@@ -68,11 +68,14 @@ filegroup(
 # Consumers depend on this to get include paths and the generated config header.
 cc_library(
     name = "eventpipe-headers",
-    hdrs = glob(["*.h"]) + glob(["bazel/linux-glibc-x64/*.h"]),
-    includes = [
-        ".",
-        "bazel/linux-glibc-x64",
-    ],
+    hdrs = glob(["*.h"]) + select({
+        "@platforms//os:macos": glob(["bazel/darwin-arm64/*.h"]),
+        "//conditions:default": glob(["bazel/linux-glibc-x64/*.h"]),
+    }),
+    includes = ["."] + select({
+        "@platforms//os:macos": ["bazel/darwin-arm64"],
+        "//conditions:default": ["bazel/linux-glibc-x64"],
+    }),
     visibility = ["//src:__subpackages__"],
     deps = [
         "//src/native/containers:dn-containers",

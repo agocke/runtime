@@ -8,20 +8,25 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 cc_library(
     name = "debug_inc",
-    hdrs = glob([
-        "inc/*.h",
-        "inc/*.inl",
-        "inc/amd64/*.h",
-        "inc/dump/*.h",
-        # Headers from debug subdirectories used by other coreclr components
-        "ee/*.h",
-        "ee/*.inl",
-        "ee/amd64/*.h",
-        "daccess/*.h",
-        "dbgutil/*.h",
-        "di/*.hpp",
-        "di/*.inl",
-    ]),
+    hdrs = glob(
+        [
+            "inc/*.h",
+            "inc/*.inl",
+            "inc/amd64/*.h",
+            "inc/arm64/*.h",
+            "inc/dump/*.h",
+            # Headers from debug subdirectories used by other coreclr components
+            "ee/*.h",
+            "ee/*.inl",
+            "ee/amd64/*.h",
+            "ee/arm64/*.h",
+            "daccess/*.h",
+            "dbgutil/*.h",
+            "di/*.hpp",
+            "di/*.inl",
+        ],
+        allow_empty = True,
+    ),
 )
 
 # --- cDAC data descriptor shared infrastructure ---
@@ -85,28 +90,48 @@ cc_library(
         "ee/rcthread.cpp",
         "ee/shared.cpp",
         "ee/stdafx.h",
-        "ee/amd64/debuggerregdisplayhelper.cpp",
-        "ee/amd64/primitives.cpp",
-        "ee/amd64/walker.cpp",
-        "ee/amd64/dbghelpers.S",
-    ],
-    textual_hdrs = [
-        "shared/amd64/primitives.cpp",
+    ] + select({
+        "@platforms//cpu:arm64": [
+            "ee/arm64/primitives.cpp",
+            "ee/arm64/walker.cpp",
+            "ee/arm64/dbghelpers.S",
+        ],
+        "//conditions:default": [
+            "ee/amd64/debuggerregdisplayhelper.cpp",
+            "ee/amd64/primitives.cpp",
+            "ee/amd64/walker.cpp",
+            "ee/amd64/dbghelpers.S",
+        ],
+    }),
+    textual_hdrs = select({
+        "@platforms//cpu:arm64": [
+            "shared/arm64/primitives.cpp",
+        ],
+        "//conditions:default": [
+            "shared/amd64/primitives.cpp",
+        ],
+    }) + [
         "shared/dbgtransportsession.cpp",
         "shared/utils.cpp",
     ],
     copts = [
         "-Isrc/coreclr/vm",
-        "-Isrc/coreclr/vm/amd64",
         "-Isrc/coreclr/debug/ee",
-        "-Isrc/coreclr/debug/ee/amd64",
         "-Isrc/coreclr/debug",
-    ] + CORECLR_COPTS + CLR_CONFIG_COPTS + [
+    ] + select({
+        "@platforms//cpu:arm64": [
+            "-Isrc/coreclr/vm/arm64",
+            "-Isrc/coreclr/debug/ee/arm64",
+        ],
+        "//conditions:default": [
+            "-Isrc/coreclr/vm/amd64",
+            "-Isrc/coreclr/debug/ee/amd64",
+        ],
+    }) + CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-DFEATURE_NO_HOST",
     ] + select({
-        "//:clr_debug": ["-mcx16"],
-        "//:clr_checked": ["-mcx16"],
-        "//conditions:default": [],
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mcx16"],
     }),
     local_defines = CLR_CONFIG_DEFINES + select({
         "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],

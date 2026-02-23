@@ -42,7 +42,7 @@ netcoreapp_impl_assembly(
             "src/System/Net/Security/SslStream.Android.cs",
             "src/System/Net/Security/SslStreamCertificateContext.Android.cs",
             "src/System/Net/Security/SslStreamPal.Android.cs",
-            # OSX-only
+            # OSX-only (added conditionally for macOS)
             "src/System/Net/CertificateValidationPal.OSX.cs",
             "src/System/Net/Security/CipherSuitesPolicyPal.OSX.cs",
             "src/System/Net/Security/Pal.OSX/SafeDeleteSslContext.cs",
@@ -51,6 +51,15 @@ netcoreapp_impl_assembly(
             "src/System/Net/Security/SslStreamCertificateContext.OSX.cs",
             "src/System/Net/Security/SslStreamPal.OSX.cs",
             "src/System/Net/Security/StreamSizes.OSX.cs",
+            # Unix/Linux-only (added conditionally for Linux)
+            "src/System/Net/CertificateValidationPal.Unix.cs",
+            "src/System/Net/NegotiateAuthenticationPal.Unix.cs",
+            "src/System/Net/Security/CipherSuitesPolicyPal.Linux.cs",
+            "src/System/Net/Security/SslConnectionInfo.Linux.cs",
+            "src/System/Net/Security/SslConnectionInfo.Unix.cs",
+            "src/System/Net/Security/SslStreamCertificateContext.Linux.cs",
+            "src/System/Net/Security/SslStreamPal.Unix.cs",
+            "src/System/Net/Security/StreamSizes.Unix.cs",
             # Managed NTLM (Android/tvOS only)
             "src/System/Net/NegotiateAuthenticationPal.Managed.cs",
         ],
@@ -83,6 +92,15 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Net/IPAddressParserStatics.cs",
     ] + select({
         "@platforms//os:linux": [
+            # Linux-specific src files
+            "src/System/Net/CertificateValidationPal.Unix.cs",
+            "src/System/Net/NegotiateAuthenticationPal.Unix.cs",
+            "src/System/Net/Security/CipherSuitesPolicyPal.Linux.cs",
+            "src/System/Net/Security/SslConnectionInfo.Linux.cs",
+            "src/System/Net/Security/SslConnectionInfo.Unix.cs",
+            "src/System/Net/Security/SslStreamCertificateContext.Linux.cs",
+            "src/System/Net/Security/SslStreamPal.Unix.cs",
+            "src/System/Net/Security/StreamSizes.Unix.cs",
             # Asn1Reader (non-windows)
             "//src/libraries/Common:src/System/Security/Cryptography/Asn1Reader/AsnValueReader.cs",
             # Unix Common (non-windows)
@@ -106,6 +124,71 @@ netcoreapp_impl_assembly(
             "//src/libraries/Common:src/System/Net/Security/RC4.cs",
             "//src/libraries/Common:src/System/Security/Cryptography/CryptoPool.cs",
             # Linux/OpenSSL (non-windows, non-android, non-apple)
+            "//src/libraries/Common:src/System/Net/Http/X509ResourceClient.cs",
+            "//src/libraries/Common:src/System/Net/Security/CertificateValidation.Unix.cs",
+            "//src/libraries/Common:src/System/Text/UrlBase64Encoding.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.ASN1.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.BIO.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.ERR.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.Initialization.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.Crypto.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.OCSP.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.OpenSsl.cs",
+            "//src/libraries/Common:src/System/Net/SafeHandleCache.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.OpenSslVersion.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.Ssl.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.SslCtx.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.SetProtocolOptions.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.SslCtxOptions.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.X509.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.X509Name.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.X509Ext.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.X509Stack.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Security.Cryptography.Native/Interop.X509StoreCtx.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeX509Handles.Unix.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/X509ExtensionSafeHandles.Unix.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeInteriorHandle.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeBioHandle.Unix.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/Asn1SafeHandles.Unix.cs",
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeHandleCache.cs",
+            "//src/libraries/Common:src/System/Net/Security/Unix/SafeDeleteSslContext.cs",
+            "//src/libraries/Common:src/System/Net/Security/SslKeyLogger.cs",
+        ],
+        "@platforms//os:macos": [
+            # For now, use Linux-style implementation on macOS (OpenSSL)
+            # Full Apple Secure Transport support requires significant additional work
+            # Linux-specific src files (shared with macOS for now)
+            "src/System/Net/CertificateValidationPal.Unix.cs",
+            "src/System/Net/NegotiateAuthenticationPal.Unix.cs",
+            "src/System/Net/Security/CipherSuitesPolicyPal.Linux.cs",
+            "src/System/Net/Security/SslConnectionInfo.Linux.cs",
+            "src/System/Net/Security/SslConnectionInfo.Unix.cs",
+            "src/System/Net/Security/SslStreamCertificateContext.Linux.cs",
+            "src/System/Net/Security/SslStreamPal.Unix.cs",
+            "src/System/Net/Security/StreamSizes.Unix.cs",
+            # Asn1Reader (non-windows)
+            "//src/libraries/Common:src/System/Security/Cryptography/Asn1Reader/AsnValueReader.cs",
+            # Unix Common (non-windows)
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+            "//src/libraries/Common:src/Interop/Unix/Interop.Errors.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Net.Security.Native/Interop.NetSecurityNative.GssFlags.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Net.Security.Native/Interop.NetSecurityNative.PackageType.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Net.Security.Native/Interop.NetSecurityNative.Status.cs",
+            "//src/libraries/Common:src/System/Net/Security/Unix/SafeDeleteContext.cs",
+            "//src/libraries/Common:src/System/Net/Security/Unix/SafeFreeCredentials.cs",
+            "//src/libraries/Common:src/System/Net/Security/Unix/SecChannelBindings.cs",
+            # NegotiateAuth GSS (non-windows, non-managed-ntlm)
+            "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/GssSafeHandles.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Net.Security.Native/Interop.Initialization.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Net.Security.Native/Interop.GssApiException.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Net.Security.Native/Interop.GssBuffer.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Net.Security.Native/Interop.NetSecurityNative.cs",
+            "//src/libraries/Common:src/Interop/Unix/System.Net.Security.Native/Interop.NetSecurityNative.IsNtlmInstalled.cs",
+            # Managed NTLM/SPNEGO helpers (non-windows)
+            "//src/libraries/Common:src/System/Net/Security/MD4.cs",
+            "//src/libraries/Common:src/System/Net/Security/RC4.cs",
+            "//src/libraries/Common:src/System/Security/Cryptography/CryptoPool.cs",
+            # OpenSSL (same as Linux)
             "//src/libraries/Common:src/System/Net/Http/X509ResourceClient.cs",
             "//src/libraries/Common:src/System/Net/Security/CertificateValidation.Unix.cs",
             "//src/libraries/Common:src/System/Text/UrlBase64Encoding.cs",

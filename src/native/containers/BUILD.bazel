@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
-# dn-containers for linux-x64
+# dn-containers for linux-x64 and darwin-arm64
 # Utility container library (allocator, list, queue, vector, umap, simdhash)
 # Used by eventpipe and other native code.
 
@@ -25,15 +25,22 @@ _HEADERS = glob(["*.h"]) + [
     "dn-sort-frag.inc",
 ]
 
+_CONFIG_HDR = select({
+    "@platforms//os:macos": ["bazel/darwin-arm64/dn-config.h"],
+    "//conditions:default": ["bazel/linux-glibc-x64/dn-config.h"],
+})
+
+_CONFIG_COPTS = select({
+    "@platforms//os:macos": ["-Isrc/native/containers/bazel/darwin-arm64"],
+    "//conditions:default": ["-Isrc/native/containers/bazel/linux-glibc-x64"],
+})
+
 cc_library(
     name = "dn-containers",
-    srcs = _SOURCES + [
-        "bazel/linux-glibc-x64/dn-config.h",
-    ] + _HEADERS,
+    srcs = _SOURCES + _CONFIG_HDR + _HEADERS,
     copts = CLR_CONFIG_COPTS + [
         "-Isrc/native",
-        "-Isrc/native/containers/bazel/linux-glibc-x64",
-    ],
+    ] + _CONFIG_COPTS,
     includes = ["."],
     visibility = ["//src/native:__subpackages__"],
     deps = [
@@ -43,14 +50,11 @@ cc_library(
 
 cc_library(
     name = "dn-containers-no-lto",
-    srcs = _SOURCES + [
-        "bazel/linux-glibc-x64/dn-config.h",
-    ] + _HEADERS,
+    srcs = _SOURCES + _CONFIG_HDR + _HEADERS,
     copts = CLR_CONFIG_COPTS + [
         "-Isrc/native",
-        "-Isrc/native/containers/bazel/linux-glibc-x64",
         "-fno-lto",
-    ],
+    ] + _CONFIG_COPTS,
     includes = ["."],
     visibility = ["//src/native:__subpackages__"],
     deps = [

@@ -32,7 +32,10 @@ cc_binary(
         "-Isrc/coreclr/md/inc",
         "-Isrc/native/libs/Common",
         "-Isrc/native/libs/System.Security.Cryptography.Native",
-        "-Isrc/native/libs/System.Security.Cryptography.Native/bazel/linux-glibc-x64",
+    ] + select({
+        "@platforms//os:macos": ["-Isrc/native/libs/System.Security.Cryptography.Native/bazel/darwin-arm64"],
+        "//conditions:default": ["-Isrc/native/libs/System.Security.Cryptography.Native/bazel/linux-glibc-x64"],
+    }) + [
         # Suppress warnings on the prebuilt bison-generated parser.
         "-Wno-register",
         "-Wno-array-bounds",
@@ -44,13 +47,18 @@ cc_binary(
         "_FEATURE_NO_HOST",
         "FEATURE_METADATA_EMIT_PORTABLE_PDB",
     ],
-    linkopts = [
-        "-Wl,-Bsymbolic",
-        "-Wl,--start-group",
-        "-Wl,--end-group",
-        "-ldl",
-        "-lpthread",
-    ],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-lpthread",
+        ],
+        "//conditions:default": [
+            "-Wl,-Bsymbolic",
+            "-Wl,--start-group",
+            "-Wl,--end-group",
+            "-ldl",
+            "-lpthread",
+        ],
+    }),
     visibility = ["//visibility:public"],
     deps = [
         ":ilasm_parser_includes",
@@ -64,6 +72,8 @@ cc_binary(
         "//src/coreclr/minipal:coreclrminipal",
         "//src/coreclr/pal:coreclrpal",
         "//src/coreclr/utilcode:utilcodestaticnohost",
-        "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl_lib",
-    ],
+    ] + select({
+        "@platforms//os:linux": ["//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl_lib"],
+        "//conditions:default": [],
+    }),
 )

@@ -1,5 +1,7 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
 
+exports_files(["src/System/Net/Quic/Internal/ResettableValueTaskSource.cs"])
+
 netcoreapp_ref_assembly(
     name = "ref_System.Net.Quic",
     srcs = [

@@ -3,6 +3,7 @@
 # and global include_directories in src/coreclr/CMakeLists.txt (for headers).
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:defs.bzl", "PLATFORM_DEFINES")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -62,8 +63,14 @@ cc_library(
 # Generated PAL config header (from configure.cmake → config.h.in)
 cc_library(
     name = "pal_config",
-    hdrs = ["src/bazel/linux-glibc-x64/config.h"],
-    strip_include_prefix = "src/bazel/linux-glibc-x64",
+    hdrs = select({
+        "@platforms//os:macos": ["src/bazel/darwin-arm64/config.h"],
+        "//conditions:default": ["src/bazel/linux-glibc-x64/config.h"],
+    }),
+    strip_include_prefix = select({
+        "@platforms//os:macos": "src/bazel/darwin-arm64",
+        "//conditions:default": "src/bazel/linux-glibc-x64",
+    }),
 )
 
 # --- Compiled PAL library (coreclrpal) ---
@@ -136,27 +143,42 @@ _PAL_SOURCES = [
     "src/thread/threadsusp.cpp",
 ]
 
-_PAL_ASM_SOURCES = [
-    "src/arch/amd64/context2.S",
-    "src/arch/amd64/debugbreak.S",
-    "src/arch/amd64/exceptionhelper.S",
-    "src/arch/amd64/callsignalhandlerwrapper.S",
-]
+_PAL_ASM_SOURCES = select({
+    "@platforms//os:macos": [
+        "src/arch/arm64/context.S",
+        "src/arch/arm64/context2.S",
+        "src/arch/arm64/debugbreak.S",
+        "src/arch/arm64/dispatchexceptionwrapper.S",
+        "src/arch/arm64/exceptionhelper.S",
+    ],
+    "//conditions:default": [
+        "src/arch/amd64/context2.S",
+        "src/arch/amd64/debugbreak.S",
+        "src/arch/amd64/exceptionhelper.S",
+        "src/arch/amd64/callsignalhandlerwrapper.S",
+    ],
+})
 
-_PAL_PLATFORM_SOURCES = [
-    "src/arch/amd64/signalhandlerhelper.cpp",
-]
+_PAL_PLATFORM_SOURCES = select({
+    "@platforms//os:macos": [
+        "src/exception/machexception.cpp",
+        "src/exception/machmessage.cpp",
+    ],
+    "//conditions:default": [
+        "src/arch/amd64/signalhandlerhelper.cpp",
+    ],
+})
 
 cc_library(
     name = "coreclrpal",
-    srcs = _PAL_SOURCES + _PAL_ASM_SOURCES + _PAL_PLATFORM_SOURCES + [
-        "src/bazel/linux-glibc-x64/config.h",
-    ] + glob(
+    srcs = _PAL_SOURCES + _PAL_ASM_SOURCES + _PAL_PLATFORM_SOURCES + select({
+        "@platforms//os:macos": ["src/bazel/darwin-arm64/config.h"],
+        "//conditions:default": ["src/bazel/linux-glibc-x64/config.h"],
+    }) + glob(
         [
             "src/include/**/*.h",
             "src/include/**/*.hpp",
             "src/include/**/*.inl",
-            "src/arch/amd64/*.h",
             "src/exception/*.h",
             "src/map/*.h",
             "src/misc/*.h",
@@ -166,7 +188,10 @@ cc_library(
             "src/objmgr/*.hpp",
         ],
         allow_empty = True,
-    ),
+    ) + select({
+        "@platforms//os:macos": glob(["src/arch/arm64/*.h"], allow_empty = True),
+        "//conditions:default": glob(["src/arch/amd64/*.h"], allow_empty = True),
+    }),
     textual_hdrs = [
         "src/exception/seh-unwind.cpp",
     ],
@@ -188,42 +213,52 @@ cc_library(
         "-Isrc/coreclr/inc",
         # PAL-specific include paths
         "-Isrc/coreclr/pal/src/include",
-        "-Isrc/coreclr/pal/src/arch/amd64",
         "-Isrc/coreclr/pal/inc",
         "-Isrc/coreclr/pal/inc/rt",
         "-Isrc/coreclr/pal/src/safecrt",
         "-Isrc/native",
         "-Isrc/native/inc",
-        # GCC amd64 assembly needs --divide for the / operator in .S files
-        # Clang's integrated assembler doesn't support this flag.
     ] + select({
+        "@platforms//os:macos": [
+            "-Isrc/coreclr/pal/src/arch/arm64",
+        ],
+        "//conditions:default": [
+            "-Isrc/coreclr/pal/src/arch/amd64",
+        ],
+    }) + select({
         "//:compiler_clang": [],
         "//conditions:default": ["-Wa,--divide"],
     }),
-    defines = [
-        # Platform defines
-        "HOST_64BIT",
-        "HOST_AMD64",
-        "HOST_UNIX",
-        "TARGET_64BIT",
-        "TARGET_AMD64",
-        "TARGET_UNIX",
-        "TARGET_LINUX",
+    defines = PLATFORM_DEFINES + [
         # PAL-specific
         "LP64COMPATIBLE",
         "CORECLR",
         "PIC",
-        "XSTATE_SUPPORTED",
         "UNICODE",
         "_UNICODE",
         "FEATURE_PAL_ANSI",
-    ],
-    linkopts = [
-        "-lgcc_s",
-        "-lpthread",
-        "-lrt",
-        "-ldl",
-    ],
+    ] + select({
+        "@platforms//os:macos": [
+            # configurecompiler.cmake — macOS platform defines
+            "_XOPEN_SOURCE",
+            "_DARWIN_C_SOURCE",
+            "__DARWIN_NON_CANCELABLE=1",
+        ],
+        "//conditions:default": ["XSTATE_SUPPORTED"],
+    }),
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-lpthread",
+            "-framework", "CoreFoundation",
+            "-framework", "Security",
+        ],
+        "//conditions:default": [
+            "-lgcc_s",
+            "-lpthread",
+            "-lrt",
+            "-ldl",
+        ],
+    }),
     deps = [
         ":pal_config",
         ":pal_headers",
@@ -245,9 +280,10 @@ cc_library(
             "src/include/**/*.inl",
         ],
         allow_empty = True,
-    ) + [
-        "src/bazel/linux-glibc-x64/config.h",
-    ],
+    ) + select({
+        "@platforms//os:macos": ["src/bazel/darwin-arm64/config.h"],
+        "//conditions:default": ["src/bazel/linux-glibc-x64/config.h"],
+    }),
     copts = CLR_CONFIG_COPTS + [
         "-Wno-invalid-offsetof",
         "-Isrc/coreclr/pal/src/include",
@@ -257,16 +293,11 @@ cc_library(
         "-Isrc/coreclr/inc",
         "-Isrc/native",
         "-Isrc/native/inc",
-        "-Isrc/coreclr/pal/src/bazel/linux-glibc-x64",
-    ],
-    defines = [
-        "HOST_64BIT",
-        "HOST_AMD64",
-        "HOST_UNIX",
-        "TARGET_64BIT",
-        "TARGET_AMD64",
-        "TARGET_UNIX",
-        "TARGET_LINUX",
+    ] + select({
+        "@platforms//os:macos": ["-Isrc/coreclr/pal/src/bazel/darwin-arm64"],
+        "//conditions:default": ["-Isrc/coreclr/pal/src/bazel/linux-glibc-x64"],
+    }),
+    defines = PLATFORM_DEFINES + [
         "CORECLR",
     ],
     deps = [

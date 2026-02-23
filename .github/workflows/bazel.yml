@@ -4,27 +4,33 @@ on:
   push:
     branches: [ bazel ]
   pull_request:
-    branches: [ bazel ]
+    branches: [ bazel, bazel-mac ]
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        config:
-          - name: release_clr+debug_libs
-            flags: '--config=clr_release'
-          - name: checked_clr+debug_libs
-            flags: '--config=clr_checked'
+        include:
+          - os: ubuntu-latest
+            name: Linux release
+            config: clr_release
+          - os: ubuntu-latest
+            name: Linux checked
+            config: clr_checked
+          - os: macos-latest
+            name: macOS release
+            config: clr_release
 
-    name: Bazel ${{ matrix.config.name }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Install dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -qq -y clang-18 lld libkrb5-dev
@@ -33,13 +39,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel-disk
-          key: bazel-${{ matrix.config.name }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
           restore-keys: |
-            bazel-${{ matrix.config.name }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-
-            bazel-${{ matrix.config.name }}-
+            bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-
+            bazel-${{ runner.os }}-
 
       - name: Build
-        run: bazel build //... ${{ matrix.config.flags }} --disk_cache=~/.cache/bazel-disk
+        run: bazel build //... --config=${{ matrix.config }} --disk_cache=~/.cache/bazel-disk
 
       - name: Test
-        run: bazel test //... ${{ matrix.config.flags }} --disk_cache=~/.cache/bazel-disk --test_output=errors
+        run: bazel test //... --config=${{ matrix.config }} --disk_cache=~/.cache/bazel-disk --test_output=errors

@@ -40,6 +40,9 @@ netcoreapp_impl_assembly(
         "@platforms//os:linux": [
             "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
         ],
+        "@platforms//os:macos": [
+            "//src/libraries/Common:src/Interop/Unix/Interop.Libraries.cs",
+        ],
     }),
     deps = [
         "//src/libraries/System.Collections:ref_System.Collections",

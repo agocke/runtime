@@ -35,7 +35,10 @@ cc_library(
     ],
     copts = [
         "-Isrc/coreclr/vm",
-        "-Isrc/coreclr/vm/amd64",
+    ] + select({
+        "@platforms//cpu:arm64": ["-Isrc/coreclr/vm/arm64"],
+        "//conditions:default": ["-Isrc/coreclr/vm/amd64"],
+    }) + [
         "-Isrc/coreclr/binder",
         "-Isrc/coreclr/binder/inc",
     ] + CORECLR_COPTS + CLR_CONFIG_COPTS,
