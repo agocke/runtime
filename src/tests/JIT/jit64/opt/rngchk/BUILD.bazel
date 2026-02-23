@@ -50,6 +50,7 @@ coreclr_test(
     srcs = ["RngchkStress3.cs"],
     debug_type = "full",
     optimize = False,
+    size = "medium",
 )
 
 coreclr_test(
