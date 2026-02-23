@@ -68,7 +68,7 @@ def live_csharp_test(
     analyzers = [],
     nowarn = [],
     size = "small",
-    use_shared_compilation = False,
+    use_shared_compilation = True,
     **kwargs
 ):
     analyzers = analyzers + [
@@ -507,7 +507,7 @@ def library_test(
     analyzers = [],
     nowarn = [],
     size = "medium",
-    use_shared_compilation = False,
+    use_shared_compilation = True,
     **kwargs
 ):
     """Test macro for library tests that compiles as library and runs via xunit.console.dll."""
@@ -537,7 +537,7 @@ def coreclr_test(
     debug_type = "portable", # TODO: plum through to compiler
     optimize = False, # TODO: plum through to compiler
     compiler_options = [],
-    use_shared_compilation = False,
+    use_shared_compilation = True,
     **kwargs
 ):
     deps = deps + [

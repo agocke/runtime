@@ -189,7 +189,7 @@ COMMON_ATTRS = {
     ),
     "use_shared_compilation": attr.bool(
         doc = "When True, uses the Roslyn compiler server via a Bazel persistent worker.",
-        default = False,
+        default = True,
     ),
     "shared_compilation_worker": attr.label(
         doc = "Internal: the persistent worker binary for shared compilation.",
@@ -260,7 +260,7 @@ _live_csharp_binary_rule = rule(
 def live_csharp_binary(
     name,
     deps = [],
-    use_shared_compilation = False,
+    use_shared_compilation = True,
     **kwargs
 ):
     deps = deps + LIVE_REFPACK_DEPS
