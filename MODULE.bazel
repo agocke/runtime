@@ -3,6 +3,8 @@ git_override(
     module_name = "rules_dotnet",
     remote = "https://github.com/agocke/rules_dotnet.git",
     commit = "7a0f9811b11a6414813941085ace37e1937b997e",
+    patches = ["//eng/bazel/patches:rules_dotnet_protoc_platform.patch"],
+    patch_strip = 1,
 )
 
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
