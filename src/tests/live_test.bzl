@@ -29,6 +29,9 @@ _TEST_NOWARN = [
     "CS3016", "CS8981",
 ]
 
+# Label for the Roslyn compiler server persistent worker binary.
+_COMPILER_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
+
 def _live_csharp_test_impl(ctx):
     result = build_binary(ctx, compile_csharp_exe)
     return result
@@ -65,6 +68,7 @@ def live_csharp_test(
     analyzers = [],
     nowarn = [],
     size = "small",
+    use_shared_compilation = False,
     **kwargs
 ):
     analyzers = analyzers + [
@@ -78,6 +82,7 @@ def live_csharp_test(
         target_frameworks = [NETCOREAPP_CURRENT],
         nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
         size = size,
+        compiler_worker = _COMPILER_WORKER if use_shared_compilation else None,
         **kwargs
     )
 
@@ -130,6 +135,8 @@ def _compile_csharp_library(ctx, tfm):
         override_debug = False,
         ref_assembly = False,
         is_windows = ctx.target_platform_has_constraint(ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]),
+        compiler_worker = ctx.executable.compiler_worker if hasattr(ctx.attr, "compiler_worker") and ctx.attr.compiler_worker else None,
+        use_compiler_worker = ctx.attr._use_compiler_worker[BuildSettingInfo].value if hasattr(ctx.attr, "_use_compiler_worker") else False,
     )
 
 def _xunit_library_test_impl(ctx):
@@ -499,6 +506,7 @@ def library_test(
     analyzers = [],
     nowarn = [],
     size = "medium",
+    use_shared_compilation = False,
     **kwargs
 ):
     """Test macro for library tests that compiles as library and runs via xunit.console.dll."""
@@ -514,6 +522,7 @@ def library_test(
         nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
         size = size,
         nullable = nullable,
+        compiler_worker = _COMPILER_WORKER if use_shared_compilation else None,
         **kwargs
     )
 
@@ -526,6 +535,7 @@ def coreclr_test(
     debug_type = "portable", # TODO: plum through to compiler
     optimize = False, # TODO: plum through to compiler
     compiler_options = [],
+    use_shared_compilation = False,
     **kwargs
 ):
     deps = deps + [
@@ -547,6 +557,7 @@ def coreclr_test(
         tags = tags,
         visibility = ["//visibility:public"],
         compiler_options = compiler_options,
+        use_shared_compilation = use_shared_compilation,
         **kwargs
     )
 
@@ -556,6 +567,7 @@ def coreclr_test(
         size = size,
         tags = tags + [ "pri%d" % pri ],
         compiler_options = compiler_options,
+        use_shared_compilation = use_shared_compilation,
         **kwargs
     )
 

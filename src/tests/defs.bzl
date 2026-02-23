@@ -25,6 +25,9 @@ load("@rules_dotnet//dotnet/private/sdk/targeting_packs:targeting_pack_transitio
 load("//:defs.bzl", "csharp_library")
 load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS")
 
+# Label for the Roslyn compiler server persistent worker binary.
+_COMPILER_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
+
 COMMON_ATTRS = {
     "deps": attr.label_list(
         doc = "Other libraries, binaries, or imported DLLs",
@@ -184,6 +187,15 @@ COMMON_ATTRS = {
         mandatory = False,
         default = [],
     ),
+    "compiler_worker": attr.label(
+        doc = "The compiler worker binary for persistent worker compilation.",
+        default = None,
+        executable = True,
+        cfg = default_transition,
+    ),
+    "_use_compiler_worker": attr.label(
+        default = "@rules_dotnet//dotnet/settings:use_compiler_worker",
+    ),
     "roll_forward_behavior": attr.string(
         doc = "The roll forward behavior that should be used: https://learn.microsoft.com/en-us/dotnet/core/versions/selection#control-roll-forward-behavior",
         default = "Major",
@@ -247,12 +259,14 @@ _live_csharp_binary_rule = rule(
 def live_csharp_binary(
     name,
     deps = [],
+    use_shared_compilation = False,
     **kwargs
 ):
     deps = deps + LIVE_REFPACK_DEPS
     _live_csharp_binary_rule(
         name = name,
         deps = deps,
+        compiler_worker = _COMPILER_WORKER if use_shared_compilation else None,
         **kwargs
     )
 

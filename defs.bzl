@@ -1,10 +1,14 @@
-load("@rules_dotnet//dotnet:defs.bzl", _base_csharp_library="csharp_library")
+load("@rules_dotnet//dotnet/private/rules/csharp:library.bzl", _base_csharp_library="csharp_library")
+load("@rules_dotnet//dotnet/private/rules/csharp:binary.bzl", _base_csharp_binary="csharp_binary")
 load("//eng/bazel:version.bzl", "PRODUCT_VERSION")
 
 # The TFM that we're building
 NETCOREAPP_CURRENT = "net10.0"
 # The TFM used by our LKG SDK
 NETCOREAPP_TOOL_CURRENT = "net10.0"
+
+# Label for the Roslyn compiler server persistent worker binary.
+_COMPILER_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
 
 # Version constants matching eng/Versions.props
 _MAJOR_VERSION = PRODUCT_VERSION.split(".")[0]
@@ -205,6 +209,7 @@ def csharp_library(
     resource_logical_names = {},
     nowarn = [],
     suffix_srcs = [],
+    use_shared_compilation = False,
     **kwargs
 ):
     if out == None:
@@ -248,11 +253,23 @@ def csharp_library(
         out = out,
         resources = resources,
         resource_logical_names = resource_logical_names,
+        compiler_worker = _COMPILER_WORKER if use_shared_compilation else None,
         nowarn = nowarn + [
             "CS1701",
             # Match Directory.Build.props global NoWarn
             "CS8500",
             "CS8969",
         ],
+        **kwargs
+    )
+
+def csharp_binary(
+    name,
+    use_shared_compilation = False,
+    **kwargs
+):
+    _base_csharp_binary(
+        name = name,
+        compiler_worker = _COMPILER_WORKER if use_shared_compilation else None,
         **kwargs
     )
