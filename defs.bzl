@@ -209,7 +209,7 @@ def csharp_library(
     resource_logical_names = {},
     nowarn = [],
     suffix_srcs = [],
-    use_shared_compilation = False,
+    use_shared_compilation = True,
     **kwargs
 ):
     if out == None:
@@ -266,7 +266,7 @@ def csharp_library(
 
 def csharp_binary(
     name,
-    use_shared_compilation = False,
+    use_shared_compilation = True,
     **kwargs
 ):
     _base_csharp_binary(
