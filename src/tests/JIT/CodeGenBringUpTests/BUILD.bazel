@@ -1,6 +1,7 @@
 load("//src/tests:live_test.bzl", "coreclr_test", "coreclr_merged_test")
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAddConst_r",
     srcs = ["FPAddConst.cs"],
     pri = 1,
@@ -8,6 +9,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ne1_do",
     srcs = ["Ne1.cs"],
     pri = 1,
@@ -16,6 +18,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "UModConst_do",
     srcs = ["UModConst.cs"],
     debug_type = "full",
@@ -23,12 +26,14 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayExc_r",
     srcs = ["ArrayExc.cs"],
     debug_type = "pdbonly",
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NotAndNeg_r",
     srcs = ["NotAndNeg.cs"],
     pri = 1,
@@ -36,6 +41,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeInt1_d",
     srcs = ["JTrueNeInt1.cs"],
     pri = 1,
@@ -44,6 +50,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5001_do",
     srcs = ["LocallocCnstB5001.cs"],
     pri = 1,
@@ -53,6 +60,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayJagged_do",
     srcs = ["ArrayJagged.cs"],
     pri = 1,
@@ -61,6 +69,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array3_ro",
     srcs = ["Array3.cs"],
     pri = 1,
@@ -69,6 +78,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5_PSP_ro",
     srcs = ["LocallocCnstB5_PSP.cs"],
     pri = 1,
@@ -78,6 +88,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeFP_d",
     srcs = ["JTrueLeFP.cs"],
     pri = 1,
@@ -86,6 +97,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ge1_ro",
     srcs = ["Ge1.cs"],
     pri = 1,
@@ -94,6 +106,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CnsLng1_do",
     srcs = ["CnsLng1.cs"],
     pri = 1,
@@ -102,6 +115,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvI2F_r",
     srcs = ["FPConvI2F.cs"],
     pri = 1,
@@ -109,6 +123,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblSubConst_d",
     srcs = ["DblSubConst.cs"],
     pri = 1,
@@ -117,6 +132,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructInstMethod_ro",
     srcs = ["StructInstMethod.cs"],
     pri = 1,
@@ -125,6 +141,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2I_ro",
     srcs = ["FPConvF2I.cs"],
     pri = 1,
@@ -133,6 +150,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMath_do",
     srcs = ["FPMath.cs"],
     pri = 1,
@@ -141,6 +159,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtFP_ro",
     srcs = ["JTrueGtFP.cs"],
     pri = 1,
@@ -149,6 +168,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAdd_do",
     srcs = ["DblAdd.cs"],
     pri = 1,
@@ -157,6 +177,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LongArgsAndReturn_ro",
     srcs = ["LongArgsAndReturn.cs"],
     pri = 1,
@@ -165,6 +186,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDivConst_do",
     srcs = ["DblDivConst.cs"],
     pri = 1,
@@ -173,6 +195,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAddConst_ro",
     srcs = ["FPAddConst.cs"],
     pri = 1,
@@ -181,6 +204,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "div2_d",
     srcs = ["div2.cs"],
     debug_type = "full",
@@ -188,6 +212,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblArea_d",
     srcs = ["DblArea.cs"],
     pri = 1,
@@ -196,6 +221,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtFP_do",
     srcs = ["JTrueLtFP.cs"],
     pri = 1,
@@ -204,6 +230,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Xor1_d",
     srcs = ["Xor1.cs"],
     pri = 1,
@@ -212,6 +239,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "div1_r",
     srcs = ["div1.cs"],
     pri = 1,
@@ -219,6 +247,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "div1_d",
     srcs = ["div1.cs"],
     pri = 1,
@@ -227,6 +256,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqFP_r",
     srcs = ["JTrueEqFP.cs"],
     pri = 1,
@@ -234,6 +264,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAdd_ro",
     srcs = ["FPAdd.cs"],
     pri = 1,
@@ -242,6 +273,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvDbl2Lng_r",
     srcs = ["FPConvDbl2Lng.cs"],
     pri = 1,
@@ -249,6 +281,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NegRMW_r",
     srcs = ["NegRMW.cs"],
     pri = 1,
@@ -256,6 +289,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSmall_d",
     srcs = ["FPSmall.cs"],
     pri = 1,
@@ -264,6 +298,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "InstanceCalls_r",
     srcs = ["InstanceCalls.cs"],
     pri = 1,
@@ -271,6 +306,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDivConst_r",
     srcs = ["DblDivConst.cs"],
     pri = 1,
@@ -278,6 +314,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5001_r",
     srcs = ["LocallocCnstB5001.cs"],
     pri = 1,
@@ -286,6 +323,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NotAndNeg_do",
     srcs = ["NotAndNeg.cs"],
     pri = 1,
@@ -294,6 +332,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul2_r",
     srcs = ["mul2.cs"],
     pri = 1,
@@ -301,6 +340,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeDbl_do",
     srcs = ["JTrueLeDbl.cs"],
     pri = 1,
@@ -309,6 +349,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocB_N_r",
     srcs = ["LocallocB_N.cs"],
     pri = 1,
@@ -317,6 +358,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtFP_r",
     srcs = ["JTrueGtFP.cs"],
     pri = 1,
@@ -324,6 +366,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CnsLng1_ro",
     srcs = ["CnsLng1.cs"],
     pri = 1,
@@ -332,6 +375,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqDbl_d",
     srcs = ["JTrueEqDbl.cs"],
     pri = 1,
@@ -340,6 +384,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeFP_d",
     srcs = ["JTrueNeFP.cs"],
     pri = 1,
@@ -348,6 +393,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Unbox_d",
     srcs = ["Unbox.cs"],
     pri = 1,
@@ -357,6 +403,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructReturn_d",
     srcs = ["StructReturn.cs"],
     pri = 1,
@@ -365,6 +412,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Gcd_ro",
     srcs = ["Gcd.cs"],
     pri = 1,
@@ -373,6 +421,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array3_r",
     srcs = ["Array3.cs"],
     pri = 1,
@@ -380,6 +429,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2I_d",
     srcs = ["FPConvF2I.cs"],
     pri = 1,
@@ -388,6 +438,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblSubConst_r",
     srcs = ["DblSubConst.cs"],
     pri = 1,
@@ -395,6 +446,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CnsBool_r",
     srcs = ["CnsBool.cs"],
     pri = 1,
@@ -402,6 +454,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblCall2_r",
     srcs = ["DblCall2.cs"],
     pri = 1,
@@ -409,6 +462,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array1_r",
     srcs = ["Array1.cs"],
     pri = 1,
@@ -416,6 +470,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDist_do",
     srcs = ["DblDist.cs"],
     pri = 1,
@@ -424,6 +479,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDist_r",
     srcs = ["FPDist.cs"],
     pri = 1,
@@ -431,6 +487,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Switch_r",
     srcs = ["Switch.cs"],
     pri = 1,
@@ -438,6 +495,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Unbox_ro",
     srcs = ["Unbox.cs"],
     pri = 1,
@@ -447,6 +505,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "SubRef_r",
     srcs = ["SubRef.cs"],
     pri = 1,
@@ -454,6 +513,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeFP_ro",
     srcs = ["JTrueNeFP.cs"],
     pri = 1,
@@ -462,6 +522,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul3_ro",
     srcs = ["mul3.cs"],
     pri = 1,
@@ -470,6 +531,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "IntArraySum_d",
     srcs = ["IntArraySum.cs"],
     pri = 1,
@@ -478,6 +540,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array1_do",
     srcs = ["Array1.cs"],
     pri = 1,
@@ -486,6 +549,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ObjAlloc_d",
     srcs = ["ObjAlloc.cs"],
     pri = 1,
@@ -494,6 +558,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSubConst_do",
     srcs = ["FPSubConst.cs"],
     pri = 1,
@@ -502,6 +567,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblSub_r",
     srcs = ["DblSub.cs"],
     pri = 1,
@@ -509,6 +575,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB117_PSP_d",
     srcs = ["LocallocCnstB117_PSP.cs"],
     pri = 1,
@@ -518,6 +585,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB1_ro",
     srcs = ["LocallocCnstB1.cs"],
     pri = 1,
@@ -527,6 +595,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2Lng_r",
     srcs = ["FPConvF2Lng.cs"],
     pri = 1,
@@ -534,6 +603,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Add1_d",
     srcs = ["Add1.cs"],
     pri = 1,
@@ -542,6 +612,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSub_d",
     srcs = ["FPSub.cs"],
     pri = 1,
@@ -550,6 +621,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeFP_ro",
     srcs = ["JTrueGeFP.cs"],
     pri = 1,
@@ -558,6 +630,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NestedCall_d",
     srcs = ["NestedCall.cs"],
     pri = 1,
@@ -566,6 +639,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DivConst_d",
     srcs = ["DivConst.cs"],
     debug_type = "full",
@@ -573,6 +647,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Unbox_do",
     srcs = ["Unbox.cs"],
     pri = 1,
@@ -582,6 +657,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "rem1_d",
     srcs = ["rem1.cs"],
     pri = 1,
@@ -590,6 +666,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblCall2_d",
     srcs = ["DblCall2.cs"],
     pri = 1,
@@ -598,6 +675,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocLarge_do",
     srcs = ["LocallocLarge.cs"],
     debug_type = "full",
@@ -609,6 +687,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtFP_r",
     srcs = ["JTrueLtFP.cs"],
     pri = 1,
@@ -616,6 +695,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblFillArray_do",
     srcs = ["DblFillArray.cs"],
     pri = 1,
@@ -624,6 +704,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array4_r",
     srcs = ["Array4.cs"],
     pri = 1,
@@ -631,6 +712,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LngConv_r",
     srcs = ["LngConv.cs"],
     pri = 1,
@@ -638,6 +720,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Jmp1_r",
     srcs = ["Jmp1.cs"],
     pri = 1,
@@ -645,6 +728,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocLarge_d",
     srcs = ["LocallocLarge.cs"],
     debug_type = "full",
@@ -656,6 +740,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Call1_do",
     srcs = ["Call1.cs"],
     pri = 1,
@@ -664,6 +749,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPArea_ro",
     srcs = ["FPArea.cs"],
     pri = 1,
@@ -672,6 +758,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NegRMW_do",
     srcs = ["NegRMW.cs"],
     pri = 1,
@@ -680,6 +767,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Add1_r",
     srcs = ["Add1.cs"],
     pri = 1,
@@ -687,6 +775,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Lt1_d",
     srcs = ["Lt1.cs"],
     pri = 1,
@@ -695,6 +784,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "UDivConst_ro",
     srcs = ["UDivConst.cs"],
     debug_type = "pdbonly",
@@ -702,6 +792,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NotAndNeg_d",
     srcs = ["NotAndNeg.cs"],
     pri = 1,
@@ -710,6 +801,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "UDivConst_do",
     srcs = ["UDivConst.cs"],
     debug_type = "full",
@@ -717,6 +809,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Sub1_d",
     srcs = ["Sub1.cs"],
     pri = 1,
@@ -725,6 +818,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocB_N_PSP_r",
     srcs = ["LocallocB_N_PSP.cs"],
     pri = 1,
@@ -733,6 +827,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ModConst_do",
     srcs = ["ModConst.cs"],
     debug_type = "full",
@@ -740,6 +835,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5001_PSP_d",
     srcs = ["LocallocCnstB5001_PSP.cs"],
     pri = 1,
@@ -749,6 +845,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDist_r",
     srcs = ["DblDist.cs"],
     pri = 1,
@@ -756,6 +853,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "InitObj_r",
     srcs = ["InitObj.cs"],
     pri = 1,
@@ -763,12 +861,14 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "UDivConst_r",
     srcs = ["UDivConst.cs"],
     debug_type = "pdbonly",
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5_PSP_do",
     srcs = ["LocallocCnstB5_PSP.cs"],
     pri = 1,
@@ -778,6 +878,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB1_PSP_do",
     srcs = ["LocallocCnstB1_PSP.cs"],
     pri = 1,
@@ -787,6 +888,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Lt1_ro",
     srcs = ["Lt1.cs"],
     pri = 1,
@@ -795,6 +897,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPArea_r",
     srcs = ["FPArea.cs"],
     pri = 1,
@@ -802,6 +905,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ge1_do",
     srcs = ["Ge1.cs"],
     pri = 1,
@@ -810,6 +914,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayObj_do",
     srcs = ["ArrayObj.cs"],
     pri = 1,
@@ -818,6 +923,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtInt1_r",
     srcs = ["JTrueLtInt1.cs"],
     pri = 1,
@@ -825,6 +931,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAvg2_ro",
     srcs = ["FPAvg2.cs"],
     pri = 1,
@@ -833,6 +940,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Lt1_r",
     srcs = ["Lt1.cs"],
     pri = 1,
@@ -840,6 +948,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "XorRef_do",
     srcs = ["XorRef.cs"],
     pri = 1,
@@ -848,6 +957,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblRem_ro",
     srcs = ["DblRem.cs"],
     pri = 1,
@@ -856,6 +966,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeDbl_d",
     srcs = ["JTrueGeDbl.cs"],
     pri = 1,
@@ -864,6 +975,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPCall1_ro",
     srcs = ["FPCall1.cs"],
     pri = 1,
@@ -872,6 +984,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "And1_d",
     srcs = ["And1.cs"],
     pri = 1,
@@ -880,6 +993,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblNeg_ro",
     srcs = ["DblNeg.cs"],
     pri = 1,
@@ -888,6 +1002,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructFldAddr_r",
     srcs = ["StructFldAddr.cs"],
     pri = 1,
@@ -895,6 +1010,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgAnd1_r",
     srcs = ["AsgAnd1.cs"],
     pri = 1,
@@ -902,6 +1018,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDivConst_d",
     srcs = ["FPDivConst.cs"],
     pri = 1,
@@ -910,6 +1027,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Swap_do",
     srcs = ["Swap.cs"],
     pri = 1,
@@ -918,6 +1036,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSubConst_d",
     srcs = ["FPSubConst.cs"],
     pri = 1,
@@ -926,6 +1045,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "divref_r",
     srcs = ["divref.cs"],
     pri = 1,
@@ -933,6 +1053,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblFillArray_r",
     srcs = ["DblFillArray.cs"],
     pri = 1,
@@ -940,6 +1061,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "div2_ro",
     srcs = ["div2.cs"],
     debug_type = "pdbonly",
@@ -947,6 +1069,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayMD1_ro",
     srcs = ["ArrayMD1.cs"],
     pri = 1,
@@ -955,6 +1078,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPError_do",
     srcs = ["FPError.cs"],
     pri = 1,
@@ -963,6 +1087,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMul_d",
     srcs = ["FPMul.cs"],
     pri = 1,
@@ -971,6 +1096,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblSub_do",
     srcs = ["DblSub.cs"],
     pri = 1,
@@ -979,6 +1105,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPRoots_do",
     srcs = ["FPRoots.cs"],
     pri = 1,
@@ -987,6 +1114,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeDbl_do",
     srcs = ["JTrueGeDbl.cs"],
     pri = 1,
@@ -995,6 +1123,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblVar_r",
     srcs = ["DblVar.cs"],
     pri = 1,
@@ -1002,6 +1131,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPArray_ro",
     srcs = ["FPArray.cs"],
     pri = 1,
@@ -1010,6 +1140,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "RecursiveTailCall_r",
     srcs = ["RecursiveTailCall.cs"],
     pri = 1,
@@ -1017,6 +1148,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "div2_do",
     srcs = ["div2.cs"],
     debug_type = "full",
@@ -1024,6 +1156,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAvg6_ro",
     srcs = ["FPAvg6.cs"],
     pri = 1,
@@ -1032,6 +1165,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Lt1_do",
     srcs = ["Lt1.cs"],
     pri = 1,
@@ -1040,6 +1174,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeInt1_ro",
     srcs = ["JTrueNeInt1.cs"],
     pri = 1,
@@ -1048,6 +1183,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5_PSP_d",
     srcs = ["LocallocCnstB5_PSP.cs"],
     pri = 1,
@@ -1057,6 +1193,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblFillArray_ro",
     srcs = ["DblFillArray.cs"],
     pri = 1,
@@ -1065,6 +1202,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AndRef_ro",
     srcs = ["AndRef.cs"],
     pri = 1,
@@ -1073,6 +1211,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB117_PSP_r",
     srcs = ["LocallocCnstB117_PSP.cs"],
     pri = 1,
@@ -1081,6 +1220,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Le1_ro",
     srcs = ["Le1.cs"],
     pri = 1,
@@ -1089,6 +1229,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "IntConv_do",
     srcs = ["IntConv.cs"],
     pri = 1,
@@ -1097,6 +1238,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array2_d",
     srcs = ["Array2.cs"],
     pri = 1,
@@ -1105,6 +1247,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StaticValueField_ro",
     srcs = ["StaticValueField.cs"],
     pri = 1,
@@ -1113,6 +1256,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Localloc_d",
     srcs = ["Localloc.cs"],
     debug_type = "full",
@@ -1121,6 +1265,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LeftShift_do",
     srcs = ["LeftShift.cs"],
     pri = 1,
@@ -1129,6 +1274,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Gcd_d",
     srcs = ["Gcd.cs"],
     pri = 1,
@@ -1137,6 +1283,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "And1_ro",
     srcs = ["And1.cs"],
     pri = 1,
@@ -1145,6 +1292,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "And1_r",
     srcs = ["And1.cs"],
     pri = 1,
@@ -1152,6 +1300,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "IntArraySum_ro",
     srcs = ["IntArraySum.cs"],
     pri = 1,
@@ -1160,6 +1309,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Args4_ro",
     srcs = ["Args4.cs"],
     pri = 1,
@@ -1168,6 +1318,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FiboRec_ro",
     srcs = ["FiboRec.cs"],
     pri = 1,
@@ -1176,6 +1327,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocB_N_ro",
     srcs = ["LocallocB_N.cs"],
     pri = 1,
@@ -1185,6 +1337,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAvg2_ro",
     srcs = ["DblAvg2.cs"],
     pri = 1,
@@ -1193,6 +1346,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ne1_d",
     srcs = ["Ne1.cs"],
     pri = 1,
@@ -1201,6 +1355,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FactorialRec_do",
     srcs = ["FactorialRec.cs"],
     pri = 1,
@@ -1209,6 +1364,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array2_ro",
     srcs = ["Array2.cs"],
     pri = 1,
@@ -1217,6 +1373,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAvg6_r",
     srcs = ["FPAvg6.cs"],
     pri = 1,
@@ -1224,6 +1381,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPCall2_d",
     srcs = ["FPCall2.cs"],
     pri = 1,
@@ -1232,6 +1390,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "UDivConst_d",
     srcs = ["UDivConst.cs"],
     debug_type = "full",
@@ -1239,6 +1398,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "struct16args_d",
     srcs = ["struct16args.cs"],
     pri = 1,
@@ -1247,6 +1407,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtFP_d",
     srcs = ["JTrueGtFP.cs"],
     pri = 1,
@@ -1255,6 +1416,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMul_do",
     srcs = ["FPMul.cs"],
     pri = 1,
@@ -1263,6 +1425,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeDbl_ro",
     srcs = ["JTrueNeDbl.cs"],
     pri = 1,
@@ -1271,6 +1434,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblArea_do",
     srcs = ["DblArea.cs"],
     pri = 1,
@@ -1279,6 +1443,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDivConst_r",
     srcs = ["FPDivConst.cs"],
     pri = 1,
@@ -1286,6 +1451,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Rotate_r",
     srcs = ["Rotate.cs"],
     pri = 1,
@@ -1293,6 +1459,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPCall2_ro",
     srcs = ["FPCall2.cs"],
     pri = 1,
@@ -1301,6 +1468,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB117_PSP_ro",
     srcs = ["LocallocCnstB117_PSP.cs"],
     pri = 1,
@@ -1310,6 +1478,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqInt1_do",
     srcs = ["JTrueEqInt1.cs"],
     pri = 1,
@@ -1318,6 +1487,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Jmp1_d",
     srcs = ["Jmp1.cs"],
     pri = 1,
@@ -1326,6 +1496,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblCall2_do",
     srcs = ["DblCall2.cs"],
     pri = 1,
@@ -1334,6 +1505,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAddConst_r",
     srcs = ["DblAddConst.cs"],
     pri = 1,
@@ -1341,6 +1513,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayObj_ro",
     srcs = ["ArrayObj.cs"],
     pri = 1,
@@ -1349,6 +1522,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StaticCalls_d",
     srcs = ["StaticCalls.cs"],
     pri = 1,
@@ -1357,6 +1531,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblVar_d",
     srcs = ["DblVar.cs"],
     pri = 1,
@@ -1365,6 +1540,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgAnd1_ro",
     srcs = ["AsgAnd1.cs"],
     pri = 1,
@@ -1373,6 +1549,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtInt1_ro",
     srcs = ["JTrueGtInt1.cs"],
     pri = 1,
@@ -1381,6 +1558,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Le1_do",
     srcs = ["Le1.cs"],
     pri = 1,
@@ -1389,6 +1567,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeDbl_r",
     srcs = ["JTrueNeDbl.cs"],
     pri = 1,
@@ -1396,6 +1575,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqDbl_ro",
     srcs = ["JTrueEqDbl.cs"],
     pri = 1,
@@ -1404,6 +1584,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "SubRef_d",
     srcs = ["SubRef.cs"],
     pri = 1,
@@ -1412,6 +1593,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPArea_do",
     srcs = ["FPArea.cs"],
     pri = 1,
@@ -1420,6 +1602,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblNeg_do",
     srcs = ["DblNeg.cs"],
     pri = 1,
@@ -1428,6 +1611,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Gt1_ro",
     srcs = ["Gt1.cs"],
     pri = 1,
@@ -1436,6 +1620,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ind1_r",
     srcs = ["Ind1.cs"],
     pri = 1,
@@ -1443,6 +1628,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Call1_ro",
     srcs = ["Call1.cs"],
     pri = 1,
@@ -1451,12 +1637,14 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "div2_r",
     srcs = ["div2.cs"],
     debug_type = "pdbonly",
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Sub1_do",
     srcs = ["Sub1.cs"],
     pri = 1,
@@ -1465,6 +1653,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeFP_d",
     srcs = ["JTrueGeFP.cs"],
     pri = 1,
@@ -1473,6 +1662,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Add1_do",
     srcs = ["Add1.cs"],
     pri = 1,
@@ -1481,6 +1671,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAdd_r",
     srcs = ["FPAdd.cs"],
     pri = 1,
@@ -1488,6 +1679,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeFP_do",
     srcs = ["JTrueNeFP.cs"],
     pri = 1,
@@ -1496,6 +1688,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Call1_r",
     srcs = ["Call1.cs"],
     pri = 1,
@@ -1503,6 +1696,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LeftShift_d",
     srcs = ["LeftShift.cs"],
     pri = 1,
@@ -1511,6 +1705,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "div1_do",
     srcs = ["div1.cs"],
     pri = 1,
@@ -1519,6 +1714,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Localloc_ro",
     srcs = ["Localloc.cs"],
     debug_type = "pdbonly",
@@ -1527,6 +1723,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAdd_ro",
     srcs = ["DblAdd.cs"],
     pri = 1,
@@ -1535,6 +1732,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAvg6_d",
     srcs = ["DblAvg6.cs"],
     pri = 1,
@@ -1543,6 +1741,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AndRef_d",
     srcs = ["AndRef.cs"],
     pri = 1,
@@ -1551,6 +1750,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDist_d",
     srcs = ["FPDist.cs"],
     pri = 1,
@@ -1559,6 +1759,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB117_ro",
     srcs = ["LocallocCnstB117.cs"],
     pri = 1,
@@ -1568,6 +1769,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ne1_r",
     srcs = ["Ne1.cs"],
     pri = 1,
@@ -1575,6 +1777,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblArray_do",
     srcs = ["DblArray.cs"],
     pri = 1,
@@ -1583,6 +1786,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblMulConst_d",
     srcs = ["DblMulConst.cs"],
     pri = 1,
@@ -1591,6 +1795,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblRoots_do",
     srcs = ["DblRoots.cs"],
     pri = 1,
@@ -1599,6 +1804,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ind1_ro",
     srcs = ["Ind1.cs"],
     pri = 1,
@@ -1607,6 +1813,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Or1_d",
     srcs = ["Or1.cs"],
     pri = 1,
@@ -1615,6 +1822,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrue1_r",
     srcs = ["JTrue1.cs"],
     pri = 1,
@@ -1622,6 +1830,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDivConst_do",
     srcs = ["FPDivConst.cs"],
     pri = 1,
@@ -1630,6 +1839,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtFP_d",
     srcs = ["JTrueLtFP.cs"],
     pri = 1,
@@ -1638,6 +1848,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "OpMembersOfStructLocal_do",
     srcs = ["OpMembersOfStructLocal.cs"],
     pri = 1,
@@ -1646,6 +1857,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayMD2_r",
     srcs = ["ArrayMD2.cs"],
     pri = 1,
@@ -1653,6 +1865,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array1_ro",
     srcs = ["Array1.cs"],
     pri = 1,
@@ -1661,6 +1874,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Gt1_r",
     srcs = ["Gt1.cs"],
     pri = 1,
@@ -1668,6 +1882,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblRoots_d",
     srcs = ["DblRoots.cs"],
     pri = 1,
@@ -1676,6 +1891,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblMul_do",
     srcs = ["DblMul.cs"],
     pri = 1,
@@ -1684,6 +1900,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "BinaryRMW_d",
     srcs = ["BinaryRMW.cs"],
     pri = 1,
@@ -1692,6 +1909,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Shift_ro",
     srcs = ["Shift.cs"],
     pri = 1,
@@ -1700,6 +1918,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPRem_ro",
     srcs = ["FPRem.cs"],
     pri = 1,
@@ -1708,6 +1927,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPRem_r",
     srcs = ["FPRem.cs"],
     pri = 1,
@@ -1715,6 +1935,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StaticValueField_do",
     srcs = ["StaticValueField.cs"],
     pri = 1,
@@ -1723,6 +1944,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "BinaryRMW_ro",
     srcs = ["BinaryRMW.cs"],
     pri = 1,
@@ -1731,6 +1953,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDist_ro",
     srcs = ["FPDist.cs"],
     pri = 1,
@@ -1739,6 +1962,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocB_N_PSP_ro",
     srcs = ["LocallocB_N_PSP.cs"],
     pri = 1,
@@ -1748,6 +1972,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAvg2_d",
     srcs = ["FPAvg2.cs"],
     pri = 1,
@@ -1756,6 +1981,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FactorialRec_r",
     srcs = ["FactorialRec.cs"],
     pri = 1,
@@ -1763,6 +1989,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAvg2_r",
     srcs = ["DblAvg2.cs"],
     pri = 1,
@@ -1770,6 +1997,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StaticValueField_r",
     srcs = ["StaticValueField.cs"],
     pri = 1,
@@ -1777,6 +2005,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ind1_do",
     srcs = ["Ind1.cs"],
     pri = 1,
@@ -1785,6 +2014,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblFillArray_d",
     srcs = ["DblFillArray.cs"],
     pri = 1,
@@ -1793,6 +2023,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqDbl_r",
     srcs = ["JTrueEqDbl.cs"],
     pri = 1,
@@ -1800,6 +2031,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtDbl_do",
     srcs = ["JTrueLtDbl.cs"],
     pri = 1,
@@ -1808,6 +2040,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayMD2_ro",
     srcs = ["ArrayMD2.cs"],
     pri = 1,
@@ -1816,6 +2049,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Eq1_do",
     srcs = ["Eq1.cs"],
     pri = 1,
@@ -1824,6 +2058,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LongArgsAndReturn_d",
     srcs = ["LongArgsAndReturn.cs"],
     pri = 1,
@@ -1832,6 +2067,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDiv_r",
     srcs = ["FPDiv.cs"],
     pri = 1,
@@ -1839,6 +2075,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayMD1_d",
     srcs = ["ArrayMD1.cs"],
     pri = 1,
@@ -1847,6 +2084,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAvg2_r",
     srcs = ["FPAvg2.cs"],
     pri = 1,
@@ -1854,6 +2092,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2F_d",
     srcs = ["FPConvF2F.cs"],
     pri = 1,
@@ -1862,6 +2101,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocB_N_d",
     srcs = ["LocallocB_N.cs"],
     pri = 1,
@@ -1871,6 +2111,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocB_N_PSP_d",
     srcs = ["LocallocB_N_PSP.cs"],
     pri = 1,
@@ -1880,6 +2121,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NotRMW_d",
     srcs = ["NotRMW.cs"],
     pri = 1,
@@ -1888,6 +2130,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Args4_do",
     srcs = ["Args4.cs"],
     pri = 1,
@@ -1896,6 +2139,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LngConv_ro",
     srcs = ["LngConv.cs"],
     pri = 1,
@@ -1904,6 +2148,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2F_do",
     srcs = ["FPConvF2F.cs"],
     pri = 1,
@@ -1912,6 +2157,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Gt1_do",
     srcs = ["Gt1.cs"],
     pri = 1,
@@ -1920,6 +2166,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPNeg_d",
     srcs = ["FPNeg.cs"],
     pri = 1,
@@ -1928,6 +2175,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Xor1_ro",
     srcs = ["Xor1.cs"],
     pri = 1,
@@ -1936,6 +2184,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblMul_d",
     srcs = ["DblMul.cs"],
     pri = 1,
@@ -1944,6 +2193,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgXor1_d",
     srcs = ["AsgXor1.cs"],
     pri = 1,
@@ -1952,6 +2202,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblSubConst_do",
     srcs = ["DblSubConst.cs"],
     pri = 1,
@@ -1960,6 +2211,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeInt1_ro",
     srcs = ["JTrueLeInt1.cs"],
     pri = 1,
@@ -1968,6 +2220,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5001_PSP_ro",
     srcs = ["LocallocCnstB5001_PSP.cs"],
     pri = 1,
@@ -1977,6 +2230,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAddConst_do",
     srcs = ["FPAddConst.cs"],
     pri = 1,
@@ -1985,6 +2239,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPRem_d",
     srcs = ["FPRem.cs"],
     pri = 1,
@@ -1993,12 +2248,14 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CastThenBinop",
     srcs = ["CastThenBinop.cs"],
     optimize = True,
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NegRMW_d",
     srcs = ["NegRMW.cs"],
     pri = 1,
@@ -2007,6 +2264,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAvg2_d",
     srcs = ["DblAvg2.cs"],
     pri = 1,
@@ -2015,6 +2273,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB117_d",
     srcs = ["LocallocCnstB117.cs"],
     pri = 1,
@@ -2024,6 +2283,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "InitObj_d",
     srcs = ["InitObj.cs"],
     pri = 1,
@@ -2032,6 +2292,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblCall2_ro",
     srcs = ["DblCall2.cs"],
     pri = 1,
@@ -2040,6 +2301,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB1_PSP_d",
     srcs = ["LocallocCnstB1_PSP.cs"],
     pri = 1,
@@ -2049,6 +2311,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Rotate_d",
     srcs = ["Rotate.cs"],
     pri = 1,
@@ -2057,6 +2320,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblSub_ro",
     srcs = ["DblSub.cs"],
     pri = 1,
@@ -2065,6 +2329,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul3_d",
     srcs = ["mul3.cs"],
     pri = 1,
@@ -2073,6 +2338,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Or1_ro",
     srcs = ["Or1.cs"],
     pri = 1,
@@ -2081,6 +2347,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FactorialRec_ro",
     srcs = ["FactorialRec.cs"],
     pri = 1,
@@ -2089,6 +2356,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array3_do",
     srcs = ["Array3.cs"],
     pri = 1,
@@ -2097,6 +2365,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NestedCall_r",
     srcs = ["NestedCall.cs"],
     pri = 1,
@@ -2104,6 +2373,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDist_do",
     srcs = ["FPDist.cs"],
     pri = 1,
@@ -2112,6 +2382,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPCall2_do",
     srcs = ["FPCall2.cs"],
     pri = 1,
@@ -2120,6 +2391,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Xor1_do",
     srcs = ["Xor1.cs"],
     pri = 1,
@@ -2128,6 +2400,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblRem_d",
     srcs = ["DblRem.cs"],
     pri = 1,
@@ -2136,6 +2409,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Args5_ro",
     srcs = ["Args5.cs"],
     pri = 1,
@@ -2144,6 +2418,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPRoots_r",
     srcs = ["FPRoots.cs"],
     pri = 1,
@@ -2151,6 +2426,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Gcd_do",
     srcs = ["Gcd.cs"],
     pri = 1,
@@ -2159,6 +2435,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5001_PSP_r",
     srcs = ["LocallocCnstB5001_PSP.cs"],
     pri = 1,
@@ -2167,6 +2444,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeInt1_r",
     srcs = ["JTrueNeInt1.cs"],
     pri = 1,
@@ -2174,6 +2452,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "RightShiftRef_do",
     srcs = ["RightShiftRef.cs"],
     pri = 1,
@@ -2182,6 +2461,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB117_PSP_do",
     srcs = ["LocallocCnstB117_PSP.cs"],
     pri = 1,
@@ -2191,6 +2471,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtInt1_r",
     srcs = ["JTrueGtInt1.cs"],
     pri = 1,
@@ -2198,6 +2479,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StaticCalls_r",
     srcs = ["StaticCalls.cs"],
     pri = 1,
@@ -2205,6 +2487,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeInt1_do",
     srcs = ["JTrueNeInt1.cs"],
     pri = 1,
@@ -2213,6 +2496,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Unbox_r",
     srcs = ["Unbox.cs"],
     pri = 1,
@@ -2221,6 +2505,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "XorRef_d",
     srcs = ["XorRef.cs"],
     pri = 1,
@@ -2229,6 +2514,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeDbl_d",
     srcs = ["JTrueLeDbl.cs"],
     pri = 1,
@@ -2237,6 +2523,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPNeg_r",
     srcs = ["FPNeg.cs"],
     pri = 1,
@@ -2244,6 +2531,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeDbl_r",
     srcs = ["JTrueLeDbl.cs"],
     pri = 1,
@@ -2251,6 +2539,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Sub1_r",
     srcs = ["Sub1.cs"],
     pri = 1,
@@ -2258,6 +2547,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayMD1_do",
     srcs = ["ArrayMD1.cs"],
     pri = 1,
@@ -2266,6 +2556,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvI2F_d",
     srcs = ["FPConvI2F.cs"],
     pri = 1,
@@ -2274,6 +2565,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMulConst_ro",
     srcs = ["FPMulConst.cs"],
     pri = 1,
@@ -2282,12 +2574,14 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "UModConst_r",
     srcs = ["UModConst.cs"],
     debug_type = "pdbonly",
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Eq1_ro",
     srcs = ["Eq1.cs"],
     pri = 1,
@@ -2296,6 +2590,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgAnd1_d",
     srcs = ["AsgAnd1.cs"],
     pri = 1,
@@ -2304,6 +2599,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSubConst_r",
     srcs = ["FPSubConst.cs"],
     pri = 1,
@@ -2311,6 +2607,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPFillArray_r",
     srcs = ["FPFillArray.cs"],
     pri = 1,
@@ -2318,6 +2615,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5_ro",
     srcs = ["LocallocCnstB5.cs"],
     pri = 1,
@@ -2327,6 +2625,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Jmp1_do",
     srcs = ["Jmp1.cs"],
     pri = 1,
@@ -2335,6 +2634,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPVar_r",
     srcs = ["FPVar.cs"],
     pri = 1,
@@ -2342,6 +2642,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul1_d",
     srcs = ["mul1.cs"],
     pri = 1,
@@ -2350,6 +2651,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DivConst_do",
     srcs = ["DivConst.cs"],
     debug_type = "full",
@@ -2357,6 +2659,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAvg2_do",
     srcs = ["FPAvg2.cs"],
     pri = 1,
@@ -2365,6 +2668,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CnsBool_d",
     srcs = ["CnsBool.cs"],
     pri = 1,
@@ -2373,6 +2677,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Switch_do",
     srcs = ["Switch.cs"],
     pri = 1,
@@ -2381,6 +2686,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayExc_d",
     srcs = ["ArrayExc.cs"],
     debug_type = "full",
@@ -2388,6 +2694,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayObj_d",
     srcs = ["ArrayObj.cs"],
     pri = 1,
@@ -2396,6 +2703,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ModConst_ro",
     srcs = ["ModConst.cs"],
     debug_type = "pdbonly",
@@ -2403,6 +2711,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeDbl_do",
     srcs = ["JTrueNeDbl.cs"],
     pri = 1,
@@ -2411,6 +2720,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtFP_ro",
     srcs = ["JTrueLtFP.cs"],
     pri = 1,
@@ -2419,6 +2729,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPNeg_ro",
     srcs = ["FPNeg.cs"],
     pri = 1,
@@ -2427,6 +2738,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "RecursiveTailCall_do",
     srcs = ["RecursiveTailCall.cs"],
     pri = 1,
@@ -2435,6 +2747,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqInt1_d",
     srcs = ["JTrueEqInt1.cs"],
     pri = 1,
@@ -2443,6 +2756,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtDbl_d",
     srcs = ["JTrueGtDbl.cs"],
     pri = 1,
@@ -2451,6 +2765,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblArea_ro",
     srcs = ["DblArea.cs"],
     pri = 1,
@@ -2459,6 +2774,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ge1_d",
     srcs = ["Ge1.cs"],
     pri = 1,
@@ -2467,6 +2783,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAdd_d",
     srcs = ["FPAdd.cs"],
     pri = 1,
@@ -2475,6 +2792,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NegRMW_ro",
     srcs = ["NegRMW.cs"],
     pri = 1,
@@ -2483,6 +2801,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgAdd1_r",
     srcs = ["AsgAdd1.cs"],
     pri = 1,
@@ -2490,6 +2809,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul2_ro",
     srcs = ["mul2.cs"],
     pri = 1,
@@ -2498,12 +2818,14 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DivConst_r",
     srcs = ["DivConst.cs"],
     debug_type = "pdbonly",
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDivConst_ro",
     srcs = ["DblDivConst.cs"],
     pri = 1,
@@ -2512,6 +2834,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "struct16args_do",
     srcs = ["struct16args.cs"],
     pri = 1,
@@ -2520,6 +2843,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAvg6_ro",
     srcs = ["DblAvg6.cs"],
     pri = 1,
@@ -2528,6 +2852,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtDbl_d",
     srcs = ["JTrueLtDbl.cs"],
     pri = 1,
@@ -2536,6 +2861,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB32_Loop_r",
     srcs = ["LocallocCnstB32_Loop.cs"],
     pri = 1,
@@ -2544,6 +2870,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructFldAddr_d",
     srcs = ["StructFldAddr.cs"],
     pri = 1,
@@ -2552,6 +2879,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array4_do",
     srcs = ["Array4.cs"],
     pri = 1,
@@ -2560,6 +2888,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayMD2_do",
     srcs = ["ArrayMD2.cs"],
     pri = 1,
@@ -2568,6 +2897,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPFillArray_ro",
     srcs = ["FPFillArray.cs"],
     pri = 1,
@@ -2576,6 +2906,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrue1_d",
     srcs = ["JTrue1.cs"],
     pri = 1,
@@ -2584,6 +2915,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "struct16args_ro",
     srcs = ["struct16args.cs"],
     pri = 1,
@@ -2592,6 +2924,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgOr1_do",
     srcs = ["AsgOr1.cs"],
     pri = 1,
@@ -2600,6 +2933,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Shift_d",
     srcs = ["Shift.cs"],
     pri = 1,
@@ -2608,6 +2942,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ModConst_d",
     srcs = ["ModConst.cs"],
     debug_type = "full",
@@ -2615,6 +2950,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPError_d",
     srcs = ["FPError.cs"],
     pri = 1,
@@ -2623,6 +2959,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Shift_r",
     srcs = ["Shift.cs"],
     pri = 1,
@@ -2630,6 +2967,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeInt1_do",
     srcs = ["JTrueLeInt1.cs"],
     pri = 1,
@@ -2638,6 +2976,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtDbl_r",
     srcs = ["JTrueGtDbl.cs"],
     pri = 1,
@@ -2645,6 +2984,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "OpMembersOfStructLocal_d",
     srcs = ["OpMembersOfStructLocal.cs"],
     pri = 1,
@@ -2653,6 +2993,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FactorialRec_d",
     srcs = ["FactorialRec.cs"],
     pri = 1,
@@ -2661,6 +3002,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSub_do",
     srcs = ["FPSub.cs"],
     pri = 1,
@@ -2669,6 +3011,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "RightShiftRef_d",
     srcs = ["RightShiftRef.cs"],
     pri = 1,
@@ -2677,6 +3020,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPNeg_do",
     srcs = ["FPNeg.cs"],
     pri = 1,
@@ -2685,6 +3029,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocB_N_do",
     srcs = ["LocallocB_N.cs"],
     pri = 1,
@@ -2694,6 +3039,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblMulConst_ro",
     srcs = ["DblMulConst.cs"],
     pri = 1,
@@ -2702,6 +3048,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMath_ro",
     srcs = ["FPMath.cs"],
     pri = 1,
@@ -2710,6 +3057,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "RecursiveTailCall_ro",
     srcs = ["RecursiveTailCall.cs"],
     pri = 1,
@@ -2718,6 +3066,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructReturn_r",
     srcs = ["StructReturn.cs"],
     pri = 1,
@@ -2725,6 +3074,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblArray_r",
     srcs = ["DblArray.cs"],
     pri = 1,
@@ -2732,6 +3082,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Call1_d",
     srcs = ["Call1.cs"],
     pri = 1,
@@ -2740,6 +3091,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AndRef_r",
     srcs = ["AndRef.cs"],
     pri = 1,
@@ -2747,12 +3099,14 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ModConst_r",
     srcs = ["ModConst.cs"],
     debug_type = "pdbonly",
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAvg2_do",
     srcs = ["DblAvg2.cs"],
     pri = 1,
@@ -2761,6 +3115,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "OrRef_ro",
     srcs = ["OrRef.cs"],
     pri = 1,
@@ -2769,6 +3124,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAvg6_do",
     srcs = ["DblAvg6.cs"],
     pri = 1,
@@ -2777,6 +3133,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB32_Loop_d",
     srcs = ["LocallocCnstB32_Loop.cs"],
     pri = 1,
@@ -2786,6 +3143,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtInt1_do",
     srcs = ["JTrueLtInt1.cs"],
     pri = 1,
@@ -2794,6 +3152,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAddConst_do",
     srcs = ["DblAddConst.cs"],
     pri = 1,
@@ -2802,6 +3161,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "addref_d",
     srcs = ["addref.cs"],
     pri = 1,
@@ -2810,6 +3170,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgXor1_do",
     srcs = ["AsgXor1.cs"],
     pri = 1,
@@ -2818,6 +3179,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB32_Loop_ro",
     srcs = ["LocallocCnstB32_Loop.cs"],
     pri = 1,
@@ -2827,6 +3189,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAdd_do",
     srcs = ["FPAdd.cs"],
     pri = 1,
@@ -2835,6 +3198,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NotRMW_r",
     srcs = ["NotRMW.cs"],
     pri = 1,
@@ -2842,6 +3206,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "divref_ro",
     srcs = ["divref.cs"],
     pri = 1,
@@ -2850,6 +3215,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDiv_d",
     srcs = ["FPDiv.cs"],
     pri = 1,
@@ -2858,6 +3224,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMath_r",
     srcs = ["FPMath.cs"],
     pri = 1,
@@ -2865,6 +3232,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "IntConv_d",
     srcs = ["IntConv.cs"],
     pri = 1,
@@ -2873,6 +3241,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "addref_ro",
     srcs = ["addref.cs"],
     pri = 1,
@@ -2881,6 +3250,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AndRef_do",
     srcs = ["AndRef.cs"],
     pri = 1,
@@ -2889,6 +3259,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblMul_r",
     srcs = ["DblMul.cs"],
     pri = 1,
@@ -2896,6 +3267,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FibLoop_ro",
     srcs = ["FibLoop.cs"],
     pri = 1,
@@ -2904,6 +3276,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "RightShiftRef_ro",
     srcs = ["RightShiftRef.cs"],
     pri = 1,
@@ -2912,6 +3285,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMath_d",
     srcs = ["FPMath.cs"],
     pri = 1,
@@ -2920,6 +3294,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LeftShift_r",
     srcs = ["LeftShift.cs"],
     pri = 1,
@@ -2927,6 +3302,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblNeg_r",
     srcs = ["DblNeg.cs"],
     pri = 1,
@@ -2934,6 +3310,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "rem1_r",
     srcs = ["rem1.cs"],
     pri = 1,
@@ -2941,6 +3318,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAvg6_do",
     srcs = ["FPAvg6.cs"],
     pri = 1,
@@ -2949,6 +3327,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructFldAddr_do",
     srcs = ["StructFldAddr.cs"],
     pri = 1,
@@ -2957,6 +3336,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CnsBool_do",
     srcs = ["CnsBool.cs"],
     pri = 1,
@@ -2965,6 +3345,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array2_do",
     srcs = ["Array2.cs"],
     pri = 1,
@@ -2973,6 +3354,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "OpMembersOfStructLocal_ro",
     srcs = ["OpMembersOfStructLocal.cs"],
     pri = 1,
@@ -2981,6 +3363,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Localloc_r",
     srcs = ["Localloc.cs"],
     debug_type = "pdbonly",
@@ -2988,6 +3371,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeInt1_d",
     srcs = ["JTrueLeInt1.cs"],
     pri = 1,
@@ -2996,6 +3380,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDiv_do",
     srcs = ["FPDiv.cs"],
     pri = 1,
@@ -3004,6 +3389,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeFP_ro",
     srcs = ["JTrueLeFP.cs"],
     pri = 1,
@@ -3012,6 +3398,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "rem1_do",
     srcs = ["rem1.cs"],
     pri = 1,
@@ -3020,6 +3407,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB1_PSP_ro",
     srcs = ["LocallocCnstB1_PSP.cs"],
     pri = 1,
@@ -3029,6 +3417,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayJagged_ro",
     srcs = ["ArrayJagged.cs"],
     pri = 1,
@@ -3037,6 +3426,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSubConst_ro",
     srcs = ["FPSubConst.cs"],
     pri = 1,
@@ -3045,6 +3435,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgSub1_r",
     srcs = ["AsgSub1.cs"],
     pri = 1,
@@ -3052,6 +3443,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPError_ro",
     srcs = ["FPError.cs"],
     pri = 1,
@@ -3060,6 +3452,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqInt1_r",
     srcs = ["JTrueEqInt1.cs"],
     pri = 1,
@@ -3067,6 +3460,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblMul_ro",
     srcs = ["DblMul.cs"],
     pri = 1,
@@ -3075,6 +3469,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPFillArray_do",
     srcs = ["FPFillArray.cs"],
     pri = 1,
@@ -3083,6 +3478,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB32_Loop_do",
     srcs = ["LocallocCnstB32_Loop.cs"],
     pri = 1,
@@ -3092,6 +3488,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgOr1_r",
     srcs = ["AsgOr1.cs"],
     pri = 1,
@@ -3099,6 +3496,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "struct16args_r",
     srcs = ["struct16args.cs"],
     pri = 1,
@@ -3106,6 +3504,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Args4_r",
     srcs = ["Args4.cs"],
     pri = 1,
@@ -3113,6 +3512,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FibLoop_do",
     srcs = ["FibLoop.cs"],
     pri = 1,
@@ -3121,6 +3521,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "InstanceCalls_ro",
     srcs = ["InstanceCalls.cs"],
     pri = 1,
@@ -3129,6 +3530,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgAdd1_ro",
     srcs = ["AsgAdd1.cs"],
     pri = 1,
@@ -3137,6 +3539,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeDbl_ro",
     srcs = ["JTrueGeDbl.cs"],
     pri = 1,
@@ -3145,6 +3548,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayObj_r",
     srcs = ["ArrayObj.cs"],
     pri = 1,
@@ -3152,6 +3556,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMul_ro",
     srcs = ["FPMul.cs"],
     pri = 1,
@@ -3160,6 +3565,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvDbl2Lng_d",
     srcs = ["FPConvDbl2Lng.cs"],
     pri = 1,
@@ -3168,6 +3574,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NotRMW_do",
     srcs = ["NotRMW.cs"],
     pri = 1,
@@ -3176,6 +3583,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPVar_d",
     srcs = ["FPVar.cs"],
     pri = 1,
@@ -3184,6 +3592,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAvg6_r",
     srcs = ["DblAvg6.cs"],
     pri = 1,
@@ -3191,6 +3600,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgOr1_ro",
     srcs = ["AsgOr1.cs"],
     pri = 1,
@@ -3199,6 +3609,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtDbl_ro",
     srcs = ["JTrueGtDbl.cs"],
     pri = 1,
@@ -3207,6 +3618,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDiv_ro",
     srcs = ["FPDiv.cs"],
     pri = 1,
@@ -3215,6 +3627,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2Lng_do",
     srcs = ["FPConvF2Lng.cs"],
     pri = 1,
@@ -3223,6 +3636,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2I_do",
     srcs = ["FPConvF2I.cs"],
     pri = 1,
@@ -3231,6 +3645,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LeftShift_ro",
     srcs = ["LeftShift.cs"],
     pri = 1,
@@ -3239,6 +3654,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Args5_do",
     srcs = ["Args5.cs"],
     pri = 1,
@@ -3247,6 +3663,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul4_ro",
     srcs = ["mul4.cs"],
     pri = 1,
@@ -3255,6 +3672,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblArray_d",
     srcs = ["DblArray.cs"],
     pri = 1,
@@ -3263,6 +3681,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPRem_do",
     srcs = ["FPRem.cs"],
     pri = 1,
@@ -3271,6 +3690,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ge1_r",
     srcs = ["Ge1.cs"],
     pri = 1,
@@ -3278,6 +3698,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPCall2_r",
     srcs = ["FPCall2.cs"],
     pri = 1,
@@ -3285,6 +3706,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgSub1_ro",
     srcs = ["AsgSub1.cs"],
     pri = 1,
@@ -3293,6 +3715,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Rotate_ro",
     srcs = ["Rotate.cs"],
     pri = 1,
@@ -3301,6 +3724,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2F_r",
     srcs = ["FPConvF2F.cs"],
     pri = 1,
@@ -3308,6 +3732,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ObjAlloc_do",
     srcs = ["ObjAlloc.cs"],
     pri = 1,
@@ -3316,6 +3741,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul4_r",
     srcs = ["mul4.cs"],
     pri = 1,
@@ -3323,6 +3749,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblMulConst_r",
     srcs = ["DblMulConst.cs"],
     pri = 1,
@@ -3330,6 +3757,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "divref_d",
     srcs = ["divref.cs"],
     pri = 1,
@@ -3338,6 +3766,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Xor1_r",
     srcs = ["Xor1.cs"],
     pri = 1,
@@ -3345,6 +3774,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB1_d",
     srcs = ["LocallocCnstB1.cs"],
     pri = 1,
@@ -3354,6 +3784,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqFP_do",
     srcs = ["JTrueEqFP.cs"],
     pri = 1,
@@ -3362,6 +3793,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Or1_do",
     srcs = ["Or1.cs"],
     pri = 1,
@@ -3370,6 +3802,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeInt1_do",
     srcs = ["JTrueGeInt1.cs"],
     pri = 1,
@@ -3378,6 +3811,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvDbl2Lng_ro",
     srcs = ["FPConvDbl2Lng.cs"],
     pri = 1,
@@ -3386,6 +3820,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2I_r",
     srcs = ["FPConvF2I.cs"],
     pri = 1,
@@ -3393,6 +3828,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array4_d",
     srcs = ["Array4.cs"],
     pri = 1,
@@ -3401,6 +3837,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5001_PSP_do",
     srcs = ["LocallocCnstB5001_PSP.cs"],
     pri = 1,
@@ -3410,6 +3847,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5_r",
     srcs = ["LocallocCnstB5.cs"],
     pri = 1,
@@ -3418,6 +3856,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "And1_do",
     srcs = ["And1.cs"],
     pri = 1,
@@ -3426,6 +3865,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblVar_ro",
     srcs = ["DblVar.cs"],
     pri = 1,
@@ -3434,6 +3874,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPVar_do",
     srcs = ["FPVar.cs"],
     pri = 1,
@@ -3442,6 +3883,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgAnd1_do",
     srcs = ["AsgAnd1.cs"],
     pri = 1,
@@ -3450,6 +3892,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "IntConv_ro",
     srcs = ["IntConv.cs"],
     pri = 1,
@@ -3458,6 +3901,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructInstMethod_d",
     srcs = ["StructInstMethod.cs"],
     pri = 1,
@@ -3466,6 +3910,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructInstMethod_r",
     srcs = ["StructInstMethod.cs"],
     pri = 1,
@@ -3473,6 +3918,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "OpMembersOfStructLocal_r",
     srcs = ["OpMembersOfStructLocal.cs"],
     pri = 1,
@@ -3480,6 +3926,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NestedCall_do",
     srcs = ["NestedCall.cs"],
     pri = 1,
@@ -3488,6 +3935,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5001_ro",
     srcs = ["LocallocCnstB5001.cs"],
     pri = 1,
@@ -3497,6 +3945,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructInstMethod_do",
     srcs = ["StructInstMethod.cs"],
     pri = 1,
@@ -3505,6 +3954,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructFldAddr_ro",
     srcs = ["StructFldAddr.cs"],
     pri = 1,
@@ -3513,6 +3963,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "InitObj_do",
     srcs = ["InitObj.cs"],
     pri = 1,
@@ -3521,6 +3972,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPRoots_d",
     srcs = ["FPRoots.cs"],
     pri = 1,
@@ -3529,6 +3981,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeInt1_ro",
     srcs = ["JTrueGeInt1.cs"],
     pri = 1,
@@ -3537,6 +3990,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ne1_ro",
     srcs = ["Ne1.cs"],
     pri = 1,
@@ -3545,6 +3999,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Switch_d",
     srcs = ["Switch.cs"],
     pri = 1,
@@ -3553,6 +4008,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqFP_ro",
     srcs = ["JTrueEqFP.cs"],
     pri = 1,
@@ -3561,6 +4017,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Or1_r",
     srcs = ["Or1.cs"],
     pri = 1,
@@ -3568,6 +4025,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Jmp1_ro",
     srcs = ["Jmp1.cs"],
     pri = 1,
@@ -3576,6 +4034,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblArea_r",
     srcs = ["DblArea.cs"],
     pri = 1,
@@ -3583,6 +4042,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayJagged_d",
     srcs = ["ArrayJagged.cs"],
     pri = 1,
@@ -3591,6 +4051,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "UModConst_d",
     srcs = ["UModConst.cs"],
     debug_type = "full",
@@ -3598,6 +4059,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblCall1_ro",
     srcs = ["DblCall1.cs"],
     pri = 1,
@@ -3606,6 +4068,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Gt1_d",
     srcs = ["Gt1.cs"],
     pri = 1,
@@ -3614,6 +4077,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAddConst_d",
     srcs = ["DblAddConst.cs"],
     pri = 1,
@@ -3622,6 +4086,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Rotate_do",
     srcs = ["Rotate.cs"],
     pri = 1,
@@ -3630,6 +4095,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul4_d",
     srcs = ["mul4.cs"],
     pri = 1,
@@ -3638,6 +4104,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeDbl_d",
     srcs = ["JTrueNeDbl.cs"],
     pri = 1,
@@ -3646,6 +4113,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeFP_do",
     srcs = ["JTrueGeFP.cs"],
     pri = 1,
@@ -3654,6 +4122,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAddConst_ro",
     srcs = ["DblAddConst.cs"],
     pri = 1,
@@ -3662,6 +4131,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Add1_ro",
     srcs = ["Add1.cs"],
     pri = 1,
@@ -3670,6 +4140,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Eq1_d",
     srcs = ["Eq1.cs"],
     pri = 1,
@@ -3678,6 +4149,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPCall1_do",
     srcs = ["FPCall1.cs"],
     pri = 1,
@@ -3686,6 +4158,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Shift_do",
     srcs = ["Shift.cs"],
     pri = 1,
@@ -3694,6 +4167,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "XorRef_r",
     srcs = ["XorRef.cs"],
     pri = 1,
@@ -3701,6 +4175,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblVar_do",
     srcs = ["DblVar.cs"],
     pri = 1,
@@ -3709,6 +4184,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Le1_d",
     srcs = ["Le1.cs"],
     pri = 1,
@@ -3717,6 +4193,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPArea_d",
     srcs = ["FPArea.cs"],
     pri = 1,
@@ -3725,6 +4202,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2Lng_ro",
     srcs = ["FPConvF2Lng.cs"],
     pri = 1,
@@ -3733,6 +4211,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul3_do",
     srcs = ["mul3.cs"],
     pri = 1,
@@ -3741,6 +4220,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgXor1_ro",
     srcs = ["AsgXor1.cs"],
     pri = 1,
@@ -3749,6 +4229,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDist_ro",
     srcs = ["DblDist.cs"],
     pri = 1,
@@ -3757,6 +4238,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeInt1_r",
     srcs = ["JTrueGeInt1.cs"],
     pri = 1,
@@ -3764,6 +4246,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul4_do",
     srcs = ["mul4.cs"],
     pri = 1,
@@ -3772,6 +4255,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "OrRef_r",
     srcs = ["OrRef.cs"],
     pri = 1,
@@ -3779,6 +4263,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul1_ro",
     srcs = ["mul1.cs"],
     pri = 1,
@@ -3787,6 +4272,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FiboRec_do",
     srcs = ["FiboRec.cs"],
     pri = 1,
@@ -3795,6 +4281,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAvg6_d",
     srcs = ["FPAvg6.cs"],
     pri = 1,
@@ -3803,6 +4290,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "SubRef_do",
     srcs = ["SubRef.cs"],
     pri = 1,
@@ -3811,6 +4299,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DivConst_ro",
     srcs = ["DivConst.cs"],
     debug_type = "pdbonly",
@@ -3818,6 +4307,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StaticValueField_d",
     srcs = ["StaticValueField.cs"],
     pri = 1,
@@ -3826,6 +4316,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeFP_r",
     srcs = ["JTrueLeFP.cs"],
     pri = 1,
@@ -3833,6 +4324,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "RecursiveTailCall_d",
     srcs = ["RecursiveTailCall.cs"],
     pri = 1,
@@ -3841,6 +4333,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblCall1_do",
     srcs = ["DblCall1.cs"],
     pri = 1,
@@ -3849,6 +4342,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "rem1_ro",
     srcs = ["rem1.cs"],
     pri = 1,
@@ -3857,6 +4351,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Sub1_ro",
     srcs = ["Sub1.cs"],
     pri = 1,
@@ -3865,6 +4360,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Swap_ro",
     srcs = ["Swap.cs"],
     pri = 1,
@@ -3873,6 +4369,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocLarge_ro",
     srcs = ["LocallocLarge.cs"],
     debug_type = "pdbonly",
@@ -3884,6 +4381,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgSub1_d",
     srcs = ["AsgSub1.cs"],
     pri = 1,
@@ -3892,6 +4390,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "BinaryRMW_r",
     srcs = ["BinaryRMW.cs"],
     pri = 1,
@@ -3899,6 +4398,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDiv_ro",
     srcs = ["DblDiv.cs"],
     pri = 1,
@@ -3907,6 +4407,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvDbl2Lng_do",
     srcs = ["FPConvDbl2Lng.cs"],
     pri = 1,
@@ -3915,6 +4416,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "InstanceCalls_d",
     srcs = ["InstanceCalls.cs"],
     pri = 1,
@@ -3923,6 +4425,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructReturn_do",
     srcs = ["StructReturn.cs"],
     pri = 1,
@@ -3931,6 +4434,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAdd_d",
     srcs = ["DblAdd.cs"],
     pri = 1,
@@ -3939,6 +4443,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "divref_do",
     srcs = ["divref.cs"],
     pri = 1,
@@ -3947,6 +4452,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPAddConst_d",
     srcs = ["FPAddConst.cs"],
     pri = 1,
@@ -3955,6 +4461,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeDbl_ro",
     srcs = ["JTrueLeDbl.cs"],
     pri = 1,
@@ -3963,6 +4470,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgAdd1_do",
     srcs = ["AsgAdd1.cs"],
     pri = 1,
@@ -3971,6 +4479,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDiv_do",
     srcs = ["DblDiv.cs"],
     pri = 1,
@@ -3979,6 +4488,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "InitObj_ro",
     srcs = ["InitObj.cs"],
     pri = 1,
@@ -3987,6 +4497,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtInt1_d",
     srcs = ["JTrueLtInt1.cs"],
     pri = 1,
@@ -3995,6 +4506,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqFP_d",
     srcs = ["JTrueEqFP.cs"],
     pri = 1,
@@ -4003,6 +4515,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StructReturn_ro",
     srcs = ["StructReturn.cs"],
     pri = 1,
@@ -4011,6 +4524,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "SubRef_ro",
     srcs = ["SubRef.cs"],
     pri = 1,
@@ -4019,6 +4533,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblRem_do",
     srcs = ["DblRem.cs"],
     pri = 1,
@@ -4027,6 +4542,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul3_r",
     srcs = ["mul3.cs"],
     pri = 1,
@@ -4034,6 +4550,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LongArgsAndReturn_r",
     srcs = ["LongArgsAndReturn.cs"],
     pri = 1,
@@ -4041,6 +4558,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayExc_do",
     srcs = ["ArrayExc.cs"],
     debug_type = "full",
@@ -4048,6 +4566,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB1_do",
     srcs = ["LocallocCnstB1.cs"],
     pri = 1,
@@ -4057,6 +4576,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Ind1_d",
     srcs = ["Ind1.cs"],
     pri = 1,
@@ -4065,6 +4585,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Localloc_do",
     srcs = ["Localloc.cs"],
     debug_type = "full",
@@ -4073,6 +4594,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB1_PSP_r",
     srcs = ["LocallocCnstB1_PSP.cs"],
     pri = 1,
@@ -4081,6 +4603,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "addref_do",
     srcs = ["addref.cs"],
     pri = 1,
@@ -4089,6 +4612,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul2_d",
     srcs = ["mul2.cs"],
     pri = 1,
@@ -4097,6 +4621,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeInt1_d",
     srcs = ["JTrueGeInt1.cs"],
     pri = 1,
@@ -4105,6 +4630,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocLarge_r",
     srcs = ["LocallocLarge.cs"],
     debug_type = "pdbonly",
@@ -4115,6 +4641,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDiv_d",
     srcs = ["DblDiv.cs"],
     pri = 1,
@@ -4123,6 +4650,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayMD2_d",
     srcs = ["ArrayMD2.cs"],
     pri = 1,
@@ -4131,6 +4659,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "div1_ro",
     srcs = ["div1.cs"],
     pri = 1,
@@ -4139,6 +4668,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CnsLng1_r",
     srcs = ["CnsLng1.cs"],
     pri = 1,
@@ -4146,6 +4676,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblCall1_r",
     srcs = ["DblCall1.cs"],
     pri = 1,
@@ -4153,6 +4684,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeDbl_r",
     srcs = ["JTrueGeDbl.cs"],
     pri = 1,
@@ -4160,6 +4692,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NotAndNeg_ro",
     srcs = ["NotAndNeg.cs"],
     pri = 1,
@@ -4168,6 +4701,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgAdd1_d",
     srcs = ["AsgAdd1.cs"],
     pri = 1,
@@ -4176,6 +4710,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CnsLng1_d",
     srcs = ["CnsLng1.cs"],
     pri = 1,
@@ -4184,6 +4719,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "XorRef_ro",
     srcs = ["XorRef.cs"],
     pri = 1,
@@ -4192,6 +4728,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Switch_ro",
     srcs = ["Switch.cs"],
     pri = 1,
@@ -4200,6 +4737,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblAdd_r",
     srcs = ["DblAdd.cs"],
     pri = 1,
@@ -4207,6 +4745,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPArray_do",
     srcs = ["FPArray.cs"],
     pri = 1,
@@ -4215,6 +4754,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDiv_r",
     srcs = ["DblDiv.cs"],
     pri = 1,
@@ -4222,6 +4762,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMulConst_d",
     srcs = ["FPMulConst.cs"],
     pri = 1,
@@ -4230,6 +4771,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDist_d",
     srcs = ["DblDist.cs"],
     pri = 1,
@@ -4238,6 +4780,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPVar_ro",
     srcs = ["FPVar.cs"],
     pri = 1,
@@ -4246,6 +4789,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocB_N_PSP_do",
     srcs = ["LocallocB_N_PSP.cs"],
     pri = 1,
@@ -4255,6 +4799,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NestedCall_ro",
     srcs = ["NestedCall.cs"],
     pri = 1,
@@ -4263,6 +4808,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array2_r",
     srcs = ["Array2.cs"],
     pri = 1,
@@ -4270,6 +4816,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FiboRec_r",
     srcs = ["FiboRec.cs"],
     pri = 1,
@@ -4277,6 +4824,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrue1_ro",
     srcs = ["JTrue1.cs"],
     pri = 1,
@@ -4285,6 +4833,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "addref_r",
     srcs = ["addref.cs"],
     pri = 1,
@@ -4292,6 +4841,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPDivConst_ro",
     srcs = ["FPDivConst.cs"],
     pri = 1,
@@ -4300,6 +4850,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblSub_d",
     srcs = ["DblSub.cs"],
     pri = 1,
@@ -4308,6 +4859,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Args5_d",
     srcs = ["Args5.cs"],
     pri = 1,
@@ -4316,6 +4868,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Swap_d",
     srcs = ["Swap.cs"],
     pri = 1,
@@ -4324,6 +4877,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Eq1_r",
     srcs = ["Eq1.cs"],
     pri = 1,
@@ -4331,6 +4885,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGeFP_r",
     srcs = ["JTrueGeFP.cs"],
     pri = 1,
@@ -4338,6 +4893,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMul_r",
     srcs = ["FPMul.cs"],
     pri = 1,
@@ -4345,6 +4901,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtInt1_ro",
     srcs = ["JTrueLtInt1.cs"],
     pri = 1,
@@ -4353,6 +4910,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ObjAlloc_ro",
     srcs = ["ObjAlloc.cs"],
     pri = 1,
@@ -4361,6 +4919,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblRem_r",
     srcs = ["DblRem.cs"],
     pri = 1,
@@ -4368,6 +4927,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB117_r",
     srcs = ["LocallocCnstB117.cs"],
     pri = 1,
@@ -4376,6 +4936,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPFillArray_d",
     srcs = ["FPFillArray.cs"],
     pri = 1,
@@ -4384,6 +4945,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueNeFP_r",
     srcs = ["JTrueNeFP.cs"],
     pri = 1,
@@ -4391,6 +4953,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "BinaryRMW_do",
     srcs = ["BinaryRMW.cs"],
     pri = 1,
@@ -4399,6 +4962,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayJagged_r",
     srcs = ["ArrayJagged.cs"],
     pri = 1,
@@ -4406,6 +4970,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvI2F_ro",
     srcs = ["FPConvI2F.cs"],
     pri = 1,
@@ -4414,6 +4979,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtDbl_ro",
     srcs = ["JTrueLtDbl.cs"],
     pri = 1,
@@ -4422,6 +4988,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblRoots_ro",
     srcs = ["DblRoots.cs"],
     pri = 1,
@@ -4430,6 +4997,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5_PSP_r",
     srcs = ["LocallocCnstB5_PSP.cs"],
     pri = 1,
@@ -4438,6 +5006,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayExc_ro",
     srcs = ["ArrayExc.cs"],
     debug_type = "pdbonly",
@@ -4445,6 +5014,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgSub1_do",
     srcs = ["AsgSub1.cs"],
     pri = 1,
@@ -4453,6 +5023,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrue1_do",
     srcs = ["JTrue1.cs"],
     pri = 1,
@@ -4461,6 +5032,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "OrRef_do",
     srcs = ["OrRef.cs"],
     pri = 1,
@@ -4469,6 +5041,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblArray_ro",
     srcs = ["DblArray.cs"],
     pri = 1,
@@ -4477,6 +5050,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSmall_r",
     srcs = ["FPSmall.cs"],
     pri = 1,
@@ -4484,6 +5058,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgXor1_r",
     srcs = ["AsgXor1.cs"],
     pri = 1,
@@ -4491,6 +5066,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FibLoop_r",
     srcs = ["FibLoop.cs"],
     pri = 1,
@@ -4498,6 +5074,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ObjAlloc_r",
     srcs = ["ObjAlloc.cs"],
     pri = 1,
@@ -4505,6 +5082,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSmall_ro",
     srcs = ["FPSmall.cs"],
     pri = 1,
@@ -4513,6 +5091,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMulConst_do",
     srcs = ["FPMulConst.cs"],
     pri = 1,
@@ -4521,6 +5100,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "ArrayMD1_r",
     srcs = ["ArrayMD1.cs"],
     pri = 1,
@@ -4528,6 +5108,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "IntArraySum_do",
     srcs = ["IntArraySum.cs"],
     pri = 1,
@@ -4536,6 +5117,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvI2F_do",
     srcs = ["FPConvI2F.cs"],
     pri = 1,
@@ -4544,6 +5126,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array1_d",
     srcs = ["Array1.cs"],
     pri = 1,
@@ -4552,6 +5135,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul2_do",
     srcs = ["mul2.cs"],
     pri = 1,
@@ -4560,6 +5144,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Swap_r",
     srcs = ["Swap.cs"],
     pri = 1,
@@ -4567,6 +5152,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2Lng_d",
     srcs = ["FPConvF2Lng.cs"],
     pri = 1,
@@ -4575,6 +5161,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPMulConst_r",
     srcs = ["FPMulConst.cs"],
     pri = 1,
@@ -4582,6 +5169,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPRoots_ro",
     srcs = ["FPRoots.cs"],
     pri = 1,
@@ -4590,6 +5178,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "InstanceCalls_do",
     srcs = ["InstanceCalls.cs"],
     pri = 1,
@@ -4598,6 +5187,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Args4_d",
     srcs = ["Args4.cs"],
     pri = 1,
@@ -4606,6 +5196,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblCall1_d",
     srcs = ["DblCall1.cs"],
     pri = 1,
@@ -4614,6 +5205,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblMulConst_do",
     srcs = ["DblMulConst.cs"],
     pri = 1,
@@ -4622,6 +5214,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLtDbl_r",
     srcs = ["JTrueLtDbl.cs"],
     pri = 1,
@@ -4629,6 +5222,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblRoots_r",
     srcs = ["DblRoots.cs"],
     pri = 1,
@@ -4636,6 +5230,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblSubConst_ro",
     srcs = ["DblSubConst.cs"],
     pri = 1,
@@ -4644,6 +5239,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPArray_d",
     srcs = ["FPArray.cs"],
     pri = 1,
@@ -4652,6 +5248,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "OrRef_d",
     srcs = ["OrRef.cs"],
     pri = 1,
@@ -4660,6 +5257,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPArray_r",
     srcs = ["FPArray.cs"],
     pri = 1,
@@ -4667,6 +5265,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB117_do",
     srcs = ["LocallocCnstB117.cs"],
     pri = 1,
@@ -4676,6 +5275,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StaticCalls_do",
     srcs = ["StaticCalls.cs"],
     pri = 1,
@@ -4684,6 +5284,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPConvF2F_ro",
     srcs = ["FPConvF2F.cs"],
     pri = 1,
@@ -4692,6 +5293,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtDbl_do",
     srcs = ["JTrueGtDbl.cs"],
     pri = 1,
@@ -4700,6 +5302,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array4_ro",
     srcs = ["Array4.cs"],
     pri = 1,
@@ -4708,6 +5311,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FiboRec_d",
     srcs = ["FiboRec.cs"],
     pri = 1,
@@ -4716,6 +5320,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "CnsBool_ro",
     srcs = ["CnsBool.cs"],
     pri = 1,
@@ -4724,6 +5329,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "NotRMW_ro",
     srcs = ["NotRMW.cs"],
     pri = 1,
@@ -4732,6 +5338,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeInt1_r",
     srcs = ["JTrueLeInt1.cs"],
     pri = 1,
@@ -4739,6 +5346,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "RightShiftRef_r",
     srcs = ["RightShiftRef.cs"],
     pri = 1,
@@ -4746,6 +5354,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtFP_do",
     srcs = ["JTrueGtFP.cs"],
     pri = 1,
@@ -4754,6 +5363,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LngConv_do",
     srcs = ["LngConv.cs"],
     pri = 1,
@@ -4762,6 +5372,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtInt1_d",
     srcs = ["JTrueGtInt1.cs"],
     pri = 1,
@@ -4770,6 +5381,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LongArgsAndReturn_do",
     srcs = ["LongArgsAndReturn.cs"],
     pri = 1,
@@ -4778,6 +5390,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5001_d",
     srcs = ["LocallocCnstB5001.cs"],
     pri = 1,
@@ -4787,6 +5400,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FibLoop_d",
     srcs = ["FibLoop.cs"],
     pri = 1,
@@ -4795,6 +5409,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB1_r",
     srcs = ["LocallocCnstB1.cs"],
     pri = 1,
@@ -4803,6 +5418,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPError_r",
     srcs = ["FPError.cs"],
     pri = 1,
@@ -4810,6 +5426,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "UModConst_ro",
     srcs = ["UModConst.cs"],
     debug_type = "pdbonly",
@@ -4817,6 +5434,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Le1_r",
     srcs = ["Le1.cs"],
     pri = 1,
@@ -4824,6 +5442,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Args5_r",
     srcs = ["Args5.cs"],
     pri = 1,
@@ -4831,6 +5450,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPCall1_d",
     srcs = ["FPCall1.cs"],
     pri = 1,
@@ -4839,6 +5459,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblDivConst_d",
     srcs = ["DblDivConst.cs"],
     pri = 1,
@@ -4847,6 +5468,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5_do",
     srcs = ["LocallocCnstB5.cs"],
     pri = 1,
@@ -4856,6 +5478,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueLeFP_do",
     srcs = ["JTrueLeFP.cs"],
     pri = 1,
@@ -4864,6 +5487,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqInt1_ro",
     srcs = ["JTrueEqInt1.cs"],
     pri = 1,
@@ -4872,6 +5496,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueGtInt1_do",
     srcs = ["JTrueGtInt1.cs"],
     pri = 1,
@@ -4880,6 +5505,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LngConv_d",
     srcs = ["LngConv.cs"],
     pri = 1,
@@ -4888,6 +5514,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Array3_d",
     srcs = ["Array3.cs"],
     pri = 1,
@@ -4896,6 +5523,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "Gcd_r",
     srcs = ["Gcd.cs"],
     pri = 1,
@@ -4903,6 +5531,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "AsgOr1_d",
     srcs = ["AsgOr1.cs"],
     pri = 1,
@@ -4911,6 +5540,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "LocallocCnstB5_d",
     srcs = ["LocallocCnstB5.cs"],
     pri = 1,
@@ -4920,6 +5550,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "DblNeg_d",
     srcs = ["DblNeg.cs"],
     pri = 1,
@@ -4928,6 +5559,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "JTrueEqDbl_do",
     srcs = ["JTrueEqDbl.cs"],
     pri = 1,
@@ -4936,6 +5568,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPCall1_r",
     srcs = ["FPCall1.cs"],
     pri = 1,
@@ -4943,6 +5576,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul1_r",
     srcs = ["mul1.cs"],
     pri = 1,
@@ -4950,6 +5584,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "IntArraySum_r",
     srcs = ["IntArraySum.cs"],
     pri = 1,
@@ -4957,6 +5592,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSmall_do",
     srcs = ["FPSmall.cs"],
     pri = 1,
@@ -4965,6 +5601,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSub_r",
     srcs = ["FPSub.cs"],
     pri = 1,
@@ -4972,6 +5609,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "IntConv_r",
     srcs = ["IntConv.cs"],
     pri = 1,
@@ -4979,6 +5617,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "FPSub_ro",
     srcs = ["FPSub.cs"],
     pri = 1,
@@ -4987,6 +5626,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "StaticCalls_ro",
     srcs = ["StaticCalls.cs"],
     pri = 1,
@@ -4995,6 +5635,7 @@ coreclr_test(
 )
 
 coreclr_test(
+    use_shared_compilation = True,
     name = "mul1_do",
     srcs = ["mul1.cs"],
     pri = 1,

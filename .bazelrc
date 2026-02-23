@@ -214,10 +214,3 @@ build:release --config=libs_release
 # from /define:DEBUG to /define:RELEASE for library targets and enables
 # native optimizations.
 build:release -c opt
-
-# =====================================================================
-# Roslyn compiler server (persistent worker)
-# =====================================================================
-# Always enable the global flag; per-target opt-in is controlled by
-# use_shared_compilation in coreclr_test / library_test / csharp_library.
-build --@rules_dotnet//dotnet/settings:use_compiler_worker=True

@@ -8,7 +8,7 @@ NETCOREAPP_CURRENT = "net10.0"
 NETCOREAPP_TOOL_CURRENT = "net10.0"
 
 # Label for the Roslyn compiler server persistent worker binary.
-_COMPILER_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
+_SHARED_COMPILATION_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
 
 # Version constants matching eng/Versions.props
 _MAJOR_VERSION = PRODUCT_VERSION.split(".")[0]
@@ -253,7 +253,8 @@ def csharp_library(
         out = out,
         resources = resources,
         resource_logical_names = resource_logical_names,
-        compiler_worker = _COMPILER_WORKER if use_shared_compilation else None,
+        use_shared_compilation = use_shared_compilation,
+        shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         nowarn = nowarn + [
             "CS1701",
             # Match Directory.Build.props global NoWarn
@@ -270,6 +271,7 @@ def csharp_binary(
 ):
     _base_csharp_binary(
         name = name,
-        compiler_worker = _COMPILER_WORKER if use_shared_compilation else None,
+        use_shared_compilation = use_shared_compilation,
+        shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         **kwargs
     )
