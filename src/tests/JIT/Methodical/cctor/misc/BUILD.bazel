@@ -106,12 +106,7 @@ il_coreclr_test(
     debug_type = "full",
 )
 
-il_coreclr_test(
-    name = "global_d",
-    srcs = ["global_d.il", "global.il"],
-    pri = 1,
-    debug_type = "full",
-)
+# global_d is disabled (DisableProjectBuild=true, rva_statics support #2451)
 
 coreclr_test(
     name = "threads1_cs_do",
@@ -129,12 +124,7 @@ coreclr_test(
     ],
 )
 
-il_coreclr_test(
-    name = "global_r",
-    srcs = ["global_r.il", "global.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-)
+# global_r is disabled (DisableProjectBuild=true, rva_statics support #2451)
 
 coreclr_test(
     name = "threads1_cs_r",

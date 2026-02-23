@@ -95,12 +95,7 @@ il_coreclr_test(
     debug_type = "pdbonly",
 )
 
-il_coreclr_test(
-    name = "pointer_d",
-    srcs = ["pointer_d.il", "pointer.il"],
-    pri = 1,
-    debug_type = "full",
-)
+# pointer_d is disabled (DisableProjectBuild=true, rva_statics support #2451)
 
 il_coreclr_test(
     name = "test_implicit_d",
@@ -114,12 +109,7 @@ il_coreclr_test(
     debug_type = "pdbonly",
 )
 
-il_coreclr_test(
-    name = "pointer_i_r",
-    srcs = ["pointer_i_r.il", "pointer_i.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-)
+# pointer_i_r is disabled (DisableProjectBuild=true, rva_statics support #2451)
 
 il_coreclr_test(
     name = "test_void_d",
@@ -328,12 +318,7 @@ il_coreclr_test(
     debug_type = "full",
 )
 
-il_coreclr_test(
-    name = "pointer_i_d",
-    srcs = ["pointer_i_d.il", "pointer_i.il"],
-    pri = 1,
-    debug_type = "full",
-)
+# pointer_i_d is disabled (DisableProjectBuild=true, rva_statics support #2451)
 
 il_coreclr_test(
     name = "test_2b_d",
@@ -402,12 +387,7 @@ il_coreclr_test(
     debug_type = "full",
 )
 
-il_coreclr_test(
-    name = "pointer_r",
-    srcs = ["pointer_r.il", "pointer.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-)
+# pointer_r is disabled (DisableProjectBuild=true, rva_statics support #2451)
 
 il_coreclr_test(
     name = "recurse_ep_r",

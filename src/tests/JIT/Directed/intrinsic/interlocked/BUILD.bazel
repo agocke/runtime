@@ -1,11 +1,6 @@
 load("//src/tests:live_test.bzl", "coreclr_test", "il_coreclr_test")
 
-il_coreclr_test(
-    name = "rva_rvastatic1",
-    srcs = ["rva_rvaStatic1.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-)
+# rva_rvastatic1-4 are disabled (DisableProjectBuild=true, rva_statics support #2451)
 
 coreclr_test(
     name = "regalloc1",
@@ -40,20 +35,6 @@ coreclr_test(
     ],
 )
 
-il_coreclr_test(
-    name = "rva_rvastatic2",
-    srcs = ["rva_rvaStatic2.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-)
-
-il_coreclr_test(
-    name = "rva_rvastatic4",
-    srcs = ["rva_rvaStatic4.il"],
-    pri = 1,
-    debug_type = "pdbonly",
-)
-
 coreclr_test(
     name = "cse_cmpxchg",
     srcs = ["cse_cmpxchg.cs"],
@@ -63,13 +44,6 @@ coreclr_test(
     deps = [
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
-)
-
-il_coreclr_test(
-    name = "rva_rvastatic3",
-    srcs = ["rva_rvaStatic3.il"],
-    pri = 1,
-    debug_type = "pdbonly",
 )
 
 coreclr_test(
