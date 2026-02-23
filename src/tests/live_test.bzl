@@ -404,20 +404,22 @@ mkdir -p "$FW_DIR"
 mkdir -p "$OUT/host/fxr/$VERSION"
 
 # Copy the dotnet host binary so it resolves frameworks from this directory.
-cp -a "$SDK_ROOT/dotnet" "$OUT/dotnet"
+# Use -L to dereference symlinks - Bazel's sandbox presents inputs as symlinks,
+# and we need actual files in the testhost to avoid broken absolute paths.
+cp -aL "$SDK_ROOT/dotnet" "$OUT/dotnet"
 
 # SDK host framework resolver
-cp -a "$SDK_ROOT/host/fxr/$VERSION/"* "$OUT/host/fxr/$VERSION/"
+cp -aL "$SDK_ROOT/host/fxr/$VERSION/"* "$OUT/host/fxr/$VERSION/"
 
 # SDK shared framework as base (lowest priority)
-cp -a "$SDK_ROOT/shared/Microsoft.NETCore.App/$VERSION/"* "$FW_DIR/"
+cp -aL "$SDK_ROOT/shared/Microsoft.NETCore.App/$VERSION/"* "$FW_DIR/"
 
 # Core_Root: Bazel-built runtime + managed assemblies override SDK
-cp -af "$CORE_ROOT/"* "$FW_DIR/"
+cp -afL "$CORE_ROOT/"* "$FW_DIR/"
 
 # Test dep assemblies have highest priority
 for f in "$@"; do
-  cp -af "$f" "$FW_DIR/"
+  cp -afL "$f" "$FW_DIR/"
 done
 
 # Generate a version-free deps.json matching MSBuild's testhost pattern.
