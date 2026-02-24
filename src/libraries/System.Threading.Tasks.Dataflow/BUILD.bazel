@@ -72,6 +72,7 @@ netcoreapp_impl_assembly(
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Threading.Tasks.Dataflow",
     resx_file = "src/Resources/Strings.resx",
+    nowarn = ["CS1589"],
 )
 
 ref_impl_pair(

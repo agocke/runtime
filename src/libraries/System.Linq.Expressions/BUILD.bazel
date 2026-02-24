@@ -13,6 +13,7 @@ netcoreapp_ref_assembly(
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
     ],
+    nowarn = ["CS0618"],
 )
 
 netcoreapp_impl_assembly(

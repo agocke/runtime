@@ -22,5 +22,6 @@ netcoreapp_impl_assembly(
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Security.AccessControl:ref_System.Security.AccessControl",
         "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
-    ]
+    ],
+    nullable = "annotations",
 )

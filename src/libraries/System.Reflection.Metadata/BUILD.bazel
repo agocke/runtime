@@ -40,6 +40,7 @@ netcoreapp_impl_assembly(
     ],
     resx_file = "src/Resources/Strings.resx",
     allow_unsafe_blocks = True,
+    cls_compliant = False,
     defines = ["SYSTEM_REFLECTION_METADATA"],
     deps = [
         "//src/libraries/System.Collections:ref_System.Collections",
