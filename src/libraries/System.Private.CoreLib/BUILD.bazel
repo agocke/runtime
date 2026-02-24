@@ -1,6 +1,6 @@
 
 load(
-    "@rules_dotnet//dotnet:defs.bzl",
+    "//:defs.bzl",
     "csharp_library"
 )
 

@@ -1,0 +1,10 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "Runtime_60035",
+    srcs = ["Runtime_60035.cs"],
+    optimize = True,
+    deps = [
+        "//src/libraries/System.Text.Encodings.Web:ref_System.Text.Encodings.Web",
+    ],
+)

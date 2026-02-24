@@ -1,4 +1,4 @@
-load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary")
+load("//:defs.bzl", "csharp_binary")
 load("//:defs.bzl", "gen_resx_source", "resgen")
 
 genrule(

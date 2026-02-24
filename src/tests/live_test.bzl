@@ -29,6 +29,9 @@ _TEST_NOWARN = [
     "CS3016", "CS8981",
 ]
 
+# Label for the Roslyn compiler server persistent worker binary.
+_SHARED_COMPILATION_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
+
 def _live_csharp_test_impl(ctx):
     result = build_binary(ctx, compile_csharp_exe)
     return result
@@ -65,6 +68,7 @@ def live_csharp_test(
     analyzers = [],
     nowarn = [],
     size = "small",
+    use_shared_compilation = True,
     **kwargs
 ):
     analyzers = analyzers + [
@@ -78,6 +82,8 @@ def live_csharp_test(
         target_frameworks = [NETCOREAPP_CURRENT],
         nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
         size = size,
+        use_shared_compilation = use_shared_compilation,
+        shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         **kwargs
     )
 
@@ -130,6 +136,8 @@ def _compile_csharp_library(ctx, tfm):
         override_debug = False,
         ref_assembly = False,
         is_windows = ctx.target_platform_has_constraint(ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]),
+        shared_compilation_worker = ctx.executable.shared_compilation_worker if ctx.attr.use_shared_compilation else None,
+        use_shared_compilation = ctx.attr.use_shared_compilation,
     )
 
 def _xunit_library_test_impl(ctx):
@@ -501,6 +509,7 @@ def library_test(
     analyzers = [],
     nowarn = [],
     size = "medium",
+    use_shared_compilation = True,
     **kwargs
 ):
     """Test macro for library tests that compiles as library and runs via xunit.console.dll."""
@@ -516,6 +525,8 @@ def library_test(
         nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
         size = size,
         nullable = nullable,
+        use_shared_compilation = use_shared_compilation,
+        shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         **kwargs
     )
 
@@ -528,6 +539,7 @@ def coreclr_test(
     debug_type = "portable", # TODO: plum through to compiler
     optimize = False, # TODO: plum through to compiler
     compiler_options = [],
+    use_shared_compilation = True,
     **kwargs
 ):
     deps = deps + [
@@ -549,6 +561,7 @@ def coreclr_test(
         tags = tags,
         visibility = ["//visibility:public"],
         compiler_options = compiler_options,
+        use_shared_compilation = use_shared_compilation,
         **kwargs
     )
 
@@ -558,6 +571,7 @@ def coreclr_test(
         size = size,
         tags = tags + [ "pri%d" % pri ],
         compiler_options = compiler_options,
+        use_shared_compilation = use_shared_compilation,
         **kwargs
     )
 
@@ -614,6 +628,24 @@ def _il_test_impl(ctx):
         executable = ctx.executable.ilasm_exe,
     )
 
+    # Copy runtime DLLs from deps alongside the test DLL
+    for dep in ctx.attr.deps:
+        runtime_info = dep[DotnetAssemblyRuntimeInfo]
+        for lib in runtime_info.libs:
+            if lib.extension == "dll":
+                dst = ctx.actions.declare_file(lib.basename, sibling = dll)
+                ctx.actions.run_shell(
+                    inputs = [lib],
+                    outputs = [dst],
+                    command = "cp -f \"$1\" \"$2\"",
+                    arguments = [lib.path, dst.path],
+                    mnemonic = "CopyFile",
+                    progress_message = "Copying %s" % lib.basename,
+                    use_default_shell_env = True,
+                    execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+                )
+                additional_runfiles.append(dst)
+
     launcher = create_launcher(ctx, additional_runfiles, dll)
 
     default_info = DefaultInfo(
@@ -622,7 +654,11 @@ def _il_test_impl(ctx):
         files = depset([dll]),
     )
 
-    return [ default_info ]
+    providers = [default_info]
+    if ctx.attr.env:
+        providers.append(testing.TestEnvironment(ctx.attr.env))
+
+    return providers
 
 _il_test = rule(
     implementation = _il_test_impl,
@@ -634,6 +670,11 @@ _il_test = rule(
         "out": attr.output(
             mandatory = True,
             doc = "The output DLL.",
+        ),
+        "deps": attr.label_list(
+            doc = "Runtime dependencies (DLLs copied alongside the test assembly)",
+            providers = [DotnetAssemblyRuntimeInfo],
+            default = [],
         ),
         "debug_type": attr.string(
             doc = "The debug type",
@@ -663,6 +704,9 @@ _il_test = rule(
         "_bash_runfiles": attr.label(
             default = "@bazel_tools//tools/bash/runfiles",
             allow_files = True,
+        ),
+        "env": attr.string_dict(
+            doc = "Environment variables to set when running the test.",
         ),
     },
     test = True,
@@ -717,9 +761,18 @@ def coreclr_merged_test(
         )
         transformed_deps.append(":" + transform_label_name)
 
+    # Test deps may reference types from common test infrastructure (e.g.,
+    # PlatformDetection in TestLibrary via [ActiveIssue] attributes). With strict
+    # deps these transitive references are not visible to the merged compilation,
+    # so include them explicitly.
+    merged_deps = deps + [
+        "//src/tests/Common:TestLibrary",
+        "@paket.main//microsoft.dotnet.xunitextensions",
+    ]
+
     live_csharp_test(
         name = name,
-        deps = deps + transformed_deps,
+        deps = merged_deps + transformed_deps,
         size = size,
         tags = tags + ["merged", "manual"],
         **kwargs
