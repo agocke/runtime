@@ -327,13 +327,24 @@ ref_impl_pair = rule(
 def live_csharp_library(
     name,
     deps = [],
+    nullable = "enable",
+    compiler_options = [],
     **kwargs
 ):
     deps = deps + LIVE_REFPACK_DEPS
 
+    # Match MSBuild compiler options for features (nullable/strict)
+    compiler_options = compiler_options + [
+        "/features:strict",
+        "/features:nullablePublicOnly",
+    ]
+
     csharp_library(
         name = name,
         deps = deps,
+        nullable = nullable,
+        langversion = "preview",
+        compiler_options = compiler_options,
         disable_implicit_framework_refs = True,
         target_frameworks = [ NETCOREAPP_CURRENT ],
         **kwargs
