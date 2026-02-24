@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/tools/aot/jitinterface/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//:defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 

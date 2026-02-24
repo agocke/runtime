@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library", "objc_library")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
-load("//:defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_DEFINES")
 
 # System.Globalization.Native for linux-x64
 # Produces libSystem.Globalization.Native.so (shared) and libSystem.Globalization.Native.a (static)

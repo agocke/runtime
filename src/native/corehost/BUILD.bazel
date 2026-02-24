@@ -5,7 +5,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
-load("//:defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_DEFINES")
 
 package(default_visibility = ["//src/native/corehost:__subpackages__"])
 
