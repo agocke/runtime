@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
-load("//:defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_DEFINES")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
 # System.IO.Ports.Native for linux-x64

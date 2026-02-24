@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/gcinfo/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//:defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_DEFINES")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
