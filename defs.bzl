@@ -17,12 +17,6 @@ _ASSEMBLY_VERSION = _MAJOR_VERSION + "." + _MINOR_VERSION + ".0.0"
 _FILE_VERSION = "42.42.42.42424"
 _INFORMATIONAL_VERSION = PRODUCT_VERSION + "-dev"
 
-def from_coreclr_artifacts(file):
-    return select({
-        "@platforms//os:linux": [ Label("//:artifacts/bin/coreclr/linux.x64.Debug/%s" % file) ],
-        "@platforms//os:macos": [ Label("//:artifacts/bin/coreclr/osx.arm64.Debug/%s" % file) ],
-    })
-
 def _gen_resx_source_impl(ctx):
     resource_name = ctx.attr.resource_name if ctx.attr.resource_name else ("FxResources.%s.SR" % ctx.attr.assembly_name)
     ctx.actions.run(
