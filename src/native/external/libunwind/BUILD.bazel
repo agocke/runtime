@@ -1,8 +1,11 @@
 # Bundled GNU libunwind for linux-x64.
 # Used by CoreCLR PAL for stack unwinding on Linux.
+# On macOS, the system libunwind is used instead — this target provides an
+# empty library so that deps can reference it unconditionally.
 # Matches CMake: src/native/external/libunwind_extras/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -10,12 +13,12 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 cc_library(
     name = "libunwind_config",
-    hdrs = [
-        "bazel/linux-glibc-x64/include/libunwind-common.h",
+    hdrs = ["bazel/linux-glibc-x64/include/libunwind-common.h",
         "bazel/linux-glibc-x64/include/libunwind.h",
         "bazel/linux-glibc-x64/include/tdep/libunwind_i.h",
     ],
     strip_include_prefix = "bazel/linux-glibc-x64/include",
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 # Internal config.h — not exposed to dependents to avoid name collisions.
@@ -23,6 +26,7 @@ cc_library(
     name = "libunwind_internal_config",
     hdrs = ["bazel/linux-glibc-x64/include/config.h"],
     strip_include_prefix = "bazel/linux-glibc-x64/include",
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 # --- Shared copts and defines ---
@@ -41,6 +45,7 @@ LIBUNWIND_COPTS = [
 ]
 
 LIBUNWIND_DEFINES = [
+    "_GNU_SOURCE",
     "HAVE___THREAD=0",
     "PACKAGE_STRING=\\\"\\\"",
     "PACKAGE_BUGREPORT=\\\"\\\"",
@@ -62,8 +67,14 @@ LIBUNWIND_INTERNAL_HDRS = glob(
 # G*.c files are compiled directly AND exposed as textual_hdrs so that
 # L*.c files (which define UNW_LOCAL_ONLY) can #include them.
 
+# On macOS, the system libunwind is used; provide an empty stub.
 cc_library(
-    name = "libunwind",
+    name = "libunwind_empty",
+    visibility = ["//src/coreclr:__subpackages__"],
+)
+
+cc_library(
+    name = "libunwind_linux",
     srcs = [
         # --- libunwind_la_SOURCES_common ---
         "src/os-linux.c",
@@ -176,7 +187,7 @@ cc_library(
         # elf64.c includes elfxx.c
         "src/elfxx.c",
     ],
-    copts = LIBUNWIND_COPTS,
+    copts = LIBUNWIND_COPTS + CLR_CONFIG_COPTS,
     defines = LIBUNWIND_DEFINES,
     hdrs = glob([
         "include/*.h",
@@ -192,6 +203,16 @@ cc_library(
         ":libunwind_config",
         ":libunwind_internal_config",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# Platform-selecting alias: GNU libunwind on Linux, empty stub on macOS.
+alias(
+    name = "libunwind",
+    actual = select({
+        "@platforms//os:macos": ":libunwind_empty",
+        "//conditions:default": ":libunwind_linux",
+    }),
 )
 
 # --- Tests ---
@@ -209,9 +230,11 @@ _LIBUNWIND_TEST_DEFINES = [
 
 cc_test(
     name = "test_flush_cache",
+    size = "small",
     srcs = ["tests/test-flush-cache.c"],
     copts = _LIBUNWIND_TEST_COPTS,
     defines = _LIBUNWIND_TEST_DEFINES,
     linkstatic = True,
-    deps = [":libunwind"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [":libunwind_linux"],
 )

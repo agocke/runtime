@@ -3,6 +3,9 @@ load(
     "//:defs.bzl",
     "NETCOREAPP_CURRENT",
     "csharp_library",
+    "gen_assembly_info",
+    "gen_illink_substitutions",
+    "gen_target_framework_attrs",
 )
 
 load(
@@ -31,14 +34,14 @@ LIVE_REFPACK_DEPS = [
     "//src/libraries/System.Linq:ref_System.Linq",
     "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
     "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
-    "//src/libraries:ref_System.Diagnostics.FileVersionInfo",
+    "//src/libraries/System.Diagnostics.FileVersionInfo:ref_System.Diagnostics.FileVersionInfo",
     "//src/libraries:ref_System.Diagnostics.Process",
     "//src/libraries/System.Memory:ref_System.Memory",
     "//src/libraries/System.Runtime.Intrinsics:ref_System.Runtime.Intrinsics",
     "//src/libraries/System.Numerics.Vectors:ref_System.Numerics.Vectors",
     "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
     "//src/libraries:ref_System.ComponentModel.Primitives",
-    "//src/libraries:ref_System.Collections.Specialized",
+    "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
     "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
 ]
 
@@ -174,6 +177,14 @@ def netcoreapp_impl_assembly(
     resx_file = None,
     exclude_sr = False,
     keyfile = None,
+    cls_compliant = True,
+    is_trimmable = True,
+    is_aot_compatible = True,
+    allow_unsafe_blocks = True,
+    nullable = "enable",
+    internals_visible_to = [],
+    resources = [],
+    resource_logical_names = {},
     **kwargs
 ):
     base_name = name[len("impl_"):]
@@ -182,13 +193,80 @@ def netcoreapp_impl_assembly(
         srcs = srcs + [
             "//src/libraries/Common:src/System/SR.cs",
         ]
+
+    # Add SkipLocalsInit.cs (matches MSBuild's inclusion via Common items)
+    srcs = srcs + [
+        "//src/libraries/Common:src/SkipLocalsInit.cs",
+    ]
+
+    # Generated files must be added in the same order as MSBuild:
+    # 1. .NETCoreApp.AssemblyAttributes.cs
+    # 2. System.SR.cs (resx-generated)
+    # 3. AssemblyInfo.cs
+    # 4. Forwards.cs
+
+    # 1. Generate the TargetFrameworkAttribute file
+    tfm_attrs_target = "tfmattrs_" + base_name
+    gen_target_framework_attrs(
+        name = tfm_attrs_target,
+        out = name + "/.NETCoreApp.AssemblyAttributes.cs",
+    )
+    srcs = srcs + [":" + tfm_attrs_target]
+
+    # 2. System.SR.cs is added by the csharp_library wrapper via resx_file
+
+    # 3. Generate the full AssemblyInfo.cs matching MSBuild's WriteCodeFragment
+    # MSBuild adds DefaultDllImportSearchPathsAttribute when referencing
+    # System.Private.CoreLib or System.Runtime.InteropServices
+    _include_dll_safe_search = False
+    for d in deps:
+        dep_str = str(d)
+        if "System.Private.CoreLib" in dep_str or "System.Runtime.InteropServices" in dep_str:
+            _include_dll_safe_search = True
+            break
+
+    assembly_info_target = "assemblyinfo_" + base_name
+    gen_assembly_info(
+        name = assembly_info_target,
+        out = name + "/" + base_name + ".AssemblyInfo.cs",
+        assembly_name = base_name,
+        cls_compliant = cls_compliant,
+        is_trimmable = is_trimmable,
+        is_aot_compatible = is_aot_compatible,
+        include_dll_safe_search_path = _include_dll_safe_search,
+    )
+
+    # 4. Forwards.cs (if facades)
+
+    # Generate ILLink.Substitutions.xml for libraries with string resources
+    resource_logical_names = dict(resource_logical_names)
+    if resx_file != None:
+        illink_target = "illink_" + base_name
+        illink_out = name + "/ILLink.Substitutions.xml"
+        gen_illink_substitutions(
+            name = illink_target,
+            out = illink_out,
+            assembly_name = base_name,
+            resource_name = "FxResources.%s.SR" % base_name,
+        )
+        resources = resources + [":" + illink_target]
+        # Key is basename — rules_dotnet looks up resource_logical_names by f.basename
+        resource_logical_names["ILLink.Substitutions.xml"] = "ILLink.Substitutions.xml"
+
+    # Match MSBuild compiler options
     compiler_options = compiler_options + [
         "/checksumalgorithm:SHA256",
         "/publicsign+",
+        # Match MSBuild's /features flags
+        "/features:strict",
+        "/features:nullablePublicOnly",
     ]
 
+    # Build suffix_srcs in MSBuild order: AssemblyInfo → Forwards
+    # These go AFTER the resx-generated System.SR.cs (which is inserted by csharp_library)
+    suffix_srcs = [":" + assembly_info_target]
     if generate_facades:
-        forwards_cs = name + ".Forwards.cs"
+        forwards_cs = name + "/" + base_name + ".Forwards.cs"
         gen_facades(
             name = "facade_" + base_name,
             srcs = srcs,
@@ -198,22 +276,31 @@ def netcoreapp_impl_assembly(
             facade_contract_assembly = facade_contract_assembly,
             facade_omit_types = facade_omit_types,
         )
-        srcs = srcs + [ ":facade_" + base_name ]
+        suffix_srcs = suffix_srcs + [ ":facade_" + base_name ]
 
     csharp_library(
         name = name,
         out = base_name,
         srcs = srcs,
+        suffix_srcs = suffix_srcs,
         defines = defines,
         deps = deps,
-        assembly_version = "10.0.0.0",
+        # Suppress rules_dotnet's auto-generated AssemblyInfo (we provide our own via gen_assembly_info)
+        assembly_version = "",
+        cls_compliant = False,
         visibility = [ "//visibility:public" ],
-        nullable = "annotations",
+        nullable = nullable,
+        allow_unsafe_blocks = allow_unsafe_blocks,
         keyfile = keyfile if keyfile else "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/MSFT.snk",
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         compiler_options = compiler_options,
         resx_file = resx_file,
+        resources = resources,
+        resource_logical_names = resource_logical_names,
+        internals_visible_to = internals_visible_to,
+        # Match MSBuild's langversion:preview
+        langversion = "preview",
         **kwargs
     )
 
@@ -240,13 +327,24 @@ ref_impl_pair = rule(
 def live_csharp_library(
     name,
     deps = [],
+    nullable = "enable",
+    compiler_options = [],
     **kwargs
 ):
     deps = deps + LIVE_REFPACK_DEPS
 
+    # Match MSBuild compiler options for features (nullable/strict)
+    compiler_options = compiler_options + [
+        "/features:strict",
+        "/features:nullablePublicOnly",
+    ]
+
     csharp_library(
         name = name,
         deps = deps,
+        nullable = nullable,
+        langversion = "preview",
+        compiler_options = compiler_options,
         disable_implicit_framework_refs = True,
         target_frameworks = [ NETCOREAPP_CURRENT ],
         **kwargs

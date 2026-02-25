@@ -1,0 +1,9 @@
+load("//src/tests:live_test.bzl", "shared_testhost")
+
+# Shared testhost directory containing SDK + Core_Root assemblies.
+# Built once and referenced by all library tests to avoid redundant
+# ~90MB file copies per test (48 tests × 90MB = ~4.3GB eliminated).
+shared_testhost(
+    name = "shared_testhost",
+    visibility = ["//visibility:public"],
+)

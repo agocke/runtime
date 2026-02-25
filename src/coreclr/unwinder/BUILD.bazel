@@ -1,8 +1,8 @@
-# Stack unwinder for linux-x64.
+# Stack unwinder.
 # Matches CMake: src/coreclr/unwinder/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -10,9 +10,15 @@ cc_library(
     name = "unwinder_wks",
     srcs = [
         "baseunwinder.cpp",
-        "amd64/unwinder.cpp",
-    ] + glob(
-        ["amd64/*.h"],
+    ] + select({
+        "@platforms//cpu:arm64": [
+            "arm64/unwinder.cpp",
+        ],
+        "//conditions:default": [
+            "amd64/unwinder.cpp",
+        ],
+    }) + glob(
+        ["amd64/*.h", "arm64/*.h"],
         allow_empty = True,
     ),
     hdrs = glob(
@@ -22,16 +28,24 @@ cc_library(
     copts = [
         # Must come before CORECLR_COPTS so that <common.h> resolves to vm/common.h
         "-Isrc/coreclr/vm",
-        "-Isrc/coreclr/vm/amd64",
-    ] + CORECLR_COPTS + [
+    ] + select({
+        "@platforms//cpu:arm64": [
+            "-Isrc/coreclr/vm/arm64",
+            "-Isrc/coreclr/unwinder/arm64",
+        ],
+        "//conditions:default": [
+            "-Isrc/coreclr/vm/amd64",
+            "-Isrc/coreclr/unwinder/amd64",
+        ],
+    }) + CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/unwinder",
-        "-Isrc/coreclr/unwinder/amd64",
         "-Isrc/coreclr/debug/ee",
         "-Isrc/coreclr/gc",
         "-Isrc/coreclr/gcdump",
         "-Isrc/coreclr/debug/daccess",
         "-Isrc/coreclr/interop/inc",
     ],
+    local_defines = CLR_CONFIG_DEFINES,
     includes = ["."],
     alwayslink = True,
     deps = ["//src/coreclr/inc:coreclr_inc"],

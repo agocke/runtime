@@ -23,4 +23,5 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
     ],
     resx_file = "src/Resources/Strings.resx",
+    nullable = "annotations",
 )

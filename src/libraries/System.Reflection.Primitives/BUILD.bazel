@@ -12,3 +12,14 @@ netcoreapp_ref_assembly(
         "//src/libraries:ref_System.Runtime",
     ],
 )
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Reflection.Primitives",
+    srcs = [],
+    deps = [
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
+    ],
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Reflection.Primitives",
+    exclude_sr = True,
+)

@@ -3,29 +3,36 @@
 Produces a tree artifact matching the standard .NET runtime hosting layout:
     {name}/
         dotnet                                          # host executable
-        host/fxr/{version}/libhostfxr.so                # framework resolver
+        host/fxr/{version}/libhostfxr.{so,dylib}       # framework resolver
         shared/Microsoft.NETCore.App/{version}/          # shared framework
-            libcoreclr.so
-            libhostpolicy.so
-            libSystem.*.so
+            libcoreclr.{so,dylib}
+            libhostpolicy.{so,dylib}
+            libSystem.*.{so,dylib}
 
-Shared libraries and executables are stripped during assembly, with debug
-symbols extracted to separate .dbg files — matching CMake's
-install_with_stripped_symbols() from eng/native/functions.cmake.
+On Linux, shared libraries are stripped with objcopy and debug symbols
+extracted to .dbg files — matching CMake's install_with_stripped_symbols()
+from eng/native/functions.cmake.
+
+On macOS, dsymutil is used to extract debug symbols into .dSYM bundles and
+the strip command removes debug info from the binary.
 """
 
 def _strip_commands(dst):
-    """Generate objcopy commands to split debug symbols, matching CMake strip_symbols().
+    """Generate platform-aware strip commands.
 
-    Produces:
-        {dst}      - stripped binary with .gnu_debuglink
-        {dst}.dbg  - extracted debug symbols
+    On Linux: objcopy to split debug symbols.
+    On macOS: dsymutil + strip (objcopy is not available).
     """
     return [
         "chmod u+w \"{dst}\"".format(dst = dst),
-        "objcopy --only-keep-debug \"{dst}\" \"{dst}.dbg\"".format(dst = dst),
-        "objcopy --strip-debug --strip-unneeded \"{dst}\"".format(dst = dst),
-        "objcopy --add-gnu-debuglink=\"{dst}.dbg\" \"{dst}\"".format(dst = dst),
+        ("if [ \"$(uname)\" = \"Darwin\" ]; then " +
+            "dsymutil \"{dst}\" -o \"{dst}.dSYM\" 2>/dev/null || true && " +
+            "strip -x \"{dst}\"; " +
+        "else " +
+            "objcopy --only-keep-debug \"{dst}\" \"{dst}.dbg\" && " +
+            "objcopy --strip-debug --strip-unneeded \"{dst}\" && " +
+            "objcopy --add-gnu-debuglink=\"{dst}.dbg\" \"{dst}\"; " +
+        "fi").format(dst = dst),
     ]
 
 def _runtime_layout_impl(ctx):

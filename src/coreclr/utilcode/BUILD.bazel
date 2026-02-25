@@ -3,7 +3,7 @@
 # Matches CMake: src/coreclr/utilcode/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -76,11 +76,12 @@ cc_library(
         "allocmemtracker.cpp",
         "executableallocator.cpp",
     ] + _UTILCODE_HDRS,
-    copts = CORECLR_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/utilcode",
         # Replicate CMake's target_precompile_headers(utilcode PRIVATE [["stdafx.h"]])
         "-include", "src/coreclr/utilcode/stdafx.h",
     ],
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
     alwayslink = True,
     deps = [
@@ -96,10 +97,11 @@ cc_library(
     srcs = _UTILCODE_COMMON_SOURCES + [
         "hostimpl.cpp",
     ] + _UTILCODE_HDRS,
-    copts = CORECLR_COPTS + [
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-Isrc/coreclr/utilcode",
         "-include", "src/coreclr/utilcode/stdafx.h",
     ],
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + [
         "SELF_NO_HOST",
     ],

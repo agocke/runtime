@@ -29,4 +29,3 @@ gen_resx_source(
     resx_file = "SharedStrings.resx",
     visibility = ["//src/tools/illink:__subpackages__"],
 )
-

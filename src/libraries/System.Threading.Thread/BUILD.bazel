@@ -14,3 +14,14 @@ netcoreapp_ref_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
 )
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Threading.Thread",
+    srcs = [],
+    deps = [
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
+    ],
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Threading.Thread",
+    exclude_sr = True,
+)

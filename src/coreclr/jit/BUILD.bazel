@@ -3,7 +3,7 @@
 # Matches CMake: src/coreclr/jit/CMakeLists.txt + jit/static/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -202,12 +202,14 @@ _JIT_WASM_SOURCES = [
 _JIT_COPTS = [
     "-Isrc/coreclr/jit",
     "-Isrc/coreclr/jit/jitstd",
-] + CORECLR_COPTS + [
+] + CORECLR_COPTS + CLR_CONFIG_COPTS + [
     "-include", "src/coreclr/jit/jitpch.h",
     "-Wno-error",
     "-Wno-endif-labels",
     "-Wno-changes-meaning",
     "-Wno-sizeof-pointer-div",
+    # emitarm64.h uses static_assert without message (C++17) in a C++11 build.
+    "-Wno-c++17-extensions",
 ]
 
 _JIT_DEFINES_BASE = [
@@ -226,9 +228,13 @@ _JIT_SIMD_DEFINES = [
 
 cc_library(
     name = "clrjit_static",
-    srcs = _JIT_COMMON_SOURCES + _JIT_AMD64_SOURCES,
+    srcs = _JIT_COMMON_SOURCES + select({
+        "@platforms//cpu:arm64": _JIT_ARM64_SOURCES,
+        "//conditions:default": _JIT_AMD64_SOURCES,
+    }),
     textual_hdrs = ["smcommon.cpp"],
     copts = _JIT_COPTS,
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + _JIT_DEFINES_BASE + _JIT_SIMD_DEFINES,
     deps = [
         "//src/coreclr/inc:coreclr_inc",
@@ -251,22 +257,33 @@ cc_library(
 
 cc_binary(
     name = "libclrjit.so",
-    srcs = _JIT_COMMON_SOURCES + _JIT_AMD64_SOURCES,
+    srcs = _JIT_COMMON_SOURCES + select({
+        "@platforms//cpu:arm64": _JIT_ARM64_SOURCES,
+        "//conditions:default": _JIT_AMD64_SOURCES,
+    }),
     linkshared = True,
     linkstatic = True,
-    copts = _JIT_COPTS,
+    copts = _JIT_COPTS + CLR_CONFIG_COPTS,
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + _JIT_DEFINES_BASE + _JIT_SIMD_DEFINES + [
         "FEATURE_NO_HOST",
         "SELF_NO_HOST",
         "JIT_STANDALONE_BUILD",
     ],
-    linkopts = [
-        "-Wl,-Bsymbolic",
-        "-Wl,--version-script=$(location bazel/clrjit.exports)",
-    ],
-    additional_linker_inputs = [
-        "bazel/clrjit.exports",
-    ],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-Wl,-install_name,@rpath/libclrjit.dylib",
+            "-Wl,-exported_symbols_list,$(location bazel/clrjit.exports.mac)",
+        ],
+        "//conditions:default": [
+            "-Wl,-Bsymbolic",
+            "-Wl,--version-script=$(location bazel/clrjit.exports)",
+        ],
+    }),
+    additional_linker_inputs = select({
+        "@platforms//os:macos": ["bazel/clrjit.exports.mac"],
+        "//conditions:default": ["bazel/clrjit.exports"],
+    }),
     deps = [
         ":jit_textual_hdrs",
         "//src/coreclr/gcinfo",
@@ -304,12 +321,18 @@ _CROSS_JIT_DEFINES = _JIT_DEFINES_BASE + [
     "JIT_STANDALONE_BUILD",
 ]
 
-_CROSS_JIT_LINKOPTS = [
-    "-Wl,-Bsymbolic",
-    "-Wl,--version-script=$(location bazel/clrjit.exports)",
-]
+_CROSS_JIT_LINKOPTS = select({
+    "@platforms//os:macos": [],
+    "//conditions:default": [
+        "-Wl,-Bsymbolic",
+        "-Wl,--version-script=$(location bazel/clrjit.exports)",
+    ],
+})
 
-_CROSS_JIT_LINKER_INPUTS = ["bazel/clrjit.exports"]
+_CROSS_JIT_LINKER_INPUTS = select({
+    "@platforms//os:macos": [],
+    "//conditions:default": ["bazel/clrjit.exports"],
+})
 
 _CROSS_JIT_DEPS = [
     ":jit_textual_hdrs",
@@ -335,6 +358,7 @@ cc_binary(
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
     deps = _CROSS_JIT_DEPS + ["//src/coreclr/gcinfo:gcinfo_universal_arm64"],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
     visibility = ["//visibility:public"],
 )
 
@@ -355,6 +379,7 @@ cc_binary(
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
     deps = _CROSS_JIT_DEPS + ["//src/coreclr/gcinfo:gcinfo_unix_x64"],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
     visibility = ["//visibility:public"],
 )
 
@@ -373,6 +398,7 @@ cc_binary(
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
     deps = _CROSS_JIT_DEPS + ["//src/coreclr/gcinfo:gcinfo_win_x64"],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
     visibility = ["//visibility:public"],
 )
 
@@ -391,6 +417,7 @@ cc_binary(
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
     deps = _CROSS_JIT_DEPS + ["//src/coreclr/gcinfo:gcinfo_universal_arm"],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
     visibility = ["//visibility:public"],
 )
 
@@ -408,6 +435,7 @@ cc_binary(
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
     deps = _CROSS_JIT_DEPS + ["//src/coreclr/gcinfo:gcinfo_win_x86"],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
     visibility = ["//visibility:public"],
 )
 

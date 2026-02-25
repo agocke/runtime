@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/vm/CMakeLists.txt + vm/wks/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -22,6 +22,9 @@ cc_library(
             "amd64/*.h",
             "amd64/*.hpp",
             "amd64/*.inl",
+            "arm64/*.h",
+            "arm64/*.hpp",
+            "arm64/*.inl",
             "i386/*.h",
         ],
         allow_empty = True,
@@ -31,14 +34,24 @@ cc_library(
 # Common copts for VM targets (vm/ is the CMAKE_INCLUDE_CURRENT_DIR).
 _VM_COPTS = [
     "-Isrc/coreclr/vm",
-    "-Isrc/coreclr/vm/amd64",
     "-Isrc/coreclr",
     "-Isrc/coreclr/gc",
     "-Isrc/coreclr/gc/env",
     "-Isrc/coreclr/runtime",
     "-Isrc/coreclr/vm/eventing/eventpipe",
+    "-Isrc/coreclr/debug/inc",
+    "-Isrc/coreclr/debug/inc/dump",
     "-Isrc/native/corehost",
-] + CORECLR_COPTS + [
+] + select({
+    "@platforms//cpu:arm64": [
+        "-Isrc/coreclr/vm/arm64",
+        "-Isrc/coreclr/debug/inc/arm64",
+    ],
+    "//conditions:default": [
+        "-Isrc/coreclr/vm/amd64",
+        "-Isrc/coreclr/debug/inc/amd64",
+    ],
+}) + CORECLR_COPTS + CLR_CONFIG_COPTS + [
     "-include", "src/coreclr/vm/common.h",
     "-Wno-error",
 ]
@@ -53,36 +66,58 @@ _VM_DEFINES = CORECLR_DEFINES + [
 # Assembly files compiled separately (no C++ PCH).
 cc_library(
     name = "cee_wks_asm",
-    srcs = [
-        "amd64/AllocSlow.S",
-        "amd64/CachedInterfaceDispatchCoreCLR.S",
-        "amd64/Context.S",
-        "amd64/StubPrecodeDynamicHelpers.S",
-        "amd64/asmhelpers.S",
-        "amd64/calldescrworkeramd64.S",
-        "amd64/externalmethodfixupthunk.S",
-        "amd64/getstate.S",
-        "amd64/jithelpers_fast.S",
-        "amd64/jithelpers_fastwritebarriers.S",
-        "amd64/jithelpers_singleappdomain.S",
-        "amd64/jithelpers_slow.S",
-        "amd64/patchedcode.S",
-        "amd64/pinvokestubs.S",
-        "amd64/redirectedhandledjitcase.S",
-        "amd64/theprestubamd64.S",
-        "amd64/thunktemplates.S",
-        "amd64/umthunkstub.S",
-        "amd64/unixasmhelpers.S",
-        "amd64/virtualcallstubamd64.S",
-        "//src/coreclr/runtime:amd64/AllocFast.S",
-        "//src/coreclr/runtime:amd64/StubDispatch.S",
-        "//src/coreclr/runtime:amd64/WriteBarriers.S",
-    ],
+    srcs = select({
+        "@platforms//cpu:arm64": [
+            "arm64/AllocSlow.S",
+            "arm64/CachedInterfaceDispatchCoreCLR.S",
+            "arm64/StubPrecodeDynamicHelpers.S",
+            "arm64/asmhelpers.S",
+            "arm64/calldescrworkerarm64.S",
+            "arm64/patchedcode.S",
+            "arm64/pinvokestubs.S",
+            "arm64/thunktemplates.S",
+            "//src/coreclr/runtime:arm64/AllocFast.S",
+            "//src/coreclr/runtime:arm64/StubDispatch.S",
+            "//src/coreclr/runtime:arm64/WriteBarriers.S",
+        ],
+        "//conditions:default": [
+            "amd64/AllocSlow.S",
+            "amd64/CachedInterfaceDispatchCoreCLR.S",
+            "amd64/Context.S",
+            "amd64/StubPrecodeDynamicHelpers.S",
+            "amd64/asmhelpers.S",
+            "amd64/calldescrworkeramd64.S",
+            "amd64/externalmethodfixupthunk.S",
+            "amd64/getstate.S",
+            "amd64/jithelpers_fast.S",
+            "amd64/jithelpers_fastwritebarriers.S",
+            "amd64/jithelpers_singleappdomain.S",
+            "amd64/jithelpers_slow.S",
+            "amd64/patchedcode.S",
+            "amd64/pinvokestubs.S",
+            "amd64/redirectedhandledjitcase.S",
+            "amd64/theprestubamd64.S",
+            "amd64/thunktemplates.S",
+            "amd64/umthunkstub.S",
+            "amd64/unixasmhelpers.S",
+            "amd64/virtualcallstubamd64.S",
+            "//src/coreclr/runtime:amd64/AllocFast.S",
+            "//src/coreclr/runtime:amd64/StubDispatch.S",
+            "//src/coreclr/runtime:amd64/WriteBarriers.S",
+        ],
+    }),
     copts = [
         "-Isrc/coreclr/vm",
-        "-Isrc/coreclr/vm/amd64",
         "-Isrc/coreclr",
-    ] + CORECLR_COPTS,
+    ] + select({
+        "@platforms//cpu:arm64": ["-Isrc/coreclr/vm/arm64"],
+        "//conditions:default": ["-Isrc/coreclr/vm/amd64"],
+    }) + CORECLR_COPTS + CLR_CONFIG_COPTS,
+    local_defines = CLR_CONFIG_DEFINES + select({
+        "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//conditions:default": [],
+    }),
     defines = _VM_DEFINES,
     linkstatic = True,
     deps = [
@@ -292,14 +327,28 @@ cc_library(
         "rcwrefcache.cpp",
         # Sources from runtime/ directory
         "//src/coreclr/runtime:CachedInterfaceDispatch.cpp",
-        # AMD64 architecture sources
-        "amd64/cgenamd64.cpp",
-        "amd64/excepamd64.cpp",
-        "amd64/profiler.cpp",
-        "amd64/stublinkeramd64.cpp",
         "exceptionhandling.cpp",
         "gcinfodecoder.cpp",
         "writebarriermanager.cpp",
+    ] + select({
+        # FEATURE_OBJCMARSHAL — Apple only (clrfeatures.cmake)
+        "@platforms//os:macos": ["interoplibinterface_objc.cpp"],
+        "//conditions:default": [],
+    }) + select({
+        "@platforms//cpu:arm64": [
+            # ARM64 architecture sources
+            "arm64/stubs.cpp",
+            "arm64/profiler.cpp",
+            "arm64/singlestepper.cpp",
+        ],
+        "//conditions:default": [
+            # AMD64 architecture sources
+            "amd64/cgenamd64.cpp",
+            "amd64/excepamd64.cpp",
+            "amd64/profiler.cpp",
+            "amd64/stublinkeramd64.cpp",
+        ],
+    }) + [
         # GC sources (integrated into VM)
         "//src/coreclr/gc:gcbridge.cpp",
         "//src/coreclr/gc:gccommon.cpp",
@@ -326,7 +375,15 @@ cc_library(
         "//src/coreclr/gc:gcee.cpp",
         "//src/coreclr/System.Private.CoreLib:src/System/Runtime/ExceptionServices/AsmOffsets.cs",
     ],
-    copts = _VM_COPTS,
+    copts = _VM_COPTS + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mcx16"],
+    }),
+    local_defines = CLR_CONFIG_DEFINES + select({
+        "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//conditions:default": [],
+    }),
     defines = _VM_DEFINES + ["GC_DESCRIPTOR"] + select({
         "//:debug_mode": ["WRITE_BARRIER_CHECK"],
         "//conditions:default": [],
@@ -357,7 +414,15 @@ cc_library(
         "codeman.cpp",
         "peimagelayout.cpp",
     ],
-    copts = _VM_COPTS,
+    copts = _VM_COPTS + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mcx16"],
+    }),
+    local_defines = CLR_CONFIG_DEFINES + select({
+        "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//conditions:default": [],
+    }),
     defines = _VM_DEFINES,
     alwayslink = True,
     deps = [

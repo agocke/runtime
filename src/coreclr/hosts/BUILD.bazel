@@ -10,11 +10,17 @@ cc_library(
     includes = ["inc"],
 )
 
-# Pre-generated config.h for linux-x64 (HAVE_GETAUXVAL=1, HAVE_DIRENT_D_TYPE=1)
+# Pre-generated config.h
 cc_library(
     name = "corerun_config",
-    hdrs = ["corerun/bazel/linux-glibc-x64/config.h"],
-    strip_include_prefix = "corerun/bazel/linux-glibc-x64",
+    hdrs = select({
+        "@platforms//os:macos": ["corerun/bazel/darwin-arm64/config.h"],
+        "//conditions:default": ["corerun/bazel/linux-glibc-x64/config.h"],
+    }),
+    strip_include_prefix = select({
+        "@platforms//os:macos": "corerun/bazel/darwin-arm64",
+        "//conditions:default": "corerun/bazel/linux-glibc-x64",
+    }),
 )
 
 cc_binary(
@@ -29,11 +35,16 @@ cc_binary(
         "-Isrc/coreclr/hosts/corerun",
         "-Isrc/native",
     ],
-    linkopts = [
-        "-ldl",
-        "-lpthread",
-        "-rdynamic",
-    ],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-lpthread",
+        ],
+        "//conditions:default": [
+            "-ldl",
+            "-lpthread",
+            "-rdynamic",
+        ],
+    }),
     visibility = ["//visibility:public"],
     deps = [
         ":corerun_config",

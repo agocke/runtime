@@ -1,8 +1,8 @@
-# libcoreclr.so — the main CoreCLR runtime shared library.
+# libcoreclr — the main CoreCLR runtime shared library.
 # Matches CMake: src/coreclr/dlls/mscoree/coreclr/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,17 +16,20 @@ cc_binary(
     linkstatic = True,
     copts = [
         "-Isrc/coreclr/vm",
-        "-Isrc/coreclr/vm/amd64",
         "-Isrc/coreclr",
         "-Isrc/coreclr/gc",
         "-Isrc/coreclr/gc/env",
         "-Isrc/coreclr/runtime",
         "-Isrc/coreclr/vm/eventing/eventpipe",
         "-Isrc/native/corehost",
-    ] + CORECLR_COPTS + [
+    ] + select({
+        "@platforms//cpu:arm64": ["-Isrc/coreclr/vm/arm64"],
+        "//conditions:default": ["-Isrc/coreclr/vm/amd64"],
+    }) + CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-include", "src/coreclr/vm/common.h",
         "-Wno-error",
     ],
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + [
         "FX_VER_INTERNALNAME_STR=CoreCLR.dll",
         "FEATURE_VIRTUAL_STUB_DISPATCH",
@@ -34,14 +37,23 @@ cc_binary(
         "FEATURE_HW_INTRINSICS",
         "FEATURE_MASKED_HW_INTRINSICS",
     ],
-    linkopts = [
-        "-Wl,-Bsymbolic",
-        "-Wl,-soname,libcoreclr.so",
-        "-Wl,--version-script=$(location bazel/coreclr.exports)",
-    ],
-    additional_linker_inputs = [
-        "bazel/coreclr.exports",
-    ],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-Wl,-install_name,@rpath/libcoreclr.dylib",
+            "-Wl,-exported_symbols_list,$(location bazel/coreclr.exports.mac)",
+            "-framework", "CoreFoundation",
+            "-framework", "Security",
+        ],
+        "//conditions:default": [
+            "-Wl,-Bsymbolic",
+            "-Wl,-soname,libcoreclr.so",
+            "-Wl,--version-script=$(location bazel/coreclr.exports)",
+        ],
+    }),
+    additional_linker_inputs = select({
+        "@platforms//os:macos": ["bazel/coreclr.exports.mac"],
+        "//conditions:default": ["bazel/coreclr.exports"],
+    }),
     deps = [
         # CORECLR_LIBRARIES (order matters for static linking)
         "//src/coreclr/dlls/mscorrc",
@@ -85,4 +97,12 @@ cc_binary(
         "//src/native/eventpipe:eventpipe-headers",
         "//src/coreclr/nativeresources:nativeresourcestring",
     ],
+)
+
+# On macOS, produce libcoreclr.dylib from libcoreclr.so
+genrule(
+    name = "libcoreclr_dylib",
+    srcs = [":libcoreclr.so"],
+    outs = ["libcoreclr.dylib"],
+    cmd = "cp $< $@",
 )

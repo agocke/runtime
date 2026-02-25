@@ -2,7 +2,7 @@
 # Nearly all coreclr components depend on this.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CORECLR_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -20,7 +20,7 @@ cc_library(
         allow_empty = True,
     ) + ["mpl/type_list"],
     textual_hdrs = glob(["*.cpp"]),
-    copts = CORECLR_COPTS,
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
     defines = CORECLR_DEFINES,
     includes = ["."],
     deps = [
@@ -57,7 +57,8 @@ cc_library(
         "//src/coreclr/pal:prebuilt/idl/xclrdata_i.cpp",
         "//src/coreclr/pal:prebuilt/idl/xcordebug_i.cpp",
     ],
-    copts = CORECLR_COPTS + ["-D_MIDL_USE_GUIDDEF_"],
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + ["-D_MIDL_USE_GUIDDEF_"],
+    local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
     alwayslink = True,
     deps = [":coreclr_inc"],

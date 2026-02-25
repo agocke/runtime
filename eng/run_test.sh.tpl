@@ -11,6 +11,7 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
   { echo>&2 "ERROR: cannot find $f"; exit 1; }; f=; set -e
 # --- end runfiles.bash initialization v3 ---
 
+exit_code=0
 $(rlocation TEMPLATED_core_root)/corerun $(rlocation TEMPLATED_entry_dll) "$@" || exit_code=$?
 
 # CoreCLR tests run successfully if they return 100
