@@ -9,7 +9,6 @@ load("@rules_dotnet//dotnet/private/rules/csharp:binary.bzl", "compile_csharp_ex
 load("@rules_dotnet//dotnet/private/rules/csharp/actions:csharp_assembly.bzl", "AssemblyAction")
 load("@rules_dotnet//dotnet/private:common.bzl",
     "collect_transitive_runfiles",
-    "generate_depsjson",
     "generate_runtimeconfig",
     "get_toolchain",
     "is_core_framework",
@@ -236,23 +235,7 @@ def _xunit_library_test_impl(ctx):
     #    processes resolve libhostpolicy.so from the testhost.
     test_runtimeconfig = _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles)
 
-    # Generate deps.json for the test assembly.
-    test_depsfile = ctx.actions.declare_file(
-        "%s/%s/%s.deps.json" % (ctx.label.name, tfm, dll.basename.replace(".dll", "")),
-    )
-    depsjson_struct = generate_depsjson(
-        ctx,
-        target_framework = tfm,
-        is_self_contained = False,
-        target_assembly_runtime_info = runtime_provider,
-        transitive_runtime_deps = transitive_runtime_deps,
-        use_relative_paths = True,
-    )
-    ctx.actions.write(
-        output = test_depsfile,
-        content = json.encode_indent(depsjson_struct),
-    )
-    additional_runfiles.append(test_depsfile)
+    test_depsfile = _generate_test_depsfile(ctx, dll, tfm, additional_runfiles)
 
     # Get the shared testhost directory from the attribute
     testhost = ctx.file._shared_testhost
@@ -345,6 +328,62 @@ def _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles):
             additional_runfiles.append(helper_runtimeconfig)
 
     return test_runtimeconfig
+
+def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
+    """Generate a deps.json listing all test output DLLs so dotnet adds them to TPA.
+
+    The shared testhost only contains framework assemblies (SDK + Core_Root).
+    Non-framework DLLs (xunit, test helpers, the library under test) live in the
+    app directory alongside xunit.console.dll.  The deps.json must list these by
+    filename so the host probes the app directory for them.
+    """
+    test_name = dll.basename.replace(".dll", "")
+    test_depsfile = ctx.actions.declare_file(
+        "%s/%s/%s.deps.json" % (ctx.label.name, tfm, test_name),
+    )
+
+    # Collect all DLL basenames from the output directory.
+    dll_entries = []
+    seen = {}
+    for f in additional_runfiles:
+        if f.path.endswith(".dll") and f.basename not in seen:
+            seen[f.basename] = True
+            dll_entries.append('          "%s": {}' % f.basename)
+
+    # Also include the test assembly itself.
+    if dll.basename not in seen:
+        dll_entries.append('          "%s": {}' % dll.basename)
+
+    runtime_block = ",\n".join(dll_entries)
+
+    depsfile_content = """\
+{{
+  "runtimeTarget": {{
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  }},
+  "targets": {{
+    ".NETCoreApp,Version=v10.0": {{
+      "{test_name}/1.0.0": {{
+        "runtime": {{
+{runtime_block}
+        }}
+      }}
+    }}
+  }},
+  "libraries": {{
+    "{test_name}/1.0.0": {{
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }}
+  }}
+}}
+""".format(test_name = test_name, runtime_block = runtime_block)
+    ctx.actions.write(output = test_depsfile, content = depsfile_content)
+    additional_runfiles.append(test_depsfile)
+
+    return test_depsfile
 
 def _shared_testhost_impl(ctx):
     """Build a shared testhost directory that all library tests can reference.
