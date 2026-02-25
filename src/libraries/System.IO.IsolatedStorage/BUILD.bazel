@@ -1,5 +1,12 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
 
+exports_files([
+    "src/System/IO/IsolatedStorage/Helper.cs",
+    "src/System/IO/IsolatedStorage/Helper.Unix.cs",
+    "src/System/IO/IsolatedStorage/Helper.NonMobile.cs",
+    "src/Resources/Strings.resx",
+])
+
 netcoreapp_ref_assembly(
     name = "ref_System.IO.IsolatedStorage",
     srcs = [
