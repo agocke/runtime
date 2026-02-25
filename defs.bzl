@@ -19,15 +19,18 @@ _INFORMATIONAL_VERSION = PRODUCT_VERSION + "-dev"
 
 def _gen_resx_source_impl(ctx):
     resource_name = ctx.attr.resource_name if ctx.attr.resource_name else ("FxResources.%s.SR" % ctx.attr.assembly_name)
+    args = [
+        "--output-path=%s" % ctx.outputs.out.path,
+        "--resource-name=%s" % resource_name,
+        "--resource-file=%s" % ctx.file.resx_file.path,
+    ]
+    if ctx.attr.resource_class_name:
+        args.append("--resource-class-name=%s" % ctx.attr.resource_class_name)
     ctx.actions.run(
         executable = ctx.executable._exe,
         inputs = [ctx.file.resx_file],
         outputs = [ctx.outputs.out],
-        arguments = [
-            "--output-path=%s" % ctx.outputs.out.path,
-            "--resource-name=%s" % resource_name,
-            "--resource-file=%s" % ctx.file.resx_file.path,
-        ],
+        arguments = args,
     )
 
 gen_resx_source = rule(
@@ -36,6 +39,7 @@ gen_resx_source = rule(
         "out": attr.output(mandatory = True),
         "assembly_name": attr.string(mandatory = True),
         "resource_name": attr.string(mandatory = False, default = ""),
+        "resource_class_name": attr.string(mandatory = False, default = ""),
         "resx_file": attr.label(
             mandatory = True,
             allow_single_file = True,

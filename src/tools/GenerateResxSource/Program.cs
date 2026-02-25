@@ -7,6 +7,7 @@ using System.Diagnostics.CodeAnalysis;
 string? outputPath = null;
 string? resourceName = null;
 string? resourceFile = null;
+string? resourceClassName = null;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -23,6 +24,10 @@ for (int i = 0; i < args.Length; i++)
     {
         resourceFile = resFile;
     }
+    else if (StartsWith(arg, "--resource-class-name=", out var resClass))
+    {
+        resourceClassName = resClass;
+    }
 
 }
 
@@ -32,8 +37,8 @@ var resxGen = new Microsoft.DotNet.Arcade.GenerateResxSource()
     OutputPath = outputPath ?? throw new Exception("No output path specified"),
     ResourceName = resourceName ?? throw new Exception("No resource name specified"),
     ResourceFile = resourceFile ?? throw new Exception("No resource file specified"),
-    ResourceClassName = "System.SR",
-    OmitGetResourceString = true,
+    ResourceClassName = resourceClassName ?? "System.SR",
+    OmitGetResourceString = resourceClassName == null,
     IncludeDefaultValues = true,
 };
 return resxGen.Execute() ? 0 : 1;

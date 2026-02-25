@@ -2,7 +2,7 @@ bazel_dep(name = "rules_dotnet")
 git_override(
     module_name = "rules_dotnet",
     remote = "https://github.com/agocke/rules_dotnet.git",
-    commit = "7a0f9811b11a6414813941085ace37e1937b997e",
+    commit = "4c531483329c63f116bcdaa5287f3118842f326c",
     patches = ["//eng/bazel/patches:rules_dotnet_protoc_platform.patch"],
     patch_strip = 1,
 )
