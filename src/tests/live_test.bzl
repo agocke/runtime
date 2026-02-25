@@ -9,7 +9,6 @@ load("@rules_dotnet//dotnet/private/rules/csharp:binary.bzl", "compile_csharp_ex
 load("@rules_dotnet//dotnet/private/rules/csharp/actions:csharp_assembly.bzl", "AssemblyAction")
 load("@rules_dotnet//dotnet/private:common.bzl",
     "collect_transitive_runfiles",
-    "generate_depsjson",
     "generate_runtimeconfig",
     "get_toolchain",
     "is_core_framework",
@@ -226,13 +225,7 @@ def _xunit_library_test_impl(ctx):
         )
         additional_runfiles.append(dst)
 
-    # Build a testhost: a directory layout with a shared framework containing
-    # Bazel-built assemblies, matching how MSBuild's testhost uses live-built
-    # bits. This ensures the real dotnet hosting pipeline is tested, and that
-    # DEBUG-built assemblies are loaded instead of the SDK's RELEASE versions.
     toolchain = get_toolchain(ctx)
-    dotnet_files = toolchain.dotnetinfo.runtime_files
-    dotnet_file = dotnet_files[0]
     sdk_version = toolchain.dotnetinfo.runtime_version
 
     # Generate runtimeconfig.json files:
@@ -241,10 +234,11 @@ def _xunit_library_test_impl(ctx):
     # 2. For Microsoft.DotNet.RemoteExecutor.dll - so "dotnet exec" child
     #    processes resolve libhostpolicy.so from the testhost.
     test_runtimeconfig = _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles)
+
     test_depsfile = _generate_test_depsfile(ctx, dll, tfm, additional_runfiles)
 
-    testhost = ctx.actions.declare_directory("%s/testhost" % ctx.label.name)
-    _build_testhost(ctx, testhost, dotnet_file, sdk_version, additional_runfiles)
+    # Get the shared testhost directory from the attribute
+    testhost = ctx.file._shared_testhost
 
     windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
     launcher = ctx.actions.declare_file("{}.{}".format(dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = dll)
@@ -336,15 +330,32 @@ def _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles):
     return test_runtimeconfig
 
 def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
-    """Generate a deps.json for the test assembly so dotnet adds it to TPA.
+    """Generate a deps.json listing all test output DLLs so dotnet adds them to TPA.
 
-    Without --depsfile, the host cannot locate the test assembly and xunit
-    throws FileNotFoundException.
+    The shared testhost only contains framework assemblies (SDK + Core_Root).
+    Non-framework DLLs (xunit, test helpers, the library under test) live in the
+    app directory alongside xunit.console.dll.  The deps.json must list these by
+    filename so the host probes the app directory for them.
     """
     test_name = dll.basename.replace(".dll", "")
     test_depsfile = ctx.actions.declare_file(
         "%s/%s/%s.deps.json" % (ctx.label.name, tfm, test_name),
     )
+
+    # Collect all DLL basenames from the output directory.
+    dll_entries = []
+    seen = {}
+    for f in additional_runfiles:
+        if f.path.endswith(".dll") and f.basename not in seen:
+            seen[f.basename] = True
+            dll_entries.append('          "%s": {}' % f.basename)
+
+    # Also include the test assembly itself.
+    if dll.basename not in seen:
+        dll_entries.append('          "%s": {}' % dll.basename)
+
+    runtime_block = ",\n".join(dll_entries)
+
     depsfile_content = """\
 {{
   "runtimeTarget": {{
@@ -355,7 +366,7 @@ def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
     ".NETCoreApp,Version=v10.0": {{
       "{test_name}/1.0.0": {{
         "runtime": {{
-          "{test_dll}": {{}}
+{runtime_block}
         }}
       }}
     }}
@@ -368,44 +379,34 @@ def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
     }}
   }}
 }}
-""".format(test_name = test_name, test_dll = dll.basename)
+""".format(test_name = test_name, runtime_block = runtime_block)
     ctx.actions.write(output = test_depsfile, content = depsfile_content)
     additional_runfiles.append(test_depsfile)
 
     return test_depsfile
 
-def _build_testhost(ctx, testhost, dotnet_file, sdk_version, test_deps):
-    """Assemble a testhost directory with a shared framework from live-built bits.
+def _shared_testhost_impl(ctx):
+    """Build a shared testhost directory that all library tests can reference.
 
-    Layout:
-        testhost/
-          dotnet                               (copied from SDK)
-          host/fxr/<version>/libhostfxr.so     (from SDK)
-          shared/Microsoft.NETCore.App/<version>/
-            <SDK assemblies as base>
-            <Core_Root assemblies override SDK>
-            <test dep assemblies override all>
-
-    The dotnet binary must be a real file (not symlink) inside the testhost
-    so that the host resolves frameworks from this directory, not the SDK's.
+    This rule creates the testhost once, containing SDK + Core_Root assemblies.
+    Individual tests reference this shared testhost instead of each building
+    their own, eliminating ~90MB of redundant file copies per test.
     """
-    core_root = ctx.file._core_root
+    toolchain = ctx.toolchains["@rules_dotnet//dotnet:toolchain_type"]
+    dotnet_file = toolchain.dotnetinfo.runtime_files[0]
+    sdk_version = toolchain.dotnetinfo.runtime_version
+    core_root = ctx.file.core_root
 
-    # Gather test dep DLLs for the override step.
-    test_dep_args = []
-    for f in test_deps:
-        if f.path.endswith(".dll"):
-            test_dep_args.append(f.path)
+    testhost = ctx.actions.declare_directory("testhost")
 
     ctx.actions.run_shell(
-        inputs = [core_root, dotnet_file] + test_deps,
+        inputs = [core_root, dotnet_file],
         outputs = [testhost],
         command = """\
 SDK_ROOT=$(dirname "$(readlink -f "$1")")
 VERSION="$2"
 OUT="$3"
 CORE_ROOT="$4"
-shift 4
 
 FW_DIR="$OUT/shared/Microsoft.NETCore.App/$VERSION"
 mkdir -p "$FW_DIR"
@@ -424,11 +425,6 @@ cp -aL "$SDK_ROOT/shared/Microsoft.NETCore.App/$VERSION/"* "$FW_DIR/"
 
 # Core_Root: Bazel-built runtime + managed assemblies override SDK
 cp -afL "$CORE_ROOT/"* "$FW_DIR/"
-
-# Test dep assemblies have highest priority
-for f in "$@"; do
-  cp -afL "$f" "$FW_DIR/"
-done
 
 # Generate a version-free deps.json matching MSBuild's testhost pattern.
 # The SDK's deps.json contains assemblyVersion/fileVersion constraints that
@@ -457,10 +453,29 @@ done
   printf '}}}},"libraries":{"Microsoft.NETCore.App/%s":{"type":"package","serviceable":false,"sha512":""}}}' "$VERSION"
 } > "$FW_DIR/Microsoft.NETCore.App.deps.json"
 """,
-        arguments = [dotnet_file.path, sdk_version, testhost.path, core_root.path] + test_dep_args,
+        arguments = [dotnet_file.path, sdk_version, testhost.path, core_root.path],
         mnemonic = "BuildTestHost",
-        progress_message = "Building testhost for %s" % ctx.label.name,
+        progress_message = "Building shared testhost",
     )
+
+    return [DefaultInfo(files = depset([testhost]))]
+
+_shared_testhost_rule = rule(
+    _shared_testhost_impl,
+    doc = """Build a shared testhost directory for library tests.""",
+    attrs = {
+        "core_root": attr.label(
+            doc = "The Core_Root directory with Bazel-built runtime assemblies",
+            default = "//:Core_Root",
+            allow_single_file = True,
+        ),
+    },
+    toolchains = ["@rules_dotnet//dotnet:toolchain_type"],
+)
+
+def shared_testhost(name = "shared_testhost", **kwargs):
+    """Create a shared testhost that all library tests can reference."""
+    _shared_testhost_rule(name = name, **kwargs)
 
 _xunit_library_test = rule(
     _xunit_library_test_impl,
@@ -488,6 +503,13 @@ _xunit_library_test = rule(
                       "DLLs matching these basenames are excluded from the test " +
                       "output directory since the testhost provides them.",
                 default = "//src/libraries:impl_netcoreapp",
+            ),
+            "_shared_testhost": attr.label(
+                doc = "The shared testhost directory containing SDK + Core_Root. " +
+                      "Built once and shared across all library tests to avoid " +
+                      "redundant ~90MB file copies per test.",
+                default = "//src/tests:shared_testhost",
+                allow_single_file = True,
             ),
             "writable_test_dir": attr.bool(
                 doc = "Copy test runtime files to a writable directory before running. " +
