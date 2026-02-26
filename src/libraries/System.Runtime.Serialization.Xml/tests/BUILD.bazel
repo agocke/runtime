@@ -1,6 +1,26 @@
 exports_files(glob(["**/*.cs"]))
 
 load("//src/tests:live_test.bzl", "library_test")
+load("@rules_dotnet//dotnet:defs.bzl", "csharp_library")
+load("//:defs.bzl", "NETCOREAPP_CURRENT")
+
+csharp_library(
+    name = "SerializableAssembly",
+    srcs = ["SerializationTypes.cs"],
+    target_frameworks = [NETCOREAPP_CURRENT],
+    deps = [
+        "//src/libraries/System.Runtime.Serialization.Xml:ref_System.Runtime.Serialization.Xml",
+        "//src/libraries/System.Runtime.Serialization.Json:ref_System.Runtime.Serialization.Json",
+        "//src/libraries/System.Runtime.Serialization.Primitives:ref_System.Runtime.Serialization.Primitives",
+        "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
+        "//src/libraries/System.Xml.XDocument:ref_System.Xml.XDocument",
+        "//src/libraries/System.Xml.XmlSerializer:ref_System.Xml.XmlSerializer",
+        "//src/libraries/System.Reflection.Metadata:ref_System.Reflection.Metadata",
+        "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
+        "//src/libraries/System.Drawing.Primitives:ref_System.Drawing.Primitives",
+        "//src/libraries:ref_System.Runtime",
+    ],
+)
 
 library_test(
     name = "System.Runtime.Serialization.Xml.Tests",
@@ -42,4 +62,5 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    data = [":SerializableAssembly"],
 )

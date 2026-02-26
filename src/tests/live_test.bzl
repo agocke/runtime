@@ -215,8 +215,13 @@ def _xunit_library_test_impl(ctx):
 
     # Copy data files (e.g., test content like TinyAssembly.dll) to the output
     # directory next to the test DLL so Assembly.Load can find them.
+    # If data_dir is set, place files in a subdirectory (e.g., "TestData/").
+    data_subdir = ctx.attr.data_dir
     for f in ctx.files.data:
-        dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, f.basename))
+        if data_subdir:
+            dst = ctx.actions.declare_file("%s/%s/%s/%s" % (ctx.label.name, tfm, data_subdir, f.basename))
+        else:
+            dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, f.basename))
         ctx.actions.run_shell(
             inputs = [f],
             outputs = [dst],
