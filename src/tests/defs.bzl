@@ -43,10 +43,6 @@ COMMON_ATTRS = {
         # in their data and we want the TFM graphs to be disconnected
         cfg = default_transition,
     ),
-    "data_dir": attr.string(
-        doc = "Subdirectory under the test output directory where data files should be placed.",
-        default = "",
-    ),
     "compile_data": attr.label_list(
         doc = "Additional compile time files.",
         allow_files = True,

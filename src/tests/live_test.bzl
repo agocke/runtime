@@ -213,22 +213,30 @@ def _xunit_library_test_impl(ctx):
                 )
                 additional_runfiles.append(dst)
 
-    # Copy data files (e.g., test content like TinyAssembly.dll) to the output
-    # directory next to the test DLL so Assembly.Load can find them.
-    # If data_dir is set, place files in a subdirectory (e.g., "TestData/").
-    data_subdir = ctx.attr.data_dir
+    # Copy data files to the output directory next to the test DLL.
+    # Preserves directory structure: for local files, paths are relative to
+    # the package; for NuGet content files, the contentFiles/any/any/ prefix
+    # is stripped to get the expected relative path.
+    pkg_prefix = ctx.label.package + "/"
     for f in ctx.files.data:
-        if data_subdir:
-            dst = ctx.actions.declare_file("%s/%s/%s/%s" % (ctx.label.name, tfm, data_subdir, f.basename))
+        sp = f.short_path
+        if "contentFiles/any/any/" in sp:
+            # NuGet content file: strip up to contentFiles/any/any/
+            rel = sp[sp.index("contentFiles/any/any/") + len("contentFiles/any/any/"):]
+        elif sp.startswith(pkg_prefix):
+            # Local file in same package: strip package path
+            rel = sp[len(pkg_prefix):]
         else:
-            dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, f.basename))
+            # Fallback: just use basename
+            rel = f.basename
+        dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, rel))
         ctx.actions.run_shell(
             inputs = [f],
             outputs = [dst],
             command = "cp -f \"$1\" \"$2\"",
             arguments = [f.path, dst.path],
             mnemonic = "CopyFile",
-            progress_message = "Copying %s" % f.basename,
+            progress_message = "Copying %s" % rel,
             use_default_shell_env = True,
             execution_requirements = COPY_EXECUTION_REQUIREMENTS,
         )

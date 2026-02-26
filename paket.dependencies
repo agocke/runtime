@@ -23,3 +23,7 @@ nuget Microsoft.DotNet.XUnitExtensions 10.0.0-beta.26102.102
 nuget System.Runtime.CompilerServices.Unsafe 6.0.0
 nuget System.Security.Cryptography.X509Certificates.TestData 10.0.0-beta.25418.1
 nuget System.Private.Runtime.UnicodeData 10.0.0-beta.25418.1
+nuget System.IO.Compression.TestData 10.0.0-beta.25418.1
+nuget System.Formats.Tar.TestData 10.0.0-beta.25418.1
+nuget System.Data.Common.TestData 10.0.0-beta.25418.1
+nuget System.Net.TestData 10.0.0-beta.25418.1

@@ -69,5 +69,6 @@ library_test(
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
     ],
     allow_unsafe_blocks = True,
+    data = ["@paket.main//system.formats.tar.testdata:content_files"],
     size = "large",
 )

@@ -1,5 +1,12 @@
 load("//src/tests:live_test.bzl", "library_test")
 
+genrule(
+    name = "mono_testdata",
+    srcs = ["System.Data.DataSetExtensions.Tests/Mono/testdataset1.xml"],
+    outs = ["Mono/testdataset1.xml"],
+    cmd = "cp $< $@",
+)
+
 library_test(
     name = "System.Data.Common.Tests",
     srcs = glob(
@@ -38,6 +45,10 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    data = [
+        "@paket.main//system.data.common.testdata:content_files",
+        ":mono_testdata",
+    ],
     nowarn = ["0168", "0169", "0414", "0219", "0649", "SYSLIB0011", "SYSLIB0051"],
     size = "large",
 )

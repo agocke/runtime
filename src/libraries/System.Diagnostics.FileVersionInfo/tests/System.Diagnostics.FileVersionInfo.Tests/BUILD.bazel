@@ -11,6 +11,8 @@ library_test(
         "NativeConsoleApp.exe",
         "NativeLibrary.dll",
         "SecondNativeLibrary.dll",
+        "//src/libraries/System.Diagnostics.FileVersionInfo/tests/System.Diagnostics.FileVersionInfo.TestAssembly:Assembly1.cs",
+        "//src/libraries/System.Diagnostics.FileVersionInfo/tests/System.Diagnostics.FileVersionInfo.TestAssembly:System.Diagnostics.FileVersionInfo.TestAssembly",
     ],
     deps = [
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
@@ -23,6 +25,7 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     allow_unsafe_blocks = True,
+    tags = ["no-sandbox"],
     size = "large",
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
 )

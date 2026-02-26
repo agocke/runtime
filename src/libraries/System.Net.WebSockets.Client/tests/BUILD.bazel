@@ -75,6 +75,7 @@ library_test(
     ],
     nowarn = ["xUnit1015", "SYSLIB0014"],
     defines = ["NETSTANDARD"],
+    data = ["@paket.main//system.net.testdata:content_files"],
     size = "large",
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
 )

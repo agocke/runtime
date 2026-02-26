@@ -8,6 +8,22 @@ gen_resx_source(
     resx_file = "//src/libraries/System.Console:src/Resources/Strings.resx",
 )
 
+# TestData files need to be placed without the TestData/ prefix
+# because the csproj uses Link="%(RecursiveDir)%(Filename)%(Extension)"
+genrule(
+    name = "ncurses_xterm",
+    srcs = ["TestData/ncursesFormats/x/xterm"],
+    outs = ["ncursesFormats/x/xterm"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "ncurses_screen256color",
+    srcs = ["TestData/ncursesFormats/s/screen-256color"],
+    outs = ["ncursesFormats/s/screen-256color"],
+    cmd = "cp $< $@",
+)
+
 library_test(
     name = "System.Console.Tests",
     srcs = glob(
@@ -64,5 +80,6 @@ library_test(
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
     ],
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    data = [":ncurses_xterm", ":ncurses_screen256color"],
     size = "large",
 )
