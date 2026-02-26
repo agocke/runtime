@@ -217,6 +217,8 @@ def _xunit_library_test_impl(ctx):
     # Preserves directory structure: for local files, paths are relative to
     # the package; for NuGet content files, the contentFiles/any/any/ prefix
     # is stripped to get the expected relative path.
+    # csharp_library/csharp_binary outputs are flattened: their paths look like
+    # <Target>/net10.0/<Target>.dll but tests expect <Target>.dll in the CWD.
     pkg_prefix = ctx.label.package + "/"
     for f in ctx.files.data:
         sp = f.short_path
@@ -226,6 +228,11 @@ def _xunit_library_test_impl(ctx):
         elif sp.startswith(pkg_prefix):
             # Local file in same package: strip package path
             rel = sp[len(pkg_prefix):]
+            # Flatten csharp_library/csharp_binary output paths
+            # e.g. "STAMain/net10.0/STAMain.dll" -> "STAMain.dll"
+            parts = rel.split("/")
+            if len(parts) == 3 and parts[1] == tfm:
+                rel = parts[2]
         else:
             # Fallback: just use basename
             rel = f.basename

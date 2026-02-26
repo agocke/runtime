@@ -185,6 +185,7 @@ def netcoreapp_impl_assembly(
     internals_visible_to = [],
     resources = [],
     resource_logical_names = {},
+    assembly_version = None,
     **kwargs
 ):
     base_name = name[len("impl_"):]
@@ -226,6 +227,9 @@ def netcoreapp_impl_assembly(
             break
 
     assembly_info_target = "assemblyinfo_" + base_name
+    assembly_info_kwargs = {}
+    if assembly_version != None:
+        assembly_info_kwargs["assembly_version"] = assembly_version
     gen_assembly_info(
         name = assembly_info_target,
         out = name + "/" + base_name + ".AssemblyInfo.cs",
@@ -234,6 +238,7 @@ def netcoreapp_impl_assembly(
         is_trimmable = is_trimmable,
         is_aot_compatible = is_aot_compatible,
         include_dll_safe_search_path = _include_dll_safe_search,
+        **assembly_info_kwargs
     )
 
     # 4. Forwards.cs (if facades)
