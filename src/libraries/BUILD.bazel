@@ -13,9 +13,7 @@ load("defs.bzl",
 
 nowarn = [ "CS8500", "CS8969" ]
 
-exports_files([
-    "System.Runtime/ref/System.Runtime.cs",
-])
+exports_files([])
 
 ref_assembly_nowarns = [
     # Ref assemblies use 'throw null'
@@ -268,6 +266,9 @@ netcoreapp_ref_assembly(
     name = "ref_System.Runtime",
     srcs = [
         "System.Runtime/ref/System.Runtime.cs",
+        # ExtraApis needed so impl_System.Runtime generates type forwarders
+        # for DebugProvider (used by System.Diagnostics.TraceSource at runtime)
+        "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
     ],
     compiler_options = [
         "/runtimemetadataversion:v4.0.30319",

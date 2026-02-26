@@ -191,11 +191,15 @@ def _xunit_library_test_impl(ctx):
     # Copy non-framework transitive runtime deps to the output directory.
     # Framework assemblies are already in the testhost via Core_Root, so only
     # test helpers (TestUtilities, RemoteExecutor, etc.) need to be copied.
+    # Deduplicate by basename to avoid conflicts when NuGet packages provide
+    # DLLs for multiple TFMs (e.g., net8.0 + netstandard2.0).
     framework_basenames = {f.basename: True for f in ctx.files._framework_assemblies}
+    copied_basenames = {}
     transitive_runtime_deps = runtime_provider.deps.to_list()
     for dep in transitive_runtime_deps:
         for lib in dep.libs:
-            if lib.extension == "dll" and lib.basename not in framework_basenames:
+            if lib.extension == "dll" and lib.basename not in framework_basenames and lib.basename not in copied_basenames:
+                copied_basenames[lib.basename] = True
                 dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, lib.basename))
                 ctx.actions.run_shell(
                     inputs = [lib],
