@@ -233,7 +233,7 @@ def _xunit_library_test_impl(ctx):
         ctx.actions.run_shell(
             inputs = [f],
             outputs = [dst],
-            command = "cp -f \"$1\" \"$2\"",
+            command = "cp -f \"$1\" \"$2\" && chmod u+rw \"$2\"",
             arguments = [f.path, dst.path],
             mnemonic = "CopyFile",
             progress_message = "Copying %s" % rel,
@@ -469,6 +469,18 @@ cp -afL "$CORE_ROOT/"* "$FW_DIR/"
   done
   printf '}}}},"libraries":{"Microsoft.NETCore.App/%s":{"type":"package","serviceable":false,"sha512":""}}}' "$VERSION"
 } > "$FW_DIR/Microsoft.NETCore.App.deps.json"
+
+# Copy SDK ref assemblies so tests that create dynamic Roslyn compilations
+# (e.g. RegexGenerator tests) can reference them.  The shared-framework
+# CoreLib is crossgen'd (R2R) and Roslyn can't parse its metadata.
+REF_DIR="$SDK_ROOT/packs/Microsoft.NETCore.App.Ref"
+if [ -d "$REF_DIR" ]; then
+    REF_VER=$(ls -1 "$REF_DIR" | sort -V | tail -1)
+    if [ -d "$REF_DIR/$REF_VER/ref/net10.0" ]; then
+        mkdir -p "$OUT/ref"
+        cp -aL "$REF_DIR/$REF_VER/ref/net10.0/"*.dll "$OUT/ref/"
+    fi
+fi
 """,
         arguments = [dotnet_file.path, sdk_version, testhost.path, core_root.path],
         mnemonic = "BuildTestHost",

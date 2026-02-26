@@ -40,13 +40,37 @@ namespace System.Text.RegularExpressions.Tests
                 return [];
             }
 
+            // When running under Bazel, the shared-framework CoreLib is
+            // crossgen'd (R2R) and Roslyn can't read its metadata.  If SDK
+            // ref assemblies are available in the testhost's ref/ directory,
+            // use all of them instead of runtime assemblies — the generated
+            // regex code may reference types spread across several ref DLLs
+            // (e.g. MemoryExtensions lives in System.Memory.dll).
+            string corelibPath = typeof(object).Assembly.Location;
+            string fwDir = Path.GetDirectoryName(corelibPath);
+            // Navigate up from <testhost>/shared/Microsoft.NETCore.App/<version>/
+            string testhostDir = fwDir is not null
+                ? Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(fwDir)))
+                : null;
+            if (testhostDir is not null)
+            {
+                string refDir = Path.Combine(testhostDir, "ref");
+                if (Directory.Exists(refDir))
+                {
+                    string[] refDlls = Directory.GetFiles(refDir, "*.dll");
+                    if (refDlls.Length > 0)
+                    {
+                        return refDlls.Select(dll => MetadataReference.CreateFromFile(dll)).ToArray();
+                    }
+                }
+            }
+
             // Typically we'd want to use the right reference assemblies, but as we're not persisting any
             // assets and only using this for testing purposes, referencing implementation assemblies is sufficient.
-            string corelibPath = typeof(object).Assembly.Location;
             return new[]
             {
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(Path.Combine(Path.GetDirectoryName(corelibPath), "System.Runtime.dll")),
+                MetadataReference.CreateFromFile(Path.Combine(fwDir, "System.Runtime.dll")),
                 MetadataReference.CreateFromFile(typeof(Unsafe).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Regex).Assembly.Location),
             };

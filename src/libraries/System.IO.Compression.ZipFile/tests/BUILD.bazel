@@ -37,5 +37,6 @@ library_test(
     ],
     data = ["@paket.main//system.io.compression.testdata:content_files"],
     size = "large",
+    writable_test_dir = True,
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
 )

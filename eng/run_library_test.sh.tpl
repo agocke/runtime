@@ -30,11 +30,9 @@ if [ "TEMPLATED_writable_test_dir" = "true" ]; then
     # File.Move on files next to the assembly (e.g. PDB rename).
     WORK_DIR="${TEST_TMPDIR:-/tmp}/testdir"
     mkdir -p "$WORK_DIR"
-    for ext in dll pdb json xml; do
-        for f in "$RESOLVED_DIR"/*."$ext"; do
-            [ -f "$f" ] && cp "$f" "$WORK_DIR/"
-        done
-    done
+    # Copy everything including subdirectories (test data), then make writable.
+    cp -a "$RESOLVED_DIR"/. "$WORK_DIR/"
+    chmod -R u+w "$WORK_DIR"
     cd "$WORK_DIR"
     XUNIT_CONSOLE="$WORK_DIR/$(basename "$XUNIT_CONSOLE")"
     ENTRY_DLL="$WORK_DIR/$(basename "$ENTRY_DLL")"

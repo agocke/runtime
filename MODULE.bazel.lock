@@ -220,7 +220,7 @@
   "moduleExtensions": {
     "//paket:paket.main_extension.bzl%main_extension": {
       "general": {
-        "bzlTransitiveDigest": "vqLzy78F73XqOKYBYZ/t4lPVTpdqEI4qedogw813yl0=",
+        "bzlTransitiveDigest": "zdUhmphhDtyjJP1oftKm6rkUPFcQWD81rSTukdnDvDo=",
         "usagesDigest": "/++DsNDsPEafh99irUtCwOTCNp57HApeC8MUxM9rbUo=",
         "recordedInputs": [
           "REPO_MAPPING:,rules_dotnet rules_dotnet+",
@@ -861,6 +861,20 @@
               "sha512": "sha512-bL+dka8UeKEdmap2YvUkZcgkncMcDbfhLwKdKC6takLwdWpGVSumGMMZv9Ph/IMb61uzYtb6T807WD3HGP1yjA=="
             }
           },
+          "nuget.system.text.regularexpressions.testdata.v10.0.0-beta.25418.1": {
+            "repoRuleId": "@@rules_dotnet+//dotnet/private/rules/nuget:nuget_archive.bzl%nuget_archive",
+            "attributes": {
+              "sources": [
+                "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json",
+                "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json",
+                "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10-transport/nuget/v3/index.json",
+                "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10/nuget/v3/index.json"
+              ],
+              "id": "system.text.regularexpressions.testdata",
+              "version": "10.0.0-beta.25418.1",
+              "sha512": "sha512-KHq2Y0MsLhIo0l+KNe8XT4GTX5QVIEaO7/xqo9tRn1JrEVXBSqu/UpPwqNDnN92FZuUDqIq9y7+UlzMi6pWjBQ=="
+            }
+          },
           "paket.main": {
             "repoRuleId": "@@rules_dotnet+//dotnet/private/rules/nuget:nuget_repo.bzl%_nuget_repo",
             "attributes": {
@@ -910,7 +924,8 @@
                 "{\"dependencies\":{\"net11\":[],\"net20\":[],\"net30\":[],\"net35\":[],\"net40\":[],\"net403\":[],\"net45\":[],\"net451\":[],\"net452\":[],\"net46\":[],\"net461\":[],\"net462\":[],\"net47\":[],\"net471\":[],\"net472\":[],\"net48\":[],\"net5.0\":[],\"net6.0\":[],\"net7.0\":[],\"net8.0\":[],\"netcoreapp1.0\":[],\"netcoreapp1.1\":[],\"netcoreapp2.0\":[],\"netcoreapp2.1\":[],\"netcoreapp2.2\":[],\"netcoreapp3.0\":[],\"netcoreapp3.1\":[],\"netstandard\":[],\"netstandard1.0\":[],\"netstandard1.1\":[],\"netstandard1.2\":[],\"netstandard1.3\":[],\"netstandard1.4\":[],\"netstandard1.5\":[],\"netstandard1.6\":[],\"netstandard2.0\":[],\"netstandard2.1\":[]},\"framework_list\":[],\"id\":\"System.IO.Compression.TestData\",\"name\":\"System.IO.Compression.TestData\",\"sha512\":\"sha512-CtGK84octR7OHt6yJg/6wJBCRbuikPxCBQ/im5gi2omdW3YGIMz0ZJnyQVbV2kcxhZABqJn7mgeffR1q3rl9YQ==\",\"sources\":[\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10-transport/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10/nuget/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"10.0.0-beta.25418.1\"}",
                 "{\"dependencies\":{\"net11\":[],\"net20\":[],\"net30\":[],\"net35\":[],\"net40\":[],\"net403\":[],\"net45\":[],\"net451\":[],\"net452\":[],\"net46\":[],\"net461\":[],\"net462\":[],\"net47\":[],\"net471\":[],\"net472\":[],\"net48\":[],\"net5.0\":[],\"net6.0\":[],\"net7.0\":[],\"net8.0\":[],\"netcoreapp1.0\":[],\"netcoreapp1.1\":[],\"netcoreapp2.0\":[],\"netcoreapp2.1\":[],\"netcoreapp2.2\":[],\"netcoreapp3.0\":[],\"netcoreapp3.1\":[],\"netstandard\":[],\"netstandard1.0\":[],\"netstandard1.1\":[],\"netstandard1.2\":[],\"netstandard1.3\":[],\"netstandard1.4\":[],\"netstandard1.5\":[],\"netstandard1.6\":[],\"netstandard2.0\":[],\"netstandard2.1\":[]},\"framework_list\":[],\"id\":\"System.Formats.Tar.TestData\",\"name\":\"System.Formats.Tar.TestData\",\"sha512\":\"sha512-uEXx6g4E//tsmB0OrKaewSFXERUjXyP33WVYhvNXYR0bB+jkKlvfD+0kzPObUIK9lhXc0CcsdO4tICvmz4YezQ==\",\"sources\":[\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10-transport/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10/nuget/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"10.0.0-beta.25418.1\"}",
                 "{\"dependencies\":{\"net11\":[],\"net20\":[],\"net30\":[],\"net35\":[],\"net40\":[],\"net403\":[],\"net45\":[],\"net451\":[],\"net452\":[],\"net46\":[],\"net461\":[],\"net462\":[],\"net47\":[],\"net471\":[],\"net472\":[],\"net48\":[],\"net5.0\":[],\"net6.0\":[],\"net7.0\":[],\"net8.0\":[],\"netcoreapp1.0\":[],\"netcoreapp1.1\":[],\"netcoreapp2.0\":[],\"netcoreapp2.1\":[],\"netcoreapp2.2\":[],\"netcoreapp3.0\":[],\"netcoreapp3.1\":[],\"netstandard\":[],\"netstandard1.0\":[],\"netstandard1.1\":[],\"netstandard1.2\":[],\"netstandard1.3\":[],\"netstandard1.4\":[],\"netstandard1.5\":[],\"netstandard1.6\":[],\"netstandard2.0\":[],\"netstandard2.1\":[]},\"framework_list\":[],\"id\":\"System.Data.Common.TestData\",\"name\":\"System.Data.Common.TestData\",\"sha512\":\"sha512-S00IRaur9/QD6TRTEoDIAo9lkug6gfwhd/iM2C0cc8ogAnsn62m9v1oZXGN8G0K4u3wRlCOtLDBWrhNfwX1B/w==\",\"sources\":[\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10-transport/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10/nuget/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"10.0.0-beta.25418.1\"}",
-                "{\"dependencies\":{\"net11\":[],\"net20\":[],\"net30\":[],\"net35\":[],\"net40\":[],\"net403\":[],\"net45\":[],\"net451\":[],\"net452\":[],\"net46\":[],\"net461\":[],\"net462\":[],\"net47\":[],\"net471\":[],\"net472\":[],\"net48\":[],\"net5.0\":[],\"net6.0\":[],\"net7.0\":[],\"net8.0\":[],\"netcoreapp1.0\":[],\"netcoreapp1.1\":[],\"netcoreapp2.0\":[],\"netcoreapp2.1\":[],\"netcoreapp2.2\":[],\"netcoreapp3.0\":[],\"netcoreapp3.1\":[],\"netstandard\":[],\"netstandard1.0\":[],\"netstandard1.1\":[],\"netstandard1.2\":[],\"netstandard1.3\":[],\"netstandard1.4\":[],\"netstandard1.5\":[],\"netstandard1.6\":[],\"netstandard2.0\":[],\"netstandard2.1\":[]},\"framework_list\":[],\"id\":\"System.Net.TestData\",\"name\":\"System.Net.TestData\",\"sha512\":\"sha512-bL+dka8UeKEdmap2YvUkZcgkncMcDbfhLwKdKC6takLwdWpGVSumGMMZv9Ph/IMb61uzYtb6T807WD3HGP1yjA==\",\"sources\":[\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10-transport/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10/nuget/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"10.0.0-beta.25418.1\"}"
+                "{\"dependencies\":{\"net11\":[],\"net20\":[],\"net30\":[],\"net35\":[],\"net40\":[],\"net403\":[],\"net45\":[],\"net451\":[],\"net452\":[],\"net46\":[],\"net461\":[],\"net462\":[],\"net47\":[],\"net471\":[],\"net472\":[],\"net48\":[],\"net5.0\":[],\"net6.0\":[],\"net7.0\":[],\"net8.0\":[],\"netcoreapp1.0\":[],\"netcoreapp1.1\":[],\"netcoreapp2.0\":[],\"netcoreapp2.1\":[],\"netcoreapp2.2\":[],\"netcoreapp3.0\":[],\"netcoreapp3.1\":[],\"netstandard\":[],\"netstandard1.0\":[],\"netstandard1.1\":[],\"netstandard1.2\":[],\"netstandard1.3\":[],\"netstandard1.4\":[],\"netstandard1.5\":[],\"netstandard1.6\":[],\"netstandard2.0\":[],\"netstandard2.1\":[]},\"framework_list\":[],\"id\":\"System.Net.TestData\",\"name\":\"System.Net.TestData\",\"sha512\":\"sha512-bL+dka8UeKEdmap2YvUkZcgkncMcDbfhLwKdKC6takLwdWpGVSumGMMZv9Ph/IMb61uzYtb6T807WD3HGP1yjA==\",\"sources\":[\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10-transport/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10/nuget/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"10.0.0-beta.25418.1\"}",
+                "{\"dependencies\":{\"net11\":[],\"net20\":[],\"net30\":[],\"net35\":[],\"net40\":[],\"net403\":[],\"net45\":[],\"net451\":[],\"net452\":[],\"net46\":[],\"net461\":[],\"net462\":[],\"net47\":[],\"net471\":[],\"net472\":[],\"net48\":[],\"net5.0\":[],\"net6.0\":[],\"net7.0\":[],\"net8.0\":[],\"netcoreapp1.0\":[],\"netcoreapp1.1\":[],\"netcoreapp2.0\":[],\"netcoreapp2.1\":[],\"netcoreapp2.2\":[],\"netcoreapp3.0\":[],\"netcoreapp3.1\":[],\"netstandard\":[],\"netstandard1.0\":[],\"netstandard1.1\":[],\"netstandard1.2\":[],\"netstandard1.3\":[],\"netstandard1.4\":[],\"netstandard1.5\":[],\"netstandard1.6\":[],\"netstandard2.0\":[],\"netstandard2.1\":[]},\"framework_list\":[],\"id\":\"System.Text.RegularExpressions.TestData\",\"name\":\"System.Text.RegularExpressions.TestData\",\"sha512\":\"sha512-KHq2Y0MsLhIo0l+KNe8XT4GTX5QVIEaO7/xqo9tRn1JrEVXBSqu/UpPwqNDnN92FZuUDqIq9y7+UlzMi6pWjBQ==\",\"sources\":[\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10-transport/nuget/v3/index.json\",\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10/nuget/v3/index.json\"],\"targeting_pack_overrides\":[],\"version\":\"10.0.0-beta.25418.1\"}"
               ],
               "targeting_pack_overrides": {
                 "humanizer.core|2.14.1": [],
@@ -957,7 +972,8 @@
                 "system.io.compression.testdata|10.0.0-beta.25418.1": [],
                 "system.formats.tar.testdata|10.0.0-beta.25418.1": [],
                 "system.data.common.testdata|10.0.0-beta.25418.1": [],
-                "system.net.testdata|10.0.0-beta.25418.1": []
+                "system.net.testdata|10.0.0-beta.25418.1": [],
+                "system.text.regularexpressions.testdata|10.0.0-beta.25418.1": []
               },
               "framework_list": {
                 "humanizer.core|2.14.1": [],
@@ -1004,7 +1020,8 @@
                 "system.io.compression.testdata|10.0.0-beta.25418.1": [],
                 "system.formats.tar.testdata|10.0.0-beta.25418.1": [],
                 "system.data.common.testdata|10.0.0-beta.25418.1": [],
-                "system.net.testdata|10.0.0-beta.25418.1": []
+                "system.net.testdata|10.0.0-beta.25418.1": [],
+                "system.text.regularexpressions.testdata|10.0.0-beta.25418.1": []
               }
             }
           }
