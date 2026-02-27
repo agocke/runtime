@@ -4,7 +4,7 @@ load("//:defs.bzl", "resgen", "gen_resx_source")
 # as part of the consuming project (linker, Roslyn analyzer), not standalone.
 # Expose files via filegroup and exports_files for inclusion.
 
-exports_files(glob(["**/*.cs"]))
+exports_files(glob(["**/*.cs"]) + ["SharedStrings.resx"])
 
 filegroup(
     name = "srcs",
