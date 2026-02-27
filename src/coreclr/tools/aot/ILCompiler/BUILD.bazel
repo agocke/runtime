@@ -3,7 +3,10 @@ load("//:defs.bzl", "csharp_binary")
 genrule(
     name = "AssemblyInfo",
     outs = ["AssemblyInfo.g.cs"],
-    cmd = "echo '[assembly: System.Reflection.AssemblyFileVersion(\"10.0.0.0\")]' > $@",
+    cmd = """cat > $@ << 'EOF'
+[assembly: System.Reflection.AssemblyFileVersion("10.0.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("10.0.0-dev+bazel")]
+EOF""",
 )
 
 csharp_binary(

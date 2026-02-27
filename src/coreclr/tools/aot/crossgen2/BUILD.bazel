@@ -1,5 +1,6 @@
 load("//:defs.bzl", "csharp_binary")
 load("//:defs.bzl", "gen_resx_source", "resgen")
+load("@rules_dotnet//dotnet:defs.bzl", "nativeaot_binary", "nativeaot_pack")
 
 genrule(
     name = "AssemblyInfo",
@@ -40,5 +41,45 @@ csharp_binary(
         "@paket.main//system.commandline",
     ],
     target_frameworks = ["net10.0"],
+    visibility = ["//visibility:public"],
+)
+
+nativeaot_pack(
+    name = "nativeaot_pack",
+    ilc = "//src/coreclr/tools/aot/ILCompiler:ilc",
+    framework_files = [
+        "@nativeaot_pack//:framework_files",
+        "@nativeaot_pack//:native_dlls",
+    ],
+    runtime_libs = [
+        "@nativeaot_pack//:native_libs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+nativeaot_binary(
+    name = "crossgen2-publish",
+    binary = ":crossgen2",
+    target_framework = "net10.0",
+    nativeaot_pack = ":nativeaot_pack",
+    ilc = "//src/coreclr/tools/aot/ILCompiler:ilc",
+    ilc_native_libs = [
+        "//src/coreclr/tools/aot/jitinterface:libjitinterface_x64.so",
+        "//src/coreclr/jit:libclrjit_unix_x64_x64.so",
+    ],
+    optimization_mode = "speed",
+    invariant_globalization = True,
+    direct_pinvokes = [
+        "System.Native",
+        "System.IO.Compression.Native",
+        "System.Net.Security.Native",
+        "System.Security.Cryptography.Native.OpenSsl",
+    ],
+    init_assemblies = [
+        "System.Private.CoreLib",
+        "System.Private.StackTraceMetadata",
+        "System.Private.TypeLoader",
+        "System.Private.Reflection.Execution",
+    ],
     visibility = ["//visibility:public"],
 )

@@ -1,10 +1,7 @@
 bazel_dep(name = "rules_dotnet")
-git_override(
+local_path_override(
     module_name = "rules_dotnet",
-    remote = "https://github.com/agocke/rules_dotnet.git",
-    commit = "4c531483329c63f116bcdaa5287f3118842f326c",
-    patches = ["//eng/bazel/patches:rules_dotnet_protoc_platform.patch"],
-    patch_strip = 1,
+    path = "/home/andy/code/rules_dotnet",
 )
 
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
@@ -31,3 +28,9 @@ bazel_dep(name = "rules_cc", version = "0.2.14")
 # ICU4C headers for System.Globalization.Native (macOS: homebrew, Linux: system)
 icu4c_repository = use_repo_rule("//eng/bazel:icu4c_repository.bzl", "icu4c_repository")
 icu4c_repository(name = "icu4c")
+
+# NativeAOT runtime pack from the SDK (LKG) for AOT compilation.
+# This provides the framework assemblies and static libraries that ILC needs.
+# TODO: Replace with a proper NuGet-based repository rule.
+nativeaot_pack_repository = use_repo_rule("//eng/bazel:nativeaot_pack_repository.bzl", "nativeaot_pack_repository")
+nativeaot_pack_repository(name = "nativeaot_pack")
