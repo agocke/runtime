@@ -43,4 +43,8 @@ else
     cd "$RESOLVED_DIR"
 fi
 
-"$TESTHOST/dotnet" exec --runtimeconfig "$RUNTIMECONFIG" --depsfile "$DEPSFILE" "$XUNIT_CONSOLE" "$ENTRY_DLL" -nologo -notrait "category=failing" -notrait "category=OuterLoop" "$@"
+# On macOS, tests requiring keychain access fail in Bazel's test environment because
+# test-setup.sh creates an isolated environment without access to the user's login
+# session. These tests pass with 'bazel run' but fail with 'bazel test'.
+# See docs/workflow/building/bazel/README.md for details.
+"$TESTHOST/dotnet" exec --runtimeconfig "$RUNTIMECONFIG" --depsfile "$DEPSFILE" "$XUNIT_CONSOLE" "$ENTRY_DLL" -nologo -notrait "category=failing" -notrait "category=OuterLoop" -notrait "category=RequiresKeychain" "$@"
