@@ -59,8 +59,9 @@ layout.
 - Remaining managed libraries (~142 assemblies not yet in Bazel, out of ~200 total)
 - Library unit tests (48 of ~187 libraries have Bazel test BUILD files)
 - CoreCLR diagnostic tooling: DAC (mscordac), DBI (mscordbi), createdump, SOS
-- CoreCLR tools: SuperPMI, ildasm (full binary), crossgen2
-- ILC (NativeAOT ahead-of-time compiler) and crossgen2 (ReadyToRun compiler)
+- CoreCLR tools: SuperPMI, ildasm (full binary)
+- ILC BUILD files and end-to-end NativeAOT pipeline (see [NativeAOT Compilation Pipeline](#nativeaot-compilation-pipeline))
+- Bootstrap mode: NativeAOT-compile crossgen2, use it for System.Private.CoreLib
 - ILLink (IL trimmer/linker)
 - Installer/packaging (NuGet packs, runtime packs, targeting packs)
 - Additional platforms (linux-arm64, macOS, Windows)
@@ -413,16 +414,14 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
   - [x] nativeaot_vxsort_enabled, nativeaot_vxsort_disabled
   - [x] bootstrapper, bootstrapperdll, stdc_compat, eventpipe_disabled
   - [x] Per-file copt strips debug defines to avoid REGDISPLAY conflicts
-- [ ] ILC compiler (managed C# AOT compiler, `BuildIntegration/`)
+- [ ] ILC compiler (managed C# AOT compiler) — see [NativeAOT Pipeline](#nativeaot-compilation-pipeline) below
 - [ ] NativeAOT managed libraries (System.Private.CoreLib, Reflection.Execution, StackTraceMetadata, TypeLoader, Runtime.Base)
-- [ ] End-to-end AOT compilation pipeline
 
 ### 4.16 Tools — 🔨 Partial
 - [x] `src/coreclr/tools/aot/jitinterface/BUILD.bazel` — AOT JIT interface shared library (native C++)
 - [ ] SuperPMI — JIT method replay/diff tool (5 native C++ sub-components)
 - [ ] SOS — debugging extension (native C++)
 - [ ] crossgen2 — ReadyToRun AOT compiler (managed C#)
-- [ ] ILC — NativeAOT ahead-of-time compiler (managed C#, ~15 projects)
 - [ ] R2RDump — ReadyToRun image dumper (managed C#)
 
 
@@ -634,3 +633,111 @@ aggregate; **5 still need special support**.
 - Test commands (linux-x64):
   - **All tests**: `bazel test //... --config=clr_checked`
   - **Library tests**: `bazel test //src/tests:all --config=clr_checked`
+
+---
+
+## NativeAOT Compilation Pipeline
+
+### Overview
+
+NativeAOT compiles .NET IL assemblies directly to native executables using the
+ILC (IL Compiler). The MSBuild pipeline for this lives in
+`src/coreclr/nativeaot/BuildIntegration/` (the `.targets` files ship inside
+the SDK's runtime pack). The Bazel equivalent splits across two repos:
+
+| Component | Location | Role |
+|-----------|----------|------|
+| ILC compiler (managed C#) | `src/coreclr/tools/aot/ILCompiler*` (this repo) | Build ILC from source |
+| NativeAOT native runtime | `src/coreclr/nativeaot/BUILD.bazel` (this repo) | Static libs linked into final binary |
+| `nativeaot_pack` rule | `src/coreclr/tools/aot/crossgen2/BUILD.bazel` (this repo) | Package ILC + framework + runtime libs |
+| `nativeaot_binary` rule | `rules_dotnet` (`dotnet/private/rules/nativeaot/`) | Invoke ILC → link (ILC args + linker flags) |
+
+### Architecture
+
+```
+nativeaot_pack (runtime repo)          nativeaot_binary (rules_dotnet)
+┌─────────────────────────┐            ┌──────────────────────────────┐
+│ ilc executable          │            │ Step 1: ILC invocation       │
+│ framework assemblies    │───feeds───→│   RSP file with ~60 args     │
+│ runtime static libs     │            │   → produces native .o       │
+│ mibc profiles           │            │                              │
+└─────────────────────────┘            │ Step 2: cc_toolchain link    │
+                                       │   Unix or Windows flags      │
+                                       │   → produces native exe      │
+                                       └──────────────────────────────┘
+```
+
+**rules_dotnet owns the build logic** (ILC invocation and linker flags),
+matching how the SDK owns the `.targets` files in MSBuild. The runtime repo
+owns the compiler source and packaging. `extra_ilc_args` / `extra_linker_args`
+attrs serve as escape hatches when ILC gains new flags before rules_dotnet is
+updated.
+
+### ILC BUILD Files (from source)
+
+Building ILC from source requires four managed libraries plus the binary:
+
+| Target | Sources | Key deps |
+|--------|---------|----------|
+| `ILCompiler.MetadataTransform` | ~50 files, `NATIVEFORMAT_PUBLICWRITER` define | ILCompiler.TypeSystem |
+| `ILCompiler.Compiler` | ~547 files (largest), shared sources from `Common/` | TypeSystem, DependencyAnalysis, Diagnostics, MetadataTransform |
+| `ILCompiler.RyuJit` | ~35 files from 4 locations | Compiler, MetadataTransform, TypeSystem |
+| `ilc` (binary) | 5 local + 3 shared sources, Resources.resx | All above + System.CommandLine |
+
+These depend on existing BUILD files: `ILCompiler.DependencyAnalysisFramework`,
+`ILCompiler.TypeSystem`, `ILCompiler.ReadyToRun`, `ILCompiler.Diagnostics`.
+
+### MSBuild Parity
+
+The `nativeaot_binary` rule in rules_dotnet faithfully replicates the MSBuild
+targets line-by-line:
+
+**ILC args** (matching `Microsoft.NETCore.Native.targets` `WriteIlcRspFileForCompilation`):
+- `--targetos`, `--targetarch`, `-o`, `-r:` (references), `--mibc:`
+- `-O` / `--Ot` / `--Os` (optimization modes)
+- `--dehydrate`, `--scanreflection`, `--methodbodyfolding:generic`
+- `--stacktracedata`, `--resilient`, `--export-dynamic-symbol`
+- `--feature:` switches, `--initassembly:`, `--directpinvoke:`, `--root:`
+- RSP file via `use_param_file("@%s")` matching MSBuild's `WriteLinesToFile`
+
+**Unix linker flags** (matching `Microsoft.NETCore.Native.Unix.targets`):
+- Argument ordering: dependents before dependencies (single-pass linkers)
+- Native libs: obj → bootstrapper → Runtime.WorkstationGC → eventpipe → stdc++compat → minipal
+- System libs: `-ldl -lrt -lm -lz` (Linux), `-lobjc -lswiftCore` (Apple), `-licucore` (Apple, conditional)
+- Frameworks: CoreFoundation, CryptoKit, Foundation, Network, Security, GSS
+- Security: `--build-id=sha1`, PIE, RELRO, BIND_NOW, noexecstack
+- Optional: `-gz=zlib`, `-fuse-ld=`, `-lstdc++`, static ICU, static OpenSSL, system brotli/zstd
+
+**Windows linker flags** (matching `Microsoft.NETCore.Native.Windows.targets`):
+- `/MERGE:.modules=.rdata`, `/MERGE:.managedcode=.text`
+- `/INCREMENTAL:NO`, `/MANIFEST:NO`, `/DYNAMICBASE`, `/NXCOMPAT`
+- Runtime libs: bootstrapper.lib, Runtime.WorkstationGC.lib, eventpipe-disabled.lib
+- Windows SDK: advapi32, bcrypt, crypt32, iphlpapi, kernel32, mswsock, ntdll, ole32,
+  oleaut32, user32, version, ws2_32, shell32, Synchronization.lib
+- UCRT: api-ms-win-crt-*.lib (dynamic linking)
+- Optional: `/CETCOMPAT`, `/guard:cf`, `/guard:ehcont`, `/safeseh` (x86), `/STACK:`
+
+### Bootstrap Mode (TODO)
+
+MSBuild supports `UseBootstrap=true` which:
+1. Builds crossgen2 from source
+2. NativeAOT-publishes it (`crossgen2_publish.csproj`)
+3. Uses that native crossgen2 to compile System.Private.CoreLib
+
+The Bazel infrastructure is partially in place:
+- `crossgen_corelib` rule has a `native_crossgen2` attr
+- `crossgen2-publish` nativeaot_binary target exists (or will exist)
+
+**Not yet wired together.** Needs a `bool_flag` (e.g., `--//src/coreclr:bootstrap`)
+that toggles `crossgen_corelib` between:
+- **Default**: LKG SDK crossgen2 (fast, no circular dependency)
+- **Bootstrap**: from-source `//src/coreclr/tools/aot/crossgen2:crossgen2-publish`
+
+### NativeAOT Versioning (TODO)
+
+Each .NET version (8/9/10) ships different ILC flags and linker libraries.
+Currently only .NET 10 is targeted. When multiple versions need support,
+add version awareness to `nativeaot_binary` via the `nativeaot_pack` provider
+metadata (e.g., `runtime_version` field) with per-version flag conditionals.
+The `extra_ilc_args` / `extra_linker_args` escape hatches cover the gap in
+the meantime.
