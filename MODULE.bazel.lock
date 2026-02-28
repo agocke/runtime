@@ -220,7 +220,7 @@
   "moduleExtensions": {
     "//paket:paket.main_extension.bzl%main_extension": {
       "general": {
-        "bzlTransitiveDigest": "J7c+3RLFdP6Wuim+u6qFway8q4ZQ/t5oY6tAygXrAa8=",
+        "bzlTransitiveDigest": "e+ZZMbS9Q1oH/IEh31IF4DowDCemyJ9DYn5QossGlAY=",
         "usagesDigest": "/++DsNDsPEafh99irUtCwOTCNp57HApeC8MUxM9rbUo=",
         "recordedInputs": [
           "REPO_MAPPING:,rules_dotnet rules_dotnet+",

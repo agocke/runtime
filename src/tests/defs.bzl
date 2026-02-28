@@ -235,6 +235,22 @@ COMMON_ATTRS = {
         doc = "Whether to include Microsoft.NET.HostModel from the toolchain. This is only required to build tha apphost shimmer.",
         default = False,
     ),
+    "is_aot_compatible": attr.bool(
+        doc = "Whether this binary is compatible with Native AOT compilation.",
+        default = False,
+    ),
+    "_illink_analyzers_net8": attr.label(
+        default = "@nuget.microsoft.net.illink.tasks.v8.0.22//:analyzers_csharp",
+        allow_files = True,
+    ),
+    "_illink_analyzers_net9": attr.label(
+        default = "@nuget.microsoft.net.illink.tasks.v9.0.11//:analyzers_csharp",
+        allow_files = True,
+    ),
+    "_illink_analyzers_net10": attr.label(
+        default = "@nuget.microsoft.net.illink.tasks.v10.0.0//:analyzers_csharp",
+        allow_files = True,
+    ),
 }
 
 def _live_csharp_binary_impl(ctx):
