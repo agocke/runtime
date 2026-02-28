@@ -10,6 +10,13 @@ gen_resx_source(
 
 library_test(
     name = "System.IO.IsolatedStorage.Tests",
+    # TODO: Skip on macOS due to debug assertion in DispatchNativeException
+    # when handling breakpoint exceptions without a debugger attached.
+    # See: https://github.com/dotnet/runtime/issues/XXXXX
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     srcs = glob(
         ["**/*.cs"],
         exclude = [
