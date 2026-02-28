@@ -12,8 +12,19 @@ load(
 )
 
 load("//:defs.bzl", "csharp_library")
+load("//eng/bazel:version.bzl", "PRODUCT_VERSION")
 
 nowarn = [ "CS8500", "CS8969", "SYSLIB1092", "CS0419" ]
+
+# CoreLib needs AssemblyInformationalVersionAttribute for Roslyn's Emit
+# to work (it embeds RuntimeVersion in PDB metadata). MSBuild's SDK
+# generates this via GenerateAssemblyInfo; we add just this one attribute
+# since CoreLib already sets other assembly attributes explicitly.
+genrule(
+    name = "corelib_assembly_info",
+    outs = ["System.Private.CoreLib.AssemblyInfo.g.cs"],
+    cmd = """echo '[assembly: System.Reflection.AssemblyInformationalVersionAttribute("{version}-dev")]' > $@""".format(version = PRODUCT_VERSION),
+)
 
 common_imports = [
     "//src/libraries/Common:src/System/Collections/Generic/ArrayBuilder.cs",
@@ -190,6 +201,7 @@ csharp_library(
         "//src/libraries/System.Private.CoreLib:System.Private.CoreLib.Generators",
     ],
     srcs = [
+        ":corelib_assembly_info",
         "src/Internal/Runtime/CompilerHelpers/ThrowHelpers.cs",
         "src/Internal/Runtime/InteropServices/ComActivationContextInternal.cs",
         "src/Internal/Runtime/InteropServices/ComponentActivator.CoreCLR.cs",

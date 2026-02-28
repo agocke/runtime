@@ -2,6 +2,13 @@ load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_ass
 
 exports_files([
     "ref/System.Text.Encodings.Web.cs",
+    "src/System/Text/Encodings/Web/AllowedBmpCodePointsBitmap.cs",
+    "src/System/Text/Encodings/Web/AsciiByteMap.cs",
+    "src/System/Text/Encodings/Web/OptimizedInboxTextEncoder.Ascii.cs",
+    "src/System/Text/Encodings/Web/ScalarEscaperBase.cs",
+    "src/System/Text/Unicode/UnicodeHelpers.cs",
+    "src/System/Text/Unicode/UnicodeHelpers.generated.cs",
+    "src/System/ThrowHelper.cs",
 ])
 
 netcoreapp_ref_assembly(

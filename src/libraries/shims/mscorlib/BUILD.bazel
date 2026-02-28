@@ -48,6 +48,7 @@ netcoreapp_impl_assembly(
         "ref/mscorlib.cs",
         "src/mscorlib.cs",
     ],
+    assembly_version = "4.0.0.0",
     deps = [
         "//src/libraries:ref_System.Private.CoreLib",
         "//src/libraries/Microsoft.Win32.Registry:impl_Microsoft.Win32.Registry",

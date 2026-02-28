@@ -1,19 +1,5 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
 
-# Extended System.Runtime ref that includes ExtraApis (DebugProvider) needed by TraceSource
-netcoreapp_ref_assembly(
-    name = "ref_System.Runtime",
-    srcs = [
-        "//src/libraries:System.Runtime/ref/System.Runtime.cs",
-        "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
-    ],
-    compiler_options = [
-        "/runtimemetadataversion:v4.0.30319",
-    ],
-    allow_unsafe_blocks = True,
-    nowarn = ["CS0169", "CS0809", "CS0618", "CS3015"],
-)
-
 netcoreapp_ref_assembly(
     name = "ref_System.Diagnostics.TraceSource",
     srcs = [
@@ -65,7 +51,7 @@ netcoreapp_impl_assembly(
     ],
     defines = ["TRACE"],
     deps = [
-        ":ref_System.Runtime",
+        "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Collections:ref_System.Collections",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",

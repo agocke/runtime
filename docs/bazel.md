@@ -634,3 +634,40 @@ aggregate; **5 still need special support**.
 - Test commands (linux-x64):
   - **All tests**: `bazel test //... --config=clr_checked`
   - **Library tests**: `bazel test //src/tests:all --config=clr_checked`
+
+## macOS Test Limitations
+
+On macOS, some tests that require access to the macOS Keychain do not work
+under `bazel test`. This is because Bazel's test wrapper (`test-setup.sh`)
+creates an isolated environment that does not have access to the user's
+login session, which is required by the macOS Security framework APIs
+(e.g., `SecKeychainCopyDefault`).
+
+**Affected tests:** Tests in `System.Security.Cryptography.Pkcs` that call
+`EnvelopedCms.Decrypt()` without providing explicit certificates attempt to
+search the system certificate stores, which requires keychain access.
+
+**Workaround:** These tests are marked with `[Trait("category", "RequiresKeychain")]`
+and are excluded from `bazel test` runs via `-notrait "category=RequiresKeychain"`.
+
+**Running excluded tests:** Use `bazel run` instead of `bazel test` for
+individual tests that require keychain access:
+
+```bash
+# This works (inherits full user environment):
+bazel run //src/libraries/System.Security.Cryptography.Pkcs/tests:System.Security.Cryptography.Pkcs.Tests
+
+# This fails for keychain tests (isolated environment):
+bazel test //src/libraries/System.Security.Cryptography.Pkcs/tests:System.Security.Cryptography.Pkcs.Tests
+```
+
+**Adding new keychain-dependent tests:** Mark them with the trait:
+
+```csharp
+[Fact]
+[Trait("category", "RequiresKeychain")]
+public void MyTestThatNeedsKeychain()
+{
+    // ...
+}
+```

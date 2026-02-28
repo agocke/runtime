@@ -185,7 +185,10 @@ netcoreapp_impl_assembly(
     }),
     resx_file = "src/Resources/Strings.resx",
     allow_unsafe_blocks = True,
-    defines = ["SYSTEM_NET_SOCKETS_DLL"],
+    defines = ["SYSTEM_NET_SOCKETS_DLL"] + select({
+        "@platforms//os:macos": ["SYSTEM_NET_SOCKETS_APPLE_PLATFROM"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//src/libraries:ref_Microsoft.Win32.Primitives",
         "//src/libraries:ref_System.Runtime",
