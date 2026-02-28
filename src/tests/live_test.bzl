@@ -412,25 +412,27 @@ def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
 def _shared_testhost_impl(ctx):
     """Build a shared testhost directory that all library tests can reference.
 
-    This rule creates the testhost once, containing SDK + Core_Root assemblies.
+    This rule creates the testhost once, containing SDK + runtime assemblies.
     Individual tests reference this shared testhost instead of each building
     their own, eliminating ~90MB of redundant file copies per test.
     """
     toolchain = ctx.toolchains["@rules_dotnet//dotnet:toolchain_type"]
     dotnet_file = toolchain.dotnetinfo.runtime_files[0]
     sdk_version = toolchain.dotnetinfo.runtime_version
-    core_root = ctx.file.core_root
 
     testhost = ctx.actions.declare_directory("testhost")
 
+    # Collect all runtime files into a single list for the shell command
+    runtime_files = ctx.files.managed_assemblies + ctx.files.native_libs + ctx.files.runtime_binaries
+
     ctx.actions.run_shell(
-        inputs = [core_root, dotnet_file],
+        inputs = [dotnet_file] + runtime_files,
         outputs = [testhost],
         command = """\
 SDK_ROOT=$(dirname "$(readlink -f "$1")")
 VERSION="$2"
 OUT="$3"
-CORE_ROOT="$4"
+shift 3
 
 FW_DIR="$OUT/shared/Microsoft.NETCore.App/$VERSION"
 mkdir -p "$FW_DIR"
@@ -447,8 +449,10 @@ cp -aL "$SDK_ROOT/host/fxr/$VERSION/"* "$OUT/host/fxr/$VERSION/"
 # SDK shared framework as base (lowest priority)
 cp -aL "$SDK_ROOT/shared/Microsoft.NETCore.App/$VERSION/"* "$FW_DIR/"
 
-# Core_Root: Bazel-built runtime + managed assemblies override SDK
-cp -afL "$CORE_ROOT/"* "$FW_DIR/"
+# Copy Bazel-built runtime files (managed + native) over SDK
+for f in "$@"; do
+    cp -afL "$f" "$FW_DIR/"
+done
 
 # Generate a version-free deps.json matching MSBuild's testhost pattern.
 # The SDK's deps.json contains assemblyVersion/fileVersion constraints that
@@ -489,7 +493,7 @@ if [ -d "$REF_DIR" ]; then
     fi
 fi
 """,
-        arguments = [dotnet_file.path, sdk_version, testhost.path, core_root.path],
+        arguments = [dotnet_file.path, sdk_version, testhost.path] + [f.path for f in runtime_files],
         mnemonic = "BuildTestHost",
         progress_message = "Building shared testhost",
     )
@@ -500,10 +504,26 @@ _shared_testhost_rule = rule(
     _shared_testhost_impl,
     doc = """Build a shared testhost directory for library tests.""",
     attrs = {
-        "core_root": attr.label(
-            doc = "The Core_Root directory with Bazel-built runtime assemblies",
-            default = "//:Core_Root",
-            allow_single_file = True,
+        "managed_assemblies": attr.label(
+            doc = "Filegroup containing managed assemblies (impl_netcoreapp)",
+            default = "//src/libraries:impl_netcoreapp",
+            allow_files = True,
+        ),
+        "native_libs": attr.label_list(
+            doc = "Native libraries to include in the testhost",
+            default = [
+                "//src/native/libs/System.Native:System.Native",
+                "//src/native/libs/System.Globalization.Native:System.Globalization.Native",
+                "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native",
+                "//src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native",
+                "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
+            ],
+            allow_files = True,
+        ),
+        "runtime_binaries": attr.label(
+            doc = "Filegroup containing runtime binaries (coreclr, hostpolicy, etc.)",
+            default = "//src/tests:testhost_runtime_binaries",
+            allow_files = True,
         ),
     },
     toolchains = ["@rules_dotnet//dotnet:toolchain_type"],

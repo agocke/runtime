@@ -113,33 +113,28 @@ runtime_layout(
     }),
 )
 
-# ── Core_Root: full test runtime ─────────────────────────────────────
+# ── Core_Root: minimal runtime for JIT/coreclr tests ─────────────────
+# Uses impl_netcoreapp_minimal (~30 assemblies) instead of impl_netcoreapp
+# (~145 assemblies). This reduces cache invalidation: changes to libraries
+# like System.Net.Sockets, System.Xml, etc. won't invalidate JIT test cache.
+# Library tests use shared_testhost which references impl_netcoreapp directly.
 copy_to_directory(
     name = "Core_Root",
     out = "Core_Root",
     srcs = [
         "//src/coreclr/hosts:corerun",
-        "//src/native/corehost:hostpolicy",
         "//src/native/libs/System.Native:System.Native",
         "//src/native/libs/System.Globalization.Native:System.Globalization.Native",
-        "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native",
-        "//src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native",
-        "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
-        "//src/libraries:impl_netcoreapp",
+        "//src/libraries:impl_netcoreapp_minimal",
     ] + select({
         "@platforms//os:macos": ["//src/coreclr/dlls/mscoree/coreclr:libcoreclr_dylib"],
         "//conditions:default": ["//src/coreclr/dlls/mscoree/coreclr:libcoreclr.so"],
     }) + select({
         "@platforms//os:linux": [
             "//src/coreclr/System.Private.CoreLib:crossgen_System.Private.CoreLib",
-            "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl",
         ],
-        # macOS: skip OpenSSL (not available on macOS)
-        # Skip R2R crossgen on macOS for now (R2R segfaults at runtime, needs investigation)
-        # The IL CoreLib from impl_netcoreapp is used directly.
         "@platforms//os:macos": [],
     }),
-    # The R2R CoreLib (listed last) overwrites the IL version from impl_netcoreapp.
     allow_overwrites = True,
     replace_prefixes = {
         "System.Private.CoreLib.r2r.dll": "System.Private.CoreLib.dll",

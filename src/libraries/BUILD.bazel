@@ -15,6 +15,76 @@ nowarn = [ "CS8500", "CS8969" ]
 
 exports_files([])
 
+# ── Minimal impl assemblies for JIT tests ─────────────────────────────
+# This subset is used by Core_Root_Minimal to reduce cache invalidation.
+# JIT tests only need basic runtime support; they don't use networking,
+# XML, serialization, etc. Changes to assemblies outside this set won't
+# invalidate the JIT test cache.
+filegroup(
+    name = "impl_netcoreapp_minimal",
+    srcs = [
+        # ── Core ──
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
+        ":impl_System.Runtime",
+        ":impl_System.Private.Uri",
+        ":impl_Microsoft.Win32.Primitives",
+        "//src/libraries/shims/mscorlib:impl_mscorlib",
+
+        # ── Essential facade shims ──
+        "//src/libraries/shims/System.AppContext:impl_System.AppContext",
+        "//src/libraries/shims/System.Buffers:impl_System.Buffers",
+        "//src/libraries/shims/System.Diagnostics.Debug:impl_System.Diagnostics.Debug",
+        "//src/libraries/shims/System.Diagnostics.Tools:impl_System.Diagnostics.Tools",
+        "//src/libraries/shims/System.Globalization:impl_System.Globalization",
+        "//src/libraries/shims/System.Globalization.Calendars:impl_System.Globalization.Calendars",
+        "//src/libraries/shims/System.IO:impl_System.IO",
+        "//src/libraries/shims/System.IO.FileSystem:impl_System.IO.FileSystem",
+        "//src/libraries/shims/System.IO.FileSystem.Primitives:impl_System.IO.FileSystem.Primitives",
+        "//src/libraries/shims/System.Reflection:impl_System.Reflection",
+        "//src/libraries/shims/System.Reflection.Extensions:impl_System.Reflection.Extensions",
+        "//src/libraries/shims/System.Resources.Reader:impl_System.Resources.Reader",
+        "//src/libraries/shims/System.Resources.ResourceManager:impl_System.Resources.ResourceManager",
+        "//src/libraries/shims/System.Runtime.CompilerServices.Unsafe:impl_System.Runtime.CompilerServices.Unsafe",
+        "//src/libraries/shims/System.Runtime.Extensions:impl_System.Runtime.Extensions",
+        "//src/libraries/shims/System.Runtime.Handles:impl_System.Runtime.Handles",
+        "//src/libraries/shims/System.Runtime.InteropServices.RuntimeInformation:impl_System.Runtime.InteropServices.RuntimeInformation",
+        "//src/libraries/shims/System.Text.Encoding:impl_System.Text.Encoding",
+        "//src/libraries/shims/System.Threading.Tasks:impl_System.Threading.Tasks",
+        "//src/libraries/shims/System.Threading.Tasks.Extensions:impl_System.Threading.Tasks.Extensions",
+        "//src/libraries/shims/System.Threading.Timer:impl_System.Threading.Timer",
+        "//src/libraries/shims/System.ValueTuple:impl_System.ValueTuple",
+
+        # ── Essential real libraries ──
+        "//src/libraries/System.Collections:impl_System.Collections",
+        "//src/libraries/System.Collections.Concurrent:impl_System.Collections.Concurrent",
+        "//src/libraries/System.Collections.NonGeneric:impl_System.Collections.NonGeneric",
+        "//src/libraries/System.Console:impl_System.Console",
+        "//src/libraries/System.Linq:impl_System.Linq",
+        "//src/libraries/System.Memory:impl_System.Memory",
+        "//src/libraries/System.Numerics.Vectors:impl_System.Numerics.Vectors",
+        "//src/libraries/System.ObjectModel:impl_System.ObjectModel",
+        "//src/libraries/System.Runtime.InteropServices:impl_System.Runtime.InteropServices",
+        "//src/libraries/System.Runtime.Intrinsics:impl_System.Runtime.Intrinsics",
+        "//src/libraries/System.Runtime.Loader:impl_System.Runtime.Loader",
+        "//src/libraries/System.Text.Encoding.Extensions:impl_System.Text.Encoding.Extensions",
+        "//src/libraries/System.Threading:impl_System.Threading",
+        "//src/libraries/System.Threading.Overlapped:impl_System.Threading.Overlapped",
+        "//src/libraries/System.Threading.Thread:impl_System.Threading.Thread",
+        "//src/libraries/System.Threading.ThreadPool:impl_System.Threading.ThreadPool",
+
+        # ── Facades needed by threading/reflection ──
+        "//src/libraries/System.Diagnostics.Tracing:impl_System.Diagnostics.Tracing",
+        "//src/libraries/System.Reflection.Primitives:impl_System.Reflection.Primitives",
+        "//src/libraries/System.Reflection.Emit.ILGeneration:impl_System.Reflection.Emit.ILGeneration",
+        "//src/libraries/System.Reflection.Emit.Lightweight:impl_System.Reflection.Emit.Lightweight",
+        "//src/libraries/System.Reflection.TypeExtensions:impl_System.Reflection.TypeExtensions",
+        "//src/libraries/System.Reflection.Emit:impl_System.Reflection.Emit",
+        "//src/libraries/System.Reflection.Metadata:impl_System.Reflection.Metadata",
+        "//src/libraries/System.Collections.Immutable:impl_System.Collections.Immutable",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 ref_assembly_nowarns = [
     # Ref assemblies use 'throw null'
     "CS8597",
