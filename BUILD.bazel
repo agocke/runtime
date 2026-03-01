@@ -132,6 +132,7 @@ copy_to_directory(
     }) + select({
         "@platforms//os:linux": [
             "//src/coreclr/System.Private.CoreLib:crossgen_System.Private.CoreLib",
+            "//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl",
         ],
         "@platforms//os:macos": [],
     }),
