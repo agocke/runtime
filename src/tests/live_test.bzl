@@ -1,4 +1,4 @@
-load("//:defs.bzl", "NETCOREAPP_CURRENT")
+load("//:defs.bzl", "NETCOREAPP_CURRENT", "csharp_library")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dotnet//dotnet/private:providers.bzl",
@@ -16,7 +16,7 @@ load("@rules_dotnet//dotnet/private:common.bzl",
     "is_standard_framework",
     "to_rlocation_path",)
 load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
-load("//src/libraries:defs.bzl", "live_csharp_library", "LIVE_REFPACK_DEPS")
+load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS", "CORE_ROOT_REFPACK_DEPS")
 load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary", "create_launcher", "COPY_EXECUTION_REQUIREMENTS")
 
 # Match src/tests/Directory.Build.props NoWarn
@@ -620,36 +620,55 @@ def coreclr_test(
     use_shared_compilation = True,
     **kwargs
 ):
-    deps = deps + [
+    # Build complete deps list for JIT tests:
+    # 1. User deps (filtered to remove any already in CORE_ROOT_REFPACK_DEPS)
+    # 2. Xunit deps
+    # 3. CORE_ROOT_REFPACK_DEPS (refs matching impls in Core_Root)
+    core_root_set = {dep: True for dep in CORE_ROOT_REFPACK_DEPS}
+    filtered_deps = [dep for dep in deps if dep not in core_root_set]
+
+    all_deps = filtered_deps + [
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
-    ]
+    ] + CORE_ROOT_REFPACK_DEPS
 
     compiler_options = [
         "/debug:%s" % debug_type,
         "/optimize%s" % ("" if optimize else "-"),
     ] + compiler_options
 
-    # Create two targets: a library for the merged runner and a test. We'll use one or the other.
-    live_csharp_library(
+    analyzers = [
+        "//src/tests/Common:XUnitWrapperGenerator",
+    ]
+
+    # Create a library target for the merged runner
+    csharp_library(
         name = name + "_lib",
-        deps = deps,
+        deps = all_deps,
         nowarn = _TEST_NOWARN,
         tags = tags,
         visibility = ["//visibility:public"],
         compiler_options = compiler_options,
+        langversion = "preview",
+        disable_implicit_framework_refs = True,
+        target_frameworks = [NETCOREAPP_CURRENT],
         use_shared_compilation = use_shared_compilation,
         **kwargs
     )
 
-    live_csharp_test(
+    # Create the test target - calls _live_csharp_test directly to bypass LIVE_REFPACK_DEPS
+    _live_csharp_test(
         name = name,
-        deps = deps,
+        deps = all_deps,
+        analyzers = analyzers,
         size = size,
-        tags = tags + [ "pri%d" % pri ],
+        tags = tags + ["pri%d" % pri],
         compiler_options = compiler_options,
+        target_frameworks = [NETCOREAPP_CURRENT],
+        nowarn = ["CS1701"] + _TEST_NOWARN,
         use_shared_compilation = use_shared_compilation,
+        shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         **kwargs
     )
 

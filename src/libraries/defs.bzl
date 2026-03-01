@@ -25,6 +25,83 @@ LIVE_NETCOREAPP_DEPS = [
 #    "//src/libraries:live_System.Collections",
 ]
 
+# ── Core_Root library set ─────────────────────────────────────────────
+# This is the single source of truth for what libraries are available to
+# JIT/coreclr tests at both compile time (refs) and runtime (impls).
+# 
+# Format: (library_name, package_path_or_none)
+#   - If package_path is None, the target is at //src/libraries:ref_/impl_<name>
+#   - If package_path is a string, the target is at that path:ref_/impl_<name>
+#
+# IMPORTANT: If a JIT test needs a library, add it here. This ensures both
+# the ref (for compilation) and impl (for runtime) are available.
+CORE_ROOT_LIBS = [
+    # Core libraries (these have refs and impls at //src/libraries:)
+    ("System.Runtime", None),
+    ("Microsoft.Win32.Primitives", None),
+    ("System.ComponentModel.Primitives", None),
+    ("System.Diagnostics.Process", None),
+    
+    # Standard libraries with their own packages
+    ("System.Collections", "//src/libraries/System.Collections"),
+    ("System.Collections.Concurrent", "//src/libraries/System.Collections.Concurrent"),
+    ("System.Collections.Immutable", "//src/libraries/System.Collections.Immutable"),
+    ("System.Collections.NonGeneric", "//src/libraries/System.Collections.NonGeneric"),
+    ("System.Collections.Specialized", "//src/libraries/System.Collections.Specialized"),
+    ("System.ComponentModel", "//src/libraries/System.ComponentModel"),
+    ("System.Console", "//src/libraries/System.Console"),
+    ("System.Diagnostics.FileVersionInfo", "//src/libraries/System.Diagnostics.FileVersionInfo"),
+    ("System.Diagnostics.Tracing", "//src/libraries/System.Diagnostics.Tracing"),
+    ("System.IO.MemoryMappedFiles", "//src/libraries/System.IO.MemoryMappedFiles"),
+    ("System.Linq", "//src/libraries/System.Linq"),
+    ("System.Memory", "//src/libraries/System.Memory"),
+    ("System.Numerics.Vectors", "//src/libraries/System.Numerics.Vectors"),
+    ("System.ObjectModel", "//src/libraries/System.ObjectModel"),
+    ("System.Reflection.Emit", "//src/libraries/System.Reflection.Emit"),
+    ("System.Reflection.Emit.ILGeneration", "//src/libraries/System.Reflection.Emit.ILGeneration"),
+    ("System.Reflection.Emit.Lightweight", "//src/libraries/System.Reflection.Emit.Lightweight"),
+    ("System.Reflection.Metadata", "//src/libraries/System.Reflection.Metadata"),
+    ("System.Reflection.Primitives", "//src/libraries/System.Reflection.Primitives"),
+    ("System.Reflection.TypeExtensions", "//src/libraries/System.Reflection.TypeExtensions"),
+    ("System.Runtime.InteropServices", "//src/libraries/System.Runtime.InteropServices"),
+    ("System.Runtime.Intrinsics", "//src/libraries/System.Runtime.Intrinsics"),
+    ("System.Runtime.Loader", "//src/libraries/System.Runtime.Loader"),
+    ("System.Runtime.Numerics", "//src/libraries/System.Runtime.Numerics"),
+    ("System.Runtime.Serialization.Primitives", "//src/libraries/System.Runtime.Serialization.Primitives"),
+    ("System.Security.Cryptography", "//src/libraries/System.Security.Cryptography"),
+    ("System.Text.Encoding.Extensions", "//src/libraries/System.Text.Encoding.Extensions"),
+    ("System.Text.Encodings.Web", "//src/libraries/System.Text.Encodings.Web"),
+    ("System.Text.RegularExpressions", "//src/libraries/System.Text.RegularExpressions"),
+    ("System.Threading", "//src/libraries/System.Threading"),
+    ("System.Threading.Overlapped", "//src/libraries/System.Threading.Overlapped"),
+    ("System.Threading.Tasks.Parallel", "//src/libraries/System.Threading.Tasks.Parallel"),
+    ("System.Threading.Thread", "//src/libraries/System.Threading.Thread"),
+    ("System.Threading.ThreadPool", "//src/libraries/System.Threading.ThreadPool"),
+]
+
+def _lib_to_ref(lib_tuple):
+    """Convert a CORE_ROOT_LIBS entry to a ref assembly label."""
+    name, pkg = lib_tuple
+    if pkg:
+        return "%s:ref_%s" % (pkg, name)
+    else:
+        return "//src/libraries:ref_%s" % name
+
+def _lib_to_impl(lib_tuple):
+    """Convert a CORE_ROOT_LIBS entry to an impl assembly label."""
+    name, pkg = lib_tuple
+    if pkg:
+        return "%s:impl_%s" % (pkg, name)
+    else:
+        return "//src/libraries:impl_%s" % name
+
+# Ref assemblies for Core_Root - used by coreclr_test for compilation
+CORE_ROOT_REFPACK_DEPS = [_lib_to_ref(lib) for lib in CORE_ROOT_LIBS]
+
+# Impl assemblies for Core_Root - used at runtime (exported for BUILD.bazel)
+CORE_ROOT_IMPL_DEPS = [_lib_to_impl(lib) for lib in CORE_ROOT_LIBS]
+
+# Full refpack for library tests (superset of CORE_ROOT_REFPACK_DEPS)
 LIVE_REFPACK_DEPS = [
     # Roughly topologically sorted
     "//src/libraries:ref_System.Runtime",
