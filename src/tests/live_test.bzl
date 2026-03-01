@@ -1,4 +1,4 @@
-load("//:defs.bzl", "NETCOREAPP_CURRENT")
+load("//:defs.bzl", "NETCOREAPP_CURRENT", "csharp_library")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dotnet//dotnet/private:providers.bzl",
@@ -16,7 +16,7 @@ load("@rules_dotnet//dotnet/private:common.bzl",
     "is_standard_framework",
     "to_rlocation_path",)
 load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
-load("//src/libraries:defs.bzl", "live_csharp_library", "LIVE_REFPACK_DEPS")
+load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS", "CORE_ROOT_REFPACK_DEPS")
 load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary", "create_launcher", "COPY_EXECUTION_REQUIREMENTS")
 
 # Match src/tests/Directory.Build.props NoWarn
@@ -412,25 +412,27 @@ def _generate_test_depsfile(ctx, dll, tfm, additional_runfiles):
 def _shared_testhost_impl(ctx):
     """Build a shared testhost directory that all library tests can reference.
 
-    This rule creates the testhost once, containing SDK + Core_Root assemblies.
+    This rule creates the testhost once, containing SDK + runtime assemblies.
     Individual tests reference this shared testhost instead of each building
     their own, eliminating ~90MB of redundant file copies per test.
     """
     toolchain = ctx.toolchains["@rules_dotnet//dotnet:toolchain_type"]
     dotnet_file = toolchain.dotnetinfo.runtime_files[0]
     sdk_version = toolchain.dotnetinfo.runtime_version
-    core_root = ctx.file.core_root
 
     testhost = ctx.actions.declare_directory("testhost")
 
+    # Collect all runtime files into a single list for the shell command
+    runtime_files = ctx.files.managed_assemblies + ctx.files.native_libs + ctx.files.runtime_binaries
+
     ctx.actions.run_shell(
-        inputs = [core_root, dotnet_file],
+        inputs = [dotnet_file] + runtime_files,
         outputs = [testhost],
         command = """\
 SDK_ROOT=$(dirname "$(readlink -f "$1")")
 VERSION="$2"
 OUT="$3"
-CORE_ROOT="$4"
+shift 3
 
 FW_DIR="$OUT/shared/Microsoft.NETCore.App/$VERSION"
 mkdir -p "$FW_DIR"
@@ -447,8 +449,10 @@ cp -aL "$SDK_ROOT/host/fxr/$VERSION/"* "$OUT/host/fxr/$VERSION/"
 # SDK shared framework as base (lowest priority)
 cp -aL "$SDK_ROOT/shared/Microsoft.NETCore.App/$VERSION/"* "$FW_DIR/"
 
-# Core_Root: Bazel-built runtime + managed assemblies override SDK
-cp -afL "$CORE_ROOT/"* "$FW_DIR/"
+# Copy Bazel-built runtime files (managed + native) over SDK
+for f in "$@"; do
+    cp -afL "$f" "$FW_DIR/"
+done
 
 # Generate a version-free deps.json matching MSBuild's testhost pattern.
 # The SDK's deps.json contains assemblyVersion/fileVersion constraints that
@@ -489,7 +493,7 @@ if [ -d "$REF_DIR" ]; then
     fi
 fi
 """,
-        arguments = [dotnet_file.path, sdk_version, testhost.path, core_root.path],
+        arguments = [dotnet_file.path, sdk_version, testhost.path] + [f.path for f in runtime_files],
         mnemonic = "BuildTestHost",
         progress_message = "Building shared testhost",
     )
@@ -500,10 +504,26 @@ _shared_testhost_rule = rule(
     _shared_testhost_impl,
     doc = """Build a shared testhost directory for library tests.""",
     attrs = {
-        "core_root": attr.label(
-            doc = "The Core_Root directory with Bazel-built runtime assemblies",
-            default = "//:Core_Root",
-            allow_single_file = True,
+        "managed_assemblies": attr.label(
+            doc = "Filegroup containing managed assemblies (impl_netcoreapp)",
+            default = "//src/libraries:impl_netcoreapp",
+            allow_files = True,
+        ),
+        "native_libs": attr.label_list(
+            doc = "Native libraries to include in the testhost",
+            default = [
+                "//src/native/libs/System.Native:System.Native",
+                "//src/native/libs/System.Globalization.Native:System.Globalization.Native",
+                "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native",
+                "//src/native/libs/System.IO.Ports.Native:System.IO.Ports.Native",
+                "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
+            ],
+            allow_files = True,
+        ),
+        "runtime_binaries": attr.label(
+            doc = "Filegroup containing runtime binaries (coreclr, hostpolicy, etc.)",
+            default = "//src/tests:testhost_runtime_binaries",
+            allow_files = True,
         ),
     },
     toolchains = ["@rules_dotnet//dotnet:toolchain_type"],
@@ -600,36 +620,55 @@ def coreclr_test(
     use_shared_compilation = True,
     **kwargs
 ):
-    deps = deps + [
+    # Build complete deps list for JIT tests:
+    # 1. User deps (filtered to remove any already in CORE_ROOT_REFPACK_DEPS)
+    # 2. Xunit deps
+    # 3. CORE_ROOT_REFPACK_DEPS (refs matching impls in Core_Root)
+    core_root_set = {dep: True for dep in CORE_ROOT_REFPACK_DEPS}
+    filtered_deps = [dep for dep in deps if dep not in core_root_set]
+
+    all_deps = filtered_deps + [
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
-    ]
+    ] + CORE_ROOT_REFPACK_DEPS
 
     compiler_options = [
         "/debug:%s" % debug_type,
         "/optimize%s" % ("" if optimize else "-"),
     ] + compiler_options
 
-    # Create two targets: a library for the merged runner and a test. We'll use one or the other.
-    live_csharp_library(
+    analyzers = [
+        "//src/tests/Common:XUnitWrapperGenerator",
+    ]
+
+    # Create a library target for the merged runner
+    csharp_library(
         name = name + "_lib",
-        deps = deps,
+        deps = all_deps,
         nowarn = _TEST_NOWARN,
         tags = tags,
         visibility = ["//visibility:public"],
         compiler_options = compiler_options,
+        langversion = "preview",
+        disable_implicit_framework_refs = True,
+        target_frameworks = [NETCOREAPP_CURRENT],
         use_shared_compilation = use_shared_compilation,
         **kwargs
     )
 
-    live_csharp_test(
+    # Create the test target - calls _live_csharp_test directly to bypass LIVE_REFPACK_DEPS
+    _live_csharp_test(
         name = name,
-        deps = deps,
+        deps = all_deps,
+        analyzers = analyzers,
         size = size,
-        tags = tags + [ "pri%d" % pri ],
+        tags = tags + ["pri%d" % pri],
         compiler_options = compiler_options,
+        target_frameworks = [NETCOREAPP_CURRENT],
+        nowarn = ["CS1701"] + _TEST_NOWARN,
         use_shared_compilation = use_shared_compilation,
+        shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         **kwargs
     )
 
