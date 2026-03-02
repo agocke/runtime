@@ -1,7 +1,8 @@
 load("@rules_dotnet//dotnet:defs.bzl", "import_library")
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+load("@aspect_bazel_lib//lib:tar.bzl", "tar")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
-load("//eng/bazel:runtime_archive.bzl", "runtime_archive")
+load("//eng/bazel:runtime_archive.bzl", "runtime_staging")
 load("//eng/bazel:runtime_layout.bzl", "runtime_layout")
 load("//eng/bazel:version.bzl", "PRODUCT_VERSION", "PRODUCT_VERSION_FULL")
 
@@ -124,10 +125,9 @@ runtime_layout(
 #   ./compare-runtime-packs.sh \
 #     artifacts/packages/Debug/Shipping/dotnet-runtime-*-linux-x64.tar.gz \
 #     bazel-bin/dotnet-runtime-*-linux-x64.tar.gz
-runtime_archive(
-    name = "runtime_archive",
+runtime_staging(
+    name = "runtime_staging",
     version = PRODUCT_VERSION_FULL,
-    rid = "linux-x64",
     root_files = [
         "//src/native/corehost:dotnet",
     ],
@@ -212,6 +212,31 @@ runtime_archive(
         "//eng/bazel/data:Microsoft.NETCore.App.deps.json",
         "//eng/bazel/data:Microsoft.NETCore.App.runtimeconfig.json",
     ],
+)
+
+LINUX_RID = "linux-x64"
+MACOS_RID = "osx-arm64"
+
+tar(
+    name = "runtime_archive_linux",
+    out = "dotnet-runtime-" + PRODUCT_VERSION_FULL + "-" + LINUX_RID + ".tar.gz",
+    srcs = [":runtime_staging"],
+    compress = "gzip",
+)
+
+tar(
+    name = "runtime_archive_macos",
+    out = "dotnet-runtime-" + PRODUCT_VERSION_FULL + "-" + MACOS_RID + ".tar.gz",
+    srcs = [":runtime_staging"],
+    compress = "gzip",
+)
+
+alias(
+    name = "runtime_archive",
+    actual = select({
+        "@platforms//os:macos": ":runtime_archive_macos",
+        "//conditions:default": ":runtime_archive_linux",
+    }),
 )
 
 # ── Core_Root: minimal runtime for JIT/coreclr tests ─────────────────

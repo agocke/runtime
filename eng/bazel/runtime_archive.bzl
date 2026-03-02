@@ -1,9 +1,6 @@
-"""Rule to assemble a .NET runtime archive (tar.gz) matching the MSBuild packs output.
+"""Rule to assemble a .NET runtime directory layout matching the MSBuild packs output.
 
-Produces a dotnet-runtime-{version}-{rid}.tar.gz matching the layout from:
-    ./build.sh packs -rc Release -lc Release
-
-Layout:
+Produces a tree artifact with the standard runtime layout:
     ./dotnet                                            # host executable
     ./LICENSE.txt                                       # license
     ./ThirdPartyNotices.txt                             # third-party notices
@@ -13,13 +10,13 @@ Layout:
         System.Private.CoreLib.dll, System.Runtime.dll, ... # managed framework
         Microsoft.NETCore.App.deps.json                     # framework manifest
         Microsoft.NETCore.App.runtimeconfig.json            # runtime config
+
+To produce a tar.gz archive, compose with tar() from @aspect_bazel_lib//lib:tar.bzl.
 """
 
-def _runtime_archive_impl(ctx):
+def _runtime_staging_impl(ctx):
     version = ctx.attr.version
-    rid = ctx.attr.rid
-    archive_name = "dotnet-runtime-{}-{}.tar.gz".format(version, rid)
-    output = ctx.actions.declare_file(archive_name)
+    output = ctx.actions.declare_directory(ctx.label.name)
 
     fxr_dir = "host/fxr/{}".format(version)
     fx_dir = "shared/Microsoft.NETCore.App/{}".format(version)
@@ -27,27 +24,27 @@ def _runtime_archive_impl(ctx):
     inputs = []
     commands = [
         'set -euo pipefail',
-        'STAGING=$(mktemp -d)',
-        'trap "rm -rf $STAGING" EXIT',
-        'mkdir -p "$STAGING/{fxr}" "$STAGING/{fx}"'.format(fxr = fxr_dir, fx = fx_dir),
+        'mkdir -p "{out}/{fxr}" "{out}/{fx}"'.format(out = output.path, fxr = fxr_dir, fx = fx_dir),
     ]
 
     # Root files: dotnet host
     for dep in ctx.attr.root_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append('cp "{src}" "$STAGING/{name}"'.format(
+            commands.append('cp "{src}" "{out}/{name}"'.format(
                 src = f.path,
+                out = output.path,
                 name = f.basename,
             ))
-            commands.append('chmod +x "$STAGING/{name}"'.format(name = f.basename))
+            commands.append('chmod +x "{out}/{name}"'.format(out = output.path, name = f.basename))
 
     # License files (with rename support)
     for src_label, dest_name in ctx.attr.license_files.items():
         for f in src_label.files.to_list():
             inputs.append(f)
-            commands.append('cp "{src}" "$STAGING/{name}"'.format(
+            commands.append('cp "{src}" "{out}/{name}"'.format(
                 src = f.path,
+                out = output.path,
                 name = dest_name,
             ))
 
@@ -55,8 +52,9 @@ def _runtime_archive_impl(ctx):
     for dep in ctx.attr.fxr_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append('cp "{src}" "$STAGING/{fxr}/{name}"'.format(
+            commands.append('cp "{src}" "{out}/{fxr}/{name}"'.format(
                 src = f.path,
+                out = output.path,
                 fxr = fxr_dir,
                 name = f.basename,
             ))
@@ -65,8 +63,9 @@ def _runtime_archive_impl(ctx):
     for dep in ctx.attr.framework_native_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append('cp "{src}" "$STAGING/{fx}/{name}"'.format(
+            commands.append('cp "{src}" "{out}/{fx}/{name}"'.format(
                 src = f.path,
+                out = output.path,
                 fx = fx_dir,
                 name = f.basename,
             ))
@@ -88,8 +87,9 @@ def _runtime_archive_impl(ctx):
                 dest_name = rename_map.get(f.basename, f.basename)
                 # Use cp -f to allow later entries to overwrite earlier ones
                 # (e.g. R2R CoreLib overwrites IL CoreLib).
-                commands.append('cp -f "{src}" "$STAGING/{fx}/{name}"'.format(
+                commands.append('cp -f "{src}" "{out}/{fx}/{name}"'.format(
                     src = f.path,
+                    out = output.path,
                     fx = fx_dir,
                     name = dest_name,
                 ))
@@ -98,17 +98,12 @@ def _runtime_archive_impl(ctx):
     for dep in ctx.attr.framework_data_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append('cp "{src}" "$STAGING/{fx}/{name}"'.format(
+            commands.append('cp "{src}" "{out}/{fx}/{name}"'.format(
                 src = f.path,
+                out = output.path,
                 fx = fx_dir,
                 name = f.basename,
             ))
-
-    # Create the tar.gz with ./ prefix (matching MSBuild output)
-    commands.append(
-        'tar czf "{output}" -C "$STAGING" --sort=name --owner=0 --group=0 '.format(output = output.path) +
-        '--mtime="2000-01-01 00:00:00Z" .',
-    )
 
     ctx.actions.run_shell(
         inputs = inputs,
@@ -118,16 +113,12 @@ def _runtime_archive_impl(ctx):
 
     return [DefaultInfo(files = depset([output]))]
 
-runtime_archive = rule(
-    implementation = _runtime_archive_impl,
+runtime_staging = rule(
+    implementation = _runtime_staging_impl,
     attrs = {
         "version": attr.string(
             mandatory = True,
             doc = "Product version string used in paths and archive name (e.g. '10.0.4-dev').",
-        ),
-        "rid": attr.string(
-            default = "linux-x64",
-            doc = "Runtime identifier (e.g. 'linux-x64').",
         ),
         "root_files": attr.label_list(
             allow_files = True,
