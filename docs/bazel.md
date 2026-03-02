@@ -124,6 +124,43 @@ areas:
 - **Unmatched compilations**: 640 CMake-only + 405 MSBuild-only units not yet ported
   to Bazel
 
+### Verifying Runtime Pack Output
+
+`compare-runtime-packs.sh` is the acceptance test for the Bazel runtime build.
+It verifies that the Bazel-produced runtime archive (`dotnet-runtime-*-linux-x64.tar.gz`)
+is **bit-for-bit identical** to the one produced by CMake+MSBuild's `packs` subset.
+
+This is the primary correctness gate: if the archives match, the Bazel build is
+producing the correct output.
+
+```bash
+# 1. Build the MSBuild runtime archive (if not already built)
+./build.sh clr+libs+host -rc Release -lc Release
+./build.sh packs -rc Release -lc Release
+# → artifacts/packages/*/Shipping/dotnet-runtime-*-linux-x64.tar.gz
+
+# 2. Build the Bazel runtime archive (once implemented)
+# bazel build //:runtime_archive
+# → bazel-bin/dotnet-runtime-*-linux-x64.tar.gz
+
+# 3. Compare them
+./compare-runtime-packs.sh \
+  artifacts/packages/Debug/Shipping/dotnet-runtime-*-linux-x64.tar.gz \
+  path/to/bazel-runtime.tar.gz
+```
+
+The script runs three phases:
+
+| Phase | What it checks |
+|---|---|
+| **File inventory** | Both archives contain exactly the same set of files |
+| **Content** | Every file is bit-for-bit identical (SHA-256 comparison) |
+| **Permissions** | File permission bits match |
+
+The archive contains ~192 files: the `dotnet` host, `libhostfxr.so`,
+`libcoreclr.so`, native interop libraries, `createdump`, managed framework DLLs,
+config files (`deps.json`, `runtimeconfig.json`), and license files.
+
 ## Platform Support Status
 
 CMake currently supports all of these OS × architecture combinations. Bazel support status is tracked below.

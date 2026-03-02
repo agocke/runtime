@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# build-bazel-runtime.sh — Build the .NET runtime using Bazel (native) + MSBuild (managed)
+# build-bazel-runtime.sh — Build the .NET runtime using Bazel and compare
+# against the CMake+MSBuild reference build.
 #
 # Usage (mirrors build.sh conventions):
 #   ./build-bazel-runtime.sh                              # Build everything, debug
@@ -8,6 +9,8 @@
 #   ./build-bazel-runtime.sh --native-only                # Only rebuild native code with Bazel
 #   ./build-bazel-runtime.sh --managed-only               # Only rebuild managed code with MSBuild
 #   ./build-bazel-runtime.sh --smoke-test                 # Run smoke test after build
+#   ./build-bazel-runtime.sh --compare                    # Build both + compare archives
+#   ./build-bazel-runtime.sh --skip-msbuild-build         # Compare using existing MSBuild artifacts
 
 set -euo pipefail
 
@@ -20,6 +23,8 @@ config=""
 clr_config=""
 libs_config=""
 run_smoke_test=false
+run_compare=false
+skip_msbuild_build=false
 bazel_config_args=()
 
 # ----- Parse arguments -----
@@ -51,6 +56,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --smoke-test)
             run_smoke_test=true
+            shift
+            ;;
+        --compare)
+            run_compare=true
+            shift
+            ;;
+        --skip-msbuild-build)
+            skip_msbuild_build=true
             shift
             ;;
         -h|--help)
@@ -131,6 +144,9 @@ bazel_targets=(
     "//:runtime_native"
 )
 
+# Bazel target for the full runtime archive (tar.gz)
+bazel_archive_target="//:runtime_archive"
+
 # ----- Helper functions -----
 log() { echo -e "\033[1;36m==>\033[0m $*"; }
 log_error() { echo -e "\033[1;31m==> ERROR:\033[0m $*" >&2; }
@@ -164,7 +180,12 @@ build_native_libs() {
 
     log "Building native components with Bazel..."
 
-    bazel --nohome_rc build "${bazel_config_args[@]}" "${bazel_targets[@]}"
+    local targets=("${bazel_targets[@]}")
+    if [[ "$run_compare" == "true" ]]; then
+        targets+=("$bazel_archive_target")
+    fi
+
+    bazel --nohome_rc build "${bazel_config_args[@]}" "${targets[@]}"
 
     log_success "Native build complete."
 }
@@ -311,6 +332,54 @@ RTCFG_EOF
     fi
 }
 
+# ----- Compare: build MSBuild packs + Bazel archive, then diff -----
+compare_archives() {
+    if [[ "$run_compare" != "true" ]]; then
+        return
+    fi
+
+    log "Comparing Bazel and MSBuild runtime archives..."
+
+    # Build MSBuild reference archive if needed
+    local msbuild_tarball_pattern="$scriptroot/artifacts/packages/*/Shipping/dotnet-runtime-*-linux-x64.tar.gz"
+    local msbuild_tarball=""
+
+    if [[ "$skip_msbuild_build" != "true" ]]; then
+        log "Building MSBuild reference (clr+libs+host+packs, -rc $msbuild_rc -lc $msbuild_lc)..."
+        "$scriptroot/build.sh" clr+libs+host -rc "$msbuild_rc" -lc "$msbuild_lc"
+        "$scriptroot/build.sh" packs -rc "$msbuild_rc" -lc "$msbuild_lc"
+    fi
+
+    # Find the MSBuild tarball
+    local candidates=($msbuild_tarball_pattern)
+    if [[ ${#candidates[@]} -eq 0 || ! -f "${candidates[0]}" ]]; then
+        log_error "MSBuild runtime tarball not found matching: $msbuild_tarball_pattern"
+        log_error "Run without --skip-msbuild-build, or build manually:"
+        log_error "  ./build.sh clr+libs+host+packs -rc $msbuild_rc -lc $msbuild_lc"
+        return 1
+    fi
+    msbuild_tarball="${candidates[0]}"
+
+    # Build the Bazel archive (if not already built by build_native_libs)
+    log "Building Bazel runtime archive..."
+    bazel --nohome_rc build "${bazel_config_args[@]}" "$bazel_archive_target"
+
+    # Find the Bazel tarball
+    local bazel_tarball
+    bazel_tarball=$(ls "$bazel_bin"/dotnet-runtime-*-linux-x64.tar.gz 2>/dev/null | head -1)
+    if [[ -z "$bazel_tarball" || ! -f "$bazel_tarball" ]]; then
+        log_error "Bazel runtime tarball not found in $bazel_bin"
+        return 1
+    fi
+
+    log "MSBuild: $msbuild_tarball"
+    log "Bazel:   $bazel_tarball"
+    echo ""
+
+    # Run comparison
+    "$scriptroot/compare-runtime-packs.sh" "$msbuild_tarball" "$bazel_tarball"
+}
+
 # ----- Main -----
 main() {
     log "Bazel + MSBuild hybrid runtime build"
@@ -326,6 +395,7 @@ main() {
     build_native_libs
     assemble_runtime
     smoke_test
+    compare_archives
 
     echo ""
     log_success "Done! Runtime is at: $output_dir"

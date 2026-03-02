@@ -1,12 +1,15 @@
 load("@rules_dotnet//dotnet:defs.bzl", "import_library")
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("//eng/bazel:runtime_archive.bzl", "runtime_archive")
 load("//eng/bazel:runtime_layout.bzl", "runtime_layout")
-load("//eng/bazel:version.bzl", "PRODUCT_VERSION")
+load("//eng/bazel:version.bzl", "PRODUCT_VERSION", "PRODUCT_VERSION_FULL")
 
 exports_files([
     "artifacts/obj/coreclr/System.Private.CoreLib/linux.x64.Debug/System.Private.CoreLib.Strings.resources",
     "artifacts/obj/coreclr/System.Private.CoreLib/osx.arm64.Debug/System.Private.CoreLib.Strings.resources",
+    "LICENSE.TXT",
+    "THIRD-PARTY-NOTICES.TXT",
 ])
 
 # ── Per-component build configuration flags ──────────────────────────
@@ -111,6 +114,104 @@ runtime_layout(
         "@platforms//os:linux": ["//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl"],
         "//conditions:default": [],
     }),
+)
+
+# ── Runtime archive (tar.gz) matching MSBuild packs output ───────────
+# Produces dotnet-runtime-{version}-{rid}.tar.gz with the same file
+# layout as:  ./build.sh packs -rc Release -lc Release
+#
+# Compare against MSBuild output with:
+#   ./compare-runtime-packs.sh \
+#     artifacts/packages/Debug/Shipping/dotnet-runtime-*-linux-x64.tar.gz \
+#     bazel-bin/dotnet-runtime-*-linux-x64.tar.gz
+runtime_archive(
+    name = "runtime_archive",
+    version = PRODUCT_VERSION_FULL,
+    rid = "linux-x64",
+    root_files = [
+        "//src/native/corehost:dotnet",
+    ],
+    license_files = {
+        "//:LICENSE.TXT": "LICENSE.txt",
+        "//:THIRD-PARTY-NOTICES.TXT": "ThirdPartyNotices.txt",
+    },
+    fxr_files = [
+        "//src/native/corehost:hostfxr",
+    ],
+    framework_native_files = select({
+        "@platforms//os:macos": ["//src/coreclr/dlls/mscoree/coreclr:libcoreclr_dylib"],
+        "//conditions:default": ["//src/coreclr/dlls/mscoree/coreclr:libcoreclr.so"],
+    }) + [
+        "//src/native/corehost:hostpolicy",
+        "//src/coreclr/jit:libclrjit.so",
+        "//src/coreclr/gc:clrgc",
+        "//src/coreclr/gc:clrgcexp",
+        "//src/native/libs/System.Globalization.Native:System.Globalization.Native",
+        "//src/native/libs/System.IO.Compression.Native:System.IO.Compression.Native",
+        "//src/native/libs/System.Native:System.Native",
+        "//src/native/libs/System.Net.Security.Native:System.Net.Security.Native",
+    ] + select({
+        "@platforms//os:linux": ["//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl"],
+        "//conditions:default": [],
+    }),
+    # TODO: add these once Bazel BUILD files exist for them:
+    #   createdump, libmscordaccore.so, libmscordbi.so,
+    #   libcoreclrtraceptprovider.so
+    framework_managed_files = [
+        "//src/libraries:impl_netcoreapp",
+        # ── Shim assemblies (type-forwarding facades) ──
+        "//src/libraries/shims/Microsoft.VisualBasic:impl_Microsoft.VisualBasic",
+        "//src/libraries/shims/System:impl_System",
+        "//src/libraries/shims/System.ComponentModel.DataAnnotations:impl_System.ComponentModel.DataAnnotations",
+        "//src/libraries/shims/System.Configuration:impl_System.Configuration",
+        "//src/libraries/shims/System.Core:impl_System.Core",
+        "//src/libraries/shims/System.Data:impl_System.Data",
+        "//src/libraries/shims/System.Drawing:impl_System.Drawing",
+        "//src/libraries/shims/System.IO.Compression.FileSystem:impl_System.IO.Compression.FileSystem",
+        "//src/libraries/shims/System.Net:impl_System.Net",
+        "//src/libraries/shims/System.Numerics:impl_System.Numerics",
+        "//src/libraries/shims/System.Runtime.Serialization:impl_System.Runtime.Serialization",
+        "//src/libraries/shims/System.Security:impl_System.Security",
+        "//src/libraries/shims/System.ServiceModel.Web:impl_System.ServiceModel.Web",
+        "//src/libraries/shims/System.ServiceProcess:impl_System.ServiceProcess",
+        "//src/libraries/shims/System.Transactions:impl_System.Transactions",
+        "//src/libraries/shims/System.Web:impl_System.Web",
+        "//src/libraries/shims/System.Windows:impl_System.Windows",
+        "//src/libraries/shims/System.Xml:impl_System.Xml",
+        "//src/libraries/shims/System.Xml.Linq:impl_System.Xml.Linq",
+        "//src/libraries/shims/System.Xml.Serialization:impl_System.Xml.Serialization",
+        "//src/libraries/shims/WindowsBase:impl_WindowsBase",
+        # ── Platform-specific libraries (PNSE stubs on Linux) ──
+        "//src/libraries/Microsoft.VisualBasic.Core/src:impl_Microsoft.VisualBasic.Core",
+        "//src/libraries/System.IO.Pipes.AccessControl/src:impl_System.IO.Pipes.AccessControl",
+        "//src/libraries/System.Net.Quic:impl_System.Net.Quic",
+        "//src/libraries/System.Runtime.InteropServices.JavaScript/src:impl_System.Runtime.InteropServices.JavaScript",
+        "//src/libraries/System.Threading.AccessControl/src:impl_System.Threading.AccessControl",
+    ] + select({
+        "@platforms//os:linux": [
+            "//src/coreclr/System.Private.CoreLib:crossgen_System.Private.CoreLib",
+        ],
+        "//conditions:default": [],
+    }),
+    # Assemblies in impl_netcoreapp that are NOT part of the runtime pack.
+    exclude_managed_files = [
+        "Microsoft.Extensions.Primitives.dll",
+        "System.CodeDom.dll",
+        "System.Formats.Cbor.dll",
+        "System.Formats.Nrbf.dll",
+        "System.Resources.Extensions.dll",
+        "System.Security.Cryptography.Pkcs.dll",
+        "System.Security.Cryptography.Xml.dll",
+        "System.Threading.RateLimiting.dll",
+    ],
+    # The R2R CoreLib overwrites the IL version from impl_netcoreapp.
+    rename_files = {
+        "System.Private.CoreLib.r2r.dll": "System.Private.CoreLib.dll",
+    },
+    framework_data_files = [
+        "//eng/bazel/data:Microsoft.NETCore.App.deps.json",
+        "//eng/bazel/data:Microsoft.NETCore.App.runtimeconfig.json",
+    ],
 )
 
 # ── Core_Root: minimal runtime for JIT/coreclr tests ─────────────────

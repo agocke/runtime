@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly")
+load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly", "netcoreapp_ref_assembly")
 
 exports_files(["src/System/Net/Quic/Internal/ResettableValueTaskSource.cs"])
 
@@ -15,4 +15,15 @@ netcoreapp_ref_assembly(
         "//src/libraries/System.Net.Security:ref_System.Net.Security",
         "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
     ],
+)
+
+# PNSE/stub assembly — placeholder for the runtime pack.
+# On Linux, this library is either PlatformNotSupported or platform-specific.
+netcoreapp_impl_assembly(
+    name = "impl_System.Net.Quic",
+    srcs = ["//src/libraries/shims:System.Void.cs"],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+    ],
+    exclude_sr = True,
 )
