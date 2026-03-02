@@ -1,5 +1,12 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
 
+exports_files([
+    "src/System/Polyfills.cs",
+    "src/System/Collections/Frozen/String/Hashing.cs",
+    "src/System/Collections/Frozen/String/KeyAnalyzer.cs",
+    "src/Validation/Requires.cs",
+])
+
 netcoreapp_ref_assembly(
     name = "ref_System.Collections.Immutable",
     srcs = [

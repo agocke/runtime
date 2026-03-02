@@ -9,13 +9,51 @@ load("defs.bzl",
     "netcoreapp_ref_assembly",
     "netcoreapp_impl_assembly",
     "ref_impl_pair",
-    "LIVE_REFPACK_DEPS")
+    "LIVE_REFPACK_DEPS",
+    "CORE_ROOT_IMPL_DEPS")
 
 nowarn = [ "CS8500", "CS8969" ]
 
-exports_files([
-    "System.Runtime/ref/System.Runtime.cs",
-])
+exports_files([])
+
+# ── Minimal impl assemblies for JIT tests ─────────────────────────────
+# This subset is used by Core_Root to reduce cache invalidation.
+# The list is defined in CORE_ROOT_LIBS (defs.bzl) to ensure compile-time
+# refs and runtime impls stay in sync.
+filegroup(
+    name = "impl_netcoreapp_minimal",
+    srcs = CORE_ROOT_IMPL_DEPS + [
+        # Core runtime assemblies not in CORE_ROOT_LIBS (internal/shims)
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
+        ":impl_System.Private.Uri",
+        "//src/libraries/shims/mscorlib:impl_mscorlib",
+
+        # Facade shims (type forwarders needed at runtime)
+        "//src/libraries/shims/System.AppContext:impl_System.AppContext",
+        "//src/libraries/shims/System.Buffers:impl_System.Buffers",
+        "//src/libraries/shims/System.Diagnostics.Debug:impl_System.Diagnostics.Debug",
+        "//src/libraries/shims/System.Diagnostics.Tools:impl_System.Diagnostics.Tools",
+        "//src/libraries/shims/System.Globalization:impl_System.Globalization",
+        "//src/libraries/shims/System.Globalization.Calendars:impl_System.Globalization.Calendars",
+        "//src/libraries/shims/System.IO:impl_System.IO",
+        "//src/libraries/shims/System.IO.FileSystem:impl_System.IO.FileSystem",
+        "//src/libraries/shims/System.IO.FileSystem.Primitives:impl_System.IO.FileSystem.Primitives",
+        "//src/libraries/shims/System.Reflection:impl_System.Reflection",
+        "//src/libraries/shims/System.Reflection.Extensions:impl_System.Reflection.Extensions",
+        "//src/libraries/shims/System.Resources.Reader:impl_System.Resources.Reader",
+        "//src/libraries/shims/System.Resources.ResourceManager:impl_System.Resources.ResourceManager",
+        "//src/libraries/shims/System.Runtime.CompilerServices.Unsafe:impl_System.Runtime.CompilerServices.Unsafe",
+        "//src/libraries/shims/System.Runtime.Extensions:impl_System.Runtime.Extensions",
+        "//src/libraries/shims/System.Runtime.Handles:impl_System.Runtime.Handles",
+        "//src/libraries/shims/System.Runtime.InteropServices.RuntimeInformation:impl_System.Runtime.InteropServices.RuntimeInformation",
+        "//src/libraries/shims/System.Text.Encoding:impl_System.Text.Encoding",
+        "//src/libraries/shims/System.Threading.Tasks:impl_System.Threading.Tasks",
+        "//src/libraries/shims/System.Threading.Tasks.Extensions:impl_System.Threading.Tasks.Extensions",
+        "//src/libraries/shims/System.Threading.Timer:impl_System.Threading.Timer",
+        "//src/libraries/shims/System.ValueTuple:impl_System.ValueTuple",
+    ],
+    visibility = ["//visibility:public"],
+)
 
 ref_assembly_nowarns = [
     # Ref assemblies use 'throw null'
@@ -268,6 +306,9 @@ netcoreapp_ref_assembly(
     name = "ref_System.Runtime",
     srcs = [
         "System.Runtime/ref/System.Runtime.cs",
+        # ExtraApis needed so impl_System.Runtime generates type forwarders
+        # for DebugProvider (used by System.Diagnostics.TraceSource at runtime)
+        "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
     ],
     compiler_options = [
         "/runtimemetadataversion:v4.0.30319",

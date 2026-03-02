@@ -10,6 +10,20 @@ exports_files([
     "ref/System.Diagnostics.DiagnosticSource.cs",
     "ref/System.Diagnostics.DiagnosticSourceActivity.cs",
     "ref/System.Diagnostics.DiagnosticSource.Typeforwards.netcoreapp.cs",
+    "src/System/Diagnostics/DsesSamplerBuilder.cs",
+    "src/System/Diagnostics/RateLimiter.cs",
+    "src/System/Diagnostics/Helpers.cs",
+    "src/System/Diagnostics/Metrics/Aggregator.cs",
+    "src/System/Diagnostics/Metrics/AggregatorStore.cs",
+    "src/System/Diagnostics/Metrics/Base2ExponentialHistogramAggregator.cs",
+    "src/System/Diagnostics/Metrics/CircularBufferBuckets.cs",
+    "src/System/Diagnostics/Metrics/ExponentialHistogramAggregator.cs",
+    "src/System/Diagnostics/Metrics/LastValueAggregator.cs",
+    "src/System/Diagnostics/Metrics/ObjectSequence.cs",
+    "src/System/Diagnostics/Metrics/ObjectSequence.netcore.cs",
+    "src/System/Diagnostics/Metrics/StringSequence.cs",
+    "src/System/Diagnostics/Metrics/StringSequence.netcore.cs",
+    "src/Resources/Strings.resx",
 ])
 
 netcoreapp_ref_assembly(

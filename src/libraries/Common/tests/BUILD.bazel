@@ -63,3 +63,29 @@ live_csharp_library(
         "CS8632",
     ],
 )
+
+live_csharp_library(
+    name = "StreamConformanceTests",
+    srcs = glob(["StreamConformanceTests/**/*.cs"]) + [
+        "//src/libraries/Common/tests:System/IO/ConnectedStreams.cs",
+        "//src/libraries/Common/tests:System/IO/CallTrackingStream.cs",
+        "//src/libraries/Common:src/System/Net/ArrayBuffer.cs",
+        "//src/libraries/Common:src/System/Net/MultiArrayBuffer.cs",
+        "//src/libraries/Common:src/System/Net/StreamBuffer.cs",
+        "//src/libraries/Common:src/System/IO/DelegatingStream.cs",
+    ],
+    deps = [
+        ":TestUtilities",
+        "//src/libraries:ref_System.Threading.Tasks",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+        "//src/libraries/System.Threading:ref_System.Threading",
+        "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
+        "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//microsoft.dotnet.xunitextensions",
+        "@paket.main//xunit.abstractions",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    allow_unsafe_blocks = True,
+    visibility = ["//visibility:public"],
+)
