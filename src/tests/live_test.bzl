@@ -85,7 +85,6 @@ def live_csharp_test(
         shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         # Match MSBuild: GenerateAssemblyInfo=false (no CLSCompliant attribute),
         # GenerateDocumentationFile=false, Nullable=annotations.
-        cls_compliant = False,
         generate_documentation_file = False,
         **kwargs
     )
@@ -611,7 +610,6 @@ def library_test(
         shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         # Match MSBuild: GenerateAssemblyInfo=false (no CLSCompliant attribute),
         # GenerateDocumentationFile=false.
-        cls_compliant = False,
         generate_documentation_file = False,
         **kwargs
     )
@@ -664,7 +662,6 @@ def coreclr_test(
         target_frameworks = [NETCOREAPP_CURRENT],
         use_shared_compilation = use_shared_compilation,
         nullable = nullable,
-        cls_compliant = False,
         generate_documentation_file = False,
         **kwargs
     )
@@ -682,7 +679,6 @@ def coreclr_test(
         use_shared_compilation = use_shared_compilation,
         shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         nullable = nullable,
-        cls_compliant = False,
         generate_documentation_file = False,
         **kwargs
     )
