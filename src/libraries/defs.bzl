@@ -151,6 +151,7 @@ def netcoreapp_ref_assembly(
         out = base_name,
         srcs = srcs,
         deps = deps,
+        cls_compliant = True,
         assembly_version = "10.0.0.0",
         visibility = [ "//visibility:public" ],
         nullable = "annotations",
