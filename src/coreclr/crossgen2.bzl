@@ -31,6 +31,24 @@ def _crossgen_corelib_impl(ctx):
 
     inputs = [il_assembly, clrjit_file, jitinterface_file]
 
+    # Native crossgen2 path: use the NativeAOT-compiled binary directly
+    if ctx.attr.native_crossgen2:
+        native_exe = ctx.executable.native_crossgen2
+        all_inputs = inputs + [native_exe]
+        native_runfiles = ctx.attr.native_crossgen2[DefaultInfo].default_runfiles
+        if native_runfiles and native_runfiles.files:
+            all_inputs = all_inputs + native_runfiles.files.to_list()
+
+        ctx.actions.run(
+            executable = native_exe,
+            inputs = all_inputs,
+            outputs = [output],
+            arguments = args,
+            mnemonic = "Crossgen2Native",
+            progress_message = "Crossgen2 (native) compiling %s" % il_assembly.short_path,
+        )
+        return
+
     crossgen2_exe = ctx.executable._crossgen2
     args_str = " ".join(["'%s'" % a for a in args])
 
@@ -102,6 +120,12 @@ crossgen_corelib = rule(
             mandatory = True,
             allow_single_file = True,
             doc = "The jitinterface shared library.",
+        ),
+        "native_crossgen2": attr.label(
+            mandatory = False,
+            cfg = "exec",
+            executable = True,
+            doc = "Optional NativeAOT-compiled crossgen2 binary. When set, uses this instead of the managed crossgen2.",
         ),
         "_crossgen2": attr.label(
             default = Label("//src/coreclr/tools/aot/crossgen2"),

@@ -1,5 +1,16 @@
 load("//:defs.bzl", "csharp_library")
 
+exports_files([
+    "Compiler/FileLayoutOptimizer.cs",
+    "Compiler/PettisHansenSort/CallGraphNode.cs",
+    "Compiler/PettisHansenSort/DisjointSetForest.cs",
+    "Compiler/PettisHansenSort/PettisHansen.cs",
+    "Compiler/ProfileData.cs",
+    "IBC/IBCDataModel.cs",
+    "IBC/IBCProfileData.cs",
+    "IBC/MIbcProfileParser.cs",
+])
+
 genrule(
     name = "AssemblyInfo",
     outs = ["AssemblyInfo.g.cs"],

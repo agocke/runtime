@@ -1,5 +1,6 @@
 load("//:defs.bzl", "csharp_binary")
 load("//:defs.bzl", "gen_resx_source", "resgen")
+load("@rules_dotnet//dotnet:defs.bzl", "publish_binary")
 
 genrule(
     name = "AssemblyInfo",
@@ -40,5 +41,20 @@ csharp_binary(
         "@paket.main//system.commandline",
     ],
     target_frameworks = ["net10.0"],
+    is_aot_compatible = True,
+    visibility = ["//visibility:public"],
+)
+
+publish_binary(
+    name = "crossgen2-publish",
+    binary = ":crossgen2",
+    target_framework = "net10.0",
+    self_contained = True,
+    aot = True,
+    optimization_mode = "speed",
+    invariant_globalization = True,
+    # TODO: crossgen2 needs libjitinterface and libclrjit linked in.
+    # This requires adding a native_deps label_list attribute to publish_binary
+    # in rules_dotnet to support additional native library inputs during linking.
     visibility = ["//visibility:public"],
 )
