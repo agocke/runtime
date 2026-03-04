@@ -21,6 +21,6 @@ cc_library(
         "src/*.hpp",
         "include/*.h",
         "include/**/*.h",
-    ]),
+    ], allow_empty = True),
     visibility = ["//src/coreclr:__subpackages__"],
 )
