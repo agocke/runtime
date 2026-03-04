@@ -22,7 +22,6 @@ cc_binary(
         "../../../vm",
         "../../..",
         "../../../gc",
-        "../../../gc/env",
         "../../../runtime",
         "../../../vm/eventing/eventpipe",
     ] + select({

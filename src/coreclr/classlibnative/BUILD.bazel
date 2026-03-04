@@ -19,7 +19,6 @@ _CLN_INCLUDES = [
     "../vm",
     "..",
     "../gc",
-    "../gc/env",
     "../runtime",
     "../vm/eventing/eventpipe",
 ] + select({

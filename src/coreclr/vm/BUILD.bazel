@@ -36,7 +36,6 @@ _VM_INCLUDES = [
     ".",
     "..",
     "../gc",
-    "../gc/env",
     "../runtime",
     "eventing/eventpipe",
 ] + select({

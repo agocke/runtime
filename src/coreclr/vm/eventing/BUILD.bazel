@@ -55,7 +55,6 @@ cc_library(
         "..",
         "../..",
         "../../gc",
-        "../../gc/env",
         "../../runtime",
         "eventpipe",
     ] + select({
@@ -123,7 +122,6 @@ _EP_INCLUDES = [
     "..",
     "../..",
     "../../gc",
-    "../../gc/env",
     "../../runtime",
     "eventpipe",
 ] + select({

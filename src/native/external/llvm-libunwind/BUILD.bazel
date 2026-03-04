@@ -22,5 +22,6 @@ cc_library(
         "include/*.h",
         "include/**/*.h",
     ], allow_empty = True),
+    includes = ["include"],
     visibility = ["//src/coreclr:__subpackages__"],
 )
