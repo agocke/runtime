@@ -12,7 +12,7 @@ output binaries and support all platforms CMake/MSBuild currently targets.
 The Bazel build produces a fully functional .NET runtime on **linux-x64**.
 All native C/C++ components build with Bazel (CoreCLR, corehost, 6 native
 interop libs, NativeAOT runtime). Managed C# libraries (System.Private.CoreLib,
-58 framework assemblies) also build with Bazel via `rules_dotnet`.
+154 framework assemblies) also build with Bazel via `rules_dotnet`.
 A hybrid build script assembles everything into a standard `dotnet` runtime
 layout.
 
@@ -21,34 +21,52 @@ layout.
 - **Native C++**: libcoreclr.so (with statically-linked JIT), dotnet host,
   hostfxr, hostpolicy, apphost, nethost, 6 native interop libraries,
   NativeAOT runtime, standalone GC, AOT JIT interface
-- **Managed C#**: System.Private.CoreLib, 44 framework assemblies
-  (System.Runtime, System.Collections, System.Console, System.Linq, etc.),
+- **Managed C#**: System.Private.CoreLib, 154 framework assemblies
+  (145 of 150 non-shim NetCoreApp assemblies + shims + extras),
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
-  48 library test suites (System.CodeDom, System.Collections,
-  System.Collections.Concurrent, System.Collections.NonGeneric,
+  93 library test suites (Microsoft.CSharp, Microsoft.Win32.Primitives,
+  System.CodeDom, System.Collections, System.Collections.Concurrent,
+  System.Collections.Immutable, System.Collections.NonGeneric,
   System.Collections.Specialized, System.ComponentModel,
   System.ComponentModel.Annotations, System.ComponentModel.EventBasedAsync,
-  System.Diagnostics.Contracts, System.Diagnostics.StackTrace,
-  System.Diagnostics.TextWriterTraceListener, System.Diagnostics.Tracing,
-  System.Drawing.Primitives, System.Formats.Asn1,
-  System.IO.FileSystem.DriveInfo, System.IO.Hashing, System.Linq,
-  System.Linq.AsyncEnumerable, System.Linq.Parallel,
-  System.Linq.Queryable, System.Memory, System.Numerics.Vectors,
-  System.ObjectModel, System.Reflection.Emit,
-  System.Reflection.Emit.ILGeneration, System.Reflection.Emit.Lightweight,
-  System.Reflection.Extensions, System.Reflection.TypeExtensions,
+  System.ComponentModel.Primitives, System.ComponentModel.TypeConverter,
+  System.Console, System.Data.Common, System.Diagnostics.Contracts,
+  System.Diagnostics.DiagnosticSource, System.Diagnostics.FileVersionInfo,
+  System.Diagnostics.StackTrace, System.Diagnostics.TextWriterTraceListener,
+  System.Diagnostics.TraceSource, System.Diagnostics.Tracing,
+  System.Drawing.Primitives, System.Formats.Asn1, System.Formats.Cbor,
+  System.Formats.Nrbf, System.Formats.Tar, System.IO.Compression,
+  System.IO.Compression.Brotli, System.IO.Compression.ZipFile,
+  System.IO.FileSystem.DriveInfo, System.IO.FileSystem.Watcher,
+  System.IO.Hashing, System.IO.IsolatedStorage, System.IO.MemoryMappedFiles,
+  System.IO.Pipelines, System.IO.Pipes, System.Linq,
+  System.Linq.AsyncEnumerable, System.Linq.Expressions,
+  System.Linq.Parallel, System.Linq.Queryable, System.Memory,
+  System.Net.HttpListener, System.Net.Mail, System.Net.NameResolution,
+  System.Net.NetworkInformation, System.Net.Ping, System.Net.Primitives,
+  System.Net.Requests, System.Net.Sockets, System.Net.WebClient,
+  System.Net.WebHeaderCollection, System.Net.WebProxy,
+  System.Net.WebSockets, System.Net.WebSockets.Client,
+  System.Numerics.Vectors, System.ObjectModel, System.Private.Uri,
+  System.Private.Xml.Linq, System.Reflection.DispatchProxy,
+  System.Reflection.Emit, System.Reflection.Emit.ILGeneration,
+  System.Reflection.Emit.Lightweight, System.Reflection.Extensions,
+  System.Reflection.Metadata, System.Reflection.TypeExtensions,
   System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
   System.Runtime.InteropServices (UnitTests), System.Runtime.Intrinsics,
-  System.Runtime.Numerics, System.Security.Claims,
+  System.Runtime.Numerics, System.Runtime.Serialization.Json,
+  System.Runtime.Serialization.Primitives, System.Runtime.Serialization.Xml,
+  System.Security.Claims, System.Security.Cryptography,
+  System.Security.Cryptography.Pkcs, System.Security.Cryptography.Xml,
   System.Text.Encoding.CodePages, System.Text.Encoding.Extensions,
+  System.Text.Encodings.Web, System.Text.RegularExpressions,
   System.Threading, System.Threading.Channels, System.Threading.Overlapped,
   System.Threading.RateLimiting, System.Threading.Tasks.Dataflow,
   System.Threading.Tasks.Parallel, System.Threading.Thread,
-  System.Threading.ThreadPool, System.Net.WebHeaderCollection,
-  System.Net.WebProxy, System.Web.HttpUtility,
-  Microsoft.CSharp)
+  System.Threading.ThreadPool, System.Transactions.Local,
+  System.Web.HttpUtility)
 - **Per-component configuration**: independent debug/checked/release for
   CoreCLR and Libraries (matching MSBuild's `-rc`/`-lc` flags)
 - **Runtime layout**: `runtime_layout` rule assembles stripped binaries into
@@ -56,8 +74,8 @@ layout.
 
 ### What's Next
 
-- Remaining managed libraries (~142 assemblies not yet in Bazel, out of ~200 total)
-- Library unit tests (48 of ~187 libraries have Bazel test BUILD files)
+- Remaining managed libraries (21 NetFxReference shims + 5 non-shim assemblies not yet in Bazel)
+- Library unit tests (93 of ~187 libraries have Bazel test BUILD files)
 - CoreCLR diagnostic tooling: DAC (mscordac), DBI (mscordbi), createdump, SOS
 - CoreCLR tools: SuperPMI, ildasm (full binary)
 - ILC BUILD files and end-to-end NativeAOT pipeline (see [NativeAOT Compilation Pipeline](#nativeaot-compilation-pipeline))
@@ -472,7 +490,7 @@ have `impl_` targets** in Bazel and are in the `impl_netcoreapp` aggregate. The
 remaining 5 need special support: Microsoft.VisualBasic.Core (VB compiler),
 System.IO.Pipes.AccessControl and System.Threading.AccessControl (Windows PNSE stubs),
 System.Net.Quic (msquic native library), and System.Runtime.InteropServices.JavaScript
-(Browser/WASM-only). 48 libraries have Bazel test BUILD files (out of ~187 with
+(Browser/WASM-only). 93 libraries have Bazel test BUILD files (out of ~187 with
 test projects).
 
 ### 5.1 System.Private.CoreLib — ✅ DONE
@@ -482,11 +500,11 @@ test projects).
   - [x] `src/libraries/System.Private.CoreLib/src/files.bzl` — source file lists
 
 ### 5.2 Framework ref + impl assemblies — 🔨 In Progress
-- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (145 assemblies)
+- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (154 assemblies)
 - [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
 - [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator
-- [ ] Remaining 51 NetCoreApp assemblies (see §9 for breakdown)
+- [ ] Remaining 26 NetCoreApp assemblies: 21 NetFxReference shims + 5 non-shim (see §9 for breakdown)
 
 ### 5.3 Build Tools — 🔨 Partial
 - [x] `src/tools/GenerateResxSource` — resource source generator
@@ -499,30 +517,49 @@ test projects).
 - [x] `src/tests/defs.bzl` — test infrastructure, live_csharp_library, xUnit runner
 - [x] `src/tests/live_test.bzl` — `library_test` macro for library unit tests
 - [x] 18 test BUILD files (JIT directed tests, common infrastructure)
-- [x] 48 library test suites (Microsoft.CSharp, System.CodeDom,
-  System.Collections, System.Collections.Concurrent,
-  System.Collections.NonGeneric, System.Collections.Specialized,
-  System.ComponentModel, System.ComponentModel.Annotations,
-  System.ComponentModel.EventBasedAsync, System.Diagnostics.Contracts,
+- [x] 93 library test suites (Microsoft.CSharp, Microsoft.Win32.Primitives,
+  System.CodeDom, System.Collections, System.Collections.Concurrent,
+  System.Collections.Immutable, System.Collections.NonGeneric,
+  System.Collections.Specialized, System.ComponentModel,
+  System.ComponentModel.Annotations, System.ComponentModel.EventBasedAsync,
+  System.ComponentModel.Primitives, System.ComponentModel.TypeConverter,
+  System.Console, System.Data.Common, System.Diagnostics.Contracts,
+  System.Diagnostics.DiagnosticSource, System.Diagnostics.FileVersionInfo,
   System.Diagnostics.StackTrace, System.Diagnostics.TextWriterTraceListener,
-  System.Diagnostics.Tracing, System.Drawing.Primitives,
-  System.Formats.Asn1, System.IO.FileSystem.DriveInfo, System.IO.Hashing,
-  System.Linq, System.Linq.AsyncEnumerable, System.Linq.Parallel,
-  System.Linq.Queryable, System.Memory, System.Net.WebHeaderCollection,
-  System.Net.WebProxy, System.Numerics.Vectors, System.ObjectModel,
+  System.Diagnostics.TraceSource, System.Diagnostics.Tracing,
+  System.Drawing.Primitives, System.Formats.Asn1, System.Formats.Cbor,
+  System.Formats.Nrbf, System.Formats.Tar, System.IO.Compression,
+  System.IO.Compression.Brotli, System.IO.Compression.ZipFile,
+  System.IO.FileSystem.DriveInfo, System.IO.FileSystem.Watcher,
+  System.IO.Hashing, System.IO.IsolatedStorage, System.IO.MemoryMappedFiles,
+  System.IO.Pipelines, System.IO.Pipes, System.Linq,
+  System.Linq.AsyncEnumerable, System.Linq.Expressions,
+  System.Linq.Parallel, System.Linq.Queryable, System.Memory,
+  System.Net.HttpListener, System.Net.Mail, System.Net.NameResolution,
+  System.Net.NetworkInformation, System.Net.Ping, System.Net.Primitives,
+  System.Net.Requests, System.Net.Sockets, System.Net.WebClient,
+  System.Net.WebHeaderCollection, System.Net.WebProxy,
+  System.Net.WebSockets, System.Net.WebSockets.Client,
+  System.Numerics.Vectors, System.ObjectModel, System.Private.Uri,
+  System.Private.Xml.Linq, System.Reflection.DispatchProxy,
   System.Reflection.Emit, System.Reflection.Emit.ILGeneration,
   System.Reflection.Emit.Lightweight, System.Reflection.Extensions,
-  System.Reflection.TypeExtensions, System.Resources.Writer,
-  System.Runtime.CompilerServices.VisualC,
+  System.Reflection.Metadata, System.Reflection.TypeExtensions,
+  System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
   System.Runtime.InteropServices (UnitTests), System.Runtime.Intrinsics,
-  System.Runtime.Numerics, System.Security.Claims,
+  System.Runtime.Numerics, System.Runtime.Serialization.Json,
+  System.Runtime.Serialization.Primitives, System.Runtime.Serialization.Xml,
+  System.Security.Claims, System.Security.Cryptography,
+  System.Security.Cryptography.Pkcs, System.Security.Cryptography.Xml,
   System.Text.Encoding.CodePages, System.Text.Encoding.Extensions,
+  System.Text.Encodings.Web, System.Text.RegularExpressions,
   System.Threading, System.Threading.Channels, System.Threading.Overlapped,
   System.Threading.RateLimiting, System.Threading.Tasks.Dataflow,
   System.Threading.Tasks.Parallel, System.Threading.Thread,
-  System.Threading.ThreadPool, System.Web.HttpUtility)
+  System.Threading.ThreadPool, System.Transactions.Local,
+  System.Web.HttpUtility)
 - [ ] Remaining CoreCLR test suite (~thousands of tests)
-- [ ] Remaining library unit tests (~139 libraries)
+- [ ] Remaining library unit tests (~94 libraries)
 
 ### 5.5 Installer / Packaging
 - [ ] `src/installer/` — runtime packs, NuGet packaging, SDK integration
@@ -626,18 +663,21 @@ DOTNET_ROOT=artifacts/bazel-dotnet artifacts/bazel-dotnet/dotnet <app.dll>
 ## 9. NetCoreApp Assembly Tracking
 
 The NetCoreApp shared framework (`NetCoreAppLibrary.props`) contains 150
-assemblies. Of those, **145 are Bazel-built** and in the `impl_netcoreapp`
-aggregate; **5 still need special support**.
+non-shim assemblies (plus 22 NetFxReference shims). Of the non-shim assemblies,
+**145 are Bazel-built** and in the `impl_netcoreapp` aggregate; **5 still need
+special support**. The `impl_netcoreapp` filegroup contains 154 total entries
+(including 8 non-NetCoreApp extras and 1 NetFxReference shim: mscorlib).
 
 ### 9.1 Status Summary
 
 | Category | Count | Description |
 |----------|------:|-------------|
-| ✅ In `impl_netcoreapp` | 145 | Built and aggregated (incl. CoreLib, shims, per-library impl) |
+| ✅ In `impl_netcoreapp` | 154 | Built and aggregated (145 non-shim NetCoreApp + mscorlib shim + 8 non-NetCoreApp extras) |
 | ❌ VB project | 1 | Microsoft.VisualBasic.Core — needs VB compiler in Bazel |
 | ❌ Windows PNSE | 2 | System.IO.Pipes.AccessControl, System.Threading.AccessControl — need PNSE stub generation |
 | ❌ Native deps | 1 | System.Net.Quic — needs msquic native library |
 | ❌ Browser-only | 1 | System.Runtime.InteropServices.JavaScript — WASM/Browser platform only |
+| ❌ NetFxRef shims | 21 | Legacy .NET Framework type-forwarder shims (System, System.Core, etc.) |
 
 
 ### 9.2 Remaining 5 Assemblies
