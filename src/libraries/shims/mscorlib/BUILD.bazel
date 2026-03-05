@@ -44,6 +44,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_mscorlib",
+    skip_cs1591 = True,
     srcs = [
         "ref/mscorlib.cs",
         "src/mscorlib.cs",
@@ -79,6 +80,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/shims/stubs:ref_System.Security.Permissions",
         "//src/libraries/shims/stubs:ref_System.Threading.AccessControl",
     ],
+    os_targeted = True,
     exclude_sr = True,
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/ECMA.snk",
 )

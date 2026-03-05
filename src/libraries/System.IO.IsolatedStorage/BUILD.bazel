@@ -19,6 +19,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.IO.IsolatedStorage",
+    os_targeted = "unix",
     srcs = [
         "src/System/IO/IsolatedStorage/IsolatedStorageException.cs",
         "src/System/IO/IsolatedStorage/IsolatedStorageFile.cs",

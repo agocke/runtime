@@ -17,6 +17,7 @@ netcoreapp_impl_assembly(
     srcs = [
         "src/System/Xml/XPath/XDocumentExtensions.cs",
     ],
+    partial_facade = True,
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Xml.XPath.XDocument",
     exclude_sr = True,

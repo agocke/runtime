@@ -332,6 +332,7 @@ netcoreapp_impl_assembly(
     deps = [
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
     ],
+    partial_facade = True,
     generate_facades = True,
     facade_contract_assembly = ":ref_Microsoft.Win32.Primitives",
     exclude_sr = True,
@@ -423,6 +424,7 @@ netcoreapp_impl_assembly(
         ":ref_System.Private.CoreLib",
         ":impl_System.Private.Uri",
     ],
+    partial_facade = True,
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Runtime",
     facade_omit_types = [
@@ -433,6 +435,8 @@ netcoreapp_impl_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Diagnostics.Process",
+    os_targeted = True,
+    defines = ["FEATURE_REGISTRY"],
     analyzers = [
         "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",

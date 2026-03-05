@@ -14,6 +14,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Xml.XDocument",
+    partial_facade = True,
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Xml.XDocument",
     exclude_sr = True,

@@ -25,6 +25,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Reflection.Metadata",
+    multitarget = True,
     srcs = glob(
         ["src/System/**/*.cs"],
         exclude = [

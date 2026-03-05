@@ -155,6 +155,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Runtime.InteropServices",
+    partial_facade = True,
     srcs = [
         "src/System/Runtime/CompilerServices/IDispatchConstantAttribute.cs",
         "src/System/Runtime/CompilerServices/IUnknownConstantAttribute.cs",

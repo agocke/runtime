@@ -17,6 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Threading.Tasks.Dataflow",
+    multitarget = True,
     srcs = [
         "src/Base/DataflowBlock.cs",
         "src/Base/DataflowBlock.netstandard21.cs",
@@ -72,7 +73,6 @@ netcoreapp_impl_assembly(
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Threading.Tasks.Dataflow",
     resx_file = "src/Resources/Strings.resx",
-    nowarn = ["CS1589"],
 )
 
 ref_impl_pair(

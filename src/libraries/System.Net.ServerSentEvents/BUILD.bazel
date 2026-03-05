@@ -19,6 +19,8 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Net.ServerSentEvents",
+    multitarget = True,
+    skip_cs1591 = True,
     srcs = [
         "src/System/Net/ServerSentEvents/Helpers.cs",
         "src/System/Net/ServerSentEvents/PooledByteBufferWriter.cs",

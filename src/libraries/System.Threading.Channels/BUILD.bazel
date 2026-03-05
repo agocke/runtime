@@ -18,6 +18,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Threading.Channels",
+    multitarget = True,
     srcs = [
         "src/System/VoidResult.cs",
         "src/System/Threading/Channels/AsyncOperation.cs",

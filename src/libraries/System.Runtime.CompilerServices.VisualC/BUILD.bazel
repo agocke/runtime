@@ -20,5 +20,6 @@ netcoreapp_impl_assembly(
     deps = [
         "//src/libraries:ref_System.Runtime",
     ],
+    partial_facade = True,
     exclude_sr = True,
 )

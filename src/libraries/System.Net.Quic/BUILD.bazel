@@ -21,9 +21,11 @@ netcoreapp_ref_assembly(
 # On Linux, this library is either PlatformNotSupported or platform-specific.
 netcoreapp_impl_assembly(
     name = "impl_System.Net.Quic",
+    os_targeted = True,
     srcs = ["//src/libraries/shims:System.Void.cs"],
     deps = [
         "//src/libraries:ref_System.Runtime",
     ],
     exclude_sr = True,
+    nowarn = ["SYSLIB1054"],
 )

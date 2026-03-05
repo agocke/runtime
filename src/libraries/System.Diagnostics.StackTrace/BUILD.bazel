@@ -38,6 +38,7 @@ netcoreapp_impl_assembly(
     ],
     exclude_sr = True,
     allow_unsafe_blocks = True,
+    partial_facade = True,
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Diagnostics.StackTrace",
 )

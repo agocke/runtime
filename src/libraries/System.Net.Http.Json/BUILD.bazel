@@ -16,6 +16,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Net.Http.Json",
+    multitarget = True,
     srcs = [
         "src/System/Net/Http/Json/HttpClientJsonExtensions.Get.AsyncEnumerable.cs",
         "src/System/Net/Http/Json/HttpClientJsonExtensions.cs",

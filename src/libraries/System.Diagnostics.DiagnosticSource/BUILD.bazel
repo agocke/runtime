@@ -59,6 +59,7 @@ write_file(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Diagnostics.DiagnosticSource",
+    multitarget = True,
     srcs = [
         # Unconditional sources
         "src/System/Diagnostics/Activity.cs",
@@ -164,6 +165,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
     ],
     resx_file = "src/Resources/Strings.resx",
+    nowarn = ["SA1205"],
 )
 
 live_csharp_library(

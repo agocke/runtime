@@ -15,8 +15,11 @@ netcoreapp_ref_assembly(
 netcoreapp_impl_assembly(
     name = "impl_System.Runtime.Serialization.Formatters",
     nowarn = [
+        "CA1822",
+        "CP0003",
         "SYSLIB0011",
         "SYSLIB0050",
+        "SYSLIB0051",
     ],
     compiler_options = ["/unsafe"],
     srcs = [

@@ -13,6 +13,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Security.Principal.Windows",
+    pnse = True,
     srcs = [
         "System.Security.Principal.Windows.notsupported.cs",
     ],

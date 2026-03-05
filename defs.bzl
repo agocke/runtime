@@ -258,6 +258,13 @@ def csharp_library(
             # Match Directory.Build.props global NoWarn
             "CS8500",
             "CS8969",
+            # Arcade SDK global NoWarn (Microsoft.DotNet.Arcade.Sdk targets)
+            "CS1702",
+            "CS1705",
+            "NU5105",
+            # Directory.Build.props global NoWarn
+            "IDE0060",
+            "IDE0100",
         ],
         **kwargs
     )

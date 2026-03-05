@@ -12,6 +12,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.IO.FileSystem.DriveInfo",
+    os_targeted = "unix",
     srcs = [
         "src/System/IO/DriveInfo.cs",
         "src/System/IO/DriveNotFoundException.cs",

@@ -133,12 +133,28 @@ public static class ComparisonEngine
         List<ManagedCompilationRecord> msbuildRecords,
         List<ManagedCompilationRecord> bazelRecords)
     {
+        // For MSBuild, prefer impl assemblies over ref assemblies when both exist.
+        // When multiple impl records exist for the same assembly (multi-targeted),
+        // prefer the platform-specific TFM since that's what goes in the runtime
+        // archive and what Bazel builds. Priority:
+        //   1. net10.0-linux (highest — exact Linux match)
+        //   2. net10.0-unix  (covers Linux)
+        //   3. plain net10.0 (fallback — often a PNSE stub)
         var msbuildByName = msbuildRecords
+            .Where(r => !r.IsReferenceAssembly)
             .GroupBy(r => r.AssemblyName)
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g =>
+                g.OrderByDescending(r => TfmPriority(r.OutputPath))
+                .First());
+
+        // For Bazel, prefer impl_ targets (the actual implementation assemblies)
+        // over ref_ targets (reference assemblies used only as compile inputs).
         var bazelByName = bazelRecords
+            .Where(r => r.TargetLabel.Contains(":impl_") || r.TargetLabel.Contains("/impl_")
+                || (!r.TargetLabel.Contains(":ref_") && !r.TargetLabel.Contains("/ref_")))
             .GroupBy(r => r.AssemblyName)
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g =>
+                g.OrderByDescending(r => r.TargetLabel.Contains(":impl_") || r.TargetLabel.Contains("/impl_")).First());
 
         var allNames = msbuildByName.Keys.Union(bazelByName.Keys).Order().ToList();
 
@@ -385,5 +401,22 @@ public static class ComparisonEngine
             return "14.0";
 
         return version;
+    }
+
+    /// <summary>
+    /// Assign a priority score for TFM selection from multi-targeted MSBuild builds.
+    /// Higher is better. Platform-specific TFMs (linux, unix) are preferred
+    /// over the plain net10.0 TFM which is often a PNSE stub.
+    /// </summary>
+    private static int TfmPriority(string outputPath)
+    {
+        if (outputPath.Contains("net10.0-linux", StringComparison.OrdinalIgnoreCase))
+            return 3;
+        if (outputPath.Contains("net10.0-unix", StringComparison.OrdinalIgnoreCase))
+            return 2;
+        if (outputPath.Contains("net10.0-osx", StringComparison.OrdinalIgnoreCase))
+            return 1;
+
+        return 0;
     }
 }

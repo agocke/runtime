@@ -62,8 +62,10 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
     ],
     allow_unsafe_blocks = True,
+    pnse = True,
     nowarn = [
-        "SYSLIB1092",
+        "CA2249",
+        "IDE0280",
     ],
     defines = [
         "REGISTRY_ASSEMBLY",

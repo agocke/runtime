@@ -265,9 +265,68 @@ def netcoreapp_impl_assembly(
     resources = [],
     resource_logical_names = {},
     assembly_version = None,
+    os_targeted = False,
+    nowarn = [],
+    partial_facade = False,
+    skip_cs1591 = False,
+    pnse = False,
+    multitarget = False,
     **kwargs
 ):
     base_name = name[len("impl_"):]
+
+    # Assemblies whose MSBuild TFM includes an OS suffix receive OS-specific
+    # implicit defines.  Match that in Bazel via select().
+    # os_targeted can be True/"linux" for net10.0-linux, or "unix" for net10.0-unix.
+    if os_targeted == "unix" or os_targeted == "Unix":
+        defines = defines + select({
+            "@platforms//os:linux": ["UNIX", "UNIX1_0"],
+            "@platforms//os:macos": ["UNIX", "UNIX1_0"],
+            "//conditions:default": [],
+        })
+    elif os_targeted:
+        defines = defines + select({
+            "@platforms//os:linux": ["LINUX", "LINUX1_0"],
+            "@platforms//os:macos": ["OSX", "OSX1_0"],
+            "//conditions:default": [],
+        })
+
+    # MSBuild's intellisense packaging adds CS1591 to most source assemblies
+    # via SkipIntellisenseNoWarnCS1591. Assemblies that don't get CS1591:
+    # - skip_cs1591=True: 4 libraries that enforce doc comments AND pure shim
+    #   assemblies (type forwarders in src/libraries/shims/) which have
+    #   SkipIntellisenseNoWarnCS1591=true via packaging infrastructure.
+    if not skip_cs1591:
+        nowarn = nowarn + ["CS1591"]
+
+    # Partial facade assemblies (IsPartialFacadeAssembly=true in MSBuild) suppress
+    # obsolete-API warnings for type-forwarding facades.
+    if partial_facade:
+        nowarn = nowarn + [
+            "SYSLIB0003",
+            "SYSLIB0004",
+            "SYSLIB0015",
+            "SYSLIB0017",
+            "SYSLIB0021",
+            "SYSLIB0022",
+            "SYSLIB0023",
+            "SYSLIB0025",
+            "SYSLIB0032",
+            "SYSLIB0036",
+        ]
+
+    # PNSE assemblies (GeneratePlatformNotSupportedAssembly in MSBuild) get extra
+    # suppressions because the generated stub code triggers these warnings.
+    if pnse:
+        nowarn = nowarn + ["nullable", "CA1052", "CA1821", "CA1823", "CS0169"]
+
+    # Multi-targeted assemblies that also target netstandard/net4x suppress
+    # warnings about APIs that don't exist in older TFMs.
+    if multitarget:
+        nowarn = nowarn + [
+            "CA1510", "CA1511", "CA1512", "CA1513",
+            "CA1845", "CA1846", "CA1847", "CP0003",
+        ]
 
     if not exclude_sr:
         srcs = srcs + [
@@ -385,6 +444,7 @@ def netcoreapp_impl_assembly(
         internals_visible_to = internals_visible_to,
         # Match MSBuild's langversion:preview
         langversion = "preview",
+        nowarn = nowarn,
         **kwargs
     )
 

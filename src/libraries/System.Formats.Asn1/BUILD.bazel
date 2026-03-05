@@ -17,6 +17,9 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Formats.Asn1",
+    multitarget = True,
+    skip_cs1591 = True,
+    defines = ["CP_NO_ZEROMEMORY"],
     srcs = glob(["src/System/Formats/Asn1/**/*.cs"]) + [
         "//src/libraries/Common:src/System/Security/Cryptography/CryptoPool.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",

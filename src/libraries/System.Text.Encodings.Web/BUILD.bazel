@@ -25,6 +25,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Text.Encodings.Web",
+    multitarget = True,
     srcs = [
         "src/System/IO/TextWriterExtensions.cs",
         "src/System/Text/Encodings/Web/AllowedBmpCodePointsBitmap.cs",
