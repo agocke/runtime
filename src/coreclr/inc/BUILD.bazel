@@ -22,7 +22,10 @@ cc_library(
     textual_hdrs = glob(["*.cpp"]),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
     defines = CORECLR_DEFINES,
-    includes = ["."],
+    includes = [
+        ".",
+        "llvm",  # macOS createdump uses #include <ELF.h>
+    ],
     deps = [
         "//src/coreclr:coreclr_inc",
         "//src/coreclr/binder:binder_headers",
@@ -81,7 +84,10 @@ cc_library(
         allow_empty = True,
     ) + ["mpl/type_list"],
     textual_hdrs = glob(["*.cpp"]),
-    includes = ["."],
+    includes = [
+        ".",
+        "llvm",
+    ],
     deps = [
         "//src/coreclr:coreclr_inc",
         "//src/coreclr/minipal:coreclrminipal_headers",
@@ -110,7 +116,10 @@ cc_library(
     textual_hdrs = glob(["*.cpp"]),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
     defines = CORECLR_DAC_DEFINES,
-    includes = ["."],
+    includes = [
+        ".",
+        "llvm",
+    ],
     deps = [
         "//src/coreclr:coreclr_inc",
         "//src/coreclr/binder:binder_headers",
