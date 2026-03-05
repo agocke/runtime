@@ -355,6 +355,7 @@ cc_binary(
 # --- coreclrpal_dac (DAC variant of PAL) ---
 # Matches CMake: src/coreclr/pal/src/CMakeLists.txt  coreclrpal_dac target.
 # Minimal DAC PAL library: just remote-unwind support.
+# On macOS, uses bundled GNU libunwind for remote unwinding (HAVE_UNW_GET_ACCESSORS).
 cc_library(
     name = "coreclrpal_dac",
     srcs = ["src/exception/remote-unwind.cpp"] + select({
@@ -379,12 +380,21 @@ cc_library(
         "inc/rt",
     ],
     local_defines = CLR_CONFIG_DEFINES,
-    defines = CORECLR_DAC_DEFINES,
+    defines = CORECLR_DAC_DEFINES + select({
+        # On macOS, use bundled libunwind for remote unwinding (UNW_REMOTE_ONLY only)
+        "@platforms//os:macos": [
+            "UNW_REMOTE_ONLY",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":pal_config",
         ":pal_headers",
         "//src/coreclr/inc:coreclr_inc_dac",
         "//src/native:native_inc",
-        "//src/native/external/libunwind",
-    ],
+    ] + select({
+        # On macOS, use the bundled DAC libunwind; on Linux use the regular one
+        "@platforms//os:macos": ["//src/native/external/libunwind:libunwind_dac_macos"],
+        "//conditions:default": ["//src/native/external/libunwind"],
+    }),
 )
