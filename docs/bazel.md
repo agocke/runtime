@@ -158,8 +158,8 @@ producing the correct output.
 ./build.sh packs -rc Release -lc Release
 # → artifacts/packages/*/Shipping/dotnet-runtime-*-linux-x64.tar.gz
 
-# 2. Build the Bazel runtime archive (once implemented)
-# bazel build //:runtime_archive
+# 2. Build the Bazel runtime archive
+bazel build --config=release //:runtime_archive
 # → bazel-bin/dotnet-runtime-*-linux-x64.tar.gz
 
 # 3. Compare them
@@ -439,8 +439,8 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 - [x] `cordbee_wks` cc_library (16 sources — debugger EE, workstation)
 - [ ] DAC (`mscordac`) — data access component for debugging/diagnostics
 - [ ] DBI (`mscordbi`) — debug interface library
-- [ ] dbgutil — debug utility library
-- [ ] createdump — crash dump generation tool
+- [x] dbgutil — debug utility library (ELF/Mach-O reader)
+- [x] createdump — crash dump generation tool
 - [ ] runtimeinfo — runtime info for debuggers
 
 ### 4.12 Hosts & DLLs — ✅ libcoreclr DONE (linux-x64)
@@ -452,6 +452,7 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
   - [x] Links all component libraries: VM, JIT, metadata, binder, debug, GC, PAL, eventpipe, etc.
   - [x] 737 total Bazel actions, ~79s clean build
 - [x] `src/coreclr/pal/BUILD.bazel` — `eventprovider` cc_library (pre-generated dummy LTTng stubs)
+- [x] `src/coreclr/pal/BUILD.bazel` — `libcoreclrtraceptprovider.so` (pre-generated LTTng tracepoint provider, links lttng-ust)
   - [ ] mscordac, mscordbi (diagnostic tooling — pending)
 
 ### 4.13 IL Assembler — ✅ DONE (linux-x64)

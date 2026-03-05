@@ -153,10 +153,12 @@ runtime_staging(
     ] + select({
         "@platforms//os:linux": ["//src/native/libs/System.Security.Cryptography.Native:System.Security.Cryptography.Native.OpenSsl"],
         "//conditions:default": [],
-    }),
+    }) + [
+        "//src/coreclr/debug:createdump",
+        "//src/coreclr/pal:libcoreclrtraceptprovider.so",
+    ],
     # TODO: add these once Bazel BUILD files exist for them:
-    #   createdump, libmscordaccore.so, libmscordbi.so,
-    #   libcoreclrtraceptprovider.so
+    #   libmscordaccore.so, libmscordbi.so
     framework_managed_files = [
         "//src/libraries:impl_netcoreapp",
         # ── Shim assemblies (type-forwarding facades) ──

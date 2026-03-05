@@ -13,6 +13,7 @@ exports_files(
 cc_library(
     name = "version_headers",
     hdrs = [
+        "version/_version.c",
         "version/_version.h",
         "version/runtime_version.h",
     ],

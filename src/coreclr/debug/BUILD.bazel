@@ -1,7 +1,8 @@
 # CoreCLR debug headers and libraries.
 # Matches CMake: src/coreclr/debug/*/CMakeLists.txt
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//:cc_defs.bzl", "PLATFORM_DEFINES")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -142,4 +143,119 @@ cc_library(
     ],
     alwayslink = True,
     linkstatic = True,
+)
+
+# --- dbgutil (debug utilities — ELF/Mach-O reader) ---
+# Matches CMake: src/coreclr/debug/dbgutil/CMakeLists.txt
+cc_library(
+    name = "dbgutil",
+    srcs = ["dbgutil/dbgutil.cpp"] + select({
+        "@platforms//os:macos": ["dbgutil/machoreader.cpp"],
+        "//conditions:default": ["dbgutil/elfreader.cpp"],
+    }),
+    hdrs = select({
+        "@platforms//os:macos": ["dbgutil/machoreader.h"],
+        "//conditions:default": ["dbgutil/elfreader.h"],
+    }),
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    includes = ["dbgutil"],
+    local_defines = CLR_CONFIG_DEFINES,
+    defines = CORECLR_DEFINES,
+    deps = [
+        "//src/coreclr/inc:coreclr_inc",
+    ],
+    linkstatic = True,
+)
+
+# --- createdump (crash dump creation tool) ---
+# Matches CMake: src/coreclr/debug/createdump/CMakeLists.txt (Unix path)
+
+# CMake configure_file: config.h.in -> config.h
+# check_function_exists(process_vm_readv HAVE_PROCESS_VM_READV)
+genrule(
+    name = "createdump_gen_config_h",
+    outs = ["createdump_generated/config.h"],
+    cmd = select({
+        "@platforms//os:linux": """printf '#pragma once\\n#define HAVE_PROCESS_VM_READV\\n' > $@""",
+        "//conditions:default": """printf '#pragma once\\n' > $@""",
+    }),
+)
+
+cc_library(
+    name = "createdump_config",
+    hdrs = [":createdump_gen_config_h"],
+    strip_include_prefix = "createdump_generated",
+)
+
+cc_library(
+    name = "createdump_static",
+    srcs = [
+        "createdump/crashinfo.cpp",
+        "createdump/crashreportwriter.cpp",
+        "createdump/createdumpmain.cpp",
+        "createdump/createdumpunix.cpp",
+        "createdump/datatarget.cpp",
+        "createdump/dumpname.cpp",
+        "createdump/dumpwriter.cpp",
+        "createdump/threadinfo.cpp",
+    ] + select({
+        "@platforms//os:macos": [
+            "createdump/crashinfomac.cpp",
+            "createdump/dumpwritermacho.cpp",
+            "createdump/threadinfomac.cpp",
+        ],
+        "//conditions:default": [
+            "createdump/crashinfounix.cpp",
+            "createdump/dumpwriterelf.cpp",
+            "createdump/threadinfounix.cpp",
+        ],
+    }),
+    hdrs = glob(["createdump/*.h"]),
+    # CMake: remove_definitions(-DUNICODE -D_UNICODE)
+    # CMake: include_directories(BEFORE ${VM_DIR})
+    # CMake: CMAKE_INCLUDE_CURRENT_DIR ON
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
+        "-UUNICODE",
+        "-U_UNICODE",
+    ],
+    includes = ["createdump"],
+    local_defines = CLR_CONFIG_DEFINES,
+    defines = CORECLR_DEFINES,
+    # CMake: target_link_libraries(createdump_static PRIVATE minipal)
+    deps = [
+        ":createdump_config",
+        "//src/coreclr/inc:coreclr_inc",
+        "//src/native/minipal",
+        "//eng/native:version_headers",
+    ],
+    linkstatic = True,
+)
+
+cc_binary(
+    name = "createdump",
+    srcs = [
+        "createdump/main.cpp",
+        "createdump/createdumppal.cpp",
+    ],
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
+        "-UUNICODE",
+        "-U_UNICODE",
+    ],
+    includes = ["createdump"],
+    local_defines = CLR_CONFIG_DEFINES,
+    defines = CORECLR_DEFINES,
+    # CMake: RPATH $ORIGIN (Linux), @loader_path (macOS)
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-rpath,@loader_path"],
+        "//conditions:default": ["-Wl,-rpath,$$ORIGIN"],
+    }) + ["-ldl"],
+    visibility = ["//visibility:public"],
+    # CMake: target_link_libraries(createdump PRIVATE
+    #   createdump_static corguids dbgutil ${CMAKE_DL_LIBS} minipal)
+    deps = [
+        ":createdump_static",
+        ":dbgutil",
+        "//src/coreclr/inc:corguids",
+        "//src/native/minipal",
+    ],
 )
