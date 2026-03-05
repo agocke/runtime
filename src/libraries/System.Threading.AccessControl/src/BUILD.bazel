@@ -10,7 +10,10 @@ netcoreapp_impl_assembly(
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
-    ],
+            "//src/libraries/System.Security.AccessControl:ref_System.Security.AccessControl",
+        "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
+        "//src/libraries/System.Threading:ref_System.Threading",
+],
     exclude_sr = True,
     supported_os_platforms_short = ["windows"],
     include_dll_safe_search_path = True,

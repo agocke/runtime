@@ -6,7 +6,6 @@ netcoreapp_impl_assembly(
     srcs = ["src/System.Runtime.Extensions.cs"],
     deps = [
         "//src/libraries:ref_System.Runtime",
-        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
     ],
     os_targeted = True,
     exclude_sr = True,

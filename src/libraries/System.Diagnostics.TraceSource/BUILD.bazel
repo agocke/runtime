@@ -7,7 +7,6 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
-        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
     ],
@@ -53,13 +52,13 @@ netcoreapp_impl_assembly(
     defines = ["TRACE"],
     deps = [
         "//src/libraries:ref_System.Runtime",
-        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Collections:ref_System.Collections",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
         "//src/libraries:ref_System.ComponentModel.Primitives",
         "//src/libraries/System.Diagnostics.StackTrace:ref_System.Diagnostics.StackTrace",
         "//src/libraries/System.Linq:ref_System.Linq",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "src/Resources/Strings.resx",

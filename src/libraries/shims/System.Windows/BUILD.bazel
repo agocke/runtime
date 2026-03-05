@@ -7,8 +7,6 @@ netcoreapp_impl_assembly(
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
-        "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
-        "//src/libraries:ref_System.ComponentModel.Primitives",
     ],
     os_targeted = True,
     exclude_sr = True,
