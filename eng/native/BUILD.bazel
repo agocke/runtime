@@ -4,7 +4,10 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 exports_files(
     ["generateversionscript.sh"],
-    visibility = ["//src/native:__subpackages__"],
+    visibility = [
+        "//src/coreclr:__subpackages__",
+        "//src/native:__subpackages__",
+    ],
 )
 
 # Version headers and static version source.

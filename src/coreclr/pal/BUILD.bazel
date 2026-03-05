@@ -4,6 +4,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//:cc_defs.bzl", "PLATFORM_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DAC_DEFINES")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -347,5 +348,38 @@ cc_binary(
     deps = [
         ":pal_headers",
         "//src/coreclr/inc:coreclr_inc",
+    ],
+)
+
+# --- coreclrpal_dac (DAC variant of PAL) ---
+# Matches CMake: src/coreclr/pal/src/CMakeLists.txt  coreclrpal_dac target.
+# Minimal DAC PAL library: just remote-unwind support.
+cc_library(
+    name = "coreclrpal_dac",
+    srcs = ["src/exception/remote-unwind.cpp"] + select({
+        "@platforms//os:macos": ["src/bazel/darwin-arm64/config.h"],
+        "//conditions:default": ["src/bazel/linux-glibc-x64/config.h"],
+    }) + glob(
+        [
+            "src/include/**/*.h",
+            "src/include/**/*.hpp",
+        ],
+        allow_empty = True,
+    ),
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    includes = [
+        "src",
+        "src/include",
+        "src/safecrt",
+        "inc",
+        "inc/rt",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    defines = CORECLR_DAC_DEFINES,
+    deps = [
+        ":pal_config",
+        ":pal_headers",
+        "//src/coreclr/inc:coreclr_inc_dac",
+        "//src/native:native_inc",
     ],
 )

@@ -156,9 +156,16 @@ runtime_staging(
     }) + [
         "//src/coreclr/debug:createdump",
         "//src/coreclr/pal:libcoreclrtraceptprovider.so",
-    ],
-    # TODO: add these once Bazel BUILD files exist for them:
-    #   libmscordaccore.so, libmscordbi.so
+    ] + select({
+        "@platforms//os:macos": [
+            "//src/coreclr/dlls/mscordac:libmscordaccore_dylib",
+            "//src/coreclr/dlls/mscordbi:libmscordbi_dylib",
+        ],
+        "//conditions:default": [
+            "//src/coreclr/dlls/mscordac:libmscordaccore.so",
+            "//src/coreclr/dlls/mscordbi:libmscordbi.so",
+        ],
+    }),
     framework_managed_files = [
         "//src/libraries:impl_netcoreapp",
         # ── Shim assemblies (type-forwarding facades) ──
