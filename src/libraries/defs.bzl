@@ -333,10 +333,13 @@ def netcoreapp_impl_assembly(
             "//src/libraries/Common:src/System/SR.cs",
         ]
 
-    # Add SkipLocalsInit.cs (matches MSBuild's inclusion via Common items)
-    srcs = srcs + [
-        "//src/libraries/Common:src/SkipLocalsInit.cs",
-    ]
+    # Add SkipLocalsInit.cs for non-shim assemblies (matches MSBuild's inclusion
+    # via Common items). Pure shim assemblies (type forwarders with both
+    # exclude_sr=True and skip_cs1591=True) don't include it.
+    if not (exclude_sr and skip_cs1591):
+        srcs = srcs + [
+            "//src/libraries/Common:src/SkipLocalsInit.cs",
+        ]
 
     # Generated files must be added in the same order as MSBuild:
     # 1. .NETCoreApp.AssemblyAttributes.cs
