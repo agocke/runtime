@@ -385,5 +385,6 @@ cc_library(
         ":pal_headers",
         "//src/coreclr/inc:coreclr_inc_dac",
         "//src/native:native_inc",
+        "//src/native/external/libunwind",
     ],
 )
