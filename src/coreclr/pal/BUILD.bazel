@@ -358,6 +358,9 @@ cc_binary(
 cc_library(
     name = "coreclrpal_dac",
     srcs = ["src/exception/remote-unwind.cpp"] + select({
+        "@platforms//os:macos": ["src/exception/compact_unwind_encoding.h"],
+        "//conditions:default": [],
+    }) + select({
         "@platforms//os:macos": ["src/bazel/darwin-arm64/config.h"],
         "//conditions:default": ["src/bazel/linux-glibc-x64/config.h"],
     }) + glob(
