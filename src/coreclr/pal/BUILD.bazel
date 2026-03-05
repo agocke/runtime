@@ -344,6 +344,7 @@ cc_binary(
     ],
     linkshared = True,
     linkstatic = True,
+    target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
     deps = [
         ":pal_headers",
