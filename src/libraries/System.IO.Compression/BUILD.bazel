@@ -28,7 +28,6 @@ netcoreapp_impl_assembly(
 
         # Common misc
         "//src/libraries/Common:src/System/Obsoletions.cs",
-        "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
 
         # Zip archive files (from SharedOpenSourcePath, but live in src/)
         "src/System/IO/Compression/ZipArchive.cs",

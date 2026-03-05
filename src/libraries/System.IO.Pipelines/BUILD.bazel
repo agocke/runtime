@@ -60,8 +60,6 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
         "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
     ],
-    generate_facades = True,
-    facade_contract_assembly = ":ref_System.IO.Pipelines",
     resx_file = "src/Resources/Strings.resx",
     assembly_description = "Single producer single consumer byte buffer management.\n\nCommonly Used Types:\nSystem.IO.Pipelines.Pipe\nSystem.IO.Pipelines.PipeWriter\nSystem.IO.Pipelines.PipeReader",
 )

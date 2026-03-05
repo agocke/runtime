@@ -22,4 +22,6 @@ netcoreapp_impl_assembly(
     ],
     partial_facade = True,
     exclude_sr = True,
+    generate_facades = True,
+    facade_contract_assembly = ":ref_System.Runtime.CompilerServices.VisualC",
 )

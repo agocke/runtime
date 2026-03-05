@@ -25,7 +25,6 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/Microsoft/Win32/SafeHandles/SafeBrotliHandle.cs",
 
         # Common misc
-        "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
 
         # Brotli source files
         "src/System/IO/Compression/BrotliStream.cs",

@@ -29,7 +29,6 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Net/InternalException.cs",
         "//src/libraries/Common:src/System/Net/IPAddressParserStatics.cs",
         "//src/libraries/Common:src/System/Net/SocketProtocolSupportPal.cs",
-        "//src/libraries/Common:src/System/Net/DebugSafeHandle.cs",
     ] + select({
         "@platforms//os:linux": [
             "//src/libraries/Common:src/System/Net/InteropIPAddressExtensions.Unix.cs",
