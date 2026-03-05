@@ -29,6 +29,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Text.RegularExpressions:RegexGenerator",
     ],
     srcs = glob(["src/System/**/*.cs"]) + [
+        "src/MS/Internal/Xml/Linq/ComponentModel/XComponentModel.cs",
         "//src/libraries/Common:src/System/Drawing/ColorConverterCommon.cs",
         "//src/libraries/Common:src/System/Drawing/ColorTable.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",

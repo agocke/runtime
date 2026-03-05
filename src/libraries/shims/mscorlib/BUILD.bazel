@@ -48,6 +48,7 @@ netcoreapp_impl_assembly(
     srcs = [
         "ref/mscorlib.cs",
         "src/mscorlib.cs",
+        "//src/libraries/shims:System.Void.cs",
     ],
     assembly_version = "4.0.0.0",
     deps = [
