@@ -3,7 +3,10 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 exports_files(
-    ["generateversionscript.sh"],
+    [
+        "generateversionscript.sh",
+        "generateexportedsymbols.sh",
+    ],
     visibility = [
         "//src/coreclr:__subpackages__",
         "//src/native:__subpackages__",

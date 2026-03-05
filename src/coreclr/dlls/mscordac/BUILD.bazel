@@ -7,13 +7,20 @@ load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "C
 package(default_visibility = ["//visibility:public"])
 
 # Generate the DAC export version script from mscordac_unixexports.src.
-# On Linux, #-prefixed entries get the DAC_ prefix.
+# On Linux, #-prefixed entries get the DAC_ prefix (using version script format).
+# On macOS, exports are simple symbol lists without prefix (using -exported_symbols_list format).
 genrule(
     name = "gen_mscordac_exports",
     srcs = ["mscordac_unixexports.src"],
     outs = ["mscordac.exports"],
-    cmd = "$(location //eng/native:generateversionscript.sh) $(location mscordac_unixexports.src) DAC_ > $@",
-    tools = ["//eng/native:generateversionscript.sh"],
+    cmd = select({
+        "@platforms//os:macos": "$(location //eng/native:generateexportedsymbols.sh) $(location mscordac_unixexports.src) > $@",
+        "//conditions:default": "$(location //eng/native:generateversionscript.sh) $(location mscordac_unixexports.src) DAC_ > $@",
+    }),
+    tools = select({
+        "@platforms//os:macos": ["//eng/native:generateexportedsymbols.sh"],
+        "//conditions:default": ["//eng/native:generateversionscript.sh"],
+    }),
 )
 
 # Generate palredefines.inc — maps unprefixed PAL symbols to DAC_-prefixed ones.

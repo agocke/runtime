@@ -576,7 +576,6 @@ cc_library(
     ],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _VM_DAC_DEFINES,
-    alwayslink = True,
     linkstatic = True,
     deps = [
         "//src/coreclr/gc:gc_headers",

@@ -7,12 +7,20 @@ load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "C
 package(default_visibility = ["//visibility:public"])
 
 # Generate the DBI export version script from mscordbi_unixexports.src.
+# On Linux, use version script format.
+# On macOS, use exported symbols list format.
 genrule(
     name = "gen_mscordbi_exports",
     srcs = ["mscordbi_unixexports.src"],
     outs = ["mscordbi.exports"],
-    cmd = "$(location //eng/native:generateversionscript.sh) $(location mscordbi_unixexports.src) > $@",
-    tools = ["//eng/native:generateversionscript.sh"],
+    cmd = select({
+        "@platforms//os:macos": "$(location //eng/native:generateexportedsymbols.sh) $(location mscordbi_unixexports.src) > $@",
+        "//conditions:default": "$(location //eng/native:generateversionscript.sh) $(location mscordbi_unixexports.src) > $@",
+    }),
+    tools = select({
+        "@platforms//os:macos": ["//eng/native:generateexportedsymbols.sh"],
+        "//conditions:default": ["//eng/native:generateversionscript.sh"],
+    }),
 )
 
 cc_binary(
