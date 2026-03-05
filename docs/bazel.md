@@ -137,10 +137,19 @@ areas:
   `-DFOO=1`), plus missing/extra defines in `coreclr_defs.bzl` and `native_defs.bzl`
 - **Native flags/optimization** (1000 files): Warning flags and optimization level
   mismatches between `.bazelrc` and `CMakeLists.txt`
-- **Managed source files** (23 assemblies): Missing `SkipLocalsInit.cs`, `Forwards.cs`
-  generation gaps, facade build strategy differences
-- **Managed nowarn** (23 assemblies): MSBuild's `Directory.Build.props` suppressions
-  not replicated in Bazel
+- **Managed assemblies**: 148 of 172 archive assemblies fully match MSBuild's CSC
+  invocations (defines, nowarn, source files, generated content). The remaining 24
+  differ due to:
+  - **Structural ref differences** (8): Bazel uses `System.Private.CoreLib` ref
+    where MSBuild uses the impl assembly directly
+  - **PNSE stub approach** (4): MSBuild generates `.notsupported.cs` with
+    PlatformNotSupportedException throws; Bazel uses `System.Void.cs` + full impl sources
+  - **Generated file content** (4): Forwards.cs/SR.cs differences from gen_facades
+    and string resource generation
+  - **Complex assemblies** (5): System.Net.Quic (stub vs full impl),
+    System.Runtime.Serialization.Formatters (BinaryFormatter inclusion),
+    and other multi-issue assemblies
+  - **Rules_dotnet dep resolution** (3): NonGeneric/Runtime refs resolved differently
 - **Unmatched compilations**: 640 CMake-only + 405 MSBuild-only units not yet ported
   to Bazel
 
