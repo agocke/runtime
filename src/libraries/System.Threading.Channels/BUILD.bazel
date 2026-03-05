@@ -61,6 +61,7 @@ netcoreapp_impl_assembly(
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Threading.Channels",
     resx_file = "src/Resources/Strings.resx",
+    assembly_description = "Provides types for passing data between producers and consumers.\n\nCommonly Used Types:\nSystem.Threading.Channel\nSystem.Threading.Channel<T>",
 )
 
 ref_impl_pair(

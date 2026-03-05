@@ -60,4 +60,5 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
+    supported_os_platforms = ["unix"],
 )

@@ -10,4 +10,5 @@ netcoreapp_impl_assembly(
         "//src/libraries:ref_System.Runtime",
     ],
     exclude_sr = True,
+    include_dll_safe_search_path = True,
 )

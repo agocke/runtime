@@ -25,4 +25,5 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
     ],
     nullable = "annotations",
+    supported_os_platforms_short = ["windows"],
 )

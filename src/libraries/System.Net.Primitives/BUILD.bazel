@@ -96,4 +96,5 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Runtime.Intrinsics:ref_System.Runtime.Intrinsics",
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
+    supported_os_platforms = ["unix"],
 )

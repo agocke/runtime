@@ -91,4 +91,5 @@ netcoreapp_impl_assembly(
     os_targeted = True,
     exclude_sr = True,
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    assembly_version = "2.1.0.0",
 )

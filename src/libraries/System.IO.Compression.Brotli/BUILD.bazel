@@ -54,6 +54,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "src/Resources/Strings.resx",
+    supported_os_platforms = ["unix"],
 )
 
 ref_impl_pair(

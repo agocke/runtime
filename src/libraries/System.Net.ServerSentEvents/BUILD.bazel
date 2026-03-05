@@ -43,6 +43,7 @@ netcoreapp_impl_assembly(
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Net.ServerSentEvents",
     resx_file = "src/Resources/Strings.resx",
+    assembly_description = "Provides a simple parser for server-sent events (SSE).\n\nCommonly Used Types:\nSystem.Net.ServerSentEvents.SseParser",
 )
 
 ref_impl_pair(

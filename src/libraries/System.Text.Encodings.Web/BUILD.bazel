@@ -68,6 +68,8 @@ netcoreapp_impl_assembly(
     nowarn = ["CS3011"],
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Text.Encodings.Web",
+    include_dll_safe_search_path = False,
+    assembly_description = "Provides types for encoding and escaping strings for use in JavaScript, HyperText Markup Language (HTML), and uniform resource locators (URL).\n\nCommonly Used Types:\nSystem.Text.Encodings.Web.HtmlEncoder\nSystem.Text.Encodings.Web.UrlEncoder\nSystem.Text.Encodings.Web.JavaScriptEncoder",
 )
 
 ref_impl_pair(

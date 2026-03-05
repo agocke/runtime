@@ -25,4 +25,5 @@ netcoreapp_impl_assembly(
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Threading.Overlapped",
     exclude_sr = True,
+    supported_os_platforms_short = ["windows"],
 )

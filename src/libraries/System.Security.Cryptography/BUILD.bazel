@@ -759,5 +759,6 @@ netcoreapp_impl_assembly(
         "INTERNAL_ASYMMETRIC_IMPLEMENTATIONS",
         "DESIGNTIMEINTERFACES",
         "SYSTEM_SECURITY_CRYPTOGRAPHY",
-    ]
+    ],
+    supported_os_platforms = ["unix"],
 )

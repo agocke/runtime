@@ -7,6 +7,7 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Security.Claims:ref_System.Security.Claims",
     ],
 )
@@ -19,7 +20,10 @@ netcoreapp_impl_assembly(
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Security.Claims:ref_System.Security.Claims",
     ],
     resx_file = "src/Resources/Strings.resx",
+    supported_os_platforms_short = ["windows"],
+    include_dll_safe_search_path = True,
 )

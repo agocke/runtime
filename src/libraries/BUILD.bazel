@@ -413,6 +413,7 @@ netcoreapp_impl_assembly(
         ":ref_System.Private.CoreLib",
     ],
     allow_unsafe_blocks = True,
+    include_neutral_resources_language = True,
 )
 
 netcoreapp_impl_assembly(
@@ -567,6 +568,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
     ],
     allow_unsafe_blocks = True,
+    supported_os_platforms = ["linux"],
 )
 
 netcoreapp_impl_assembly(

@@ -27,4 +27,5 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Runtime.Serialization.Primitives:impl_System.Runtime.Serialization.Primitives",
         "//src/libraries/System.Xml.ReaderWriter:impl_System.Xml.ReaderWriter",
     ],
+    include_dll_safe_search_path = False,
 )

@@ -265,12 +265,18 @@ def netcoreapp_impl_assembly(
     resources = [],
     resource_logical_names = {},
     assembly_version = None,
+    assembly_description = None,
+    include_dll_safe_search_path = None,
+    include_neutral_resources_language = None,
     os_targeted = False,
     nowarn = [],
     partial_facade = False,
     skip_cs1591 = False,
     pnse = False,
     multitarget = False,
+    supported_os_platforms = [],
+    supported_os_platforms_short = [],
+    unsupported_os_platforms = [],
     **kwargs
 ):
     base_name = name[len("impl_"):]
@@ -358,19 +364,25 @@ def netcoreapp_impl_assembly(
     # 2. System.SR.cs is added by the csharp_library wrapper via resx_file
 
     # 3. Generate the full AssemblyInfo.cs matching MSBuild's WriteCodeFragment
-    # MSBuild adds DefaultDllImportSearchPathsAttribute when referencing
-    # System.Private.CoreLib or System.Runtime.InteropServices
-    _include_dll_safe_search = False
-    for d in deps:
-        dep_str = str(d)
-        if "System.Private.CoreLib" in dep_str or "System.Runtime.InteropServices" in dep_str:
-            _include_dll_safe_search = True
-            break
+    # MSBuild adds DefaultDllImportSearchPathsAttribute when any ReferencePath
+    # has Filename of System.Runtime.InteropServices or System.Private.CoreLib.
+    # Auto-detect from deps if not explicitly specified.
+    if include_dll_safe_search_path == None:
+        _include_dll_safe_search = False
+        for d in deps:
+            dep_str = str(d)
+            if "System.Private.CoreLib" in dep_str or "System.Runtime.InteropServices" in dep_str:
+                _include_dll_safe_search = True
+                break
+    else:
+        _include_dll_safe_search = include_dll_safe_search_path
 
     assembly_info_target = "assemblyinfo_" + base_name
     assembly_info_kwargs = {}
     if assembly_version != None:
         assembly_info_kwargs["assembly_version"] = assembly_version
+    if assembly_description:
+        assembly_info_kwargs["assembly_description"] = assembly_description
     gen_assembly_info(
         name = assembly_info_target,
         out = name + "/" + base_name + ".AssemblyInfo.cs",
@@ -379,6 +391,11 @@ def netcoreapp_impl_assembly(
         is_trimmable = is_trimmable,
         is_aot_compatible = is_aot_compatible,
         include_dll_safe_search_path = _include_dll_safe_search,
+        include_neutral_resources_language = include_neutral_resources_language if include_neutral_resources_language != None else (resx_file != None),
+        not_supported = pnse,
+        supported_os_platforms = supported_os_platforms,
+        supported_os_platforms_short = supported_os_platforms_short,
+        unsupported_os_platforms = unsupported_os_platforms,
         **assembly_info_kwargs
     )
 

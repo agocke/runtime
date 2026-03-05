@@ -7,6 +7,7 @@ netcoreapp_ref_assembly(
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
     ],
@@ -52,6 +53,7 @@ netcoreapp_impl_assembly(
     defines = ["TRACE"],
     deps = [
         "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Collections:ref_System.Collections",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
@@ -63,6 +65,7 @@ netcoreapp_impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     generate_facades = True,
     facade_contract_assembly = ":ref_System.Diagnostics.TraceSource",
+    include_dll_safe_search_path = True,
 )
 
 ref_impl_pair(

@@ -63,6 +63,7 @@ netcoreapp_impl_assembly(
     generate_facades = True,
     facade_contract_assembly = ":ref_System.IO.Pipelines",
     resx_file = "src/Resources/Strings.resx",
+    assembly_description = "Single producer single consumer byte buffer management.\n\nCommonly Used Types:\nSystem.IO.Pipelines.Pipe\nSystem.IO.Pipelines.PipeWriter\nSystem.IO.Pipelines.PipeReader",
 )
 
 ref_impl_pair(

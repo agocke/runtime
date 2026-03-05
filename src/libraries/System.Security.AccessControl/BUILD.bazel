@@ -8,6 +8,7 @@ netcoreapp_ref_assembly(
     deps = [
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
     ],
 )
@@ -21,8 +22,11 @@ netcoreapp_impl_assembly(
     deps = [
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
     ],
     resx_file = "src/Resources/Strings.resx",
     nullable = "annotations",
+    supported_os_platforms_short = ["windows"],
+    include_dll_safe_search_path = True,
 )

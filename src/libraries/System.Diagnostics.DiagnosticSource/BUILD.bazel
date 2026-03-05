@@ -54,6 +54,7 @@ write_file(
         "",
         "    public static Version AssemblyFileVersion { get; } = new(BuildAssemblyFileVersion);",
         "}",
+        "",
     ],
 )
 
@@ -166,6 +167,7 @@ netcoreapp_impl_assembly(
     ],
     resx_file = "src/Resources/Strings.resx",
     nowarn = ["SA1205"],
+    assembly_description = "Provides Classes that allow you to decouple code logging rich (unserializable) diagnostics/telemetry (e.g. framework) from code that consumes it (e.g. tools)\n\nCommonly Used Types:\nSystem.Diagnostics.DiagnosticListener\nSystem.Diagnostics.DiagnosticSource",
 )
 
 live_csharp_library(

@@ -13,4 +13,5 @@ netcoreapp_impl_assembly(
     ],
     os_targeted = True,
     exclude_sr = True,
+    assembly_version = "4.0.0.0",
 )

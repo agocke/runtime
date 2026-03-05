@@ -24,4 +24,5 @@ netcoreapp_impl_assembly(
         "//src/libraries:impl_System.Runtime",
         "//src/libraries/System.Private.DataContractSerialization:impl_System.Private.DataContractSerialization",
     ],
+    include_dll_safe_search_path = False,
 )

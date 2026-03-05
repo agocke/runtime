@@ -25,4 +25,5 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Private.Xml:impl_System.Private.Xml",
         "//src/libraries/System.Private.Xml.Linq:impl_System.Private.Xml.Linq",
     ],
+    include_dll_safe_search_path = False,
 )

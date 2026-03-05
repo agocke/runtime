@@ -71,4 +71,5 @@ netcoreapp_impl_assembly(
         "REGISTRY_ASSEMBLY",
     ],
     resx_file = "src/Resources/Strings.resx",
+    supported_os_platforms_short = ["windows"],
 )

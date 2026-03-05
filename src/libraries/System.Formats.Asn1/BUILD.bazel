@@ -34,4 +34,5 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
         "//src/libraries/System.Text.Encoding.Extensions:ref_System.Text.Encoding.Extensions",
     ],
+    assembly_description = "Provides classes that can read and write the ASN.1 BER, CER, and DER data formats.",
 )
