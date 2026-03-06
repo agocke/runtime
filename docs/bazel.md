@@ -137,19 +137,21 @@ areas:
   `-DFOO=1`), plus missing/extra defines in `coreclr_defs.bzl` and `native_defs.bzl`
 - **Native flags/optimization** (1000 files): Warning flags and optimization level
   mismatches between `.bazelrc` and `CMakeLists.txt`
-- **Managed assemblies**: 148 of 172 archive assemblies fully match MSBuild's CSC
-  invocations (defines, nowarn, source files, generated content). The remaining 24
-  differ due to:
-  - **Structural ref differences** (8): Bazel uses `System.Private.CoreLib` ref
-    where MSBuild uses the impl assembly directly
-  - **PNSE stub approach** (4): MSBuild generates `.notsupported.cs` with
+- **Managed assemblies**: 159 of 172 archive assemblies fully match MSBuild's CSC
+  invocations (defines, nowarn, source files, generated content, references). The
+  remaining 13 differ due to:
+  - **PNSE stub approach** (3): MSBuild generates `.notsupported.cs` with
     PlatformNotSupportedException throws; Bazel uses `System.Void.cs` + full impl sources
+    (Registry, IO.Pipes.AccessControl, Threading.AccessControl)
   - **Generated file content** (4): Forwards.cs/SR.cs differences from gen_facades
-    and string resource generation
-  - **Complex assemblies** (5): System.Net.Quic (stub vs full impl),
+    and string resource generation (System.Collections, System.Runtime,
+    System.Private.CoreLib, System.Private.Uri)
+  - **Structural ref differences** (3): CoreLib + System.Runtime ref conflict for
+    assemblies that reference `$(CoreLibProject)` in MSBuild but can't have both
+    declarations in Bazel (Encodings.Web, TraceSource, InteropServices)
+  - **Complex assemblies** (3): System.Net.Quic (stub vs full impl),
     System.Runtime.Serialization.Formatters (BinaryFormatter inclusion),
-    and other multi-issue assemblies
-  - **Rules_dotnet dep resolution** (3): NonGeneric/Runtime refs resolved differently
+    System.Runtime.InteropServices.JavaScript (WASM vs stub)
 - **Unmatched compilations**: 640 CMake-only + 405 MSBuild-only units not yet ported
   to Bazel
 
