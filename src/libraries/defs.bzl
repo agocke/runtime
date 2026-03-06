@@ -131,6 +131,7 @@ def netcoreapp_ref_assembly(
     compiler_options = [],
     keyfile = None,
     cls_compliant = True,
+    assembly_version = "10.0.0.0",
     **kwargs
 ):
     compiler_options = compiler_options + [
@@ -153,7 +154,7 @@ def netcoreapp_ref_assembly(
         srcs = srcs,
         deps = deps,
         cls_compliant = cls_compliant,
-        assembly_version = "10.0.0.0",
+        assembly_version = assembly_version,
         visibility = [ "//visibility:public" ],
         nullable = "annotations",
         keyfile = keyfile if keyfile else "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/MSFT.snk",

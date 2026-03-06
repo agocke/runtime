@@ -6,6 +6,7 @@ netcoreapp_ref_assembly(
         "ref/System.Runtime.Serialization.Formatters.cs",
         "ref/System.Runtime.Serialization.Formatters.Forwards.cs",
     ],
+    assembly_version = "8.1.0.0",
     deps = [
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries:ref_System.Runtime",
