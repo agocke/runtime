@@ -24,6 +24,21 @@ public sealed class Difference
 }
 
 /// <summary>
+/// A single entry from the managed assembly manifest.
+/// </summary>
+public sealed class ManifestEntry
+{
+    public required string Name { get; init; }
+    public required ManifestStatus ExpectedStatus { get; init; }
+}
+
+public enum ManifestStatus
+{
+    Match,
+    Diff,
+}
+
+/// <summary>
 /// Full report of the equivalence check.
 /// </summary>
 public sealed class EquivalenceReport
@@ -36,18 +51,75 @@ public sealed class EquivalenceReport
     public List<string> OnlyInBazelManaged { get; } = [];
 
     /// <summary>
-    /// Set of assembly/file names whose differences are expected and should
-    /// not cause the equivalence check to fail.
+    /// Manifest entries describing every expected managed assembly and
+    /// whether it should match or is a known diff.  When set, the
+    /// equivalence check also verifies that no assemblies are missing
+    /// from either build and that no unexpected assemblies appear.
     /// </summary>
-    public HashSet<string> KnownDiffs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, ManifestEntry> ManagedManifest { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Set of native file names whose differences are expected.
+    /// </summary>
+    public HashSet<string> KnownNativeDiffs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public int TotalComparisons => NativeResults.Count + ManagedResults.Count;
     public int Matches => NativeResults.Count(r => r.IsMatch) + ManagedResults.Count(r => r.IsMatch);
-    public int KnownMismatches => NativeResults.Count(r => !r.IsMatch && KnownDiffs.Contains(r.Name))
-        + ManagedResults.Count(r => !r.IsMatch && KnownDiffs.Contains(r.Name));
+
+    public bool IsManagedKnownDiff(string name) =>
+        ManagedManifest.TryGetValue(name, out var entry) && entry.ExpectedStatus == ManifestStatus.Diff;
+
+    public int KnownMismatches => NativeResults.Count(r => !r.IsMatch && KnownNativeDiffs.Contains(r.Name))
+        + ManagedResults.Count(r => !r.IsMatch && IsManagedKnownDiff(r.Name));
     public int UnexpectedMismatches => TotalComparisons - Matches - KnownMismatches;
     public int Mismatches => TotalComparisons - Matches;
-    public bool IsEquivalent => UnexpectedMismatches == 0;
+
+    /// <summary>
+    /// Managed assemblies present in the manifest but missing from both builds.
+    /// </summary>
+    public List<string> MissingFromBothBuilds =>
+        ManagedManifest.Keys
+            .Where(name => !ManagedResults.Any(r => r.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                && !OnlyInMSBuild.Contains(name, StringComparer.OrdinalIgnoreCase)
+                && !OnlyInBazelManaged.Contains(name, StringComparer.OrdinalIgnoreCase))
+            .Order()
+            .ToList();
+
+    /// <summary>
+    /// Managed assemblies that appear in the comparison (both builds) but are not in the manifest.
+    /// Only-in-one-build assemblies are not flagged — they are already tracked separately.
+    /// </summary>
+    public List<string> UnlistedAssemblies
+    {
+        get
+        {
+            if (ManagedManifest.Count == 0)
+                return [];
+
+            return ManagedResults
+                .Select(r => r.Name)
+                .Where(name => !ManagedManifest.ContainsKey(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order()
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Managed assemblies expected to match that actually differ.
+    /// </summary>
+    public List<ComparisonResult> Regressions =>
+        ManagedResults
+            .Where(r => !r.IsMatch
+                && ManagedManifest.TryGetValue(r.Name, out var entry)
+                && entry.ExpectedStatus == ManifestStatus.Match)
+            .ToList();
+
+    public bool IsEquivalent =>
+        UnexpectedMismatches == 0
+        && Regressions.Count == 0
+        && MissingFromBothBuilds.Count == 0
+        && UnlistedAssemblies.Count == 0;
 }
 
 public static class ComparisonEngine
