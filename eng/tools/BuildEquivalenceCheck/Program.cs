@@ -10,6 +10,7 @@ var binlogPaths = new List<string>();
 string? bazelAqueryNativePath = null;
 string? bazelAqueryManagedPath = null;
 string? jsonOutputPath = null;
+string? knownDiffsPath = null;
 bool verbose = false;
 
 for (int i = 0; i < args.Length; i++)
@@ -33,6 +34,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--json-output":
             jsonOutputPath = args[++i];
+            break;
+        case "--known-diffs":
+            knownDiffsPath = args[++i];
             break;
         case "--verbose" or "-v":
             verbose = true;
@@ -113,6 +117,24 @@ Console.WriteLine("Comparing build inputs...");
 var report = ComparisonEngine.CompareNative(cmakeNativeRecords, bazelNativeRecords);
 ComparisonEngine.CompareManaged(report, msbuildManagedRecords, bazelManagedRecords);
 
+// ── Load known differences ──────────────────────────────────────────
+if (knownDiffsPath is not null)
+{
+    if (!File.Exists(knownDiffsPath))
+    {
+        Console.Error.WriteLine($"Known-diffs file not found: {knownDiffsPath}");
+        return 1;
+    }
+
+    var knownNames = File.ReadAllLines(knownDiffsPath)
+        .Select(line => line.Trim())
+        .Where(line => line.Length > 0 && !line.StartsWith('#'))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    report.KnownDiffs = knownNames;
+    Console.WriteLine($"  Loaded {knownNames.Count} known-diff entries from {knownDiffsPath}");
+}
+
 // ── Report ──────────────────────────────────────────────────────────
 ReportWriter.WriteConsoleReport(report, verbose);
 
@@ -154,6 +176,7 @@ static void PrintUsage()
           --bazel-native-aquery <path>       Bazel aquery JSON for native CppCompile actions
           --bazel-managed-aquery <path>      Bazel aquery JSON for managed CSharpCompile actions
           --json-output <path>               Write detailed JSON report to file
+          --known-diffs <path>               File listing assembly/file names with expected diffs
           --verbose / -v                     Show all differences including only-in lists
           --help / -h                        Show this help
         """);

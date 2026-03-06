@@ -149,6 +149,7 @@ for cfg in "${configs[@]}"; do
         --repo-root "$scriptroot"
         --bazel-native-aquery "$bazel_native_aquery"
         --bazel-managed-aquery "$bazel_managed_aquery"
+        --known-diffs "$scriptroot/eng/tools/BuildEquivalenceCheck/known-diffs.txt"
     )
 
     # Add compile_commands.json files that exist

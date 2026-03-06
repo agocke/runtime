@@ -27,27 +27,39 @@ public static class ReportWriter
         {
             Console.WriteLine("── Native C/C++ ──────────────────────────────────────");
             var nativeMatches = report.NativeResults.Count(r => r.IsMatch);
-            var nativeMismatches = report.NativeResults.Count(r => !r.IsMatch);
+            var nativeKnown = report.NativeResults.Count(r => !r.IsMatch && report.KnownDiffs.Contains(r.Name));
+            var nativeUnexpected = report.NativeResults.Count(r => !r.IsMatch && !report.KnownDiffs.Contains(r.Name));
             Console.WriteLine($"  Compared: {report.NativeResults.Count} source files");
             WriteColored($"  Matched:  {nativeMatches}", ConsoleColor.Green);
-            if (nativeMismatches > 0)
-                WriteColored($"  Differ:   {nativeMismatches}", ConsoleColor.Red);
+            if (nativeKnown > 0)
+                WriteColored($"  Known:    {nativeKnown}", ConsoleColor.Yellow);
+            if (nativeUnexpected > 0)
+                WriteColored($"  Differ:   {nativeUnexpected}", ConsoleColor.Red);
             if (report.OnlyInCMake.Count > 0)
                 WriteColored($"  Only in CMake: {report.OnlyInCMake.Count}", ConsoleColor.Yellow);
             if (report.OnlyInBazel.Count > 0)
                 WriteColored($"  Only in Bazel: {report.OnlyInBazel.Count}", ConsoleColor.Yellow);
             Console.WriteLine();
 
-            if (verbose || nativeMismatches > 0)
+            // Show unexpected diffs (always)
+            foreach (var result in report.NativeResults.Where(r => !r.IsMatch && !report.KnownDiffs.Contains(r.Name)))
             {
-                foreach (var result in report.NativeResults.Where(r => !r.IsMatch))
+                WriteColored($"  ✗ {result.Name}", ConsoleColor.Red);
+                foreach (var diff in result.Differences)
+                    WriteDifference(diff);
+            }
+
+            // Show known diffs and only-in lists (verbose only)
+            if (verbose)
+            {
+                foreach (var result in report.NativeResults.Where(r => !r.IsMatch && report.KnownDiffs.Contains(r.Name)))
                 {
-                    WriteColored($"  ✗ {result.Name}", ConsoleColor.Red);
+                    WriteColored($"  ⚠ {result.Name} (known)", ConsoleColor.Yellow);
                     foreach (var diff in result.Differences)
                         WriteDifference(diff);
                 }
 
-                if (report.OnlyInCMake.Count > 0 && verbose)
+                if (report.OnlyInCMake.Count > 0)
                 {
                     Console.WriteLine("  Files only in CMake:");
                     foreach (var f in report.OnlyInCMake.Take(20))
@@ -56,7 +68,7 @@ public static class ReportWriter
                         Console.WriteLine($"    ... and {report.OnlyInCMake.Count - 20} more");
                 }
 
-                if (report.OnlyInBazel.Count > 0 && verbose)
+                if (report.OnlyInBazel.Count > 0)
                 {
                     Console.WriteLine("  Files only in Bazel:");
                     foreach (var f in report.OnlyInBazel.Take(20))
@@ -72,27 +84,39 @@ public static class ReportWriter
         {
             Console.WriteLine("── Managed C# ────────────────────────────────────────");
             var managedMatches = report.ManagedResults.Count(r => r.IsMatch);
-            var managedMismatches = report.ManagedResults.Count(r => !r.IsMatch);
+            var managedKnown = report.ManagedResults.Count(r => !r.IsMatch && report.KnownDiffs.Contains(r.Name));
+            var managedUnexpected = report.ManagedResults.Count(r => !r.IsMatch && !report.KnownDiffs.Contains(r.Name));
             Console.WriteLine($"  Compared: {report.ManagedResults.Count} assemblies");
             WriteColored($"  Matched:  {managedMatches}", ConsoleColor.Green);
-            if (managedMismatches > 0)
-                WriteColored($"  Differ:   {managedMismatches}", ConsoleColor.Red);
+            if (managedKnown > 0)
+                WriteColored($"  Known:    {managedKnown}", ConsoleColor.Yellow);
+            if (managedUnexpected > 0)
+                WriteColored($"  Differ:   {managedUnexpected}", ConsoleColor.Red);
             if (report.OnlyInMSBuild.Count > 0)
                 WriteColored($"  Only in MSBuild: {report.OnlyInMSBuild.Count}", ConsoleColor.Yellow);
             if (report.OnlyInBazelManaged.Count > 0)
                 WriteColored($"  Only in Bazel:   {report.OnlyInBazelManaged.Count}", ConsoleColor.Yellow);
             Console.WriteLine();
 
-            if (verbose || managedMismatches > 0)
+            // Show unexpected diffs first (always)
+            foreach (var result in report.ManagedResults.Where(r => !r.IsMatch && !report.KnownDiffs.Contains(r.Name)))
             {
-                foreach (var result in report.ManagedResults.Where(r => !r.IsMatch))
+                WriteColored($"  ✗ {result.Name}", ConsoleColor.Red);
+                foreach (var diff in result.Differences)
+                    WriteDifference(diff);
+            }
+
+            // Show known diffs (verbose only)
+            if (verbose)
+            {
+                foreach (var result in report.ManagedResults.Where(r => !r.IsMatch && report.KnownDiffs.Contains(r.Name)))
                 {
-                    WriteColored($"  ✗ {result.Name}", ConsoleColor.Red);
+                    WriteColored($"  ⚠ {result.Name} (known)", ConsoleColor.Yellow);
                     foreach (var diff in result.Differences)
                         WriteDifference(diff);
                 }
 
-                if (report.OnlyInMSBuild.Count > 0 && verbose)
+                if (report.OnlyInMSBuild.Count > 0)
                 {
                     Console.WriteLine("  Assemblies only in MSBuild:");
                     foreach (var a in report.OnlyInMSBuild.Take(20))
@@ -101,7 +125,7 @@ public static class ReportWriter
                         Console.WriteLine($"    ... and {report.OnlyInMSBuild.Count - 20} more");
                 }
 
-                if (report.OnlyInBazelManaged.Count > 0 && verbose)
+                if (report.OnlyInBazelManaged.Count > 0)
                 {
                     Console.WriteLine("  Assemblies only in Bazel:");
                     foreach (var a in report.OnlyInBazelManaged.Take(20))
@@ -116,7 +140,12 @@ public static class ReportWriter
         Console.WriteLine("── Overall ───────────────────────────────────────────");
         Console.WriteLine($"  Total comparisons: {report.TotalComparisons}");
         Console.WriteLine($"  Matches:           {report.Matches}");
-        Console.WriteLine($"  Mismatches:        {report.Mismatches}");
+        if (report.KnownMismatches > 0)
+            Console.WriteLine($"  Known diffs:       {report.KnownMismatches}");
+        if (report.UnexpectedMismatches > 0)
+            Console.WriteLine($"  Unexpected diffs:  {report.UnexpectedMismatches}");
+        else if (report.KnownMismatches == 0 && report.Mismatches > 0)
+            Console.WriteLine($"  Mismatches:        {report.Mismatches}");
         Console.WriteLine();
 
         if (report.IsEquivalent)
@@ -137,17 +166,27 @@ public static class ReportWriter
                 TotalComparisons = report.TotalComparisons,
                 Matches = report.Matches,
                 Mismatches = report.Mismatches,
+                KnownMismatches = report.KnownMismatches,
+                UnexpectedMismatches = report.UnexpectedMismatches,
                 NativeOnlyInCMake = report.OnlyInCMake.Count,
                 NativeOnlyInBazel = report.OnlyInBazel.Count,
                 ManagedOnlyInMSBuild = report.OnlyInMSBuild.Count,
                 ManagedOnlyInBazel = report.OnlyInBazelManaged.Count,
             },
             NativeDifferences = report.NativeResults
-                .Where(r => !r.IsMatch)
+                .Where(r => !r.IsMatch && !report.KnownDiffs.Contains(r.Name))
                 .Select(ToJsonDiff)
                 .ToList(),
             ManagedDifferences = report.ManagedResults
-                .Where(r => !r.IsMatch)
+                .Where(r => !r.IsMatch && !report.KnownDiffs.Contains(r.Name))
+                .Select(ToJsonDiff)
+                .ToList(),
+            KnownNativeDifferences = report.NativeResults
+                .Where(r => !r.IsMatch && report.KnownDiffs.Contains(r.Name))
+                .Select(ToJsonDiff)
+                .ToList(),
+            KnownManagedDifferences = report.ManagedResults
+                .Where(r => !r.IsMatch && report.KnownDiffs.Contains(r.Name))
                 .Select(ToJsonDiff)
                 .ToList(),
             OnlyInCMake = report.OnlyInCMake,
@@ -214,6 +253,8 @@ internal sealed class JsonReport
     public required JsonSummary Summary { get; init; }
     public required List<JsonDiff> NativeDifferences { get; init; }
     public required List<JsonDiff> ManagedDifferences { get; init; }
+    public required List<JsonDiff> KnownNativeDifferences { get; init; }
+    public required List<JsonDiff> KnownManagedDifferences { get; init; }
     public required List<string> OnlyInCMake { get; init; }
     public required List<string> OnlyInBazel { get; init; }
     public required List<string> OnlyInMSBuild { get; init; }
@@ -225,6 +266,8 @@ internal sealed class JsonSummary
     public int TotalComparisons { get; init; }
     public int Matches { get; init; }
     public int Mismatches { get; init; }
+    public int KnownMismatches { get; init; }
+    public int UnexpectedMismatches { get; init; }
     public int NativeOnlyInCMake { get; init; }
     public int NativeOnlyInBazel { get; init; }
     public int ManagedOnlyInMSBuild { get; init; }

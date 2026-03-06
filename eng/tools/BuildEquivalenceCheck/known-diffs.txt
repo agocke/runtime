@@ -1,0 +1,49 @@
+# Known managed assembly differences between Bazel and MSBuild.
+#
+# Each line is an assembly name that is expected to differ. Lines starting
+# with # are comments. Blank lines are ignored.
+#
+# When all differences for an assembly are resolved, remove it from this file
+# so the equivalence check will catch regressions.
+
+# ── PNSE stubs ──────────────────────────────────────────────────────
+# MSBuild generates .notsupported.cs with PlatformNotSupportedException
+# throws; Bazel uses System.Void.cs + full impl sources.
+Microsoft.Win32.Registry
+System.IO.Pipes.AccessControl
+System.Threading.AccessControl
+
+# ── Generated file content ──────────────────────────────────────────
+# Forwards.cs or SR.cs generation produces different output between
+# Bazel's gen_facades / gen_resx_source and MSBuild's GenFacades / ResGen.
+System.Collections
+System.Runtime
+System.Private.CoreLib
+System.Private.Uri
+
+# ── Complex assemblies ──────────────────────────────────────────────
+# Different source file sets or reference sets due to platform stubs
+# vs full implementations.
+System.Net.Quic
+System.Runtime.Serialization.Formatters
+System.Runtime.InteropServices.JavaScript
+
+# ── Non-archive assemblies ──────────────────────────────────────────
+# These assemblies are compared but not in the runtime archive. They
+# differ because MSBuild uses the full targeting pack (all framework refs)
+# while Bazel uses precise deps, or because they are built as stubs in
+# MSBuild but as full implementations in Bazel.
+Microsoft.Extensions.Primitives
+Microsoft.Interop.ComInterfaceGenerator
+Microsoft.Interop.LibraryImportGenerator
+Microsoft.Interop.SourceGeneration
+System.CodeDom
+System.Formats.Cbor
+System.Formats.Nrbf
+System.Private.CoreLib.Generators
+System.Reflection.MetadataLoadContext
+System.Resources.Extensions
+System.Security.Cryptography.Pkcs
+System.Security.Cryptography.Xml
+System.Text.RegularExpressions.Generator
+System.Threading.RateLimiting

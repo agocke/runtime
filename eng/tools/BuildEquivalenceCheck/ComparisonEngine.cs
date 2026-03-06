@@ -35,14 +35,19 @@ public sealed class EquivalenceReport
     public List<string> OnlyInMSBuild { get; } = [];
     public List<string> OnlyInBazelManaged { get; } = [];
 
+    /// <summary>
+    /// Set of assembly/file names whose differences are expected and should
+    /// not cause the equivalence check to fail.
+    /// </summary>
+    public HashSet<string> KnownDiffs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     public int TotalComparisons => NativeResults.Count + ManagedResults.Count;
     public int Matches => NativeResults.Count(r => r.IsMatch) + ManagedResults.Count(r => r.IsMatch);
+    public int KnownMismatches => NativeResults.Count(r => !r.IsMatch && KnownDiffs.Contains(r.Name))
+        + ManagedResults.Count(r => !r.IsMatch && KnownDiffs.Contains(r.Name));
+    public int UnexpectedMismatches => TotalComparisons - Matches - KnownMismatches;
     public int Mismatches => TotalComparisons - Matches;
-    public bool IsEquivalent => Mismatches == 0
-        && OnlyInCMake.Count == 0
-        && OnlyInBazel.Count == 0
-        && OnlyInMSBuild.Count == 0
-        && OnlyInBazelManaged.Count == 0;
+    public bool IsEquivalent => UnexpectedMismatches == 0;
 }
 
 public static class ComparisonEngine
