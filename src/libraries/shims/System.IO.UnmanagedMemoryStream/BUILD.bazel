@@ -5,7 +5,8 @@ netcoreapp_impl_assembly(
     skip_cs1591 = True,
     srcs = ["src/System.IO.UnmanagedMemoryStream.cs"],
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
     ],
     os_targeted = True,
     exclude_sr = True,

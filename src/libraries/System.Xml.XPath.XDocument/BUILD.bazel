@@ -23,8 +23,7 @@ netcoreapp_impl_assembly(
     exclude_sr = True,
     allow_unsafe_blocks = True,
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
-        "//src/libraries:impl_System.Runtime",
+        "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Private.Xml:impl_System.Private.Xml",
         "//src/libraries/System.Private.Xml.Linq:impl_System.Private.Xml.Linq",
     ],

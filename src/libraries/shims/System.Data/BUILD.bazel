@@ -8,6 +8,7 @@ netcoreapp_impl_assembly(
         "ref/System.Data.cs",
     ],
     deps = [
+        "//src/libraries:ref_System.Private.CoreLib",
         "//src/libraries/System.Data.Common:ref_System.Data.Common",
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/shims/stubs:ref_System.Data.Odbc",

@@ -19,8 +19,7 @@ netcoreapp_impl_assembly(
     facade_contract_assembly = ":ref_System.Xml.XDocument",
     exclude_sr = True,
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
-        "//src/libraries:impl_System.Runtime",
+        "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.ObjectModel:impl_System.ObjectModel",
         "//src/libraries/System.Private.Xml:impl_System.Private.Xml",
         "//src/libraries/System.Private.Xml.Linq:impl_System.Private.Xml.Linq",

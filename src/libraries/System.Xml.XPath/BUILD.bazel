@@ -20,8 +20,7 @@ netcoreapp_impl_assembly(
     name = "impl_System.Xml.XPath",
     srcs = [],
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
-        "//src/libraries:impl_System.Runtime",
+        "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Private.Xml:impl_System.Private.Xml",
     ],
     partial_facade = True,

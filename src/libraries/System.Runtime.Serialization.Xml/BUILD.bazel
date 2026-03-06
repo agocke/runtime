@@ -21,8 +21,7 @@ netcoreapp_impl_assembly(
     facade_contract_assembly = ":ref_System.Runtime.Serialization.Xml",
     exclude_sr = True,
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
-        "//src/libraries:impl_System.Runtime",
+        "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Private.DataContractSerialization:impl_System.Private.DataContractSerialization",
         "//src/libraries/System.Runtime.Serialization.Primitives:impl_System.Runtime.Serialization.Primitives",
         "//src/libraries/System.Xml.ReaderWriter:impl_System.Xml.ReaderWriter",
