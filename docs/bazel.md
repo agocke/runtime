@@ -124,7 +124,7 @@ bazel build //...                                       # Bazel
 ./compare-bazel.sh --json-output results.json           # machine-readable output
 ```
 
-The tool lives in `eng/tools/BuildEquivalenceCheck/`. It parses MSBuild `.binlog`
+The tool lives in `src/tools/BuildEquivalenceCheck/`. It parses MSBuild `.binlog`
 files, CMake `compile_commands.json`, and Bazel `aquery` output to extract and
 normalize compilation records, then compares them field-by-field.
 
