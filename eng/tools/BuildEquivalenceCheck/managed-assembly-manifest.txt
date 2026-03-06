@@ -18,7 +18,7 @@ match Microsoft.CSharp
 match Microsoft.VisualBasic
 match Microsoft.VisualBasic.Core
 match Microsoft.Win32.Primitives
-match System
+diff  System
 match System.AppContext
 match System.Buffers
 match System.Collections.Concurrent
@@ -34,7 +34,7 @@ match System.ComponentModel.TypeConverter
 match System.Configuration
 match System.Console
 match System.Core
-match System.Data
+diff  System.Data
 match System.Data.Common
 match System.Data.DataSetExtensions
 match System.Diagnostics.Contracts

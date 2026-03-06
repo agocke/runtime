@@ -5,11 +5,8 @@ netcoreapp_impl_assembly(
     skip_cs1591 = True,
     srcs = [
         "ref/System.cs",
-        "src/System.cs",
     ],
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
-        "//src/libraries:impl_System.Private.Uri",
         "//src/libraries:ref_Microsoft.Win32.Primitives",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",

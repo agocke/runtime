@@ -8,6 +8,7 @@ netcoreapp_impl_assembly(
     srcs = ["//src/libraries/shims:System.Void.cs"],
     deps = [
         "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
     ],
     exclude_sr = True,
     include_dll_safe_search_path = True,

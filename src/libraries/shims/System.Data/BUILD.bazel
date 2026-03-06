@@ -8,9 +8,9 @@ netcoreapp_impl_assembly(
         "ref/System.Data.cs",
     ],
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
         "//src/libraries/System.Data.Common:ref_System.Data.Common",
         "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/shims/stubs:ref_System.Data.Odbc",
         "//src/libraries/shims/stubs:ref_System.Data.OleDb",
         "//src/libraries/shims/stubs:ref_System.Data.SqlClient",
@@ -19,5 +19,4 @@ netcoreapp_impl_assembly(
     os_targeted = True,
     exclude_sr = True,
     assembly_version = "4.0.0.0",
-    include_dll_safe_search_path = True,
 )
