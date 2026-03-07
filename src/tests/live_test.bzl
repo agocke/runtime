@@ -712,7 +712,7 @@ _transform_dep = rule(
 )
 
 def _il_test_impl(ctx):
-    args = []
+    args = ["-quiet"]
     if ctx.attr.debug_type == "full":
         args.append("-debug")
     if ctx.attr.debug_type == "pdbonly":
