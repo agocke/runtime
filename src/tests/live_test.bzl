@@ -9,12 +9,12 @@ load("@rules_dotnet//dotnet/private/rules/csharp:binary.bzl", "compile_csharp_ex
 load("@rules_dotnet//dotnet/private/rules/csharp/actions:csharp_assembly.bzl", "AssemblyAction")
 load("@rules_dotnet//dotnet/private:common.bzl",
     "collect_transitive_runfiles",
-    "emit_pdb",
     "generate_runtimeconfig",
     "get_toolchain",
     "is_core_framework",
     "is_debug",
     "is_standard_framework",
+    "resolve_debug_type",
     "to_rlocation_path",)
 load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
 load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS", "CORE_ROOT_REFPACK_DEPS")
@@ -100,7 +100,7 @@ def _compile_csharp_library(ctx, tfm):
         additionalfiles = ctx.files.additionalfiles,
         direct_analyzers = ctx.attr.analyzers,
         debug = is_debug(ctx),
-        emit_pdb = emit_pdb(ctx),
+        debug_type = resolve_debug_type(ctx),
         defines = ctx.attr.defines,
         deps = ctx.attr.deps,
         exports = [],
