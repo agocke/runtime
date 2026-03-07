@@ -26,6 +26,8 @@ def _gen_resx_source_impl(ctx):
     ]
     if ctx.attr.resource_class_name:
         args.append("--resource-class-name=%s" % ctx.attr.resource_class_name)
+    if not ctx.attr.include_default_values:
+        args.append("--include-default-values=false")
     ctx.actions.run(
         executable = ctx.executable._exe,
         inputs = [ctx.file.resx_file],
@@ -40,6 +42,7 @@ gen_resx_source = rule(
         "assembly_name": attr.string(mandatory = True),
         "resource_name": attr.string(mandatory = False, default = ""),
         "resource_class_name": attr.string(mandatory = False, default = ""),
+        "include_default_values": attr.bool(default = True),
         "resx_file": attr.label(
             mandatory = True,
             allow_single_file = True,
@@ -137,9 +140,10 @@ def _gen_assembly_info_impl(ctx):
     if ctx.attr.not_supported:
         lines.append('[assembly: System.Reflection.AssemblyMetadata("NotSupported", "True")]')
 
-    lines.append('[assembly: System.Reflection.AssemblyMetadata("Serviceable", "True")]')
-    lines.append('[assembly: System.Reflection.AssemblyMetadata("PreferInbox", "True")]')
-    lines.append('[assembly: System.Reflection.AssemblyDefaultAliasAttribute("%s")]' % assembly_name)
+    if ctx.attr.include_serviceable:
+        lines.append('[assembly: System.Reflection.AssemblyMetadata("Serviceable", "True")]')
+        lines.append('[assembly: System.Reflection.AssemblyMetadata("PreferInbox", "True")]')
+        lines.append('[assembly: System.Reflection.AssemblyDefaultAliasAttribute("%s")]' % assembly_name)
 
     if ctx.attr.include_neutral_resources_language:
         lines.append('[assembly: System.Resources.NeutralResourcesLanguage("en-US")]')
@@ -199,6 +203,7 @@ gen_assembly_info = rule(
         "cls_compliant": attr.bool(default = True),
         "is_trimmable": attr.bool(default = True),
         "is_aot_compatible": attr.bool(default = True),
+        "include_serviceable": attr.bool(default = True),
         "include_dll_safe_search_path": attr.bool(default = False),
         "include_neutral_resources_language": attr.bool(default = True),
         "assembly_description": attr.string(default = ""),
@@ -266,6 +271,7 @@ def csharp_library(
     out = None,
     resx_file = None,
     resource_name = None,
+    include_default_values = True,
     resources = [],
     resource_logical_names = {},
     nowarn = [],
@@ -301,6 +307,7 @@ def csharp_library(
             assembly_name = out,
             resource_name = _resource_name,
             resx_file = resx_file,
+            include_default_values = include_default_values,
         )
         srcs = srcs + [ ":" + resx_target ]
 
