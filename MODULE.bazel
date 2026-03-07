@@ -1,7 +1,8 @@
 bazel_dep(name = "rules_dotnet")
-local_path_override(
+git_override(
     module_name = "rules_dotnet",
-    path = "/home/andy/code/rules_dotnet",
+    remote = "https://github.com/agocke/rules_dotnet.git",
+    commit = "24a42a333d9b600ca1b7f366d957394018d6b28c",
 )
 
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
