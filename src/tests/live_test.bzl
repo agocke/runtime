@@ -9,6 +9,7 @@ load("@rules_dotnet//dotnet/private/rules/csharp:binary.bzl", "compile_csharp_ex
 load("@rules_dotnet//dotnet/private/rules/csharp/actions:csharp_assembly.bzl", "AssemblyAction")
 load("@rules_dotnet//dotnet/private:common.bzl",
     "collect_transitive_runfiles",
+    "emit_pdb",
     "generate_runtimeconfig",
     "get_toolchain",
     "is_core_framework",
@@ -99,6 +100,7 @@ def _compile_csharp_library(ctx, tfm):
         additionalfiles = ctx.files.additionalfiles,
         direct_analyzers = ctx.attr.analyzers,
         debug = is_debug(ctx),
+        emit_pdb = emit_pdb(ctx),
         defines = ctx.attr.defines,
         deps = ctx.attr.deps,
         exports = [],
