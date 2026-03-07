@@ -127,6 +127,8 @@ public static class ComparisonEngine
     // Flags injected by Bazel's cc_toolchain that CMake doesn't use.
     // Only include flags that are genuinely from the Bazel C++ toolchain
     // and have no CMake equivalent — NOT flags from .bazelrc that mirror CMake.
+    // Do NOT add config-sensitive flags here (debug info, optimization, etc.)
+    // — those must be compared to catch configuration mismatches.
     private static readonly HashSet<string> BazelToolchainFlags =
     [
         "-U_FORTIFY_SOURCE",
@@ -140,14 +142,14 @@ public static class ComparisonEngine
         "-no-canonical-prefixes",
         "-Wno-builtin-macro-redefined",
         "-fdata-sections",
-        "-g0",
     ];
 
     // Flags injected by CMake that Bazel doesn't use.
+    // Do NOT add config-sensitive flags here (debug info, optimization, etc.)
+    // — those must be compared to catch configuration mismatches.
     private static readonly HashSet<string> CMakeToolchainFlags =
     [
         "-Wno-null-conversion",
-        "-glldb",
         "-Wvla",
     ];
 

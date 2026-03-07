@@ -34,7 +34,7 @@ match System.ComponentModel.TypeConverter
 match System.Configuration
 match System.Console
 match System.Core
-diff  System.Data
+match System.Data
 match System.Data.Common
 match System.Data.DataSetExtensions
 match System.Diagnostics.Contracts
