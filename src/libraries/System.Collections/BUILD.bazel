@@ -9,6 +9,7 @@ netcoreapp_ref_assembly(
     name = "ref_System.Collections",
     srcs = [
         "ref/System.Collections.cs",
+        "ref/System.Collections.Forwards.cs",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
