@@ -3,7 +3,8 @@
 # bit-for-bit identical to the CMake+MSBuild-built runtime archive.
 #
 # Usage:
-#   ./compare-runtime-packs.sh                          # build both, then compare
+#   ./compare-runtime-packs.sh                          # build both (debug), then compare
+#   ./compare-runtime-packs.sh --config release         # build both in release, then compare
 #   ./compare-runtime-packs.sh --skip-build             # use existing artifacts
 #   ./compare-runtime-packs.sh <msbuild-tarball> <bazel-tarball>
 #
@@ -40,15 +41,20 @@ product_version="${major_version}.${minor_version}.${patch_version}"
 msbuild_tarball=""
 bazel_tarball=""
 skip_build=false
+config="debug"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --config)
+            config="${2,,}"
+            shift 2
+            ;;
         --skip-build)
             skip_build=true
             shift
             ;;
         -h|--help)
-            head -13 "${BASH_SOURCE[0]}" | tail -12
+            head -14 "${BASH_SOURCE[0]}" | tail -13
             exit 0
             ;;
         -*)
@@ -59,7 +65,7 @@ while [[ $# -gt 0 ]]; do
             if [[ -z "$msbuild_tarball" ]]; then
                 msbuild_tarball="$1"
             elif [[ -z "$bazel_tarball" ]]; then
-                bazel_tarball="$2"
+                bazel_tarball="$1"
             else
                 echo "Too many arguments" >&2
                 exit 2
@@ -69,6 +75,22 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ----- Map config to build system flags -----
+case "$config" in
+    debug)
+        msbuild_config_args=()
+        bazel_config_args=()
+        ;;
+    release)
+        msbuild_config_args=(-rc release -lc release)
+        bazel_config_args=(--config=release)
+        ;;
+    *)
+        echo "Invalid config: $config (must be debug or release)" >&2
+        exit 2
+        ;;
+esac
+
 if [[ -n "$msbuild_tarball" && -z "$bazel_tarball" ]]; then
     echo "Usage: $0 [--skip-build] [<msbuild-tarball> <bazel-tarball>]" >&2
     exit 2
@@ -77,11 +99,11 @@ fi
 if [[ -z "$msbuild_tarball" ]]; then
     # ── Build step ──────────────────────────────────────────────────────
     if [[ "$skip_build" != "true" ]]; then
-        log "Building MSBuild runtime archive (./build.sh clr+libs+host+packs)..."
-        "$scriptroot/build.sh" clr+libs+host+packs
+        log "Building MSBuild runtime archive (./build.sh clr+libs+host+packs ${msbuild_config_args[*]})..."
+        "$scriptroot/build.sh" clr+libs+host+packs "${msbuild_config_args[@]}"
 
-        log "Building Bazel runtime archive (bazel build //:runtime_archive)..."
-        bazel --nohome_rc build //:runtime_archive
+        log "Building Bazel runtime archive (bazel build ${bazel_config_args[*]} //:runtime_archive)..."
+        bazel --nohome_rc build "${bazel_config_args[@]}" //:runtime_archive
     fi
 
     # ── Auto-detect MSBuild tarball ─────────────────────────────────────
