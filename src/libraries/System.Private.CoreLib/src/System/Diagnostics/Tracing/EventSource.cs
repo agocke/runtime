@@ -54,7 +54,7 @@
 //
 // This set of types is roughly a generalization of JSON support (basically primitives, bags, and arrays).
 //
-// Explicitly allowed structs include (* New for V4.6)
+// Explicitly allowed structs include
 //   * Marked with the EventData attribute
 //   * implicitly defined (e.g the C# new {x = 3, y = 5} syntax)
 //   * KeyValuePair<K,V>  (thus dictionaries can be passed since they are an IEnumerable of KeyValuePair)
