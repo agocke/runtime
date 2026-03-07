@@ -124,7 +124,7 @@ bazel build //...                                       # Bazel
 ./compare-bazel.sh --json-output results.json           # machine-readable output
 ```
 
-The tool lives in `eng/tools/BuildEquivalenceCheck/`. It parses MSBuild `.binlog`
+The tool lives in `src/tools/BuildEquivalenceCheck/`. It parses MSBuild `.binlog`
 files, CMake `compile_commands.json`, and Bazel `aquery` output to extract and
 normalize compilation records, then compares them field-by-field.
 
@@ -137,10 +137,18 @@ areas:
   `-DFOO=1`), plus missing/extra defines in `coreclr_defs.bzl` and `native_defs.bzl`
 - **Native flags/optimization** (1000 files): Warning flags and optimization level
   mismatches between `.bazelrc` and `CMakeLists.txt`
-- **Managed source files** (23 assemblies): Missing `SkipLocalsInit.cs`, `Forwards.cs`
-  generation gaps, facade build strategy differences
-- **Managed nowarn** (23 assemblies): MSBuild's `Directory.Build.props` suppressions
-  not replicated in Bazel
+- **Managed assemblies**: 162 of 172 archive assemblies fully match MSBuild's CSC
+  invocations (defines, nowarn, source files, generated content, references). The
+  remaining 10 differ due to:
+  - **PNSE stub approach** (3): MSBuild generates `.notsupported.cs` with
+    PlatformNotSupportedException throws; Bazel uses `System.Void.cs` + full impl sources
+    (Registry, IO.Pipes.AccessControl, Threading.AccessControl)
+  - **Generated file content** (4): Forwards.cs/SR.cs differences from gen_facades
+    and string resource generation (System.Collections, System.Runtime,
+    System.Private.CoreLib, System.Private.Uri)
+  - **Complex assemblies** (3): System.Net.Quic (stub vs full impl),
+    System.Runtime.Serialization.Formatters (BinaryFormatter inclusion),
+    System.Runtime.InteropServices.JavaScript (WASM vs stub)
 - **Unmatched compilations**: 640 CMake-only + 405 MSBuild-only units not yet ported
   to Bazel
 

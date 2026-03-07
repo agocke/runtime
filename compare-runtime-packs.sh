@@ -3,8 +3,9 @@
 # bit-for-bit identical to the CMake+MSBuild-built runtime archive.
 #
 # Usage:
+#   ./compare-runtime-packs.sh                          # build both, then compare
+#   ./compare-runtime-packs.sh --skip-build             # use existing artifacts
 #   ./compare-runtime-packs.sh <msbuild-tarball> <bazel-tarball>
-#   ./compare-runtime-packs.sh                          # auto-detect from artifacts/
 #
 # Exit codes:
 #   0  — archives are identical
@@ -38,35 +39,84 @@ product_version="${major_version}.${minor_version}.${patch_version}"
 # ----- Parse arguments or auto-detect -----
 msbuild_tarball=""
 bazel_tarball=""
+skip_build=false
 
-if [[ $# -ge 2 ]]; then
-    msbuild_tarball="$1"
-    bazel_tarball="$2"
-elif [[ $# -eq 0 ]]; then
-    # Auto-detect: look for the packs tarball in artifacts/
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-build)
+            skip_build=true
+            shift
+            ;;
+        -h|--help)
+            head -13 "${BASH_SOURCE[0]}" | tail -12
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 2
+            ;;
+        *)
+            if [[ -z "$msbuild_tarball" ]]; then
+                msbuild_tarball="$1"
+            elif [[ -z "$bazel_tarball" ]]; then
+                bazel_tarball="$2"
+            else
+                echo "Too many arguments" >&2
+                exit 2
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -n "$msbuild_tarball" && -z "$bazel_tarball" ]]; then
+    echo "Usage: $0 [--skip-build] [<msbuild-tarball> <bazel-tarball>]" >&2
+    exit 2
+fi
+
+if [[ -z "$msbuild_tarball" ]]; then
+    # ── Build step ──────────────────────────────────────────────────────
+    if [[ "$skip_build" != "true" ]]; then
+        log "Building MSBuild runtime archive (./build.sh clr+libs+host+packs)..."
+        "$scriptroot/build.sh" clr+libs+host+packs
+
+        log "Building Bazel runtime archive (bazel build //:runtime_archive)..."
+        bazel --nohome_rc build //:runtime_archive
+    fi
+
+    # ── Auto-detect MSBuild tarball ─────────────────────────────────────
     pattern="artifacts/packages/*/Shipping/dotnet-runtime-*-linux-x64.tar.gz"
-    candidates=($scriptroot/$pattern)
+    candidates=()
+    for f in $scriptroot/$pattern; do
+        [[ -f "$f" ]] && candidates+=("$f")
+    done
     if [[ ${#candidates[@]} -eq 0 ]]; then
         log_error "No MSBuild runtime tarball found matching: $pattern"
-        log_error "Run:  ./build.sh clr+libs+host+packs -rc Release -lc Release"
+        log_error "Run:  ./build.sh clr+libs+host+packs"
         exit 2
     fi
     msbuild_tarball="${candidates[0]}"
     log "Auto-detected MSBuild tarball: $msbuild_tarball"
 
-    # Bazel tarball doesn't exist yet — that's the whole point of this script.
-    # For now, allow it to be missing and report what needs to be built.
+    # ── Auto-detect Bazel tarball ───────────────────────────────────────
     bazel_tarball="${BAZEL_RUNTIME_TARBALL:-}"
     if [[ -z "$bazel_tarball" ]]; then
-        log_error "Bazel runtime tarball not specified."
-        log_error "Set BAZEL_RUNTIME_TARBALL or pass as second argument."
-        log_error "Usage: $0 <msbuild-tarball> <bazel-tarball>"
+        bazel_pattern="bazel-bin/dotnet-runtime-*-linux-x64.tar.gz"
+        bazel_candidates=()
+        for f in $scriptroot/$bazel_pattern; do
+            [[ -f "$f" ]] && bazel_candidates+=("$f")
+        done
+        if [[ ${#bazel_candidates[@]} -gt 0 ]]; then
+            bazel_tarball="${bazel_candidates[0]}"
+        fi
+    fi
+    if [[ -z "$bazel_tarball" ]]; then
+        log_error "No Bazel runtime tarball found."
+        log_error "Run:  bazel build //:runtime_archive"
+        log_error "Or set BAZEL_RUNTIME_TARBALL."
         exit 2
     fi
-else
-    echo "Usage: $0 [<msbuild-tarball> <bazel-tarball>]"
-    echo "       $0                        # auto-detect MSBuild, set BAZEL_RUNTIME_TARBALL"
-    exit 2
+    log "Auto-detected Bazel tarball: $bazel_tarball"
 fi
 
 for f in "$msbuild_tarball" "$bazel_tarball"; do
