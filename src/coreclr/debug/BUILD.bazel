@@ -3,6 +3,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//:cc_defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_pch.bzl", "cc_pch")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES", "CORECLR_DAC_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -310,6 +311,45 @@ cc_library(
 
 # --- daccess (Data Access Component core library) ---
 # Matches CMake: src/coreclr/debug/daccess/CMakeLists.txt
+
+cc_pch(
+    name = "daccess_pch",
+    header = "daccess/stdafx.h",
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
+        "-DFEATURE_NO_HOST",
+        "-Wno-error",
+    ],
+    defines = CORECLR_DAC_DEFINES + [
+        "FEATURE_VIRTUAL_STUB_DISPATCH",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = [
+        "../vm",
+        "daccess",
+        "ee",
+        "../gcdump",
+        "../interop/inc",
+    ] + select({
+        "@platforms//cpu:arm64": [
+            "../vm/arm64",
+            "daccess/arm64",
+        ],
+        "//conditions:default": [
+            "../vm/amd64",
+            "daccess/amd64",
+        ],
+    }),
+    deps = [
+        "//src/native/managed/cdac:cdac_api",
+        "//src/coreclr/inc:coreclr_inc_dac",
+        "//src/coreclr/interop:interop_headers",
+        "//src/coreclr/vm:vm_headers",
+        "//src/coreclr/vm/eventing:eventing_headers",
+        "//src/coreclr/gcdump:gcdump_headers",
+        "//src/native/corehost:corehost_headers",
+    ],
+)
+
 cc_library(
     name = "daccess",
     srcs = [
@@ -355,8 +395,9 @@ cc_library(
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-DFEATURE_NO_HOST",
         "-Wno-error",
-        "-include", "src/coreclr/debug/daccess/stdafx.h",
+        "-include-pch", "$(execpath :daccess_pch)",
     ],
+    additional_compiler_inputs = [":daccess_pch"],
     includes = [
         "../vm",
         "daccess",

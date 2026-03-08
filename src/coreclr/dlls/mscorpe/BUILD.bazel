@@ -2,9 +2,25 @@
 # Matches CMake: src/coreclr/dlls/mscorpe/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_pch.bzl", "cc_pch")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
+
+cc_pch(
+    name = "mscorpe_pch",
+    header = "stdafx.h",
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    defines = CORECLR_DEFINES + [
+        "FEATURE_CORECLR",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = [".", "../../md/inc"],
+    deps = [
+        "//src/coreclr/ildasm:ildasm_inc",
+        "//src/coreclr/inc:coreclr_inc",
+    ],
+)
 
 cc_library(
     name = "mscorpe",
@@ -19,8 +35,9 @@ cc_library(
         "stdafx.h",
     ],
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-        "-include", "src/coreclr/dlls/mscorpe/stdafx.h",
+        "-include-pch", "$(execpath :mscorpe_pch)",
     ],
+    additional_compiler_inputs = [":mscorpe_pch"],
     includes = [".", "../../md/inc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + [

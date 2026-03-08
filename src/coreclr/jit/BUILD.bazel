@@ -3,6 +3,7 @@
 # Matches CMake: src/coreclr/jit/CMakeLists.txt + jit/static/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//:cc_pch.bzl", "cc_pch")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -200,7 +201,6 @@ _JIT_WASM_SOURCES = [
 # -------------------------------------------------------------------------
 
 _JIT_COPTS = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-    "-include", "src/coreclr/jit/jitpch.h",
     "-Wno-error",
     "-Wno-endif-labels",
     "-Wno-changes-meaning",
@@ -225,6 +225,20 @@ _JIT_SIMD_DEFINES = [
 ]
 
 # -------------------------------------------------------------------------
+# Precompiled header for JIT targets — matches CMake target_precompile_headers
+# -------------------------------------------------------------------------
+
+cc_pch(
+    name = "jit_pch",
+    header = "jitpch.h",
+    copts = _JIT_COPTS,
+    defines = CORECLR_DEFINES + _JIT_DEFINES_BASE + _JIT_SIMD_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _JIT_INCLUDES,
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+# -------------------------------------------------------------------------
 # clrjit_static — OBJECT library for linking into libcoreclr.so
 # -------------------------------------------------------------------------
 
@@ -235,7 +249,8 @@ cc_library(
         "//conditions:default": _JIT_AMD64_SOURCES,
     }),
     textual_hdrs = ["smcommon.cpp"],
-    copts = _JIT_COPTS,
+    copts = _JIT_COPTS + ["-include-pch", "$(execpath :jit_pch)"],
+    additional_compiler_inputs = [":jit_pch"],
     includes = _JIT_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + _JIT_DEFINES_BASE + _JIT_SIMD_DEFINES,
@@ -266,7 +281,7 @@ cc_binary(
     }),
     linkshared = True,
     linkstatic = True,
-    copts = _JIT_COPTS + CLR_CONFIG_COPTS,
+    copts = _JIT_COPTS + CLR_CONFIG_COPTS + ["-include", "src/coreclr/jit/jitpch.h"],
     includes = _JIT_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + _JIT_DEFINES_BASE + _JIT_SIMD_DEFINES + [
@@ -355,7 +370,7 @@ cc_binary(
     srcs = _JIT_COMMON_SOURCES + _JIT_ARM64_SOURCES,
     linkshared = True,
     linkstatic = True,
-    copts = _JIT_COPTS + _CROSS_JIT_UNDEF_COPTS + [
+    copts = _JIT_COPTS + ["-include", "src/coreclr/jit/jitpch.h"] + _CROSS_JIT_UNDEF_COPTS + [
         "-DTARGET_64BIT",
         "-DTARGET_ARM64",
     ],
@@ -374,7 +389,7 @@ cc_binary(
     srcs = _JIT_COMMON_SOURCES + _JIT_AMD64_SOURCES,
     linkshared = True,
     linkstatic = True,
-    copts = _JIT_COPTS + _CROSS_JIT_UNDEF_COPTS + [
+    copts = _JIT_COPTS + ["-include", "src/coreclr/jit/jitpch.h"] + _CROSS_JIT_UNDEF_COPTS + [
         "-DTARGET_64BIT",
         "-DTARGET_AMD64",
         "-DTARGET_UNIX",
@@ -396,7 +411,7 @@ cc_binary(
     srcs = _JIT_COMMON_SOURCES + _JIT_AMD64_SOURCES,
     linkshared = True,
     linkstatic = True,
-    copts = _JIT_COPTS + _CROSS_JIT_UNDEF_COPTS + [
+    copts = _JIT_COPTS + ["-include", "src/coreclr/jit/jitpch.h"] + _CROSS_JIT_UNDEF_COPTS + [
         "-DTARGET_64BIT",
         "-DTARGET_AMD64",
         "-DTARGET_WINDOWS",
@@ -416,7 +431,7 @@ cc_binary(
     srcs = _JIT_COMMON_SOURCES + _JIT_ARM_SOURCES,
     linkshared = True,
     linkstatic = True,
-    copts = _JIT_COPTS + _CROSS_JIT_UNDEF_COPTS + [
+    copts = _JIT_COPTS + ["-include", "src/coreclr/jit/jitpch.h"] + _CROSS_JIT_UNDEF_COPTS + [
         "-DTARGET_ARM",
         "-DARM_SOFTFP",
         "-DCONFIGURABLE_ARM_ABI",
@@ -436,7 +451,7 @@ cc_binary(
     srcs = _JIT_COMMON_SOURCES + _JIT_I386_SOURCES,
     linkshared = True,
     linkstatic = True,
-    copts = _JIT_COPTS + _CROSS_JIT_UNDEF_COPTS + [
+    copts = _JIT_COPTS + ["-include", "src/coreclr/jit/jitpch.h"] + _CROSS_JIT_UNDEF_COPTS + [
         "-DTARGET_X86",
         "-DTARGET_WINDOWS",
     ],

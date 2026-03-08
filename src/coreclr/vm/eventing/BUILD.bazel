@@ -48,9 +48,13 @@ cc_library(
     name = "userevents",
     srcs = ["userevents/bazel/user_events_stub.cpp"],
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-        "-include", "src/coreclr/vm/common.h",
+        "-include-pch", "$(execpath //src/coreclr/vm:vm_pch_plain)",
         "-Wno-error",
-    ],
+    ] + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mcx16"],
+    }),
+    additional_compiler_inputs = ["//src/coreclr/vm:vm_pch_plain"],
     includes = [
         "..",
         "../..",
@@ -130,9 +134,12 @@ _EP_INCLUDES = [
 })
 
 _EP_COPTS = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-    "-include", "src/coreclr/vm/common.h",
+    "-include-pch", "$(execpath //src/coreclr/vm:vm_pch_wks_nocd)",
     "-Wno-error",
-]
+] + select({
+    "@platforms//cpu:arm64": [],
+    "//conditions:default": ["-mcx16"],
+})
 
 _EP_DEFINES = CORECLR_DEFINES + [
     "FEATURE_VIRTUAL_STUB_DISPATCH",
@@ -154,6 +161,7 @@ cc_library(
         "//src/native/eventpipe:dn-diagnosticserver-pal-srcs",
     ],
     copts = _EP_COPTS,
+    additional_compiler_inputs = ["//src/coreclr/vm:vm_pch_wks_nocd"],
     includes = _EP_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES,
     defines = _EP_DEFINES,

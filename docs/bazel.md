@@ -606,6 +606,7 @@ Mono-only platforms (Browser/WASM, WASI, Tizen) are also excluded.
 - [x] `.bazelrc` — Compiler flags matching CMake for linux-x64, per-component config system
 - [x] `BUILD.bazel` (root) — Root package, string_flag build settings, config_settings, runtime layout
 - [x] `defs.bzl` — Shared macros (csharp_library wrapper, gen_resx_source, resgen)
+- [x] `cc_pch.bzl` — Precompiled header (PCH) rule for Clang; compiles a C++ header into `.pch`, consumed via `-include-pch` (see [Precompiled Headers](#precompiled-headers-pch) below)
 - [x] `src/libraries/defs.bzl` — Library macros (netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair)
 - [x] `src/tests/defs.bzl` — Test infrastructure (live_csharp_library, test runner)
 - [x] Compiler flag parity verified against CMake (`-g`, `-O3`, `-std=gnu11`/`-std=c++17`, all warning flags, all defines)
@@ -736,6 +737,85 @@ special support**. The `impl_netcoreapp` filegroup contains 154 total entries
 - Test commands (linux-x64):
   - **All tests**: `bazel test //... --config=clr_checked`
   - **Library tests**: `bazel test //src/tests:all --config=clr_checked`
+
+---
+
+## Precompiled Headers (PCH)
+
+CoreCLR uses precompiled headers extensively — CMake's `target_precompile_headers()`
+is applied to 34 targets covering the JIT, VM, utilcode, metadata, and debug
+components. Without PCH, massive headers like `common.h` (~128K preprocessed lines)
+and `jitpch.h` (~88K lines) are re-parsed for every `.cpp` file, consuming ~90%
+of total C++ compilation CPU time.
+
+Bazel has no built-in PCH support, so we provide a custom Starlark rule in
+`cc_pch.bzl`. This reduces `libcoreclr.so` clean-build CPU time by **59%**
+(1,447s → 599s aggregate) and wall time by **53%** (73s → 34s on 20 cores).
+
+### Usage
+
+```python
+load("//:cc_pch.bzl", "cc_pch")
+
+cc_pch(
+    name = "my_pch",
+    header = "stdafx.h",
+    copts = MY_COPTS,
+    defines = MY_DEFINES,
+    local_defines = MY_LOCAL_DEFINES,
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+cc_library(
+    name = "my_lib",
+    srcs = glob(["*.cpp"]),
+    copts = MY_COPTS + ["-include-pch", "$(execpath :my_pch)"],
+    additional_compiler_inputs = [":my_pch"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+```
+
+The `cc_pch` rule compiles a header into a `.pch` binary. Consumers reference it
+via `-include-pch $(execpath :pch_target)` and list it in `additional_compiler_inputs`.
+The PCH target's `copts`, `defines`, `local_defines`, `includes`, and `deps` must
+match the consuming `cc_library` — Clang validates macro/feature consistency and
+will error on mismatches.
+
+### Key design decisions
+
+- **Determinism**: `-Xclang -fno-pch-timestamp` prevents Clang from embedding a
+  timestamp in the `.pch` file.
+- **No sandbox**: PCH actions run with `execution_requirements = {"no-sandbox": "1"}`
+  so that header paths stored in the PCH are execroot-relative rather than absolute
+  sandbox paths. Consumer compilations also see the execroot layout.
+- **Path normalization**: Include directories are normalized (`.` and `..` resolved)
+  to match the paths that `cc_library` produces, ensuring the compiler sees
+  identical include search paths.
+- **`./` prefix**: The header is passed as `./src/.../header.h` (not
+  `src/.../header.h`) so that `__FILE__` values for transitively-included headers
+  match the non-PCH behavior (where `-include header.h` resolves via `-iquote .`).
+- **Per-target output name**: The `.pch` output is named after the rule
+  (`ctx.label.name + ".pch"`), not the header, so multiple PCH targets for the
+  same header (with different defines) don't collide.
+
+### PCH targets in CoreCLR
+
+| Component  | PCH header  | Targets |
+|------------|-------------|---------|
+| utilcode   | stdafx.h    | `utilcode_pch`, `utilcode_nohost_pch`, `utilcode_dac_pch` |
+| VM         | common.h    | `vm_pch_wks`, `vm_pch_wks_nocd`, `vm_pch_plain`, `vm_pch_dac` |
+| JIT        | jitpch.h    | `jit_pch` |
+| md/*       | stdafx.h    | 13 targets (compiler/runtime/enc/datasource × wks/ppdb/dac/dbi) |
+| debug      | stdafx.h    | `daccess_pch` |
+| mscorpe    | stdafx.h    | `mscorpe_pch` |
+
+### Known limitation
+
+58 of ~1,880 `.o` files have cosmetic differences compared to non-PCH output: 4
+inline functions in `gchandleutilities.h`, `gcheaputilities.h`, `codeman.h`, and
+`utilcode.h` contain `_ASSERTE()` calls whose `__FILE__` string literals pick up
+an absolute execroot path from the PCH's internal file table. The `.text` (code)
+sections are byte-identical; only `.rodata.str1.1` (string data) differs.
 
 ---
 

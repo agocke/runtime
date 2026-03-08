@@ -27,9 +27,12 @@ _CLN_INCLUDES = [
 })
 
 _CLN_COPTS = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-    "-include", "src/coreclr/vm/common.h",
+    "-include-pch", "$(execpath //src/coreclr/vm:vm_pch_plain)",
     "-Wno-error",
-]
+] + select({
+    "@platforms//cpu:arm64": [],
+    "//conditions:default": ["-mcx16"],
+})
 
 _CLN_DEPS = [
     ":classlibnative_headers",
@@ -54,6 +57,7 @@ cc_library(
         "bcltype/variant.cpp",
     ],
     copts = _CLN_COPTS,
+    additional_compiler_inputs = ["//src/coreclr/vm:vm_pch_plain"],
     includes = _CLN_INCLUDES + ["bcltype", "inc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
@@ -70,6 +74,7 @@ cc_library(
         "float/divmodint.cpp",
     ],
     copts = _CLN_COPTS,
+    additional_compiler_inputs = ["//src/coreclr/vm:vm_pch_plain"],
     includes = _CLN_INCLUDES + ["inc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,

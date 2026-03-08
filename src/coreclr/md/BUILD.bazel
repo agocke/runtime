@@ -1,6 +1,7 @@
 # CoreCLR metadata headers and libraries.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_pch.bzl", "cc_pch")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES", "CORECLR_DAC_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -59,6 +60,157 @@ _MD_DBI_DEFINES = CORECLR_DEFINES + [
     "FEATURE_METADATA_RELEASE_MEMORY_ON_REOPEN",
 ]
 
+# ============================================================
+# Precompiled header targets
+# ============================================================
+
+# compiler/stdafx.h variants
+cc_pch(
+    name = "md_compiler_pch_wks",
+    header = "compiler/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["compiler"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+cc_pch(
+    name = "md_compiler_pch_ppdb",
+    header = "compiler/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DEFINES + [
+        "FEATURE_METADATA_EMIT_PORTABLE_PDB",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["compiler"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+cc_pch(
+    name = "md_compiler_pch_dac",
+    header = "compiler/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DAC_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["compiler"],
+    deps = ["//src/coreclr/inc:coreclr_inc_dac"],
+)
+
+cc_pch(
+    name = "md_compiler_pch_dbi",
+    header = "compiler/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DBI_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["compiler"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+# runtime/stdafx.h variants
+cc_pch(
+    name = "md_runtime_pch_wks",
+    header = "runtime/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DEFINES + [
+        "NO_COR",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["runtime"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+cc_pch(
+    name = "md_runtime_pch_ppdb",
+    header = "runtime/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DEFINES + [
+        "NO_COR",
+        "FEATURE_METADATA_EMIT_PORTABLE_PDB",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["runtime"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+cc_pch(
+    name = "md_runtime_pch_dac",
+    header = "runtime/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DAC_DEFINES + [
+        "NO_COR",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["runtime"],
+    deps = ["//src/coreclr/inc:coreclr_inc_dac"],
+)
+
+cc_pch(
+    name = "md_runtime_pch_dbi",
+    header = "runtime/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DBI_DEFINES + [
+        "NO_COR",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["runtime"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+# enc/stdafx.h variants
+cc_pch(
+    name = "md_enc_pch_wks",
+    header = "enc/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["enc"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+cc_pch(
+    name = "md_enc_pch_ppdb",
+    header = "enc/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DEFINES + [
+        "FEATURE_METADATA_EMIT_PORTABLE_PDB",
+    ],
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["enc"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+cc_pch(
+    name = "md_enc_pch_dac",
+    header = "enc/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DAC_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["enc"],
+    deps = ["//src/coreclr/inc:coreclr_inc_dac"],
+)
+
+cc_pch(
+    name = "md_enc_pch_dbi",
+    header = "enc/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DBI_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["enc"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
+# datasource/stdafx.h variants
+cc_pch(
+    name = "md_datasource_pch_dbi",
+    header = "datasource/stdafx.h",
+    copts = _MD_COPTS,
+    defines = _MD_DBI_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _MD_INCLUDES + ["datasource"],
+    deps = ["//src/coreclr/inc:coreclr_inc"],
+)
+
 # --- mdcompiler_wks (metadata compiler, workstation) ---
 # Matches CMake: src/coreclr/md/compiler/CMakeLists.txt
 cc_library(
@@ -85,8 +237,9 @@ cc_library(
         "compiler/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/compiler/stdafx.h",
+        "-include-pch", "$(execpath :md_compiler_pch_wks)",
     ],
+    additional_compiler_inputs = [":md_compiler_pch_wks"],
     includes = _MD_INCLUDES + ["compiler"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES,
@@ -120,8 +273,9 @@ cc_library(
         "compiler/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/compiler/stdafx.h",
+        "-include-pch", "$(execpath :md_compiler_pch_ppdb)",
     ],
+    additional_compiler_inputs = [":md_compiler_pch_ppdb"],
     includes = _MD_INCLUDES + ["compiler"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES + [
@@ -148,8 +302,9 @@ cc_library(
         "runtime/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/runtime/stdafx.h",
+        "-include-pch", "$(execpath :md_runtime_pch_wks)",
     ],
+    additional_compiler_inputs = [":md_runtime_pch_wks"],
     includes = _MD_INCLUDES + ["runtime"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES + [
@@ -176,8 +331,9 @@ cc_library(
         "runtime/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/runtime/stdafx.h",
+        "-include-pch", "$(execpath :md_runtime_pch_ppdb)",
     ],
+    additional_compiler_inputs = [":md_runtime_pch_ppdb"],
     includes = _MD_INCLUDES + ["runtime"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES + [
@@ -206,8 +362,9 @@ cc_library(
         "enc/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/enc/stdafx.h",
+        "-include-pch", "$(execpath :md_enc_pch_wks)",
     ],
+    additional_compiler_inputs = [":md_enc_pch_wks"],
     includes = _MD_INCLUDES + ["enc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES,
@@ -247,8 +404,9 @@ cc_library(
     name = "mdcompiler_dac",
     srcs = _MDCOMPILER_BASE_SOURCES,
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/compiler/stdafx.h",
+        "-include-pch", "$(execpath :md_compiler_pch_dac)",
     ],
+    additional_compiler_inputs = [":md_compiler_pch_dac"],
     includes = _MD_INCLUDES + ["compiler"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DAC_DEFINES,
@@ -273,8 +431,9 @@ cc_library(
         "runtime/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/runtime/stdafx.h",
+        "-include-pch", "$(execpath :md_runtime_pch_dac)",
     ],
+    additional_compiler_inputs = [":md_runtime_pch_dac"],
     includes = _MD_INCLUDES + ["runtime"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DAC_DEFINES + [
@@ -302,8 +461,9 @@ cc_library(
         "enc/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/enc/stdafx.h",
+        "-include-pch", "$(execpath :md_enc_pch_dac)",
     ],
+    additional_compiler_inputs = [":md_enc_pch_dac"],
     includes = _MD_INCLUDES + ["enc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DAC_DEFINES,
@@ -321,8 +481,9 @@ cc_library(
     name = "mdcompiler-dbi",
     srcs = _MDCOMPILER_BASE_SOURCES,
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/compiler/stdafx.h",
+        "-include-pch", "$(execpath :md_compiler_pch_dbi)",
     ],
+    additional_compiler_inputs = [":md_compiler_pch_dbi"],
     includes = _MD_INCLUDES + ["compiler"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DBI_DEFINES,
@@ -347,8 +508,9 @@ cc_library(
         "runtime/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/runtime/stdafx.h",
+        "-include-pch", "$(execpath :md_runtime_pch_dbi)",
     ],
+    additional_compiler_inputs = [":md_runtime_pch_dbi"],
     includes = _MD_INCLUDES + ["runtime"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DBI_DEFINES + [
@@ -376,8 +538,9 @@ cc_library(
         "enc/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/enc/stdafx.h",
+        "-include-pch", "$(execpath :md_enc_pch_dbi)",
     ],
+    additional_compiler_inputs = [":md_enc_pch_dbi"],
     includes = _MD_INCLUDES + ["enc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DBI_DEFINES,
@@ -396,8 +559,9 @@ cc_library(
         "datasource/targettypes.cpp",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/datasource/stdafx.h",
+        "-include-pch", "$(execpath :md_datasource_pch_dbi)",
     ],
+    additional_compiler_inputs = [":md_datasource_pch_dbi"],
     includes = _MD_INCLUDES + ["datasource"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DBI_DEFINES,
@@ -422,8 +586,9 @@ cc_library(
         "enc/stdafx.h",
     ],
     copts = _MD_COPTS + [
-        "-include", "src/coreclr/md/enc/stdafx.h",
+        "-include-pch", "$(execpath :md_enc_pch_ppdb)",
     ],
+    additional_compiler_inputs = [":md_enc_pch_ppdb"],
     includes = _MD_INCLUDES + ["enc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES + [

@@ -3,11 +3,56 @@
 # Matches CMake: src/coreclr/utilcode/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_pch.bzl", "cc_pch")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES", "CORECLR_DAC_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 exports_files(["yieldprocessornormalized.cpp"])
+
+# Precompiled headers for utilcode — matches CMake target_precompile_headers(utilcode PRIVATE stdafx.h)
+# Each variant needs its own PCH because defines and deps differ.
+cc_pch(
+    name = "utilcode_pch",
+    header = "stdafx.h",
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    local_defines = CLR_CONFIG_DEFINES,
+    defines = CORECLR_DEFINES,
+    includes = ["."],
+    deps = [
+        "//src/coreclr/inc:coreclr_inc",
+        "//src/coreclr/nativeresources:nativeresourcestring",
+        "//src/coreclr/pal:coreclrpal",
+    ],
+)
+
+cc_pch(
+    name = "utilcode_nohost_pch",
+    header = "stdafx.h",
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    local_defines = CLR_CONFIG_DEFINES,
+    defines = CORECLR_DEFINES + ["SELF_NO_HOST"],
+    includes = ["."],
+    deps = [
+        "//src/coreclr/inc:coreclr_inc",
+        "//src/coreclr/minipal:coreclrminipal",
+        "//src/coreclr/nativeresources:nativeresourcestring",
+    ],
+)
+
+cc_pch(
+    name = "utilcode_dac_pch",
+    header = "stdafx.h",
+    copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    local_defines = CLR_CONFIG_DEFINES,
+    defines = CORECLR_DAC_DEFINES + ["SELF_NO_HOST"],
+    includes = ["."],
+    deps = [
+        "//src/coreclr/inc:coreclr_inc_dac",
+        "//src/coreclr/minipal:coreclrminipal",
+        "//src/coreclr/nativeresources:nativeresourcestring",
+    ],
+)
 
 _UTILCODE_COMMON_SOURCES = [
     "clrhost_nodependencies.cpp",
@@ -77,8 +122,9 @@ cc_library(
         "executableallocator.cpp",
     ] + _UTILCODE_HDRS,
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-        "-include", "src/coreclr/utilcode/stdafx.h",
+        "-include-pch", "$(execpath :utilcode_pch)",
     ],
+    additional_compiler_inputs = [":utilcode_pch"],
     includes = ["."],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
@@ -97,8 +143,9 @@ cc_library(
         "hostimpl.cpp",
     ] + _UTILCODE_HDRS,
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-        "-include", "src/coreclr/utilcode/stdafx.h",
+        "-include-pch", "$(execpath :utilcode_nohost_pch)",
     ],
+    additional_compiler_inputs = [":utilcode_nohost_pch"],
     includes = ["."],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + [
@@ -120,8 +167,9 @@ cc_library(
         "hostimpl.cpp",
     ] + _UTILCODE_HDRS,
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-        "-include", "src/coreclr/utilcode/stdafx.h",
+        "-include-pch", "$(execpath :utilcode_dac_pch)",
     ],
+    additional_compiler_inputs = [":utilcode_dac_pch"],
     includes = ["."],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DAC_DEFINES + [

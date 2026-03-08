@@ -2,6 +2,7 @@
 # Matches CMake: src/coreclr/vm/CMakeLists.txt + vm/wks/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_pch.bzl", "cc_pch")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES", "CORECLR_DAC_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -44,7 +45,6 @@ _VM_INCLUDES = [
 })
 
 _VM_COPTS = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-    "-include", "src/coreclr/vm/common.h",
     "-Wno-error",
 ]
 
@@ -54,6 +54,99 @@ _VM_DEFINES = CORECLR_DEFINES + [
     "FEATURE_HW_INTRINSICS",
     "FEATURE_MASKED_HW_INTRINSICS",
 ]
+
+_VM_DAC_DEFINES = CORECLR_DAC_DEFINES + [
+    "FEATURE_VIRTUAL_STUB_DISPATCH",
+    "FEATURE_SIMD",
+    "FEATURE_HW_INTRINSICS",
+    "FEATURE_MASKED_HW_INTRINSICS",
+]
+
+# Deps sufficient to compile common.h (provides all transitively included headers).
+_VM_PCH_DEPS = [
+    ":vm_headers",
+    "//src/coreclr/classlibnative:classlibnative_headers",
+    "//src/coreclr/gc:gc_headers",
+    "//src/coreclr/inc:coreclr_inc",
+    "//src/coreclr/interop:interop_headers",
+    "//src/coreclr/runtime:runtime_headers",
+    "//src/coreclr/vm/eventing:eventpipe_shim_headers",
+    "//src/coreclr/vm/eventing:eventing_headers",
+    "//src/coreclr/vm/eventing:userevents_headers",
+    "//src/native/corehost:corehost_headers",
+    "//src/native/eventpipe:eventpipe-headers",
+]
+
+# PCH for WKS targets (cee_wks_core, cee_wks) — matches CMake target_precompile_headers
+cc_pch(
+    name = "vm_pch_wks",
+    header = "common.h",
+    copts = _VM_COPTS + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mcx16"],
+    }),
+    defines = _VM_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES + select({
+        "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//:clr_checked": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
+        "//conditions:default": [],
+    }),
+    includes = _VM_INCLUDES,
+    deps = _VM_PCH_DEPS,
+    visibility = ["//src/coreclr:__subpackages__"],
+)
+
+# PCH for WKS targets without FEATURE_CACHED_INTERFACE_DISPATCH select (eventpipe, libcoreclr.so)
+cc_pch(
+    name = "vm_pch_wks_nocd",
+    header = "common.h",
+    copts = _VM_COPTS + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mcx16"],
+    }),
+    defines = _VM_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _VM_INCLUDES,
+    deps = _VM_PCH_DEPS,
+    visibility = ["//src/coreclr:__subpackages__"],
+)
+
+# PCH for targets with base CORECLR_DEFINES only (userevents, classlibnative)
+cc_pch(
+    name = "vm_pch_plain",
+    header = "common.h",
+    copts = _VM_COPTS + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mcx16"],
+    }),
+    defines = CORECLR_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _VM_INCLUDES,
+    deps = _VM_PCH_DEPS,
+    visibility = ["//src/coreclr:__subpackages__"],
+)
+
+# PCH for DAC variant
+cc_pch(
+    name = "vm_pch_dac",
+    header = "common.h",
+    copts = _VM_COPTS,
+    defines = _VM_DAC_DEFINES,
+    local_defines = CLR_CONFIG_DEFINES,
+    includes = _VM_INCLUDES + ["../interop/inc"],
+    deps = [
+        ":vm_headers",
+        "//src/coreclr/gc:gc_headers",
+        "//src/coreclr/inc:coreclr_inc_dac",
+        "//src/coreclr/interop:interop_headers",
+        "//src/coreclr/runtime:runtime_headers",
+        "//src/coreclr/vm/eventing:eventpipe_shim_headers",
+        "//src/coreclr/vm/eventing:eventing_headers",
+        "//src/native/corehost:corehost_headers",
+        "//src/native/eventpipe:eventpipe-headers",
+    ],
+    visibility = ["//src/coreclr:__subpackages__"],
+)
 
 # Assembly files compiled separately (no C++ PCH).
 cc_library(
@@ -369,10 +462,11 @@ cc_library(
         "//src/coreclr/gc:gcee.cpp",
         "//src/coreclr/System.Private.CoreLib:src/System/Runtime/ExceptionServices/AsmOffsets.cs",
     ],
-    copts = _VM_COPTS + select({
+    copts = _VM_COPTS + ["-include-pch", "$(execpath :vm_pch_wks)"] + select({
         "@platforms//cpu:arm64": [],
         "//conditions:default": ["-mcx16"],
     }),
+    additional_compiler_inputs = [":vm_pch_wks"],
     includes = _VM_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES + select({
         "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
@@ -409,10 +503,11 @@ cc_library(
         "codeman.cpp",
         "peimagelayout.cpp",
     ],
-    copts = _VM_COPTS + select({
+    copts = _VM_COPTS + ["-include-pch", "$(execpath :vm_pch_wks)"] + select({
         "@platforms//cpu:arm64": [],
         "//conditions:default": ["-mcx16"],
     }),
+    additional_compiler_inputs = [":vm_pch_wks"],
     includes = _VM_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES + select({
         "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
@@ -440,13 +535,6 @@ cc_library(
 # VM_SOURCES_DAC = VM_SOURCES_DAC_AND_WKS_COMMON + conditionalweaktable.cpp
 #   + threaddebugblockinginfo.cpp + exceptionhandling.cpp + peimagelayout.cpp
 #   + arch-specific (DAC_AND_WKS_ARCH) + GC handle sources.
-
-_VM_DAC_DEFINES = CORECLR_DAC_DEFINES + [
-    "FEATURE_VIRTUAL_STUB_DISPATCH",
-    "FEATURE_SIMD",
-    "FEATURE_HW_INTRINSICS",
-    "FEATURE_MASKED_HW_INTRINSICS",
-]
 
 cc_library(
     name = "cee_dac",
@@ -570,7 +658,8 @@ cc_library(
         "yieldprocessornormalizedshared.cpp",
         "i386/stublinkerx86.cpp",
     ],
-    copts = _VM_COPTS,
+    copts = _VM_COPTS + ["-include-pch", "$(execpath :vm_pch_dac)"],
+    additional_compiler_inputs = [":vm_pch_dac"],
     includes = _VM_INCLUDES + [
         "../interop/inc",
     ],

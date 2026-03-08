@@ -1,23 +1,27 @@
 # libcoreclr — the main CoreCLR runtime shared library.
 # Matches CMake: src/coreclr/dlls/mscoree/coreclr/CMakeLists.txt
 
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_binary(
-    name = "libcoreclr.so",
+# Separate cc_library for mscoree sources so we can use additional_compiler_inputs
+# (cc_binary does not support that attribute in this rules_cc version).
+cc_library(
+    name = "libcoreclr_objs",
     srcs = [
         "//src/coreclr/dlls:mscoree/mscoree.cpp",
         "//src/coreclr/dlls:mscoree/exports.cpp",
     ],
-    linkshared = True,
-    linkstatic = True,
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
-        "-include", "src/coreclr/vm/common.h",
+        "-include-pch", "$(execpath //src/coreclr/vm:vm_pch_wks_nocd)",
         "-Wno-error",
-    ],
+    ] + select({
+        "@platforms//cpu:arm64": [],
+        "//conditions:default": ["-mcx16"],
+    }),
+    additional_compiler_inputs = ["//src/coreclr/vm:vm_pch_wks_nocd"],
     includes = [
         "../../../vm",
         "../../..",
@@ -36,6 +40,23 @@ cc_binary(
         "FEATURE_HW_INTRINSICS",
         "FEATURE_MASKED_HW_INTRINSICS",
     ],
+    alwayslink = True,
+    deps = [
+        "//src/coreclr/vm:vm_headers",
+        "//src/coreclr/vm/eventing:eventpipe_shim_headers",
+        "//src/coreclr/vm/eventing:eventing_headers",
+        "//src/coreclr/gc:gc_headers",
+        "//src/coreclr/runtime:runtime_headers",
+        "//src/native/corehost:corehost_headers",
+        "//src/native/eventpipe:eventpipe-headers",
+        "//src/coreclr/inc:coreclr_inc",
+    ],
+)
+
+cc_binary(
+    name = "libcoreclr.so",
+    linkshared = True,
+    linkstatic = True,
     linkopts = select({
         "@platforms//os:macos": [
             "-Wl,-install_name,@rpath/libcoreclr.dylib",
@@ -54,6 +75,7 @@ cc_binary(
         "//conditions:default": ["bazel/coreclr.exports"],
     }),
     deps = [
+        ":libcoreclr_objs",
         # CORECLR_LIBRARIES (order matters for static linking)
         "//src/coreclr/dlls/mscorrc",
         "//src/coreclr/utilcode",
