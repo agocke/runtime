@@ -163,6 +163,7 @@ def netcoreapp_ref_assembly(
         nowarn = nowarn,
         compiler_options = compiler_options,
         ref_assembly = True,
+        debug_type = "none",
         **kwargs
     )
 

@@ -9,8 +9,8 @@ netcoreapp_impl_assembly(
     ],
     deps = [
         "//src/libraries/System.Data.Common:ref_System.Data.Common",
-        "//src/libraries:ref_System.Runtime",
-        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
+        "//src/libraries:ref_System.Private.CoreLib",
+        "//src/libraries:impl_System.Runtime",
         "//src/libraries/shims/stubs:ref_System.Data.Odbc",
         "//src/libraries/shims/stubs:ref_System.Data.OleDb",
         "//src/libraries/shims/stubs:ref_System.Data.SqlClient",

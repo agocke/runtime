@@ -34,7 +34,7 @@ match System.ComponentModel.TypeConverter
 match System.Configuration
 match System.Console
 match System.Core
-diff  System.Data
+match System.Data
 match System.Data.Common
 match System.Data.DataSetExtensions
 match System.Diagnostics.Contracts
@@ -183,7 +183,7 @@ diff  System.IO.Pipes.AccessControl
 diff  System.Threading.AccessControl
 
 # Generated content: Forwards.cs or SR.cs generation differences
-diff  System.Collections
+match System.Collections
 diff  System.Runtime
 diff  System.Private.CoreLib
 diff  System.Private.Uri
