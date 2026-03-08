@@ -211,7 +211,7 @@ gen_facades = rule(
             doc = "The types to omit from the generated facades.",
         ),
         "_exe": attr.label(
-            default = Label("//src/tools/GenFacades:GenFacades"),
+            default = Label("//src/tools/bazel/GenFacades:GenFacades"),
             cfg = "exec",
             executable = True,
         ),
@@ -240,7 +240,7 @@ gen_resx_source = rule(
             allow_single_file = True,
         ),
         "_exe": attr.label(
-            default = Label("//src/tools/GenerateResxSource:GenerateResxSource"),
+            default = Label("//src/tools/bazel/GenerateResxSource:GenerateResxSource"),
             cfg = "exec",
             executable = True,
         ),

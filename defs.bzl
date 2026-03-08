@@ -48,7 +48,7 @@ gen_resx_source = rule(
             allow_single_file = True,
         ),
         "_exe": attr.label(
-            default = Label("//src/tools/GenerateResxSource:GenerateResxSource"),
+            default = Label("//src/tools/bazel/GenerateResxSource:GenerateResxSource"),
             cfg = "exec",
             executable = True,
         ),
@@ -86,7 +86,7 @@ gen_pnse_source = rule(
             allow_single_file = True,
         ),
         "_exe": attr.label(
-            default = Label("//src/tools/GenNotSupportedSource:GenNotSupportedSource"),
+            default = Label("//src/tools/bazel/GenNotSupportedSource:GenNotSupportedSource"),
             cfg = "exec",
             executable = True,
         ),
@@ -113,7 +113,7 @@ resgen = rule(
             allow_single_file = True,
         ),
         "_exe": attr.label(
-            default = Label("//src/tools/ResGen:ResGen"),
+            default = Label("//src/tools/bazel/ResGen:ResGen"),
             cfg = "exec",
             executable = True,
         ),
