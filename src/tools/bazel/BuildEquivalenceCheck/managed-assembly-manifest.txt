@@ -187,10 +187,13 @@ diff  System.Threading.AccessControl
 # Generated content: Forwards.cs or SR.cs generation differences
 match System.Collections
 match System.Runtime
+# CoreLib: now generates System.SR with omit_getresourcestring matching MSBuild.
+# Pending full MSBuild build to verify equivalence.
 diff  System.Private.CoreLib
 match System.Private.Uri
 
-# System: missing System.Private.Uri dep (adding it causes CS0433 with ref_System.Runtime)
+# System: now uses impl_ deps (matching MSBuild's CompileUsingReferenceAssemblies=false).
+# Pending full MSBuild build to verify equivalence.
 diff  System
 
 # System.Net.Quic: Bazel builds PNSE stub; MSBuild builds full Linux impl (~86 files)

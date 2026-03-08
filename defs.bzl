@@ -28,6 +28,8 @@ def _gen_resx_source_impl(ctx):
         args.append("--resource-class-name=%s" % ctx.attr.resource_class_name)
     if not ctx.attr.include_default_values:
         args.append("--include-default-values=false")
+    if ctx.attr.omit_getresourcestring:
+        args.append("--omit-getresourcestring")
     ctx.actions.run(
         executable = ctx.executable._exe,
         inputs = [ctx.file.resx_file],
@@ -43,6 +45,7 @@ gen_resx_source = rule(
         "resource_name": attr.string(mandatory = False, default = ""),
         "resource_class_name": attr.string(mandatory = False, default = ""),
         "include_default_values": attr.bool(default = True),
+        "omit_getresourcestring": attr.bool(default = False),
         "resx_file": attr.label(
             mandatory = True,
             allow_single_file = True,
@@ -310,6 +313,7 @@ def csharp_library(
     resx_file = None,
     resource_name = None,
     resource_class_name = None,
+    omit_getresourcestring = False,
     include_default_values = True,
     resources = [],
     resource_logical_names = {},
@@ -348,6 +352,7 @@ def csharp_library(
             resource_class_name = resource_class_name if resource_class_name else "",
             resx_file = resx_file,
             include_default_values = include_default_values,
+            omit_getresourcestring = omit_getresourcestring,
         )
         srcs = srcs + [ ":" + resx_target ]
 
