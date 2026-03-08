@@ -184,9 +184,9 @@ diff  System.Threading.AccessControl
 
 # Generated content: Forwards.cs or SR.cs generation differences
 match System.Collections
-diff  System.Runtime
+match System.Runtime
 diff  System.Private.CoreLib
-diff  System.Private.Uri
+match System.Private.Uri
 
 # Complex: different source/ref sets due to platform stubs vs full impl
 diff  System.Net.Quic

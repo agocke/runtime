@@ -306,9 +306,6 @@ netcoreapp_ref_assembly(
     name = "ref_System.Runtime",
     srcs = [
         "System.Runtime/ref/System.Runtime.cs",
-        # ExtraApis needed so impl_System.Runtime generates type forwarders
-        # for DebugProvider (used by System.Diagnostics.TraceSource at runtime)
-        "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
     ],
     compiler_options = [
         "/runtimemetadataversion:v4.0.30319",
@@ -404,14 +401,13 @@ netcoreapp_impl_assembly(
         "System.Private.Uri/src/System/UriScheme.cs",
         "System.Private.Uri/src/System/UriSyntax.cs",
         "System.Private.Uri/src/System/ValueStringBuilderExtensions.cs",
-
-        "System.Private.Uri/System.SR.cs",
     ],
     deps = [
         ":ref_System.Private.CoreLib",
     ],
     allow_unsafe_blocks = True,
     include_neutral_resources_language = True,
+    resx_file = "System.Private.Uri/src/Resources/Strings.resx",
 )
 
 netcoreapp_impl_assembly(
