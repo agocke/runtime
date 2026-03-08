@@ -177,7 +177,9 @@ match WindowsBase
 match mscorlib
 match netstandard
 
-# PNSE stubs: MSBuild generates .notsupported.cs; Bazel uses System.Void.cs
+# PNSE stubs: Bazel now generates .notsupported.cs via GenNotSupportedSource,
+# matching MSBuild's GeneratePlatformNotSupportedAssemblyMessage behavior.
+# May still diff on reference set (ref_ vs impl_ deps).
 diff  Microsoft.Win32.Registry
 diff  System.IO.Pipes.AccessControl
 diff  System.Threading.AccessControl
@@ -188,9 +190,17 @@ match System.Runtime
 diff  System.Private.CoreLib
 match System.Private.Uri
 
-# Complex: different source/ref sets due to platform stubs vs full impl
+# System: missing System.Private.Uri dep (adding it causes CS0433 with ref_System.Runtime)
+diff  System
+
+# System.Net.Quic: Bazel builds PNSE stub; MSBuild builds full Linux impl (~86 files)
 diff  System.Net.Quic
+
+# Formatters: Bazel now uses BinaryFormatter.Removed.cs stub matching MSBuild
+# NetCoreAppCurrent (FunctioningBinaryFormatter=false). May still diff on deps.
 diff  System.Runtime.Serialization.Formatters
+
+# JS Interop: Bazel now generates .notsupported.cs via GenNotSupportedSource.
 diff  System.Runtime.InteropServices.JavaScript
 
 # ── Non-archive assemblies ─────────────────────────────────────────
