@@ -207,6 +207,9 @@ def _gen_assembly_info_impl(ctx):
     if ctx.attr.include_dll_safe_search_path:
         lines.append("[assembly: System.Runtime.InteropServices.DefaultDllImportSearchPathsAttribute(System.Runtime.InteropServices.DllImportSearchPath.AssemblyDirectory | System.Runtime.InteropServices.DllImportSearchPath.System32)]")
 
+    if ctx.attr.assembly_configuration:
+        lines.append('[assembly: System.Reflection.AssemblyConfigurationAttribute("%s")]' % ctx.attr.assembly_configuration)
+
     lines.append('[assembly: System.Reflection.AssemblyCompanyAttribute("Microsoft Corporation")]')
     lines.append('[assembly: System.Reflection.AssemblyCopyrightAttribute("© Microsoft Corporation. All rights reserved.")]')
     desc = ctx.attr.assembly_description if ctx.attr.assembly_description else assembly_name
@@ -248,6 +251,7 @@ gen_assembly_info = rule(
         "include_dll_safe_search_path": attr.bool(default = False),
         "include_neutral_resources_language": attr.bool(default = True),
         "assembly_description": attr.string(default = ""),
+        "assembly_configuration": attr.string(default = ""),
         "not_supported": attr.bool(default = False),
         "supported_os_platforms": attr.string_list(default = []),
         "supported_os_platforms_short": attr.string_list(default = []),
