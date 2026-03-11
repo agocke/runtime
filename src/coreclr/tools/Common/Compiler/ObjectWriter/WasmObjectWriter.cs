@@ -227,6 +227,7 @@ namespace ILCompiler.ObjectWriter
         private static readonly byte[] s_unreachableFunctionBody = [0x00, 0x00, 0x0b];
 
         private readonly HashSet<Utf8String> _unresolvedSymbols = new();
+        private readonly HashSet<Utf8String> _stubbedSymbols = new();
 
         private protected override void PreProcessRelocation(Relocation reloc, ISymbolNode relocTarget, Utf8String relocSymbolName)
         {
@@ -252,6 +253,14 @@ namespace ILCompiler.ObjectWriter
                 codeWriter.WriteULEB128((ulong)bodySize);
                 codeWriter.Buffer.Write(s_unreachableFunctionBody);
 
+                _stubbedSymbols.Add(relocSymbolName);
+            }
+            else
+            {
+                // Non-method function references (e.g., native runtime helpers without
+                // managed method metadata) cannot get a proper stub because we don't
+                // know their signature. Track them for diagnostic reporting — they will
+                // fall back to function index 0 during relocation resolution.
                 _unresolvedSymbols.Add(relocSymbolName);
             }
         }
@@ -390,9 +399,18 @@ namespace ILCompiler.ObjectWriter
                 section.Emit(outputFileStream);
             }
 
+            if (_stubbedSymbols.Count > 0)
+            {
+                Console.Error.WriteLine($"[WASM] Info: {_stubbedSymbols.Count} unresolved function symbol(s) replaced with trap stubs:");
+                foreach (Utf8String sym in _stubbedSymbols.OrderBy(s => s.ToString()))
+                {
+                    Console.Error.WriteLine($"[WASM]   - {sym}");
+                }
+            }
+
             if (_unresolvedSymbols.Count > 0)
             {
-                Console.Error.WriteLine($"[WASM] Warning: {_unresolvedSymbols.Count} unresolved function symbol(s) linked to index 0:");
+                Console.Error.WriteLine($"[WASM] Warning: {_unresolvedSymbols.Count} non-method function symbol(s) linked to index 0 (no signature available for stub):");
                 foreach (Utf8String sym in _unresolvedSymbols.OrderBy(s => s.ToString()))
                 {
                     Console.Error.WriteLine($"[WASM]   - {sym}");

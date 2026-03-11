@@ -2987,7 +2987,28 @@ GenTree* Lowering::LowerCall(GenTree* node)
             MakeSrcContained(call, controlExpr);
         }
 #endif // TARGET_RISCV64
+
+#ifdef TARGET_WASM
+        // Managed WASM calls pass the target address twice: once as the PEP (Portable
+        // Entry Point) parameter and once as the call_indirect table index. Mark the
+        // control expression multiply-used so LSRA assigns a register (WASM local)
+        // that codegen can retrieve with local.get for the PEP copy.
+        if (!call->IsUnmanaged() && !call->IsHelperCall() && varTypeIsEnregisterable(controlExpr))
+        {
+            controlExpr->gtLIRFlags |= LIR::Flags::MultiplyUsed;
+        }
+#endif // TARGET_WASM
     }
+
+#ifdef TARGET_WASM
+    // CT_INDIRECT managed calls use gtCallAddr instead of controlExpr.
+    // Mark it multiply-used for the same PEP reason as above.
+    if (call->gtCallType == CT_INDIRECT && !call->IsUnmanaged() && !call->IsHelperCall() &&
+        call->gtCallAddr != nullptr && varTypeIsEnregisterable(call->gtCallAddr))
+    {
+        call->gtCallAddr->gtLIRFlags |= LIR::Flags::MultiplyUsed;
+    }
+#endif // TARGET_WASM
 
     if (m_compiler->opts.IsCFGEnabled())
     {

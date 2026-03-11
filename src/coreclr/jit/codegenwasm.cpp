@@ -2262,14 +2262,16 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
 
     if (target != nullptr)
     {
-        // For indirect calls with a target, push the PEP (the target address) before the call.
+        // For indirect calls, the target value is already on the WASM stack from code
+        // generation (via WasmProduceReg which emits local.tee to save it in a local).
+        // For managed calls we need it twice: once as PEP and once as the call_indirect
+        // table index. Push the PEP copy first via local.get, then consume the original.
         if (needsPEP)
         {
-            genConsumeReg(target);
+            assert(genIsValidReg(target->GetRegNum()));
+            GetEmitter()->emitIns_I(INS_local_get, EA_PTRSIZE, WasmRegToIndex(target->GetRegNum()));
         }
 
-        // Codegen should have already evaluated our target node (last) and pushed it onto the stack,
-        //  ready for call_indirect. Consume it.
         genConsumeReg(target);
 
         params.callType = EC_INDIR_R;
