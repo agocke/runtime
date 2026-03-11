@@ -12,7 +12,7 @@ output binaries and support all platforms CMake/MSBuild currently targets.
 The Bazel build produces a fully functional .NET runtime on **linux-x64**.
 All native C/C++ components build with Bazel (CoreCLR, corehost, 6 native
 interop libs, NativeAOT runtime). Managed C# libraries (System.Private.CoreLib,
-158 framework assemblies) also build with Bazel via `rules_dotnet`.
+162 framework assemblies) also build with Bazel via `rules_dotnet`.
 A hybrid build script assembles everything into a standard `dotnet` runtime
 layout.
 
@@ -22,7 +22,7 @@ layout.
   hostfxr, hostpolicy, apphost, nethost, 6 native interop libraries,
   NativeAOT runtime, standalone GC, AOT JIT interface,
   DAC (libmscordaccore.so), DBI (libmscordbi.so), createdump
-- **Managed C#**: System.Private.CoreLib, 158 framework assemblies
+- **Managed C#**: System.Private.CoreLib, 162 framework assemblies
   (145 of 150 non-shim NetCoreApp assemblies + shims + extras),
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
@@ -533,6 +533,7 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 
 ### 5.2 Framework ref + impl assemblies — 🔨 In Progress
 - [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (158 assemblies)
+- [x] OOB library BUILD files: System.IO.Packaging, System.ServiceModel.Syndication, System.Security.Cryptography.Cose, System.IO.Ports
 - [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
 - [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator
