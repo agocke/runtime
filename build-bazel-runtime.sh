@@ -22,6 +22,7 @@ build_managed=true
 config=""
 clr_config=""
 libs_config=""
+host_config=""
 run_smoke_test=false
 run_compare=false
 skip_msbuild_build=false
@@ -47,6 +48,11 @@ while [[ $# -gt 0 ]]; do
         # Match build.sh flags: -lc / --librariesconfiguration
         -lc|--librariesconfiguration)
             libs_config="${2,,}"
+            shift 2
+            ;;
+        # Match build.sh flags: -hc / --hostconfiguration
+        -hc|--hostconfiguration)
+            host_config="${2,,}"
             shift 2
             ;;
         # Match build.sh flags: -c / --configuration (sets both)
@@ -88,13 +94,15 @@ tfm="net${major_version}.${minor_version}"
 rid="linux-x64"
 
 # Resolve per-component configs.
-# -c sets both; -rc / -lc override individually.
+# -c sets both; -rc / -lc / -hc override individually.
 if [[ -n "$config" ]]; then
     clr_config="${clr_config:-$config}"
     libs_config="${libs_config:-$config}"
+    host_config="${host_config:-$config}"
 fi
 clr_config="${clr_config:-debug}"
 libs_config="${libs_config:-debug}"
+host_config="${host_config:-$clr_config}"
 
 # Validate config values
 case "$clr_config" in
@@ -104,6 +112,10 @@ esac
 case "$libs_config" in
     debug|release) ;;
     *) echo "Invalid -lc: $libs_config (must be debug or release)"; exit 1 ;;
+esac
+case "$host_config" in
+    debug|checked|release) ;;
+    *) echo "Invalid -hc: $host_config (must be debug, checked, or release)"; exit 1 ;;
 esac
 
 # Map to MSBuild config names (for managed build)
@@ -115,6 +127,11 @@ esac
 case "$libs_config" in
     debug)   msbuild_lc="Debug" ;;
     release) msbuild_lc="Release" ;;
+esac
+case "$host_config" in
+    debug)   msbuild_hc="Debug" ;;
+    checked) msbuild_hc="Checked" ;;
+    release) msbuild_hc="Release" ;;
 esac
 
 # Map to Bazel --config flags
@@ -345,9 +362,9 @@ compare_archives() {
     local msbuild_tarball=""
 
     if [[ "$skip_msbuild_build" != "true" ]]; then
-        log "Building MSBuild reference (clr+libs+host+packs, -rc $msbuild_rc -lc $msbuild_lc)..."
-        "$scriptroot/build.sh" clr+libs+host -rc "$msbuild_rc" -lc "$msbuild_lc"
-        "$scriptroot/build.sh" packs -rc "$msbuild_rc" -lc "$msbuild_lc"
+        log "Building MSBuild reference (clr+libs+host+packs, -rc $msbuild_rc -lc $msbuild_lc -hc $msbuild_hc)..."
+        "$scriptroot/build.sh" clr+libs+host -rc "$msbuild_rc" -lc "$msbuild_lc" -hc "$msbuild_hc"
+        "$scriptroot/build.sh" packs -rc "$msbuild_rc" -lc "$msbuild_lc" -hc "$msbuild_hc"
     fi
 
     # Find the MSBuild tarball
@@ -355,7 +372,7 @@ compare_archives() {
     if [[ ${#candidates[@]} -eq 0 || ! -f "${candidates[0]}" ]]; then
         log_error "MSBuild runtime tarball not found matching: $msbuild_tarball_pattern"
         log_error "Run without --skip-msbuild-build, or build manually:"
-        log_error "  ./build.sh clr+libs+host+packs -rc $msbuild_rc -lc $msbuild_lc"
+        log_error "  ./build.sh clr+libs+host+packs -rc $msbuild_rc -lc $msbuild_lc -hc $msbuild_hc"
         return 1
     fi
     msbuild_tarball="${candidates[0]}"
@@ -386,6 +403,7 @@ main() {
     log "  Product version: $product_version"
     log "  CLR config:      $clr_config ($msbuild_rc)"
     log "  Libs config:     $libs_config ($msbuild_lc)"
+    log "  Host config:     $host_config ($msbuild_hc)"
     log "  Build native:    $build_native"
     log "  Build managed:   $build_managed"
     log "  Output:          $output_dir"

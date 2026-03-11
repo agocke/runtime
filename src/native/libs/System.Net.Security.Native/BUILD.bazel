@@ -9,7 +9,6 @@ load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 cc_library(
     name = "System.Net.Security.Native_lib",
     srcs = [
-        "entrypoints.c",
         "pal_gssapi.c",
     ] + glob(["*.h"]),
     copts = [],

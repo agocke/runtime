@@ -64,6 +64,12 @@ build --copt=-Wimplicit-fallthrough
 build --copt=-Wno-unused-but-set-variable
 # Bazel's default C++ toolchain enables -Wunused-but-set-parameter; CMake does not.
 build --copt=-Wno-unused-but-set-parameter
+# Additional CMake warnings (configurecompiler.cmake)
+build --copt=-Wno-unused-parameter
+build --copt=-Wno-alloca
+build --copt=-Wno-implicit-int-float-conversion
+build --cxxopt=-Wvla
+build --cxxopt=-Wno-invalid-offsetof
 
 # --- GCC-specific warning flags (default compiler) ---
 # These are in an else() branch in configurecompiler.cmake (not Clang).
@@ -149,11 +155,21 @@ build --host_per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
 # Preserve debug symbols (match CMake behavior of always including -g)
 build --strip=never
 
+# Match CMake's Clang debug info format (configurecompiler.cmake: -glldb).
+# This overrides the -g0 that Bazel's C++ toolchain sets in opt mode,
+# ensuring debug symbols are generated for later stripping in the
+# runtime archive (matching CMake's install_with_stripped_symbols).
+build --copt=-glldb
+
 # --- Linux-specific settings ---
 # Linker hardening, shared object naming, and lld.
 # These are no-ops or harmful on macOS, so they live behind --config=linux.
 build:linux --linkopt=-Wl,--build-id=sha1
 build:linux --linkopt=-fuse-ld=lld
+# CMake compiles with -ffunction-sections but does NOT use --gc-sections at
+# link time.  Bazel's C++ toolchain enables --gc-sections by default; disable
+# it so native binary contents match CMake output.
+build:linux --linkopt=-Wl,--no-gc-sections
 
 # macOS deployment target — match CMake's eng/native/configureplatform.cmake
 build:macos --macos_minimum_os=12.0
@@ -208,3 +224,6 @@ build:release --config=libs_release
 # from /define:DEBUG to /define:RELEASE for library targets and enables
 # native optimizations.
 build:release -c opt
+# Match CMake's -O3 for release (configureoptimization.cmake).
+# Bazel's -c opt defaults to -O2; override to -O3 for equivalence.
+build:release --copt=-O3

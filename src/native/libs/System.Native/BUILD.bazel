@@ -5,7 +5,6 @@ load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 cc_library(
     name = "System.Native_lib",
     srcs = [
-        "entrypoints.c",
         "pal_autoreleasepool.c",
         "pal_console.c",
         "pal_datetime.c",

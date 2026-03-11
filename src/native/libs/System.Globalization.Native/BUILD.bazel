@@ -10,7 +10,6 @@ load("//:cc_defs.bzl", "PLATFORM_DEFINES")
 cc_library(
     name = "System.Globalization.Native_lib",
     srcs = [
-        "entrypoints.c",
         "pal_calendarData.c",
         "pal_casing.c",
         "pal_collation.c",

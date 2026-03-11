@@ -72,6 +72,10 @@ layout.
   CoreCLR and Libraries (matching MSBuild's `-rc`/`-lc` flags)
 - **Runtime layout**: `runtime_layout` rule assembles stripped binaries into
   standard .NET hosting directory structure
+- **Runtime archive**: `runtime_archive` produces a tar.gz matching MSBuild's
+  `dotnet-runtime-*-linux-x64.tar.gz` — native binaries stripped with
+  debug-link, correct file permissions (755/644), `-O3` and `-glldb` matching
+  CMake release flags
 
 ### What's Next
 
@@ -158,14 +162,11 @@ areas:
 
 `compare-runtime-packs.sh` is the acceptance test for the Bazel runtime build.
 It verifies that the Bazel-produced runtime archive (`dotnet-runtime-*-linux-x64.tar.gz`)
-is **bit-for-bit identical** to the one produced by CMake+MSBuild's `packs` subset.
-
-This is the primary correctness gate: if the archives match, the Bazel build is
-producing the correct output.
+matches the one produced by CMake+MSBuild's `packs` subset.
 
 ```bash
 # 1. Build the MSBuild runtime archive (if not already built)
-./build.sh clr+libs+host -rc Release -lc Release
+./build.sh clr+libs+host -rc Release -lc Release -hc Release
 ./build.sh packs -rc Release -lc Release
 # → artifacts/packages/*/Shipping/dotnet-runtime-*-linux-x64.tar.gz
 
@@ -173,10 +174,8 @@ producing the correct output.
 bazel build --config=release //:runtime_archive
 # → bazel-bin/dotnet-runtime-*-linux-x64.tar.gz
 
-# 3. Compare them
-./compare-runtime-packs.sh \
-  artifacts/packages/Debug/Shipping/dotnet-runtime-*-linux-x64.tar.gz \
-  path/to/bazel-runtime.tar.gz
+# 3. Compare them (auto-detects both archives)
+./compare-runtime-packs.sh --skip-build --config release
 ```
 
 The script runs three phases:
@@ -190,6 +189,18 @@ The script runs three phases:
 The archive contains ~192 files: the `dotnet` host, `libhostfxr.so`,
 `libcoreclr.so`, native interop libraries, `createdump`, managed framework DLLs,
 config files (`deps.json`, `runtimeconfig.json`), and license files.
+
+#### Current Comparison Status
+
+| Category | Status | Notes |
+|---|---|---|
+| **File inventory** | ✅ Identical | Same 192 files in both archives |
+| **Permissions** | ✅ Identical | 192/192 files match (755 for executables/shared libs, 644 for data) |
+| **Host binaries** | ≈ Identical | dotnet, hostfxr, hostpolicy within 0.1% |
+| **Interop libs** | ≈ Identical | libSystem.Native, Security, Net.Security within 0.3% |
+| **CLR components** | ✖ Differ | libcoreclr.so +24%, libclrjit.so -4%, GC libs -12% (different source/define sets) |
+| **Managed DLLs** | ✖ Differ | MSBuild R2R-compiles all DLLs; Bazel only R2R-compiles CoreLib |
+| **Data files** | ✖ Differ | deps.json placeholder, runtimeconfig.json whitespace, ThirdPartyNotices.txt |
 
 ## Platform Support Status
 

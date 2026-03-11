@@ -11,7 +11,6 @@ cc_library(
     srcs = [
         "apibridge.c",
         "apibridge_30.c",
-        "entrypoints.c",
         "memory_debug.c",
         "openssl.c",
         "opensslshim.c",

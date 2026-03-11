@@ -11,8 +11,32 @@ Produces a tree artifact with the standard runtime layout:
         Microsoft.NETCore.App.deps.json                     # framework manifest
         Microsoft.NETCore.App.runtimeconfig.json            # runtime config
 
+Native binaries are stripped with objcopy and debug symbols extracted to .dbg
+files — matching CMake's install_with_stripped_symbols() from
+eng/native/functions.cmake.
+
 To produce a tar.gz archive, compose with tar() from @aspect_bazel_lib//lib:tar.bzl.
 """
+
+def _strip_commands(dst):
+    """Generate platform-aware strip commands for native binaries.
+
+    On Linux: objcopy to split debug symbols into .dbg, strip binary,
+              and add .gnu_debuglink (matches CMake strip_symbols).
+    On macOS: dsymutil + strip (objcopy is not available).
+    """
+    return [
+        "chmod u+w \"{dst}\"".format(dst = dst),
+        ("if [ \"$(uname)\" = \"Darwin\" ]; then " +
+            "dsymutil \"{dst}\" -o \"{dst}.dSYM\" 2>/dev/null || true && " +
+            "strip -x \"{dst}\"; " +
+        "else " +
+            "objcopy --only-keep-debug \"{dst}\" \"{dst}.dbg\" && " +
+            "objcopy --strip-debug --strip-unneeded \"{dst}\" && " +
+            "objcopy --add-gnu-debuglink=\"{dst}.dbg\" \"{dst}\" && " +
+            "rm -f \"{dst}.dbg\"; " +
+        "fi").format(dst = dst),
+    ]
 
 def _runtime_staging_impl(ctx):
     version = ctx.attr.version
@@ -31,12 +55,10 @@ def _runtime_staging_impl(ctx):
     for dep in ctx.attr.root_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append('cp "{src}" "{out}/{name}"'.format(
-                src = f.path,
-                out = output.path,
-                name = f.basename,
-            ))
-            commands.append('chmod +x "{out}/{name}"'.format(out = output.path, name = f.basename))
+            dst = '{out}/{name}'.format(out = output.path, name = f.basename)
+            commands.append('cp "{src}" "{dst}"'.format(src = f.path, dst = dst))
+            commands.append('chmod 755 "{dst}"'.format(dst = dst))
+            commands.extend(_strip_commands(dst))
 
     # License files (with rename support)
     for src_label, dest_name in ctx.attr.license_files.items():
@@ -47,28 +69,26 @@ def _runtime_staging_impl(ctx):
                 out = output.path,
                 name = dest_name,
             ))
+            commands.append('chmod 644 "{out}/{name}"'.format(out = output.path, name = dest_name))
 
-    # Host FXR files
+    # Host FXR files (644 in MSBuild archives — .so but not executable)
     for dep in ctx.attr.fxr_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append('cp "{src}" "{out}/{fxr}/{name}"'.format(
-                src = f.path,
-                out = output.path,
-                fxr = fxr_dir,
-                name = f.basename,
-            ))
+            dst = '{out}/{fxr}/{name}'.format(out = output.path, fxr = fxr_dir, name = f.basename)
+            commands.append('cp "{src}" "{dst}"'.format(src = f.path, dst = dst))
+            commands.append('chmod 644 "{dst}"'.format(dst = dst))
+            commands.extend(_strip_commands(dst))
 
     # Native framework files (shared libs, executables)
     for dep in ctx.attr.framework_native_files:
         for f in dep.files.to_list():
             inputs.append(f)
-            commands.append('cp "{src}" "{out}/{fx}/{name}"'.format(
-                src = f.path,
-                out = output.path,
-                fx = fx_dir,
-                name = f.basename,
-            ))
+            dst = '{out}/{fx}/{name}'.format(out = output.path, fx = fx_dir, name = f.basename)
+            commands.append('cp "{src}" "{dst}"'.format(src = f.path, dst = dst))
+            # Executables get 755, shared libs get 755 (CMake convention)
+            commands.append('chmod 755 "{dst}"'.format(dst = dst))
+            commands.extend(_strip_commands(dst))
 
     # Managed framework files (DLLs)
     # Process renames first to build the rename map
@@ -93,6 +113,11 @@ def _runtime_staging_impl(ctx):
                     fx = fx_dir,
                     name = dest_name,
                 ))
+                commands.append('chmod 644 "{out}/{fx}/{name}"'.format(
+                    out = output.path,
+                    fx = fx_dir,
+                    name = dest_name,
+                ))
 
     # Config/data files placed directly into the framework directory
     for dep in ctx.attr.framework_data_files:
@@ -100,6 +125,11 @@ def _runtime_staging_impl(ctx):
             inputs.append(f)
             commands.append('cp "{src}" "{out}/{fx}/{name}"'.format(
                 src = f.path,
+                out = output.path,
+                fx = fx_dir,
+                name = f.basename,
+            ))
+            commands.append('chmod 644 "{out}/{fx}/{name}"'.format(
                 out = output.path,
                 fx = fx_dir,
                 name = f.basename,

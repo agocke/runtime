@@ -82,7 +82,7 @@ case "$config" in
         bazel_config_args=()
         ;;
     release)
-        msbuild_config_args=(-rc release -lc release)
+        msbuild_config_args=(-rc release -lc release -hc release)
         bazel_config_args=(--config=release)
         ;;
     *)
