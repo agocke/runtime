@@ -200,7 +200,7 @@ namespace Tests.Collections
             if (exception == null)
             {
                 throw EqualException.ForMismatchedValues(
-                    exceptionTypes,
+                    string.Join(", ", exceptionTypes.Select(t => t.Name)),
                     null,
                     "Expected an exception but got null.");
             }
@@ -208,8 +208,8 @@ namespace Tests.Collections
             if (!exceptionTypes.Contains(exceptionType))
             {
                 throw EqualException.ForMismatchedValues(
-                    exceptionTypes,
-                    exceptionType,
+                    string.Join(", ", exceptionTypes.Select(t => t.Name)),
+                    exceptionType.Name,
                     "Caught wrong exception.");
             }
         }
