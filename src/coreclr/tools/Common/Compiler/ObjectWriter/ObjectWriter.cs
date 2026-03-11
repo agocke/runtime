@@ -419,11 +419,12 @@ namespace ILCompiler.ObjectWriter
                 }
 
                 ObjectNodeSection section = node.GetSection(_nodeFactory);
+                ObjectNodeSection emitSection = GetEmitSection(section);
                 SectionWriter sectionWriter = ShouldShareSymbol(node, section) ?
                     GetOrCreateSection(section, currentSymbolName, currentSymbolName) :
                     GetOrCreateSection(section);
 
-                if (section.NeedsAlignment)
+                if (emitSection.NeedsAlignment)
                 {
                     sectionWriter.EmitAlignment(nodeContents.Alignment);
                 }
@@ -546,7 +547,7 @@ namespace ILCompiler.ObjectWriter
                 }
 
                 // Note that this has to be done last as not to advance the section writer position.
-                sectionWriter.EmitData(nodeContents.Data);
+                sectionWriter.EmitData(GetNodeEmitData(node, nodeContents.Data));
             }
 
             foreach (ISymbolRangeNode range in symbolRangeNodes)
@@ -732,6 +733,14 @@ namespace ILCompiler.ObjectWriter
 
         partial void HandleControlFlowForRelocation(ISymbolNode relocTarget, Utf8String relocSymbolName);
 
+        /// <summary>
+        /// Allows subclasses to modify the data emitted for a node.
+        /// </summary>
+        private protected virtual ReadOnlyMemory<byte> GetNodeEmitData(ObjectNode node, ReadOnlyMemory<byte> data)
+        {
+            return data;
+        }
+
         partial void PrepareForUnwindInfo();
 
         partial void EmitUnwindInfoForNode(ObjectNode node, Utf8String currentSymbolName, SectionWriter sectionWriter);
@@ -743,6 +752,7 @@ namespace ILCompiler.ObjectWriter
             ObjectWriter objectWriter =
                 factory.Target.IsApplePlatform ? new MachObjectWriter(factory, options) :
                 factory.Target.OperatingSystem == TargetOS.Windows ? new CoffObjectWriter(factory, options) :
+                factory.Target.Architecture == Internal.TypeSystem.TargetArchitecture.Wasm32 ? new WasmObjectWriter(factory, options) :
                 new ElfObjectWriter(factory, options);
 
             using Stream outputFileStream = new FileStream(objectFilePath, FileMode.Create);

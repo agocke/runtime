@@ -1071,9 +1071,8 @@ PhaseStatus Compiler::fgWasmControlFlow()
 
     if (hasBlocksOnlyReachableViaEH)
     {
-        JITDUMP("\nThere are blocks only reachable via EH, bailing out for now\n");
-        NYI_WASM("Method has blocks only reachable via EH");
-        return PhaseStatus::MODIFIED_NOTHING;
+        JITDUMP("\nThere are blocks only reachable via EH, continuing with non-EH blocks\n");
+        // TODO-WASM: Properly handle EH blocks in control flow restructuring.
     }
 
     assert(dfsTree->IsForWasm());

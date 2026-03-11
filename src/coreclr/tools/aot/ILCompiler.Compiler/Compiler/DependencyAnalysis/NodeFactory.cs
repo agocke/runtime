@@ -8,8 +8,10 @@ using System.Diagnostics;
 using System.Text;
 
 using ILCompiler.DependencyAnalysisFramework;
+using ILCompiler.DependencyAnalysis.Wasm;
 
 using Internal.IL;
+using Internal.JitInterface;
 using Internal.Runtime;
 using Internal.Text;
 using Internal.TypeSystem;
@@ -611,6 +613,11 @@ namespace ILCompiler.DependencyAnalysis
             _analysisCharacteristics = new NodeCache<string, AnalysisCharacteristicNode>(c =>
             {
                 return new AnalysisCharacteristicNode(c);
+            });
+
+            _wasmTypeNodes = new NodeCache<WasmFuncType, WasmTypeNode>(key =>
+            {
+                return new WasmTypeNode(key);
             });
 
             NativeLayout = new NativeLayoutHelper(this);
@@ -1567,6 +1574,13 @@ namespace ILCompiler.DependencyAnalysis
         public AnalysisCharacteristicNode AnalysisCharacteristic(string ch)
         {
             return _analysisCharacteristics.GetOrAdd(ch);
+        }
+
+        private NodeCache<WasmFuncType, WasmTypeNode> _wasmTypeNodes;
+        public WasmTypeNode WasmTypeNode(CorInfoWasmType[] types)
+        {
+            WasmFuncType funcType = WasmFuncType.FromCorInfoSignature(types);
+            return _wasmTypeNodes.GetOrAdd(funcType);
         }
 
         /// <summary>

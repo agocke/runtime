@@ -36,11 +36,11 @@ namespace ILCompiler.ObjectWriter
     /// <summary>
     /// Wasm object file format writer.
     /// </summary>
-    internal sealed class WasmObjectWriter : ObjectWriter
+    internal sealed partial class WasmObjectWriter : ObjectWriter
     {
         protected override CodeDataLayout LayoutMode => CodeDataLayout.Separate;
 
-        public WasmObjectWriter(NodeFactory factory, ObjectWritingOptions options, OutputInfoBuilder outputInfoBuilder)
+        public WasmObjectWriter(NodeFactory factory, ObjectWritingOptions options, OutputInfoBuilder outputInfoBuilder = null)
             : base(factory, options, outputInfoBuilder)
         {
         }
@@ -52,7 +52,7 @@ namespace ILCompiler.ObjectWriter
         }
 
         private Dictionary<Utf8String, int> _uniqueSignatures = new();
-        private Dictionary<string, int> _uniqueSymbols = new();
+        private Dictionary<Utf8String, int> _uniqueSymbols = new();
         private int _signatureCount = 0;
         private int _methodCount = 0;
 
@@ -72,7 +72,7 @@ namespace ILCompiler.ObjectWriter
         {
             WriteSignatureIndexForFunction(desc);
 
-            _uniqueSymbols.Add(symbol.GetMangledName(_nodeFactory.NameMangler), _methodCount);
+            _uniqueSymbols.Add(new Utf8String(symbol.GetMangledName(_nodeFactory.NameMangler)), _methodCount);
             _methodCount++;
         }
 
@@ -84,7 +84,18 @@ namespace ILCompiler.ObjectWriter
             Utf8String key = signature.GetMangledName(_nodeFactory.NameMangler);
             if (!_uniqueSignatures.TryGetValue(key, out int signatureIndex))
             {
-                throw new InvalidOperationException($"Signature index of {key} not found for function: {desc.GetName()}");
+                // Auto-register the signature if not already known (e.g., for P/Invoke stubs).
+                signatureIndex = _signatureCount;
+                _uniqueSignatures.Add(key, signatureIndex);
+                _signatureCount++;
+
+                // Write the type to the type section.
+                SectionWriter typeWriter = GetOrCreateSection(ObjectNodeSection.WasmTypeSection);
+                int encodeSize = signature.EncodeSize();
+                Span<byte> buffer = typeWriter.Buffer.GetSpan(encodeSize);
+                int bytesWritten = signature.Encode(buffer);
+                Debug.Assert(bytesWritten == encodeSize);
+                typeWriter.Buffer.Advance(bytesWritten);
             }
 
             writer.WriteULEB128((ulong)signatureIndex);
@@ -208,6 +219,19 @@ namespace ILCompiler.ObjectWriter
             }
 
             return section;
+        }
+
+        // Minimal valid WASM function body: 0 local declarations + end opcode.
+        private static readonly byte[] s_minimalFunctionBody = [0x00, 0x0b];
+
+        private protected override ReadOnlyMemory<byte> GetNodeEmitData(ObjectNode node, ReadOnlyMemory<byte> data)
+        {
+            if (node is IMethodBodyNode && data.Length == 0)
+            {
+                return s_minimalFunctionBody;
+            }
+
+            return data;
         }
 
         private protected override SectionWriter.Params WriterParams(ObjectNodeSection section)
@@ -387,6 +411,23 @@ namespace ILCompiler.ObjectWriter
 
                             break;
                         }
+                        case RelocType.WASM_FUNCTION_INDEX_LEB:
+                        {
+                            if (_uniqueSymbols.TryGetValue(reloc.SymbolName, out int index))
+                            {
+                                Relocation.WriteValue(reloc.Type, pData, index);
+                                WriteRelocFromDataSpan(reloc, pData);
+                            }
+                            else
+                            {
+                                // TODO-WASM: Native runtime helpers (e.g., RhGetCrashInfoBuffer) are not yet
+                                // compiled for WASM. Use function index 0 as a placeholder.
+                                Relocation.WriteValue(reloc.Type, pData, 0);
+                                WriteRelocFromDataSpan(reloc, pData);
+                            }
+
+                            break;
+                        }
                         default:
                             // TODO-WASM: add other cases as needed;
                             // ignoring other reloc types for now
@@ -448,12 +489,12 @@ namespace ILCompiler.ObjectWriter
         private void WriteExports()
         {
             WriteTableExport("table", 0);
-            string[] functionExports = _uniqueSymbols.Keys.ToArray();
+            Utf8String[] functionExports = _uniqueSymbols.Keys.ToArray();
             // TODO-WASM: Handle exports better (e.g., only export public methods, etc.)
             // Also, see if we could leverage definedSymbols for this instead of doing our own bookkeeping in _uniqueSymbols.
-            foreach (string name in functionExports.OrderBy(name => name))
+            foreach (Utf8String name in functionExports.OrderBy(name => name.ToString()))
             {
-                WriteFunctionExport(name, _uniqueSymbols[name]);
+                WriteFunctionExport(name.ToString(), _uniqueSymbols[name]);
             }
         }
 

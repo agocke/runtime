@@ -7383,8 +7383,13 @@ GenTree* Lowering::LowerVirtualVtableCall(GenTreeCall* call)
     }
 
     // get a reference to the thisPtr being passed
+#if HAS_FIXED_REGISTER_SET
     assert(thisArgNode->OperIs(GT_PUTARG_REG));
     GenTree* thisPtr = thisArgNode->AsUnOp()->gtGetOp1();
+#else
+    // On platforms without fixed registers (e.g., WASM), PUTARG nodes are not inserted.
+    GenTree* thisPtr = thisArgNode;
+#endif
 
     // If what we are passing as the thisptr is not already a local, make a new local to place it in
     // because we will be creating expressions based on it.

@@ -95,6 +95,10 @@ namespace ILCompiler
             {
                 return "";
             }
+            else if (architecture is TargetArchitecture.Wasm32)
+            {
+                return "";
+            }
             else
             {
                 throw new InternalCompilerErrorException($"Unknown architecture '{architecture}'");

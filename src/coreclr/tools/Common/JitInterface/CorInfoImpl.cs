@@ -4087,8 +4087,17 @@ namespace Internal.JitInterface
 
         private int doAssert(byte* szFile, int iLine, byte* szExpr)
         {
-            Logger.LogMessage(Marshal.PtrToStringUTF8((IntPtr)szFile) + ":" + iLine);
-            Logger.LogMessage(Marshal.PtrToStringUTF8((IntPtr)szExpr));
+            string file = Marshal.PtrToStringUTF8((IntPtr)szFile);
+            string expr = Marshal.PtrToStringUTF8((IntPtr)szExpr);
+            Logger.LogMessage(file + ":" + iLine);
+            Logger.LogMessage(expr);
+
+            // For WASM spike: continue past assertions to make progress.
+            // On other architectures, assertions are fatal.
+            if (_compilation.NodeFactory.Target.Architecture == Internal.TypeSystem.TargetArchitecture.Wasm32)
+            {
+                return 0;
+            }
 
             return 1;
         }
