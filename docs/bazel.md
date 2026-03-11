@@ -12,7 +12,7 @@ output binaries and support all platforms CMake/MSBuild currently targets.
 The Bazel build produces a fully functional .NET runtime on **linux-x64**.
 All native C/C++ components build with Bazel (CoreCLR, corehost, 6 native
 interop libs, NativeAOT runtime). Managed C# libraries (System.Private.CoreLib,
-154 framework assemblies) also build with Bazel via `rules_dotnet`.
+158 framework assemblies) also build with Bazel via `rules_dotnet`.
 A hybrid build script assembles everything into a standard `dotnet` runtime
 layout.
 
@@ -22,7 +22,7 @@ layout.
   hostfxr, hostpolicy, apphost, nethost, 6 native interop libraries,
   NativeAOT runtime, standalone GC, AOT JIT interface,
   DAC (libmscordaccore.so), DBI (libmscordbi.so), createdump
-- **Managed C#**: System.Private.CoreLib, 154 framework assemblies
+- **Managed C#**: System.Private.CoreLib, 158 framework assemblies
   (145 of 150 non-shim NetCoreApp assemblies + shims + extras),
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
@@ -50,12 +50,13 @@ layout.
   System.Net.Requests, System.Net.Sockets, System.Net.WebClient,
   System.Net.WebHeaderCollection, System.Net.WebProxy,
   System.Net.WebSockets, System.Net.WebSockets.Client,
-  System.Numerics.Vectors, System.ObjectModel, System.Private.Uri,
-  System.Private.Xml.Linq, System.Reflection.DispatchProxy,
-  System.Reflection.Emit, System.Reflection.Emit.ILGeneration,
-  System.Reflection.Emit.Lightweight, System.Reflection.Extensions,
-  System.Reflection.Metadata, System.Reflection.TypeExtensions,
-  System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
+  System.Numerics.Tensors, System.Numerics.Vectors, System.ObjectModel,
+  System.Private.Uri, System.Private.Xml.Linq,
+  System.Reflection.DispatchProxy, System.Reflection.Emit,
+  System.Reflection.Emit.ILGeneration, System.Reflection.Emit.Lightweight,
+  System.Reflection.Extensions, System.Reflection.Metadata,
+  System.Reflection.TypeExtensions, System.Resources.Writer,
+  System.Runtime.CompilerServices.VisualC,
   System.Runtime.InteropServices (UnitTests), System.Runtime.Intrinsics,
   System.Runtime.Numerics, System.Runtime.Serialization.Json,
   System.Runtime.Serialization.Primitives, System.Runtime.Serialization.Xml,
@@ -140,10 +141,10 @@ areas:
 - **Managed assemblies**: 164 of 186 archive+non-archive assemblies fully match
   MSBuild's CSC invocations (defines, nowarn, source files, generated content,
   references). The remaining 22 differ due to:
-  - **PNSE stub generation** (4): Bazel now generates `.notsupported.cs` via
+  - **PNSE stub generation** (5): Bazel now generates `.notsupported.cs` via
     `GenNotSupportedSource` (matching MSBuild's `GeneratePlatformNotSupportedAssemblyMessage`),
     but reference sets may still differ (Registry, IO.Pipes.AccessControl,
-    Threading.AccessControl, InteropServices.JavaScript)
+    Threading.AccessControl, InteropServices.JavaScript, Diagnostics.EventLog)
   - **Generated file content** (2): SR.cs/Forwards.cs differences
     (System.Private.CoreLib, System shim)
   - **Complex assemblies** (2): System.Net.Quic (PNSE stub vs full Linux impl),
@@ -517,8 +518,9 @@ framework contains 150 assemblies (per `NetCoreAppLibrary.props`). Of those, **1
 have `impl_` targets** in Bazel and are in the `impl_netcoreapp` aggregate.
 Windows-only and browser-only libraries (System.IO.Pipes.AccessControl,
 System.Threading.AccessControl, Microsoft.Win32.Registry,
-System.Runtime.InteropServices.JavaScript) use `gen_pnse_source` to generate
-`.notsupported.cs` stubs matching MSBuild's `GeneratePlatformNotSupportedAssemblyMessage`.
+System.Runtime.InteropServices.JavaScript, System.Diagnostics.EventLog) use
+`gen_pnse_source` to generate `.notsupported.cs` stubs matching MSBuild's
+`GeneratePlatformNotSupportedAssemblyMessage`.
 The remaining 2 need special support: Microsoft.VisualBasic.Core (VB compiler)
 and System.Net.Quic (msquic native library + full Linux implementation).
 93 libraries have Bazel test BUILD files (out of ~187 with test projects).
@@ -530,7 +532,7 @@ and System.Net.Quic (msquic native library + full Linux implementation).
   - [x] `src/libraries/System.Private.CoreLib/src/files.bzl` — source file lists
 
 ### 5.2 Framework ref + impl assemblies — 🔨 In Progress
-- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (154 assemblies)
+- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (158 assemblies)
 - [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
 - [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator
@@ -570,12 +572,13 @@ and System.Net.Quic (msquic native library + full Linux implementation).
   System.Net.Requests, System.Net.Sockets, System.Net.WebClient,
   System.Net.WebHeaderCollection, System.Net.WebProxy,
   System.Net.WebSockets, System.Net.WebSockets.Client,
-  System.Numerics.Vectors, System.ObjectModel, System.Private.Uri,
-  System.Private.Xml.Linq, System.Reflection.DispatchProxy,
-  System.Reflection.Emit, System.Reflection.Emit.ILGeneration,
-  System.Reflection.Emit.Lightweight, System.Reflection.Extensions,
-  System.Reflection.Metadata, System.Reflection.TypeExtensions,
-  System.Resources.Writer, System.Runtime.CompilerServices.VisualC,
+  System.Numerics.Tensors, System.Numerics.Vectors, System.ObjectModel,
+  System.Private.Uri, System.Private.Xml.Linq,
+  System.Reflection.DispatchProxy, System.Reflection.Emit,
+  System.Reflection.Emit.ILGeneration, System.Reflection.Emit.Lightweight,
+  System.Reflection.Extensions, System.Reflection.Metadata,
+  System.Reflection.TypeExtensions, System.Resources.Writer,
+  System.Runtime.CompilerServices.VisualC,
   System.Runtime.InteropServices (UnitTests), System.Runtime.Intrinsics,
   System.Runtime.Numerics, System.Runtime.Serialization.Json,
   System.Runtime.Serialization.Primitives, System.Runtime.Serialization.Xml,
@@ -695,14 +698,14 @@ DOTNET_ROOT=artifacts/bazel-dotnet artifacts/bazel-dotnet/dotnet <app.dll>
 The NetCoreApp shared framework (`NetCoreAppLibrary.props`) contains 150
 non-shim assemblies (plus 22 NetFxReference shims). Of the non-shim assemblies,
 **145 are Bazel-built** and in the `impl_netcoreapp` aggregate; **5 still need
-special support**. The `impl_netcoreapp` filegroup contains 154 total entries
-(including 8 non-NetCoreApp extras and 1 NetFxReference shim: mscorlib).
+special support**. The `impl_netcoreapp` filegroup contains 158 total entries
+(including 12 non-NetCoreApp extras and 1 NetFxReference shim: mscorlib).
 
 ### 9.1 Status Summary
 
 | Category | Count | Description |
 |----------|------:|-------------|
-| ✅ In `impl_netcoreapp` | 154 | Built and aggregated (145 non-shim NetCoreApp + mscorlib shim + 8 non-NetCoreApp extras) |
+| ✅ In `impl_netcoreapp` | 158 | Built and aggregated (145 non-shim NetCoreApp + mscorlib shim + 12 non-NetCoreApp extras) |
 | ❌ VB project | 1 | Microsoft.VisualBasic.Core — needs VB compiler in Bazel |
 | ❌ Native deps | 1 | System.Net.Quic — needs msquic native library + full Linux impl |
 | ❌ NetFxRef shims | 21 | Legacy .NET Framework type-forwarder shims (System, System.Core, etc.) |
