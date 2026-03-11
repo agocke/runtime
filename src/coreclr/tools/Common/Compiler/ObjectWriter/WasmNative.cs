@@ -68,8 +68,8 @@ namespace ILCompiler.ObjectWriter
 
     public class WasmGlobalImportType : WasmImportType
     {
-        WasmValueType _valueType;
-        WasmMutabilityType _mutability;
+        private WasmValueType _valueType;
+        private WasmMutabilityType _mutability;
 
         public WasmGlobalImportType(WasmValueType valueType, WasmMutabilityType mutability) : base (WasmExternalKind.Global)
         {
@@ -92,12 +92,12 @@ namespace ILCompiler.ObjectWriter
         HasMin = 0x00,
         HasMinAndMax = 0x01
     }
-  
+
     public class WasmMemoryImportType : WasmImportType
     {
-        WasmLimitType _limitType;
-        uint _min;
-        uint? _max;
+        private WasmLimitType _limitType;
+        private uint _min;
+        private uint? _max;
 
         public WasmMemoryImportType(WasmLimitType limitType, uint min, uint? max = null) : base(WasmExternalKind.Memory)
         {

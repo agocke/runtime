@@ -606,6 +606,8 @@ namespace ILCompiler.ObjectWriter
 
                     Utf8String relocSymbolName = GetMangledName(relocTarget);
 
+                    PreProcessRelocation(reloc, relocTarget, relocSymbolName);
+
                     EmitOrResolveRelocation(
                         blockToRelocate.SectionIndex,
                         blockToRelocate.Offset + reloc.Offset,
@@ -658,6 +660,10 @@ namespace ILCompiler.ObjectWriter
         private protected virtual void RecordMethodDeclaration(ISymbolDefinitionNode node, MethodDesc desc)
         {
             Debug.Assert(LayoutMode == CodeDataLayout.Separate);
+        }
+
+        private protected virtual void PreProcessRelocation(Relocation reloc, ISymbolNode relocTarget, Utf8String relocSymbolName)
+        {
         }
 
         private protected virtual void RecordMethodSignature(WasmTypeNode signature)

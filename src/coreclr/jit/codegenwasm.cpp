@@ -2250,10 +2250,24 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
         }
     }
 
+    // Managed calls have a hidden PEP (Portable Entry Point) parameter appended last.
+    // This is the function's own address, used for indirect dispatch support.
+    bool needsPEP = !call->IsUnmanaged() && !call->IsHelperCall();
+    if (needsPEP)
+    {
+        typeStack.Push(CORINFO_WASM_TYPE_I32);
+    }
+
     params.wasmSignature = m_compiler->info.compCompHnd->getWasmTypeSymbol(typeStack.Data(), typeStack.Height());
 
     if (target != nullptr)
     {
+        // For indirect calls with a target, push the PEP (the target address) before the call.
+        if (needsPEP)
+        {
+            genConsumeReg(target);
+        }
+
         // Codegen should have already evaluated our target node (last) and pushed it onto the stack,
         //  ready for call_indirect. Consume it.
         genConsumeReg(target);
@@ -2291,6 +2305,12 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
             assert(call->IsHelperCall() || (call->gtCallType == CT_USER_FUNC));
 
             params.addr = call->gtDirectCallAddress;
+
+            // Push PEP (function address) as the last argument for managed calls.
+            if (needsPEP)
+            {
+                GetEmitter()->emitAddressConstant(params.addr);
+            }
 
             params.callType = EC_FUNC_TOKEN;
             genEmitCallWithCurrentGC(params);
@@ -2779,10 +2799,44 @@ void CodeGen::genCodeForStoreBlk(GenTreeBlk* blkOp)
             break;
 
         case GenTreeBlk::BlkOpKindNativeOpcode:
-            genConsumeOperands(blkOp);
-            // Emit the size constant expected by the memory.copy and memory.fill opcodes
-            GetEmitter()->emitIns_I(INS_i32_const, EA_4BYTE, blkOp->Size());
-            GetEmitter()->emitIns_I(isCopyBlk ? INS_memory_copy : INS_memory_fill, EA_8BYTE, LINEAR_MEMORY_INDEX);
+            if (isCopyBlk)
+            {
+                // memory.copy needs [dest, src, size] on the WASM stack.
+                // The source node is contained (set in lowerwasm.cpp), so we must
+                // explicitly push dest addr, then evaluate the source addr, then push size.
+                genConsumeReg(blkOp->Addr());
+
+                GenTree* data = blkOp->Data();
+                assert(data->isContained());
+                if (data->OperIs(GT_IND))
+                {
+                    genConsumeReg(data->AsIndir()->Addr());
+                }
+                else
+                {
+                    assert(data->OperIs(GT_LCL_VAR, GT_LCL_FLD));
+                    GenTreeLclVarCommon* lclVar = data->AsLclVarCommon();
+                    bool                fpBased;
+                    int offset = m_compiler->lvaFrameAddress(lclVar->GetLclNum(), &fpBased) + lclVar->GetLclOffs();
+                    assert(fpBased);
+                    GetEmitter()->emitIns_I(INS_local_get, EA_PTRSIZE, WasmRegToIndex(GetFramePointerReg()));
+                    if (offset != 0)
+                    {
+                        GetEmitter()->emitIns_I(INS_i32_const, EA_4BYTE, offset);
+                        GetEmitter()->emitIns(INS_i32_add);
+                    }
+                }
+
+                GetEmitter()->emitIns_I(INS_i32_const, EA_4BYTE, blkOp->Size());
+                GetEmitter()->emitIns_I(INS_memory_copy, EA_8BYTE, LINEAR_MEMORY_INDEX);
+            }
+            else
+            {
+                genConsumeOperands(blkOp);
+                // Emit the size constant expected by the memory.fill opcode
+                GetEmitter()->emitIns_I(INS_i32_const, EA_4BYTE, blkOp->Size());
+                GetEmitter()->emitIns_I(INS_memory_fill, EA_8BYTE, LINEAR_MEMORY_INDEX);
+            }
             break;
 
         default:

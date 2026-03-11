@@ -36,11 +36,11 @@ namespace ILCompiler.ObjectWriter.WasmInstructions
         }
     }
 
-    // Represents a group of Wasm instructions (expressions) which 
+    // Represents a group of Wasm instructions (expressions) which
     // form a complete expression ending with the 'end' opcode.
-    class WasmInstructionGroup : IWasmEncodable
+    internal sealed class WasmInstructionGroup : IWasmEncodable
     {
-        readonly WasmExpr[] _wasmExprs;
+        private readonly WasmExpr[] _wasmExprs;
         public WasmInstructionGroup(WasmExpr[] wasmExprs)
         {
             _wasmExprs = wasmExprs;
@@ -71,7 +71,7 @@ namespace ILCompiler.ObjectWriter.WasmInstructions
 
     public abstract class WasmExpr : IWasmEncodable
     {
-        WasmExprKind _kind;
+        private WasmExprKind _kind;
         public WasmExpr(WasmExprKind kind)
         {
             _kind = kind;
@@ -86,9 +86,9 @@ namespace ILCompiler.ObjectWriter.WasmInstructions
     }
 
     // Represents a constant expression (e.g., (i32.const <value>))
-    class WasmConstExpr : WasmExpr
+    internal sealed class WasmConstExpr : WasmExpr
     {
-        long ConstValue;
+        private long ConstValue;
 
         public WasmConstExpr(WasmExprKind kind, long value) : base(kind)
         {
@@ -117,7 +117,7 @@ namespace ILCompiler.ObjectWriter.WasmInstructions
     }
 
     // Represents a global variable expression (e.g., (global.get <index))
-    class WasmGlobalVarExpr : WasmExpr
+    internal sealed class WasmGlobalVarExpr : WasmExpr
     {
         public readonly int GlobalIndex;
         public WasmGlobalVarExpr(WasmExprKind kind, int globalIndex) : base(kind)
@@ -141,7 +141,7 @@ namespace ILCompiler.ObjectWriter.WasmInstructions
     }
 
     // Represents a binary expression (e.g., i32.add)
-    class WasmBinaryExpr : WasmExpr
+    internal sealed class WasmBinaryExpr : WasmExpr
     {
         public WasmBinaryExpr(WasmExprKind kind) : base(kind)
         {
@@ -154,7 +154,7 @@ namespace ILCompiler.ObjectWriter.WasmInstructions
     // ************************************************
     // Simple DSL wrapper for creating Wasm expressions
     // ************************************************
-    static class Global
+    internal static class Global
     {
         public static WasmExpr Get(int index)
         {
@@ -162,7 +162,7 @@ namespace ILCompiler.ObjectWriter.WasmInstructions
         }
     }
 
-    static class I32
+    internal static class I32
     {
         public static WasmExpr Const(long value)
         {

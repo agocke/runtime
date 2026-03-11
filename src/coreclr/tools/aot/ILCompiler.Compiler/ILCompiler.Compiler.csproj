@@ -18,10 +18,6 @@
 
     <NoWarn Condition="'$(DotNetBuildSourceOnly)' == 'true'">$(NoWarn);CS8524</NoWarn>
     <NoWarn>$(NoWarn);CA1859</NoWarn>
-    <!-- WASM shared files (WasmObjectWriter.cs, WasmNative.cs, WasmInstructions.cs, WasmLowering.cs)
-         have style issues from their initial implementation. MSBuild does not support per-file NoWarn,
-         so these must be suppressed project-wide until the upstream files are fixed. -->
-    <NoWarn>$(NoWarn);SA1028;SA1400;CA1805;IDE0059;IDE0060;CA1854;IDE0062;IDE0200;IDE0074;CA1822;CA1852</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
