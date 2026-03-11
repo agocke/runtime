@@ -2941,18 +2941,14 @@ void CodeGen::genCodeForInitBlkLoop(GenTreeBlk* blkOp)
 //------------------------------------------------------------------------
 // genCodeForCmpXchg: Generate code for GT_CMPXCHG (CompareExchange).
 //
-// For single-threaded WASM, this is a non-atomic compare-exchange.
-// We use WASM atomic instructions even though single-threaded, as they
-// handle the compare-exchange semantics correctly.
-// Actually, for the spike we'll just emit a stub that returns the old value.
+// For single-threaded WASM, this is a non-atomic compare-exchange:
+// load old value, compare with comparand, store new value only if equal.
+// Returns the old value regardless.
 //
 void CodeGen::genCodeForCmpXchg(GenTreeCmpXchg* treeNode)
 {
     assert(!WASM_THREAD_SUPPORT);
 
-    // For the spike: read the old value, unconditionally store the new value.
-    // This is semantically a simplified exchange, not a true compare-exchange.
-    // TODO-WASM: Implement proper compare-exchange semantics.
     GenTree* location  = treeNode->Addr();
     GenTree* value     = treeNode->Data();
     GenTree* comparand = treeNode->Comparand();
@@ -2961,19 +2957,33 @@ void CodeGen::genCodeForCmpXchg(GenTreeCmpXchg* treeNode)
     regNumber targetReg = treeNode->GetRegNum();
     assert(targetReg != REG_NA);
 
-    // Read old value: *location
+    unsigned targetIdx = WasmRegToIndex(targetReg);
+
+    // Read old value: old = *location
     genConsumeReg(location);
     GetEmitter()->emitIns_I(INS_i32_load, size, 0);
-    GetEmitter()->emitIns_I(INS_local_set, size, WasmRegToIndex(targetReg));
+    GetEmitter()->emitIns_I(INS_local_set, size, targetIdx);
 
-    // Consume comparand (discard it for now)
+    // Compare old value with comparand: if (old == comparand) *location = value
+    GetEmitter()->emitIns_I(INS_local_get, size, targetIdx);
     genConsumeReg(comparand);
-    GetEmitter()->emitIns(INS_drop);
-
-    // Store new value: *location = value
-    genConsumeReg(location);
-    genConsumeReg(value);
-    GetEmitter()->emitIns_I(INS_i32_store, size, 0);
+    GetEmitter()->emitIns(INS_i32_eq);
+    GetEmitter()->emitIns_BlockTy(INS_if);
+    {
+        // Store new value: *location = value
+        genConsumeReg(location);
+        genConsumeReg(value);
+        GetEmitter()->emitIns_I(INS_i32_store, size, 0);
+    }
+    GetEmitter()->emitIns(INS_else);
+    {
+        // Comparand didn't match — consume operands without storing.
+        genConsumeReg(location);
+        GetEmitter()->emitIns(INS_drop);
+        genConsumeReg(value);
+        GetEmitter()->emitIns(INS_drop);
+    }
+    GetEmitter()->emitIns(INS_end);
 
     genProduceReg(treeNode);
 }

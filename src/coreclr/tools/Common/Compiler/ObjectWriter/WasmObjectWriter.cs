@@ -224,6 +224,8 @@ namespace ILCompiler.ObjectWriter
         // Minimal valid WASM function body: 0 local declarations + end opcode.
         private static readonly byte[] s_minimalFunctionBody = [0x00, 0x0b];
 
+        private readonly HashSet<Utf8String> _unresolvedSymbols = new();
+
         private protected override ReadOnlyMemory<byte> GetNodeEmitData(ObjectNode node, ReadOnlyMemory<byte> data)
         {
             if (node is IMethodBodyNode && data.Length == 0)
@@ -360,6 +362,15 @@ namespace ILCompiler.ObjectWriter
 
                 section.Emit(outputFileStream);
             }
+
+            if (_unresolvedSymbols.Count > 0)
+            {
+                Console.Error.WriteLine($"[WASM] Warning: {_unresolvedSymbols.Count} unresolved function symbol(s) linked to index 0:");
+                foreach (Utf8String sym in _unresolvedSymbols.OrderBy(s => s.ToString()))
+                {
+                    Console.Error.WriteLine($"[WASM]   - {sym}");
+                }
+            }
         }
 
         Dictionary<int, List<SymbolicRelocation>> _resolvableRelocations = new();
@@ -420,8 +431,10 @@ namespace ILCompiler.ObjectWriter
                             }
                             else
                             {
-                                // TODO-WASM: Native runtime helpers (e.g., RhGetCrashInfoBuffer) are not yet
-                                // compiled for WASM. Use function index 0 as a placeholder.
+                                // Native runtime helpers (e.g., RhGetCrashInfoBuffer) are not yet compiled
+                                // for WASM. Use function index 0 as placeholder — these calls will execute
+                                // the wrong function at runtime. Track for diagnostic reporting.
+                                _unresolvedSymbols.Add(reloc.SymbolName);
                                 Relocation.WriteValue(reloc.Type, pData, 0);
                                 WriteRelocFromDataSpan(reloc, pData);
                             }

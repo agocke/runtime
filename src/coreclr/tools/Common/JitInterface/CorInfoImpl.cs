@@ -4085,6 +4085,8 @@ namespace Internal.JitInterface
             return false;
         }
 
+        private int _wasmAssertionCount;
+
         private int doAssert(byte* szFile, int iLine, byte* szExpr)
         {
             string file = Marshal.PtrToStringUTF8((IntPtr)szFile);
@@ -4096,6 +4098,8 @@ namespace Internal.JitInterface
             // On other architectures, assertions are fatal.
             if (_compilation.NodeFactory.Target.Architecture == Internal.TypeSystem.TargetArchitecture.Wasm32)
             {
+                _wasmAssertionCount++;
+                Logger.LogMessage($"[WASM] Assertion #{_wasmAssertionCount} suppressed (non-fatal): {file}:{iLine} — {expr}");
                 return 0;
             }
 
