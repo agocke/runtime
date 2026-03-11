@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using ILCompiler;
 using ILCompiler.DependencyAnalysis.Wasm;
 using Internal.TypeSystem;
 
@@ -130,7 +131,7 @@ namespace Internal.JitInterface
         /// </summary>
         /// <param name="method"></param>
         /// <returns></returns>
-        public static WasmFuncType GetSignature(MethodDesc method)
+        public static WasmFuncType GetSignature(MethodDesc method, bool addCallingConventionParams = true)
         {
             MethodSignature signature = method.Signature;
             TypeDesc returnType = signature.ReturnType;
@@ -167,6 +168,8 @@ namespace Internal.JitInterface
                 }
             }
 
+            bool isManaged = !method.IsUnmanagedCallersOnly && addCallingConventionParams;
+
             if (method.IsUnmanagedCallersOnly) // reverse P/Invoke
             {
                 if (hasReturnBuffer)
@@ -174,10 +177,30 @@ namespace Internal.JitInterface
                     result.Add(pointerType);
                 }
             }
-            else // managed call
+            else if (isManaged) // managed call with full calling convention
             {
                 result.Add(pointerType); // Stack pointer parameter
 
+                // Shared generic methods have a hidden instantiation argument
+                // (either MethodTable or MethodDesc pointer). In R2L ordering,
+                // this goes right after SP (before this/retbuf/params).
+                if (method.RequiresInstArg())
+                {
+                    result.Add(pointerType);
+                }
+
+                if (hasThis)
+                {
+                    result.Add(pointerType);
+                }
+
+                if (hasReturnBuffer)
+                {
+                    result.Add(pointerType);
+                }
+            }
+            else // managed call without calling convention params (for stubs called with UNMANAGED convention)
+            {
                 if (hasThis)
                 {
                     result.Add(pointerType);
@@ -194,7 +217,7 @@ namespace Internal.JitInterface
                 result.Add(LowerType(signature[i]));
             }
 
-            if (!method.IsUnmanagedCallersOnly)
+            if (isManaged)
             {
                 result.Add(pointerType); // PE entrypoint parameter
             }

@@ -834,11 +834,12 @@ BasicBlock* CodeGen::genEmitEndBlock(BasicBlock* block)
             }
 
 #if defined(TARGET_WASM)
-            // For wasm the last instruction in a function or funclet must be end.
-            //
-            if (block->IsLast() || m_compiler->bbIsFuncletBeg(block->Next()))
+            // For wasm the last instruction in a function must be end.
+            // When funclet epilog placeholders exist, genFuncletEpilog handles
+            // the function-closing end after all funclet code.
+            if (block->IsLast() && wasmFuncletEpilogRemaining == 0)
             {
-                GetEmitter()->emitIns(INS_end);
+                genWasmCloseFunction();
             }
 #endif // defined(TARGET_WASM)
 
@@ -847,6 +848,12 @@ BasicBlock* CodeGen::genEmitEndBlock(BasicBlock* block)
 
         case BBJ_CALLFINALLY:
             result = genCallFinally(block);
+#if defined(TARGET_WASM)
+            if (block->IsLast())
+            {
+                genWasmCloseFunction();
+            }
+#endif
             break;
 
         case BBJ_EHCATCHRET:
@@ -857,9 +864,18 @@ BasicBlock* CodeGen::genEmitEndBlock(BasicBlock* block)
         case BBJ_EHFAULTRET:
         case BBJ_EHFILTERRET:
             genReserveFuncletEpilog(block);
+#if defined(TARGET_WASM)
+            wasmFuncletEpilogRemaining++;
+#endif
             break;
 
         case BBJ_SWITCH:
+#if defined(TARGET_WASM)
+            if (block->IsLast())
+            {
+                genWasmCloseFunction();
+            }
+#endif
             break;
 
         case BBJ_ALWAYS:
@@ -899,6 +915,13 @@ BasicBlock* CodeGen::genEmitEndBlock(BasicBlock* block)
 #if FEATURE_LOOP_ALIGN
             SetLoopAlignBackEdge(block, block->GetTarget());
 #endif // FEATURE_LOOP_ALIGN
+
+#if defined(TARGET_WASM)
+            if (block->IsLast())
+            {
+                genWasmCloseFunction();
+            }
+#endif
             break;
 
         case BBJ_COND:
@@ -909,6 +932,12 @@ BasicBlock* CodeGen::genEmitEndBlock(BasicBlock* block)
             SetLoopAlignBackEdge(block, block->GetFalseTarget());
 #endif // FEATURE_LOOP_ALIGN
 
+#if defined(TARGET_WASM)
+            if (block->IsLast())
+            {
+                genWasmCloseFunction();
+            }
+#endif
             break;
 
         default:

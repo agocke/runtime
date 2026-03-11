@@ -76,11 +76,11 @@ namespace ILCompiler.ObjectWriter
             _methodCount++;
         }
 
-        private void WriteSignatureIndexForFunction(MethodDesc desc)
+        private void WriteSignatureIndexForFunction(MethodDesc desc, bool addCallingConventionParams = true)
         {
             SectionWriter writer = GetOrCreateSection(WasmObjectNodeSection.FunctionSection);
 
-            WasmFuncType signature = Internal.JitInterface.WasmLowering.GetSignature(desc);
+            WasmFuncType signature = Internal.JitInterface.WasmLowering.GetSignature(desc, addCallingConventionParams);
             Utf8String key = signature.GetMangledName(_nodeFactory.NameMangler);
             if (!_uniqueSignatures.TryGetValue(key, out int signatureIndex))
             {
@@ -242,7 +242,12 @@ namespace ILCompiler.ObjectWriter
             // correct type signature (enabling validation to pass).
             if (relocTarget is IMethodNode methodNode)
             {
-                WriteSignatureIndexForFunction(methodNode.Method);
+                // Write barrier helpers (RhpAssignRef, etc.) are called by the JIT
+                // using the UNMANAGED convention (no SP/PEP params), but they are
+                // technically managed methods. Use the raw method signature for stubs
+                // of these helpers so the type matches the call site.
+                bool useCallingConvention = !IsUnmanagedConventionHelper(methodNode.Method);
+                WriteSignatureIndexForFunction(methodNode.Method, useCallingConvention);
 
                 _uniqueSymbols.Add(relocSymbolName, _methodCount);
                 _methodCount++;
@@ -263,6 +268,22 @@ namespace ILCompiler.ObjectWriter
                 // fall back to function index 0 during relocation resolution.
                 _unresolvedSymbols.Add(relocSymbolName);
             }
+        }
+
+        /// <summary>
+        /// Returns true for runtime helpers that the JIT calls using the UNMANAGED convention
+        /// (without SP/PEP parameters), even though they are technically managed methods.
+        /// </summary>
+        private static bool IsUnmanagedConventionHelper(MethodDesc method)
+        {
+            // These write barrier helpers are called ONLY via genEmitHelperCall
+            // with the UNMANAGED convention (no SP/PEP). Other write barrier
+            // helpers like RhBulkMoveWithWriteBarrier are called via regular
+            // managed code paths and must use the MANAGED convention.
+            string name = method.GetName();
+            return name is "RhpAssignRef" or "RhpCheckedAssignRef"
+                or "JIT_WriteBarrierEnsureNonHeapTarget"
+                or "RhpByRefAssignRef";
         }
 
         private protected override ReadOnlyMemory<byte> GetNodeEmitData(ObjectNode node, ReadOnlyMemory<byte> data)
@@ -477,11 +498,20 @@ namespace ILCompiler.ObjectWriter
                             else
                             {
                                 // Native runtime helpers (e.g., RhGetCrashInfoBuffer) are not yet compiled
-                                // for WASM. Use function index 0 as placeholder — these calls will execute
-                                // the wrong function at runtime. Track for diagnostic reporting.
+                                // for WASM. Replace the `call` instruction with `unreachable` + nop padding.
+                                // This avoids type validation errors (function 0 has the wrong signature)
+                                // and is functionally equivalent since these helpers would trap anyway.
                                 _unresolvedSymbols.Add(reloc.SymbolName);
-                                Relocation.WriteValue(reloc.Type, pData, 0);
-                                WriteRelocFromDataSpan(reloc, pData);
+
+                                // The call opcode (0x10) is 1 byte before the relocation offset.
+                                // Replace it with unreachable (0x00) and fill the LEB128 index with nops (0x01).
+                                int lebSize = Relocation.GetSize(reloc.Type);
+                                sectionStream.Position = reloc.Offset - 1;
+                                sectionStream.WriteByte(0x00); // unreachable (replaces call opcode)
+                                for (int i = 0; i < lebSize; i++)
+                                {
+                                    sectionStream.WriteByte(0x01); // nop
+                                }
                             }
 
                             break;

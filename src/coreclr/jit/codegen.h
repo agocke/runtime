@@ -211,12 +211,14 @@ protected:
     void genCodeForBBlist();
 
 #if defined(TARGET_WASM)
-    ArrayStack<WasmInterval*>* wasmControlFlowStack = nullptr;
-    unsigned                   wasmCursor           = 0;
+    ArrayStack<WasmInterval*>* wasmControlFlowStack      = nullptr;
+    unsigned                   wasmCursor                 = 0;
+    unsigned                   wasmFuncletEpilogRemaining = 0;
     unsigned                   findTargetDepth(BasicBlock* target);
     void                       WasmProduceReg(GenTree* node);
     regNumber                  GetMultiUseOperandReg(GenTree* operand);
     void                       genEmitNullCheck(regNumber reg);
+    void                       genWasmCloseFunction();
 #endif
 
     void        genEmitStartBlock(BasicBlock* block);

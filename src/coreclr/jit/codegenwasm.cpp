@@ -249,10 +249,19 @@ void CodeGen::genFnEpilog(BasicBlock* block)
     }
 
     // TODO-WASM: shadow stack maintenance
-    // TODO-WASM: we need to handle the end-of-function case if we reach the end of a codegen for a function
-    // and do NOT have an epilog. In those cases we currently will not emit an end instruction.
-    if (block->IsLast() || m_compiler->bbIsFuncletBeg(block->Next()))
+    // If this is the very last block (no funclets follow), close the function.
+    // Otherwise emit `return` — funclet blocks follow and genFuncletEpilog
+    // will close the function after all funclet code.
+    if (block->IsLast())
     {
+        // No funclets follow — close the function directly.
+        // Skip the leading `unreachable` since genFnEpilog already has
+        // valid control flow reaching here (BBJ_RETURN).
+        while (!wasmControlFlowStack->Empty())
+        {
+            wasmControlFlowStack->Pop();
+            instGen(INS_end);
+        }
         instGen(INS_end);
     }
     else
@@ -274,7 +283,12 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
     }
 #endif
 
-    // TODO-WASM: Implement proper funclet prolog for WASM exception handling.
+    // WASM has no native exception handling support for this spike.
+    // Emit `unreachable` at the funclet start so all subsequent funclet body
+    // code is dead. The WASM validator treats the stack as polymorphic after
+    // `unreachable`, so type mismatches in funclet body code won't fail
+    // validation.
+    instGen(INS_unreachable);
 }
 
 void CodeGen::genFuncletEpilog()
@@ -286,7 +300,40 @@ void CodeGen::genFuncletEpilog()
     }
 #endif
 
-    // TODO-WASM: Implement proper funclet epilog for WASM exception handling.
+    // On WASM, funclets are inline in the same function body (not separate
+    // functions like on native targets). genFuncletEpilog is called for every
+    // funclet via placeholder IGs during the emit phase.
+    //
+    // Emit `unreachable` so the stack becomes polymorphic — any subsequent
+    // instructions are valid regardless of stack types.
+    instGen(INS_unreachable);
+
+    wasmFuncletEpilogRemaining--;
+
+    // Only the last funclet epilog closes the function body. Earlier funclet
+    // epilogs just emit `unreachable` to make subsequent funclet code (which
+    // is dead) type-safe under WASM's structured control flow rules.
+    if (wasmFuncletEpilogRemaining == 0)
+    {
+        genWasmCloseFunction();
+    }
+}
+
+//------------------------------------------------------------------------
+// genWasmCloseFunction: Drain remaining WASM control flow frames and emit
+// the function-closing `end` instruction. Emits `unreachable` first to
+// make the stack polymorphic (the drain `end` instructions are dead code
+// that satisfies the validator's structured control flow requirements).
+//
+void CodeGen::genWasmCloseFunction()
+{
+    instGen(INS_unreachable);
+    while (!wasmControlFlowStack->Empty())
+    {
+        wasmControlFlowStack->Pop();
+        instGen(INS_end);
+    }
+    GetEmitter()->emitIns(INS_end);
 }
 
 //------------------------------------------------------------------------
@@ -1531,9 +1578,12 @@ void CodeGen::genCodeForShift(GenTree* tree)
     GenTreeOp* treeNode = tree->AsOp();
     genConsumeOperands(treeNode);
 
-    // TODO-WASM: Zero-extend the 2nd operand for shifts and rotates as needed when the 1st and 2nd operand are
-    // different types. The shift operand width in IR is always TYP_INT; the WASM operations have the same widths
-    // for both the shift and shiftee. So the shift may need to be extended (zero-extended) for TYP_LONG.
+    // The shift operand width in IR is always TYP_INT, but WASM i64 shift/rotate
+    // instructions require both operands to be i64. Extend the shift amount.
+    if (treeNode->TypeIs(TYP_LONG) && genActualType(treeNode->gtGetOp2()) == TYP_INT)
+    {
+        GetEmitter()->emitIns(INS_i64_extend_u_i32);
+    }
 
     instruction ins;
     switch (PackOperAndType(treeNode->OperGet(), treeNode->TypeGet()))
@@ -2252,7 +2302,10 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
 
     // Managed calls have a hidden PEP (Portable Entry Point) parameter appended last.
     // This is the function's own address, used for indirect dispatch support.
-    bool needsPEP = !call->IsUnmanaged() && !call->IsHelperCall();
+    // PEP must be included for ALL managed calls (including helpers) because
+    // WasmLowering.GetSignature unconditionally adds PEP to managed function
+    // declarations — the call-site signature must match.
+    bool needsPEP = !call->IsUnmanaged();
     if (needsPEP)
     {
         typeStack.Push(CORINFO_WASM_TYPE_I32);
