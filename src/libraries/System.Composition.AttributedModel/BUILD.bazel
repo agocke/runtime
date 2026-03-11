@@ -1,0 +1,27 @@
+load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Composition.AttributedModel",
+    multitarget = True,
+    srcs = [
+        "src/System/Composition/Convention/AttributedModelProvider.cs",
+        "src/System/Composition/ExportAttribute.cs",
+        "src/System/Composition/ExportMetadataAttribute.cs",
+        "src/System/Composition/ImportAttribute.cs",
+        "src/System/Composition/ImportingConstructorAttribute.cs",
+        "src/System/Composition/ImportManyAttribute.cs",
+        "src/System/Composition/ImportMetadataConstraintAttribute.cs",
+        "src/System/Composition/MetadataAttributeAttribute.cs",
+        "src/System/Composition/OnImportsSatisfiedAttribute.cs",
+        "src/System/Composition/PartMetadataAttribute.cs",
+        "src/System/Composition/PartNotDiscoverableAttribute.cs",
+        "src/System/Composition/SharedAttribute.cs",
+        "src/System/Composition/SharingBoundaryAttribute.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+    ],
+    nullable = "disable",
+    nowarn = ["nullable"],
+    exclude_sr = True,
+)

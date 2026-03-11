@@ -22,7 +22,7 @@ layout.
   hostfxr, hostpolicy, apphost, nethost, 6 native interop libraries,
   NativeAOT runtime, standalone GC, AOT JIT interface,
   DAC (libmscordaccore.so), DBI (libmscordbi.so), createdump
-- **Managed C#**: System.Private.CoreLib, 166 framework assemblies
+- **Managed C#**: System.Private.CoreLib, 173 framework assemblies
   (145 of 150 non-shim NetCoreApp assemblies + shims + extras),
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator

@@ -1,0 +1,24 @@
+load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Composition.Runtime",
+    multitarget = True,
+    srcs = [
+        "src/System/Composition/CompositionContext.cs",
+        "src/System/Composition/ExportFactoryOfT.cs",
+        "src/System/Composition/ExportFactoryOfTTMetadata.cs",
+        "src/System/Composition/ExportOfT.cs",
+        "src/System/Composition/Hosting/CompositionFailedException.cs",
+        "src/System/Composition/Hosting/Core/CompositionContract.cs",
+        "src/System/Composition/Runtime/Util/Formatters.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries/System.Linq:ref_System.Linq",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+    nullable = "disable",
+    nowarn = ["nullable"],
+    is_aot_compatible = False,
+)
