@@ -2,12 +2,12 @@
 #
 # Per-component configuration (matching MSBuild's -rc / -lc flags):
 #
-#   CoreCLR (clr_config):   checked (default), debug, release
+#   CoreCLR (clr_config):   debug, checked (default), release
 #   Libraries (libs_config): debug (default), release
 #
 # Use --config flags to select:
 #   --config=clr_debug       Debug CLR
-#   --config=clr_checked     Checked CLR (default; debug asserts + release optimization)
+#   --config=clr_checked     Checked CLR (debug asserts + release optimization)
 #   --config=clr_release     Release CLR
 #   --config=libs_release    Release libraries
 #   --config=release         Release everything (= clr_release + libs_release)
@@ -147,9 +147,6 @@ build --host_per_file_copt=src/native/external/.*@-w
 build --per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
 build --host_per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
 
-# Use --config=debuginfo to include debug symbols when needed.
-build:debuginfo --strip=never
-
 # --- Linux-specific settings ---
 # Linker hardening, shared object naming, and lld.
 # These are no-ops or harmful on macOS, so they live behind --config=linux.
@@ -159,6 +156,9 @@ build:linux --linkopt=-fuse-ld=lld
 # macOS deployment target — match CMake's eng/native/configureplatform.cmake
 build:macos --macos_minimum_os=12.0
 
+# Enable automatic platform config selection (applies build:linux on Linux,
+# build:macos on macOS, etc.).
+build --enable_platform_specific_config
 
 # =====================================================================
 # Per-component configuration
@@ -173,8 +173,11 @@ build:macos --macos_minimum_os=12.0
 # src/native/native_defs.bzl.  The --config flags below set the
 # string_flag values that drive those select() expressions.
 
-# Defaults are set via build_setting_default in BUILD.bazel:
-#   clr_config = checked, libs_config = debug
+# --- CoreCLR default: checked ---
+build --//:clr_config=checked
+
+# --- Libraries default: debug ---
+build --//:libs_config=debug
 
 # =====================================================================
 # --config=clr_debug: Debug CoreCLR
@@ -202,3 +205,4 @@ build:libs_release --//:libs_config=release
 # =====================================================================
 build:release --config=clr_release
 build:release --config=libs_release
+# Note: -c opt is on clr_release, so it applies here too.
