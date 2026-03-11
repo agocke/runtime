@@ -20,13 +20,13 @@ exports_files([
 # Set via command line:  --//:clr_config=release  --//:libs_config=release
 # Or via .bazelrc:       --config=clr_release     --config=libs_release
 #
-# CoreCLR configuration: debug (default), checked, or release.
+# CoreCLR configuration: checked (default), debug, or release.
 #   debug   = assertions + debug defines + no optimization
 #   checked = assertions + debug defines + release optimization (-O2)
 #   release = no assertions + NDEBUG + release optimization
 string_flag(
     name = "clr_config",
-    build_setting_default = "debug",
+    build_setting_default = "checked",
     visibility = ["//visibility:public"],
 )
 
