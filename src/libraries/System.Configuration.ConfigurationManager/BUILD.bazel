@@ -1,0 +1,58 @@
+load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Configuration.ConfigurationManager",
+    srcs = [
+        "ref/System.Configuration.ConfigurationManager.cs",
+        "ref/System.Configuration.ConfigurationManager.netcoreapp.cs",
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
+        "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
+        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
+        "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+        "//src/libraries/System.Security.Permissions:ref_System.Security.Permissions",
+    ],
+)
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Configuration.ConfigurationManager",
+    srcs = glob(
+        ["src/**/*.cs"],
+        exclude = [
+            "src/System/Configuration/DpapiProtectedConfigurationProvider.cs",
+        ],
+    ) + [
+        "//src/libraries/Common:src/System/Obsoletions.cs",
+    ],
+    deps = [
+        "//src/libraries/System.Diagnostics.EventLog:ref_System.Diagnostics.EventLog",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+        "//src/libraries/System.Security.Cryptography.ProtectedData:ref_System.Security.Cryptography.ProtectedData",
+        "//src/libraries/System.Security.Permissions:ref_System.Security.Permissions",
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
+        "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
+        "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
+        "//src/libraries/System.IO.FileSystem.Watcher:ref_System.IO.FileSystem.Watcher",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+    multitarget = True,
+    nullable = "disable",
+    assembly_description = "Provides types that support using XML configuration files (app.config). This package exists only to support migrating existing .NET Framework code that already uses System.Configuration. When writing new code, use another configuration system instead, such as Microsoft.Extensions.Configuration.",
+)
+
+ref_impl_pair(
+    name = "live_System.Configuration.ConfigurationManager",
+    ref = ":ref_System.Configuration.ConfigurationManager",
+    lib = ":impl_System.Configuration.ConfigurationManager",
+    visibility = ["//visibility:public"],
+)

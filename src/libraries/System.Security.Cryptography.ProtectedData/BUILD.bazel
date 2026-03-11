@@ -1,0 +1,39 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+
+exports_files([
+    "ref/System.Security.Cryptography.ProtectedData.cs",
+])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Security.Cryptography.ProtectedData",
+    srcs = [
+        "ref/System.Security.Cryptography.ProtectedData.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+    ],
+)
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Security.Cryptography.ProtectedData",
+    multitarget = True,
+    pnse = True,
+    pnse_message = "SR.PlatformNotSupported_CryptographyProtectedData",
+    pnse_ref_srcs = [
+        "ref/System.Security.Cryptography.ProtectedData.cs",
+    ],
+    srcs = [],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+    supported_os_platforms_short = ["windows"],
+    assembly_description = "Provides access to Windows Data Protection Api.\n\nCommonly Used Types:\nSystem.Security.Cryptography.DataProtectionScope\nSystem.Security.Cryptography.ProtectedData",
+)
+
+ref_impl_pair(
+    name = "live_System.Security.Cryptography.ProtectedData",
+    ref = ":ref_System.Security.Cryptography.ProtectedData",
+    lib = ":impl_System.Security.Cryptography.ProtectedData",
+    visibility = ["//visibility:public"],
+)
