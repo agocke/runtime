@@ -1,4 +1,16 @@
+load("//src/libraries:defs.bzl", "live_csharp_library")
 load("//src/tests:live_test.bzl", "library_test")
+
+# Helper assembly loaded at runtime by AssemblyCatalogTests and
+# DirectoryCatalogTests.  Built as a separate assembly so it can be discovered
+# by name ("System.ComponentModel.Composition.Noop.Assembly.dll").
+live_csharp_library(
+    name = "System.ComponentModel.Composition.Noop.Assembly",
+    srcs = ["System.ComponentModel.Composition.Noop.Assembly/TestClass.cs"],
+    deps = [
+        "//src/libraries/System.ComponentModel.Composition:impl_System.ComponentModel.Composition",
+    ],
+)
 
 library_test(
     name = "System.ComponentModel.Composition.Tests",
@@ -14,6 +26,7 @@ library_test(
         "//src/libraries/Common/tests:System/IO/TempFile.cs",
     ],
     deps = [
+        ":System.ComponentModel.Composition.Noop.Assembly",
         "//src/libraries/System.ComponentModel.Composition:impl_System.ComponentModel.Composition",
         "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",

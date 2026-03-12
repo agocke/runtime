@@ -15,7 +15,7 @@ library_test(
         "//src/libraries/Microsoft.Extensions.Options.ConfigurationExtensions:impl_Microsoft.Extensions.Options.ConfigurationExtensions",
         "//src/libraries/Microsoft.Extensions.Configuration:ref_Microsoft.Extensions.Configuration",
         "//src/libraries/Microsoft.Extensions.Configuration.Abstractions:ref_Microsoft.Extensions.Configuration.Abstractions",
-        "//src/libraries/Microsoft.Extensions.Configuration.Binder:ref_Microsoft.Extensions.Configuration.Binder",
+        "//src/libraries/Microsoft.Extensions.Configuration.Binder:impl_Microsoft.Extensions.Configuration.Binder",
         "//src/libraries/Microsoft.Extensions.DependencyInjection:ref_Microsoft.Extensions.DependencyInjection",
         "//src/libraries/Microsoft.Extensions.DependencyInjection.Abstractions:ref_Microsoft.Extensions.DependencyInjection.Abstractions",
         "//src/libraries/Microsoft.Extensions.Options:ref_Microsoft.Extensions.Options",

@@ -10,7 +10,7 @@ library_test(
         "//src/libraries/Common/tests:System/IO/WrappedStream.cs",
     ],
     deps = [
-        "//src/libraries/System.IO.Packaging:ref_System.IO.Packaging",
+        "//src/libraries/System.IO.Packaging:impl_System.IO.Packaging",
         "//src/libraries/System.IO.Compression:ref_System.IO.Compression",
         "//src/libraries/System.Net.Mail:ref_System.Net.Mail",
         "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
@@ -21,6 +21,7 @@ library_test(
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
     ],
+    data = ["@paket.main//system.io.packaging.testdata:content_files"],
     size = "large",
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
 )
