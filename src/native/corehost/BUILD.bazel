@@ -393,13 +393,19 @@ cc_binary(
         "apphost/bundle_marker.h",
         "apphost/standalone/hostfxr_resolver.cpp",
         "hostfxr_resolver.h",
-    ],
+    ] + select({
+        "@platforms//os:windows": [
+            "apphost/apphost.windows.cpp",
+            "apphost/apphost.windows.h",
+        ],
+        "//conditions:default": [],
+    }),
     copts = COREHOST_COPTS,
     includes = COREHOST_INCLUDES + ["fxr", "hostmisc", "apphost"],
     defines = COREHOST_DEFINES + ["FEATURE_APPHOST"],
     local_defines = NATIVE_CONFIG_DEFINES,
     linkopts = PLATFORM_LINKOPTS + select({
-        "@platforms//os:windows": [],
+        "@platforms//os:windows": ["shell32.lib", "user32.lib"],
         "@platforms//os:macos": [],
         "//conditions:default": ["-Wl,-Bsymbolic"],
     }),
