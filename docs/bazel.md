@@ -28,7 +28,7 @@ layout.
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
-  134 library test suites (Microsoft.CSharp,
+  135 library test suites (Microsoft.CSharp,
   Microsoft.Extensions.Caching.Memory,
   Microsoft.Extensions.Configuration,
   Microsoft.Extensions.Configuration.Binder,
@@ -70,7 +70,7 @@ layout.
   System.IO.Packaging, System.IO.Pipelines, System.IO.Pipes, System.Linq,
   System.Linq.AsyncEnumerable, System.Linq.Expressions,
   System.Linq.Parallel, System.Linq.Queryable, System.Memory,
-  System.Net.HttpListener, System.Net.Mail, System.Net.NameResolution,
+  System.Memory.Data, System.Net.HttpListener, System.Net.Mail, System.Net.NameResolution,
   System.Net.NetworkInformation, System.Net.Ping, System.Net.Primitives,
   System.Net.Requests, System.Net.Sockets, System.Net.WebClient,
   System.Net.WebHeaderCollection, System.Net.WebProxy,
@@ -105,8 +105,7 @@ layout.
   (needs System.Drawing.Common), System.Runtime.Serialization.Formatters
   (needs System.Drawing.Common), System.Security.AccessControl (Windows),
   System.Security.Principal.Windows (Windows);
-  plus 2 test suites with BUILD files needing external packages:
-  System.Memory.Data (needs System.Text.Json source generator),
+  plus 1 test suite with BUILD files needing external packages:
   System.Security.Cryptography.Cose (needs Microsoft.IdentityModel.Tokens))
 - **Per-component configuration**: independent debug/checked/release for
   CoreCLR and Libraries (matching MSBuild's `-rc`/`-lc` flags)
@@ -586,7 +585,7 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 - [x] System.ServiceProcess.ServiceController (PNSE stub for non-Windows)
 - [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
-- [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator
+- [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator, JsonSourceGenerator
 - [ ] Remaining 26 NetCoreApp assemblies: 21 NetFxReference shims + 5 non-shim (see §9 for breakdown)
 
 ### 5.3 Build Tools — 🔨 Partial
