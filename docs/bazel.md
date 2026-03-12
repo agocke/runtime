@@ -208,7 +208,7 @@ CMake currently supports all of these OS × architecture combinations. Bazel sup
 | Linux (glibc) | ✅ | 🔨 In progress | First target; linux-x64 compiler flags verified |
 | Linux (musl/Alpine) | ✅ | ❌ Not started | |
 | macOS (Darwin) | ✅ | ❌ Not started | |
-| Windows | ✅ | ❌ Not started | |
+| Windows | ✅ | 🔨 Host only | corehost (dotnet.exe, hostfxr.dll, hostpolicy.dll, apphost.exe, nethost.dll) builds with MSVC; CI on `windows-latest` |
 | FreeBSD | ✅ | ❌ Not started | |
 | NetBSD | ✅ | ❌ Not started | |
 | OpenBSD | ✅ | ❌ Not started | |
