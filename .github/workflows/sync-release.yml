@@ -1,0 +1,371 @@
+name: Sync release/10.0 → bazel
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6:00 UTC
+  workflow_dispatch:
+    inputs:
+      skip_copilot_fix:
+        description: 'Skip Copilot SDK auto-fix attempt'
+        type: boolean
+        default: false
+      skip_equivalence:
+        description: 'Skip equivalence check'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ─── Job 1: Merge upstream and create PR ────────────────────────────────────
+  merge-and-pr:
+    name: Merge & Create PR
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.create-pr.outputs.pr_number }}
+      sync_branch: ${{ steps.create-branch.outputs.branch }}
+      classification: ${{ steps.detect.outputs.classification }}
+      has_new_commits: ${{ steps.check-new.outputs.has_new_commits }}
+      report_file: ${{ steps.detect.outputs.report_file }}
+    steps:
+      - name: Checkout bazel branch
+        uses: actions/checkout@v5
+        with:
+          ref: bazel
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream https://github.com/dotnet/runtime.git || true
+          git fetch upstream release/10.0 --quiet
+
+      - name: Check for existing sync PR
+        id: check-existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          open_prs=$(gh pr list --base bazel --label bazel-sync --state open --json number --jq 'length')
+          if [ "$open_prs" -gt 0 ]; then
+            echo "has_open_pr=true" >> "$GITHUB_OUTPUT"
+            echo "An open sync PR already exists, skipping"
+          else
+            echo "has_open_pr=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for new commits
+        id: check-new
+        if: steps.check-existing.outputs.has_open_pr == 'false'
+        run: |
+          # List unmerged upstream commits, oldest first
+          next_commit=$(git rev-list --reverse --ancestry-path origin/bazel..upstream/release/10.0 | head -1)
+          if [ -z "$next_commit" ]; then
+            echo "has_new_commits=false" >> "$GITHUB_OUTPUT"
+            echo "Already up-to-date"
+          else
+            echo "has_new_commits=true" >> "$GITHUB_OUTPUT"
+            echo "next_commit=$next_commit" >> "$GITHUB_OUTPUT"
+            remaining=$(git rev-list --count origin/bazel..upstream/release/10.0)
+            echo "next_commit_subject=$(git log -1 --format='%s' "$next_commit")" >> "$GITHUB_OUTPUT"
+            echo "next_commit_short=$(git rev-parse --short "$next_commit")" >> "$GITHUB_OUTPUT"
+            echo "remaining=$remaining" >> "$GITHUB_OUTPUT"
+            echo "Next commit: $next_commit (1 of $remaining pending)"
+          fi
+
+      - name: Create sync branch
+        id: create-branch
+        if: steps.check-new.outputs.has_new_commits == 'true'
+        run: |
+          short="${{ steps.check-new.outputs.next_commit_short }}"
+          branch="sync/release-10.0-${short}"
+          git checkout -b "$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Merge single upstream commit
+        id: merge
+        if: steps.check-new.outputs.has_new_commits == 'true'
+        run: |
+          next_commit="${{ steps.check-new.outputs.next_commit }}"
+          if git merge "$next_commit" --no-edit; then
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Merge conflicts detected"
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            # Stage conflicted files so we can still create the PR
+            git add -A
+            git commit --no-edit -m "Merge $next_commit (with conflicts)" || true
+          fi
+
+      - name: Run change detection
+        id: detect
+        if: steps.check-new.outputs.has_new_commits == 'true'
+        run: |
+          report_file="/tmp/sync-report.md"
+          next_commit="${{ steps.check-new.outputs.next_commit }}"
+
+          if [ "${{ steps.merge.outputs.conflict }}" = "true" ]; then
+            echo "classification=conflict" >> "$GITHUB_OUTPUT"
+            echo "# Sync Report" > "$report_file"
+            echo "" >> "$report_file"
+            echo "**Classification:** ❌ **conflict** — Merge conflicts need manual resolution" >> "$report_file"
+            echo "" >> "$report_file"
+            echo "## Conflicted Files" >> "$report_file"
+            git diff --name-only --diff-filter=U HEAD || true >> "$report_file"
+          else
+            chmod +x src/tools/bazel/detect-upstream-changes.sh
+            set +e
+            ./src/tools/bazel/detect-upstream-changes.sh origin/bazel "$next_commit" \
+              --report-file "$report_file"
+            exit_code=$?
+            set -e
+
+            if [ "$exit_code" -eq 0 ]; then
+              echo "classification=clean" >> "$GITHUB_OUTPUT"
+            elif [ "$exit_code" -eq 1 ]; then
+              echo "classification=build-changes" >> "$GITHUB_OUTPUT"
+            else
+              echo "classification=unknown" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+          echo "report_file=$report_file" >> "$GITHUB_OUTPUT"
+
+      - name: Push sync branch
+        if: steps.check-new.outputs.has_new_commits == 'true'
+        run: |
+          git push origin "${{ steps.create-branch.outputs.branch }}"
+
+      - name: Create PR
+        id: create-pr
+        if: steps.check-new.outputs.has_new_commits == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          classification="${{ steps.detect.outputs.classification }}"
+          report_file="${{ steps.detect.outputs.report_file }}"
+          commit_subject="${{ steps.check-new.outputs.next_commit_subject }}"
+          commit_short="${{ steps.check-new.outputs.next_commit_short }}"
+          remaining="${{ steps.check-new.outputs.remaining }}"
+
+          case "$classification" in
+            clean)
+              title="✅ Sync ${commit_short}: ${commit_subject}"
+              labels="bazel-sync,bazel-sync-clean"
+              ;;
+            build-changes)
+              title="⚠️ Sync ${commit_short}: ${commit_subject}"
+              labels="bazel-sync,bazel-sync-needs-attention"
+              ;;
+            conflict)
+              title="❌ Sync ${commit_short}: ${commit_subject}"
+              labels="bazel-sync,bazel-sync-conflict"
+              ;;
+            *)
+              title="Sync ${commit_short}: ${commit_subject}"
+              labels="bazel-sync"
+              ;;
+          esac
+
+          # Prepend commit info to the report
+          commit_header="**Upstream commit:** [\`${commit_short}\`](https://github.com/dotnet/runtime/commit/${{ steps.check-new.outputs.next_commit }}) — ${commit_subject}"
+          commit_header+="\n**Remaining after this:** $((remaining - 1)) commit(s)\n\n---\n\n"
+          full_body=$(printf '%s' "$commit_header" && cat "$report_file")
+          echo "$full_body" > "$report_file"
+
+          pr_url=$(gh pr create \
+            --base bazel \
+            --head "${{ steps.create-branch.outputs.branch }}" \
+            --title "$title" \
+            --body-file "$report_file" \
+            --label "$labels" 2>&1 || true)
+
+          # Extract PR number from URL
+          pr_number=$(echo "$pr_url" | grep -oP '/pull/\K[0-9]+' || echo "")
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "Created PR: $pr_url"
+
+  # ─── Job 2: Equivalence check ──────────────────────────────────────────────
+  equivalence-check:
+    name: Equivalence Check
+    needs: merge-and-pr
+    if: >-
+      needs.merge-and-pr.outputs.has_new_commits == 'true' &&
+      needs.merge-and-pr.outputs.classification == 'build-changes' &&
+      github.event.inputs.skip_equivalence != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout sync branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.merge-and-pr.outputs.sync_branch }}
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y clang-18 lld libkrb5-dev liblttng-ust-dev
+
+      - name: Mount Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-equiv-${{ hashFiles('MODULE.bazel', '.bazelrc') }}-${{ github.sha }}
+          restore-keys: |
+            bazel-equiv-${{ hashFiles('MODULE.bazel', '.bazelrc') }}-
+            bazel-equiv-
+
+      - name: Build MSBuild runtime
+        run: ./build.sh clr+libs+host+packs -bl
+
+      - name: Build Bazel runtime archive
+        run: bazel build //:runtime_archive --config=clr_release --disk_cache=~/.cache/bazel-disk
+
+      - name: Compare runtime packs
+        id: compare-packs
+        continue-on-error: true
+        run: |
+          ./compare-runtime-packs.sh --skip-build 2>&1 | tee /tmp/packs-result.txt
+
+      - name: Compare build inputs
+        id: compare-build
+        continue-on-error: true
+        run: |
+          ./compare-bazel.sh --skip-build 2>&1 | tee /tmp/build-result.txt
+
+      - name: Post results to PR
+        if: needs.merge-and-pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          packs_status="${{ steps.compare-packs.outcome }}"
+          build_status="${{ steps.compare-build.outcome }}"
+
+          comment="## Equivalence Check Results\n\n"
+          comment+="| Check | Status |\n|-------|--------|\n"
+          comment+="| Runtime Packs | $([ "$packs_status" = "success" ] && echo "✅ Pass" || echo "❌ Fail") |\n"
+          comment+="| Build Inputs | $([ "$build_status" = "success" ] && echo "✅ Pass" || echo "❌ Fail") |\n\n"
+
+          if [ "$packs_status" != "success" ]; then
+            comment+="<details><summary>Runtime Packs Details</summary>\n\n\`\`\`\n$(tail -50 /tmp/packs-result.txt)\n\`\`\`\n</details>\n\n"
+          fi
+          if [ "$build_status" != "success" ]; then
+            comment+="<details><summary>Build Inputs Details</summary>\n\n\`\`\`\n$(tail -50 /tmp/build-result.txt)\n\`\`\`\n</details>\n"
+          fi
+
+          echo -e "$comment" | gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" --body-file -
+
+  # ─── Job 3: Copilot SDK auto-fix ───────────────────────────────────────────
+  copilot-fix:
+    name: Copilot Auto-Fix
+    needs: merge-and-pr
+    if: >-
+      needs.merge-and-pr.outputs.has_new_commits == 'true' &&
+      (needs.merge-and-pr.outputs.classification == 'build-changes' ||
+       needs.merge-and-pr.outputs.classification == 'conflict') &&
+      github.event.inputs.skip_copilot_fix != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout sync branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.merge-and-pr.outputs.sync_branch }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Regenerate detection report
+        run: |
+          git fetch origin bazel --quiet
+          chmod +x src/tools/bazel/detect-upstream-changes.sh
+          ./src/tools/bazel/detect-upstream-changes.sh origin/bazel HEAD \
+            --report-file /tmp/sync-report.md || true
+
+      - name: Run Copilot fix
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+        run: |
+          cd src/tools/bazel
+          dotnet run CopilotFixSync.cs -- /tmp/sync-report.md
+
+      - name: Check for changes
+        id: check-changes
+        run: |
+          if git diff --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Bazel dependencies
+        if: steps.check-changes.outputs.has_changes == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y clang-18 lld libkrb5-dev liblttng-ust-dev
+
+      - name: Validate Bazel build
+        id: validate
+        if: steps.check-changes.outputs.has_changes == 'true'
+        continue-on-error: true
+        run: bazel build //... --config=clr_release --keep_going 2>&1 | tail -30
+
+      - name: Commit and push fixes
+        if: steps.check-changes.outputs.has_changes == 'true' && steps.validate.outcome == 'success'
+        run: |
+          git add -A
+          git commit -m "Auto-fix BUILD.bazel files for upstream sync
+
+          Applied by Copilot SDK based on detection report.
+
+          Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          git push origin HEAD
+
+      - name: Comment on PR (success)
+        if: steps.check-changes.outputs.has_changes == 'true' && steps.validate.outcome == 'success' && needs.merge-and-pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" \
+            --body "🤖 **Copilot Auto-Fix Applied**
+
+          Copilot SDK automatically updated BUILD.bazel files based on the detection report. Changes have been pushed to the sync branch and validated with \`bazel build //...\`.
+
+          Please review the changes carefully before merging."
+
+      - name: Comment on PR (failure or no changes)
+        if: >-
+          (steps.check-changes.outputs.has_changes == 'false' ||
+           steps.validate.outcome != 'success') &&
+          needs.merge-and-pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ steps.check-changes.outputs.has_changes }}" = "false" ]; then
+            msg="🤖 **Copilot Auto-Fix**: No changes were produced. Manual intervention needed."
+          else
+            msg="🤖 **Copilot Auto-Fix Failed**: Changes were produced but \`bazel build\` validation failed. Manual intervention needed."
+          fi
+          gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" --body "$msg"
+
+      - name: Revert on validation failure
+        if: steps.check-changes.outputs.has_changes == 'true' && steps.validate.outcome != 'success'
+        run: git checkout -- .
