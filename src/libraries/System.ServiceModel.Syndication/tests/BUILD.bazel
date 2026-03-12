@@ -1,0 +1,22 @@
+load("//src/tests:live_test.bzl", "library_test")
+
+library_test(
+    name = "System.ServiceModel.Syndication.Tests",
+    srcs = glob(["**/*.cs"]),
+    data = glob(["TestFeeds/**"]),
+    deps = [
+        "//src/libraries/System.ServiceModel.Syndication:ref_System.ServiceModel.Syndication",
+        "//src/libraries/System.Runtime.Serialization.Primitives:ref_System.Runtime.Serialization.Primitives",
+        "//src/libraries/System.Runtime.Serialization.Xml:ref_System.Runtime.Serialization.Xml",
+        "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
+        "//src/libraries/System.Xml.XDocument:ref_System.Xml.XDocument",
+        "//src/libraries/System.Xml.XmlSerializer:ref_System.Xml.XmlSerializer",
+        "//src/libraries/Common/tests:TestUtilities",
+        "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//microsoft.dotnet.xunitextensions",
+        "@paket.main//xunit.abstractions",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    size = "large",
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+)

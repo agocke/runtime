@@ -1,0 +1,18 @@
+load("//src/libraries:defs.bzl", "live_csharp_library")
+
+live_csharp_library(
+    name = "Microsoft.Extensions.DependencyInjection.Specification.Tests",
+    srcs = glob(["**/*.cs"]),
+    deps = [
+        "//src/libraries/Microsoft.Extensions.DependencyInjection.Abstractions:ref_Microsoft.Extensions.DependencyInjection.Abstractions",
+        "//src/libraries/System.Threading:ref_System.Threading",
+        "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
+        "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
+        "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    nullable = "disable",
+    nowarn = ["nullable", "CA1852", "1591"],
+    visibility = ["//visibility:public"],
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/AspNetCore.snk",
+)

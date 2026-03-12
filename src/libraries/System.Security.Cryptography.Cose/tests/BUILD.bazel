@@ -1,0 +1,26 @@
+load("//src/tests:live_test.bzl", "library_test")
+
+library_test(
+    name = "System.Security.Cryptography.Cose.Tests",
+    srcs = glob(["**/*.cs"]) + [
+        "//src/libraries/Common/tests:System/Security/Cryptography/ByteUtils.cs",
+        "//src/libraries/Common/tests:System/Security/Cryptography/PlatformSupport.cs",
+        "//src/libraries/Common/tests:System/Security/Cryptography/CngKeyWrapper.cs",
+        "//src/libraries/Common/tests:System/Security/Cryptography/AlgorithmImplementations/MLDsa/MLDsaTestsData.cs",
+        "//src/libraries/Common/tests:System/Security/Cryptography/AlgorithmImplementations/MLDsa/MLDsaTestsData.Ietf.cs",
+        "//src/libraries/Common:src/System/Experimentals.cs",
+    ],
+    deps = [
+        "//src/libraries/System.Security.Cryptography.Cose:ref_System.Security.Cryptography.Cose",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+        "//src/libraries/System.Formats.Cbor:ref_System.Formats.Cbor",
+        "//src/libraries/Common/tests:TestUtilities",
+        "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//microsoft.dotnet.xunitextensions",
+        "@paket.main//xunit.abstractions",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    nowarn = ["SYSLIB5006"],
+    size = "large",
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+)

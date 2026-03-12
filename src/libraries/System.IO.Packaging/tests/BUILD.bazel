@@ -1,0 +1,26 @@
+load("//src/tests:live_test.bzl", "library_test")
+
+library_test(
+    name = "System.IO.Packaging.Tests",
+    srcs = glob(
+        ["**/*.cs"],
+        exclude = ["Tests.NetFramework.cs"],
+    ) + [
+        "//src/libraries/Common/tests:TestUtilities/System/DisableParallelization.cs",
+        "//src/libraries/Common/tests:System/IO/WrappedStream.cs",
+    ],
+    deps = [
+        "//src/libraries/System.IO.Packaging:ref_System.IO.Packaging",
+        "//src/libraries/System.IO.Compression:ref_System.IO.Compression",
+        "//src/libraries/System.Net.Mail:ref_System.Net.Mail",
+        "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
+        "//src/libraries/System.Xml.XDocument:ref_System.Xml.XDocument",
+        "//src/libraries/Common/tests:TestUtilities",
+        "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//microsoft.dotnet.xunitextensions",
+        "@paket.main//xunit.abstractions",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    size = "large",
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+)

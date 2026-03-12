@@ -2,6 +2,9 @@ load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_ass
 
 exports_files([
     "ref/Microsoft.Extensions.Diagnostics.cs",
+    "src/Metrics/Configuration/MetricsConfigureOptions.cs",
+    "src/Metrics/DebugConsoleMetricListener.cs",
+    "src/Metrics/ListenerSubscription.cs",
 ])
 
 netcoreapp_ref_assembly(
