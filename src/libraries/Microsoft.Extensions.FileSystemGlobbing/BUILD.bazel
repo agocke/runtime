@@ -1,0 +1,38 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+
+exports_files([
+    "ref/Microsoft.Extensions.FileSystemGlobbing.cs",
+])
+
+netcoreapp_ref_assembly(
+    name = "ref_Microsoft.Extensions.FileSystemGlobbing",
+    srcs = [
+        "ref/Microsoft.Extensions.FileSystemGlobbing.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections:ref_System.Collections",
+    ],
+)
+
+netcoreapp_impl_assembly(
+    name = "impl_Microsoft.Extensions.FileSystemGlobbing",
+    multitarget = True,
+    srcs = glob(["src/**/*.cs"]) + [
+        "//src/libraries/System.Private.CoreLib:src/System/Numerics/Hashing/HashHelpers.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries/System.Collections:ref_System.Collections",
+        "//src/libraries/System.Linq:ref_System.Linq",
+        "//src/libraries/System.Memory:ref_System.Memory",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+)
+
+ref_impl_pair(
+    name = "live_Microsoft.Extensions.FileSystemGlobbing",
+    ref = ":ref_Microsoft.Extensions.FileSystemGlobbing",
+    lib = ":impl_Microsoft.Extensions.FileSystemGlobbing",
+    visibility = ["//visibility:public"],
+)

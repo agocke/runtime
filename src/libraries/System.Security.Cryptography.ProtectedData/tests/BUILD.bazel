@@ -1,0 +1,21 @@
+load("//src/tests:live_test.bzl", "library_test")
+
+library_test(
+    name = "System.Security.Cryptography.ProtectedData.Tests",
+    srcs = glob(["**/*.cs"]) + [
+        "//src/libraries/Common/tests:System/Security/Cryptography/ByteUtils.cs",
+    ],
+    deps = [
+        "//src/libraries/System.Security.Cryptography.ProtectedData:impl_System.Security.Cryptography.ProtectedData",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+        "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
+        "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
+        "//src/libraries/Common/tests:TestUtilities",
+        "@paket.main//microsoft.dotnet.xunitassert",
+        "@paket.main//microsoft.dotnet.xunitextensions",
+        "@paket.main//xunit.abstractions",
+        "@paket.main//xunit.extensibility.core",
+    ],
+    allow_unsafe_blocks = True,
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+)

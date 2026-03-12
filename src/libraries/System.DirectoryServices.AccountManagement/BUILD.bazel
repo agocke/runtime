@@ -1,0 +1,39 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+
+exports_files(["ref/System.DirectoryServices.AccountManagement.cs"])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.DirectoryServices.AccountManagement",
+    srcs = ["ref/System.DirectoryServices.AccountManagement.cs"],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+        "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
+    ],
+)
+
+netcoreapp_impl_assembly(
+    name = "impl_System.DirectoryServices.AccountManagement",
+    pnse = True,
+    pnse_message = "SR.DirectoryServicesAccountManagement_PlatformNotSupported",
+    pnse_ref_srcs = ["ref/System.DirectoryServices.AccountManagement.cs"],
+    multitarget = True,
+    srcs = [],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
+        "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+    supported_os_platforms_short = ["windows"],
+    nullable = "disable",
+)
+
+ref_impl_pair(
+    name = "live_System.DirectoryServices.AccountManagement",
+    ref = ":ref_System.DirectoryServices.AccountManagement",
+    lib = ":impl_System.DirectoryServices.AccountManagement",
+    visibility = ["//visibility:public"],
+)

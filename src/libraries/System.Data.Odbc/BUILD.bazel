@@ -1,0 +1,38 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+
+exports_files(["ref/System.Data.Odbc.cs"])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.Data.Odbc",
+    srcs = ["ref/System.Data.Odbc.cs"],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
+        "//src/libraries/System.Data.Common:ref_System.Data.Common",
+    ],
+)
+
+netcoreapp_impl_assembly(
+    name = "impl_System.Data.Odbc",
+    pnse = True,
+    pnse_message = "SR.Odbc_PlatformNotSupported",
+    pnse_ref_srcs = ["ref/System.Data.Odbc.cs"],
+    multitarget = True,
+    srcs = [],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
+        "//src/libraries/System.Data.Common:ref_System.Data.Common",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+    supported_os_platforms_short = ["windows"],
+)
+
+ref_impl_pair(
+    name = "live_System.Data.Odbc",
+    ref = ":ref_System.Data.Odbc",
+    lib = ":impl_System.Data.Odbc",
+    visibility = ["//visibility:public"],
+)

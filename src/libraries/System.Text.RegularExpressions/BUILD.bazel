@@ -3,7 +3,7 @@ load("//:defs.bzl", "csharp_library", "gen_resx_source")
 
 exports_files([
     "ref/System.Text.RegularExpressions.cs",
-])
+] + glob(["src/**/*.cs"]) + glob(["src/**/*.resx"]))
 
 gen_resx_source(
     name = "gen_resx_RegexGenerator",
