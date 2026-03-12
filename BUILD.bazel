@@ -56,6 +56,32 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+# Compound config_settings: CLR config × Windows.
+# Used by CLR_CONFIG_COPTS and NATIVE_CONFIG_COPTS to select MSVC flags
+# (/O2, /MT, /MTd) vs GCC/Clang flags (-O2).  These are more specific
+# than the base clr_* settings, so Bazel picks them when both match
+# (on Windows).
+config_setting(
+    name = "clr_debug_windows",
+    flag_values = {"//:clr_config": "debug"},
+    constraint_values = ["@platforms//os:windows"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "clr_checked_windows",
+    flag_values = {"//:clr_config": "checked"},
+    constraint_values = ["@platforms//os:windows"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "clr_release_windows",
+    flag_values = {"//:clr_config": "release"},
+    constraint_values = ["@platforms//os:windows"],
+    visibility = ["//visibility:public"],
+)
+
 # ── Libraries config_settings ────────────────────────────────────────
 config_setting(
     name = "libs_debug",

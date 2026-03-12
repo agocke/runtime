@@ -222,11 +222,17 @@ CLR_CONFIG_DEFINES = select({
 
 # --- Debug/checked/release copts ---
 # Flags that vary by config but aren't -D defines (e.g. optimization level).
-# Checked and release both need -O2.  Previously release relied on Bazel's
-# global -c opt, but that also switches library C# from DEBUG to RELEASE,
-# which is wrong for the "release CLR + debug libs" CI configuration.
+# Checked and release both need -O2 (Clang) or /O2 (MSVC).  Previously
+# release relied on Bazel's global -c opt, but that also switches library
+# C# from DEBUG to RELEASE, which is wrong for the "release CLR + debug
+# libs" CI configuration.
+#
+# The *_windows config_settings are more specific than the base ones
+# (they add a constraint_values match), so Bazel picks them on Windows.
 CLR_CONFIG_COPTS = select({
     "//:clr_debug": [],
+    "//:clr_checked_windows": ["/O2"],
+    "//:clr_release_windows": ["/O2"],
     "//:clr_checked": ["-O2"],
     "//:clr_release": ["-O2"],
 })

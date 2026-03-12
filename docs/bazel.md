@@ -84,6 +84,11 @@ layout.
 - ILLink (IL trimmer/linker)
 - Installer/packaging (NuGet packs, runtime packs, targeting packs)
 - Additional platforms (linux-arm64, macOS, Windows)
+  - **Windows (win-x64)**: corehost native components (dotnet.exe, hostfxr.dll,
+    hostpolicy.dll) build successfully with MSVC. Infrastructure includes
+    MSVC compiler/linker flags in `cc_defs.bzl`, static debug CRT (`/MTd`)
+    matching CMake's `configurecompiler.cmake`, and Windows config headers
+    for corehost and minipal.
 - Full test suite integration
 - Eliminate MSBuild dependency for managed builds
 
@@ -94,11 +99,12 @@ MSBuild's `-rc` (runtime configuration) and `-lc` (libraries configuration):
 
 | Config flags | CoreCLR | Libraries |
 |---|---|---|
-| *(default)* | Debug | Debug |
+| *(default)* | Checked | Debug |
 | `--config=release` | Release | Release |
 | `--config=clr_release` | Release | Debug |
+| `--config=clr_debug` | Debug | Debug |
 | `--config=clr_checked` | Checked | Debug |
-| `--config=libs_release` | Debug | Release |
+| `--config=libs_release` | Checked | Release |
 | `--config=clr_checked --config=libs_release` | Checked | Release |
 
 Implementation uses modern Bazel `string_flag` build settings (`//:clr_config`,
