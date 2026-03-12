@@ -24,10 +24,11 @@ layout.
   DAC (libmscordaccore.so), DBI (libmscordbi.so), createdump
 - **Managed C#**: System.Private.CoreLib, 173 framework assemblies
   (152 of 150 non-shim NetCoreApp assemblies + shims + extras),
+  plus ~75 OOB/Extensions libraries,
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
-  117 library test suites (Microsoft.CSharp,
+  134 library test suites (Microsoft.CSharp,
   Microsoft.Extensions.Caching.Memory,
   Microsoft.Extensions.Configuration,
   Microsoft.Extensions.Configuration.Binder,
@@ -115,7 +116,7 @@ layout.
 ### What's Next
 
 - Remaining managed libraries (21 NetFxReference shims + 5 non-shim assemblies not yet in Bazel)
-- Library unit tests (117 of ~187 libraries have Bazel test BUILD files)
+- Library unit tests (134 of ~187 libraries have Bazel test BUILD files)
 - CoreCLR diagnostic tooling: SOS
 - CoreCLR tools: SuperPMI, ildasm (full binary)
 - ILC BUILD files and end-to-end NativeAOT pipeline (see [NativeAOT Compilation Pipeline](#nativeaot-compilation-pipeline))
