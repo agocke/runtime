@@ -28,7 +28,7 @@ layout.
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
-  135 library test suites (Microsoft.CSharp,
+  136 library test suites (Microsoft.CSharp,
   Microsoft.Extensions.Caching.Memory,
   Microsoft.Extensions.Configuration,
   Microsoft.Extensions.Configuration.Binder,
@@ -88,6 +88,7 @@ layout.
   System.Runtime.Serialization.Json,
   System.Runtime.Serialization.Primitives, System.Runtime.Serialization.Xml,
   System.Security.Claims, System.Security.Cryptography,
+  System.Security.Cryptography.Cose,
   System.Security.Cryptography.Pkcs,
   System.Security.Cryptography.ProtectedData,
   System.Security.Cryptography.Xml,
@@ -104,9 +105,7 @@ layout.
   Microsoft.Win32.Registry (Windows), System.Resources.Extensions
   (needs System.Drawing.Common), System.Runtime.Serialization.Formatters
   (needs System.Drawing.Common), System.Security.AccessControl (Windows),
-  System.Security.Principal.Windows (Windows);
-  plus 1 test suite with BUILD files needing external packages:
-  System.Security.Cryptography.Cose (needs Microsoft.IdentityModel.Tokens))
+  System.Security.Principal.Windows (Windows)
 - **Per-component configuration**: independent debug/checked/release for
   CoreCLR and Libraries (matching MSBuild's `-rc`/`-lc` flags)
 - **Runtime layout**: `runtime_layout` rule assembles stripped binaries into
