@@ -12,7 +12,7 @@ output binaries and support all platforms CMake/MSBuild currently targets.
 The Bazel build produces a fully functional .NET runtime on **linux-x64**.
 All native C/C++ components build with Bazel (CoreCLR, corehost, 6 native
 interop libs, NativeAOT runtime). Managed C# libraries (System.Private.CoreLib,
-166 framework assemblies) also build with Bazel via `rules_dotnet`.
+173 framework assemblies) also build with Bazel via `rules_dotnet`.
 A hybrid build script assembles everything into a standard `dotnet` runtime
 layout.
 
@@ -23,7 +23,7 @@ layout.
   NativeAOT runtime, standalone GC, AOT JIT interface,
   DAC (libmscordaccore.so), DBI (libmscordbi.so), createdump
 - **Managed C#**: System.Private.CoreLib, 173 framework assemblies
-  (145 of 150 non-shim NetCoreApp assemblies + shims + extras),
+  (152 of 150 non-shim NetCoreApp assemblies + shims + extras),
   ref assemblies, source generators
 - **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
@@ -514,7 +514,7 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 ## 5. Managed Libraries (`src/libraries/`) — 🔨 In Progress
 
 Managed C# framework assemblies built with `rules_dotnet`. The NetCoreApp shared
-framework contains 150 assemblies (per `NetCoreAppLibrary.props`). Of those, **145
+framework contains 150 assemblies (per `NetCoreAppLibrary.props`). Of those, **152
 have `impl_` targets** in Bazel and are in the `impl_netcoreapp` aggregate.
 Windows-only and browser-only libraries (System.IO.Pipes.AccessControl,
 System.Threading.AccessControl, Microsoft.Win32.Registry,
@@ -532,8 +532,9 @@ and System.Net.Quic (msquic native library + full Linux implementation).
   - [x] `src/libraries/System.Private.CoreLib/src/files.bzl` — source file lists
 
 ### 5.2 Framework ref + impl assemblies — 🔨 In Progress
-- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (158 assemblies)
+- [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (165 assemblies)
 - [x] OOB library BUILD files: System.IO.Packaging, System.ServiceModel.Syndication, System.Security.Cryptography.Cose, System.IO.Ports, System.Security.Permissions, System.Runtime.Caching, Microsoft.Bcl.Cryptography, Microsoft.Bcl.Memory, System.Windows.Extensions (ref only)
+- [x] Microsoft.Extensions Layer 2 libraries (12): Options.ConfigurationExtensions, Options.DataAnnotations, Configuration.Binder, Configuration.CommandLine, Configuration.EnvironmentVariables, Configuration.FileExtensions, Configuration.Ini, Configuration.Json, Configuration.UserSecrets, Configuration.Xml, FileProviders.Composite, FileProviders.Physical
 - [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
 - [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator
@@ -698,15 +699,15 @@ DOTNET_ROOT=artifacts/bazel-dotnet artifacts/bazel-dotnet/dotnet <app.dll>
 
 The NetCoreApp shared framework (`NetCoreAppLibrary.props`) contains 150
 non-shim assemblies (plus 22 NetFxReference shims). Of the non-shim assemblies,
-**145 are Bazel-built** and in the `impl_netcoreapp` aggregate; **5 still need
-special support**. The `impl_netcoreapp` filegroup contains 158 total entries
+**152 are Bazel-built** and in the `impl_netcoreapp` aggregate; **5 still need
+special support**. The `impl_netcoreapp` filegroup contains 165 total entries
 (including 12 non-NetCoreApp extras and 1 NetFxReference shim: mscorlib).
 
 ### 9.1 Status Summary
 
 | Category | Count | Description |
 |----------|------:|-------------|
-| ✅ In `impl_netcoreapp` | 158 | Built and aggregated (145 non-shim NetCoreApp + mscorlib shim + 12 non-NetCoreApp extras) |
+| ✅ In `impl_netcoreapp` | 165 | Built and aggregated (152 non-shim NetCoreApp + mscorlib shim + 12 non-NetCoreApp extras) |
 | ❌ VB project | 1 | Microsoft.VisualBasic.Core — needs VB compiler in Bazel |
 | ❌ Native deps | 1 | System.Net.Quic — needs msquic native library + full Linux impl |
 | ❌ NetFxRef shims | 21 | Legacy .NET Framework type-forwarder shims (System, System.Core, etc.) |
