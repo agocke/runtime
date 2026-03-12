@@ -12,6 +12,8 @@ netcoreapp_ref_assembly(
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.CodeDom:ref_System.CodeDom",
+        "//src/libraries/System.Runtime.Serialization.Primitives:ref_System.Runtime.Serialization.Primitives",
+        "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
     ],
 )
 

@@ -1,43 +1,38 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
 
 exports_files([
-    "ref/Microsoft.Extensions.Http.cs",
+    "ref/Microsoft.Extensions.Logging.cs",
+    "ref/Microsoft.Extensions.Logging.Forwards.cs",
 ])
 
 netcoreapp_ref_assembly(
-    name = "ref_Microsoft.Extensions.Http",
+    name = "ref_Microsoft.Extensions.Logging",
     srcs = [
-        "ref/Microsoft.Extensions.Http.cs",
+        "ref/Microsoft.Extensions.Logging.cs",
+        "ref/Microsoft.Extensions.Logging.Forwards.cs",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
-        "//src/libraries/Microsoft.Extensions.Configuration.Abstractions:ref_Microsoft.Extensions.Configuration.Abstractions",
+        "//src/libraries/Microsoft.Extensions.DependencyInjection:ref_Microsoft.Extensions.DependencyInjection",
         "//src/libraries/Microsoft.Extensions.DependencyInjection.Abstractions:ref_Microsoft.Extensions.DependencyInjection.Abstractions",
-        "//src/libraries/Microsoft.Extensions.Diagnostics:ref_Microsoft.Extensions.Diagnostics",
-        "//src/libraries/Microsoft.Extensions.Logging:ref_Microsoft.Extensions.Logging",
         "//src/libraries/Microsoft.Extensions.Logging.Abstractions:ref_Microsoft.Extensions.Logging.Abstractions",
         "//src/libraries/Microsoft.Extensions.Options:ref_Microsoft.Extensions.Options",
-        "//src/libraries/System.ComponentModel:ref_System.ComponentModel",
-        "//src/libraries/System.Net.Http:ref_System.Net.Http",
-        "//src/libraries/System.Net.Primitives:ref_System.Net.Primitives",
     ],
 )
 
 netcoreapp_impl_assembly(
-    name = "impl_Microsoft.Extensions.Http",
+    name = "impl_Microsoft.Extensions.Logging",
     multitarget = True,
     srcs = glob(["src/**/*.cs"]) + [
-        "//src/libraries/Common:src/Extensions/NonCapturingTimer/NonCapturingTimer.cs",
-        "//src/libraries/Common:src/Extensions/TypeNameHelper/TypeNameHelper.cs",
-        "//src/libraries/Common:src/System/Net/Http/UriRedactionHelper.cs",
+        "//src/libraries/Common:src/Extensions/ProviderAliasUtilities/ProviderAliasUtilities.cs",
+        "//src/libraries/Common:src/Extensions/Logging/NullExternalScopeProvider.cs",
+        "//src/libraries/Common:src/Extensions/Logging/NullScope.cs",
+        "//src/libraries/Common:src/Extensions/Logging/DebuggerDisplayFormatting.cs",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
-        "//src/libraries/System.Net.Http:ref_System.Net.Http",
-        "//src/libraries/Microsoft.Extensions.Configuration.Abstractions:ref_Microsoft.Extensions.Configuration.Abstractions",
+        "//src/libraries/Microsoft.Extensions.DependencyInjection:ref_Microsoft.Extensions.DependencyInjection",
         "//src/libraries/Microsoft.Extensions.DependencyInjection.Abstractions:ref_Microsoft.Extensions.DependencyInjection.Abstractions",
-        "//src/libraries/Microsoft.Extensions.Diagnostics:ref_Microsoft.Extensions.Diagnostics",
-        "//src/libraries/Microsoft.Extensions.Logging:ref_Microsoft.Extensions.Logging",
         "//src/libraries/Microsoft.Extensions.Logging.Abstractions:ref_Microsoft.Extensions.Logging.Abstractions",
         "//src/libraries/Microsoft.Extensions.Options:ref_Microsoft.Extensions.Options",
         "//src/libraries/System.Collections:ref_System.Collections",
@@ -46,15 +41,14 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Diagnostics.DiagnosticSource:ref_System.Diagnostics.DiagnosticSource",
         "//src/libraries/System.Linq:ref_System.Linq",
         "//src/libraries/System.Memory:ref_System.Memory",
-        "//src/libraries/System.Net.Primitives:ref_System.Net.Primitives",
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "src/Resources/Strings.resx",
 )
 
 ref_impl_pair(
-    name = "live_Microsoft.Extensions.Http",
-    ref = ":ref_Microsoft.Extensions.Http",
-    lib = ":impl_Microsoft.Extensions.Http",
+    name = "live_Microsoft.Extensions.Logging",
+    ref = ":ref_Microsoft.Extensions.Logging",
+    lib = ":impl_Microsoft.Extensions.Logging",
     visibility = ["//visibility:public"],
 )
