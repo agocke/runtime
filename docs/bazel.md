@@ -535,6 +535,10 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 - [x] `src/libraries/BUILD.bazel` — root-level ref/impl targets + `impl_netcoreapp` aggregate (165 assemblies)
 - [x] OOB library BUILD files: System.IO.Packaging, System.ServiceModel.Syndication, System.Security.Cryptography.Cose, System.IO.Ports, System.Security.Permissions, System.Runtime.Caching, Microsoft.Bcl.Cryptography, Microsoft.Bcl.Memory, System.Windows.Extensions (ref only)
 - [x] Microsoft.Extensions Layer 2 libraries (12): Options.ConfigurationExtensions, Options.DataAnnotations, Configuration.Binder, Configuration.CommandLine, Configuration.EnvironmentVariables, Configuration.FileExtensions, Configuration.Ini, Configuration.Json, Configuration.UserSecrets, Configuration.Xml, FileProviders.Composite, FileProviders.Physical
+- [x] Microsoft.Extensions Layer 2 additional (3): Logging.Configuration, Caching.Memory, Diagnostics
+- [x] Microsoft.Extensions Layer 3 libraries (7): Hosting.Abstractions, Logging.Console, Logging.Debug, Logging.EventLog, Logging.EventSource, Logging.TraceSource, Http
+- [x] Microsoft.Extensions Layer 4 libraries (4): Hosting, Hosting.Systemd, Hosting.WindowsServices, DependencyModel
+- [x] System.ServiceProcess.ServiceController (PNSE stub for non-Windows)
 - [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
 - [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
 - [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator
