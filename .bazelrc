@@ -2,10 +2,11 @@
 #
 # Per-component configuration (matching MSBuild's -rc / -lc flags):
 #
-#   CoreCLR (clr_config):   debug (default), checked, release
+#   CoreCLR (clr_config):   debug, checked (default), release
 #   Libraries (libs_config): debug (default), release
 #
 # Use --config flags to select:
+#   --config=clr_debug       Debug CLR
 #   --config=clr_checked     Checked CLR (debug asserts + release optimization)
 #   --config=clr_release     Release CLR
 #   --config=libs_release    Release libraries
@@ -146,9 +147,6 @@ build --host_per_file_copt=src/native/external/.*@-w
 build --per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
 build --host_per_file_copt=.*safecrt_input_s.*@-U_UNICODE,-UUNICODE
 
-# Preserve debug symbols (match CMake behavior of always including -g)
-build --strip=never
-
 # --- Linux-specific settings ---
 # Linker hardening, shared object naming, and lld.
 # These are no-ops or harmful on macOS, so they live behind --config=linux.
@@ -175,14 +173,19 @@ build --enable_platform_specific_config
 # src/native/native_defs.bzl.  The --config flags below set the
 # string_flag values that drive those select() expressions.
 
-# --- CoreCLR default: debug ---
-build --//:clr_config=debug
+# --- CoreCLR default: checked ---
+build --//:clr_config=checked
 
 # --- Libraries default: debug ---
 build --//:libs_config=debug
 
 # =====================================================================
-# --config=clr_checked: Checked CoreCLR
+# --config=clr_debug: Debug CoreCLR
+# =====================================================================
+build:clr_debug --//:clr_config=debug
+
+# =====================================================================
+# --config=clr_checked: Checked CoreCLR (same as default)
 # =====================================================================
 build:clr_checked --//:clr_config=checked
 
@@ -190,6 +193,7 @@ build:clr_checked --//:clr_config=checked
 # --config=clr_release: Release CoreCLR
 # =====================================================================
 build:clr_release --//:clr_config=release
+build:clr_release -c opt
 
 # =====================================================================
 # --config=libs_release: Release libraries
@@ -201,10 +205,4 @@ build:libs_release --//:libs_config=release
 # =====================================================================
 build:release --config=clr_release
 build:release --config=libs_release
-# Enable compiler optimizations.  System.Private.CoreLib uses
-# override_debug to control its own DEBUG/RELEASE defines via
-# select() on //:clr_config, so it is safe to mix CLR and library
-# configurations.  The -c opt here switches the default C# compilation
-# from /define:DEBUG to /define:RELEASE for library targets and enables
-# native optimizations.
-build:release -c opt
+# Note: -c opt is on clr_release, so it applies here too.
