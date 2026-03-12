@@ -16,7 +16,7 @@ library_test(
     deps = [
         "//src/libraries/Microsoft.Extensions.Configuration:impl_Microsoft.Extensions.Configuration",
         "//src/libraries/Microsoft.Extensions.Configuration.Abstractions:ref_Microsoft.Extensions.Configuration.Abstractions",
-        "//src/libraries/Microsoft.Extensions.Configuration.Binder:ref_Microsoft.Extensions.Configuration.Binder",
+        "//src/libraries/Microsoft.Extensions.Configuration.Binder:impl_Microsoft.Extensions.Configuration.Binder",
         "//src/libraries/Microsoft.Extensions.FileProviders.Abstractions:ref_Microsoft.Extensions.FileProviders.Abstractions",
         "//src/libraries/Microsoft.Extensions.Primitives:ref_Microsoft.Extensions.Primitives",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
