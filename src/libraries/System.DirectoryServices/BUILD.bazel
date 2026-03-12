@@ -1,0 +1,62 @@
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+
+exports_files([
+    "ref/System.DirectoryServices.cs",
+    "ref/System.DirectoryServices.manual.cs",
+])
+
+netcoreapp_ref_assembly(
+    name = "ref_System.DirectoryServices",
+    srcs = [
+        "ref/System.DirectoryServices.cs",
+        "ref/System.DirectoryServices.manual.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
+        "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
+        "//src/libraries/System.IO.FileSystem.AccessControl:ref_System.IO.FileSystem.AccessControl",
+        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
+        "//src/libraries/System.Security.AccessControl:ref_System.Security.AccessControl",
+        "//src/libraries/System.Security.Permissions:ref_System.Security.Permissions",
+        "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
+    ],
+)
+
+netcoreapp_impl_assembly(
+    name = "impl_System.DirectoryServices",
+    pnse = True,
+    pnse_message = "SR.DirectoryServices_PlatformNotSupported",
+    pnse_ref_srcs = [
+        "ref/System.DirectoryServices.cs",
+    ],
+    multitarget = True,
+    srcs = [
+        "ref/System.DirectoryServices.manual.cs",
+    ],
+    deps = [
+        "//src/libraries:ref_System.Runtime",
+        "//src/libraries:ref_System.ComponentModel.Primitives",
+        "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
+        "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
+        "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
+        "//src/libraries/System.IO.FileSystem.AccessControl:ref_System.IO.FileSystem.AccessControl",
+        "//src/libraries/System.ObjectModel:ref_System.ObjectModel",
+        "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
+        "//src/libraries/System.Security.AccessControl:ref_System.Security.AccessControl",
+        "//src/libraries/System.Security.Permissions:ref_System.Security.Permissions",
+        "//src/libraries/System.Security.Principal.Windows:ref_System.Security.Principal.Windows",
+    ],
+    resx_file = "src/Resources/Strings.resx",
+    supported_os_platforms_short = ["windows"],
+)
+
+ref_impl_pair(
+    name = "live_System.DirectoryServices",
+    ref = ":ref_System.DirectoryServices",
+    lib = ":impl_System.DirectoryServices",
+    visibility = ["//visibility:public"],
+)
