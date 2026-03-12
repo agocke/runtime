@@ -2,7 +2,17 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Reflection.Emit.Lightweight.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "DynamicILInfoTests.cs",
+        "DynamicMethodCreateDelegate.cs",
+        "DynamicMethodCtor.cs",
+        "DynamicMethodDefineParameter.cs",
+        "DynamicMethodGetBaseDefinition.cs",
+        "DynamicMethodGetILGenerator.cs",
+        "DynamicMethodInitLocals.cs",
+        "DynamicMethodToString.cs",
+        "Utilities.cs",
+    ],
     deps = [
         "//src/libraries/System.Reflection.Emit.Lightweight:ref_System.Reflection.Emit.Lightweight",
         "//src/libraries/System.Reflection.Emit:ref_System.Reflection.Emit",

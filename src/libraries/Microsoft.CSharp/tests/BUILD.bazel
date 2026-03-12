@@ -2,7 +2,33 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "Microsoft.CSharp.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "AccessTests.cs",
+        "AccessTests.netcoreapp.cs",
+        "ArrayHandling.cs",
+        "AssignmentTests.cs",
+        "BindingErrors.cs",
+        "CSharpArgumentInfoTests.cs",
+        "DefaultParameterTests.cs",
+        "DelegateInDynamicTests.cs",
+        "DynamicDebuggerProxyTests.cs",
+        "EnumArithmeticTests.cs",
+        "EnumUnaryOperationTests.cs",
+        "ExplicitConversionTests.cs",
+        "Helpers.cs",
+        "ImplicitConversionTests.cs",
+        "IndexingTests.cs",
+        "IntegerBinaryOperationTests.cs",
+        "IntegerUnaryOperationTests.cs",
+        "IsEventTests.cs",
+        "NamedArgumentTests.cs",
+        "NullableEnumUnaryOperationTest.cs",
+        "RuntimeBinderExceptionTests.cs",
+        "RuntimeBinderInternalCompilerExceptionTests.cs",
+        "RuntimeBinderTests.cs",
+        "UserDefinedShortCircuitOperators.cs",
+        "VarArgsTests.cs",
+    ] + [
         "//src/libraries/System.Private.CoreLib:src/System/Runtime/CompilerServices/IsExternalInit.cs",
     ],
     deps = [

@@ -2,17 +2,28 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.IO.Pipes.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            # Windows-only files
-            "NamedPipeTests/NamedPipeTest.CreateClient.Windows.cs",
-            "NamedPipeTests/NamedPipeTest.CurrentUserOnly.Windows.cs",
-            "NamedPipeTests/NamedPipeTest.MessageMode.Windows.cs",
-            "NamedPipeTests/NamedPipeTest.RunAsClient.Windows.cs",
-            "InteropTest.Windows.cs",
-        ],
-    ) + [
+    srcs = [
+        "AnonymousPipeTests/AnonymousPipeTest.CreateClient.cs",
+        "AnonymousPipeTests/AnonymousPipeTest.CreateServer.cs",
+        "AnonymousPipeTests/AnonymousPipeTest.CrossProcess.cs",
+        "AnonymousPipeTests/AnonymousPipeTest.Specific.cs",
+        "AssemblyInfo.cs",
+        "InteropTest.Unix.cs",
+        "NamedPipeTests/NamedPipeTest.CreateClient.Unix.cs",
+        "NamedPipeTests/NamedPipeTest.CreateClient.cs",
+        "NamedPipeTests/NamedPipeTest.CreateServer.cs",
+        "NamedPipeTests/NamedPipeTest.CrossProcess.cs",
+        "NamedPipeTests/NamedPipeTest.CurrentUserOnly.Unix.cs",
+        "NamedPipeTests/NamedPipeTest.CurrentUserOnly.cs",
+        "NamedPipeTests/NamedPipeTest.RunAsClient.Unix.cs",
+        "NamedPipeTests/NamedPipeTest.Specific.cs",
+        "NamedPipeTests/NamedPipeTest.UnixDomainSockets.cs",
+        "NativeOverlapped.unix.cs",
+        "PipeStream.ProtectedMethods.Tests.cs",
+        "PipeStreamConformanceTests.cs",
+        "UnifiedErrorHandlingTests.cs",
+        "XunitAssemblyAttributes.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Threading/Tasks/TaskTimeoutExtensions.cs",
     ],
     deps = [

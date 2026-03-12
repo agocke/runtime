@@ -3,7 +3,21 @@ load("//:defs.bzl", "csharp_binary")
 
 csharp_binary(
     name = "ResGen",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "FileStreamResource.cs",
+        "FileUtilities.cs",
+        "IResource.cs",
+        "InputFormatNotSupportedException.cs",
+        "LiveObjectResource.cs",
+        "Logger.cs",
+        "MSBuildResXReader.cs",
+        "NameUtilities.cs",
+        "ProcessResourceFiles.cs",
+        "Program.cs",
+        "StringResource.cs",
+        "TypeConverterByteArrayResource.cs",
+        "TypeConverterStringResource.cs",
+    ],
     deps = [
         "@paket.main//system.resources.extensions",
     ],

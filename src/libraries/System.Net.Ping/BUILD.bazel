@@ -20,15 +20,17 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
     ],
-    srcs = glob(
-        ["src/System/**/*.cs"],
-        exclude = [
-            "src/System/Net/NetworkInformation/Ping.OSX.cs",
-            "src/System/Net/NetworkInformation/Ping.Windows.cs",
-            "src/System/Net/NetworkInformation/Ping.Unix.cs",
-            "src/System/Net/NetworkInformation/Ping.PingUtility.cs",
-        ],
-    ) + [
+    srcs = [
+        "src/System/Net/NetworkInformation/IPStatus.cs",
+        "src/System/Net/NetworkInformation/IcmpV4MessageConstants.cs",
+        "src/System/Net/NetworkInformation/IcmpV6MessageConstants.cs",
+        "src/System/Net/NetworkInformation/Ping.RawSocket.cs",
+        "src/System/Net/NetworkInformation/Ping.cs",
+        "src/System/Net/NetworkInformation/PingCompletedEventArgs.cs",
+        "src/System/Net/NetworkInformation/PingException.cs",
+        "src/System/Net/NetworkInformation/PingOptions.cs",
+        "src/System/Net/NetworkInformation/PingReply.cs",
+    ] + [
         # Common sources
         "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",

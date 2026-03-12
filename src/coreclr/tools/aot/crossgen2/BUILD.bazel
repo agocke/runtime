@@ -24,7 +24,10 @@ resgen(
 
 csharp_binary(
     name = "crossgen2",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "Crossgen2RootCommand.cs",
+        "Program.cs",
+    ] + [
         "//src/coreclr/tools/Common:CommandLineHelpers.cs",
         "//src/coreclr/tools/Common:InstructionSetHelpers.cs",
         "//src/libraries/Common:src/System/SR.cs",

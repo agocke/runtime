@@ -10,7 +10,21 @@ gen_resx_source(
 
 library_test(
     name = "System.Net.Requests.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "AssemblyInfo.cs",
+        "AuthenticationManagerTest.cs",
+        "AuthorizationTest.cs",
+        "FileWebRequestTest.cs",
+        "FtpWebRequestTest.cs",
+        "GlobalProxySelectionTest.cs",
+        "HttpRequestCachePolicyTest.cs",
+        "HttpWebRequestTest.cs",
+        "HttpWebResponseHeaderTest.cs",
+        "HttpWebResponseTest.cs",
+        "LoggingTest.cs",
+        "RequestStreamTest.cs",
+        "WebRequestTest.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Net/Capability.Security.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.Certificates.cs",

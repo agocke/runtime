@@ -2,7 +2,25 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.IO.Compression.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "CompressionStreamUnitTests.Deflate.cs",
+        "CompressionStreamUnitTests.Gzip.cs",
+        "CompressionStreamUnitTests.ZLib.cs",
+        "Utilities/ClampedReadStream.cs",
+        "Utilities/StripHeaderAndFooter.cs",
+        "XunitAssemblyAttributes.cs",
+        "ZLibCompressionOptionsUnitTests.cs",
+        "ZipArchive/zip_CreateTests.Comments.cs",
+        "ZipArchive/zip_CreateTests.Unix.cs",
+        "ZipArchive/zip_CreateTests.cs",
+        "ZipArchive/zip_InvalidParametersAndStrangeFiles.cs",
+        "ZipArchive/zip_LargeFiles.cs",
+        "ZipArchive/zip_ManualAndCompatibilityTests.cs",
+        "ZipArchive/zip_ReadTests.cs",
+        "ZipArchive/zip_UpdateTests.Comments.cs",
+        "ZipArchive/zip_UpdateTests.cs",
+        "ZipArchive/zip_netcoreappTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/IO/PathFeatures.cs",
         "//src/libraries/Common/tests:System/IO/CallTrackingStream.cs",
         "//src/libraries/Common/tests:System/IO/Compression/CRC.cs",

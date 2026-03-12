@@ -2,7 +2,19 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Numerics.Vectors.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "GenericVectorTests.cs",
+        "GenericVectorUnsupportedTests.cs",
+        "MathHelper.cs",
+        "Matrix3x2Tests.cs",
+        "Matrix4x4Tests.cs",
+        "PlaneTests.cs",
+        "QuaternionTests.cs",
+        "Util.cs",
+        "Vector2Tests.cs",
+        "Vector3Tests.cs",
+        "Vector4Tests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/GenericMathTestMemberData.cs",
     ],
     deps = [

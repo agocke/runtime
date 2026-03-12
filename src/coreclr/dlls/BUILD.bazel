@@ -10,10 +10,5 @@ exports_files([
 
 cc_library(
     name = "dlls_headers",
-    hdrs = glob(
-        [
-            "**/*.h",
-        ],
-        allow_empty = True,
-    ) + ["//src/coreclr/dlls/mscorrc:resource.h"],
+    hdrs = ["mscoree/stdafx.h"] + ["//src/coreclr/dlls/mscorrc:resource.h"],
 )

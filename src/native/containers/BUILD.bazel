@@ -21,7 +21,28 @@ _SOURCES = [
     "dn-simdhash-utils.c",
 ]
 
-_HEADERS = glob(["*.h"]) + [
+_HEADERS = [
+    "dn-allocator.h",
+    "dn-fwd-list.h",
+    "dn-list.h",
+    "dn-queue.h",
+    "dn-simdhash-arch.h",
+    "dn-simdhash-ght-compatible.h",
+    "dn-simdhash-specialization-declarations.h",
+    "dn-simdhash-specialization.h",
+    "dn-simdhash-specializations.h",
+    "dn-simdhash-string-ptr.h",
+    "dn-simdhash-utils.h",
+    "dn-simdhash.h",
+    "dn-umap-t.h",
+    "dn-umap.h",
+    "dn-utils.h",
+    "dn-vector-priv.h",
+    "dn-vector-ptr.h",
+    "dn-vector-t.h",
+    "dn-vector-types.h",
+    "dn-vector.h",
+] + [
     "dn-sort-frag.inc",
 ]
 

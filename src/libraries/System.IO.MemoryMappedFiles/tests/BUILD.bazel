@@ -2,13 +2,20 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.IO.MemoryMappedFiles.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            # Windows-only
-            "MemoryMappedFilesTestsBase.Windows.cs",
-        ],
-    ) + [
+    srcs = [
+        "MemoryMappedFile.CreateFromFile.Tests.cs",
+        "MemoryMappedFile.CreateNew.Tests.cs",
+        "MemoryMappedFile.CreateOrOpen.Tests.cs",
+        "MemoryMappedFile.CrossProcess.cs",
+        "MemoryMappedFile.OpenExisting.Tests.cs",
+        "MemoryMappedFilesTestsBase.Unix.cs",
+        "MemoryMappedFilesTestsBase.cs",
+        "MemoryMappedViewAccessor.Tests.cs",
+        "MemoryMappedViewStream.Tests.cs",
+        "MemoryMappedViewStreamConformanceTests.cs",
+        "SafeMemoryMappedViewHandleTests.cs",
+        "XunitAssemblyAttributes.cs",
+    ] + [
         "//src/libraries/Common/tests:System/IO/TempFile.cs",
         "//src/libraries/Common:src/DisableRuntimeMarshalling.cs",
         "//src/libraries/Common:src/Interop/Windows/Interop.BOOL.cs",

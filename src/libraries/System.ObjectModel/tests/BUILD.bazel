@@ -2,10 +2,29 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.ObjectModel.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = ["TrimmingTests/**"],
-    ) + [
+    srcs = [
+        "KeyedCollection/ConcreteTestClasses.cs",
+        "KeyedCollection/Serialization.cs",
+        "KeyedCollection/TestMethods.cs",
+        "KeyedCollection/Utils.cs",
+        "ObservableCollection/ObservableCollection_ConstructorAndPropertyTests.cs",
+        "ObservableCollection/ObservableCollection_MethodsTest.cs",
+        "ObservableCollection/ObservableCollection_ReentrancyTests.cs",
+        "ObservableCollection/ObservableCollection_Serialization.cs",
+        "ReadOnlyDictionary/ReadOnlyDictionaryTests.cs",
+        "ReadOnlyDictionary/ReadOnlyDictionary_SerializationTests.cs",
+        "ReadOnlyObservableCollection/ReadOnlyObservableCollectionTests.cs",
+        "ReadOnlyObservableCollection/ReadOnlyObservableCollection_EventsTests.cs",
+        "ReadOnlyObservableCollection/ReadOnlyObservableCollection_SerializationTests.cs",
+        "System/Collections/ObjectModel/KeyedCollectionTests.cs",
+        "System/Collections/Specialized/NotifyCollectionChangedEventArgsTests.cs",
+        "System/ComponentModel/DataErrorsChangedEventArgsTests.cs",
+        "System/ComponentModel/PropertyChangedEventArgsTests.cs",
+        "System/ComponentModel/PropertyChangingEventArgsTests.cs",
+        "System/ComponentModel/TypeConverterAttributeTests.cs",
+        "System/ComponentModel/TypeDescriptionProviderAttributeTests.cs",
+        "System/Windows/Markup/ValueSerializerAttributeTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Collections/IEnumerableTest.cs",
         "//src/libraries/Common/tests:System/Collections/ICollectionTest.cs",
         "//src/libraries/Common/tests:System/Collections/IListTest.cs",

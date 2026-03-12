@@ -26,13 +26,32 @@ genrule(
 
 library_test(
     name = "System.Console.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            # Windows-only
-            "ConsoleEncoding.Windows.cs",
-        ],
-    ) + [
+    srcs = [
+        "BeepByBellChar.cs",
+        "CancelKeyPress.Unix.cs",
+        "CancelKeyPress.cs",
+        "Color.cs",
+        "ConsoleEncoding.cs",
+        "ConsoleKeyInfoTests.cs",
+        "ConsoleStream.cs",
+        "Helpers.cs",
+        "KeyParserTests.cs",
+        "ManualTests/ManualTests.cs",
+        "NonStandardConfiguration.Unix.cs",
+        "ReadAndWrite.cs",
+        "ReadKey.cs",
+        "RedirectedStream.cs",
+        "SetError.cs",
+        "SetIn.cs",
+        "SetOut.cs",
+        "SyncTextReader.cs",
+        "SyncTextWriter.cs",
+        "TermInfo.Unix.cs",
+        "ThreadSafety.cs",
+        "Timeout.cs",
+        "WindowAndCursorProps.cs",
+        "XunitAssemblyAttributes.cs",
+    ] + [
         "//src/libraries/System.Console:src/System/TermInfo.WellKnownStrings.cs",
         "//src/libraries/System.Console:src/System/TermInfo.WellKnownNumbers.cs",
         "//src/libraries/System.Console:src/System/TermInfo.Database.cs",

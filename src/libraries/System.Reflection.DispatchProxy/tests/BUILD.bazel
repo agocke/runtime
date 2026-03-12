@@ -14,13 +14,10 @@ live_csharp_library(
 
 library_test(
     name = "System.Reflection.DispatchProxy.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            "TestDependency/**",
-            "TrimmingTests/**",
-        ],
-    ),
+    srcs = [
+        "DispatchProxyTests.cs",
+        "TestTypes.cs",
+    ],
     deps = [
         ":System.Reflection.DispatchProxy.TestDependency",
         "//src/libraries/System.Reflection.DispatchProxy:ref_System.Reflection.DispatchProxy",

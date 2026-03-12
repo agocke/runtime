@@ -2,7 +2,15 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Diagnostics.Contracts.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "AssertTests.cs",
+        "AssumeTests.cs",
+        "ContractFailedTests.cs",
+        "ExistsTests.cs",
+        "ForAllTests.cs",
+        "Utilities.cs",
+        "ValueTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/ShouldNotBeInvokedException.cs",
     ],
     deps = [

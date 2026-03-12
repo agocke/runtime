@@ -2,7 +2,23 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Threading.Overlapped.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "AsyncResult.cs",
+        "DllImport.cs",
+        "HandleFactory.cs",
+        "OverlappedTests.cs",
+        "ThreadPoolBoundHandle_AllocateNativeOverlappedTests.cs",
+        "ThreadPoolBoundHandle_BindHandleTests.cs",
+        "ThreadPoolBoundHandle_DisposeTests.cs",
+        "ThreadPoolBoundHandle_FreeNativeOverlappedTests.cs",
+        "ThreadPoolBoundHandle_GetNativeOverlappedStateTests.cs",
+        "ThreadPoolBoundHandle_HandleTests.cs",
+        "ThreadPoolBoundHandle_Helpers.cs",
+        "ThreadPoolBoundHandle_IntegrationTests.cs",
+        "ThreadPoolBoundHandle_IntegrationTests.netcoreapp.cs",
+        "ThreadPoolBoundHandle_PreAllocatedOverlappedTests.cs",
+        "Win32Handle.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Threading/ThreadTestHelpers.cs",
     ],
     deps = [

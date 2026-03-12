@@ -10,7 +10,19 @@ gen_resx_source(
 
 library_test(
     name = "System.Net.WebSockets.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "WebSocketCloseTests.cs",
+        "WebSocketCreateTest.cs",
+        "WebSocketDeflateOptionsTests.cs",
+        "WebSocketDeflateTests.cs",
+        "WebSocketExceptionTests.cs",
+        "WebSocketKeepAliveTests.cs",
+        "WebSocketReceiveResultTests.cs",
+        "WebSocketStreamTests.cs",
+        "WebSocketTestStream.cs",
+        "WebSocketTests.cs",
+        "WebSocketUtf8Tests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Net/Configuration.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.WebSockets.cs",
         "//src/libraries/Common/tests:System/IO/ConnectedStreams.cs",

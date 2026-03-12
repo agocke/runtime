@@ -2,7 +2,16 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Runtime.Serialization.Primitives.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "System/Runtime/Serialization/CollectionDataContractAttributeTests.cs",
+        "System/Runtime/Serialization/ContractNamespaceAttributeTests.cs",
+        "System/Runtime/Serialization/DataContractAttributeTests.cs",
+        "System/Runtime/Serialization/DataMemberAttributeTests.cs",
+        "System/Runtime/Serialization/EnumMemberAttributeTests.cs",
+        "System/Runtime/Serialization/IgnoreDataMemberAttributeTests.cs",
+        "System/Runtime/Serialization/InvalidDataContractExceptionTests.cs",
+        "System/Runtime/Serialization/KnownTypeAttributeTests.cs",
+    ],
     deps = [
         "//src/libraries/System.Runtime.Serialization.Primitives:ref_System.Runtime.Serialization.Primitives",
         "//src/libraries/System.Runtime.Serialization.Formatters:impl_System.Runtime.Serialization.Formatters",

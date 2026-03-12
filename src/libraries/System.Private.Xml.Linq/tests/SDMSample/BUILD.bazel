@@ -2,7 +2,19 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Xml.Linq.SDMSample.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "SDMAttribute.cs",
+        "SDMCData.cs",
+        "SDMComment.cs",
+        "SDMContainer.cs",
+        "SDMDocument.cs",
+        "SDMElement.cs",
+        "SDMLoadSave.cs",
+        "SDMMisc.cs",
+        "SDMNode.cs",
+        "SDMPI.cs",
+        "SDMXName.cs",
+    ],
     deps = [
         "//src/libraries/System.Xml.XDocument:ref_System.Xml.XDocument",
         "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",

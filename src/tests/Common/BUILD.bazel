@@ -4,7 +4,21 @@ load("//src/libraries:defs.bzl", "live_csharp_library")
 
 csharp_library(
     name = "XUnitWrapperGenerator",
-    srcs = glob(["XUnitWrapperGenerator/*.cs"]) + [
+    srcs = [
+        "XUnitWrapperGenerator/CodeBuilder.cs",
+        "XUnitWrapperGenerator/Descriptors.cs",
+        "XUnitWrapperGenerator/ITestInfo.cs",
+        "XUnitWrapperGenerator/ImmutableDictionaryValueComparer.cs",
+        "XUnitWrapperGenerator/OptionsHelper.cs",
+        "XUnitWrapperGenerator/RoslynUtils.cs",
+        "XUnitWrapperGenerator/RuntimeConfiguration.cs",
+        "XUnitWrapperGenerator/RuntimeTestModes.cs",
+        "XUnitWrapperGenerator/SymbolExtensions.cs",
+        "XUnitWrapperGenerator/TargetFrameworkMonikers.cs",
+        "XUnitWrapperGenerator/TestPlatforms.cs",
+        "XUnitWrapperGenerator/TestRuntimes.cs",
+        "XUnitWrapperGenerator/XUnitWrapperGenerator.cs",
+    ] + [
         "XUnitWrapperLibrary/TestFilter.cs",
     ],
     deps = [
@@ -24,10 +38,18 @@ csharp_library(
 
 live_csharp_library(
     name = "TestLibrary",
-    srcs = glob(
-        ["CoreCLRTestLibrary/*.cs"],
-        exclude = ["CoreCLRTestLibrary/OutOfProcessTest.cs"],
-    ),
+    srcs = [
+        "CoreCLRTestLibrary/AssertExtensions.cs",
+        "CoreCLRTestLibrary/CoreClrConfigurationDetection.cs",
+        "CoreCLRTestLibrary/Generator.cs",
+        "CoreCLRTestLibrary/HostPolicyMock.cs",
+        "CoreCLRTestLibrary/Logging.cs",
+        "CoreCLRTestLibrary/PlatformDetection.cs",
+        "CoreCLRTestLibrary/TestFramework.cs",
+        "CoreCLRTestLibrary/Utilities.cs",
+        "CoreCLRTestLibrary/Vectors.cs",
+        "CoreCLRTestLibrary/XPlatformUtils.cs",
+    ],
     deps = [
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//xunit.abstractions",

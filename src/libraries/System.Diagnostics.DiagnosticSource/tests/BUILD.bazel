@@ -10,17 +10,24 @@ gen_resx_source(
 
 library_test(
     name = "System.Diagnostics.DiagnosticSource.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            "TrimmingTests/**",
-            "MetricOuterLoopTests/**",
-            "TestWithConfigSwitches/**",
-            # .NET Framework only
-            "HttpHandlerDiagnosticListenerTests.cs",
-            "ActivityDateTimeTests.cs",
-        ],
-    ) + [
+    srcs = [
+        "ActivitySourceTests.cs",
+        "ActivityTagsCollectionTests.cs",
+        "ActivityTests.cs",
+        "AggregationManagerTests.cs",
+        "AssemblyInfo.cs",
+        "Base2ExponentialHistogramAggregatorTests.cs",
+        "DiagnosticSourceEventSourceBridgeTests.cs",
+        "DiagnosticSourceTests.cs",
+        "ExponentialHistogramTests.cs",
+        "MetricsAdviceTests.cs",
+        "MetricsTests.cs",
+        "PropagatorTests.cs",
+        "RuntimeMetricsTests.cs",
+        "TagListTests.cs",
+        "TestNotSupported.cs",
+        "W3CPropagatorTests.cs",
+    ] + [
         "//src/libraries/System.Diagnostics.DiagnosticSource:src/System/Diagnostics/DsesSamplerBuilder.cs",
         "//src/libraries/System.Diagnostics.DiagnosticSource:src/System/Diagnostics/RateLimiter.cs",
         "//src/libraries/System.Diagnostics.DiagnosticSource:src/System/Diagnostics/Helpers.cs",

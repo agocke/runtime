@@ -2,7 +2,7 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Resources.Writer.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = ["ResourceWriterUnitTest.cs"],
     deps = [
         "//src/libraries/System.Resources.Writer:impl_System.Resources.Writer",
         "//src/libraries/Common/tests:TestUtilities",

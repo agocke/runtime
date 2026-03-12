@@ -2,7 +2,7 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Net.WebHeaderCollection.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = ["WebHeaderCollectionTest.cs"],
     deps = [
         "//src/libraries/System.Net.WebHeaderCollection:ref_System.Net.WebHeaderCollection",
         "//src/libraries/System.Net.Primitives:ref_System.Net.Primitives",

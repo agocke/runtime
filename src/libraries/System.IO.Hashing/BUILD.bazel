@@ -14,13 +14,25 @@ netcoreapp_ref_assembly(
 
 live_csharp_library(
     name = "live_System.IO.Hashing",
-    srcs = glob(
-        ["src/**/*.cs"],
-        exclude = [
-            # BitOperations.cs is only for non-.NETCoreApp targets
-            "src/System/IO/Hashing/BitOperations.cs",
-        ],
-    ) + [
+    srcs = [
+        "src/System/IO/Hashing/Crc32.Arm.cs",
+        "src/System/IO/Hashing/Crc32.Table.cs",
+        "src/System/IO/Hashing/Crc32.Vectorized.cs",
+        "src/System/IO/Hashing/Crc32.cs",
+        "src/System/IO/Hashing/Crc64.Table.cs",
+        "src/System/IO/Hashing/Crc64.Vectorized.cs",
+        "src/System/IO/Hashing/Crc64.cs",
+        "src/System/IO/Hashing/NonCryptographicHashAlgorithm.cs",
+        "src/System/IO/Hashing/VectorHelper.cs",
+        "src/System/IO/Hashing/XxHash128.cs",
+        "src/System/IO/Hashing/XxHash3.cs",
+        "src/System/IO/Hashing/XxHash32.State.cs",
+        "src/System/IO/Hashing/XxHash32.cs",
+        "src/System/IO/Hashing/XxHash64.State.cs",
+        "src/System/IO/Hashing/XxHash64.cs",
+        "src/System/IO/Hashing/XxHashShared.cs",
+        "src/System/ThrowHelper.cs",
+    ] + [
         "//src/libraries/Common:src/System/SR.cs",
     ],
     resx_file = "src/Resources/Strings.resx",

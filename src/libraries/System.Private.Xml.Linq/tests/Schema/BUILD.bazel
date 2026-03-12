@@ -2,7 +2,7 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Xml.Schema.Extensions.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = ["ExtensionTests.cs"],
     deps = [
         "//src/libraries/System.Xml.XDocument:ref_System.Xml.XDocument",
         "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",

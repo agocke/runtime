@@ -10,7 +10,10 @@ cc_library(
     srcs = [
         "entrypoints.c",
         "pal_zlib.c",
-    ] + glob(["*.h"]),
+    ] + [
+        "pal_zlib.h",
+        "zlib_allocator.h",
+    ],
     copts = [
         "-Wno-declaration-after-statement",
         "-Wno-implicit-fallthrough",

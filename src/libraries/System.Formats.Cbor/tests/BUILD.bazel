@@ -2,14 +2,31 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Formats.Cbor.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            "PropertyTests/**",
-            "CborDocument/**",
-            "CborTestHelpers.netstandard.cs",
-        ],
-    ) + [
+    srcs = [
+        "CborTestHelpers.netcoreapp.cs",
+        "CoseKeyHelpers.cs",
+        "Reader/CborReaderTests.Array.cs",
+        "Reader/CborReaderTests.ByteString.cs",
+        "Reader/CborReaderTests.Helpers.cs",
+        "Reader/CborReaderTests.Integer.cs",
+        "Reader/CborReaderTests.Map.cs",
+        "Reader/CborReaderTests.Simple.cs",
+        "Reader/CborReaderTests.Simple.netcoreapp.cs",
+        "Reader/CborReaderTests.SkipValue.cs",
+        "Reader/CborReaderTests.Tag.cs",
+        "Reader/CborReaderTests.TextString.cs",
+        "Reader/CborReaderTests.cs",
+        "Writer/CborWriterTests.Array.cs",
+        "Writer/CborWriterTests.ByteString.cs",
+        "Writer/CborWriterTests.Helpers.cs",
+        "Writer/CborWriterTests.Integer.cs",
+        "Writer/CborWriterTests.Map.cs",
+        "Writer/CborWriterTests.Simple.cs",
+        "Writer/CborWriterTests.Simple.netcoreapp.cs",
+        "Writer/CborWriterTests.Tag.cs",
+        "Writer/CborWriterTests.TextString.cs",
+        "Writer/CborWriterTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Security/Cryptography/ByteUtils.cs",
     ],
     deps = [

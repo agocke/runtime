@@ -17,17 +17,36 @@ library_test(
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            # Windows-specific
-            "**/Helper.Win32.cs",
-            # Mobile-specific
-            "**/Helper.AnyMobile.cs",
-            "**/TestHelper.AnyMobile.cs",
-            "**/HelperTests.AnyMobile.cs",
-        ],
-    ) + [
+    srcs = [
+        "AssemblyInfo.cs",
+        "StoreTestsFixture.cs",
+        "System/IO/IsolatedStorage/ContainsUnknownFilesTests.cs",
+        "System/IO/IsolatedStorage/CopyFileTests.cs",
+        "System/IO/IsolatedStorage/CreateDirectoryTests.cs",
+        "System/IO/IsolatedStorage/CreateFileTests.cs",
+        "System/IO/IsolatedStorage/DeleteDirectoryTests.cs",
+        "System/IO/IsolatedStorage/DeleteFileTests.cs",
+        "System/IO/IsolatedStorage/DirectoryExistsTests.cs",
+        "System/IO/IsolatedStorage/FileExistsTests.cs",
+        "System/IO/IsolatedStorage/GetCreationTimeTests.cs",
+        "System/IO/IsolatedStorage/GetFileNamesTests.cs",
+        "System/IO/IsolatedStorage/GetLastAccessTimeTests.cs",
+        "System/IO/IsolatedStorage/GetLastWriteTimeTests.cs",
+        "System/IO/IsolatedStorage/GetStoreTests.cs",
+        "System/IO/IsolatedStorage/HelperTests.NonMobile.cs",
+        "System/IO/IsolatedStorage/HelperTests.Win32Unix.cs",
+        "System/IO/IsolatedStorage/HelperTests.cs",
+        "System/IO/IsolatedStorage/IdentityTests.cs",
+        "System/IO/IsolatedStorage/IsoStorageTest.cs",
+        "System/IO/IsolatedStorage/IsolatedStorageBaseClassTests.cs",
+        "System/IO/IsolatedStorage/IsolatedStorageFileStreamTests.cs",
+        "System/IO/IsolatedStorage/MoveDirectoryTests.cs",
+        "System/IO/IsolatedStorage/MoveFileTests.cs",
+        "System/IO/IsolatedStorage/OpenFileTests.cs",
+        "System/IO/IsolatedStorage/RemoveTests.cs",
+        "System/IO/IsolatedStorage/TestHelper.NonMobile.cs",
+        "System/IO/IsolatedStorage/TestHelper.cs",
+    ] + [
         # Library source files compiled into tests
         "//src/libraries/System.IO.IsolatedStorage:src/System/IO/IsolatedStorage/Helper.cs",
         "//src/libraries/System.IO.IsolatedStorage:src/System/IO/IsolatedStorage/Helper.Unix.cs",

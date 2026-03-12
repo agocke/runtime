@@ -18,7 +18,7 @@ import_library(
 
 csharp_binary(
     name = "GenNotSupportedSource",
-    srcs = glob(["*.cs"]),
+    srcs = ["Program.cs"],
     deps = [
         ":GenFacadesNuGetFiles",
         "@paket.main//microsoft.build.framework",

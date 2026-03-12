@@ -2,7 +2,23 @@ load("//:defs.bzl", "csharp_library")
 
 csharp_library(
     name = "ILCompiler.DependencyAnalysisFramework",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "ComputedStaticDependencyNode.cs",
+        "DependencyAnalyzer.cs",
+        "DependencyAnalyzerBase.cs",
+        "DependencyNode.cs",
+        "DependencyNodeCore.cs",
+        "DgmlWriter.cs",
+        "EventSourceLogStrategy.cs",
+        "FirstMarkLogStrategy.cs",
+        "FullGraphLogStrategy.cs",
+        "IDependencyAnalysisMarkStrategy.cs",
+        "IDependencyAnalyzerLogEdgeVisitor.cs",
+        "IDependencyAnalyzerLogNodeVisitor.cs",
+        "IDependencyNode.cs",
+        "NoLogStrategy.cs",
+        "PerfEventSource.cs",
+    ] + [
         "//src/coreclr/tools/Common:Sorting/ArrayAccessor.cs",
         "//src/coreclr/tools/Common:Sorting/ICompareAsEqualAction.cs",
         "//src/coreclr/tools/Common:Sorting/ISortableDataStructureAccessor.cs",

@@ -2,7 +2,20 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.IO.Hashing.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "Crc32Tests.cs",
+        "Crc64Tests.cs",
+        "NonCryptoHashBaseTests.cs",
+        "NonCryptoHashTestDriver.cs",
+        "XxHash128Tests.cs",
+        "XxHash32Tests.007.cs",
+        "XxHash32Tests.cs",
+        "XxHash32Tests.f00d.cs",
+        "XxHash3Tests.cs",
+        "XxHash64Tests.007.cs",
+        "XxHash64Tests.cs",
+        "XxHash64Tests.f00d.cs",
+    ] + [
         "//src/libraries/Common/tests:System/IO/PositionValueStream.cs",
     ],
     deps = [

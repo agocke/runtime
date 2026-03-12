@@ -24,10 +24,25 @@ cc_library(
     ] + select({
         "@platforms//os:macos": ["bazel/darwin-arm64/minipalconfig.h"],
         "//conditions:default": ["bazel/linux-glibc-x64/minipalconfig.h"],
-    }) + glob(
-        ["*.h", "**/*.h"],
-        exclude = ["bazel/**"],
-    ),
+    }) + [
+        "com/memory.h",
+        "cpufeatures.h",
+        "cpuid.h",
+        "debugger.h",
+        "entrypoints.h",
+        "getexepath.h",
+        "guid.h",
+        "log.h",
+        "mutex.h",
+        "random.h",
+        "strings.h",
+        "thread.h",
+        "time.h",
+        "types.h",
+        "utf8.h",
+        "utils.h",
+        "xoshiro128pp.h",
+    ],
     copts = CLR_CONFIG_COPTS,
     # includes = [".."] is already set below; add platform-specific config headers
     includes = [".."] + select({

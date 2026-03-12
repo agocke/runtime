@@ -25,7 +25,21 @@ cc_binary(
         "portable_pdb.cpp",
         "prebuilt/asmparse.cpp",
         "writer.cpp",
-    ] + glob(["*.h", "*.hpp"]),
+    ] + [
+        "asmenum.h",
+        "asmman.hpp",
+        "asmparse.h",
+        "asmtemplates.h",
+        "assembler.h",
+        "binstr.h",
+        "class.hpp",
+        "ilasmpch.h",
+        "method.hpp",
+        "nvpair.h",
+        "portable_pdb.h",
+        "sha256.h",
+        "typar.hpp",
+    ],
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
         # Suppress warnings on the prebuilt bison-generated parser.
         "-Wno-register",

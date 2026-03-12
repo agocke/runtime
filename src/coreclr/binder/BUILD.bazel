@@ -8,14 +8,30 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 cc_library(
     name = "binder_headers",
-    hdrs = glob(
-        [
-            "inc/*.h",
-            "inc/*.hpp",
-            "inc/*.inl",
-        ],
-        allow_empty = True,
-    ),
+    hdrs = [
+        "inc/activitytracker.h",
+        "inc/applicationcontext.hpp",
+        "inc/applicationcontext.inl",
+        "inc/assembly.hpp",
+        "inc/assembly.inl",
+        "inc/assemblybindercommon.hpp",
+        "inc/assemblyhashtraits.hpp",
+        "inc/assemblyidentity.hpp",
+        "inc/assemblyname.hpp",
+        "inc/assemblyname.inl",
+        "inc/assemblyversion.hpp",
+        "inc/assemblyversion.inl",
+        "inc/bindertracing.h",
+        "inc/bindertypes.hpp",
+        "inc/bindresult.hpp",
+        "inc/bindresult.inl",
+        "inc/customassemblybinder.h",
+        "inc/defaultassemblybinder.h",
+        "inc/failurecache.hpp",
+        "inc/failurecachehashtraits.hpp",
+        "inc/textualidentityparser.hpp",
+        "inc/utils.hpp",
+    ],
 )
 
 cc_library(

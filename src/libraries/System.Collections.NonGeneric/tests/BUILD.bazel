@@ -2,7 +2,25 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Collections.NonGeneric.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "ArrayList/ArrayList.IList.Tests.cs",
+        "ArrayListTests.cs",
+        "CaseInsensitiveComparerTests.cs",
+        "CaseInsensitiveHashCodeProviderTests.cs",
+        "CollectionBaseTests.cs",
+        "CollectionsUtilTests.cs",
+        "ComparerTests.cs",
+        "DictionaryBaseTests.cs",
+        "Hashtable/Hashtable.IDictionary.Tests.cs",
+        "Hashtable/Hashtable.Keys.Tests.cs",
+        "Hashtable/Hashtable.Values.Tests.cs",
+        "HashtableTests.cs",
+        "Helpers.cs",
+        "QueueTests.cs",
+        "ReadOnlyCollectionBaseTests.cs",
+        "SortedListTests.cs",
+        "StackTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Collections/ICollection.NonGeneric.Tests.cs",
         "//src/libraries/Common/tests:System/Collections/IDictionary.NonGeneric.Tests.cs",
         "//src/libraries/Common/tests:System/Collections/IEnumerable.NonGeneric.Tests.cs",

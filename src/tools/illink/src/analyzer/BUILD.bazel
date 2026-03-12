@@ -2,7 +2,12 @@ load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary")
 
 csharp_binary(
     name = "illinkanalyzer",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "ConsoleDependencyGraph.cs",
+        "LinkerAnalyzerCore/DependencyGraph.cs",
+        "LinkerAnalyzerCore/SpaceAnalyzer.cs",
+        "Main.cs",
+    ] + [
         "//src/tools/illink/external:Mono.Options/Options.cs",
     ],
     out = "illinkanalyzer",

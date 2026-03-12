@@ -2,9 +2,11 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Diagnostics.FileVersionInfo.Tests",
-    srcs = glob(["*.cs"], exclude = [
-        "FileVersionInfoTest.Windows.cs",
-    ]) + [
+    srcs = [
+        "AssemblyInfo.cs",
+        "FileVersionInfoTest.Unix.cs",
+        "FileVersionInfoTest.cs",
+    ] + [
         "//src/libraries/Common/tests:System/IO/ReparsePointUtilities.cs",
     ],
     data = [

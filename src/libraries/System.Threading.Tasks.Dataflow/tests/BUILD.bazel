@@ -2,7 +2,28 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Threading.Tasks.Dataflow.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "Dataflow/ActionBlockTests.cs",
+        "Dataflow/BatchBlockTests.cs",
+        "Dataflow/BatchedJoinBlockTests.cs",
+        "Dataflow/BroadcastBlockTests.cs",
+        "Dataflow/BufferBlockTests.cs",
+        "Dataflow/ConcurrentTests.cs",
+        "Dataflow/DataflowBlockExtensionTests.IAsyncEnumerable.cs",
+        "Dataflow/DataflowBlockExtensionTests.cs",
+        "Dataflow/DataflowBlockOptionsTests.cs",
+        "Dataflow/DataflowTestHelper.IAsyncEnumerable.cs",
+        "Dataflow/DataflowTestHelper.cs",
+        "Dataflow/DebugAttributeTests.cs",
+        "Dataflow/DelegateBasedMocks.cs",
+        "Dataflow/EtwTests.cs",
+        "Dataflow/JoinBlockTests.cs",
+        "Dataflow/SimpleNetworkTests.cs",
+        "Dataflow/TransformBlockTests.cs",
+        "Dataflow/TransformManyBlockTests.IAsyncEnumerable.cs",
+        "Dataflow/TransformManyBlockTests.cs",
+        "Dataflow/WriteOnceBlockTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Diagnostics/Tracing/TestEventListener.cs",
         "//src/libraries/Common/tests:System/Diagnostics/DebuggerAttributes.cs",
     ],

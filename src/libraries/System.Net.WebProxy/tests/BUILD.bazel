@@ -2,7 +2,7 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Net.WebProxy.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = ["WebProxyTest.cs"],
     deps = [
         "//src/libraries/System.Net.Primitives:ref_System.Net.Primitives",
         "//src/libraries/System.Net.NameResolution:ref_System.Net.NameResolution",

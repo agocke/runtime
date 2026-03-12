@@ -2,7 +2,30 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Text.Encodings.Web.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "AllowedBmpCodePointsBitmapTests.cs",
+        "AsciiByteMapTests.cs",
+        "AsciiPreescapedDataTests.cs",
+        "ConfigurableScalarTextEncoder.cs",
+        "EncoderCommon.cs",
+        "EncoderCommonTests.cs",
+        "EncoderExtensionsTests.cs",
+        "Extensions.cs",
+        "HtmlEncoderTests.cs",
+        "InboxEncoderCommonTests.cs",
+        "JavaScriptEncoderTests.Relaxed.cs",
+        "JavaScriptEncoderTests.cs",
+        "SR.cs",
+        "TextEncoderBatteryTests.cs",
+        "TextEncoderSettingsTests.cs",
+        "TextEncoderTests.cs",
+        "UnicodeHelpersTests.cs",
+        "UnicodeRangeTests.cs",
+        "UnicodeRangesTests.cs",
+        "UnicodeRangesTests.generated.cs",
+        "UnicodeTestHelpers.cs",
+        "UrlEncoderTests.cs",
+    ] + [
         # Library source files compiled into tests for internal testing
         "//src/libraries/System.Text.Encodings.Web:src/System/Text/Encodings/Web/AllowedBmpCodePointsBitmap.cs",
         "//src/libraries/System.Text.Encodings.Web:src/System/Text/Encodings/Web/AsciiByteMap.cs",

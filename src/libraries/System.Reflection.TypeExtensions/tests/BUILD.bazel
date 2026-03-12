@@ -2,7 +2,20 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Reflection.TypeExtensions.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "AssemblyExtensionTests.cs",
+        "ConstructorInfo/ConstructorInfoInvokeArrayTests.cs",
+        "ConstructorInfo/ConstructorInfoTests.cs",
+        "EventInfoTests.cs",
+        "FieldInfoTests.cs",
+        "Helpers.cs",
+        "MetadataTokenTests.cs",
+        "MethodBaseTests.cs",
+        "MethodInfoTests.cs",
+        "ModuleTests.cs",
+        "PropertyInfoTests.cs",
+        "TypeTests.cs",
+    ],
     data = [
         "//src/libraries/Common/tests:Data/TinyAssembly.dll",
     ],

@@ -11,10 +11,13 @@ EOF""",
 
 csharp_binary(
     name = "ilc",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = ["repro/**"],
-    ) + [
+    srcs = [
+        "ConfigurablePInvokePolicy.cs",
+        "EcmaOnlyDebugInformationProvider.cs",
+        "ILCompilerRootCommand.cs",
+        "Program.cs",
+        "RdXmlRootProvider.cs",
+    ] + [
         "//src/coreclr/tools/Common:CommandLineHelpers.cs",
         "//src/coreclr/tools/Common:InstructionSetHelpers.cs",
         "//src/coreclr/tools/Common:TypeSystem/IL/HelperExtensions.cs",

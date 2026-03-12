@@ -5,14 +5,21 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 cc_library(
     name = "interpreter_headers",
-    hdrs = glob(
-        [
-            "*.h",
-            "*.def",
-            "inc/*.h",
-            "inc/*.def",
-        ],
-        allow_empty = True,
-    ),
+    hdrs = [
+        "compiler.h",
+        "datastructs.h",
+        "eeinterp.h",
+        "failures.h",
+        "interpconfig.h",
+        "interpconfigvalues.h",
+        "interpreter.h",
+        "interpretershared.h",
+        "intops.def",
+        "intops.h",
+        "intopsshared.h",
+        "intrinsics.h",
+        "simdhash.h",
+        "stackmap.h",
+    ],
     includes = ["."],
 )

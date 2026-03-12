@@ -15,7 +15,10 @@ import_library(
 
 csharp_binary(
     name = "GenerateResxSource",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "GenerateResxSource.cs",
+        "Program.cs",
+    ],
     deps = [
         ":GenResxSourceNuGetFiles",
     ],

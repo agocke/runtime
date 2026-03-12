@@ -2,13 +2,12 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Runtime.Intrinsics.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            # Wasm-specific tests (require PackedSimd hardware support)
-            "Wasm/**",
-        ],
-    ) + [
+    srcs = [
+        "Vectors/Vector128Tests.cs",
+        "Vectors/Vector256Tests.cs",
+        "Vectors/Vector512Tests.cs",
+        "Vectors/Vector64Tests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/GenericMathTestMemberData.cs",
     ],
     deps = [

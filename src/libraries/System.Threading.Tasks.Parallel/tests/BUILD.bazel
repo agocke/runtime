@@ -2,7 +2,24 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Threading.Tasks.Parallel.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "BreakTests.cs",
+        "EtwTests.cs",
+        "ParallelFor.cs",
+        "ParallelForBoundary.cs",
+        "ParallelForEachAsyncTests.cs",
+        "ParallelForTest.cs",
+        "ParallelForTests.cs",
+        "ParallelForeachPartitioner.cs",
+        "ParallelInvokeTest.cs",
+        "ParallelLoopResultTests.cs",
+        "ParallelStateTest.cs",
+        "RangePartitioner1Chunk.cs",
+        "RangePartitionerTests.cs",
+        "RangePartitionerThreadSafetyTests.cs",
+        "RespectParentCancellationTest.cs",
+        "XunitAssemblyAttributes.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Diagnostics/Tracing/TestEventListener.cs",
         "//src/libraries/Common/tests:System/Threading/ThreadPoolHelpers.cs",
     ],

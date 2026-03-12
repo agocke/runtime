@@ -2,7 +2,14 @@ load("//:defs.bzl", "csharp_library")
 
 csharp_library(
     name = "ILCompiler.Diagnostics",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "AssemblyInfo.cs",
+        "ISymNGenWriter.cs",
+        "MethodInfo.cs",
+        "PdbWriter.cs",
+        "PerfMapWriter.cs",
+        "ReadyToRunDiagnosticsConstants.cs",
+    ],
     defines = ["READYTORUN"],
     compiler_options = ["/unsafe"],
     deps = [

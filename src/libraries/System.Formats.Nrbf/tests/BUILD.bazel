@@ -2,7 +2,22 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Formats.Nrbf.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "ArrayOfSerializationRecordsTests.cs",
+        "ArraySinglePrimitiveRecordTests.cs",
+        "AttackTests.cs",
+        "CustomOffsetArrays.cs",
+        "EdgeCaseTests.cs",
+        "InvalidInputTests.cs",
+        "JaggedArraysTests.cs",
+        "ReadAnythingTests.cs",
+        "ReadExactTypesTests.cs",
+        "ReadTests.cs",
+        "RectangularArraysTests.cs",
+        "StartsWithPayloadHeaderTests.cs",
+        "TypeExtensions.cs",
+        "TypeMatchTests.cs",
+    ] + [
         "//src/libraries/System.Formats.Nrbf:src/System/Formats/Nrbf/BinaryArrayType.cs",
         "//src/libraries/System.Formats.Nrbf:src/System/Formats/Nrbf/BinaryType.cs",
         "//src/libraries/System.Formats.Nrbf:src/System/Formats/Nrbf/PrimitiveType.cs",

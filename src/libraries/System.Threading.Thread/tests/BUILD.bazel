@@ -21,7 +21,12 @@ csharp_binary(
 
 library_test(
     name = "System.Threading.Thread.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "CompressedStackTests.cs",
+        "ExceptionTests.cs",
+        "ThreadExceptionEventArgsTests.cs",
+        "ThreadTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Threading/ThreadTestHelpers.cs",
     ],
     data = [

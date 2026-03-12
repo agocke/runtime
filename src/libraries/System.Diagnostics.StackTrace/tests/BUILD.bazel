@@ -17,10 +17,17 @@ live_csharp_library(
 library_test(
     name = "System.Diagnostics.StackTrace.Tests",
     debug_type = "portable",
-    srcs = glob(
-        ["*.cs"],
-        exclude = ["ExceptionTestAssembly/**"],
-    ),
+    srcs = [
+        "DiagnosticMethodInfoTests.cs",
+        "StackFrameExtensionsTests.cs",
+        "StackFrameTests.cs",
+        "StackTraceSymbolsTests.cs",
+        "StackTraceTests.cs",
+        "SymDocumentTypeTests.cs",
+        "SymLanguageTypeTests.cs",
+        "SymLanguageVendorTests.cs",
+        "SymbolTokenTests.cs",
+    ],
     deps = [
         ":ExceptionTestAssembly",
         "//src/libraries/System.Diagnostics.StackTrace:ref_System.Diagnostics.StackTrace",

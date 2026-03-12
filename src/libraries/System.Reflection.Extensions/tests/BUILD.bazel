@@ -2,7 +2,20 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Reflection.Extensions.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "Definitions/ConstructorDefinitions.cs",
+        "Definitions/EventDefinitions.cs",
+        "Definitions/FieldDefinitions.cs",
+        "Definitions/MethodDefinitions.cs",
+        "Definitions/PropertyDefinitions.cs",
+        "GetCustomAttributes_Assembly.cs",
+        "GetCustomAttributes_Compat.cs",
+        "GetCustomAttributes_MemberInfo.cs",
+        "GetCustomAttributes_ParameterInfo.cs",
+        "ReflectionTestExtensions.cs",
+        "RuntimeReflectionExtensionTests.cs",
+        "RuntimeReflectionExtensionTestsWithQuirks.cs",
+    ],
     deps = [
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",

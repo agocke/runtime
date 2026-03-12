@@ -2,13 +2,31 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.ComponentModel.Primitives.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            "System/ComponentModel/Design/**",
-            "TrimmingTests/**",
-        ],
-    ),
+    srcs = [
+        "System/ComponentModel/BrowsableAttributeTests.cs",
+        "System/ComponentModel/CategoryAttributeTests.cs",
+        "System/ComponentModel/ComponentCollectionTests.cs",
+        "System/ComponentModel/ComponentTests.cs",
+        "System/ComponentModel/DescriptionAttributeTests.cs",
+        "System/ComponentModel/DesignOnlyAttributeTests.cs",
+        "System/ComponentModel/DesignerAttributeTests.cs",
+        "System/ComponentModel/DesignerCategoryAttributeTests.cs",
+        "System/ComponentModel/DesignerSerializationVisibilityAttributeTests.cs",
+        "System/ComponentModel/DisplayNameAttributeTests.cs",
+        "System/ComponentModel/EditorAttributeTests.cs",
+        "System/ComponentModel/EventHandlerListTests.cs",
+        "System/ComponentModel/ImmutableObjectAttributeTests.cs",
+        "System/ComponentModel/InitializationEventAttributeTests.cs",
+        "System/ComponentModel/InvalidAsynchronousStateExceptionTests.cs",
+        "System/ComponentModel/InvalidEnumArgumentExceptionTests.cs",
+        "System/ComponentModel/LocalizableAttributeTests.cs",
+        "System/ComponentModel/MergablePropertyAttributeTests.cs",
+        "System/ComponentModel/MockISite.cs",
+        "System/ComponentModel/NotifyParentPropertyAttributeTests.cs",
+        "System/ComponentModel/ParenthesizePropertyNameAttributeTests.cs",
+        "System/ComponentModel/ReadOnlyAttributeTests.cs",
+        "System/ComponentModel/RefreshPropertiesAttributeTests.cs",
+    ],
     deps = [
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",

@@ -5,7 +5,18 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 cc_library(
     name = "common",
     srcs = [],
-    hdrs = glob(["Common/*.h"]) + select({
+    hdrs = [
+        "Common/pal_atomic.h",
+        "Common/pal_compiler.h",
+        "Common/pal_error_common.h",
+        "Common/pal_io_common.h",
+        "Common/pal_networking_common.h",
+        "Common/pal_safecrt.h",
+        "Common/pal_ssl_types.h",
+        "Common/pal_types.h",
+        "Common/pal_utilities.h",
+        "Common/pal_x509_types.h",
+    ] + select({
         "@platforms//os:macos": ["//src/native/libs/bazel:darwin-arm64/pal_config.h"],
         "//conditions:default": ["//src/native/libs/bazel:linux-glibc-x64/pal_config.h"],
     }),

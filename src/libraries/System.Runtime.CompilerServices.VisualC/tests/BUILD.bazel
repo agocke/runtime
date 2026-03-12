@@ -2,7 +2,10 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Runtime.CompilerServices.VisualC.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "System/Runtime/CompilerServices/RequiredAttributeAttributeTests.cs",
+        "System/Runtime/CompilerServices/ScopelessEnumAttributeTests.cs",
+    ],
     deps = [
         "//src/libraries/System.Runtime.CompilerServices.VisualC:impl_System.Runtime.CompilerServices.VisualC",
         "@paket.main//microsoft.dotnet.xunitassert",

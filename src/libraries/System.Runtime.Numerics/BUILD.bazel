@@ -12,7 +12,22 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Runtime.Numerics",
-    srcs = glob(["src/**/*.cs"]) + [
+    srcs = [
+        "src/Properties/InternalsVisibleTo.cs",
+        "src/System/Number.BigInteger.cs",
+        "src/System/Number.Polyfill.cs",
+        "src/System/Numerics/BigInteger.cs",
+        "src/System/Numerics/BigIntegerCalculator.AddSub.cs",
+        "src/System/Numerics/BigIntegerCalculator.DivRem.cs",
+        "src/System/Numerics/BigIntegerCalculator.FastReducer.cs",
+        "src/System/Numerics/BigIntegerCalculator.GcdInv.cs",
+        "src/System/Numerics/BigIntegerCalculator.PowMod.cs",
+        "src/System/Numerics/BigIntegerCalculator.SquMul.cs",
+        "src/System/Numerics/BigIntegerCalculator.Utils.cs",
+        "src/System/Numerics/Complex.cs",
+        "src/System/Numerics/NumericsHelpers.cs",
+        "src/System/ThrowHelper.cs",
+    ] + [
         # Shared sources from Common
         "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",
         "//src/libraries/Common:src/System/Number.Formatting.Common.cs",

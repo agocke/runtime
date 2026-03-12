@@ -19,7 +19,27 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Reflection.Emit",
-    srcs = glob(["src/System/**/*.cs"]) + [
+    srcs = [
+        "src/System/Reflection/Emit/ArrayMethod.cs",
+        "src/System/Reflection/Emit/ConstructorBuilderImpl.cs",
+        "src/System/Reflection/Emit/CustomAttributeWrapper.cs",
+        "src/System/Reflection/Emit/EnumBuilderImpl.cs",
+        "src/System/Reflection/Emit/EventBuilderImpl.cs",
+        "src/System/Reflection/Emit/FieldBuilderImpl.cs",
+        "src/System/Reflection/Emit/GenericTypeParameterBuilderImpl.cs",
+        "src/System/Reflection/Emit/ILGeneratorImpl.cs",
+        "src/System/Reflection/Emit/LocalBuilderImpl.cs",
+        "src/System/Reflection/Emit/MethodBuilderImpl.cs",
+        "src/System/Reflection/Emit/ModuleBuilderImpl.cs",
+        "src/System/Reflection/Emit/ParameterBuilderImpl.cs",
+        "src/System/Reflection/Emit/Pdb/SequencePoint.cs",
+        "src/System/Reflection/Emit/Pdb/SymbolDocumentWriter.cs",
+        "src/System/Reflection/Emit/PersistedAssemblyBuilder.cs",
+        "src/System/Reflection/Emit/PropertyBuilderImpl.cs",
+        "src/System/Reflection/Emit/PseudoCustomAttributesData.cs",
+        "src/System/Reflection/Emit/SignatureHelper.cs",
+        "src/System/Reflection/Emit/TypeBuilderImpl.cs",
+    ] + [
         "//src/libraries/System.Private.CoreLib:src/System/Reflection/Emit/MethodBuilderInstantiation.cs",
         "//src/libraries/System.Private.CoreLib:src/System/Reflection/Emit/SymbolType.cs",
         "//src/libraries/System.Private.CoreLib:src/System/Reflection/Emit/TypeNameBuilder.cs",

@@ -2,7 +2,27 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Diagnostics.TraceSource.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "AssemblyInfo.cs",
+        "BooleanSwitchClassTests.cs",
+        "CorrelationManagerTests.cs",
+        "DefaultTraceListenerClassTests.cs",
+        "EventTypeFilterClassTests.cs",
+        "SourceFilterClassTests.cs",
+        "SwitchClassTests.cs",
+        "TestTextTraceListener.cs",
+        "TestTraceFilter.cs",
+        "TestTraceListener.cs",
+        "TraceClassTests.cs",
+        "TraceEventCacheClassTests.cs",
+        "TraceFilterClassTests.cs",
+        "TraceInternalClassTests.cs",
+        "TraceListenerClassTests.cs",
+        "TraceListenerCollectionClassTests.cs",
+        "TraceSourceClassTests.cs",
+        "TraceSwitchClassTests.cs",
+        "TraceTestHelper.cs",
+    ],
     deps = [
         "//src/libraries/System.Diagnostics.TraceSource:ref_System.Diagnostics.TraceSource",
         "//src/libraries/System.Diagnostics.Tracing:ref_System.Diagnostics.Tracing",

@@ -2,7 +2,7 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "Microsoft.Win32.Primitives.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = ["Win32ExceptionTests.cs"],
     deps = [
         "//src/libraries:ref_Microsoft.Win32.Primitives",
         "//src/libraries/Common/tests:TestUtilities",

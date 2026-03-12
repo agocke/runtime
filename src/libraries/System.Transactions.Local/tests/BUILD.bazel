@@ -2,7 +2,23 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Transactions.Local.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "AssemblyInfo.cs",
+        "AsyncTest.cs",
+        "AsyncTransactionScopeTests.cs",
+        "CloneTxTests.cs",
+        "EnlistTest.cs",
+        "HelperFunctions.cs",
+        "IntResourceManager.cs",
+        "LTMEnlistmentTests.cs",
+        "NonMsdtcPromoterTests.cs",
+        "OleTxNonWindowsUnsupportedTests.cs",
+        "OleTxTests.cs",
+        "TestEnlistments.cs",
+        "TransactionManagerTest.cs",
+        "TransactionScopeTest.cs",
+        "TransactionTracingEventListener.cs",
+    ],
     deps = [
         "//src/libraries/System.Transactions.Local:ref_System.Transactions.Local",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",

@@ -2,7 +2,12 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Xml.Linq.Axes.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "AxisOrderValidation.cs",
+        "InvalidParamValidation.cs",
+        "TestData.cs",
+        "Utils.cs",
+    ],
     deps = [
         "//src/libraries/System.Xml.XDocument:ref_System.Xml.XDocument",
         "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",

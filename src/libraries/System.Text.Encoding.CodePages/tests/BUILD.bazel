@@ -2,7 +2,11 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Text.Encoding.CodePages.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "EncoderFallbackBufferHelper.cs",
+        "EncodingCodePages.cs",
+        "EncodingCodePages.netcoreapp.cs",
+    ],
     deps = [
         "//src/libraries/System.Text.Encoding.CodePages:live_System.Text.Encoding.CodePages",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",

@@ -2,7 +2,19 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Threading.Channels.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "BoundedChannelTests.cs",
+        "ChannelClosedExceptionTests.cs",
+        "ChannelClosedExceptionTests.netcoreapp.cs",
+        "ChannelTestBase.cs",
+        "ChannelTests.cs",
+        "DebugAttributeTests.cs",
+        "PriorityUnboundedChannelTests.cs",
+        "RendezvousChannelTests.cs",
+        "Stress.cs",
+        "TestBase.cs",
+        "UnboundedChannelTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Diagnostics/DebuggerAttributes.cs",
     ],
     deps = [

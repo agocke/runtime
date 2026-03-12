@@ -2,7 +2,10 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Threading.ThreadPool.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "RegisteredWaitTests.cs",
+        "ThreadPoolTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/IO/TempFile.cs",
         "//src/libraries/Common/tests:System/Threading/ThreadTestHelpers.cs",
     ],

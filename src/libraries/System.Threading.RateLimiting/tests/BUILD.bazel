@@ -2,7 +2,18 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Threading.RateLimiting.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = [
+        "BaseRateLimiterTests.cs",
+        "ChainedLimiterTests.cs",
+        "ConcurrencyLimiterTests.cs",
+        "FixedWindowRateLimiterTests.cs",
+        "Infrastructure/Utils.cs",
+        "PartitionedChainedLimiterTests.cs",
+        "PartitionedRateLimiterTests.cs",
+        "RateLimiterPartitionTests.cs",
+        "SlidingWindowRateLimiterTests.cs",
+        "TokenBucketRateLimiterTests.cs",
+    ],
     deps = [
         "//src/libraries/System.Threading.RateLimiting:ref_System.Threading.RateLimiting",
         "//src/libraries/System.Threading:ref_System.Threading",

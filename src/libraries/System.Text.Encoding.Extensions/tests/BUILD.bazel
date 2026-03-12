@@ -2,7 +2,7 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Text.Encoding.Extensions.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = ["Fallback.cs"],
     deps = [
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//microsoft.dotnet.xunitextensions",

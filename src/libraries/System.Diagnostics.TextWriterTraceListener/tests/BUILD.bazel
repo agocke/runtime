@@ -2,7 +2,16 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Diagnostics.TextWriterTraceListener.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "CommonUtilities.cs",
+        "ConsoleTraceListenerTests.cs",
+        "CtorsDelimiterTests.cs",
+        "CtorsStreamTests.cs",
+        "DelimiterWriteMethodTests.cs",
+        "TestTraceFilter.cs",
+        "TextWriterTraceListener_WriteTests.cs",
+        "XmlWriterTraceListenerTests.cs",
+    ],
     deps = [
         "//src/libraries/System.Diagnostics.TextWriterTraceListener:ref_System.Diagnostics.TextWriterTraceListener",
         "//src/libraries/System.Diagnostics.TraceSource:ref_System.Diagnostics.TraceSource",

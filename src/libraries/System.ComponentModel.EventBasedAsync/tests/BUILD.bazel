@@ -2,7 +2,17 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.ComponentModel.EventBasedAsync.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "AsyncCompletedEventArgsTests.cs",
+        "AsyncOperationFinalizerTests.cs",
+        "AsyncOperationManagerTests.cs",
+        "AsyncOperationTests.cs",
+        "BackgroundWorkerTests.cs",
+        "DoWorkEventArgsTests.cs",
+        "ProgressChangedEventArgsTests.cs",
+        "RunWorkerCompletedEventArgsTests.cs",
+        "TestException.cs",
+    ],
     deps = [
         "//src/libraries/System.ComponentModel.EventBasedAsync:ref_System.ComponentModel.EventBasedAsync",
         "//src/libraries/System.Threading:ref_System.Threading",

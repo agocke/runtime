@@ -2,7 +2,15 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Net.Ping.Functional.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "AssemblyInfo.cs",
+        "LoggingTest.cs",
+        "PingExceptionTest.cs",
+        "PingOptionsTest.cs",
+        "PingTest.cs",
+        "TestSettings.cs",
+        "UnixPingUtilityTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Net/RemoteExecutorExtensions.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.Ping.cs",

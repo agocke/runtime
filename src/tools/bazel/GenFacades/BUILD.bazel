@@ -19,7 +19,10 @@ import_library(
 
 csharp_binary(
     name = "GenFacades",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "Logger.cs",
+        "Program.cs",
+    ],
     deps = [
         ":GenFacadesNuGetFiles",
         "@paket.main//microsoft.build.framework",

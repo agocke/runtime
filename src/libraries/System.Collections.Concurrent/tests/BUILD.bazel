@@ -2,9 +2,25 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Collections.Concurrent.Tests",
-    srcs = glob([
-        "**/*.cs",
-    ]) + [
+    srcs = [
+        "BlockingCollectionCancellationTests.cs",
+        "BlockingCollectionTests.cs",
+        "ConcurrentBagTests.cs",
+        "ConcurrentDictionary/ConcurrentDictionary.Generic.Tests.cs",
+        "ConcurrentDictionary/ConcurrentDictionary.NonGeneric.Tests.cs",
+        "ConcurrentDictionary/ConcurrentDictionaryExtensions.cs",
+        "ConcurrentDictionary/ConcurrentDictionaryTests.cs",
+        "ConcurrentQueueTests.cs",
+        "ConcurrentStackTests.cs",
+        "EtwTests.cs",
+        "IntRangePartitionerTests.cs",
+        "LongRangePartitionerTests.cs",
+        "PartitionerHelpers.cs",
+        "PartitionerStaticTests.cs",
+        "PartitionerTests.cs",
+        "ProducerConsumerCollectionTests.cs",
+        "RangePartitionerNegativeTests.cs",
+    ] + [
         # CoreLib shared source
         "//src/libraries/System.Private.CoreLib:src/System/Collections/Concurrent/IProducerConsumerCollectionDebugView.cs",
         # Common collection test infrastructure

@@ -2,7 +2,17 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Drawing.Primitives.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "ColorTests.cs",
+        "ColorTranslatorTests.cs",
+        "DataContractSerializerTests.cs",
+        "PointFTests.cs",
+        "PointTests.cs",
+        "RectangleFTests.cs",
+        "RectangleTests.cs",
+        "SizeFTests.cs",
+        "SizeTests.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Diagnostics/DebuggerAttributes.cs",
         "//src/libraries/Common/tests:System/Runtime/Serialization/DataContractSerializerHelper.cs",
         "//src/libraries/Common/tests:System/Runtime/Serialization/Utils.cs",

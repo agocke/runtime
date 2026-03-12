@@ -18,13 +18,14 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Runtime.InteropServices:LibraryImportGenerator",
         "//src/libraries/System.Runtime.InteropServices:Microsoft.Interop.SourceGeneration",
     ],
-    srcs = glob(
-        ["src/System/**/*.cs"],
-        exclude = [
-            "src/System/Net/Dns.Browser.cs",
-            "src/System/Net/NameResolutionPal.Windows.cs",
-        ],
-    ) + [
+    srcs = [
+        "src/System/Net/Dns.cs",
+        "src/System/Net/IPHostEntry.cs",
+        "src/System/Net/NameResolutionMetrics.cs",
+        "src/System/Net/NameResolutionPal.Unix.cs",
+        "src/System/Net/NameResolutionTelemetry.cs",
+        "src/System/Net/NetEventSource.NameResolution.cs",
+    ] + [
         "//src/libraries/Common:src/System/Net/Logging/NetEventSource.Common.cs",
         "//src/libraries/Common:src/System/Net/InternalException.cs",
         "//src/libraries/Common:src/System/Net/IPAddressParserStatics.cs",

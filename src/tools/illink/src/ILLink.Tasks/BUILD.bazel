@@ -2,7 +2,13 @@ load("@rules_dotnet//dotnet:defs.bzl", "csharp_library")
 
 csharp_library(
     name = "ILLink.Tasks",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "CombineLinkerXmlFiles.cs",
+        "ComputeManagedAssemblies.cs",
+        "CreateRuntimeRootDescriptorFile.cs",
+        "LinkTask.cs",
+        "Utils.cs",
+    ],
     out = "ILLink.Tasks",
     deps = [
         "//src/tools/illink/src/linker:illink_lib",

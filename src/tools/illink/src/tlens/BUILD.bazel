@@ -2,7 +2,29 @@ load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary")
 
 csharp_binary(
     name = "tlens",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "TLens.Analyzers/Analyzer.cs",
+        "TLens.Analyzers/DuplicatedCodeAnalyzer.cs",
+        "TLens.Analyzers/InterfaceDispatchAnalyzer.cs",
+        "TLens.Analyzers/InterfaceTypeCheckAnalyzers.cs",
+        "TLens.Analyzers/InterfacesAnalyzer.cs",
+        "TLens.Analyzers/InverterCtorsChainAnalyzer.cs",
+        "TLens.Analyzers/LargeStaticArraysAnalyzer.cs",
+        "TLens.Analyzers/LargeStaticCtorAnalyzer.cs",
+        "TLens.Analyzers/LargeStringsAnalyzer.cs",
+        "TLens.Analyzers/LimitedMethodCalls.cs",
+        "TLens.Analyzers/RedundantFieldInitializationAnalyzer.cs",
+        "TLens.Analyzers/TypeInstatiationAnalyzer.cs",
+        "TLens.Analyzers/UnnecessaryFieldsAssignmentAnalyzer.cs",
+        "TLens.Analyzers/UnusedParametersAnalyzer.cs",
+        "TLens.Analyzers/UserOperatorCalledForNullCheckAnalyzer.cs",
+        "TLens/AssemlyReferenceResolver.cs",
+        "TLens/Driver.cs",
+        "TLens/LensesCollection.cs",
+        "TLens/MethodDefinitionExtensions.cs",
+        "TLens/Runner.cs",
+        "TLens/SizeStatistics.cs",
+    ] + [
         "//src/tools/illink/external:Mono.Options/Options.cs",
     ],
     out = "tlens",

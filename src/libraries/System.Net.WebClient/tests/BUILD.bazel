@@ -2,7 +2,10 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Net.WebClient.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = [
+        "AssemblyInfo.cs",
+        "WebClientTest.cs",
+    ] + [
         "//src/libraries/Common/tests:System/Net/Capability.Security.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.Certificates.cs",

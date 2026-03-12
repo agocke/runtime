@@ -2,7 +2,11 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.IO.Compression.Brotli.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "AssemblyInfo.cs",
+        "BrotliGoogleTestData.cs",
+        "CompressionStreamUnitTests.Brotli.cs",
+    ] + [
         "//src/libraries/Common/tests:System/IO/Compression/CompressionStreamTestBase.cs",
         "//src/libraries/Common/tests:System/IO/Compression/CompressionStreamUnitTestBase.cs",
         "//src/libraries/Common/tests:System/IO/Compression/CRC.cs",

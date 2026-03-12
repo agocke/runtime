@@ -2,7 +2,13 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Security.Claims.Tests",
-    srcs = glob(["*.cs"]),
+    srcs = [
+        "ClaimTests.cs",
+        "ClaimsIdentityTests.cs",
+        "ClaimsPrincipalTests.cs",
+        "GenericIdentityTests.cs",
+        "GenericPrincipalTests.cs",
+    ],
     deps = [
         "//src/libraries/System.Security.Claims:impl_System.Security.Claims",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",

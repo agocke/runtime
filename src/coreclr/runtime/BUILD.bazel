@@ -7,12 +7,34 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 cc_library(
     name = "runtime_headers",
-    hdrs = glob(["*.h"]),
+    hdrs = [
+        "CachedInterfaceDispatch.h",
+        "asyncsafethreadmap.h",
+    ],
 )
 
 exports_files(
     [
         "CachedInterfaceDispatch.cpp",
         "asyncsafethreadmap.cpp",
-    ] + glob(["**/*.S"]),
+    ] + [
+        "amd64/AllocFast.S",
+        "amd64/StubDispatch.S",
+        "amd64/WriteBarriers.S",
+        "arm/AllocFast.S",
+        "arm/StubDispatch.S",
+        "arm/WriteBarriers.S",
+        "arm64/AllocFast.S",
+        "arm64/StubDispatch.S",
+        "arm64/WriteBarriers.S",
+        "i386/AllocFast.S",
+        "i386/StubDispatch.S",
+        "i386/WriteBarriers.S",
+        "loongarch64/AllocFast.S",
+        "loongarch64/StubDispatch.S",
+        "loongarch64/WriteBarriers.S",
+        "riscv64/AllocFast.S",
+        "riscv64/StubDispatch.S",
+        "riscv64/WriteBarriers.S",
+    ],
 )

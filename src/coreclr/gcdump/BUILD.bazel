@@ -5,7 +5,7 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 cc_library(
     name = "gcdump_headers",
-    hdrs = glob(["*.h"], allow_empty = True) + [
+    hdrs = [
         "//src/coreclr/gcinfo:gcinfohelpers.h",
     ],
     textual_hdrs = [

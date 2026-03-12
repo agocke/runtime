@@ -6,7 +6,7 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 cc_library(
     name = "hosts_inc",
-    hdrs = glob(["inc/*.h"]),
+    hdrs = ["inc/coreclrhost.h"],
     includes = ["inc"],
 )
 

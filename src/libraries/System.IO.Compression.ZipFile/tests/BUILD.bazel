@@ -2,7 +2,17 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.IO.Compression.ZipFile.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = [
+        "ZipFile.Create.Stream.cs",
+        "ZipFile.Create.cs",
+        "ZipFile.Extract.Stream.cs",
+        "ZipFile.Extract.cs",
+        "ZipFile.Open.cs",
+        "ZipFile.Unix.cs",
+        "ZipFileExtensions.ZipArchive.Create.cs",
+        "ZipFileExtensions.ZipArchive.Extract.cs",
+        "ZipFileExtensions.ZipArchiveEntry.Extract.cs",
+    ] + [
         "//src/libraries/Common/tests:System/IO/TempFile.cs",
         "//src/libraries/Common/tests:System/IO/TempDirectory.cs",
         "//src/libraries/Common/tests:System/IO/WrappedStream.cs",

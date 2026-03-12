@@ -2,7 +2,7 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.Web.HttpUtility.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = ["HttpUtility/HttpUtilityTest.cs"],
     deps = [
         "//src/libraries/System.Web.HttpUtility:ref_System.Web.HttpUtility",
         "//src/libraries/Common/tests:TestUtilities",

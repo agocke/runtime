@@ -5,11 +5,17 @@ package(default_visibility = ["//src/coreclr:__subpackages__"])
 
 cc_library(
     name = "classlibnative_headers",
-    hdrs = glob([
-        "bcltype/*.h",
-        "bcltype/*.inl",
-        "inc/*.h",
-    ]),
+    hdrs = [
+        "bcltype/arraynative.h",
+        "bcltype/arraynative.inl",
+        "bcltype/objectnative.h",
+        "bcltype/system.h",
+        "bcltype/varargsnative.h",
+        "bcltype/variant.h",
+        "inc/divmodint.h",
+        "inc/floatdouble.h",
+        "inc/floatsingle.h",
+    ],
     includes = ["bcltype", "inc"],
 )
 

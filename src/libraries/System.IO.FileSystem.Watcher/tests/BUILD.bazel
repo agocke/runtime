@@ -2,9 +2,32 @@ load("//src/tests:live_test.bzl", "library_test")
 
 library_test(
     name = "System.IO.FileSystem.Watcher.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-    ) + [
+    srcs = [
+        "Args.ErrorEventArgs.cs",
+        "Args.FileSystemEventArgs.cs",
+        "Args.RenamedEventArgs.cs",
+        "AssemblyInfo.cs",
+        "FileSystemWatcher.Directory.Changed.cs",
+        "FileSystemWatcher.Directory.Create.cs",
+        "FileSystemWatcher.Directory.Delete.cs",
+        "FileSystemWatcher.Directory.Move.cs",
+        "FileSystemWatcher.Directory.NotifyFilter.cs",
+        "FileSystemWatcher.File.Changed.cs",
+        "FileSystemWatcher.File.Create.cs",
+        "FileSystemWatcher.File.Delete.cs",
+        "FileSystemWatcher.File.Move.cs",
+        "FileSystemWatcher.File.NotifyFilter.cs",
+        "FileSystemWatcher.InternalBufferSize.cs",
+        "FileSystemWatcher.MultipleWatchers.cs",
+        "FileSystemWatcher.SymbolicLink.cs",
+        "FileSystemWatcher.Unix.cs",
+        "FileSystemWatcher.WaitForChanged.cs",
+        "FileSystemWatcher.cs",
+        "FileSystemWatcher.unit.cs",
+        "InternalBufferOverflowException.cs",
+        "Utility/FileSystemWatcherTest.cs",
+        "Utility/TestFileSystemWatcher.cs",
+    ] + [
         "//src/libraries/Common/tests:System/IO/TempFile.cs",
         "//src/libraries/Common/tests:System/IO/TempDirectory.cs",
         "//src/libraries/Common/tests:System/IO/ReparsePointUtilities.cs",

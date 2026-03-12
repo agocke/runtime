@@ -13,7 +13,10 @@ cc_library(
     ] + select({
         "@platforms//os:linux": ["pal_termios2.c"],
         "//conditions:default": [],
-    }) + glob(["*.h"]),
+    }) + [
+        "pal_serial.h",
+        "pal_termios.h",
+    ],
     copts = [],
     includes = [
         "../../..",

@@ -11,7 +11,7 @@ cc_library(
     srcs = [
         "entrypoints.c",
         "pal_gssapi.c",
-    ] + glob(["*.h"]),
+    ] + ["pal_gssapi.h"],
     copts = [],
     includes = [
         "../../..",
