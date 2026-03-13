@@ -101,5 +101,5 @@ helix_library_test(
     ],
     size = "large",
     keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
-    queue = "Ubuntu.2204.Amd64.Open",
+    queue = "AzureLinux.3.Amd64.Open",
 )

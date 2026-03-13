@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.DotNet.Helix.Client;
@@ -195,7 +197,19 @@ namespace HelixSubmit
             Console.WriteLine($"Job submitted. CorrelationId: {sentJob.CorrelationId}");
             Console.WriteLine("Waiting for job completion...");
 
-            JobPassFail result = await sentJob.WaitAsync(pollingIntervalMs: 10_000);
+            // Allow generous time for queue wait + execution. Bazel controls the outer timeout.
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(50));
+            JobPassFail result;
+            try
+            {
+                result = await sentJob.WaitAsync(pollingIntervalMs: 10_000, cancellationToken: cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Timed out waiting for Helix job {sentJob.CorrelationId}.");
+                Console.Error.WriteLine($"Check status at: https://helix.dot.net/api/jobs/{sentJob.CorrelationId}/details?api-version=2019-06-17");
+                return 1;
+            }
 
             Console.WriteLine($"Job completed. Total={result.Total} Passed={result.Passed?.Count ?? 0} Failed={result.Failed?.Count ?? 0}");
 
@@ -206,6 +220,11 @@ namespace HelixSubmit
                 {
                     Console.Error.WriteLine($"  - {failed}");
                 }
+
+                await FetchAndDisplayWorkItemLogsAsync(
+                    baseUrl ?? "https://helix.dot.net/",
+                    sentJob.CorrelationId,
+                    result.Failed);
             }
 
             if (resultsDir is not null)
@@ -223,6 +242,72 @@ namespace HelixSubmit
             bool success = result.Failed is null || result.Failed.Count == 0;
 
             return success ? 0 : 1;
+        }
+
+        private static async Task FetchAndDisplayWorkItemLogsAsync(
+            string baseUrl,
+            string correlationId,
+            IReadOnlyList<string> failedWorkItems)
+        {
+            using var http = new HttpClient();
+            string apiBase = baseUrl.TrimEnd('/');
+
+            foreach (string workItemName in failedWorkItems)
+            {
+                try
+                {
+                    string encodedName = Uri.EscapeDataString(workItemName);
+                    string detailsUrl =
+                        $"{apiBase}/api/jobs/{correlationId}/workitems/{encodedName}?api-version=2019-06-17";
+
+                    string detailsJson = await http.GetStringAsync(detailsUrl);
+                    using JsonDocument doc = JsonDocument.Parse(detailsJson);
+                    JsonElement root = doc.RootElement;
+
+                    if (root.TryGetProperty("ExitCode", out JsonElement exitCodeEl))
+                    {
+                        Console.Error.WriteLine($"\n=== {workItemName} (exit code: {exitCodeEl}) ===");
+                    }
+
+                    if (root.TryGetProperty("ConsoleOutputUri", out JsonElement consoleUri) &&
+                        consoleUri.GetString() is string consoleUrl)
+                    {
+                        string console = await http.GetStringAsync(consoleUrl);
+                        if (!string.IsNullOrWhiteSpace(console))
+                        {
+                            Console.Error.WriteLine("--- Console Output ---");
+                            Console.Error.WriteLine(console);
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine("(console output is empty)");
+                        }
+                    }
+
+                    if (root.TryGetProperty("Logs", out JsonElement logs) &&
+                        logs.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (JsonElement log in logs.EnumerateArray())
+                        {
+                            string? module = log.TryGetProperty("Module", out JsonElement m) ? m.GetString() : null;
+                            string? logUrl = log.TryGetProperty("Uri", out JsonElement u) ? u.GetString() : null;
+                            if (logUrl is not null)
+                            {
+                                string logContent = await http.GetStringAsync(logUrl);
+                                if (!string.IsNullOrWhiteSpace(logContent))
+                                {
+                                    Console.Error.WriteLine($"--- Log: {module ?? "unknown"} ---");
+                                    Console.Error.WriteLine(logContent);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"  (failed to fetch logs for {workItemName}: {ex.Message})");
+                }
+            }
         }
 
         private static IHelixApi CreateApi(string? token, string? baseUrl)

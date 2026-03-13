@@ -337,7 +337,9 @@ def _helix_library_test_impl(ctx):
     #   $HELIX_WORKITEM_PAYLOAD = test files (per work item)
     test_name = prep.dll.basename.replace(".dll", "")
     helix_command = " ".join([
+        "export DOTNET_ROOT=$HELIX_CORRELATION_PAYLOAD &&",
         "chmod +x $HELIX_CORRELATION_PAYLOAD/dotnet &&",
+        "chmod +x $HELIX_CORRELATION_PAYLOAD/host/fxr/*/libhostfxr.so &&",
         "$HELIX_CORRELATION_PAYLOAD/dotnet", "exec",
         "--runtimeconfig", "$HELIX_WORKITEM_PAYLOAD/" + test_name + ".runtimeconfig.json",
         "--depsfile", "$HELIX_WORKITEM_PAYLOAD/" + test_name + ".deps.json",
@@ -810,6 +812,7 @@ def helix_library_test(
         target_frameworks = [NETCOREAPP_CURRENT],
         nowarn = nowarn + ["CS1701"] + _TEST_NOWARN,
         size = size,
+        timeout = "eternal",
         nullable = nullable,
         queue = queue,
         helix_timeout = helix_timeout,
