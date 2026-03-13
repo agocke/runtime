@@ -64,7 +64,7 @@ jobs:
         if: steps.check-existing.outputs.has_open_pr == 'false'
         run: |
           # List unmerged upstream commits, oldest first
-          next_commit=$(git rev-list --reverse --ancestry-path origin/bazel..upstream/release/10.0 | head -1)
+          next_commit=$(git rev-list --reverse origin/bazel..upstream/release/10.0 | head -1)
           if [ -z "$next_commit" ]; then
             echo "has_new_commits=false" >> "$GITHUB_OUTPUT"
             echo "Already up-to-date"
