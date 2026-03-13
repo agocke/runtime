@@ -21,9 +21,17 @@ jobs:
           - os: macos-latest
             name: macOS release
             config: clr_release
+          - os: windows-latest
+            name: Windows host
+            config: clr_release
+            targets: //src/native/corehost:all
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout
@@ -45,7 +53,8 @@ jobs:
             bazel-${{ runner.os }}-${{ matrix.config }}-
 
       - name: Build
-        run: bazel build //... --config=${{ matrix.config }} --disk_cache=~/.cache/bazel-disk
+        run: bazel build ${{ matrix.targets || '//...' }} --config=${{ matrix.config }} --disk_cache=~/.cache/bazel-disk
 
       - name: Test
+        if: ${{ !matrix.targets }}
         run: bazel test //... --config=${{ matrix.config }} --disk_cache=~/.cache/bazel-disk --test_output=errors
