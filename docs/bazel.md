@@ -235,6 +235,64 @@ The archive contains ~192 files: the `dotnet` host, `libhostfxr.so`,
 `libcoreclr.so`, native interop libraries, `createdump`, managed framework DLLs,
 config files (`deps.json`, `runtimeconfig.json`), and license files.
 
+## Syncing with release/10.0
+
+The `bazel` branch is a long-lived branch off `release/10.0`. A GitHub Action
+(`.github/workflows/sync-release.yml`) runs daily to keep it current, merging
+**one upstream commit at a time** to maintain a 1:1 correspondence between
+release/10.0 commits and bazel merge commits.
+
+### How the sync works
+
+1. **Check**: The workflow checks if there are unmerged upstream commits and
+   skips if an open sync PR already exists.
+2. **Pick next commit**: Takes the oldest unmerged commit from
+   `upstream/release/10.0` (one at a time).
+3. **Merge**: Merges that single commit into a new branch off `bazel`.
+4. **Detect**: A detection script (`src/tools/bazel/detect-upstream-changes.sh`)
+   analyzes the merge diff and classifies it:
+   - **clean** — Only `.cs` content changes, no new/removed files or build config
+     changes. Bazel build is unaffected.
+   - **build-changes** — New/removed `.cs` files in libraries with explicit
+     `srcs` lists, changed `.csproj`/`.props`/`.targets`/`CMakeLists.txt` files.
+     BUILD.bazel files may need updates.
+   - **conflict** — Git merge had conflicts requiring manual resolution.
+5. **PR**: A pull request is created with the upstream commit info, detection
+   report, and appropriate labels (`bazel-sync-clean`, `bazel-sync-needs-attention`,
+   `bazel-sync-conflict`).
+6. **Auto-fix** (build-changes/conflict only): A C# script using the GitHub
+   Copilot SDK (`src/tools/bazel/CopilotFixSync.cs`) attempts to automatically
+   update BUILD.bazel files based on the detection report.
+7. **Equivalence check** (build-changes only): Full MSBuild and Bazel builds are
+   run, followed by `compare-runtime-packs.sh` and `compare-bazel.sh` to verify
+   build equivalence. Results are posted as a PR comment.
+
+The workflow will not create a new sync PR while one is already open. Once the
+current PR is merged or closed, the next daily run picks up the next commit.
+
+### Running the detection script locally
+
+```bash
+# Compare current bazel branch against upstream
+./src/tools/bazel/detect-upstream-changes.sh origin/bazel upstream/release/10.0
+
+# Save report to a file
+./src/tools/bazel/detect-upstream-changes.sh origin/bazel upstream/release/10.0 \
+  --report-file /tmp/sync-report.md
+```
+
+Exit codes: `0` = clean, `1` = build-changes, `2` = conflict.
+
+### Key patterns to know when fixing BUILD.bazel files
+
+| MSBuild (.csproj) | Bazel (BUILD.bazel) |
+|--------------------|---------------------|
+| `<Compile Include="path">` | `srcs = ["src/path"]` |
+| `$(CoreLibSharedDir)path` | `"//src/libraries/System.Private.CoreLib:src/path"` |
+| `$(CommonPath)path` | `"//src/libraries/Common:src/path"` |
+| `<ProjectReference Include="...">` | `deps = ["//src/libraries:ref_AssemblyName"]` |
+| `<DefineConstants>FOO</DefineConstants>` | `defines = ["FOO"]` |
+
 ## Platform Support Status
 
 CMake currently supports all of these OS × architecture combinations. Bazel support status is tracked below.
