@@ -18,7 +18,7 @@ load("@rules_dotnet//dotnet/private:common.bzl",
     "to_rlocation_path",)
 load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
 load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS", "CORE_ROOT_REFPACK_DEPS")
-load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary", "create_launcher", "COPY_EXECUTION_REQUIREMENTS")
+load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary", "create_launcher")
 
 # Match src/tests/Directory.Build.props NoWarn
 _TEST_NOWARN = [
@@ -155,19 +155,13 @@ def _xunit_library_test_impl(ctx):
     dll = runtime_provider.libs[0]
     additional_runfiles = list(runtime_provider.pdbs)
 
-    # Copy the xunit console runner files to the same output directory as the test DLL.
+    # Symlink the xunit console runner files to the same output directory as the test DLL.
     xunit_console_dll = None
     for f in ctx.files._xunit_runner:
         dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, f.basename))
-        ctx.actions.run_shell(
-            inputs = [f],
-            outputs = [dst],
-            command = "cp -f \"$1\" \"$2\"",
-            arguments = [f.path, dst.path],
-            mnemonic = "CopyFile",
-            progress_message = "Copying %s" % f.basename,
-            use_default_shell_env = True,
-            execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+        ctx.actions.symlink(
+            output = dst,
+            target_file = f,
         )
         additional_runfiles.append(dst)
         if f.basename == "xunit.console.dll":
@@ -176,49 +170,37 @@ def _xunit_library_test_impl(ctx):
     if xunit_console_dll == None:
         fail("xunit.console.dll not found in xunit runner files")
 
-    # Copy xunit.runner.json next to the test DLL to match MSBuild behavior.
+    # Symlink xunit.runner.json next to the test DLL to match MSBuild behavior.
     # Key settings: preEnumerateTheories=false avoids expensive upfront theory
     # enumeration, and diagnosticMessages=true enables long-running test warnings.
     xunit_runner_json = ctx.file._xunit_runner_config
     dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, xunit_runner_json.basename))
-    ctx.actions.run_shell(
-        inputs = [xunit_runner_json],
-        outputs = [dst],
-        command = "cp -f \"$1\" \"$2\"",
-        arguments = [xunit_runner_json.path, dst.path],
-        mnemonic = "CopyFile",
-        progress_message = "Copying %s" % xunit_runner_json.basename,
-        use_default_shell_env = True,
-        execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+    ctx.actions.symlink(
+        output = dst,
+        target_file = xunit_runner_json,
     )
     additional_runfiles.append(dst)
 
-    # Copy non-framework transitive runtime deps to the output directory.
+    # Symlink non-framework transitive runtime deps to the output directory.
     # Framework assemblies are already in the testhost via Core_Root, so only
-    # test helpers (TestUtilities, RemoteExecutor, etc.) need to be copied.
+    # test helpers (TestUtilities, RemoteExecutor, etc.) need to be symlinked.
     # Deduplicate by basename to avoid conflicts when NuGet packages provide
     # DLLs for multiple TFMs (e.g., net8.0 + netstandard2.0).
     framework_basenames = {f.basename: True for f in ctx.files._framework_assemblies}
-    copied_basenames = {}
+    symlinked_basenames = {}
     transitive_runtime_deps = runtime_provider.deps.to_list()
     for dep in transitive_runtime_deps:
         for lib in dep.libs:
-            if lib.extension == "dll" and lib.basename not in framework_basenames and lib.basename not in copied_basenames:
-                copied_basenames[lib.basename] = True
+            if lib.extension == "dll" and lib.basename not in framework_basenames and lib.basename not in symlinked_basenames:
+                symlinked_basenames[lib.basename] = True
                 dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, lib.basename))
-                ctx.actions.run_shell(
-                    inputs = [lib],
-                    outputs = [dst],
-                    command = "cp -f \"$1\" \"$2\"",
-                    arguments = [lib.path, dst.path],
-                    mnemonic = "CopyFile",
-                    progress_message = "Copying files",
-                    use_default_shell_env = True,
-                    execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+                ctx.actions.symlink(
+                    output = dst,
+                    target_file = lib,
                 )
                 additional_runfiles.append(dst)
 
-    # Copy data files to the output directory next to the test DLL.
+    # Symlink data files to the output directory next to the test DLL.
     # Preserves directory structure: for local files, paths are relative to
     # the package; for NuGet content files, the contentFiles/any/any/ prefix
     # is stripped to get the expected relative path.
@@ -242,15 +224,9 @@ def _xunit_library_test_impl(ctx):
             # Fallback: just use basename
             rel = f.basename
         dst = ctx.actions.declare_file("%s/%s/%s" % (ctx.label.name, tfm, rel))
-        ctx.actions.run_shell(
-            inputs = [f],
-            outputs = [dst],
-            command = "cp -f \"$1\" \"$2\" && chmod u+rw \"$2\"",
-            arguments = [f.path, dst.path],
-            mnemonic = "CopyFile",
-            progress_message = "Copying %s" % rel,
-            use_default_shell_env = True,
-            execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+        ctx.actions.symlink(
+            output = dst,
+            target_file = f,
         )
         additional_runfiles.append(dst)
 
@@ -738,21 +714,15 @@ def _il_test_impl(ctx):
         executable = ctx.executable.ilasm_exe,
     )
 
-    # Copy runtime DLLs from deps alongside the test DLL
+    # Symlink runtime DLLs from deps alongside the test DLL
     for dep in ctx.attr.deps:
         runtime_info = dep[DotnetAssemblyRuntimeInfo]
         for lib in runtime_info.libs:
             if lib.extension == "dll":
                 dst = ctx.actions.declare_file(lib.basename, sibling = dll)
-                ctx.actions.run_shell(
-                    inputs = [lib],
-                    outputs = [dst],
-                    command = "cp -f \"$1\" \"$2\"",
-                    arguments = [lib.path, dst.path],
-                    mnemonic = "CopyFile",
-                    progress_message = "Copying %s" % lib.basename,
-                    use_default_shell_env = True,
-                    execution_requirements = COPY_EXECUTION_REQUIREMENTS,
+                ctx.actions.symlink(
+                    output = dst,
+                    target_file = lib,
                 )
                 additional_runfiles.append(dst)
 
