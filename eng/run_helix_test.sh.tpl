@@ -22,17 +22,25 @@ TESTHOST="$(readlink -f "$(rlocation TEMPLATED_testhost)")"
 TEST_DIR_ANCHOR="$(rlocation TEMPLATED_test_dir_anchor)"
 TEST_DIR="$(dirname "$(readlink -f "$TEST_DIR_ANCHOR")")"
 
+# The Helix SDK writes .payload cache files next to the payload directories.
+# Bazel's sandbox is read-only, so we copy payloads to a writable temp location.
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+cp -rL "$TESTHOST" "$WORK_DIR/testhost"
+cp -rL "$TEST_DIR" "$WORK_DIR/testpayload"
+
 # Build HelixSubmit arguments.
 ARGS=(
     "--queue=TEMPLATED_queue"
-    "--command=TEMPLATED_command"
+    '--command=TEMPLATED_command'
     "--work-item-name=TEMPLATED_work_item_name"
     "--timeout=TEMPLATED_timeout"
     "--base-url=TEMPLATED_base_url"
     "--source=TEMPLATED_source"
     "--creator=TEMPLATED_creator"
-    "--correlation-payload-dir=$TESTHOST"
-    "--test-payload-dir=$TEST_DIR"
+    "--correlation-payload-dir=$WORK_DIR/testhost"
+    "--test-payload-dir=$WORK_DIR/testpayload"
 )
 
 # Pass Helix access token from environment if available.
