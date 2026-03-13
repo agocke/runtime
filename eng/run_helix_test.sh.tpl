@@ -28,6 +28,7 @@ ARGS=(
     "--command=TEMPLATED_command"
     "--work-item-name=TEMPLATED_work_item_name"
     "--timeout=TEMPLATED_timeout"
+    "--base-url=TEMPLATED_base_url"
     "--source=TEMPLATED_source"
     "--creator=TEMPLATED_creator"
     "--correlation-payload-dir=$TESTHOST"

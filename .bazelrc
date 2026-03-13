@@ -206,3 +206,15 @@ build:libs_release --//:libs_config=release
 build:release --config=clr_release
 build:release --config=libs_release
 # Note: -c opt is on clr_release, so it applies here too.
+
+# =====================================================================
+# Helix remote test queue configs
+# =====================================================================
+# Usage: bazel test --config=helix_ubuntu2204 //path/to:Helix.Test
+# Requires HELIX_ACCESS_TOKEN env var for non-.Open queues.
+build:helix_ubuntu2204 --//:helix_queue=Ubuntu.2204.Amd64.Open
+build:helix_azurelinux3 --//:helix_queue=AzureLinux.3.Amd64.Open
+build:helix_win11 --//:helix_queue=Windows.11.Amd64.Client.Open
+build:helix_winserver2025 --//:helix_queue=Windows.Server2025.Amd64.Open
+build:helix_osx15 --//:helix_queue=OSX.15.Amd64.Open
+build:helix_osx26_arm64 --//:helix_queue=OSX.26.Arm64.Open

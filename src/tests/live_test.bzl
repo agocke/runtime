@@ -321,6 +321,13 @@ def _helix_library_test_impl(ctx):
     """Build a library test and dispatch it to Helix for remote execution."""
     prep = _prepare_library_test(ctx)
 
+    # Resolve effective values: rule attr overrides build setting.
+    queue = ctx.attr.queue if ctx.attr.queue else ctx.attr._helix_queue_setting[BuildSettingInfo].value
+    if not queue:
+        fail("Helix queue must be set via the 'queue' attribute or --//:helix_queue flag")
+    helix_timeout = ctx.attr.helix_timeout if ctx.attr.helix_timeout else ctx.attr._helix_timeout_setting[BuildSettingInfo].value
+    base_url = ctx.attr._helix_base_url_setting[BuildSettingInfo].value
+
     windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
     launcher = ctx.actions.declare_file("{}.{}".format(prep.dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = prep.dll)
 
@@ -349,10 +356,11 @@ def _helix_library_test_impl(ctx):
             "TEMPLATED_testhost": to_rlocation_path(ctx, prep.testhost),
             "TEMPLATED_test_dir_anchor": to_rlocation_path(ctx, prep.xunit_console_dll),
             "TEMPLATED_command": helix_command,
-            "TEMPLATED_queue": ctx.attr.queue,
-            "TEMPLATED_timeout": ctx.attr.helix_timeout,
+            "TEMPLATED_queue": queue,
+            "TEMPLATED_timeout": helix_timeout,
+            "TEMPLATED_base_url": base_url,
             "TEMPLATED_work_item_name": ctx.label.name,
-            "TEMPLATED_source": ctx.attr.source if ctx.attr.source else "runtime/bazel/" + ctx.attr.queue,
+            "TEMPLATED_source": ctx.attr.source if ctx.attr.source else "runtime/bazel/" + queue,
             "TEMPLATED_creator": ctx.attr.creator,
         },
         is_executable = True,
@@ -706,12 +714,24 @@ _helix_library_test = rule(
                 cfg = "exec",
             ),
             "queue": attr.string(
-                doc = "Helix queue name (e.g., 'Ubuntu.2204.Amd64.Open').",
-                mandatory = True,
+                doc = "Helix queue name (e.g., 'Ubuntu.2204.Amd64.Open'). Overrides --//:helix_queue.",
+                default = "",
             ),
             "helix_timeout": attr.string(
-                doc = "Helix work item timeout in HH:MM:SS format.",
-                default = "00:15:00",
+                doc = "Helix work item timeout in HH:MM:SS format. Overrides --//:helix_timeout.",
+                default = "",
+            ),
+            "_helix_queue_setting": attr.label(
+                doc = "Build setting for default Helix queue.",
+                default = "//:helix_queue",
+            ),
+            "_helix_timeout_setting": attr.label(
+                doc = "Build setting for default Helix timeout.",
+                default = "//:helix_timeout",
+            ),
+            "_helix_base_url_setting": attr.label(
+                doc = "Build setting for Helix API base URL.",
+                default = "//:helix_base_url",
             ),
             "source": attr.string(
                 doc = "Helix job source identifier.",
@@ -761,12 +781,12 @@ def library_test(
 
 def helix_library_test(
     name,
-    queue,
+    queue = "",
     deps = [],
     analyzers = [],
     nowarn = [],
     size = "large",
-    helix_timeout = "00:15:00",
+    helix_timeout = "",
     source = "",
     creator = "bazel-helix",
     use_shared_compilation = True,
@@ -776,7 +796,8 @@ def helix_library_test(
     """Test macro for library tests dispatched to Helix for remote execution.
 
     Same compilation as library_test(), but the test runs on a Helix worker
-    instead of locally. Set HELIX_ACCESS_TOKEN env var for authenticated queues,
+    instead of locally. Queue can be set per-target or globally via
+    --//:helix_queue. Set HELIX_ACCESS_TOKEN env var for authenticated queues,
     or use anonymous submission with the creator field for .Open queues.
     Use --local_resources=helix_slot=N to control concurrent Helix submissions.
     """

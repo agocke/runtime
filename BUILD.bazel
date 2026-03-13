@@ -91,6 +91,31 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+# ── Helix remote test settings ───────────────────────────────────────
+#
+# Set via command line:  --//:helix_queue=Ubuntu.2204.Amd64.Open
+# Or via .bazelrc:       --config=helix_ubuntu2204
+#
+# Default queue is empty (required per-target in helix_library_test).
+# base_url and timeout provide sensible defaults overridable globally.
+string_flag(
+    name = "helix_queue",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "helix_base_url",
+    build_setting_default = "https://helix.dot.net/",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "helix_timeout",
+    build_setting_default = "00:15:00",
+    visibility = ["//visibility:public"],
+)
+
 # ── Assembled native runtime layout ──────────────────────────────────
 runtime_layout(
     name = "runtime_native",
