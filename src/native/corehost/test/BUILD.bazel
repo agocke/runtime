@@ -2,9 +2,10 @@
 # Cross-platform tests only; Windows-only tests (comsxs, ijw, typelibs) are excluded.
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library", "cc_test")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
-COREHOST_TEST_COPTS = []
+COREHOST_TEST_COPTS = PLATFORM_COPTS
 
 COREHOST_TEST_INCLUDES = [
     "../",
@@ -30,6 +31,8 @@ cc_test(
     size = "small",
     srcs = ["fx_ver/test_fx_ver.cpp"],
     copts = COREHOST_TEST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_TEST_INCLUDES,
     defines = COREHOST_TEST_DEFINES,
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -50,6 +53,8 @@ cc_library(
         "mockcoreclr/mockcoreclr.h",
     ],
     copts = COREHOST_TEST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_TEST_INCLUDES,
     defines = COREHOST_TEST_DEFINES + ["EXPORT_SHARED_API"],
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -72,6 +77,8 @@ cc_library(
         "mockhostfxr/test_c_api.c",
     ],
     copts = COREHOST_TEST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_TEST_INCLUDES,
     defines = COREHOST_TEST_DEFINES + [
         "MOCKHOSTFXR_2_2",
@@ -97,6 +104,8 @@ cc_library(
         "mockhostfxr/test_c_api.c",
     ],
     copts = COREHOST_TEST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_TEST_INCLUDES,
     defines = COREHOST_TEST_DEFINES + [
         "MOCKHOSTFXR_5_0",
@@ -122,6 +131,8 @@ cc_library(
     name = "mockhostpolicy_lib",
     srcs = ["mockhostpolicy/mockhostpolicy.cpp"],
     copts = COREHOST_TEST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_TEST_INCLUDES,
     defines = COREHOST_TEST_DEFINES + ["EXPORT_SHARED_API"],
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -156,6 +167,8 @@ cc_binary(
         "nativehost/resolve_component_dependencies_test.h",
     ],
     copts = COREHOST_TEST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_TEST_INCLUDES + ["../nethost"],
     defines = COREHOST_TEST_DEFINES,
     local_defines = NATIVE_CONFIG_DEFINES,

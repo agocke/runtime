@@ -2,6 +2,7 @@
 # Matches CMake: src/coreclr/minipal/CMakeLists.txt + Unix/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -21,7 +22,9 @@ cc_library(
         "Unix/dn-u16.cpp",
         "Unix/doublemapping.cpp",
     ],
-    copts = CLR_CONFIG_COPTS,
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     deps = [
         ":coreclrminipal_headers",
         "//src/coreclr/inc:coreclr_inc",

@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 
 # zlib-ng built in ZLIB_COMPAT mode without runtime CPU detection
 # for linux-x64. Uses generic implementations only.
@@ -81,11 +82,16 @@ cc_library(
         ":gen_zlib_h",
         ":gen_zlib_name_mangling_h",
     ],
-    copts = [
-        "-Wno-implicit-fallthrough",
-        "-Wno-unused-command-line-argument",
-        "-w",
-    ],
+    copts = PLATFORM_COPTS + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-Wno-implicit-fallthrough",
+            "-Wno-unused-command-line-argument",
+            "-w",
+        ],
+    }),
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     local_defines = [
         "ZLIB_COMPAT",
         "DISABLE_RUNTIME_CPU_DETECTION",

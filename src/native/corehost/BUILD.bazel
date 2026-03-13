@@ -5,7 +5,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_COPTS", "NATIVE_CONFIG_DEFINES")
 
-load("//:cc_defs.bzl", "PLATFORM_COPTS", "PLATFORM_DEFINES", "PLATFORM_LINKOPTS")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS", "PLATFORM_DEFINES", "PLATFORM_LINKOPTS")
 
 package(default_visibility = ["//src/native/corehost:__subpackages__"])
 
@@ -137,6 +137,8 @@ cc_library(
         "//conditions:default": [],
     }),
     copts = COREHOST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_INCLUDES + ["hostmisc"],
     defines = COREHOST_DEFINES,
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -166,6 +168,8 @@ cc_library(
     name = "fxr_resolver",
     srcs = ["fxr_resolver.cpp"],
     copts = COREHOST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_INCLUDES + ["fxr", "hostmisc"],
     defines = COREHOST_DEFINES,
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -199,6 +203,8 @@ cc_library(
         "runtime_config.h",
     ],
     copts = COREHOST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_INCLUDES + ["fxr", "hostmisc"],
     defines = COREHOST_DEFINES + ["EXPORT_SHARED_API"],
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -247,6 +253,8 @@ cc_library(
         "fxr/standalone/hostpolicy_resolver.cpp",
     ],
     copts = COREHOST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_INCLUDES + ["fxr", "hostmisc"],
     defines = COREHOST_DEFINES + ["EXPORT_SHARED_API"],
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -320,6 +328,8 @@ cc_library(
         "hostpolicy/version.h",
     ],
     copts = COREHOST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_INCLUDES + ["fxr", "hostmisc", "hostpolicy"],
     defines = COREHOST_DEFINES + ["EXPORT_SHARED_API"],
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -367,6 +377,8 @@ cc_binary(
         "hostfxr_resolver.h",
     ],
     copts = COREHOST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_INCLUDES + ["fxr", "hostmisc", "apphost"],
     defines = COREHOST_DEFINES,
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -401,6 +413,8 @@ cc_binary(
         "//conditions:default": [],
     }),
     copts = COREHOST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_INCLUDES + ["fxr", "hostmisc", "apphost"],
     defines = COREHOST_DEFINES + ["FEATURE_APPHOST"],
     local_defines = NATIVE_CONFIG_DEFINES,
@@ -424,6 +438,8 @@ cc_library(
     srcs = ["nethost/nethost.cpp"],
     hdrs = ["nethost/nethost.h"],
     copts = COREHOST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = COREHOST_INCLUDES + ["fxr", "hostmisc"],
     defines = COREHOST_DEFINES + [
         "EXPORT_SHARED_API",

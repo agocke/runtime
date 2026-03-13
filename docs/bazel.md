@@ -86,7 +86,8 @@ layout.
 - Additional platforms (linux-arm64, macOS, Windows)
   - **Windows (win-x64)**: corehost native components (dotnet.exe, hostfxr.dll,
     hostpolicy.dll) build successfully with MSVC. Infrastructure includes
-    MSVC compiler/linker flags in `cc_defs.bzl`, static debug CRT (`/MTd`)
+    MSVC compiler/linker flags in `cc_defs.bzl` (alongside Unix/Clang flags
+    via `PLATFORM_COPTS`/`PLATFORM_CONLYOPTS`/`PLATFORM_CXXOPTS`), static debug CRT (`/MTd`)
     matching CMake's `configurecompiler.cmake`, and Windows config headers
     for corehost and minipal.
 - Full test suite integration
@@ -142,7 +143,7 @@ areas:
 - **Native defines** (1000 files): Boolean define normalization needed (`-DFOO` vs
   `-DFOO=1`), plus missing/extra defines in `coreclr_defs.bzl` and `native_defs.bzl`
 - **Native flags/optimization** (1000 files): Warning flags and optimization level
-  mismatches between `.bazelrc` and `CMakeLists.txt`
+  mismatches between `cc_defs.bzl` constants (PLATFORM_COPTS, etc.) and `CMakeLists.txt`
 - **Managed assemblies**: 164 of 186 archive+non-archive assemblies fully match
   MSBuild's CSC invocations (defines, nowarn, source files, generated content,
   references). The remaining 22 differ due to:
@@ -613,7 +614,8 @@ Mono-only platforms (Browser/WASM, WASI, Tizen) are also excluded.
 ## 7. Bazel Infrastructure — 🔨 linux-x64 done
 
 - [x] `MODULE.bazel` — Bzlmod workspace, depends on rules_cc@0.2.14, rules_dotnet, bazel_skylib@1.8.2
-- [x] `.bazelrc` — Compiler flags matching CMake for linux-x64, per-component config system
+- [x] `.bazelrc` — Per-component config system, per_file_copt, linker flags
+- [x] `cc_defs.bzl` — Platform compiler flags (`PLATFORM_COPTS`/`PLATFORM_CONLYOPTS`/`PLATFORM_CXXOPTS`) matching CMake for linux-x64 and win-x64, applied via BUILD file attributes
 - [x] `BUILD.bazel` (root) — Root package, string_flag build settings, config_settings, runtime layout
 - [x] `defs.bzl` — Shared macros (csharp_library wrapper, gen_resx_source, resgen)
 - [x] `src/libraries/defs.bzl` — Library macros (netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair)

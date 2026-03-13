@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 # dn-containers for linux-x64 and darwin-arm64
@@ -38,7 +39,9 @@ _CONFIG_INCLUDES = select({
 cc_library(
     name = "dn-containers",
     srcs = _SOURCES + _CONFIG_HDR + _HEADERS,
-    copts = CLR_CONFIG_COPTS,
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = [".", ".."] + _CONFIG_INCLUDES,
     visibility = ["//src/native:__subpackages__"],
     deps = [
@@ -49,9 +52,11 @@ cc_library(
 cc_library(
     name = "dn-containers-no-lto",
     srcs = _SOURCES + _CONFIG_HDR + _HEADERS,
-    copts = CLR_CONFIG_COPTS + [
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS + [
         "-fno-lto",
     ],
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = [".", ".."] + _CONFIG_INCLUDES,
     visibility = ["//src/native:__subpackages__"],
     deps = [

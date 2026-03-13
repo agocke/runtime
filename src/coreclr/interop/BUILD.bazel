@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/interop/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -34,6 +34,8 @@ cc_library(
         "*.h",
     ]),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     local_defines = CLR_CONFIG_DEFINES,
     includes = [
         ".",

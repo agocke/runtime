@@ -5,7 +5,7 @@
 # Currently uses pre-generated files; a Bazel genrule can replace this later.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -51,6 +51,8 @@ cc_library(
         "-include", "src/coreclr/vm/common.h",
         "-Wno-error",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         "..",
         "../..",
@@ -154,6 +156,8 @@ cc_library(
         "//src/native/eventpipe:dn-diagnosticserver-pal-srcs",
     ],
     copts = _EP_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _EP_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES,
     defines = _EP_DEFINES,

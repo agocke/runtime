@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library", "objc_library")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
-load("//:cc_defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS", "PLATFORM_DEFINES")
 
 # System.Globalization.Native for linux-x64
 # Produces libSystem.Globalization.Native.so (shared) and libSystem.Globalization.Native.a (static)
@@ -27,7 +27,7 @@ cc_library(
         "@platforms//os:macos": ["bazel/darwin-arm64/config.h"],
         "//conditions:default": ["bazel/linux-glibc-x64/config.h"],
     }),
-    copts = CLR_CONFIG_COPTS + [
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS + [
         "-Wno-switch-enum",
         "-Wno-covered-switch-default",
         "-Wno-reserved-id-macro",
@@ -43,6 +43,8 @@ cc_library(
         ],
         "//conditions:default": [],
     }),
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = [
         "../../..",
         "../Common",
@@ -96,7 +98,7 @@ cc_library(
         "pal_timeZoneInfo_objc.c",
     ] + glob(["*.h"]),
     hdrs = ["bazel/darwin-arm64/config.h"],
-    copts = CLR_CONFIG_COPTS + [
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS + [
         "-x", "objective-c",
         "-fobjc-arc",
         "-Wno-switch-enum",
@@ -111,6 +113,8 @@ cc_library(
         """-DOSX_ICU_LIBRARY_PATH='"/usr/lib/libicucore.dylib"'""",
         "-DU_DISABLE_RENAMING",
     ],
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = [
         "../../..",
         "../Common",

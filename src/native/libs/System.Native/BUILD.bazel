@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
-load("//:cc_defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS", "PLATFORM_DEFINES")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
 cc_library(
@@ -34,9 +34,11 @@ cc_library(
         "pal_time.c",
         "pal_uid.c",
     ] + glob(["*.h"]),
-    copts = [
+    copts = PLATFORM_COPTS + [
         "-Wno-declaration-after-statement",
     ],
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = [
         "../../..",
         "../Common",
@@ -84,12 +86,14 @@ cc_library(
         "pal_log_objc.c",
         "pal_searchpath_objc.c",
     ] + glob(["*.h"]),
-    copts = [
+    copts = PLATFORM_COPTS + [
         "-x", "objective-c",
         "-fno-objc-arc",
         "-Wno-declaration-after-statement",
 
     ],
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     defines = [
         "HAS_CONSOLE_SIGNALS",
     ],

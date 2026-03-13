@@ -4,7 +4,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_BASE_CONFIG_DEFINES", "CLR_CONFIG_COPTS")
-load("//src/coreclr/nativeaot:nativeaot_defs.bzl", "NATIVEAOT_COMMON_DEFINES", "NATIVEAOT_COPTS", "NATIVEAOT_DEFINES")
+load("//src/coreclr/nativeaot:nativeaot_defs.bzl", "NATIVEAOT_COMMON_DEFINES", "NATIVEAOT_CONLYOPTS", "NATIVEAOT_COPTS", "NATIVEAOT_CXXOPTS", "NATIVEAOT_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -376,6 +376,8 @@ cc_library(
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     includes = _GC_UNIX_INCLUDES + _EVENTING_INCLUDES,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
@@ -399,6 +401,8 @@ cc_library(
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     includes = _GC_UNIX_INCLUDES + _EVENTING_INCLUDES,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
@@ -419,6 +423,8 @@ cc_library(
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     includes = _GC_UNIX_INCLUDES + _EVENTING_INCLUDES,
     defines = NATIVEAOT_DEFINES + ["FEATURE_SVR_GC"],
     local_defines = CLR_BASE_CONFIG_DEFINES,
@@ -439,6 +445,8 @@ cc_library(
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     includes = _GC_UNIX_INCLUDES + _EVENTING_INCLUDES,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
@@ -454,6 +462,8 @@ cc_library(
     hdrs = _RUNTIME_HDRS,
     textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     includes = _GC_UNIX_INCLUDES + _EVENTING_INCLUDES,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
@@ -491,6 +501,8 @@ cc_library(
         "@platforms//cpu:arm64": [],
         "//conditions:default": ["-mavx2"],
     }),
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     includes = ["../gc/vxsort", "../gc/vxsort/smallsort"],
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
@@ -507,6 +519,8 @@ cc_library(
     name = "nativeaot_vxsort_disabled",
     srcs = ["//src/coreclr/gc:vxsort/dummy.cpp"],
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     includes = ["../gc/vxsort"],
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
@@ -526,6 +540,8 @@ cc_library(
     name = "bootstrapper",
     srcs = ["Bootstrap/main.cpp"],
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -536,6 +552,8 @@ cc_library(
     name = "bootstrapperdll",
     srcs = ["Bootstrap/main.cpp"],
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     defines = NATIVEAOT_DEFINES + ["NATIVEAOT_DLL"],
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,
@@ -546,6 +564,8 @@ cc_library(
     name = "stdc_compat",
     srcs = ["Bootstrap/stdcppshim.cpp"],
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = NATIVEAOT_CONLYOPTS,
+    cxxopts = NATIVEAOT_CXXOPTS,
     defines = NATIVEAOT_DEFINES,
     local_defines = CLR_BASE_CONFIG_DEFINES,
     linkstatic = True,

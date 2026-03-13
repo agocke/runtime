@@ -5,6 +5,7 @@
 # Matches CMake: src/native/external/libunwind_extras/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -212,7 +213,9 @@ cc_library(
         # elf64.c includes elfxx.c
         "src/elfxx.c",
     ],
-    copts = LIBUNWIND_COPTS + CLR_CONFIG_COPTS,
+    copts = PLATFORM_COPTS + LIBUNWIND_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     defines = LIBUNWIND_DEFINES,
     hdrs = glob([
         "include/*.h",
@@ -297,10 +300,12 @@ cc_library(
         ],
         allow_empty = True,
     ),
-    copts = LIBUNWIND_COPTS + CLR_CONFIG_COPTS + [
+    copts = PLATFORM_COPTS + LIBUNWIND_COPTS + CLR_CONFIG_COPTS + [
         "-Wno-sometimes-uninitialized",
         "-Wno-implicit-function-declaration",
     ],
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     defines = LIBUNWIND_DEFINES + [
         "UNW_REMOTE_ONLY",
         # TARGET_ARM64 required by missing-functions.c
@@ -351,7 +356,9 @@ cc_test(
     name = "test_flush_cache",
     size = "small",
     srcs = ["tests/test-flush-cache.c"],
-    copts = _LIBUNWIND_TEST_COPTS,
+    copts = PLATFORM_COPTS + _LIBUNWIND_TEST_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["include", "tests"],
     defines = _LIBUNWIND_TEST_DEFINES,
     linkstatic = True,

@@ -1,7 +1,7 @@
 # CoreCLR metadata headers and libraries.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES", "CORECLR_DAC_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS", "CORECLR_DAC_DEFINES", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -87,6 +87,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/compiler/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["compiler"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES,
@@ -122,6 +124,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/compiler/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["compiler"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES + [
@@ -150,6 +154,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/runtime/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["runtime"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES + [
@@ -178,6 +184,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/runtime/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["runtime"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES + [
@@ -208,6 +216,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/enc/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["enc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES,
@@ -249,6 +259,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/compiler/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["compiler"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DAC_DEFINES,
@@ -275,6 +287,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/runtime/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["runtime"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DAC_DEFINES + [
@@ -304,6 +318,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/enc/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["enc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DAC_DEFINES,
@@ -323,6 +339,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/compiler/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["compiler"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DBI_DEFINES,
@@ -349,6 +367,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/runtime/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["runtime"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DBI_DEFINES + [
@@ -378,6 +398,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/enc/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["enc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DBI_DEFINES,
@@ -398,6 +420,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/datasource/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["datasource"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DBI_DEFINES,
@@ -424,6 +448,8 @@ cc_library(
     copts = _MD_COPTS + [
         "-include", "src/coreclr/md/enc/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _MD_INCLUDES + ["enc"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = _MD_DEFINES + [

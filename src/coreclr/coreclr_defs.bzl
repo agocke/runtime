@@ -1,8 +1,11 @@
 # Shared constants for CoreCLR Bazel builds.
 # Import into BUILD.bazel files with:
-#   load("//src/coreclr:coreclr_defs.bzl", "CORECLR_DEFINES", "CORECLR_COPTS")
+#   load("//src/coreclr:coreclr_defs.bzl", "CORECLR_DEFINES", "CORECLR_COPTS",
+#         "CORECLR_CONLYOPTS", "CORECLR_CXXOPTS")
 #   load("//src/coreclr:coreclr_defs.bzl", "CORECLR_DAC_DEFINES")
 #   load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CLR_CONFIG_COPTS")
+
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 
 # --- Feature defines ---
 # Derived from clrdefinitions.cmake and clrfeatures.cmake.
@@ -149,18 +152,27 @@ CORECLR_DAC_DEFINES = _CORECLR_DAC_COMMON_DEFINES + select({
 # --- Global include paths for all coreclr components ---
 # Matches include_directories() from src/coreclr/CMakeLists.txt (Unix path).
 
-CORECLR_COPTS = [
-    # Warning suppression matching configurecompiler.cmake + src/coreclr/CMakeLists.txt for GCC C++
-    "-Wno-invalid-offsetof",
-    "-Wno-class-memaccess",
-    "-Wno-conversion-null",
-    "-Wno-pointer-arith",
-    "-Wno-misleading-indentation",
-    "-Wno-stringop-overflow",
-    "-Wno-restrict",
+CORECLR_COPTS = PLATFORM_COPTS + select({
+    "@platforms//os:windows": [],
+    "//conditions:default": [
+        # Warning suppression matching configurecompiler.cmake +
+        # src/coreclr/CMakeLists.txt for GCC/Clang.
+        "-Wno-invalid-offsetof",
+        "-Wno-class-memaccess",
+        "-Wno-conversion-null",
+        "-Wno-pointer-arith",
+        "-Wno-misleading-indentation",
+        "-Wno-stringop-overflow",
+        "-Wno-restrict",
+    ],
     # Include paths are provided by //src/coreclr:coreclr_inc and
     # //src/native:native_inc (propagated via deps).
-]
+})
+
+# C-only and C++-only flags for coreclr targets.  Pass via
+# conlyopts = CORECLR_CONLYOPTS and cxxopts = CORECLR_CXXOPTS.
+CORECLR_CONLYOPTS = PLATFORM_CONLYOPTS
+CORECLR_CXXOPTS = PLATFORM_CXXOPTS
 
 # --- Debug/checked/release defines ---
 # Matches CMake's per-config compile_definitions from configurecompiler.cmake.

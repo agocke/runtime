@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
-load("//:cc_defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS", "PLATFORM_DEFINES")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
 # System.Security.Cryptography.Native.OpenSsl for linux-x64
@@ -46,7 +46,7 @@ cc_library(
         "pal_x509ext.c",
     ] + glob(["*.h"]),
     hdrs = ["bazel/linux-glibc-x64/pal_crypto_config.h"],
-    copts = [
+    copts = PLATFORM_COPTS + [
         "-Wno-cast-align",
         "-Wno-reserved-id-macro",
         "-Wno-documentation",
@@ -54,6 +54,8 @@ cc_library(
         "-pthread",
 
     ],
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = [
         "../../..",
         "../Common",

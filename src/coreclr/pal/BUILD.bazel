@@ -3,9 +3,8 @@
 # and global include_directories in src/coreclr/CMakeLists.txt (for headers).
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//:cc_defs.bzl", "PLATFORM_DEFINES")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DAC_DEFINES")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_COPTS", "PLATFORM_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS", "CORECLR_DAC_DEFINES", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -201,7 +200,7 @@ cc_library(
         "inc/*.inc",
         "inc/rt/*.h",
     ]),
-    copts = CLR_CONFIG_COPTS + [
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS + [
         # Warning suppression (matching configurecompiler.cmake for GCC C++)
         "-Wno-invalid-offsetof",
         "-Wno-class-memaccess",
@@ -214,6 +213,8 @@ cc_library(
         "//:compiler_clang": [],
         "//conditions:default": ["-Wa,--divide"],
     }),
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         "../inc",
         "src/include",
@@ -279,9 +280,11 @@ cc_library(
         "@platforms//os:macos": ["src/bazel/darwin-arm64/config.h"],
         "//conditions:default": ["src/bazel/linux-glibc-x64/config.h"],
     }),
-    copts = CLR_CONFIG_COPTS + [
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS + [
         "-Wno-invalid-offsetof",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         "src/include",
         "inc",
@@ -314,6 +317,8 @@ cc_library(
         "src/include/**/*.inl",
     ]),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = ["src/include"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
@@ -334,6 +339,8 @@ cc_binary(
     srcs = glob(["src/eventprovider/bazel/lttng/traceptprov*.cpp"]) +
            glob(["src/eventprovider/bazel/lttng/tp*.h"]),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = ["src/eventprovider/bazel/lttng"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
@@ -372,6 +379,8 @@ cc_library(
         allow_empty = True,
     ),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         "src",
         "src/include",

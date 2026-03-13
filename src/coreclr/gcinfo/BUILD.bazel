@@ -3,7 +3,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//:cc_defs.bzl", "PLATFORM_DEFINES")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -56,6 +56,8 @@ cc_library(
     srcs = _GCINFO_ALLARCH_SOURCES,
     hdrs = glob(["*.h"]),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     local_defines = CLR_CONFIG_DEFINES,
     includes = ["."],
     alwayslink = True,
@@ -76,6 +78,8 @@ cc_library(
         "-DTARGET_64BIT",
         "-DTARGET_ARM64",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _HOST_DEFINES,
     includes = ["."],
     deps = _CROSS_ARCH_DEPS,
@@ -91,6 +95,8 @@ cc_library(
         "-DTARGET_UNIX",
         "-DUNIX_AMD64_ABI",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _HOST_DEFINES,
     includes = ["."],
     deps = _CROSS_ARCH_DEPS,
@@ -105,6 +111,8 @@ cc_library(
         "-DTARGET_AMD64",
         "-DTARGET_WINDOWS",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _HOST_DEFINES,
     includes = ["."],
     deps = _CROSS_ARCH_DEPS,
@@ -117,6 +125,8 @@ cc_library(
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + _CROSS_ARCH_UNDEF_COPTS + [
         "-DTARGET_ARM",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _HOST_DEFINES,
     includes = ["."],
     deps = _CROSS_ARCH_DEPS,
@@ -130,6 +140,8 @@ cc_library(
         "-DTARGET_X86",
         "-DTARGET_WINDOWS",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _HOST_DEFINES,
     includes = ["."],
     deps = _CROSS_ARCH_DEPS,
@@ -145,6 +157,8 @@ cc_library(
         "-DTARGET_BROWSER",
         "-DFEATURE_INTERPRETER",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _HOST_DEFINES,
     includes = ["."],
     deps = _CROSS_ARCH_DEPS,

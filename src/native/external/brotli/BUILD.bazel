@@ -3,6 +3,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load(":compiler_config_setting.bzl", "create_msvc_config")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -118,7 +119,9 @@ cc_library(
     name = "brotlicommon",
     srcs = [":common_sources"],
     hdrs = [":common_headers"],
-    copts = STRICT_C_OPTIONS,
+    copts = PLATFORM_COPTS + STRICT_C_OPTIONS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     local_defines = ["BROTLI_SHARED_COMPILATION"],
     deps = [":brotli_inc"],
 )
@@ -127,7 +130,9 @@ cc_library(
     name = "brotlidec",
     srcs = [":dec_sources"],
     hdrs = [":dec_headers"],
-    copts = STRICT_C_OPTIONS,
+    copts = PLATFORM_COPTS + STRICT_C_OPTIONS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     local_defines = ["BROTLI_SHARED_COMPILATION"],
     deps = [":brotlicommon"],
 )
@@ -136,7 +141,9 @@ cc_library(
     name = "brotlienc",
     srcs = [":enc_sources"],
     hdrs = [":enc_headers"],
-    copts = STRICT_C_OPTIONS,
+    copts = PLATFORM_COPTS + STRICT_C_OPTIONS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     local_defines = ["BROTLI_SHARED_COMPILATION"],
     linkopts = select({
         ":clang-cl": [],
@@ -149,7 +156,9 @@ cc_library(
 cc_binary(
     name = "brotli",
     srcs = ["c/tools/brotli.c"],
-    copts = STRICT_C_OPTIONS,
+    copts = PLATFORM_COPTS + STRICT_C_OPTIONS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     linkstatic = 1,
     deps = [
         ":brotlidec",

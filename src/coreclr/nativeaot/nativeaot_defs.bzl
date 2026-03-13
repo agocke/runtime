@@ -2,6 +2,8 @@
 # Derived from src/coreclr/nativeaot/CMakeLists.txt and
 # src/coreclr/nativeaot/Runtime/CMakeLists.txt.
 
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
+
 # Shared defines (identical across all supported platforms).
 NATIVEAOT_COMMON_DEFINES = [
     "FEATURE_NATIVEAOT",
@@ -50,22 +52,29 @@ NATIVEAOT_DEFINES = NATIVEAOT_COMMON_DEFINES + select({
     ],
 })
 
-_NATIVEAOT_COMMON_COPTS = [
-    "-fno-exceptions",
-    "-fno-asynchronous-unwind-tables",
-    "-Wno-invalid-offsetof",
-    "-Wno-class-memaccess",
-    "-Wno-conversion-null",
-    "-Wno-pointer-arith",
-    "-Wno-misleading-indentation",
-    "-Wno-stringop-overflow",
-    "-Wno-restrict",
-    "-Wno-unused-but-set-parameter",
-    # Include paths are provided by //src/coreclr/nativeaot:nativeaot_inc
-    # and //src/native:native_inc (propagated via deps).
-]
-
-NATIVEAOT_COPTS = _NATIVEAOT_COMMON_COPTS + select({
-    "@platforms//os:macos": [],
-    "@platforms//os:linux": ["-mcx16"],
+_NATIVEAOT_COMMON_COPTS = select({
+    "@platforms//os:windows": [],
+    "//conditions:default": [
+        "-fno-exceptions",
+        "-fno-asynchronous-unwind-tables",
+        "-Wno-invalid-offsetof",
+        "-Wno-class-memaccess",
+        "-Wno-conversion-null",
+        "-Wno-pointer-arith",
+        "-Wno-misleading-indentation",
+        "-Wno-stringop-overflow",
+        "-Wno-restrict",
+        "-Wno-unused-but-set-parameter",
+        # Include paths are provided by //src/coreclr/nativeaot:nativeaot_inc
+        # and //src/native:native_inc (propagated via deps).
+    ],
 })
+
+NATIVEAOT_COPTS = PLATFORM_COPTS + _NATIVEAOT_COMMON_COPTS + select({
+    "@platforms//os:linux": ["-mcx16"],
+    "//conditions:default": [],
+})
+
+# C-only and C++-only flags for NativeAOT targets.
+NATIVEAOT_CONLYOPTS = PLATFORM_CONLYOPTS
+NATIVEAOT_CXXOPTS = PLATFORM_CXXOPTS

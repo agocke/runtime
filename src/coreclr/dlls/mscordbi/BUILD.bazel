@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/dlls/mscordbi/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -36,6 +36,8 @@ cc_binary(
     linkshared = True,
     linkstatic = True,
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = ["."],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,

@@ -2,6 +2,7 @@
 # Matches CMake: src/coreclr/vm/datadescriptor/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -15,7 +16,9 @@ cc_library(
         _DESCRIPTOR_STUB_SRC,
         "bazel/cdac/contractconfiguration.h",
     ],
-    copts = CLR_CONFIG_COPTS,
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["bazel/cdac"],
     alwayslink = True,
     deps = ["//src/coreclr/debug:datadescriptor_shared_inc"],
@@ -28,7 +31,9 @@ cc_library(
         _DESCRIPTOR_STUB_SRC,
         "bazel/gc_wks/contractconfiguration.h",
     ],
-    copts = CLR_CONFIG_COPTS,
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["bazel/gc_wks"],
     alwayslink = True,
     deps = ["//src/coreclr/debug:datadescriptor_shared_inc"],
@@ -41,7 +46,9 @@ cc_library(
         _DESCRIPTOR_STUB_SRC,
         "bazel/gc_svr/contractconfiguration.h",
     ],
-    copts = CLR_CONFIG_COPTS,
+    copts = PLATFORM_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["bazel/gc_svr"],
     alwayslink = True,
     deps = ["//src/coreclr/debug:datadescriptor_shared_inc"],

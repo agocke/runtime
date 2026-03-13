@@ -3,7 +3,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//:cc_defs.bzl", "PLATFORM_DEFINES")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES", "CORECLR_DAC_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS", "CORECLR_DAC_DEFINES", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -55,6 +55,8 @@ cc_library(
         "debug-pal/unix/twowaypipe.cpp",
     ],
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = ["inc"],
     local_defines = CLR_CONFIG_DEFINES + select({
         "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
@@ -120,6 +122,8 @@ cc_library(
         "@platforms//cpu:arm64": [],
         "//conditions:default": ["-mcx16"],
     }),
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         "../vm",
         "ee",
@@ -158,6 +162,8 @@ cc_library(
         "//conditions:default": ["dbgutil/elfreader.h"],
     }),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = ["dbgutil"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
@@ -218,6 +224,8 @@ cc_library(
         "-UUNICODE",
         "-U_UNICODE",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = ["createdump"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
@@ -241,6 +249,8 @@ cc_binary(
         "-UUNICODE",
         "-U_UNICODE",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = ["createdump"],
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES,
@@ -287,6 +297,8 @@ cc_library(
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS + [
         "-DFEATURE_NO_HOST",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         "../vm",
         "ee",
@@ -357,6 +369,8 @@ cc_library(
         "-Wno-error",
         "-include", "src/coreclr/debug/daccess/stdafx.h",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         "../vm",
         "daccess",
@@ -457,6 +471,8 @@ cc_library(
         "-DFEATURE_NO_HOST",
         "-DFEATURE_METADATA_LOAD_TRUSTED_IMAGES",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         "di",
     ],

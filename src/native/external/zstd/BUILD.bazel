@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 
 # zstd built as static library for linux-x64
 # No legacy support, no multithread, no programs
@@ -46,10 +47,15 @@ cc_library(
         "lib/zstd.h",
         "lib/zstd_errors.h",
     ],
-    copts = [
-        "-Wno-implicit-fallthrough",
-        "-w",
-    ],
+    copts = PLATFORM_COPTS + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-Wno-implicit-fallthrough",
+            "-w",
+        ],
+    }),
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     local_defines = [
         "ZSTD_MULTITHREAD_SUPPORT=0",
         "ZSTD_LEGACY_SUPPORT=0",

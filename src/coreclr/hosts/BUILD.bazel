@@ -1,6 +1,7 @@
 # CoreCLR hosts headers and executables.
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -31,7 +32,9 @@ cc_binary(
         "corerun/dotenv.cpp",
         "corerun/dotenv.hpp",
     ],
-    copts = [],
+    copts = PLATFORM_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["corerun"],
     linkopts = select({
         "@platforms//os:macos": [

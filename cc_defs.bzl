@@ -56,11 +56,80 @@ PLATFORM_DEFINES = [
 # Platform-specific compiler flags matching CMake configurecompiler.cmake.
 # Used by native cc_library targets via copts = PLATFORM_COPTS.
 #
-# On Unix, baseline flags (language standards, warnings) are set in
-# .bazelrc via build:unix because --conlyopt/--cxxopt/--per_file_copt
-# have no BUILD-file equivalent.  PLATFORM_COPTS is empty on Unix.
+# Unix flags use GCC/Clang syntax; Windows flags use MSVC syntax.
+# Platform selection is handled via select() so the correct flags are
+# applied automatically on each platform.
 #
-# On Windows, MSVC flags live here so targets opt in explicitly.
+# Language-standard and C++-only flags live in PLATFORM_CONLYOPTS and
+# PLATFORM_CXXOPTS respectively (Bazel 7.4.0+ added conlyopts/cxxopts
+# attributes on cc_* rules).
+#
+# per_file_copt has no BUILD-file equivalent and remains in .bazelrc.
+
+# --- Unix (GCC/Clang) flags from configurecompiler.cmake ---
+
+_UNIX_COPTS = [
+    # Code generation
+    "-fPIC",
+    "-fno-omit-frame-pointer",
+    "-fno-strict-overflow",
+    "-fno-strict-aliasing",
+    "-fstack-protector-strong",
+    "-ffp-contract=off",
+    "-fsigned-char",
+    "-fvisibility=hidden",
+    "-ffunction-sections",
+    # Universal platform defines
+    "-D_FILE_OFFSET_BITS=64",
+    "-D_TIME_BITS=64",
+    # Warning flags shared between GCC and Clang (configurecompiler.cmake)
+    "-Wall",
+    "-Wno-unused-variable",
+    "-Wno-unused-value",
+    "-Wno-unused-function",
+    "-Wno-tautological-compare",
+    "-Wno-unknown-pragmas",
+    "-Wimplicit-fallthrough",
+    "-Wno-unused-but-set-variable",
+    # Bazel's default C++ toolchain enables -Wunused-but-set-parameter; CMake does not.
+    "-Wno-unused-but-set-parameter",
+    # GCC-specific warning flags (silently ignored by Clang with
+    # -Wno-unknown-warning-option).
+    "-Wno-uninitialized",
+    "-Wno-strict-aliasing",
+    "-Wno-array-bounds",
+    "-Wno-stringop-truncation",
+    # Clang-specific flags (silently ignored by GCC).
+    "-Wno-unknown-warning-option",
+    "-ferror-limit=4096",
+    "-Wno-null-conversion",
+    "-Wno-unused-private-field",
+    "-Wno-constant-logical-operand",
+    "-Wno-pragma-pack",
+    "-Wno-incompatible-ms-struct",
+    "-Wno-reserved-identifier",
+    "-Wno-unsafe-buffer-usage",
+    "-Wno-single-bit-bitfield-constant-conversion",
+    "-Wno-cast-function-type-strict",
+    "-Wno-switch-default",
+]
+
+_UNIX_CONLYOPTS = [
+    "-std=gnu11",
+]
+
+_UNIX_CXXOPTS = [
+    "-std=gnu++11",
+    "-fno-rtti",
+    # GCC C++-specific warnings (silently ignored by Clang).
+    "-Wno-misleading-indentation",
+    "-Wno-stringop-overflow",
+    "-Wno-restrict",
+    "-Wno-class-memaccess",
+    # Clang C++-specific warnings.
+    "-Wno-nontrivial-memaccess",
+]
+
 PLATFORM_COPTS = select({
     "@platforms//os:windows": [
         # Exception handling & code generation
@@ -115,7 +184,20 @@ PLATFORM_COPTS = select({
         "/wd5105",
         "/wd5205",
     ],
-    "//conditions:default": [],
+    "//conditions:default": _UNIX_COPTS,
+})
+
+# C-only flags (language standard).  Pass via conlyopts = PLATFORM_CONLYOPTS.
+PLATFORM_CONLYOPTS = select({
+    "@platforms//os:windows": [],
+    "//conditions:default": _UNIX_CONLYOPTS,
+})
+
+# C++-only flags (language standard, RTTI, C++ warnings).
+# Pass via cxxopts = PLATFORM_CXXOPTS.
+PLATFORM_CXXOPTS = select({
+    "@platforms//os:windows": [],
+    "//conditions:default": _UNIX_CXXOPTS,
 })
 
 # Platform-specific linker flags matching CMake configurecompiler.cmake.

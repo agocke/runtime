@@ -1,6 +1,7 @@
 # GC subsystem — Bazel build.
 # Matches CMake: src/coreclr/gc/CMakeLists.txt
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS")
 load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
@@ -74,7 +75,7 @@ _GC_STANDALONE_DEFINES = [
     ],
 })
 
-_GC_COPTS = [
+_GC_COPTS = PLATFORM_COPTS + [
     "-Wno-invalid-offsetof",
     "-Wno-unused-but-set-parameter",
     # -iquote ensures GC's own env/ headers (e.g. volatile.h) are found
@@ -116,6 +117,8 @@ cc_library(
         "//conditions:default": ["unix/bazel/linux-glibc-x64/config.gc.h"],
     }),
     copts = _GC_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = _GC_INCLUDES + ["unix"],
     local_defines = _GC_STANDALONE_DEFINES,
     alwayslink = True,
@@ -157,6 +160,8 @@ cc_library(
         "@platforms//cpu:arm64": [],
         "//conditions:default": ["-mavx2"],
     }),
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = _GC_INCLUDES + ["vxsort", "vxsort/smallsort"],
     local_defines = _GC_STANDALONE_DEFINES,
     alwayslink = True,
@@ -179,7 +184,9 @@ cc_library(
         _DESCRIPTOR_STUB_SRC,
         "datadescriptor/bazel/gc_dll_wks/contractconfiguration.h",
     ],
-    copts = [],
+    copts = PLATFORM_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["datadescriptor/bazel/gc_dll_wks"],
     alwayslink = True,
     deps = ["//src/coreclr/debug:datadescriptor_shared_inc"],
@@ -191,7 +198,9 @@ cc_library(
         _DESCRIPTOR_STUB_SRC,
         "datadescriptor/bazel/gc_dll_svr/contractconfiguration.h",
     ],
-    copts = [],
+    copts = PLATFORM_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["datadescriptor/bazel/gc_dll_svr"],
     defines = ["SERVER_GC"],
     alwayslink = True,
@@ -204,7 +213,9 @@ cc_library(
         _DESCRIPTOR_STUB_SRC,
         "datadescriptor/bazel/gcexp_dll_wks/contractconfiguration.h",
     ],
-    copts = [],
+    copts = PLATFORM_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["datadescriptor/bazel/gcexp_dll_wks"],
     defines = ["USE_REGIONS"],
     alwayslink = True,
@@ -217,7 +228,9 @@ cc_library(
         _DESCRIPTOR_STUB_SRC,
         "datadescriptor/bazel/gcexp_dll_svr/contractconfiguration.h",
     ],
-    copts = [],
+    copts = PLATFORM_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = ["datadescriptor/bazel/gcexp_dll_svr"],
     defines = ["USE_REGIONS", "SERVER_GC"],
     alwayslink = True,
@@ -258,6 +271,8 @@ cc_library(
     srcs = _GC_SOURCES,
     textual_hdrs = _GC_TEXTUAL_HDRS,
     copts = _GC_STANDALONE_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = _GC_INCLUDES,
     defines = _GC_STANDALONE_DEFINES,
     alwayslink = True,
@@ -294,6 +309,8 @@ cc_library(
     srcs = _GC_SOURCES,
     textual_hdrs = _GC_TEXTUAL_HDRS,
     copts = _GC_STANDALONE_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = _GC_INCLUDES,
     defines = _GC_STANDALONE_DEFINES + ["USE_REGIONS"],
     alwayslink = True,

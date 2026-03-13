@@ -3,7 +3,7 @@
 # Matches CMake: src/coreclr/jit/CMakeLists.txt + jit/static/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -236,6 +236,8 @@ cc_library(
     }),
     textual_hdrs = ["smcommon.cpp"],
     copts = _JIT_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _JIT_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + _JIT_DEFINES_BASE + _JIT_SIMD_DEFINES,
@@ -267,6 +269,8 @@ cc_binary(
     linkshared = True,
     linkstatic = True,
     copts = _JIT_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _JIT_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES,
     defines = CORECLR_DEFINES + _JIT_DEFINES_BASE + _JIT_SIMD_DEFINES + [
@@ -359,6 +363,8 @@ cc_binary(
         "-DTARGET_64BIT",
         "-DTARGET_ARM64",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _CROSS_JIT_DEFINES + _JIT_SIMD_DEFINES,
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
@@ -381,6 +387,8 @@ cc_binary(
         "-DTARGET_UNIX_ANYOS",
         "-DUNIX_AMD64_ABI",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _CROSS_JIT_DEFINES + _JIT_SIMD_DEFINES,
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
@@ -401,6 +409,8 @@ cc_binary(
         "-DTARGET_AMD64",
         "-DTARGET_WINDOWS",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _CROSS_JIT_DEFINES + _JIT_SIMD_DEFINES,
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
@@ -421,6 +431,8 @@ cc_binary(
         "-DARM_SOFTFP",
         "-DCONFIGURABLE_ARM_ABI",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _CROSS_JIT_DEFINES,
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,
@@ -440,6 +452,8 @@ cc_binary(
         "-DTARGET_X86",
         "-DTARGET_WINDOWS",
     ],
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     defines = _CROSS_JIT_DEFINES + _JIT_SIMD_DEFINES,
     linkopts = _CROSS_JIT_LINKOPTS,
     additional_linker_inputs = _CROSS_JIT_LINKER_INPUTS,

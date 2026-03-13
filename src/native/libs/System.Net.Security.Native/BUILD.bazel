@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
-load("//:cc_defs.bzl", "PLATFORM_DEFINES")
+load("//:cc_defs.bzl", "PLATFORM_CONLYOPTS", "PLATFORM_COPTS", "PLATFORM_CXXOPTS", "PLATFORM_DEFINES")
 load("//src/native:native_defs.bzl", "NATIVE_CONFIG_DEFINES")
 
 # System.Net.Security.Native for linux-x64
@@ -12,7 +12,9 @@ cc_library(
         "entrypoints.c",
         "pal_gssapi.c",
     ] + glob(["*.h"]),
-    copts = [],
+    copts = PLATFORM_COPTS,
+    conlyopts = PLATFORM_CONLYOPTS,
+    cxxopts = PLATFORM_CXXOPTS,
     includes = [
         "../../..",
         "../Common",

@@ -30,113 +30,18 @@
 # =====================================================================
 # Unix compiler flags (GCC/Clang)
 # =====================================================================
-# Applied automatically on Linux and macOS via --enable_platform_specific_config
-# (see build:linux --config=unix and build:macos --config=unix below).
-# Windows uses MSVC flags instead (see build:windows section).
+# Compiler flags (language standards, warnings, codegen options) are defined
+# in cc_defs.bzl as PLATFORM_COPTS / PLATFORM_CONLYOPTS / PLATFORM_CXXOPTS
+# and applied via BUILD file attributes.  Subsystem-specific constants
+# (CORECLR_COPTS, NATIVEAOT_COPTS, etc.) incorporate them automatically.
 #
-# Flags within build:unix are applied in file order, so -Wall appears
-# before -Wno-* suppressions — the ordering is correct.
+# Only flags that have no BUILD-file equivalent remain here:
+#   - per_file_copt / host_per_file_copt (no attribute equivalent)
+#   - config selection (--config=clang)
+#   - toolchain env vars (--repo_env=CC/CXX)
 
 # Default to Clang on Unix (matching CMake).
 build:unix --config=clang
-
-# Match CMake configurecompiler.cmake settings (config-independent)
-build:unix --conlyopt=-std=gnu11
-build:unix --cxxopt=-std=gnu++11
-build:unix --copt=-fPIC
-build:unix --copt=-fno-omit-frame-pointer
-build:unix --copt=-fno-strict-overflow
-build:unix --copt=-fno-strict-aliasing
-build:unix --copt=-fstack-protector-strong
-build:unix --copt=-ffp-contract=off
-build:unix --copt=-fsigned-char
-build:unix --copt=-fvisibility=hidden
-build:unix --copt=-ffunction-sections
-build:unix --cxxopt=-fno-rtti
-
-# Platform defines (Unix only)
-# Platform-specific arch/OS defines are in PLATFORM_DEFINES (cc_defs.bzl)
-# and used via select() in BUILD files. Only universal defines go here.
-build:unix --copt=-D_FILE_OFFSET_BITS=64
-build:unix --copt=-D_TIME_BITS=64
-
-# Exec/tool platform defines (for tools like ilasm built with cfg = "exec")
-build:unix --host_conlyopt=-std=gnu11
-build:unix --host_cxxopt=-std=gnu++11
-build:unix --host_copt=-D_FILE_OFFSET_BITS=64
-build:unix --host_copt=-D_TIME_BITS=64
-
-# Warning flags shared between GCC and Clang (configurecompiler.cmake)
-build:unix --copt=-Wall
-build:unix --copt=-Wno-unused-variable
-build:unix --copt=-Wno-unused-value
-build:unix --copt=-Wno-unused-function
-build:unix --copt=-Wno-tautological-compare
-build:unix --copt=-Wno-unknown-pragmas
-build:unix --copt=-Wimplicit-fallthrough
-build:unix --copt=-Wno-unused-but-set-variable
-# Bazel's default C++ toolchain enables -Wunused-but-set-parameter; CMake does not.
-build:unix --copt=-Wno-unused-but-set-parameter
-
-# --- GCC-specific warning flags (default compiler) ---
-# These are in an else() branch in configurecompiler.cmake (not Clang).
-# Silently ignored by Clang when -Wno-unknown-warning-option is set.
-build:unix --copt=-Wno-uninitialized
-build:unix --copt=-Wno-strict-aliasing
-build:unix --copt=-Wno-array-bounds
-build:unix --cxxopt=-Wno-misleading-indentation
-build:unix --cxxopt=-Wno-stringop-overflow
-build:unix --cxxopt=-Wno-restrict
-build:unix --copt=-Wno-stringop-truncation
-build:unix --cxxopt=-Wno-class-memaccess
-
-# --- Clang-specific warning flags (configurecompiler.cmake) ---
-# Unknown -Wno-* flags are silently ignored by GCC, so this is safe.
-build:unix --copt=-Wno-unknown-warning-option
-build:unix --copt=-ferror-limit=4096
-build:unix --copt=-Wno-null-conversion
-build:unix --copt=-Wno-unused-private-field
-build:unix --copt=-Wno-constant-logical-operand
-build:unix --copt=-Wno-pragma-pack
-build:unix --copt=-Wno-incompatible-ms-struct
-build:unix --copt=-Wno-reserved-identifier
-build:unix --copt=-Wno-unsafe-buffer-usage
-build:unix --copt=-Wno-single-bit-bitfield-constant-conversion
-build:unix --copt=-Wno-cast-function-type-strict
-build:unix --copt=-Wno-switch-default
-build:unix --cxxopt=-Wno-nontrivial-memaccess
-
-# Exec/tool warning flags (for tools like ilasm built with cfg = "exec")
-build:unix --host_copt=-Wall
-build:unix --host_copt=-Wno-unused-variable
-build:unix --host_copt=-Wno-unused-value
-build:unix --host_copt=-Wno-unused-function
-build:unix --host_copt=-Wno-tautological-compare
-build:unix --host_copt=-Wno-unknown-pragmas
-build:unix --host_copt=-Wimplicit-fallthrough
-build:unix --host_copt=-Wno-unused-but-set-variable
-build:unix --host_copt=-Wno-unused-but-set-parameter
-build:unix --host_copt=-Wno-uninitialized
-build:unix --host_copt=-Wno-strict-aliasing
-build:unix --host_copt=-Wno-array-bounds
-build:unix --host_cxxopt=-Wno-misleading-indentation
-build:unix --host_cxxopt=-Wno-stringop-overflow
-build:unix --host_cxxopt=-Wno-restrict
-build:unix --host_copt=-Wno-stringop-truncation
-build:unix --host_cxxopt=-Wno-class-memaccess
-build:unix --host_copt=-Wno-unknown-warning-option
-build:unix --host_copt=-ferror-limit=4096
-build:unix --host_copt=-Wno-null-conversion
-build:unix --host_copt=-Wno-unused-private-field
-build:unix --host_copt=-Wno-constant-logical-operand
-build:unix --host_copt=-Wno-pragma-pack
-build:unix --host_copt=-Wno-incompatible-ms-struct
-build:unix --host_copt=-Wno-reserved-identifier
-build:unix --host_copt=-Wno-unsafe-buffer-usage
-build:unix --host_copt=-Wno-single-bit-bitfield-constant-conversion
-build:unix --host_copt=-Wno-cast-function-type-strict
-build:unix --host_copt=-Wno-switch-default
-build:unix --host_cxxopt=-Wno-nontrivial-memaccess
 
 # Disable warnings for vendored code
 build:unix --per_file_copt=src/native/external/.*@-w

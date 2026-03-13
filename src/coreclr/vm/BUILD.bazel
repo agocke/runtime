@@ -2,7 +2,7 @@
 # Matches CMake: src/coreclr/vm/CMakeLists.txt + vm/wks/CMakeLists.txt
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_DEFINES", "CORECLR_COPTS", "CLR_CONFIG_COPTS", "CORECLR_DEFINES", "CORECLR_DAC_DEFINES")
+load("//src/coreclr:coreclr_defs.bzl", "CLR_CONFIG_COPTS", "CLR_CONFIG_DEFINES", "CORECLR_CONLYOPTS", "CORECLR_COPTS", "CORECLR_CXXOPTS", "CORECLR_DAC_DEFINES", "CORECLR_DEFINES")
 
 package(default_visibility = ["//src/coreclr:__subpackages__"])
 
@@ -99,6 +99,8 @@ cc_library(
         ],
     }),
     copts = CORECLR_COPTS + CLR_CONFIG_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = [
         ".",
         "..",
@@ -373,6 +375,8 @@ cc_library(
         "@platforms//cpu:arm64": [],
         "//conditions:default": ["-mcx16"],
     }),
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _VM_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES + select({
         "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
@@ -413,6 +417,8 @@ cc_library(
         "@platforms//cpu:arm64": [],
         "//conditions:default": ["-mcx16"],
     }),
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _VM_INCLUDES,
     local_defines = CLR_CONFIG_DEFINES + select({
         "//:clr_debug": ["FEATURE_CACHED_INTERFACE_DISPATCH"],
@@ -571,6 +577,8 @@ cc_library(
         "i386/stublinkerx86.cpp",
     ],
     copts = _VM_COPTS,
+    conlyopts = CORECLR_CONLYOPTS,
+    cxxopts = CORECLR_CXXOPTS,
     includes = _VM_INCLUDES + [
         "../interop/inc",
     ],
