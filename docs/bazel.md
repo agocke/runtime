@@ -607,17 +607,22 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 - [ ] Remaining CoreCLR test suite (~thousands of tests)
 - [ ] Remaining library unit tests (~78 libraries)
 
-### 5.5 Helix Remote Test Dispatch — 🔨 Partial
+### 5.5 Helix Remote Test Dispatch — ✅ Working E2E
 - [x] `src/tools/bazel/HelixSubmit/` — C# console app using `Microsoft.DotNet.Helix.JobSender`
-  to submit work items to Helix, wait for completion, and report pass/fail
+  to submit work items to Helix, wait for completion, and report pass/fail. Includes
+  log-fetching for failed work items (console output + run_client.py logs).
 - [x] `src/tests/live_test.bzl` — `helix_library_test` macro for dispatching library
   tests to Helix workers (same compilation as `library_test`, different launcher)
 - [x] `eng/run_helix_test.sh.tpl` — launcher template for Helix test dispatch
 - [x] NuGet deps: `Microsoft.DotNet.Helix.JobSender` + 35 transitive packages
 - [x] Bazel build settings (`//:helix_queue`, `//:helix_base_url`, `//:helix_timeout`)
-- [x] `.bazelrc` configs for common queues (helix_ubuntu2204, helix_win11, etc.)
+- [x] `.bazelrc` configs for common queues (helix_azurelinux3, helix_win11, etc.)
+- [x] Verified E2E: `System.Collections.Tests.Helix` passes on `AzureLinux.3.Amd64.Open`
 - [ ] Batch coordinator for multi-work-item Helix jobs
 - [ ] xUnit XML result download and integration
+
+**Note:** Ubuntu 22.04 queues are incompatible with locally-built .NET 10 runtime
+(GLIBCXX_3.4.32 mismatch). Use AzureLinux 3 or newer Ubuntu queues.
 
 ### 5.6 Installer / Packaging
 - [ ] `src/installer/` — runtime packs, NuGet packaging, SDK integration
