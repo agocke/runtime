@@ -821,7 +821,7 @@ def helix_library_test(
         use_shared_compilation = use_shared_compilation,
         shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         generate_documentation_file = False,
-        tags = tags + ["helix", "requires-network", "external"],
+        tags = tags + ["helix", "requires-network"],
         **kwargs
     )
 
