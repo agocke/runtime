@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
@@ -211,27 +212,57 @@ namespace HelixSubmit
                 return 1;
             }
 
-            Console.WriteLine($"Job completed. Total={result.Total} Passed={result.Passed?.Count ?? 0} Failed={result.Failed?.Count ?? 0}");
+            // Helix reports Total as N+1 because it includes a synthetic
+            // "HelixController Work Queueing" item for internal bookkeeping.
+            int internalCount = 0;
+            int userPassed = 0;
+            int userFailed = 0;
+            var workItemNames = new List<string>();
+
+            if (result.Passed is not null)
+            {
+                foreach (string name in result.Passed)
+                {
+                    if (name.StartsWith("HelixController", StringComparison.Ordinal))
+                        internalCount++;
+                    else
+                    {
+                        userPassed++;
+                        workItemNames.Add(name);
+                    }
+                }
+            }
+
+            if (result.Failed is not null)
+            {
+                foreach (string name in result.Failed)
+                {
+                    if (name.StartsWith("HelixController", StringComparison.Ordinal))
+                        internalCount++;
+                    else
+                    {
+                        userFailed++;
+                        workItemNames.Add(name);
+                    }
+                }
+            }
+
+            Console.WriteLine($"Job completed. Work items: {userPassed + userFailed} total, {userPassed} passed, {userFailed} failed");
 
             // Fetch and display console output from work items to surface xUnit test results.
             // For passed jobs, show just the summary; for failed jobs, show full output + logs.
-            bool hasFailed = result.Failed is { Count: > 0 };
+            bool hasFailed = userFailed > 0;
             if (hasFailed)
             {
                 Console.Error.WriteLine("Failed work items:");
-                foreach (string failed in result.Failed!)
+                foreach (string name in workItemNames)
                 {
-                    Console.Error.WriteLine($"  - {failed}");
+                    if (result.Failed!.Contains(name))
+                        Console.Error.WriteLine($"  - {name}");
                 }
             }
 
             // Display console output for all non-internal work items.
-            var workItemNames = new List<string>();
-            if (result.Passed is not null)
-                workItemNames.AddRange(result.Passed);
-            if (result.Failed is not null)
-                workItemNames.AddRange(result.Failed);
-
             await FetchAndDisplayWorkItemLogsAsync(
                 baseUrl ?? "https://helix.dot.net/",
                 sentJob.CorrelationId,
@@ -245,14 +276,12 @@ namespace HelixSubmit
                 await File.WriteAllTextAsync(summaryPath,
                     $"CorrelationId: {sentJob.CorrelationId}\n" +
                     $"Queue: {queue}\n" +
-                    $"Total: {result.Total}\n" +
-                    $"Passed: {result.Passed?.Count ?? 0}\n" +
-                    $"Failed: {result.Failed?.Count ?? 0}\n");
+                    $"WorkItems: {userPassed + userFailed}\n" +
+                    $"Passed: {userPassed}\n" +
+                    $"Failed: {userFailed}\n");
             }
 
-            bool success = result.Failed is null || result.Failed.Count == 0;
-
-            return success ? 0 : 1;
+            return hasFailed ? 1 : 0;
         }
 
         private static async Task FetchAndDisplayWorkItemLogsAsync(
