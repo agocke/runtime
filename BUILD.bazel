@@ -96,7 +96,7 @@ config_setting(
 # Set via command line:  --//:helix_queue=Ubuntu.2204.Amd64.Open
 # Or via .bazelrc:       --config=helix_ubuntu2204
 #
-# Default queue is empty (required per-target in helix_library_test).
+# Default queue is empty — set it to enable Helix dispatch for all tests.
 # base_url and timeout provide sensible defaults overridable globally.
 string_flag(
     name = "helix_queue",

@@ -210,15 +210,14 @@ build:release --config=libs_release
 # =====================================================================
 # Helix remote test queue configs
 # =====================================================================
-# Helix tests are opt-in (tagged "manual"). To run them:
-#   bazel test //path/to:Helix.Test                          # explicit target
-#   bazel test --config=helix //src/libraries/...            # all Helix tests
-#   bazel test --config=helix_azurelinux3 //src/libraries/...  # specific queue
+# Helix dispatch is opt-in. Setting --//:helix_queue switches all
+# library_test targets from local to remote execution on Helix.
+#   bazel test //src/libraries/...                            # local (default)
+#   bazel test --config=helix_azurelinux3 //src/libraries/... # remote via Helix
 # Requires HELIX_ACCESS_TOKEN env var for non-.Open queues.
-test:helix --test_tag_filters=helix
-build:helix_ubuntu2204 --//:helix_queue=Ubuntu.2204.Amd64.Open
-build:helix_azurelinux3 --config=helix --//:helix_queue=AzureLinux.3.Amd64.Open
-build:helix_win11 --config=helix --//:helix_queue=Windows.11.Amd64.Client.Open
-build:helix_winserver2025 --config=helix --//:helix_queue=Windows.Server2025.Amd64.Open
-build:helix_osx15 --config=helix --//:helix_queue=OSX.15.Amd64.Open
-build:helix_osx26_arm64 --config=helix --//:helix_queue=OSX.26.Arm64.Open
+build:helix_ubuntu2204 --//:helix_queue=Ubuntu.2204.Amd64.Open --test_timeout=3600
+build:helix_azurelinux3 --//:helix_queue=AzureLinux.3.Amd64.Open --test_timeout=3600
+build:helix_win11 --//:helix_queue=Windows.11.Amd64.Client.Open --test_timeout=3600
+build:helix_winserver2025 --//:helix_queue=Windows.Server2025.Amd64.Open --test_timeout=3600
+build:helix_osx15 --//:helix_queue=OSX.15.Amd64.Open --test_timeout=3600
+build:helix_osx26_arm64 --//:helix_queue=OSX.26.Arm64.Open --test_timeout=3600
