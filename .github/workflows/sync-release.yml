@@ -147,6 +147,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+               - name: Create PR
+        id: create-pr
+        if: steps.check-new.outputs.has_new_commits == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           classification="${{ steps.detect.outputs.classification }}"
           report_file="${{ steps.detect.outputs.report_file }}"
           commit_subject="${{ steps.check-new.outputs.next_commit_subject }}"
@@ -156,19 +162,19 @@ jobs:
           case "$classification" in
             clean)
               title="✅ Sync ${commit_short}: ${commit_subject}"
-              labels="bazel-sync,bazel-sync-clean"
+              label_flags="--label bazel-sync --label bazel-sync-clean"
               ;;
             build-changes)
               title="⚠️ Sync ${commit_short}: ${commit_subject}"
-              labels="bazel-sync,bazel-sync-needs-attention"
+              label_flags="--label bazel-sync --label bazel-sync-needs-attention"
               ;;
             conflict)
               title="❌ Sync ${commit_short}: ${commit_subject}"
-              labels="bazel-sync,bazel-sync-conflict"
+              label_flags="--label bazel-sync --label bazel-sync-conflict"
               ;;
             *)
               title="Sync ${commit_short}: ${commit_subject}"
-              labels="bazel-sync"
+              label_flags="--label bazel-sync"
               ;;
           esac
 
@@ -183,7 +189,7 @@ jobs:
             --head "${{ steps.create-branch.outputs.branch }}" \
             --title "$title" \
             --body-file "$report_file" \
-            --label "$labels" 2>&1 || true)
+            $label_flags 2>&1 || true)
 
           # Extract PR number from URL
           pr_number=$(echo "$pr_url" | grep -oP '/pull/\K[0-9]+' || echo "")
