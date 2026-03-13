@@ -213,19 +213,30 @@ namespace HelixSubmit
 
             Console.WriteLine($"Job completed. Total={result.Total} Passed={result.Passed?.Count ?? 0} Failed={result.Failed?.Count ?? 0}");
 
-            if (result.Failed is { Count: > 0 })
+            // Fetch and display console output from work items to surface xUnit test results.
+            // For passed jobs, show just the summary; for failed jobs, show full output + logs.
+            bool hasFailed = result.Failed is { Count: > 0 };
+            if (hasFailed)
             {
                 Console.Error.WriteLine("Failed work items:");
-                foreach (string failed in result.Failed)
+                foreach (string failed in result.Failed!)
                 {
                     Console.Error.WriteLine($"  - {failed}");
                 }
-
-                await FetchAndDisplayWorkItemLogsAsync(
-                    baseUrl ?? "https://helix.dot.net/",
-                    sentJob.CorrelationId,
-                    result.Failed);
             }
+
+            // Display console output for all non-internal work items.
+            var workItemNames = new List<string>();
+            if (result.Passed is not null)
+                workItemNames.AddRange(result.Passed);
+            if (result.Failed is not null)
+                workItemNames.AddRange(result.Failed);
+
+            await FetchAndDisplayWorkItemLogsAsync(
+                baseUrl ?? "https://helix.dot.net/",
+                sentJob.CorrelationId,
+                workItemNames,
+                verbose: hasFailed);
 
             if (resultsDir is not null)
             {
@@ -247,13 +258,18 @@ namespace HelixSubmit
         private static async Task FetchAndDisplayWorkItemLogsAsync(
             string baseUrl,
             string correlationId,
-            IReadOnlyList<string> failedWorkItems)
+            IReadOnlyList<string> workItemNames,
+            bool verbose)
         {
-            using var http = new HttpClient();
+            using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true });
             string apiBase = baseUrl.TrimEnd('/');
 
-            foreach (string workItemName in failedWorkItems)
+            foreach (string workItemName in workItemNames)
             {
+                // Skip internal Helix work items.
+                if (workItemName.StartsWith("HelixController", StringComparison.Ordinal))
+                    continue;
+
                 try
                 {
                     string encodedName = Uri.EscapeDataString(workItemName);
@@ -264,40 +280,63 @@ namespace HelixSubmit
                     using JsonDocument doc = JsonDocument.Parse(detailsJson);
                     JsonElement root = doc.RootElement;
 
-                    if (root.TryGetProperty("ExitCode", out JsonElement exitCodeEl))
-                    {
-                        Console.Error.WriteLine($"\n=== {workItemName} (exit code: {exitCodeEl}) ===");
-                    }
+                    int? exitCode = root.TryGetProperty("ExitCode", out JsonElement exitCodeEl) ? exitCodeEl.GetInt32() : null;
+                    bool passed = exitCode == 0;
 
+                    // Fetch console output.
+                    string? consoleContent = null;
                     if (root.TryGetProperty("ConsoleOutputUri", out JsonElement consoleUri) &&
                         consoleUri.GetString() is string consoleUrl)
                     {
-                        string console = await http.GetStringAsync(consoleUrl);
-                        if (!string.IsNullOrWhiteSpace(console))
+                        consoleContent = await http.GetStringAsync(consoleUrl);
+                    }
+
+                    if (passed && !verbose)
+                    {
+                        // For passing work items, extract just the xUnit summary line.
+                        if (consoleContent is not null)
+                        {
+                            string[] lines = consoleContent.Split('\n');
+                            foreach (string line in lines)
+                            {
+                                string trimmed = line.Trim();
+                                if (trimmed.Contains("Total:") && trimmed.Contains("Failed:"))
+                                {
+                                    Console.WriteLine($"  {trimmed}");
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // For failed work items or verbose mode, show everything.
+                        Console.Error.WriteLine($"\n=== {workItemName} (exit code: {exitCode}) ===");
+
+                        if (!string.IsNullOrWhiteSpace(consoleContent))
                         {
                             Console.Error.WriteLine("--- Console Output ---");
-                            Console.Error.WriteLine(console);
+                            Console.Error.WriteLine(consoleContent);
                         }
                         else
                         {
                             Console.Error.WriteLine("(console output is empty)");
                         }
-                    }
 
-                    if (root.TryGetProperty("Logs", out JsonElement logs) &&
-                        logs.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (JsonElement log in logs.EnumerateArray())
+                        if (root.TryGetProperty("Logs", out JsonElement logs) &&
+                            logs.ValueKind == JsonValueKind.Array)
                         {
-                            string? module = log.TryGetProperty("Module", out JsonElement m) ? m.GetString() : null;
-                            string? logUrl = log.TryGetProperty("Uri", out JsonElement u) ? u.GetString() : null;
-                            if (logUrl is not null)
+                            foreach (JsonElement log in logs.EnumerateArray())
                             {
-                                string logContent = await http.GetStringAsync(logUrl);
-                                if (!string.IsNullOrWhiteSpace(logContent))
+                                string? module = log.TryGetProperty("Module", out JsonElement m) ? m.GetString() : null;
+                                string? logUrl = log.TryGetProperty("Uri", out JsonElement u) ? u.GetString() : null;
+                                if (logUrl is not null)
                                 {
-                                    Console.Error.WriteLine($"--- Log: {module ?? "unknown"} ---");
-                                    Console.Error.WriteLine(logContent);
+                                    string logContent = await http.GetStringAsync(logUrl);
+                                    if (!string.IsNullOrWhiteSpace(logContent))
+                                    {
+                                        Console.Error.WriteLine($"--- Log: {module ?? "unknown"} ---");
+                                        Console.Error.WriteLine(logContent);
+                                    }
                                 }
                             }
                         }
