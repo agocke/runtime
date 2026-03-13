@@ -614,8 +614,8 @@ and System.Net.Quic (msquic native library + full Linux implementation).
   tests to Helix workers (same compilation as `library_test`, different launcher)
 - [x] `eng/run_helix_test.sh.tpl` — launcher template for Helix test dispatch
 - [x] NuGet deps: `Microsoft.DotNet.Helix.JobSender` + 35 transitive packages
-- [ ] Bazel build settings for Helix queue/token configuration
-- [ ] `.bazelrc` configs for common Helix queues
+- [x] Bazel build settings (`//:helix_queue`, `//:helix_base_url`, `//:helix_timeout`)
+- [x] `.bazelrc` configs for common queues (helix_ubuntu2204, helix_win11, etc.)
 - [ ] Batch coordinator for multi-work-item Helix jobs
 - [ ] xUnit XML result download and integration
 
