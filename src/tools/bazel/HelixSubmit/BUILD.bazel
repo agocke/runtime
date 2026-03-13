@@ -1,0 +1,13 @@
+load("//:defs.bzl", "csharp_binary")
+
+csharp_binary(
+    name = "HelixSubmit",
+    srcs = glob(["*.cs"]),
+    deps = [
+        "@paket.main//microsoft.dotnet.helix.client",
+        "@paket.main//microsoft.dotnet.helix.jobsender",
+    ],
+    nullable = "enable",
+    target_frameworks = ["net10.0"],
+    visibility = ["//visibility:public"],
+)

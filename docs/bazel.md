@@ -596,7 +596,7 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 
 ### 5.4 Tests — 🔨 Partial
 - [x] `src/tests/defs.bzl` — test infrastructure, live_csharp_library, xUnit runner
-- [x] `src/tests/live_test.bzl` — `library_test` macro for library unit tests
+- [x] `src/tests/live_test.bzl` — `library_test` and `helix_library_test` macros for library unit tests
 - [x] 18 test BUILD files (JIT directed tests, common infrastructure)
 - [x] 117 library test suites (see §1 "What Works" for full list;
   includes 5 platform-constrained suites: Microsoft.Win32.Registry (Windows),
@@ -607,7 +607,19 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 - [ ] Remaining CoreCLR test suite (~thousands of tests)
 - [ ] Remaining library unit tests (~78 libraries)
 
-### 5.5 Installer / Packaging
+### 5.5 Helix Remote Test Dispatch — 🔨 Partial
+- [x] `src/tools/bazel/HelixSubmit/` — C# console app using `Microsoft.DotNet.Helix.JobSender`
+  to submit work items to Helix, wait for completion, and report pass/fail
+- [x] `src/tests/live_test.bzl` — `helix_library_test` macro for dispatching library
+  tests to Helix workers (same compilation as `library_test`, different launcher)
+- [x] `eng/run_helix_test.sh.tpl` — launcher template for Helix test dispatch
+- [x] NuGet deps: `Microsoft.DotNet.Helix.JobSender` + 35 transitive packages
+- [ ] Bazel build settings for Helix queue/token configuration
+- [ ] `.bazelrc` configs for common Helix queues
+- [ ] Batch coordinator for multi-work-item Helix jobs
+- [ ] xUnit XML result download and integration
+
+### 5.6 Installer / Packaging
 - [ ] `src/installer/` — runtime packs, NuGet packaging, SDK integration
 - [ ] Targeting packs, runtime packs, host packs
 

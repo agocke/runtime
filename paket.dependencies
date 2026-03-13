@@ -31,3 +31,4 @@ nuget System.Data.Common.TestData 10.0.0-beta.25418.1
 nuget System.Net.TestData 10.0.0-beta.25418.1
 nuget System.Text.RegularExpressions.TestData 10.0.0-beta.25418.1
 nuget Microsoft.IdentityModel.Tokens 6.15.0
+nuget Microsoft.DotNet.Helix.JobSender 10.0.0-beta.26102.102

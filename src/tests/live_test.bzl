@@ -144,8 +144,13 @@ def _compile_csharp_library(ctx, tfm):
         use_shared_compilation = ctx.attr.use_shared_compilation,
     )
 
-def _xunit_library_test_impl(ctx):
-    """Build a library test and create a launcher that runs xunit.console.dll."""
+def _prepare_library_test(ctx):
+    """Compile test library and prepare all runtime files for testing.
+
+    Shared preparation logic used by both local xunit and Helix test rules.
+    Returns a struct with all compilation outputs and runtime files needed
+    to create a test launcher.
+    """
     tfm = get_tfm_value(ctx.attr._target_framework)
 
     if is_standard_framework(tfm):
@@ -269,31 +274,103 @@ def _xunit_library_test_impl(ctx):
     # Get the shared testhost directory from the attribute
     testhost = ctx.file._shared_testhost
 
+    return struct(
+        tfm = tfm,
+        compile_provider = compile_provider,
+        runtime_provider = runtime_provider,
+        dll = dll,
+        xunit_console_dll = xunit_console_dll,
+        test_runtimeconfig = test_runtimeconfig,
+        test_depsfile = test_depsfile,
+        testhost = testhost,
+        additional_runfiles = additional_runfiles,
+    )
+
+def _xunit_library_test_impl(ctx):
+    """Build a library test and create a launcher that runs xunit.console.dll."""
+    prep = _prepare_library_test(ctx)
+
     windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
-    launcher = ctx.actions.declare_file("{}.{}".format(dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = dll)
+    launcher = ctx.actions.declare_file("{}.{}".format(prep.dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = prep.dll)
     ctx.actions.expand_template(
         template = ctx.file._launcher_sh,
         output = launcher,
         substitutions = {
-            "TEMPLATED_testhost": to_rlocation_path(ctx, testhost),
-            "TEMPLATED_xunit_console": to_rlocation_path(ctx, xunit_console_dll),
-            "TEMPLATED_entry_dll": to_rlocation_path(ctx, dll),
-            "TEMPLATED_depsfile": to_rlocation_path(ctx, test_depsfile),
-            "TEMPLATED_runtimeconfig": to_rlocation_path(ctx, test_runtimeconfig),
+            "TEMPLATED_testhost": to_rlocation_path(ctx, prep.testhost),
+            "TEMPLATED_xunit_console": to_rlocation_path(ctx, prep.xunit_console_dll),
+            "TEMPLATED_entry_dll": to_rlocation_path(ctx, prep.dll),
+            "TEMPLATED_depsfile": to_rlocation_path(ctx, prep.test_depsfile),
+            "TEMPLATED_runtimeconfig": to_rlocation_path(ctx, prep.test_runtimeconfig),
             "TEMPLATED_writable_test_dir": "true" if ctx.attr.writable_test_dir else "false",
         },
         is_executable = True,
     )
-    additional_runfiles.append(testhost)
+    additional_runfiles = list(prep.additional_runfiles)
+    additional_runfiles.append(prep.testhost)
     additional_runfiles.extend(ctx.files._bash_runfiles)
 
     default_info = DefaultInfo(
         executable = launcher,
-        runfiles = collect_transitive_runfiles(ctx, runtime_provider, ctx.attr.deps).merge(ctx.runfiles(files = additional_runfiles)).merge(ctx.attr._bash_runfiles[DefaultInfo].default_runfiles),
-        files = depset([dll]),
+        runfiles = collect_transitive_runfiles(ctx, prep.runtime_provider, ctx.attr.deps).merge(ctx.runfiles(files = additional_runfiles)).merge(ctx.attr._bash_runfiles[DefaultInfo].default_runfiles),
+        files = depset([prep.dll]),
     )
 
-    return [default_info, compile_provider, runtime_provider]
+    return [default_info, prep.compile_provider, prep.runtime_provider]
+
+def _helix_library_test_impl(ctx):
+    """Build a library test and dispatch it to Helix for remote execution."""
+    prep = _prepare_library_test(ctx)
+
+    windows_constraint = ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]
+    launcher = ctx.actions.declare_file("{}.{}".format(prep.dll.basename, "bat" if ctx.target_platform_has_constraint(windows_constraint) else "sh"), sibling = prep.dll)
+
+    # Build the command that will run on the Helix worker.
+    # Helix environment variables resolve the payload directories:
+    #   $HELIX_CORRELATION_PAYLOAD = shared testhost (uploaded once per job)
+    #   $HELIX_WORKITEM_PAYLOAD = test files (per work item)
+    test_name = prep.dll.basename.replace(".dll", "")
+    helix_command = " ".join([
+        "chmod +x $HELIX_CORRELATION_PAYLOAD/dotnet &&",
+        "$HELIX_CORRELATION_PAYLOAD/dotnet", "exec",
+        "--runtimeconfig", "$HELIX_WORKITEM_PAYLOAD/" + test_name + ".runtimeconfig.json",
+        "--depsfile", "$HELIX_WORKITEM_PAYLOAD/" + test_name + ".deps.json",
+        "$HELIX_WORKITEM_PAYLOAD/xunit.console.dll",
+        "$HELIX_WORKITEM_PAYLOAD/" + prep.dll.basename,
+        "-nologo",
+        "-notrait", "category=failing",
+        "-notrait", "category=OuterLoop",
+    ])
+
+    ctx.actions.expand_template(
+        template = ctx.file._launcher_sh,
+        output = launcher,
+        substitutions = {
+            "TEMPLATED_helix_submit": to_rlocation_path(ctx, ctx.executable._helix_submit),
+            "TEMPLATED_testhost": to_rlocation_path(ctx, prep.testhost),
+            "TEMPLATED_test_dir_anchor": to_rlocation_path(ctx, prep.xunit_console_dll),
+            "TEMPLATED_command": helix_command,
+            "TEMPLATED_queue": ctx.attr.queue,
+            "TEMPLATED_timeout": ctx.attr.helix_timeout,
+            "TEMPLATED_work_item_name": ctx.label.name,
+            "TEMPLATED_source": ctx.attr.source if ctx.attr.source else "runtime/bazel/" + ctx.attr.queue,
+            "TEMPLATED_creator": ctx.attr.creator,
+        },
+        is_executable = True,
+    )
+    additional_runfiles = list(prep.additional_runfiles)
+    additional_runfiles.append(prep.testhost)
+    additional_runfiles.extend(ctx.files._bash_runfiles)
+
+    default_info = DefaultInfo(
+        executable = launcher,
+        runfiles = collect_transitive_runfiles(ctx, prep.runtime_provider, ctx.attr.deps)
+            .merge(ctx.runfiles(files = additional_runfiles))
+            .merge(ctx.attr._bash_runfiles[DefaultInfo].default_runfiles)
+            .merge(ctx.attr._helix_submit[DefaultInfo].default_runfiles),
+        files = depset([prep.dll]),
+    )
+
+    return [default_info, prep.compile_provider, prep.runtime_provider]
 
 def _generate_runtimeconfigs(ctx, dll, tfm, sdk_version, additional_runfiles):
     """Generate runtimeconfig.json files needed by the test and RemoteExecutor.
@@ -586,6 +663,72 @@ _xunit_library_test = rule(
     cfg = tfm_transition,
 )
 
+_helix_library_test = rule(
+    _helix_library_test_impl,
+    doc = """Compile a C# library test and dispatch it to Helix for remote execution.
+
+    Same compilation as _xunit_library_test, but the test runs on a Helix worker
+    instead of locally. The shared testhost is uploaded as a Helix correlation
+    payload (shared across work items), and the test directory is uploaded as
+    the work item payload.
+    """,
+    attrs = dicts.add(
+        COMMON_ATTRS,
+        {
+            "_launcher_sh": attr.label(
+                doc = "A template file for the Helix launcher on Linux/MacOS",
+                default = "//eng:run_helix_test.sh.tpl",
+                allow_single_file = True,
+            ),
+            "_xunit_runner": attr.label(
+                doc = "The xunit console runner files",
+                default = "//eng:xunit_console_runner",
+                allow_files = True,
+            ),
+            "_xunit_runner_config": attr.label(
+                doc = "The xunit.runner.json configuration file",
+                default = "//eng:testing/xunit/xunit.runner.json",
+                allow_single_file = True,
+            ),
+            "_framework_assemblies": attr.label(
+                doc = "Framework impl assemblies already present in Core_Root.",
+                default = "//src/libraries:impl_netcoreapp",
+            ),
+            "_shared_testhost": attr.label(
+                doc = "The shared testhost directory for Helix correlation payload.",
+                default = "//src/tests:shared_testhost",
+                allow_single_file = True,
+            ),
+            "_helix_submit": attr.label(
+                doc = "The HelixSubmit tool for dispatching tests to Helix.",
+                default = "//src/tools/bazel/HelixSubmit",
+                executable = True,
+                cfg = "exec",
+            ),
+            "queue": attr.string(
+                doc = "Helix queue name (e.g., 'Ubuntu.2204.Amd64.Open').",
+                mandatory = True,
+            ),
+            "helix_timeout": attr.string(
+                doc = "Helix work item timeout in HH:MM:SS format.",
+                default = "00:15:00",
+            ),
+            "source": attr.string(
+                doc = "Helix job source identifier.",
+                default = "",
+            ),
+            "creator": attr.string(
+                doc = "Helix job creator for anonymous submissions.",
+                default = "bazel-helix",
+            ),
+        }),
+    test = True,
+    toolchains = [
+        "@rules_dotnet//dotnet:toolchain_type",
+    ],
+    cfg = tfm_transition,
+)
+
 def library_test(
     name,
     deps = [],
@@ -613,6 +756,48 @@ def library_test(
         # Match MSBuild: GenerateAssemblyInfo=false (no CLSCompliant attribute),
         # GenerateDocumentationFile=false.
         generate_documentation_file = False,
+        **kwargs
+    )
+
+def helix_library_test(
+    name,
+    queue,
+    deps = [],
+    analyzers = [],
+    nowarn = [],
+    size = "large",
+    helix_timeout = "00:15:00",
+    source = "",
+    creator = "bazel-helix",
+    use_shared_compilation = True,
+    tags = [],
+    **kwargs
+):
+    """Test macro for library tests dispatched to Helix for remote execution.
+
+    Same compilation as library_test(), but the test runs on a Helix worker
+    instead of locally. Set HELIX_ACCESS_TOKEN env var for authenticated queues,
+    or use anonymous submission with the creator field for .Open queues.
+    Use --local_resources=helix_slot=N to control concurrent Helix submissions.
+    """
+    deps = deps + LIVE_REFPACK_DEPS
+    nullable = kwargs.pop("nullable", "annotations")
+    _helix_library_test(
+        name = name,
+        deps = deps,
+        analyzers = analyzers,
+        target_frameworks = [NETCOREAPP_CURRENT],
+        nowarn = nowarn + ["CS1701"] + _TEST_NOWARN,
+        size = size,
+        nullable = nullable,
+        queue = queue,
+        helix_timeout = helix_timeout,
+        source = source,
+        creator = creator,
+        use_shared_compilation = use_shared_compilation,
+        shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
+        generate_documentation_file = False,
+        tags = tags + ["helix", "requires-network", "external"],
         **kwargs
     )
 
