@@ -56,9 +56,9 @@ jobs:
           echo "$output"
 
           # Parse outputs from the script's summary
-          sync_branch=$(echo "$output" | grep '^ *Branch:' | awk '{print $2}')
-          classification=$(echo "$output" | grep '^ *Classification:' | awk '{print $2}')
-          pr_url=$(echo "$output" | grep '^ *PR:' | awk '{print $2}')
+          sync_branch=$(echo "$output" | grep '^ *Branch:' | awk '{print $2}' | tr -d '\r')
+          classification=$(echo "$output" | grep '^ *Classification:' | awk '{print $2}' | tr -d '\r')
+          pr_url=$(echo "$output" | grep '^ *PR:' | awk '{print $2}' | tr -d '\r')
           pr_number=$(echo "$pr_url" | grep -oP '/pull/\K[0-9]+' || true)
 
           if [[ -n "$sync_branch" ]]; then
