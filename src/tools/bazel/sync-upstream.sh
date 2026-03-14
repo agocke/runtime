@@ -1,0 +1,315 @@
+#!/usr/bin/env bash
+# sync-upstream.sh
+#
+# Syncs the next upstream commit from release/10.0 into the bazel branch.
+# Runs the full pipeline: check → merge → detect → push → create PR.
+#
+# This script is the single source of truth for the sync logic.
+# The GitHub Actions workflow is a thin wrapper that calls this script.
+#
+# Usage:
+#   ./src/tools/bazel/sync-upstream.sh [options]
+#
+# Options:
+#   --repo OWNER/REPO   GitHub repository (default: auto-detect from git remote)
+#   --upstream-ref REF  Upstream branch to sync from (default: release/10.0)
+#   --base-branch NAME  Local base branch (default: bazel)
+#   --dry-run           Do everything except push and create PR
+#   --detect-only       Only run change detection on existing HEAD vs base
+#   --skip-push         Skip git push (but still create branch and merge)
+#   --skip-pr           Skip PR creation (but still push)
+#   --copilot-fix       Run Copilot auto-fix if build-changes detected
+#   -v, --verbose       Print commands as they execute
+#   -h, --help          Show this help
+#
+# Prerequisites:
+#   - git with fetch access to upstream
+#   - gh CLI (authenticated) for PR operations
+#
+# Exit codes:
+#   0 = success (PR created, or up-to-date, or dry-run completed)
+#   1 = failure
+#   2 = usage error
+
+set -euo pipefail
+
+# ─── Defaults ─────────────────────────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+REPO=""
+UPSTREAM_REF="release/10.0"
+BASE_BRANCH="bazel"
+DRY_RUN=false
+DETECT_ONLY=false
+SKIP_PUSH=false
+SKIP_PR=false
+COPILOT_FIX=false
+VERBOSE=false
+
+# ─── Parse arguments ─────────────────────────────────────────────────────────
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --repo)          REPO="$2"; shift 2 ;;
+        --upstream-ref)  UPSTREAM_REF="$2"; shift 2 ;;
+        --base-branch)   BASE_BRANCH="$2"; shift 2 ;;
+        --dry-run)       DRY_RUN=true; shift ;;
+        --detect-only)   DETECT_ONLY=true; shift ;;
+        --skip-push)     SKIP_PUSH=true; shift ;;
+        --skip-pr)       SKIP_PR=true; shift ;;
+        --copilot-fix)   COPILOT_FIX=true; shift ;;
+        -v|--verbose)    VERBOSE=true; shift ;;
+        -h|--help)
+            sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+            exit 0
+            ;;
+        *)
+            echo "Error: unknown option: $1" >&2
+            echo "Run with --help for usage." >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ "$VERBOSE" == true ]]; then
+    set -x
+fi
+
+if [[ "$DRY_RUN" == true ]]; then
+    SKIP_PUSH=true
+    SKIP_PR=true
+fi
+
+cd "$REPO_ROOT"
+
+# Auto-detect repo from git remote if not specified
+if [[ -z "$REPO" ]]; then
+    REPO=$(git remote get-url origin 2>/dev/null \
+        | sed -n 's|.*github\.com[:/]\([^/]*/[^/.]*\).*|\1|p')
+    if [[ -z "$REPO" ]]; then
+        echo "Error: could not detect repository. Use --repo OWNER/REPO." >&2
+        exit 2
+    fi
+fi
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+info()  { echo "==> $*"; }
+detail() { echo "    $*"; }
+err()   { echo "ERROR: $*" >&2; }
+
+# ─── Detect-only mode ────────────────────────────────────────────────────────
+
+if [[ "$DETECT_ONLY" == true ]]; then
+    info "Running change detection only"
+    report_file="/tmp/sync-report.md"
+    detect_exit=0
+    "$SCRIPT_DIR/detect-upstream-changes.sh" "origin/$BASE_BRANCH" HEAD \
+        --report-file "$report_file" || detect_exit=$?
+
+    if [[ ! -f "$report_file" ]]; then
+        err "Detection script failed (exit $detect_exit) and produced no report."
+        exit 1
+    fi
+
+    cat "$report_file"
+    exit "$detect_exit"
+fi
+
+# ─── Step 1: Check for existing sync PR ──────────────────────────────────────
+
+info "Checking for existing sync PRs..."
+
+open_prs=$(gh pr list --repo "$REPO" --base "$BASE_BRANCH" \
+    --label bazel-sync --state open --json number --jq 'length' 2>/dev/null || echo "0")
+
+if [[ "$open_prs" -gt 0 ]]; then
+    info "An open sync PR already exists. Close or merge it first."
+    exit 0
+fi
+
+# ─── Step 2: Fetch upstream and find next commit ─────────────────────────────
+
+info "Fetching upstream..."
+
+git remote add upstream https://github.com/dotnet/runtime.git 2>/dev/null || true
+git fetch upstream "$UPSTREAM_REF" --quiet
+git fetch origin "$BASE_BRANCH" --quiet
+
+next_commit=$(git rev-list --reverse "origin/$BASE_BRANCH..upstream/$UPSTREAM_REF" | head -1)
+
+if [[ -z "$next_commit" ]]; then
+    info "Already up-to-date with upstream/$UPSTREAM_REF."
+    exit 0
+fi
+
+remaining=$(git rev-list --count "origin/$BASE_BRANCH..upstream/$UPSTREAM_REF")
+commit_short=$(git rev-parse --short "$next_commit")
+commit_subject=$(git log -1 --format='%s' "$next_commit")
+
+info "Next commit: $commit_short — $commit_subject"
+detail "($remaining commit(s) pending)"
+
+# ─── Step 3: Create sync branch and merge ────────────────────────────────────
+
+branch="sync/${UPSTREAM_REF//\//-}-${commit_short}"
+
+info "Creating branch: $branch"
+git checkout -B "$branch" "origin/$BASE_BRANCH" --quiet
+
+conflict=false
+if git merge "$next_commit" --no-edit 2>/dev/null; then
+    detail "Merge succeeded (no conflicts)"
+else
+    detail "Merge conflicts detected"
+    conflict=true
+    git add -A
+    git commit --no-edit -m "Merge $next_commit (with conflicts)" 2>/dev/null || true
+fi
+
+# ─── Step 4: Run change detection ────────────────────────────────────────────
+
+info "Running change detection..."
+
+report_file="/tmp/sync-report.md"
+classification="unknown"
+
+if [[ "$conflict" == true ]]; then
+    classification="conflict"
+    cat > "$report_file" <<CONFLICT_EOF
+# Sync Report: \`$UPSTREAM_REF\` → \`$BASE_BRANCH\`
+
+**Classification:** ❌ **conflict** — Merge conflicts need manual resolution
+
+## Conflicted Files
+$(git diff --name-only --diff-filter=U HEAD 2>/dev/null || true)
+CONFLICT_EOF
+else
+    detect_exit=0
+    "$SCRIPT_DIR/detect-upstream-changes.sh" "origin/$BASE_BRANCH" "$next_commit" \
+        --report-file "$report_file" || detect_exit=$?
+
+    if [[ ! -f "$report_file" ]]; then
+        err "Detection script failed (exit $detect_exit) and produced no report."
+        exit 1
+    fi
+
+    case "$detect_exit" in
+        0) classification="clean" ;;
+        1) classification="build-changes" ;;
+    esac
+fi
+
+detail "Classification: $classification"
+echo ""
+cat "$report_file"
+echo ""
+
+# ─── Step 5: Push branch ─────────────────────────────────────────────────────
+
+if [[ "$SKIP_PUSH" == true ]]; then
+    info "Push skipped (--dry-run or --skip-push)"
+else
+    info "Pushing $branch..."
+    git push origin "$branch"
+fi
+
+# ─── Step 6: Create PR ───────────────────────────────────────────────────────
+
+if [[ "$SKIP_PR" == true ]]; then
+    info "PR creation skipped (--dry-run or --skip-pr)"
+else
+    info "Creating PR..."
+
+    case "$classification" in
+        clean)
+            title="✅ Sync ${commit_short}: ${commit_subject}"
+            label_flags="--label bazel-sync --label bazel-sync-clean"
+            ;;
+        build-changes)
+            title="⚠️ Sync ${commit_short}: ${commit_subject}"
+            label_flags="--label bazel-sync --label bazel-sync-needs-attention"
+            ;;
+        conflict)
+            title="❌ Sync ${commit_short}: ${commit_subject}"
+            label_flags="--label bazel-sync --label bazel-sync-conflict"
+            ;;
+        *)
+            title="Sync ${commit_short}: ${commit_subject}"
+            label_flags="--label bazel-sync"
+            ;;
+    esac
+
+    # Prepend commit info header
+    header="**Upstream commit:** [\`${commit_short}\`](https://github.com/dotnet/runtime/commit/${next_commit}) — ${commit_subject}"
+    header+="\n**Remaining after this:** $((remaining - 1)) commit(s)\n\n---\n\n"
+    full_body=$(printf '%s' "$header" && cat "$report_file")
+    echo "$full_body" > "$report_file"
+
+    # shellcheck disable=SC2086
+    pr_url=$(gh pr create \
+        --repo "$REPO" \
+        --base "$BASE_BRANCH" \
+        --head "$branch" \
+        --title "$title" \
+        --body-file "$report_file" \
+        $label_flags)
+
+    pr_number=$(echo "$pr_url" | grep -oP '/pull/\K[0-9]+')
+    if [[ -z "$pr_number" ]]; then
+        err "Failed to extract PR number from: $pr_url"
+        exit 1
+    fi
+
+    detail "Created: $pr_url"
+fi
+
+# ─── Step 7: Copilot auto-fix (optional) ─────────────────────────────────────
+
+if [[ "$COPILOT_FIX" == true && ("$classification" == "build-changes" || "$classification" == "conflict") ]]; then
+    info "Running Copilot auto-fix..."
+
+    if ! command -v copilot &>/dev/null; then
+        err "Copilot CLI not found. Install with: npm install -g @github/copilot"
+        err "Skipping auto-fix."
+    elif [[ ! -f "$report_file" ]]; then
+        err "No report file — skipping auto-fix."
+    else
+        cd "$SCRIPT_DIR"
+        if dotnet run CopilotFixSync.cs -- "$report_file"; then
+            cd "$REPO_ROOT"
+            if ! git diff --quiet; then
+                detail "Copilot produced changes:"
+                git diff --stat
+                if [[ "$SKIP_PUSH" != true ]]; then
+                    git add -A
+                    git commit -m "Auto-fix BUILD.bazel files for upstream sync
+
+Applied by Copilot SDK based on detection report.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+                    git push origin HEAD
+                    detail "Pushed auto-fix commit."
+                fi
+            else
+                detail "Copilot produced no changes."
+            fi
+        else
+            err "CopilotFixSync.cs failed."
+        fi
+        cd "$REPO_ROOT"
+    fi
+fi
+
+# ─── Done ─────────────────────────────────────────────────────────────────────
+
+info "Done."
+echo ""
+echo "  Branch:          $branch"
+echo "  Classification:  $classification"
+echo "  Remaining:       $((remaining - 1)) commit(s)"
+if [[ -n "${pr_url:-}" ]]; then
+    echo "  PR:              $pr_url"
+fi

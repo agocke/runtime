@@ -233,28 +233,27 @@ if [[ -n "$changed_props" ]]; then
                     | sort -u || true)
 
                 if [[ -n "$changed_pkg_names" ]]; then
-                    # Build a list of NuGet package names used by Bazel (dotted form)
-                    bazel_pkgs=""
+                    # Build a lookup file of NuGet package names used by Bazel,
+                    # with dots stripped and lowercased for matching against
+                    # MSBuild property names (e.g. "microsoftdotnetarcadesdk").
+                    paket_lookup_file=$(mktemp)
                     if [[ -f "paket/paket.main.bzl" ]]; then
-                        bazel_pkgs=$(grep -oP '"name":\s*"\K[^"]+' paket/paket.main.bzl 2>/dev/null || true)
+                        grep -oP '"name":\s*"\K[^"]+' paket/paket.main.bzl 2>/dev/null \
+                            | while IFS= read -r name; do
+                                stripped=$(echo "$name" | tr -d '.' | tr '[:upper:]' '[:lower:]')
+                                echo "$stripped $name"
+                            done > "$paket_lookup_file"
                     fi
 
                     while IFS= read -r pkg; do
                         [[ -z "$pkg" ]] && continue
-                        # Match by stripping dots from NuGet names and comparing
-                        # case-insensitively against the MSBuild property prefix.
-                        # e.g. property "MicrosoftDotNetArcadeSdk" matches
-                        #      NuGet name "Microsoft.DotNet.Arcade.Sdk"
                         pkg_lower=$(echo "$pkg" | tr '[:upper:]' '[:lower:]')
-                        while IFS= read -r nuget_name; do
-                            [[ -z "$nuget_name" ]] && continue
-                            stripped=$(echo "$nuget_name" | tr -d '.' | tr '[:upper:]' '[:lower:]')
-                            if [[ "$stripped" == "$pkg_lower" ]]; then
-                                bazel_affected+="$nuget_name "
-                                break
-                            fi
-                        done <<< "$bazel_pkgs"
+                        match=$(grep "^${pkg_lower} " "$paket_lookup_file" | head -1 | cut -d' ' -f2 || true)
+                        if [[ -n "$match" ]]; then
+                            bazel_affected+="$match "
+                        fi
                     done <<< "$changed_pkg_names"
+                    rm -f "$paket_lookup_file"
                 fi
 
                 if [[ -n "$bazel_affected" ]]; then
