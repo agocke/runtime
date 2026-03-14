@@ -1,6 +1,3 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-
 // CopilotFixSync.cs
 //
 // Uses the GitHub Copilot SDK for .NET to automatically attempt BUILD.bazel
@@ -11,8 +8,6 @@
 // Requires:
 //   - GitHub.Copilot.SDK NuGet package
 //   - Copilot CLI installed and authenticated (COPILOT_GITHUB_TOKEN env var)
-
-#pragma warning disable CA2007 // Consider calling ConfigureAwait (not applicable to top-level scripts)
 
 #:package GitHub.Copilot.SDK@*
 
@@ -41,25 +36,6 @@ await client.StartAsync();
 await using var session = await client.CreateSessionAsync(new SessionConfig
 {
     Model = "claude-sonnet-4"
-});
-
-var completionSource = new TaskCompletionSource();
-
-session.On(evt =>
-{
-    switch (evt)
-    {
-        case AssistantMessageEvent msg:
-            Console.WriteLine(msg.Data.Content);
-            break;
-        case SessionErrorEvent err:
-            Console.Error.WriteLine($"[Error]: {err.Data.Message}");
-            completionSource.TrySetException(new InvalidOperationException(err.Data.Message));
-            break;
-        case SessionIdleEvent:
-            completionSource.TrySetResult();
-            break;
-    }
 });
 
 var prompt = $"""
@@ -124,13 +100,13 @@ var prompt = $"""
     Only modify BUILD.bazel files. Do not modify any other files.
     """;
 
-await session.SendAsync(prompt);
-
-// Wait for the session to complete its work
-using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
 try
 {
-    await completionSource.Task.WaitAsync(cts.Token);
+    var response = await session.SendAndWaitAsync(
+        new MessageOptions { Prompt = prompt },
+        TimeSpan.FromMinutes(10));
+
+    Console.WriteLine(response?.Data?.Content ?? "(no response)");
 }
 catch (OperationCanceledException)
 {
