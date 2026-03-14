@@ -138,14 +138,15 @@ git remote add upstream https://github.com/dotnet/runtime.git 2>/dev/null || tru
 git fetch upstream "$UPSTREAM_REF" --quiet
 git fetch origin "$BASE_BRANCH" --quiet
 
-next_commit=$(git rev-list --reverse "origin/$BASE_BRANCH..upstream/$UPSTREAM_REF" | head -1)
+all_commits=$(git rev-list --reverse "origin/$BASE_BRANCH..upstream/$UPSTREAM_REF")
+next_commit=$(head -1 <<< "$all_commits")
 
 if [[ -z "$next_commit" ]]; then
     info "Already up-to-date with upstream/$UPSTREAM_REF."
     exit 0
 fi
 
-remaining=$(git rev-list --count "origin/$BASE_BRANCH..upstream/$UPSTREAM_REF")
+remaining=$(wc -l <<< "$all_commits" | tr -d ' ')
 commit_short=$(git rev-parse --short "$next_commit")
 commit_subject=$(git log -1 --format='%s' "$next_commit")
 
