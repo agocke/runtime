@@ -119,13 +119,7 @@ var prompt = $"""
     Only modify BUILD.bazel files. Do not modify any other files.
     """;
 
-await session.SendAsync(new UserMessageEvent
-{
-    Data = new UserMessageEventData
-    {
-        Content = prompt
-    }
-});
+await session.SendAsync(prompt);
 
 // Wait for the session to complete its work
 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
