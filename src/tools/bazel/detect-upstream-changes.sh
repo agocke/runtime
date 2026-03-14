@@ -214,25 +214,65 @@ if [[ -n "$changed_props" ]]; then
         append ""
         while IFS= read -r file; do
             [[ -z "$file" ]] && continue
-            # Version-only changes in eng/ are informational, not Bazel-breaking
-            is_version_only=false
+            is_version_props=false
             if [[ "$file" == eng/Version.Details.props || "$file" == eng/Versions.props ]]; then
-                is_version_only=true
+                is_version_props=true
             fi
 
-            changes=$(git diff "$DIFF_RANGE" -- "$file" 2>/dev/null | grep '^[+-]' | grep -v '^[+-][+-][+-]' | grep -iE 'DefineConstants|Reference|Compile|Condition|Property|Version' | head -10 || true)
-            if [[ "$is_version_only" == true ]]; then
-                append "- \`$file\` _(version bump, informational)_"
+            changes=$(git diff "$DIFF_RANGE" -- "$file" 2>/dev/null | grep '^[+-]' | grep -v '^[+-][+-][+-]' | grep -iE 'DefineConstants|Reference|Compile|Condition|Property|Version' | head -20 || true)
+
+            if [[ "$is_version_props" == true ]]; then
+                # Cross-reference changed package versions against Bazel NuGet deps.
+                # MODULE.bazel and paket/paket.main.bzl embed package versions;
+                # if any changed package is used by Bazel, this is a build change.
+                bazel_affected=""
+                changed_pkg_names=$(git diff "$DIFF_RANGE" -- "$file" 2>/dev/null \
+                    | grep '^[-+]' | grep -v '^[+-][+-][+-]' \
+                    | grep -oP '<(\w+)PackageVersion>' \
+                    | sed 's/<//;s/PackageVersion>//' \
+                    | sort -u || true)
+
+                if [[ -n "$changed_pkg_names" ]]; then
+                    # Build a list of NuGet package names used by Bazel (dotted form)
+                    bazel_pkgs=""
+                    if [[ -f "paket/paket.main.bzl" ]]; then
+                        bazel_pkgs=$(grep -oP '"name":\s*"\K[^"]+' paket/paket.main.bzl 2>/dev/null || true)
+                    fi
+
+                    while IFS= read -r pkg; do
+                        [[ -z "$pkg" ]] && continue
+                        # Match by stripping dots from NuGet names and comparing
+                        # case-insensitively against the MSBuild property prefix.
+                        # e.g. property "MicrosoftDotNetArcadeSdk" matches
+                        #      NuGet name "Microsoft.DotNet.Arcade.Sdk"
+                        pkg_lower=$(echo "$pkg" | tr '[:upper:]' '[:lower:]')
+                        while IFS= read -r nuget_name; do
+                            [[ -z "$nuget_name" ]] && continue
+                            stripped=$(echo "$nuget_name" | tr -d '.' | tr '[:upper:]' '[:lower:]')
+                            if [[ "$stripped" == "$pkg_lower" ]]; then
+                                bazel_affected+="$nuget_name "
+                                break
+                            fi
+                        done <<< "$bazel_pkgs"
+                    done <<< "$changed_pkg_names"
+                fi
+
+                if [[ -n "$bazel_affected" ]]; then
+                    append "- \`$file\` ⚠️ **version bump affects Bazel NuGet deps:** ${bazel_affected}"
+                    has_build_changes=true
+                else
+                    append "- \`$file\` _(version bump, no Bazel NuGet deps affected)_"
+                fi
             else
                 append "- \`$file\`"
+                if [[ -n "$changes" ]]; then
+                    has_build_changes=true
+                fi
             fi
             if [[ -n "$changes" ]]; then
                 append '  ```diff'
                 append "  $changes"
                 append '  ```'
-                if [[ "$is_version_only" == false ]]; then
-                    has_build_changes=true
-                fi
             fi
         done <<< "$relevant_props"
         append ""
