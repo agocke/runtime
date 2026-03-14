@@ -38,25 +38,6 @@ await using var session = await client.CreateSessionAsync(new SessionConfig
     Model = "claude-sonnet-4"
 });
 
-var completionSource = new TaskCompletionSource();
-
-session.On(evt =>
-{
-    switch (evt)
-    {
-        case AssistantMessageEvent msg:
-            Console.WriteLine(msg.Data.Content);
-            break;
-        case SessionErrorEvent err:
-            Console.Error.WriteLine($"[Error]: {err.Data.Message}");
-            completionSource.TrySetException(new InvalidOperationException(err.Data.Message));
-            break;
-        case SessionIdleEvent:
-            completionSource.TrySetResult();
-            break;
-    }
-});
-
 var prompt = $"""
     You are updating Bazel BUILD files for the dotnet/runtime repository after
     merging upstream changes from release/10.0 into the bazel branch.
@@ -119,13 +100,13 @@ var prompt = $"""
     Only modify BUILD.bazel files. Do not modify any other files.
     """;
 
-await session.SendAsync(prompt);
-
-// Wait for the session to complete its work
-using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
 try
 {
-    await completionSource.Task.WaitAsync(cts.Token);
+    var response = await session.SendAndWaitAsync(
+        new MessageOptions { Prompt = prompt },
+        TimeSpan.FromMinutes(10));
+
+    Console.WriteLine(response?.Data?.Content ?? "(no response)");
 }
 catch (OperationCanceledException)
 {
