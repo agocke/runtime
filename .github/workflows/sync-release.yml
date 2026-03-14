@@ -147,12 +147,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-               - name: Create PR
-        id: create-pr
-        if: steps.check-new.outputs.has_new_commits == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
           classification="${{ steps.detect.outputs.classification }}"
           report_file="${{ steps.detect.outputs.report_file }}"
           commit_subject="${{ steps.check-new.outputs.next_commit_subject }}"
