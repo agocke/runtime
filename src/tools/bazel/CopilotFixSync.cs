@@ -1,6 +1,3 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-
 // CopilotFixSync.cs
 //
 // Uses the GitHub Copilot SDK for .NET to automatically attempt BUILD.bazel
@@ -11,8 +8,6 @@
 // Requires:
 //   - GitHub.Copilot.SDK NuGet package
 //   - Copilot CLI installed and authenticated (COPILOT_GITHUB_TOKEN env var)
-
-#pragma warning disable CA2007 // Consider calling ConfigureAwait (not applicable to top-level scripts)
 
 #:package GitHub.Copilot.SDK@*
 
