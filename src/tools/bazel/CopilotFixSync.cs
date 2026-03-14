@@ -35,7 +35,8 @@ await client.StartAsync();
 
 await using var session = await client.CreateSessionAsync(new SessionConfig
 {
-    Model = "claude-sonnet-4"
+    Model = "claude-sonnet-4",
+    OnPermissionRequest = PermissionHandler.ApproveAll
 });
 
 var prompt = $"""

@@ -183,10 +183,15 @@ jobs:
           chmod +x src/tools/bazel/sync-upstream.sh
           chmod +x src/tools/bazel/detect-upstream-changes.sh
 
-          # Generate the detection report
+          # Generate the detection report (exit 1 = build-changes, which is expected)
           git fetch origin bazel --quiet
           src/tools/bazel/detect-upstream-changes.sh origin/bazel HEAD \
-            --report-file /tmp/sync-report.md
+            --report-file /tmp/sync-report.md || true
+
+          if [ ! -f /tmp/sync-report.md ]; then
+            echo "ERROR: Detection script failed to produce a report"
+            exit 1
+          fi
 
           # Run the Copilot fix
           cd src/tools/bazel
