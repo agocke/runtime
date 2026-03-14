@@ -51,7 +51,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          open_prs=$(gh pr list --base bazel --label bazel-sync --state open --json number --jq 'length')
+          open_prs=$(gh pr list --repo "${{ github.repository }}" --base bazel --label bazel-sync --state open --json number --jq 'length')
           if [ "$open_prs" -gt 0 ]; then
             echo "has_open_pr=true" >> "$GITHUB_OUTPUT"
             echo "An open sync PR already exists, skipping"
@@ -179,14 +179,19 @@ jobs:
           echo "$full_body" > "$report_file"
 
           pr_url=$(gh pr create \
+            --repo "${{ github.repository }}" \
             --base bazel \
             --head "${{ steps.create-branch.outputs.branch }}" \
             --title "$title" \
             --body-file "$report_file" \
-            $label_flags 2>&1 || true)
+            $label_flags)
 
           # Extract PR number from URL
-          pr_number=$(echo "$pr_url" | grep -oP '/pull/\K[0-9]+' || echo "")
+          pr_number=$(echo "$pr_url" | grep -oP '/pull/\K[0-9]+')
+          if [ -z "$pr_number" ]; then
+            echo "::error::Failed to extract PR number from: $pr_url"
+            exit 1
+          fi
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
           echo "Created PR: $pr_url"
 
@@ -260,7 +265,7 @@ jobs:
             comment+="<details><summary>Build Inputs Details</summary>\n\n\`\`\`\n$(tail -50 /tmp/build-result.txt)\n\`\`\`\n</details>\n"
           fi
 
-          echo -e "$comment" | gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" --body-file -
+          echo -e "$comment" | gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" --repo "${{ github.repository }}" --body-file -
 
   # ─── Job 3: Copilot SDK auto-fix ───────────────────────────────────────────
   copilot-fix:
@@ -344,7 +349,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" \
+          gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" --repo "${{ github.repository }}" \
             --body "🤖 **Copilot Auto-Fix Applied**
 
           Copilot SDK automatically updated BUILD.bazel files based on the detection report. Changes have been pushed to the sync branch and validated with \`bazel build //...\`.
@@ -364,7 +369,7 @@ jobs:
           else
             msg="🤖 **Copilot Auto-Fix Failed**: Changes were produced but \`bazel build\` validation failed. Manual intervention needed."
           fi
-          gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" --body "$msg"
+          gh pr comment "${{ needs.merge-and-pr.outputs.pr_number }}" --repo "${{ github.repository }}" --body "$msg"
 
       - name: Revert on validation failure
         if: steps.check-changes.outputs.has_changes == 'true' && steps.validate.outcome != 'success'
