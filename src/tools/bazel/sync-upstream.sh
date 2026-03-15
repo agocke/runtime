@@ -281,7 +281,7 @@ if [[ "$SKIP_PUSH" == true ]]; then
     info "Push skipped (--dry-run or --skip-push)"
 else
     info "Pushing $branch..."
-    git push origin "$branch"
+    git push --force-with-lease origin "$branch"
 fi
 
 # ─── Step 7: Create PR (last step — branch is fully ready) ───────────────────

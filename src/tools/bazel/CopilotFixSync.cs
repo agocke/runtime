@@ -148,13 +148,18 @@ try
 {
     var response = await session.SendAndWaitAsync(
         new MessageOptions { Prompt = prompt },
-        TimeSpan.FromMinutes(10));
+        TimeSpan.FromMinutes(20));
 
     Console.WriteLine(response?.Data?.Content ?? "(no response)");
 }
 catch (OperationCanceledException)
 {
-    Console.Error.WriteLine("Copilot session timed out after 10 minutes");
+    Console.Error.WriteLine("Copilot session timed out after 20 minutes");
+    return 1;
+}
+catch (TimeoutException)
+{
+    Console.Error.WriteLine("Copilot session timed out after 20 minutes");
     return 1;
 }
 
