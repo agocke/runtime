@@ -257,13 +257,20 @@ release/10.0 commits and bazel merge commits.
      `srcs` lists, changed `.csproj`/`.props`/`.targets`/`CMakeLists.txt` files.
      BUILD.bazel files may need updates.
    - **conflict** — Git merge had conflicts requiring manual resolution.
-5. **PR**: A pull request is created with the upstream commit info, detection
+5. **Fix version bumps** (build-changes/conflict only): A deterministic C#
+   script (`src/tools/bazel/FixVersionBumps.cs`) parses the
+   `eng/Version.Details.props` diff, cross-references changed packages against
+   `paket/paket.main.bzl`, and replaces all version-pinned NuGet labels
+   (`nuget.<pkg>.v<old>` → `nuget.<pkg>.v<new>`) across Bazel files. This
+   handles the most common sync scenario without needing Copilot.
+6. **Copilot auto-fix** (build-changes/conflict only): A C# script using the
+   GitHub Copilot SDK (`src/tools/bazel/CopilotFixSync.cs`) attempts to
+   automatically handle remaining non-version changes (new/removed files,
+   new dependencies, etc.) based on the detection report.
+7. **PR**: A pull request is created with the upstream commit info, detection
    report, and appropriate labels (`bazel-sync-clean`, `bazel-sync-needs-attention`,
    `bazel-sync-conflict`).
-6. **Auto-fix** (build-changes/conflict only): A C# script using the GitHub
-   Copilot SDK (`src/tools/bazel/CopilotFixSync.cs`) attempts to automatically
-   update BUILD.bazel files based on the detection report.
-7. **Equivalence check** (build-changes only): Full MSBuild and Bazel builds are
+8. **Equivalence check** (build-changes only): Full MSBuild and Bazel builds are
    run, followed by `compare-runtime-packs.sh` and `compare-bazel.sh` to verify
    build equivalence. Results are posted as a PR comment.
 

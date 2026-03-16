@@ -29,9 +29,10 @@
 #   2. Fetch upstream, find next commit
 #   3. Create sync branch, merge
 #   4. Run change detection
-#   5. Run Copilot auto-fix (if --copilot-fix and build-changes/conflict)
-#   6. Push branch
-#   7. Create PR (last step — everything is ready)
+#   5. Fix version bumps (deterministic — no Copilot needed)
+#   6. Run Copilot auto-fix (if --copilot-fix and non-version build-changes)
+#   7. Push branch
+#   8. Create PR (last step — everything is ready)
 #
 # Prerequisites:
 #   - git with fetch access to upstream
@@ -241,7 +242,35 @@ echo ""
 cat "$report_file"
 echo ""
 
-# ─── Step 5: Copilot auto-fix (before push — all fixes go into the branch) ───
+# ─── Step 5: Fix version bumps (deterministic, no Copilot needed) ─────────────
+
+if [[ "$classification" == "build-changes" || "$classification" == "conflict" ]]; then
+    info "Fixing NuGet version bumps..."
+
+    cd "$SCRIPT_DIR"
+    if dotnet run FixVersionBumps.cs -- "origin/$BASE_BRANCH" "$next_commit" --repo-root "$REPO_ROOT"; then
+        cd "$REPO_ROOT"
+        if ! git diff --quiet; then
+            detail "Version bump changes:"
+            git diff --stat
+            git add -A
+            git commit -m "Update Bazel NuGet version-pinned labels
+
+Deterministic replacement of versioned labels in MODULE.bazel,
+paket/paket.main.bzl, and BUILD files to match upstream version bumps.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            detail "Committed version bump fixes."
+        else
+            detail "No version bump changes needed."
+        fi
+    else
+        err "FixVersionBumps.cs failed."
+    fi
+    cd "$REPO_ROOT"
+fi
+
+# ─── Step 6: Copilot auto-fix (for non-version changes like new files, deps) ──
 
 if [[ "$COPILOT_FIX" == true && ("$classification" == "build-changes" || "$classification" == "conflict") ]]; then
     info "Running Copilot auto-fix..."
@@ -275,7 +304,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
     fi
 fi
 
-# ─── Step 6: Push branch ─────────────────────────────────────────────────────
+# ─── Step 7: Push branch ─────────────────────────────────────────────────────
 
 if [[ "$SKIP_PUSH" == true ]]; then
     info "Push skipped (--dry-run or --skip-push)"
@@ -284,7 +313,7 @@ else
     git push --force-with-lease origin "$branch"
 fi
 
-# ─── Step 7: Create PR (last step — branch is fully ready) ───────────────────
+# ─── Step 8: Create PR (last step — branch is fully ready) ───────────────────
 
 if [[ "$SKIP_PR" == true ]]; then
     info "PR creation skipped (--dry-run or --skip-pr)"
