@@ -10,11 +10,11 @@ exports_files([
 filegroup(
     name = "xunit_console_runner",
     srcs = [
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.console.dll",
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.console.runtimeconfig.json",
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.console.deps.json",
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.runner.reporters.netcoreapp10.dll",
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.runner.utility.netcoreapp10.dll",
+        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26110.124//:tools/net/xunit.console.dll",
+        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26110.124//:tools/net/xunit.console.runtimeconfig.json",
+        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26110.124//:tools/net/xunit.console.deps.json",
+        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26110.124//:tools/net/xunit.runner.reporters.netcoreapp10.dll",
+        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26110.124//:tools/net/xunit.runner.utility.netcoreapp10.dll",
     ],
     visibility = ["//visibility:public"],
 )

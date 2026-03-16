@@ -323,7 +323,7 @@ netcoreapp_ref_assembly(
     ],
     allow_unsafe_blocks = True,
     defines = ["BUILDING_CORELIB_REFERENCE"],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/SilverlightPlatformPublicKey.snk",
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26110.124//:tools/snk/SilverlightPlatformPublicKey.snk",
     compiler_options = [
         "/runtimemetadataversion:v4.0.30319",
         "/checksumalgorithm:SHA256",

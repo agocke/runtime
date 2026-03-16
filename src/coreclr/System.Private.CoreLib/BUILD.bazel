@@ -396,7 +396,7 @@ csharp_library(
         "//:clr_checked": [ "/debug:portable", "/optimize+" ],
         "//conditions:default": [ "/debug:portable", "/optimize-" ],
     }),
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/SilverlightPlatformPublicKey.snk",
+    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26110.124//:tools/snk/SilverlightPlatformPublicKey.snk",
     defines = [
         "SYSTEM_PRIVATE_CORELIB",
         "CORECLR",
