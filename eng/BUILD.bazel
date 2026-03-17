@@ -1,5 +1,7 @@
 # Package for eng/ (enables subpackage references)
 
+load("//:defs.bzl", "XUNIT_CONSOLE_RUNNER_REPO")
+
 exports_files([
     "run_binary.sh.tpl",
     "run_test.sh.tpl",
@@ -10,11 +12,11 @@ exports_files([
 filegroup(
     name = "xunit_console_runner",
     srcs = [
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.console.dll",
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.console.runtimeconfig.json",
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.console.deps.json",
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.runner.reporters.netcoreapp10.dll",
-        "@nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102//:tools/net/xunit.runner.utility.netcoreapp10.dll",
+        "@{}//:tools/net/xunit.console.dll".format(XUNIT_CONSOLE_RUNNER_REPO),
+        "@{}//:tools/net/xunit.console.runtimeconfig.json".format(XUNIT_CONSOLE_RUNNER_REPO),
+        "@{}//:tools/net/xunit.console.deps.json".format(XUNIT_CONSOLE_RUNNER_REPO),
+        "@{}//:tools/net/xunit.runner.reporters.netcoreapp10.dll".format(XUNIT_CONSOLE_RUNNER_REPO),
+        "@{}//:tools/net/xunit.runner.utility.netcoreapp10.dll".format(XUNIT_CONSOLE_RUNNER_REPO),
     ],
     visibility = ["//visibility:public"],
 )

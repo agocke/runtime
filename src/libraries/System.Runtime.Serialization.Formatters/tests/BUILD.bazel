@@ -1,4 +1,5 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//:defs.bzl", "OPEN_SNK")
 
 # NOTE: This test suite requires the System.Drawing.Common NuGet package
 # (Bitmap, Metafile, Icon, Drawing2D, Imaging etc.) which is not available
@@ -63,7 +64,7 @@ library_test(
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
     ],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
     nowarn = [
         "SYSLIB0011",
         "SYSLIB0050",

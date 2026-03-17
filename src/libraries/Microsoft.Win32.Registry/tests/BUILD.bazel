@@ -1,4 +1,5 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "Microsoft.Win32.Registry.Tests",
@@ -21,6 +22,6 @@ library_test(
     ],
     allow_unsafe_blocks = True,
     defines = ["REGISTRY_ASSEMBLY"],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
     target_compatible_with = ["@platforms//os:windows"],
 )

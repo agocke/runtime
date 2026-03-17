@@ -1,6 +1,7 @@
 
 load(
     "//:defs.bzl",
+    "MSFT_SNK",
     "NETCOREAPP_CURRENT",
     "csharp_library",
     "gen_assembly_info",
@@ -158,7 +159,7 @@ def netcoreapp_ref_assembly(
         assembly_version = assembly_version,
         visibility = [ "//visibility:public" ],
         nullable = "annotations",
-        keyfile = keyfile if keyfile else "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/MSFT.snk",
+        keyfile = keyfile if keyfile else MSFT_SNK,
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         nowarn = nowarn,
@@ -474,7 +475,7 @@ def netcoreapp_impl_assembly(
         visibility = [ "//visibility:public" ],
         nullable = nullable,
         allow_unsafe_blocks = allow_unsafe_blocks,
-        keyfile = keyfile if keyfile else "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/MSFT.snk",
+        keyfile = keyfile if keyfile else MSFT_SNK,
         target_frameworks = [ NETCOREAPP_CURRENT ],
         disable_implicit_framework_refs = True,
         compiler_options = compiler_options,

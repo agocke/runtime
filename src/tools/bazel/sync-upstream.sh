@@ -30,6 +30,8 @@
 #   3. Create sync branch, merge
 #   4. Run change detection
 #   5. Fix version bumps (deterministic — no Copilot needed)
+#      - Updates paket.dependencies, defs.bzl, MODULE.bazel
+#      - Runs sync-paket.sh to regenerate paket/paket.main.bzl
 #   6. Run Copilot auto-fix (if --copilot-fix and non-version build-changes)
 #   7. Push branch
 #   8. Create PR (last step — everything is ready)
@@ -251,13 +253,28 @@ if [[ "$classification" == "build-changes" || "$classification" == "conflict" ]]
     if dotnet run FixVersionBumps.cs -- "origin/$BASE_BRANCH" "$next_commit" --repo-root "$REPO_ROOT"; then
         cd "$REPO_ROOT"
         if ! git diff --quiet; then
-            detail "Version bump changes:"
-            git diff --stat
-            git add -A
-            git commit -m "Update Bazel NuGet version-pinned labels
+            detail "Version bump changes detected — regenerating paket files..."
 
-Deterministic replacement of versioned labels in MODULE.bazel,
-paket/paket.main.bzl, and BUILD files to match upstream version bumps.
+            # Regenerate paket/paket.main.bzl from updated paket.dependencies
+            if command -v bazel &>/dev/null || command -v bazelisk &>/dev/null; then
+                info "Running sync-paket.sh to regenerate paket/paket.main.bzl..."
+                if "$REPO_ROOT/sync-paket.sh"; then
+                    detail "paket/paket.main.bzl regenerated successfully."
+                else
+                    err "sync-paket.sh failed — paket/paket.main.bzl may be stale."
+                fi
+            else
+                err "bazel not found — skipping paket regeneration."
+                err "paket/paket.main.bzl must be regenerated manually via sync-paket.sh."
+            fi
+
+            git add -A
+            git diff --cached --stat
+            git commit -m "Update Bazel NuGet versions and regenerate paket
+
+Deterministic update of paket.dependencies, defs.bzl constants, and
+MODULE.bazel use_repo entries. Regenerated paket/paket.main.bzl via
+paket2bazel.
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
             detail "Committed version bump fixes."

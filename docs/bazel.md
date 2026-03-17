@@ -260,9 +260,16 @@ release/10.0 commits and bazel merge commits.
 5. **Fix version bumps** (build-changes/conflict only): A deterministic C#
    script (`src/tools/bazel/FixVersionBumps.cs`) parses the
    `eng/Version.Details.props` diff, cross-references changed packages against
-   `paket/paket.main.bzl`, and replaces all version-pinned NuGet labels
-   (`nuget.<pkg>.v<old>` → `nuget.<pkg>.v<new>`) across Bazel files. This
-   handles the most common sync scenario without needing Copilot.
+   `paket.dependencies`, and updates:
+   - `paket.dependencies` — the source of truth for NuGet package versions
+   - `defs.bzl` — centralized versioned repo-name constants (e.g.,
+     `ARCADE_SDK_REPO`, `OPEN_SNK`, `MSFT_SNK`)
+   - `MODULE.bazel` — `use_repo()` entries for versioned repos
+
+   After updating these files, the script runs `sync-paket.sh` to regenerate
+   `paket/paket.main.bzl` via `paket2bazel`, ensuring sha512 hashes and
+   dependency graphs are correct. All other BUILD files reference the
+   centralized constants in `defs.bzl`, so they don't need updating.
 6. **Copilot auto-fix** (build-changes/conflict only): A C# script using the
    GitHub Copilot SDK (`src/tools/bazel/CopilotFixSync.cs`) attempts to
    automatically handle remaining non-version changes (new/removed files,

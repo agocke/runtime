@@ -1,5 +1,5 @@
 load("//src/tests:live_test.bzl", "library_test")
-load("//:defs.bzl", "csharp_binary")
+load("//:defs.bzl", "OPEN_SNK", "csharp_binary")
 
 csharp_binary(
     name = "STAMain",
@@ -43,5 +43,5 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     allow_unsafe_blocks = True,
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
 )

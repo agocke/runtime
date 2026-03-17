@@ -1,4 +1,5 @@
 load("//src/libraries:defs.bzl", "live_csharp_library")
+load("//:defs.bzl", "ASPNETCORE_SNK")
 
 live_csharp_library(
     name = "Microsoft.Extensions.DependencyInjection.Specification.Tests",
@@ -14,5 +15,5 @@ live_csharp_library(
     nullable = "disable",
     nowarn = ["nullable", "CA1852", "1591"],
     visibility = ["//visibility:public"],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/AspNetCore.snk",
+    keyfile = ASPNETCORE_SNK,
 )

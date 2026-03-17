@@ -1,4 +1,5 @@
 load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
+load("//:defs.bzl", "OPEN_SNK")
 
 netcoreapp_impl_assembly(
     name = "impl_netstandard",
@@ -90,6 +91,6 @@ netcoreapp_impl_assembly(
     ],
     os_targeted = True,
     exclude_sr = True,
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
     assembly_version = "2.1.0.0",
 )
