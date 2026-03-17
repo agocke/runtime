@@ -1,3 +1,4 @@
+source https://api.nuget.org/v3/index.json
 source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json
 source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json
 source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet10-transport/nuget/v3/index.json
@@ -25,7 +26,7 @@ nuget XUnit.Abstractions 2.0.3
 nuget XUnit.Extensibility.Core 2.9.3
 nuget xunit.extensibility.execution 2.9.3
 nuget Microsoft.DotNet.XUnitExtensions 10.0.0-beta.26102.102
-nuget Microsoft.DotNet.Cecil 0.11.5-alpha.26108.2
+nuget Microsoft.DotNet.Cecil 0.11.5-alpha.26102.102
 nuget Microsoft.DiaSymReader 2.0.0
 nuget Microsoft.Diagnostics.Runtime 1.0.5
 nuget System.Runtime.CompilerServices.Unsafe 6.0.0
