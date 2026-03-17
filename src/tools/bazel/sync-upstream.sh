@@ -2,7 +2,7 @@
 # sync-upstream.sh
 #
 # Syncs the next upstream commit from release/10.0 into the bazel branch.
-# Runs the full pipeline: check → merge → detect → [copilot fix] → push → PR.
+# Runs the full pipeline: check → merge → detect → push → PR.
 #
 # This script is the single source of truth for the sync logic.
 # The GitHub Actions workflow is a thin wrapper that calls this script.
@@ -14,12 +14,11 @@
 #   --repo OWNER/REPO    GitHub repository (default: auto-detect from git remote)
 #   --upstream-ref REF   Upstream branch to sync from (default: release/10.0)
 #   --base-branch NAME   Local base branch (default: bazel)
-#   --dry-run            Do everything locally (no push, no PR, no copilot fix)
+#   --dry-run            Do everything locally (no push, no PR)
 #   --detect-only        Only run change detection on existing HEAD vs base
 #   --skip-push          Skip git push (but still create branch and merge)
 #   --skip-pr            Skip PR creation (but still push)
 #   --skip-fetch         Skip git fetch (use existing refs)
-#   --copilot-fix        Run Copilot auto-fix if build-changes detected
 #   --output-file PATH   Write structured results to file (for CI consumption)
 #   -v, --verbose        Print commands as they execute
 #   -h, --help           Show this help
@@ -33,9 +32,10 @@
 #      - Updates paket.dependencies, defs.bzl, MODULE.bazel, BUILD.bazel files
 #      - Runs paket install to regenerate paket.lock
 #      - Runs sync-paket.sh to regenerate paket/paket.main.bzl
-#   6. Run Copilot auto-fix (if --copilot-fix and non-version build-changes)
-#   7. Push branch
-#   8. Create PR (last step — everything is ready)
+#   6. Push branch
+#   7. Create PR (last step — everything is ready)
+#
+# Copilot auto-fix runs as a separate CI job after this script completes.
 #
 # Prerequisites:
 #   - git with fetch access to upstream
@@ -61,7 +61,6 @@ DETECT_ONLY=false
 SKIP_PUSH=false
 SKIP_PR=false
 SKIP_FETCH=false
-COPILOT_FIX=false
 VERBOSE=false
 OUTPUT_FILE=""
 
@@ -77,7 +76,6 @@ while [[ $# -gt 0 ]]; do
         --skip-push)     SKIP_PUSH=true; shift ;;
         --skip-pr)       SKIP_PR=true; shift ;;
         --skip-fetch)    SKIP_FETCH=true; shift ;;
-        --copilot-fix)   COPILOT_FIX=true; shift ;;
         --output-file)   OUTPUT_FILE="$2"; shift 2 ;;
         -v|--verbose)    VERBOSE=true; shift ;;
         -h|--help)
@@ -308,41 +306,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
     cd "$REPO_ROOT"
 fi
 
-# ─── Step 6: Copilot auto-fix (for non-version changes like new files, deps) ──
-
-if [[ "$COPILOT_FIX" == true && ("$classification" == "build-changes" || "$classification" == "conflict") ]]; then
-    info "Running Copilot auto-fix..."
-
-    if ! command -v copilot &>/dev/null; then
-        err "Copilot CLI not found. Install with: npm install -g @github/copilot"
-        err "Skipping auto-fix."
-    elif [[ ! -f "$report_file" ]]; then
-        err "No report file — skipping auto-fix."
-    else
-        cd "$SCRIPT_DIR"
-        if dotnet run CopilotFixSync.cs -- "$report_file"; then
-            cd "$REPO_ROOT"
-            if ! git diff --quiet; then
-                detail "Copilot produced changes:"
-                git diff --stat
-                git add -A
-                git commit -m "Auto-fix BUILD.bazel files for upstream sync
-
-Applied by Copilot SDK based on detection report.
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
-                detail "Committed auto-fix."
-            else
-                detail "Copilot produced no changes."
-            fi
-        else
-            err "CopilotFixSync.cs failed."
-        fi
-        cd "$REPO_ROOT"
-    fi
-fi
-
-# ─── Step 7: Push branch ─────────────────────────────────────────────────────
+# ─── Step 6: Push branch ─────────────────────────────────────────────────────
 
 if [[ "$SKIP_PUSH" == true ]]; then
     info "Push skipped (--dry-run or --skip-push)"
@@ -351,7 +315,7 @@ else
     git push --force-with-lease origin "$branch"
 fi
 
-# ─── Step 8: Create PR (last step — branch is fully ready) ───────────────────
+# ─── Step 7: Create PR (last step — branch is fully ready) ───────────────────
 
 if [[ "$SKIP_PR" == true ]]; then
     info "PR creation skipped (--dry-run or --skip-pr)"
