@@ -1,5 +1,5 @@
 load("//src/tests:live_test.bzl", "library_test")
-load("//:defs.bzl", "resgen")
+load("//:defs.bzl", "OPEN_SNK", "resgen")
 
 resgen(
     name = "TestResx",
@@ -44,7 +44,7 @@ library_test(
     defines = ["FUNCTIONAL_TESTS"],
     resources = [":TestResx"],
     resource_logical_names = {"TestResx.resources": "Resources.TestResx.resources"},
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
     nowarn = ["SYSLIB0011"],
     size = "large",
 )

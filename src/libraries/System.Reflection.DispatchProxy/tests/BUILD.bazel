@@ -1,5 +1,6 @@
 load("//src/libraries:defs.bzl", "live_csharp_library")
 load("//src/tests:live_test.bzl", "library_test")
+load("//:defs.bzl", "OPEN_SNK")
 
 live_csharp_library(
     name = "System.Reflection.DispatchProxy.TestDependency",
@@ -33,5 +34,5 @@ library_test(
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
     ],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
 )

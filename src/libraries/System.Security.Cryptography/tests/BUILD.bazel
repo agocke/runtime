@@ -1,4 +1,5 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Security.Cryptography.Tests",
@@ -251,6 +252,6 @@ library_test(
     data = ["@paket.main//system.security.cryptography.x509certificates.testdata:content_files"],
     nowarn = ["CS0234", "CS8821", "SYSLIB0021", "SYSLIB0026", "SYSLIB0027", "SYSLIB0028", "SYSLIB0057", "SYSLIB5006"],
     size = "large",
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
     target_compatible_with = ["@platforms//os:linux"],
 )

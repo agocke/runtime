@@ -22,7 +22,7 @@ load(
 )
 load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
 load("@rules_dotnet//dotnet/private/sdk/targeting_packs:targeting_pack_transition.bzl", "targeting_pack_transition")
-load("//:defs.bzl", "csharp_library")
+load("//:defs.bzl", "ILLINK_TASKS_NET10_REPO", "ILLINK_TASKS_NET8_REPO", "ILLINK_TASKS_NET9_REPO", "csharp_library")
 load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS")
 
 # Label for the Roslyn compiler server persistent worker binary.
@@ -252,15 +252,15 @@ COMMON_ATTRS = {
         default = False,
     ),
     "_illink_analyzers_net8": attr.label(
-        default = "@nuget.microsoft.net.illink.tasks.v8.0.22//:analyzers_csharp",
+        default = "@{}//:analyzers_csharp".format(ILLINK_TASKS_NET8_REPO),
         allow_files = True,
     ),
     "_illink_analyzers_net9": attr.label(
-        default = "@nuget.microsoft.net.illink.tasks.v9.0.11//:analyzers_csharp",
+        default = "@{}//:analyzers_csharp".format(ILLINK_TASKS_NET9_REPO),
         allow_files = True,
     ),
     "_illink_analyzers_net10": attr.label(
-        default = "@nuget.microsoft.net.illink.tasks.v10.0.0//:analyzers_csharp",
+        default = "@{}//:analyzers_csharp".format(ILLINK_TASKS_NET10_REPO),
         allow_files = True,
     ),
 }

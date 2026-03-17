@@ -5,6 +5,7 @@ load(
 )
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("//:defs.bzl", "SILVERLIGHT_SNK")
 load("defs.bzl",
     "netcoreapp_ref_assembly",
     "netcoreapp_impl_assembly",
@@ -323,7 +324,7 @@ netcoreapp_ref_assembly(
     ],
     allow_unsafe_blocks = True,
     defines = ["BUILDING_CORELIB_REFERENCE"],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/SilverlightPlatformPublicKey.snk",
+    keyfile = SILVERLIGHT_SNK,
     compiler_options = [
         "/runtimemetadataversion:v4.0.30319",
         "/checksumalgorithm:SHA256",

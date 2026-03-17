@@ -11,7 +11,7 @@ load(
     "coreclr_x64_files", "coreclr_arm64_files"
 )
 
-load("//:defs.bzl", "csharp_library", "gen_assembly_info")
+load("//:defs.bzl", "SILVERLIGHT_SNK", "csharp_library", "gen_assembly_info")
 load("//eng/bazel:version.bzl", "PRODUCT_VERSION")
 
 nowarn = [ "CS0419", "CS0649", "CS1591", "CS8500", "CS8969" ]
@@ -396,7 +396,7 @@ csharp_library(
         "//:clr_checked": [ "/debug:portable", "/optimize+" ],
         "//conditions:default": [ "/debug:portable", "/optimize-" ],
     }),
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/SilverlightPlatformPublicKey.snk",
+    keyfile = SILVERLIGHT_SNK,
     defines = [
         "SYSTEM_PRIVATE_CORELIB",
         "CORECLR",

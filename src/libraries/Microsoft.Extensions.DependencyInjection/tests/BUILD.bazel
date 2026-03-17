@@ -1,5 +1,6 @@
 load("//src/libraries:defs.bzl", "live_csharp_library")
 load("//src/tests:live_test.bzl", "library_test")
+load("//:defs.bzl", "ASPNETCORE_SNK", "OPEN_SNK")
 
 live_csharp_library(
     name = "CollectibleAssembly",
@@ -8,7 +9,7 @@ live_csharp_library(
         "//src/libraries/Microsoft.Extensions.DependencyInjection.Abstractions:ref_Microsoft.Extensions.DependencyInjection.Abstractions",
         "//src/libraries/Microsoft.Extensions.DependencyInjection:ref_Microsoft.Extensions.DependencyInjection",
     ],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
 )
 
 library_test(
@@ -37,5 +38,5 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     size = "large",
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/AspNetCore.snk",
+    keyfile = ASPNETCORE_SNK,
 )

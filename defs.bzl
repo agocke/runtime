@@ -7,6 +7,29 @@ NETCOREAPP_CURRENT = "net10.0"
 # The TFM used by our LKG SDK
 NETCOREAPP_TOOL_CURRENT = "net10.0"
 
+# ─── Centralized versioned NuGet repo names ──────────────────────────────────
+# These are the Bazel repo names for version-pinned NuGet packages.
+# When package versions change, update ONLY these constants + paket.dependencies,
+# then re-run sync-paket.sh to regenerate paket/paket.main.bzl.
+#
+# The repo names follow the pattern: nuget.<lowercased-package-name>.v<version>
+
+ARCADE_SDK_REPO = "nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102"
+GENFACADES_REPO = "nuget.microsoft.dotnet.genfacades.v10.0.0-beta.26102.102"
+XUNIT_CONSOLE_RUNNER_REPO = "nuget.microsoft.dotnet.xunitconsolerunner.v2.9.3-beta.26102.102"
+UNICODE_DATA_REPO = "nuget.system.private.runtime.unicodedata.v10.0.0-beta.25418.1"
+ILLINK_TASKS_NET8_REPO = "nuget.microsoft.net.illink.tasks.v8.0.22"
+ILLINK_TASKS_NET9_REPO = "nuget.microsoft.net.illink.tasks.v9.0.11"
+ILLINK_TASKS_NET10_REPO = "nuget.microsoft.net.illink.tasks.v10.0.0"
+
+# ─── Pre-built labels for commonly used assets ───────────────────────────────
+
+MSFT_SNK = "@{}//:tools/snk/MSFT.snk".format(ARCADE_SDK_REPO)
+OPEN_SNK = "@{}//:tools/snk/Open.snk".format(ARCADE_SDK_REPO)
+ASPNETCORE_SNK = "@{}//:tools/snk/AspNetCore.snk".format(ARCADE_SDK_REPO)
+ECMA_SNK = "@{}//:tools/snk/ECMA.snk".format(ARCADE_SDK_REPO)
+SILVERLIGHT_SNK = "@{}//:tools/snk/SilverlightPlatformPublicKey.snk".format(ARCADE_SDK_REPO)
+
 # Label for the Roslyn compiler server persistent worker binary.
 _SHARED_COMPILATION_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
 

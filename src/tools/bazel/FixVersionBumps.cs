@@ -6,8 +6,13 @@
 // Usage: dotnet run FixVersionBumps.cs -- <base-ref> <head-ref> [--repo-root <path>]
 //
 // Reads the git diff of eng/Version.Details.props between base-ref and head-ref,
-// extracts old→new version mappings, cross-references against paket/paket.main.bzl,
-// and performs text replacement across all Bazel files that use versioned labels.
+// extracts old→new version mappings, cross-references against paket.dependencies,
+// and updates:
+//   1. paket.dependencies (source of truth for paket2bazel)
+//   2. defs.bzl (centralized versioned repo name constants)
+//   3. MODULE.bazel (use_repo entries for versioned repos)
+//
+// After running this script, run sync-paket.sh to regenerate paket/paket.main.bzl.
 
 using System.Diagnostics;
 using System.Text.RegularExpressions;
@@ -100,27 +105,27 @@ Console.WriteLine($"Found {bumps.Count} version bump(s) in eng/Version.Details.p
 foreach (var (prop, versions) in bumps)
     Console.WriteLine($"  {prop}: {versions.Old} → {versions.New}");
 
-// ─── Step 2: Cross-reference against paket/paket.main.bzl ────────────────────
+// ─── Step 2: Cross-reference against paket.dependencies ──────────────────────
 
-var paketPath = Path.Combine(repoRoot, "paket/paket.main.bzl");
-if (!File.Exists(paketPath))
+var paketDepsPath = Path.Combine(repoRoot, "paket.dependencies");
+if (!File.Exists(paketDepsPath))
 {
-    Console.Error.WriteLine($"paket/paket.main.bzl not found at {paketPath}");
+    Console.Error.WriteLine($"paket.dependencies not found at {paketDepsPath}");
     return 1;
 }
 
-var paketContent = File.ReadAllText(paketPath);
+var paketDepsContent = File.ReadAllText(paketDepsPath);
 
-// Extract package entries: {"name": "Package.Name", ... "version": "X.Y.Z", ...}
-var paketNameRegex = new Regex(@"""name"":\s*""([^""]+)""");
-var paketPackageNames = paketNameRegex.Matches(paketContent)
-    .Select(m => m.Groups[1].Value)
-    .ToHashSet();
+// Parse nuget lines: "nuget PackageName Version"
+var paketLineRegex = new Regex(@"^nuget\s+(\S+)\s+(\S+)", RegexOptions.Multiline);
+var paketPackages = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+foreach (Match m in paketLineRegex.Matches(paketDepsContent))
+    paketPackages[m.Groups[1].Value] = m.Groups[2].Value;
 
-// Build lookup: normalized MSBuild prop name → NuGet package name
-// e.g., "microsoftdotnetarcadesdk" → "Microsoft.DotNet.Arcade.Sdk"
+// Build lookup: normalized MSBuild prop name → paket package name
+// e.g., "microsoftdotnetarcadesdk" → "microsoft.dotnet.arcade.sdk"
 var normalizedToPaketName = new Dictionary<string, string>();
-foreach (var name in paketPackageNames)
+foreach (var name in paketPackages.Keys)
 {
     var normalized = name.Replace(".", "").ToLowerInvariant();
     normalizedToPaketName[normalized] = name;
@@ -148,69 +153,88 @@ Console.WriteLine($"\n{replacements.Count} package(s) affect Bazel:");
 foreach (var r in replacements)
     Console.WriteLine($"  {r.PackageName}: {r.OldVersion} → {r.NewVersion}");
 
-// ─── Step 3: Perform replacements ─────────────────────────────────────────────
+// ─── Step 3: Update paket.dependencies ────────────────────────────────────────
 
-// Files that contain version-pinned NuGet labels
-string[] bazelFiles = [
-    "MODULE.bazel",
-    "eng/BUILD.bazel",
-    "src/libraries/defs.bzl",
-    "src/libraries/BUILD.bazel",
-    "src/coreclr/System.Private.CoreLib/BUILD.bazel",
-    "src/tools/bazel/GenFacades/BUILD.bazel",
-    "src/tools/bazel/GenNotSupportedSource/BUILD.bazel",
-    "src/tools/bazel/GenerateResxSource/BUILD.bazel",
-];
-
-int totalReplacements = 0;
+Console.WriteLine("\nUpdating paket.dependencies...");
+var updatedPaketDeps = paketDepsContent;
 
 foreach (var (packageName, oldVersion, newVersion) in replacements)
 {
-    var lowerName = packageName.ToLowerInvariant();
-
-    // Replace versioned labels: nuget.<pkg>.v<old> → nuget.<pkg>.v<new>
-    var oldLabel = $"nuget.{lowerName}.v{oldVersion}";
-    var newLabel = $"nuget.{lowerName}.v{newVersion}";
-
-    foreach (var relPath in bazelFiles)
+    // Replace: "nuget PackageName OldVersion" → "nuget PackageName NewVersion"
+    var pattern = $@"(nuget\s+{Regex.Escape(packageName)}\s+){Regex.Escape(oldVersion)}";
+    var regex = new Regex(pattern, RegexOptions.IgnoreCase);
+    if (regex.IsMatch(updatedPaketDeps))
     {
-        var fullPath = Path.Combine(repoRoot, relPath);
-        if (!File.Exists(fullPath))
-            continue;
-
-        var content = File.ReadAllText(fullPath);
-        if (!content.Contains(oldLabel))
-            continue;
-
-        var count = CountOccurrences(content, oldLabel);
-        var updated = content.Replace(oldLabel, newLabel);
-        File.WriteAllText(fullPath, updated);
-        totalReplacements += count;
-        Console.WriteLine($"  {relPath}: {count} replacement(s) ({oldLabel})");
+        updatedPaketDeps = regex.Replace(updatedPaketDeps, $"${{1}}{newVersion}");
+        Console.WriteLine($"  paket.dependencies: {packageName} {oldVersion} → {newVersion}");
     }
-
-    // Update paket/paket.main.bzl: replace the "version" field only.
-    // Pattern: "name": "Package.Name", "id": "...", "version": "<old>"
-    // We target the specific package entry to avoid false matches on sha512.
-    var paketUpdated = paketContent;
-    var paketVersionPattern = $@"(""name"":\s*""{Regex.Escape(packageName)}""[^}}]*?""version"":\s*""){Regex.Escape(oldVersion)}("")";
-    var paketReplacement = $"${{1}}{newVersion}${{2}}";
-
-    var paketRegex = new Regex(paketVersionPattern, RegexOptions.Singleline);
-    if (paketRegex.IsMatch(paketUpdated))
-    {
-        paketUpdated = paketRegex.Replace(paketUpdated, paketReplacement);
-        totalReplacements++;
-        Console.WriteLine($"  paket/paket.main.bzl: updated version for {packageName}");
-    }
-
-    paketContent = paketUpdated;
 }
 
-// Write paket file once after all replacements
-File.WriteAllText(paketPath, paketContent);
+File.WriteAllText(paketDepsPath, updatedPaketDeps);
 
-Console.WriteLine($"\nDone. {totalReplacements} total replacement(s) across all files.");
+// ─── Step 4: Update defs.bzl centralized constants ────────────────────────────
+
+Console.WriteLine("\nUpdating defs.bzl...");
+var defsPath = Path.Combine(repoRoot, "defs.bzl");
+
+if (File.Exists(defsPath))
+{
+    var defsContent = File.ReadAllText(defsPath);
+    var defsUpdated = false;
+
+    foreach (var (packageName, oldVersion, newVersion) in replacements)
+    {
+        var lowerName = packageName.ToLowerInvariant();
+        var oldRepoName = $"nuget.{lowerName}.v{oldVersion}";
+        var newRepoName = $"nuget.{lowerName}.v{newVersion}";
+
+        if (defsContent.Contains(oldRepoName))
+        {
+            var count = CountOccurrences(defsContent, oldRepoName);
+            defsContent = defsContent.Replace(oldRepoName, newRepoName);
+            Console.WriteLine($"  defs.bzl: {count} replacement(s) ({oldRepoName})");
+            defsUpdated = true;
+        }
+    }
+
+    if (defsUpdated)
+        File.WriteAllText(defsPath, defsContent);
+    else
+        Console.WriteLine("  defs.bzl: no changes needed");
+}
+
+// ─── Step 5: Update MODULE.bazel use_repo entries ─────────────────────────────
+
+Console.WriteLine("\nUpdating MODULE.bazel...");
+var modulePath = Path.Combine(repoRoot, "MODULE.bazel");
+
+if (File.Exists(modulePath))
+{
+    var moduleContent = File.ReadAllText(modulePath);
+    var moduleUpdated = false;
+
+    foreach (var (packageName, oldVersion, newVersion) in replacements)
+    {
+        var lowerName = packageName.ToLowerInvariant();
+        var oldRepoName = $"nuget.{lowerName}.v{oldVersion}";
+        var newRepoName = $"nuget.{lowerName}.v{newVersion}";
+
+        if (moduleContent.Contains(oldRepoName))
+        {
+            var count = CountOccurrences(moduleContent, oldRepoName);
+            moduleContent = moduleContent.Replace(oldRepoName, newRepoName);
+            Console.WriteLine($"  MODULE.bazel: {count} replacement(s) ({oldRepoName})");
+            moduleUpdated = true;
+        }
+    }
+
+    if (moduleUpdated)
+        File.WriteAllText(modulePath, moduleContent);
+    else
+        Console.WriteLine("  MODULE.bazel: no changes needed");
+}
+
+Console.WriteLine("\nDone. Run sync-paket.sh to regenerate paket/paket.main.bzl.");
 return 0;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

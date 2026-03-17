@@ -1,4 +1,4 @@
-load("//:defs.bzl", "gen_resx_source")
+load("//:defs.bzl", "OPEN_SNK", "gen_resx_source")
 load("//src/tests:live_test.bzl", "library_test")
 
 gen_resx_source(
@@ -77,5 +77,5 @@ library_test(
     defines = ["NETSTANDARD"],
     data = ["@paket.main//system.net.testdata:content_files"],
     size = "large",
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/Open.snk",
+    keyfile = OPEN_SNK,
 )

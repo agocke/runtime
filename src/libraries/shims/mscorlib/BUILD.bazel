@@ -1,4 +1,5 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
+load("//:defs.bzl", "ECMA_SNK")
 
 netcoreapp_ref_assembly(
     name = "ref_mscorlib",
@@ -39,7 +40,7 @@ netcoreapp_ref_assembly(
         "//src/libraries/shims/stubs:ref_System.Security.Permissions",
         "//src/libraries/shims/stubs:ref_System.Threading.AccessControl",
     ],
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/ECMA.snk"
+    keyfile = ECMA_SNK
 )
 
 netcoreapp_impl_assembly(
@@ -83,5 +84,5 @@ netcoreapp_impl_assembly(
     ],
     os_targeted = True,
     exclude_sr = True,
-    keyfile = "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26102.102//:tools/snk/ECMA.snk",
+    keyfile = ECMA_SNK,
 )
