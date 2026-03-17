@@ -293,9 +293,7 @@ if [[ "$classification" == "build-changes" || "$classification" == "conflict" ]]
 
 Deterministic update of paket.dependencies, defs.bzl constants, and
 MODULE.bazel use_repo entries. Regenerated paket/paket.main.bzl via
-paket2bazel.
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+paket2bazel."
             detail "Committed version bump fixes."
         else
             detail "No version bump changes needed."
