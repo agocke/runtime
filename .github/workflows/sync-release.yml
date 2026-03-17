@@ -58,7 +58,7 @@ jobs:
         run: npm install -g @github/copilot
 
       - name: Install Paket
-        run: dotnet tool install -g paket
+        run: dotnet tool install -g paket --add-source https://api.nuget.org/v3/index.json
 
       - name: Run sync
         id: run-sync
