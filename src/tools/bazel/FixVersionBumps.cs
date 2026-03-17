@@ -235,6 +235,86 @@ if (File.Exists(modulePath))
 }
 
 Console.WriteLine("\nDone. Run sync-paket.sh to regenerate paket/paket.main.bzl.");
+
+// ─── Step 6: Scan BUILD.bazel and .bzl files for hardcoded versioned repo names ──
+
+Console.WriteLine("\nScanning BUILD.bazel files for hardcoded versioned repo names...");
+var buildFiles = Directory.EnumerateFiles(repoRoot, "BUILD.bazel", SearchOption.AllDirectories)
+    .Where(f => !f.Contains("paket/paket.main"))
+    .ToList();
+
+var totalBuildReplacements = 0;
+
+foreach (var buildFile in buildFiles)
+{
+    var content = File.ReadAllText(buildFile);
+    var updated = false;
+
+    foreach (var (packageName, oldVersion, newVersion) in replacements)
+    {
+        var lowerName = packageName.ToLowerInvariant();
+        var oldRepoName = $"nuget.{lowerName}.v{oldVersion}";
+        var newRepoName = $"nuget.{lowerName}.v{newVersion}";
+
+        if (content.Contains(oldRepoName))
+        {
+            var count = CountOccurrences(content, oldRepoName);
+            content = content.Replace(oldRepoName, newRepoName);
+            var relativePath = Path.GetRelativePath(repoRoot, buildFile);
+            Console.WriteLine($"  {relativePath}: {count} replacement(s) ({oldRepoName})");
+            totalBuildReplacements += count;
+            updated = true;
+        }
+    }
+
+    if (updated)
+        File.WriteAllText(buildFile, content);
+}
+
+if (totalBuildReplacements == 0)
+    Console.WriteLine("  No hardcoded versioned repo names found in BUILD.bazel files.");
+else
+    Console.WriteLine($"\n{totalBuildReplacements} total replacement(s) in BUILD.bazel files.");
+
+Console.WriteLine("\nScanning .bzl files for hardcoded versioned repo names...");
+var bzlFiles = Directory.EnumerateFiles(repoRoot, "*.bzl", SearchOption.AllDirectories)
+    .Where(f => !f.Contains("paket/paket.main"))
+    .ToList();
+
+var totalBzlReplacements = 0;
+
+foreach (var bzlFile in bzlFiles)
+{
+    var content = File.ReadAllText(bzlFile);
+    var updated = false;
+
+    foreach (var (packageName, oldVersion, newVersion) in replacements)
+    {
+        var lowerName = packageName.ToLowerInvariant();
+        var oldRepoName = $"nuget.{lowerName}.v{oldVersion}";
+        var newRepoName = $"nuget.{lowerName}.v{newVersion}";
+
+        if (content.Contains(oldRepoName))
+        {
+            var count = CountOccurrences(content, oldRepoName);
+            content = content.Replace(oldRepoName, newRepoName);
+            var relativePath = Path.GetRelativePath(repoRoot, bzlFile);
+            Console.WriteLine($"  {relativePath}: {count} replacement(s) ({oldRepoName})");
+            totalBzlReplacements += count;
+            updated = true;
+        }
+    }
+
+    if (updated)
+        File.WriteAllText(bzlFile, content);
+}
+
+if (totalBzlReplacements == 0)
+    Console.WriteLine("  No hardcoded versioned repo names found in .bzl files.");
+else
+    Console.WriteLine($"\n{totalBzlReplacements} total replacement(s) in .bzl files.");
+
+Console.WriteLine("\nDone. Run paket install then sync-paket.sh to regenerate paket files.");
 return 0;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
