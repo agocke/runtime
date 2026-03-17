@@ -57,6 +57,9 @@ jobs:
         if: github.event.inputs.skip_copilot_fix != 'true'
         run: npm install -g @github/copilot
 
+      - name: Install Paket
+        run: dotnet tool install -g paket
+
       - name: Run sync
         id: run-sync
         env:

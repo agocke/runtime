@@ -255,7 +255,27 @@ if [[ "$classification" == "build-changes" || "$classification" == "conflict" ]]
         if ! git diff --quiet; then
             detail "Version bump changes detected — regenerating paket files..."
 
-            # Regenerate paket/paket.main.bzl from updated paket.dependencies
+            # Regenerate paket.lock from updated paket.dependencies
+            if command -v paket &>/dev/null; then
+                info "Running paket install to regenerate paket.lock..."
+                if paket install; then
+                    detail "paket.lock regenerated successfully."
+                else
+                    err "paket install failed — paket.lock may be stale."
+                fi
+            elif dotnet tool list -g 2>/dev/null | grep -qi paket; then
+                info "Running dotnet paket install to regenerate paket.lock..."
+                if dotnet paket install; then
+                    detail "paket.lock regenerated successfully."
+                else
+                    err "dotnet paket install failed — paket.lock may be stale."
+                fi
+            else
+                err "paket not found — skipping paket.lock regeneration."
+                err "Install paket: dotnet tool install -g paket"
+            fi
+
+            # Regenerate paket/paket.main.bzl from updated paket.lock
             if command -v bazel &>/dev/null || command -v bazelisk &>/dev/null; then
                 info "Running sync-paket.sh to regenerate paket/paket.main.bzl..."
                 if "$REPO_ROOT/sync-paket.sh"; then

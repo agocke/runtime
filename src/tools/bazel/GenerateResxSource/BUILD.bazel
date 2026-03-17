@@ -1,15 +1,15 @@
 
-load("//:defs.bzl", "csharp_binary")
+load("//:defs.bzl", "ARCADE_SDK_REPO", "csharp_binary")
 load("@rules_dotnet//dotnet:defs.bzl", "import_library")
 
 import_library(
     name = "GenResxSourceNuGetFiles",
     library_name = "GenResxSourceDlls",
     refs = [
-        "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26110.124//:tools/net/Microsoft.DotNet.Arcade.Sdk.dll",
+        "@{}//:tools/net/Microsoft.DotNet.Arcade.Sdk.dll".format(ARCADE_SDK_REPO),
     ],
     libs = [
-        "@nuget.microsoft.dotnet.arcade.sdk.v10.0.0-beta.26110.124//:tools/net/Microsoft.DotNet.Arcade.Sdk.dll",
+        "@{}//:tools/net/Microsoft.DotNet.Arcade.Sdk.dll".format(ARCADE_SDK_REPO),
     ],
 )
 

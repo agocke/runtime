@@ -1,18 +1,18 @@
-load("//:defs.bzl", "csharp_binary")
+load("//:defs.bzl", "GENFACADES_REPO", "csharp_binary")
 load("@rules_dotnet//dotnet:defs.bzl", "import_library")
 
 import_library(
     name = "GenFacadesNuGetFiles",
     library_name = "GenFacadesDlls",
     refs = [
-        "@nuget.microsoft.dotnet.genfacades.v10.0.0-beta.26110.124//:tools/net/Microsoft.DotNet.GenFacades.dll",
-        "@nuget.microsoft.dotnet.genfacades.v10.0.0-beta.26110.124//:tools/net/Microsoft.CodeAnalysis.dll",
-        "@nuget.microsoft.dotnet.genfacades.v10.0.0-beta.26110.124//:tools/net/Microsoft.CodeAnalysis.CSharp.dll",
+        "@{}//:tools/net/Microsoft.DotNet.GenFacades.dll".format(GENFACADES_REPO),
+        "@{}//:tools/net/Microsoft.CodeAnalysis.dll".format(GENFACADES_REPO),
+        "@{}//:tools/net/Microsoft.CodeAnalysis.CSharp.dll".format(GENFACADES_REPO),
     ],
     libs = [
-        "@nuget.microsoft.dotnet.genfacades.v10.0.0-beta.26110.124//:tools/net/Microsoft.DotNet.GenFacades.dll",
-        "@nuget.microsoft.dotnet.genfacades.v10.0.0-beta.26110.124//:tools/net/Microsoft.CodeAnalysis.dll",
-        "@nuget.microsoft.dotnet.genfacades.v10.0.0-beta.26110.124//:tools/net/Microsoft.CodeAnalysis.CSharp.dll",
+        "@{}//:tools/net/Microsoft.DotNet.GenFacades.dll".format(GENFACADES_REPO),
+        "@{}//:tools/net/Microsoft.CodeAnalysis.dll".format(GENFACADES_REPO),
+        "@{}//:tools/net/Microsoft.CodeAnalysis.CSharp.dll".format(GENFACADES_REPO),
     ],
 )
 
