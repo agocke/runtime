@@ -153,74 +153,62 @@ Clang is the default compiler (matching CMake).
 
 `compare-bazel.sh` automates build-input equivalence checking between Bazel and
 CMake/MSBuild. It compares every compilation unit's source files, preprocessor
-defines, compiler flags, references, and other inputs.
+defines, compiler flags, references, and other inputs. The default configuration
+is **release**.
 
 ```bash
-# Prerequisites: build both systems first
-./build.sh clr+libs -rc release                         # MSBuild + CMake
-bazel build //...                                       # Bazel
-
-# Run comparison
-./compare-bazel.sh                                      # default (debug)
-./compare-bazel.sh --config release                     # release mode
+# Run comparison (builds both systems automatically)
+./compare-bazel.sh                                      # default (release)
+./compare-bazel.sh --config debug                       # debug mode
+./compare-bazel.sh --config both                        # both configs
 ./compare-bazel.sh --skip-build                         # reuse existing build artifacts
 ./compare-bazel.sh --verbose                            # show full diffs
 ./compare-bazel.sh --json-output results.json           # machine-readable output
 ```
 
-The tool lives in `src/tools/BuildEquivalenceCheck/`. It parses MSBuild `.binlog`
+The tool lives in `src/tools/bazel/BuildEquivalenceCheck/`. It parses MSBuild `.binlog`
 files, CMake `compile_commands.json`, and Bazel `aquery` output to extract and
 normalize compilation records, then compares them field-by-field.
+
+Managed assemblies are tracked via a **manifest file**
+(`managed-assembly-manifest.txt`) that lists every expected assembly as either
+`match` (must be identical) or `diff` (known difference). The check fails on
+regressions (match→diff), unlisted assemblies, or missing entries. Native diffs
+are **informational only** unless a native manifest is provided via
+`--native-manifest`.
 
 ### Known equivalence gaps
 
 See [build-equivalence-TODO.md](build-equivalence-TODO.md) for the full list. Key
 areas:
 
-- **Native defines** (1000 files): Boolean define normalization needed (`-DFOO` vs
-  `-DFOO=1`), plus missing/extra defines in `coreclr_defs.bzl` and `native_defs.bzl`
-- **Native flags/optimization** (1000 files): Warning flags and optimization level
-  mismatches between `.bazelrc` and `CMakeLists.txt`
-- **Managed assemblies**: 164 of 186 archive+non-archive assemblies fully match
-  MSBuild's CSC invocations (defines, nowarn, source files, generated content,
-  references). The remaining 22 differ due to:
-  - **PNSE stub generation** (5): Bazel now generates `.notsupported.cs` via
-    `GenNotSupportedSource` (matching MSBuild's `GeneratePlatformNotSupportedAssemblyMessage`),
-    but reference sets may still differ (Registry, IO.Pipes.AccessControl,
-    Threading.AccessControl, InteropServices.JavaScript, Diagnostics.EventLog)
-  - **Generated file content** (2): SR.cs/Forwards.cs differences
-    (System.Private.CoreLib, System shim)
-  - **Complex assemblies** (2): System.Net.Quic (PNSE stub vs full Linux impl),
-    System.Runtime.Serialization.Formatters (BinaryFormatter stub vs full impl —
-    now uses Removed.cs matching MSBuild, may still diff on deps)
-  - **Non-archive assemblies** (14): Differ by design — Bazel uses precise deps
+- **Native flags** (~1000 files): Warning flags and debug info flag mismatches
+  between `.bazelrc`/`coreclr_defs.bzl` and `CMakeLists.txt`. Native define
+  normalization (`-DFOO` vs `-DFOO=1`) and optimization normalization (empty vs
+  `-O0`) are handled by the tool.
+- **Managed assemblies**: 87 of 408 tracked assemblies fully match MSBuild's CSC
+  invocations (defines, nowarn, source files, generated content, references).
+  The remaining 321 differ due to:
+  - **Generated file content** (majority): `System.SR.cs` generation differences
+    between MSBuild and Bazel
+  - **PNSE stub generation**: Bazel generates `.notsupported.cs` via
+    `GenNotSupportedSource`, but reference sets may differ
+  - **Non-archive assemblies**: Differ by design — Bazel uses precise deps
     while MSBuild uses the full targeting pack
-- **Unmatched compilations**: 640 CMake-only + 405 MSBuild-only units not yet ported
-  to Bazel
+  - **Source generators**: Different targeting (netstandard2.0 polyfills, etc.)
 
 ### Verifying Runtime Pack Output
 
-`compare-runtime-packs.sh` is the acceptance test for the Bazel runtime build.
-It verifies that the Bazel-produced runtime archive (`dotnet-runtime-*-linux-x64.tar.gz`)
-is **bit-for-bit identical** to the one produced by CMake+MSBuild's `packs` subset.
-
-This is the primary correctness gate: if the archives match, the Bazel build is
-producing the correct output.
+`compare-runtime-packs.sh` verifies that the Bazel-produced runtime archive
+(`dotnet-runtime-*-linux-x64.tar.gz`) has the **same file list** as the one
+produced by CMake+MSBuild's `packs` subset. Content and permission differences
+are reported as warnings (expected since these are independent builds).
 
 ```bash
-# 1. Build the MSBuild runtime archive (if not already built)
-./build.sh clr+libs+host -rc Release -lc Release
-./build.sh packs -rc Release -lc Release
-# → artifacts/packages/*/Shipping/dotnet-runtime-*-linux-x64.tar.gz
-
-# 2. Build the Bazel runtime archive
-bazel build --config=release //:runtime_archive
-# → bazel-bin/dotnet-runtime-*-linux-x64.tar.gz
-
-# 3. Compare them
-./compare-runtime-packs.sh \
-  artifacts/packages/Debug/Shipping/dotnet-runtime-*-linux-x64.tar.gz \
-  path/to/bazel-runtime.tar.gz
+# Run comparison (builds both systems automatically)
+./compare-runtime-packs.sh                              # default (release)
+./compare-runtime-packs.sh --config debug               # debug mode
+./compare-runtime-packs.sh --skip-build                 # reuse existing artifacts
 ```
 
 The script runs three phases:
