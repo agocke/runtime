@@ -28,6 +28,20 @@ namespace ILCompiler.Linker
         /// <param name="symbols">Symbols from the object file.</param>
         public void AddObject(int objectIndex, IReadOnlyList<ElfSymbolEntry> symbols)
         {
+            AddObjectCore(objectIndex, symbols, isArchiveMember: false);
+        }
+
+        /// <summary>
+        /// Adds symbols from an archive member using first-wins semantics.
+        /// Duplicate strong definitions are silently ignored (matching ld behavior).
+        /// </summary>
+        public void AddArchiveMember(int objectIndex, IReadOnlyList<ElfSymbolEntry> symbols)
+        {
+            AddObjectCore(objectIndex, symbols, isArchiveMember: true);
+        }
+
+        private void AddObjectCore(int objectIndex, IReadOnlyList<ElfSymbolEntry> symbols, bool isArchiveMember)
+        {
             foreach (ElfSymbolEntry sym in symbols)
             {
                 if (sym.IsLocal || string.IsNullOrEmpty(sym.Name))
@@ -48,7 +62,9 @@ namespace ILCompiler.Linker
                     }
                     else if (!existing.IsWeak && sym.IsGlobal)
                     {
-                        throw new LinkerException($"Duplicate strong symbol definition: '{sym.Name}' in object {existing.ObjectIndex} and object {objectIndex}.");
+                        // Archive members use first-wins (silently ignore duplicate strong)
+                        if (!isArchiveMember)
+                            throw new LinkerException($"Duplicate strong symbol definition: '{sym.Name}' in object {existing.ObjectIndex} and object {objectIndex}.");
                     }
                     // If existing is strong and new is weak, keep existing (do nothing)
                 }
