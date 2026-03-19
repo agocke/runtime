@@ -43,5 +43,12 @@
     <Compile Include="DependencyGraphTests.cs" />
     <Compile Include="DevirtualizationTests.cs" />
     <Compile Include="SwiftLoweringTests.cs" />
+    <Compile Include="ElfTestData.cs" />
+    <Compile Include="ElfArchiveReaderTests.cs" />
+    <Compile Include="ElfObjectReaderTests.cs" />
+    <Compile Include="SymbolResolverTests.cs" />
+    <Compile Include="SectionLayoutTests.cs" />
+    <Compile Include="RelocationProcessorTests.cs" />
+    <Compile Include="ElfExecutableWriterTests.cs" />
   </ItemGroup>
 </Project>

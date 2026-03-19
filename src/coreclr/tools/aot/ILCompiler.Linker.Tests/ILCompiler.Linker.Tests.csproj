@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ILCompiler.Linker.Tests</AssemblyName>
+    <TargetFramework>$(NetCoreAppToolCurrent)</TargetFramework>
+    <Configurations>Debug;Release;Checked</Configurations>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <Platforms>x86;x64</Platforms>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DotNet.XUnitExtensions" Version="$(MicrosoftDotNetXUnitExtensionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ILCompiler.Compiler\ILCompiler.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\ILCompiler.Compiler.Tests\ElfTestData.cs" Link="ElfTestData.cs" />
+    <Compile Include="..\ILCompiler.Compiler.Tests\ElfArchiveReaderTests.cs" Link="ElfArchiveReaderTests.cs" />
+    <Compile Include="..\ILCompiler.Compiler.Tests\ElfObjectReaderTests.cs" Link="ElfObjectReaderTests.cs" />
+    <Compile Include="..\ILCompiler.Compiler.Tests\SymbolResolverTests.cs" Link="SymbolResolverTests.cs" />
+    <Compile Include="..\ILCompiler.Compiler.Tests\SectionLayoutTests.cs" Link="SectionLayoutTests.cs" />
+    <Compile Include="..\ILCompiler.Compiler.Tests\RelocationProcessorTests.cs" Link="RelocationProcessorTests.cs" />
+    <Compile Include="..\ILCompiler.Compiler.Tests\ElfExecutableWriterTests.cs" Link="ElfExecutableWriterTests.cs" />
+  </ItemGroup>
+</Project>

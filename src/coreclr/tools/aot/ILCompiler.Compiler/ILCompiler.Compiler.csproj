@@ -21,6 +21,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="ILCompiler.Compiler.Tests" />
+    <InternalsVisibleTo Include="ILCompiler.Linker.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ILCompiler.DependencyAnalysisFramework\ILCompiler.DependencyAnalysisFramework.csproj" />
     <ProjectReference Include="..\ILCompiler.MetadataTransform\ILCompiler.MetadataTransform.csproj" />
     <ProjectReference Include="..\ILCompiler.TypeSystem\ILCompiler.TypeSystem.csproj" />
@@ -634,6 +639,12 @@
     <Compile Include="Compiler\ObjectWriter\SectionData.cs" />
     <Compile Include="Compiler\ObjectWriter\SectionWriter.cs" />
     <Compile Include="Compiler\ObjectWriter\StringTableBuilder.cs" />
+    <Compile Include="Compiler\Linker\ElfArchiveReader.cs" />
+    <Compile Include="Compiler\Linker\ElfObjectReader.cs" />
+    <Compile Include="Compiler\Linker\SymbolResolver.cs" />
+    <Compile Include="Compiler\Linker\SectionLayout.cs" />
+    <Compile Include="Compiler\Linker\RelocationProcessor.cs" />
+    <Compile Include="Compiler\Linker\ElfExecutableWriter.cs" />
     <Compile Include="Compiler\ReadOnlyFieldPolicy.cs" />
     <Compile Include="Compiler\DependencyAnalysis\Target_RiscV64\RiscV64JumpStubNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\Target_RiscV64\RiscV64ReadyToRunHelperNode.cs" />
