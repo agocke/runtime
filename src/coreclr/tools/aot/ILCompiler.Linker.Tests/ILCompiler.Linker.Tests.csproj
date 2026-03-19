@@ -27,5 +27,6 @@
     <Compile Include="..\ILCompiler.Compiler.Tests\SectionLayoutTests.cs" Link="SectionLayoutTests.cs" />
     <Compile Include="..\ILCompiler.Compiler.Tests\RelocationProcessorTests.cs" Link="RelocationProcessorTests.cs" />
     <Compile Include="..\ILCompiler.Compiler.Tests\ElfExecutableWriterTests.cs" Link="ElfExecutableWriterTests.cs" />
+    <Compile Include="..\ILCompiler.Compiler.Tests\LinkerIntegrationTests.cs" Link="LinkerIntegrationTests.cs" />
   </ItemGroup>
 </Project>

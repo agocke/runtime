@@ -50,5 +50,6 @@
     <Compile Include="SectionLayoutTests.cs" />
     <Compile Include="RelocationProcessorTests.cs" />
     <Compile Include="ElfExecutableWriterTests.cs" />
+    <Compile Include="LinkerIntegrationTests.cs" />
   </ItemGroup>
 </Project>
