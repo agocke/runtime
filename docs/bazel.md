@@ -724,6 +724,8 @@ Mono-only platforms (Browser/WASM, WASI, Tizen) are also excluded.
 - [x] `src/libraries/defs.bzl` — Library macros (netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair)
 - [x] `src/tests/defs.bzl` — Test infrastructure (live_csharp_library, test runner)
 - [x] Compiler flag parity verified against CMake (`-g`, `-O3`, `-std=gnu11`/`-std=c++17`, all warning flags, all defines)
+- [x] Managed C# compiler flag parity: `/warnaserror+`, `/warn:9999` matching MSBuild's
+  `TreatWarningsAsErrors=true` and `WarningLevel=9999` from `Directory.Build.props`
 - [x] Clang is the default compiler (matching CMake), with GCC available via `--repo_env=CC=gcc`
 - [x] Per-component configuration: `//:clr_config` (debug/checked/release) + `//:libs_config` (debug/release)
 - [ ] `.bazelrc` platform configs for other OS/arch targets (e.g., `build:linux-arm64`, `build:macos-x64`)

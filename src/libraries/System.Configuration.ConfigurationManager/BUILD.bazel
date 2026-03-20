@@ -7,6 +7,7 @@ netcoreapp_ref_assembly(
         "ref/System.Configuration.ConfigurationManager.netcoreapp.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",
     ],
+    nowarn = ["CS0618"],
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",

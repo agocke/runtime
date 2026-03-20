@@ -11,6 +11,7 @@ netcoreapp_ref_assembly(
         "ref/System.Data.OleDb.cs",
         "ref/System.Data.OleDb.Manual.cs",
     ],
+    nowarn = ["CS0618"],
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries:ref_System.ComponentModel.Primitives",
@@ -31,6 +32,7 @@ netcoreapp_impl_assembly(
     ],
     multitarget = True,
     srcs = [],
+    nowarn = ["CS0618"],
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries:ref_System.ComponentModel.Primitives",

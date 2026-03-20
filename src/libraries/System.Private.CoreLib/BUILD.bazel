@@ -32,6 +32,7 @@ csharp_library(
     nowarn = [
         "CS3001",
         "CS3003",
+        "CS3021",
         # MSBuild does not generate XML docs for generator projects
         "CS1572",
         "CS1574",

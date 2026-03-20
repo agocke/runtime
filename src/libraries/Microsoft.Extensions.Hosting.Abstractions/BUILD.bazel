@@ -9,6 +9,7 @@ netcoreapp_ref_assembly(
     srcs = [
         "ref/Microsoft.Extensions.Hosting.Abstractions.cs",
     ],
+    nowarn = ["CS0618"],
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/Microsoft.Extensions.Configuration.Abstractions:ref_Microsoft.Extensions.Configuration.Abstractions",

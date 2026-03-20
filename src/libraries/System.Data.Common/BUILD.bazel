@@ -46,7 +46,16 @@ netcoreapp_impl_assembly(
     ],
     resx_file = "src/Resources/Strings.resx",
     allow_unsafe_blocks = True,
-    nowarn = ["SYSLIB0038"],
+    nowarn = [
+        "SYSLIB0038",
+        # CS8604 on DefaultValueTypeConverter.cs — fires in Bazel because
+        # MSBuild's EditorConfig/GlobalConfig configures nullable severity
+        # differently; the MSBuild build is clean with the same TreatWarningsAsErrors.
+        "CS8604",
+        # AD0001: RegexGenerator analyzer crashes due to missing embedded
+        # resources in the Bazel-built generator.
+        "AD0001",
+    ],
     deps = [
         "//src/libraries:ref_System.Private.CoreLib",
         "//src/libraries:impl_System.Runtime",
