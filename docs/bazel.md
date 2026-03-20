@@ -26,7 +26,7 @@ layout.
   (152 of 150 non-shim NetCoreApp assemblies + shims + extras),
   plus ~75 OOB/Extensions libraries,
   ref assemblies, source generators
-- **Build tools**: ResGen, GenerateResxSource, GenFacades, ilasm, LibraryImportGenerator
+- **Build tools**: ResGen, GenerateResxSource, GenFacades, GenerateDepsFile, ilasm, LibraryImportGenerator
 - **Tests**: corehost native tests, xUnit-based managed test infrastructure,
   136 library test suites (Microsoft.CSharp,
   Microsoft.Extensions.Caching.Memory,
@@ -221,7 +221,11 @@ The script runs three phases:
 
 The archive contains ~192 files: the `dotnet` host, `libhostfxr.so`,
 `libcoreclr.so`, native interop libraries, `createdump`, managed framework DLLs,
-config files (`deps.json`, `runtimeconfig.json`), and license files.
+config files (`deps.json`, `runtimeconfig.json`), and license files. The
+`deps.json` is generated at build time by the `GenerateDepsFile` tool
+(`src/tools/bazel/GenerateDepsFile/`) which reads assembly/file versions
+from the actual DLLs and produces the full RID fallback graph — matching
+the MSBuild `GenerateSharedFrameworkDepsFile` task.
 
 ## Syncing with release/10.0
 
@@ -657,6 +661,7 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 - [x] `src/tools/GenerateResxSource` — resource source generator
 - [x] `src/tools/ResGen` — resource compiler
 - [x] `src/tools/GenFacades` — type-forward facade generator
+- [x] `src/tools/GenerateDepsFile` — generates `Microsoft.NETCore.App.deps.json` from assembled DLLs
 - [ ] ILLink / IL trimmer (`src/tools/illink/`) — IL linker, Roslyn analyzers, tasks
 - [ ] StressLogAnalyzer (`src/tools/StressLogAnalyzer/`)
 

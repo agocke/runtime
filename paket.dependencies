@@ -16,6 +16,7 @@ nuget System.Memory 4.5.5
 nuget microsoft.dotnet.arcade.sdk 10.0.0-beta.26102.102
 nuget System.Buffers 4.5.1
 nuget microsoft.dotnet.genfacades 10.0.0-beta.26102.102
+nuget microsoft.dotnet.sharedframework.sdk 10.0.0-beta.26102.102
 nuget Microsoft.Build.Framework 17.8.3
 nuget Microsoft.Build.Utilities.Core 17.8.3
 nuget System.Resources.Extensions 8.0.0
