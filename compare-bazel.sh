@@ -19,7 +19,7 @@ set -euo pipefail
 scriptroot="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ----- Defaults -----
-config="debug"
+config="release"
 skip_build=false
 verbose=false
 json_output=""
@@ -89,7 +89,7 @@ for cfg in "${configs[@]}"; do
     # ----- Map config to build system flags -----
     if [[ "$cfg" == "debug" ]]; then
         msbuild_rc="Debug"
-        bazel_aquery_args=()
+        bazel_aquery_args=(--config=clr_debug)
     else
         msbuild_rc="Release"
         bazel_aquery_args=(--config=release)
@@ -111,8 +111,8 @@ for cfg in "${configs[@]}"; do
 
     # ----- Step 1: Build with CMake/MSBuild -----
     if [[ "$skip_build" != "true" ]]; then
-        log "Building with CMake/MSBuild (./build.sh clr+libs+libs.tests -rc $cfg -lc $cfg)..."
-        "$scriptroot/build.sh" clr+libs+libs.tests -rc "$cfg" -lc "$cfg" -bl
+        log "Building with CMake/MSBuild (./build.sh clr+libs+libs.tests -c $cfg -rc $cfg -lc $cfg -bl)..."
+        "$scriptroot/build.sh" clr+libs+libs.tests -c "$cfg" -rc "$cfg" -lc "$cfg" -bl
     fi
 
     # ----- Step 2: Extract Bazel aquery -----

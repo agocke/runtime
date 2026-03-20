@@ -59,9 +59,19 @@ public sealed class EquivalenceReport
     public Dictionary<string, ManifestEntry> ManagedManifest { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Set of native file names whose differences are expected.
+    /// Manifest entries describing every expected native source file and
+    /// whether it should match or is a known diff.  When set, native diffs
+    /// participate in the pass/fail check.
     /// </summary>
-    public HashSet<string> KnownNativeDiffs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, ManifestEntry> NativeManifest { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Set of native file names whose differences are expected.
+    /// Computed from NativeManifest entries with status Diff.
+    /// </summary>
+    public HashSet<string> KnownNativeDiffs => new(
+        NativeManifest.Where(kv => kv.Value.ExpectedStatus == ManifestStatus.Diff).Select(kv => kv.Key),
+        StringComparer.OrdinalIgnoreCase);
 
     public int TotalComparisons => NativeResults.Count + ManagedResults.Count;
     public int Matches => NativeResults.Count(r => r.IsMatch) + ManagedResults.Count(r => r.IsMatch);
@@ -69,10 +79,70 @@ public sealed class EquivalenceReport
     public bool IsManagedKnownDiff(string name) =>
         ManagedManifest.TryGetValue(name, out var entry) && entry.ExpectedStatus == ManifestStatus.Diff;
 
-    public int KnownMismatches => NativeResults.Count(r => !r.IsMatch && KnownNativeDiffs.Contains(r.Name))
+    public bool IsNativeKnownDiff(string name) =>
+        NativeManifest.TryGetValue(name, out var entry) && entry.ExpectedStatus == ManifestStatus.Diff;
+
+    public int KnownMismatches => NativeResults.Count(r => !r.IsMatch && IsNativeKnownDiff(r.Name))
         + ManagedResults.Count(r => !r.IsMatch && IsManagedKnownDiff(r.Name));
     public int UnexpectedMismatches => TotalComparisons - Matches - KnownMismatches;
     public int Mismatches => TotalComparisons - Matches;
+
+    // ── Native manifest properties ──────────────────────────────────
+
+    /// <summary>
+    /// Native source files expected to match that actually differ.
+    /// </summary>
+    public List<ComparisonResult> NativeRegressions =>
+        NativeManifest.Count == 0 ? [] :
+        NativeResults
+            .Where(r => !r.IsMatch
+                && NativeManifest.TryGetValue(r.Name, out var entry)
+                && entry.ExpectedStatus == ManifestStatus.Match)
+            .ToList();
+
+    /// <summary>
+    /// Native source files present in the manifest but missing from both builds.
+    /// </summary>
+    public List<string> NativeMissingFromBothBuilds =>
+        NativeManifest.Count == 0 ? [] :
+        NativeManifest.Keys
+            .Where(name => !NativeResults.Any(r => r.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                && !OnlyInCMake.Contains(name, StringComparer.OrdinalIgnoreCase)
+                && !OnlyInBazel.Contains(name, StringComparer.OrdinalIgnoreCase))
+            .Order()
+            .ToList();
+
+    /// <summary>
+    /// Native source files that appear in the comparison but are not in the manifest.
+    /// </summary>
+    public List<string> NativeUnlistedFiles
+    {
+        get
+        {
+            if (NativeManifest.Count == 0)
+                return [];
+
+            return NativeResults
+                .Select(r => r.Name)
+                .Where(name => !NativeManifest.ContainsKey(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order()
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Count of native diffs that are not tracked by a manifest.
+    /// When no native manifest is provided, all native diffs are untracked
+    /// but do NOT cause failure — use <see cref="HasNativeManifest"/> to check.
+    /// </summary>
+    public int UntrackedNativeDiffs => NativeManifest.Count == 0
+        ? NativeResults.Count(r => !r.IsMatch)
+        : NativeResults.Count(r => !r.IsMatch && !NativeManifest.ContainsKey(r.Name));
+
+    public bool HasNativeManifest => NativeManifest.Count > 0;
+
+    // ── Managed manifest properties ─────────────────────────────────
 
     /// <summary>
     /// Managed assemblies present in the manifest but missing from both builds.
@@ -115,11 +185,30 @@ public sealed class EquivalenceReport
                 && entry.ExpectedStatus == ManifestStatus.Match)
             .ToList();
 
+    // ── Overall pass/fail ───────────────────────────────────────────
+
+    /// <summary>
+    /// The build is equivalent when:
+    /// - Managed: no unexpected diffs, no regressions, no missing, no unlisted
+    /// - Native (when manifest provided): no regressions, no missing, no unlisted
+    /// - Native (no manifest): native diffs are informational only
+    /// </summary>
     public bool IsEquivalent =>
-        UnexpectedMismatches == 0
-        && Regressions.Count == 0
+        ManagedIsEquivalent && NativeIsEquivalent;
+
+    public bool ManagedIsEquivalent =>
+        Regressions.Count == 0
         && MissingFromBothBuilds.Count == 0
-        && UnlistedAssemblies.Count == 0;
+        && UnlistedAssemblies.Count == 0
+        && ManagedResults.All(r => r.IsMatch || IsManagedKnownDiff(r.Name)
+            || (ManagedManifest.Count == 0));
+
+    public bool NativeIsEquivalent =>
+        !HasNativeManifest
+        || (NativeRegressions.Count == 0
+            && NativeMissingFromBothBuilds.Count == 0
+            && NativeUnlistedFiles.Count == 0
+            && NativeResults.All(r => r.IsMatch || IsNativeKnownDiff(r.Name)));
 }
 
 public static class ComparisonEngine
@@ -263,9 +352,9 @@ public static class ComparisonEngine
     {
         var result = new ComparisonResult { Name = file, Category = "native" };
 
-        // Compare defines (filter known toolchain noise)
-        var cmakeDefines = new SortedSet<string>(cmake.Defines.Where(d => !CMakeToolchainDefines.Contains(d)), StringComparer.Ordinal);
-        var bazelDefines = new SortedSet<string>(bazel.Defines.Where(d => !BazelToolchainDefines.Contains(d)), StringComparer.Ordinal);
+        // Compare defines (filter known toolchain noise, normalize =1 suffix)
+        var cmakeDefines = new SortedSet<string>(cmake.Defines.Where(d => !CMakeToolchainDefines.Contains(d)).Select(NormalizeDefine), StringComparer.Ordinal);
+        var bazelDefines = new SortedSet<string>(bazel.Defines.Where(d => !BazelToolchainDefines.Contains(d)).Select(NormalizeDefine), StringComparer.Ordinal);
         AddSetDifference(result, "defines", cmakeDefines, bazelDefines);
 
         // Compare undefines
@@ -286,16 +375,18 @@ public static class ComparisonEngine
             });
         }
 
-        // Compare optimization level
-        if (cmake.OptimizationLevel != bazel.OptimizationLevel)
+        // Compare optimization level (treat empty as -O0, the compiler default)
+        var cmakeOpt = NormalizeOptimization(cmake.OptimizationLevel);
+        var bazelOpt = NormalizeOptimization(bazel.OptimizationLevel);
+        if (cmakeOpt != bazelOpt)
         {
             result.Differences.Add(new Difference
             {
                 Field = "optimization",
                 OnlyInCMake = [],
                 OnlyInBazel = [],
-                CMakeValue = cmake.OptimizationLevel,
-                BazelValue = bazel.OptimizationLevel,
+                CMakeValue = cmakeOpt,
+                BazelValue = bazelOpt,
             });
         }
 
@@ -480,6 +571,31 @@ public static class ComparisonEngine
             return "14.0";
 
         return version;
+    }
+
+    /// <summary>
+    /// Normalize a C/C++ define so that <c>FOO</c> and <c>FOO=1</c> compare as
+    /// equal — they are semantically identical in the C/C++ preprocessor.
+    /// </summary>
+    private static string NormalizeDefine(string define)
+    {
+        if (define.EndsWith("=1", StringComparison.Ordinal))
+            return define[..^2];
+
+        return define;
+    }
+
+    /// <summary>
+    /// Normalize an optimization flag. When no explicit <c>-O</c> flag is
+    /// present the compiler defaults to <c>-O0</c>, so treat an empty/null
+    /// value the same as <c>-O0</c>.
+    /// </summary>
+    private static string NormalizeOptimization(string? level)
+    {
+        if (string.IsNullOrEmpty(level))
+            return "-O0";
+
+        return level;
     }
 
     /// <summary>

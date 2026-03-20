@@ -11,6 +11,7 @@ string? bazelAqueryNativePath = null;
 string? bazelAqueryManagedPath = null;
 string? jsonOutputPath = null;
 string? managedManifestPath = null;
+string? nativeManifestPath = null;
 bool verbose = false;
 
 for (int i = 0; i < args.Length; i++)
@@ -37,6 +38,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--managed-manifest":
             managedManifestPath = args[++i];
+            break;
+        case "--native-manifest":
+            nativeManifestPath = args[++i];
             break;
         case "--verbose" or "-v":
             verbose = true;
@@ -117,49 +121,25 @@ Console.WriteLine("Comparing build inputs...");
 var report = ComparisonEngine.CompareNative(cmakeNativeRecords, bazelNativeRecords);
 ComparisonEngine.CompareManaged(report, msbuildManagedRecords, bazelManagedRecords);
 
-// ── Load managed assembly manifest ──────────────────────────────────
+// ── Load manifests ──────────────────────────────────────────────────
 if (managedManifestPath is not null)
 {
-    if (!File.Exists(managedManifestPath))
-    {
-        Console.Error.WriteLine($"Managed manifest file not found: {managedManifestPath}");
-        return 1;
-    }
-
-    var manifest = new Dictionary<string, ManifestEntry>(StringComparer.OrdinalIgnoreCase);
-    foreach (var rawLine in File.ReadAllLines(managedManifestPath))
-    {
-        var line = rawLine.Trim();
-        if (line.Length == 0 || line.StartsWith('#'))
-            continue;
-
-        var parts = line.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length != 2)
-        {
-            Console.Error.WriteLine($"Invalid manifest line (expected 'match|diff AssemblyName'): {line}");
-            return 1;
-        }
-
-        var status = parts[0].ToLowerInvariant() switch
-        {
-            "match" => ManifestStatus.Match,
-            "diff" => ManifestStatus.Diff,
-            _ => (ManifestStatus?)null,
-        };
-
-        if (status is null)
-        {
-            Console.Error.WriteLine($"Invalid manifest status '{parts[0]}' (expected 'match' or 'diff'): {line}");
-            return 1;
-        }
-
-        manifest[parts[1]] = new ManifestEntry { Name = parts[1], ExpectedStatus = status.Value };
-    }
-
-    report.ManagedManifest = manifest;
-    var matchCount = manifest.Values.Count(e => e.ExpectedStatus == ManifestStatus.Match);
+    var (manifest, error) = LoadManifest(managedManifestPath, "Managed");
+    if (error is not null) { Console.Error.WriteLine(error); return 1; }
+    report.ManagedManifest = manifest!;
+    var matchCount = manifest!.Values.Count(e => e.ExpectedStatus == ManifestStatus.Match);
     var diffCount = manifest.Values.Count(e => e.ExpectedStatus == ManifestStatus.Diff);
-    Console.WriteLine($"  Loaded manifest: {manifest.Count} entries ({matchCount} match, {diffCount} diff) from {managedManifestPath}");
+    Console.WriteLine($"  Loaded managed manifest: {manifest.Count} entries ({matchCount} match, {diffCount} diff) from {managedManifestPath}");
+}
+
+if (nativeManifestPath is not null)
+{
+    var (manifest, error) = LoadManifest(nativeManifestPath, "Native");
+    if (error is not null) { Console.Error.WriteLine(error); return 1; }
+    report.NativeManifest = manifest!;
+    var matchCount = manifest!.Values.Count(e => e.ExpectedStatus == ManifestStatus.Match);
+    var diffCount = manifest.Values.Count(e => e.ExpectedStatus == ManifestStatus.Diff);
+    Console.WriteLine($"  Loaded native manifest: {manifest.Count} entries ({matchCount} match, {diffCount} diff) from {nativeManifestPath}");
 }
 
 // ── Report ──────────────────────────────────────────────────────────
@@ -188,6 +168,38 @@ static string? FindRepoRoot()
     return null;
 }
 
+static (Dictionary<string, ManifestEntry>? manifest, string? error) LoadManifest(string path, string label)
+{
+    if (!File.Exists(path))
+        return (null, $"{label} manifest file not found: {path}");
+
+    var manifest = new Dictionary<string, ManifestEntry>(StringComparer.OrdinalIgnoreCase);
+    foreach (var rawLine in File.ReadAllLines(path))
+    {
+        var line = rawLine.Trim();
+        if (line.Length == 0 || line.StartsWith('#'))
+            continue;
+
+        var parts = line.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
+            return (null, $"Invalid manifest line (expected 'match|diff <name>'): {line}");
+
+        var status = parts[0].ToLowerInvariant() switch
+        {
+            "match" => ManifestStatus.Match,
+            "diff" => ManifestStatus.Diff,
+            _ => (ManifestStatus?)null,
+        };
+
+        if (status is null)
+            return (null, $"Invalid manifest status '{parts[0]}' (expected 'match' or 'diff'): {line}");
+
+        manifest[parts[1]] = new ManifestEntry { Name = parts[1], ExpectedStatus = status.Value };
+    }
+
+    return (manifest, null);
+}
+
 static void PrintUsage()
 {
     Console.WriteLine("""
@@ -203,7 +215,8 @@ static void PrintUsage()
           --bazel-native-aquery <path>       Bazel aquery JSON for native CppCompile actions
           --bazel-managed-aquery <path>      Bazel aquery JSON for managed CSharpCompile actions
           --json-output <path>               Write detailed JSON report to file
-          --managed-manifest <path>           Manifest listing expected assemblies and their status
+          --managed-manifest <path>          Manifest listing expected assemblies and their status
+          --native-manifest <path>           Manifest listing expected native source files and their status
           --verbose / -v                     Show all differences including only-in lists
           --help / -h                        Show this help
         """);

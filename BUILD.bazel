@@ -230,6 +230,17 @@ runtime_staging(
     }),
     # Assemblies in impl_netcoreapp that are NOT part of the runtime pack.
     exclude_managed_files = [
+        "Microsoft.Extensions.Caching.Abstractions.dll",
+        "Microsoft.Extensions.Configuration.Abstractions.dll",
+        "Microsoft.Extensions.Configuration.dll",
+        "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
+        "Microsoft.Extensions.DependencyInjection.dll",
+        "Microsoft.Extensions.Diagnostics.Abstractions.dll",
+        "Microsoft.Extensions.FileProviders.Abstractions.dll",
+        "Microsoft.Extensions.FileSystemGlobbing.dll",
+        "Microsoft.Extensions.Logging.Abstractions.dll",
+        "Microsoft.Extensions.Logging.dll",
+        "Microsoft.Extensions.Options.dll",
         "Microsoft.Extensions.Primitives.dll",
         "System.CodeDom.dll",
         "System.Formats.Cbor.dll",

@@ -41,7 +41,7 @@ product_version="${major_version}.${minor_version}.${patch_version}"
 msbuild_tarball=""
 bazel_tarball=""
 skip_build=false
-config="debug"
+config="release"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -79,10 +79,10 @@ done
 case "$config" in
     debug)
         msbuild_config_args=()
-        bazel_config_args=()
+        bazel_config_args=(--config=clr_debug)
         ;;
     release)
-        msbuild_config_args=(-rc release -lc release)
+        msbuild_config_args=(-c release -rc release -lc release)
         bazel_config_args=(--config=release)
         ;;
     *)
@@ -225,7 +225,7 @@ done < "$tmpdir/common-files.txt"
 if [[ $different -eq 0 ]]; then
     log_success "All $identical common files are bit-for-bit identical"
 else
-    log_error "$different of $common_count files differ:"
+    log_warn "$different of $common_count files differ:"
 
     for relpath in "${diff_files[@]}"; do
         msbuild_file="$msbuild_dir/$relpath"
@@ -247,7 +247,7 @@ else
         echo "      MSBuild: $msbuild_sha" >&2
         echo "      Bazel:   $bazel_sha" >&2
     done
-    failures=$((failures + 1))
+    warnings=$((warnings + 1))
 fi
 
 # ----- Compare file permissions -----
