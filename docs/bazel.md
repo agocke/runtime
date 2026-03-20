@@ -189,13 +189,14 @@ areas:
 - **Managed assemblies**: 87 of 408 tracked assemblies fully match MSBuild's CSC
   invocations (defines, nowarn, source files, generated content, references).
   The remaining 321 differ due to:
-  - **Generated file content** (majority): `System.SR.cs` generation differences
-    between MSBuild and Bazel
   - **PNSE stub generation**: Bazel generates `.notsupported.cs` via
     `GenNotSupportedSource`, but reference sets may differ
   - **Non-archive assemblies**: Differ by design — Bazel uses precise deps
     while MSBuild uses the full targeting pack
   - **Source generators**: Different targeting (netstandard2.0 polyfills, etc.)
+  - `System.SR.cs` generation now matches MSBuild: `include_default_values`
+    is config-dependent (True for debug, False for release) per
+    `eng/resources.targets`
 
 ### Verifying Runtime Pack Output
 
