@@ -4,6 +4,8 @@ exports_files([
     "ref/System.Data.Common.cs",
     "ref/System.Data.Common.Forwards.cs",
     "ref/System.Data.Common.manual.cs",
+    "src/ILLink/ILLink.Descriptors.LibraryBuild.xml",
+    "src/ILLink/ILLink.Suppressions.LibraryBuild.xml",
 ])
 
 netcoreapp_ref_assembly(
