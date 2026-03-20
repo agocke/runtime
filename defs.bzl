@@ -341,7 +341,7 @@ def csharp_library(
     resource_name = None,
     resource_class_name = None,
     omit_getresourcestring = False,
-    include_default_values = True,
+    include_default_values = None,
     resources = [],
     resource_logical_names = {},
     nowarn = [],
@@ -371,6 +371,12 @@ def csharp_library(
         resource_logical_names[resgen_out] = _resource_name + ".resources"
 
         resx_target = "resx_" + name
+        # MSBuild only includes default resource values in Debug builds
+        # (eng/resources.targets:11). Match that behavior with a select().
+        _include_default_values = include_default_values if include_default_values != None else select({
+            "//:libs_debug": True,
+            "//conditions:default": False,
+        })
         gen_resx_source(
             name = resx_target,
             out = name + "/System.SR.cs",
@@ -378,7 +384,7 @@ def csharp_library(
             resource_name = _resource_name,
             resource_class_name = resource_class_name if resource_class_name else "",
             resx_file = resx_file,
-            include_default_values = include_default_values,
+            include_default_values = _include_default_values,
             omit_getresourcestring = omit_getresourcestring,
         )
         srcs = srcs + [ ":" + resx_target ]

@@ -1,10 +1,16 @@
 load("@rules_dotnet//dotnet:defs.bzl", "import_library")
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("//eng/bazel:runtime_archive.bzl", "runtime_staging")
 load("//eng/bazel:runtime_layout.bzl", "runtime_layout")
 load("//eng/bazel:version.bzl", "PRODUCT_VERSION", "PRODUCT_VERSION_FULL")
+load(
+    "//:framework_r2r.bzl",
+    "FRAMEWORK_ASSEMBLY_LABELS",
+    "R2R_ASSEMBLIES",
+    "framework_crossgen_targets",
+    "framework_illink_targets",
+)
 
 exports_files([
     "artifacts/obj/coreclr/System.Private.CoreLib/linux.x64.Debug/System.Private.CoreLib.Strings.resources",
@@ -143,6 +149,40 @@ runtime_layout(
     }),
 )
 
+# ── ILLink trimming + crossgen2 R2R for all framework assemblies ─────
+# Generates illink_<Name> and crossgen_<Name> targets for each assembly
+# in the runtime pack.  ILLink-trimmed assemblies that are NOT in the
+# R2R list still get trimmed but skip crossgen2.
+framework_illink_targets()
+
+framework_crossgen_targets(
+    clrjit = select({
+        "@platforms//cpu:arm64": "//src/coreclr/jit:libclrjit.so",
+        "//conditions:default": "//src/coreclr/jit:libclrjit_unix_x64_x64.so",
+    }),
+    jitinterface = select({
+        "@platforms//cpu:arm64": "//src/coreclr/tools/aot/jitinterface:libjitinterface_arm64_dylib",
+        "//conditions:default": "//src/coreclr/tools/aot/jitinterface:libjitinterface_x64.so",
+    }),
+    target_arch = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "x64",
+    }),
+    target_os = select({
+        "@platforms//os:macos": "osx",
+        "//conditions:default": "linux",
+    }),
+)
+
+# Filegroup collecting all processed framework assemblies:
+# - R2R assemblies get crossgen2 output
+# - Non-R2R assemblies get ILLink-trimmed output
+filegroup(
+    name = "framework_processed",
+    srcs = [":crossgen_" + name for name in R2R_ASSEMBLIES] +
+           [":illink_" + name for name in FRAMEWORK_ASSEMBLY_LABELS.keys() if name not in R2R_ASSEMBLIES],
+)
+
 # ── Runtime archive (tar.gz) matching MSBuild packs output ───────────
 # Produces dotnet-runtime-{version}-{rid}.tar.gz with the same file
 # layout as:  ./build.sh packs -rc Release -lc Release
@@ -193,69 +233,30 @@ runtime_staging(
         ],
     }),
     framework_managed_files = [
-        "//src/libraries:impl_netcoreapp",
-        # ── Shim assemblies (type-forwarding facades) ──
-        "//src/libraries/shims/Microsoft.VisualBasic:impl_Microsoft.VisualBasic",
-        "//src/libraries/shims/System:impl_System",
-        "//src/libraries/shims/System.ComponentModel.DataAnnotations:impl_System.ComponentModel.DataAnnotations",
-        "//src/libraries/shims/System.Configuration:impl_System.Configuration",
-        "//src/libraries/shims/System.Core:impl_System.Core",
-        "//src/libraries/shims/System.Data:impl_System.Data",
-        "//src/libraries/shims/System.Drawing:impl_System.Drawing",
-        "//src/libraries/shims/System.IO.Compression.FileSystem:impl_System.IO.Compression.FileSystem",
-        "//src/libraries/shims/System.Net:impl_System.Net",
-        "//src/libraries/shims/System.Numerics:impl_System.Numerics",
-        "//src/libraries/shims/System.Runtime.Serialization:impl_System.Runtime.Serialization",
-        "//src/libraries/shims/System.Security:impl_System.Security",
-        "//src/libraries/shims/System.ServiceModel.Web:impl_System.ServiceModel.Web",
-        "//src/libraries/shims/System.ServiceProcess:impl_System.ServiceProcess",
-        "//src/libraries/shims/System.Transactions:impl_System.Transactions",
-        "//src/libraries/shims/System.Web:impl_System.Web",
-        "//src/libraries/shims/System.Windows:impl_System.Windows",
-        "//src/libraries/shims/System.Xml:impl_System.Xml",
-        "//src/libraries/shims/System.Xml.Linq:impl_System.Xml.Linq",
-        "//src/libraries/shims/System.Xml.Serialization:impl_System.Xml.Serialization",
-        "//src/libraries/shims/WindowsBase:impl_WindowsBase",
-        # ── Platform-specific libraries (PNSE stubs on Linux) ──
-        "//src/libraries/Microsoft.VisualBasic.Core/src:impl_Microsoft.VisualBasic.Core",
-        "//src/libraries/System.IO.Pipes.AccessControl/src:impl_System.IO.Pipes.AccessControl",
-        "//src/libraries/System.Net.Quic:impl_System.Net.Quic",
-        "//src/libraries/System.Runtime.InteropServices.JavaScript/src:impl_System.Runtime.InteropServices.JavaScript",
-        "//src/libraries/System.Threading.AccessControl/src:impl_System.Threading.AccessControl",
+        # ILLink-trimmed + crossgen2 R2R processed framework assemblies.
+        # This replaces the raw impl_netcoreapp + shim + platform-specific
+        # labels — all assemblies flow through illink_trim, and R2R
+        # assemblies additionally go through crossgen_assembly.
+        ":framework_processed",
     ] + select({
         "@platforms//os:linux": [
             "//src/coreclr/System.Private.CoreLib:crossgen_System.Private.CoreLib",
         ],
         "//conditions:default": [],
     }),
-    # Assemblies in impl_netcoreapp that are NOT part of the runtime pack.
+    # Assemblies in impl_netcoreapp that are NOT part of the runtime pack
+    # are already excluded from FRAMEWORK_ASSEMBLY_LABELS, so no
+    # exclude_managed_files needed for the processed assemblies.
+    # However, System.Private.CoreLib is added separately (R2R'd by its
+    # own crossgen_corelib rule), so exclude it from the processed set.
     exclude_managed_files = [
-        "Microsoft.Extensions.Caching.Abstractions.dll",
-        "Microsoft.Extensions.Configuration.Abstractions.dll",
-        "Microsoft.Extensions.Configuration.dll",
-        "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
-        "Microsoft.Extensions.DependencyInjection.dll",
-        "Microsoft.Extensions.Diagnostics.Abstractions.dll",
-        "Microsoft.Extensions.FileProviders.Abstractions.dll",
-        "Microsoft.Extensions.FileSystemGlobbing.dll",
-        "Microsoft.Extensions.Logging.Abstractions.dll",
-        "Microsoft.Extensions.Logging.dll",
-        "Microsoft.Extensions.Options.dll",
-        "Microsoft.Extensions.Primitives.dll",
-        "System.CodeDom.dll",
-        "System.Formats.Cbor.dll",
-        "System.Formats.Nrbf.dll",
-        "System.Resources.Extensions.dll",
-        "System.Security.Cryptography.Pkcs.dll",
-        "System.Security.Cryptography.Xml.dll",
-        "System.Threading.RateLimiting.dll",
+        "System.Private.CoreLib.dll",
     ],
     # The R2R CoreLib overwrites the IL version from impl_netcoreapp.
     rename_files = {
         "System.Private.CoreLib.r2r.dll": "System.Private.CoreLib.dll",
     },
     framework_data_files = [
-        "//eng/bazel/data:Microsoft.NETCore.App.deps.json",
         "//eng/bazel/data:Microsoft.NETCore.App.runtimeconfig.json",
     ],
 )
@@ -263,20 +264,80 @@ runtime_staging(
 LINUX_RID = "linux-x64"
 MACOS_RID = "osx-arm64"
 
-pkg_tar(
-    name = "runtime_archive_linux",
-    out = "dotnet-runtime-" + PRODUCT_VERSION_FULL + "-" + LINUX_RID + ".tar.gz",
+# ── Generate deps.json from the actual assembled DLLs ────────────────
+# Runs the GenerateDepsFile tool over the staging directory to produce a
+# deps.json with real assembly/file versions and the full RID fallback
+# graph — matching the output of MSBuild's GenerateSharedFrameworkDepsFile
+# task from Microsoft.DotNet.SharedFramework.Sdk.
+genrule(
+    name = "generate_deps_json",
     srcs = [":runtime_staging"],
-    strip_prefix = "runtime_staging",
-    extension = "tar.gz",
+    outs = ["Microsoft.NETCore.App.deps.json"],
+    tools = ["//src/tools/bazel/GenerateDepsFile"],
+    cmd = "$(location //src/tools/bazel/GenerateDepsFile) " +
+        "$(location :runtime_staging)/shared/Microsoft.NETCore.App/" + PRODUCT_VERSION_FULL + " " +
+        select({
+            "@platforms//os:macos": MACOS_RID,
+            "//conditions:default": LINUX_RID,
+        }) + " " +
+        PRODUCT_VERSION_FULL + " " +
+        "$$PWD/eng/bazel/data/RuntimeIdentifierGraph.json " +
+        "$@",
 )
 
-pkg_tar(
+# ── Build the runtime archive with correct permissions ────────────────
+# Bazel tree artifacts enforce 555 permissions. This genrule copies the
+# staging directory, sets correct permissions (644 for data/DLLs, 755 for
+# executables and shared libraries), injects the generated deps.json, and
+# creates a tar.gz archive matching the MSBuild packs output.
+genrule(
+    name = "runtime_archive_linux",
+    srcs = [
+        ":runtime_staging",
+        ":generate_deps_json",
+    ],
+    outs = ["dotnet-runtime-" + PRODUCT_VERSION_FULL + "-" + LINUX_RID + ".tar.gz"],
+    cmd = """
+        set -euo pipefail
+        STAGING="$(location :runtime_staging)"
+        DEPS="$(location :generate_deps_json)"
+        OUT="$@"
+        WORK=$$(mktemp -d)
+        trap "rm -rf $$WORK" EXIT
+        cp -rL "$$STAGING" "$$WORK/archive"
+        cp "$$DEPS" "$$WORK/archive/shared/Microsoft.NETCore.App/""" + PRODUCT_VERSION_FULL + """/Microsoft.NETCore.App.deps.json"
+        # Set permissions: 755 for executables and shared framework native libs, 644 for everything else.
+        # Note: host/fxr/*.so is 644 (loaded by dotnet host, not executed directly).
+        find "$$WORK/archive" -type f -exec chmod 644 {} +
+        find "$$WORK/archive/shared" -type f \\( -name "*.so" -o -name "createdump" \\) -exec chmod 755 {} +
+        chmod 755 "$$WORK/archive/dotnet"
+        tar czf "$$OUT" -C "$$WORK/archive" .
+    """,
+)
+
+genrule(
     name = "runtime_archive_macos",
-    out = "dotnet-runtime-" + PRODUCT_VERSION_FULL + "-" + MACOS_RID + ".tar.gz",
-    srcs = [":runtime_staging"],
-    strip_prefix = "runtime_staging",
-    extension = "tar.gz",
+    srcs = [
+        ":runtime_staging",
+        ":generate_deps_json",
+    ],
+    outs = ["dotnet-runtime-" + PRODUCT_VERSION_FULL + "-" + MACOS_RID + ".tar.gz"],
+    cmd = """
+        set -euo pipefail
+        STAGING="$(location :runtime_staging)"
+        DEPS="$(location :generate_deps_json)"
+        OUT="$@"
+        WORK=$$(mktemp -d)
+        trap "rm -rf $$WORK" EXIT
+        cp -rL "$$STAGING" "$$WORK/archive"
+        cp "$$DEPS" "$$WORK/archive/shared/Microsoft.NETCore.App/""" + PRODUCT_VERSION_FULL + """/Microsoft.NETCore.App.deps.json"
+        # Set permissions: 755 for executables and shared framework native libs, 644 for everything else.
+        # Note: host/fxr/*.dylib is 644 (loaded by dotnet host, not executed directly).
+        find "$$WORK/archive" -type f -exec chmod 644 {} +
+        find "$$WORK/archive/shared" -type f \\( -name "*.dylib" -o -name "createdump" \\) -exec chmod 755 {} +
+        chmod 755 "$$WORK/archive/dotnet"
+        tar czf "$$OUT" -C "$$WORK/archive" .
+    """,
 )
 
 alias(

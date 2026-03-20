@@ -24,6 +24,7 @@ exports_files([
     "src/System/Diagnostics/Metrics/StringSequence.cs",
     "src/System/Diagnostics/Metrics/StringSequence.netcore.cs",
     "src/Resources/Strings.resx",
+    "src/ILLink/ILLink.Descriptors.LibraryBuild.xml",
 ])
 
 netcoreapp_ref_assembly(

@@ -5,6 +5,7 @@ exports_files([
     "ref/System.Text.Json.cs",
     "ref/System.Text.Json.netcoreapp.cs",
     "ref/System.Text.Json.Typeforwards.netcoreapp.cs",
+    "src/ILLink/ILLink.Descriptors.LibraryBuild.xml",
 ])
 
 gen_resx_source(

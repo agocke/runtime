@@ -4,6 +4,8 @@ exports_files([
     "ref/System.ComponentModel.TypeConverter.cs",
     "ref/System.ComponentModel.TypeConverter.Forwards.cs",
     "ref/System.ComponentModel.manual.cs",
+    "src/ILLink/ILLink.Descriptors.LibraryBuild.xml",
+    "src/ILLink/ILLink.Suppressions.LibraryBuild.xml",
 ])
 
 netcoreapp_ref_assembly(
