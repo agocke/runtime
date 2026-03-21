@@ -254,12 +254,18 @@ With CI mode (`--config=ci` for Bazel, `--ci` for MSBuild), the CSC compiler
 outputs are **content-identical** after stripping PDB-derived hashes. The
 `/pathmap` flags normalize source paths to `/_/` in both build systems.
 
-The pipeline after CSC introduces differences at the ILLink and crossgen2/R2R
-stages:
+ILLink outputs are also **content-identical** for assemblies whose CSC input
+matches.  `impl_System.Runtime` is a type-forwarding assembly (936
+`ExportedType` rows → CoreLib); when ILLink resolves types through it, it
+rewrites `AssemblyRef System.Runtime` to `System.Private.CoreLib`.  MSBuild
+avoids this by passing ref assemblies (with real TypeDefs) to ILLink.  Bazel
+mirrors this: `impl_netcoreapp_base` excludes `impl_System.Runtime`, and
+`ref_System.Runtime` is passed separately via `illink_trim(refs = ...)`.
+
+Remaining gaps after ILLink:
 
 | Gap | Description | Impact |
 |-----|-------------|--------|
-| **ILLink metadata rewriting** | ILLink rewrites PE metadata tables (heap layout, table ordering) in a way that depends on the ILLink binary itself. MSBuild and Bazel compile ILLink from the same source but produce different binaries, leading to different metadata output. | All managed DLLs differ post-ILLink |
 | **MIBC/PGO data** | MSBuild passes `StandardOptimizationData.mibc` + `--embed-pgo-data` to crossgen2. Bazel doesn't pass MIBC data, producing smaller R2R assemblies without embedded PGO profiles. | R2R assemblies differ in size and content |
 
 ## Syncing with release/10.0

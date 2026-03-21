@@ -319,7 +319,10 @@ def framework_illink_targets():
             name = "illink_" + name,
             assembly = label,
             out = "trimmed/" + name + ".dll",
-            refs = ["//src/libraries:impl_netcoreapp"],
+            refs = [
+                "//src/libraries:impl_netcoreapp_base",
+                "//src/libraries:ref_System.Runtime",
+            ],
             descriptors = desc,
             suppressions = supp,
             disable_opt_ipconstprop = (name == "System.Linq.Expressions"),

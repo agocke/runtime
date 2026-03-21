@@ -9,6 +9,7 @@ Typical pipeline:  csharp_library → illink_trim → crossgen_assembly
 
 load(
     "@rules_dotnet//dotnet/private:providers.bzl",
+    "DotnetAssemblyCompileInfo",
     "DotnetAssemblyRuntimeInfo",
 )
 
@@ -27,15 +28,22 @@ def _illink_trim_impl(ctx):
     # Exclude the directory containing the root assembly itself — ILLink
     # will fail with "Cannot overwrite an existing assembly" if it finds
     # the same assembly name in both the -a input and a -d search dir.
+    #
+    # For ref assemblies (ref_assembly=True csharp_library targets),
+    # DefaultInfo.files is empty — the DLL is only in
+    # DotnetAssemblyCompileInfo.irefs.  Fall back to that provider when
+    # dep.files yields no DLLs.
     root_dir = il_assembly.dirname
     ref_files = []
     ref_dirs = {}
     for dep in ctx.attr.refs:
-        for f in dep.files.to_list():
-            if f.extension == "dll":
-                ref_files.append(f)
-                if f.dirname != root_dir:
-                    ref_dirs[f.dirname] = True
+        dlls = [f for f in dep.files.to_list() if f.extension == "dll"]
+        if not dlls and DotnetAssemblyCompileInfo in dep:
+            dlls = list(dep[DotnetAssemblyCompileInfo].irefs)
+        for f in dlls:
+            ref_files.append(f)
+            if f.dirname != root_dir:
+                ref_dirs[f.dirname] = True
 
     # Build ILLink argument list matching eng/illink.targets ILLinkTrimAssembly.
     # The MSBuild ILLink task (LinkTask.cs) also emits --warnaserror- in its
