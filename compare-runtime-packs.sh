@@ -205,13 +205,30 @@ fi
 # ----- Compare file contents (bit-for-bit) -----
 log_header "Phase 2: Bit-for-bit content comparison"
 
+# Helper: compare two managed DLLs ignoring PDB-derived hash fields.
+# Uses the SRM-based compare-pe.cs tool which zeros TimeDateStamp, MVID,
+# CodeView GUID, and PDB Checksum before comparing.
+# Exit codes from compare-pe.cs:
+#   0 — byte-for-byte identical
+#   1 — content match (only PDB-derived hashes differ)
+#   2 — substantive PE content differences
+#   3 — usage error or not a managed PE
+compare_pe_tool="$scriptroot/src/tools/bazel/compare-pe/compare-pe.cs"
+
 # Only compare files present in both archives
 comm -12 "$tmpdir/msbuild-files.txt" "$tmpdir/bazel-files.txt" > "$tmpdir/common-files.txt"
 common_count=$(wc -l < "$tmpdir/common-files.txt")
 
 identical=0
 different=0
+content_match=0
 diff_files=()
+
+# Collect DLL pairs that aren't bit-for-bit identical for batch comparison
+dll_pairs_file="$tmpdir/dll-pairs.txt"
+dll_relpath_file="$tmpdir/dll-relpaths.txt"
+> "$dll_pairs_file"
+> "$dll_relpath_file"
 
 while IFS= read -r relpath; do
     msbuild_file="$msbuild_dir/$relpath"
@@ -219,14 +236,37 @@ while IFS= read -r relpath; do
 
     if cmp -s "$msbuild_file" "$bazel_file"; then
         identical=$((identical + 1))
+    elif [[ "$relpath" == *.dll ]]; then
+        printf '%s\t%s\n' "$msbuild_file" "$bazel_file" >> "$dll_pairs_file"
+        echo "$relpath" >> "$dll_relpath_file"
     else
         different=$((different + 1))
         diff_files+=("$relpath")
     fi
 done < "$tmpdir/common-files.txt"
 
+# Run batch comparison for all non-identical DLLs in a single dotnet invocation
+dll_results_file="$tmpdir/dll-results.txt"
+if [[ -s "$dll_pairs_file" ]]; then
+    dotnet "$compare_pe_tool" -- --batch "$dll_pairs_file" "$dll_results_file"
+
+    while IFS= read -r relpath && IFS= read -r result <&3; do
+        case "$result" in
+            0|1) content_match=$((content_match + 1)) ;;
+            *)
+                different=$((different + 1))
+                diff_files+=("$relpath")
+                ;;
+        esac
+    done < "$dll_relpath_file" 3< "$dll_results_file"
+fi
+
 if [[ $different -eq 0 ]]; then
-    log_success "All $identical common files are bit-for-bit identical"
+    if [[ $content_match -eq 0 ]]; then
+        log_success "All $identical common files are bit-for-bit identical"
+    else
+        log_success "All common files match ($identical bit-for-bit, $content_match DLLs identical after stripping PDB-derived hashes)"
+    fi
 else
     log_warn "$different of $common_count files differ:"
 
@@ -283,6 +323,7 @@ echo "  Bazel tarball:    $bazel_tarball"
 echo "  Total files:      MSBuild=$msbuild_count  Bazel=$bazel_count"
 echo "  Common files:     $common_count"
 echo "  Identical:        $identical"
+echo "  Content match:    $content_match  (DLLs identical after stripping PDB-derived hashes)"
 echo "  Different:        $different"
 echo "  Permission diffs: $perm_diffs"
 echo ""

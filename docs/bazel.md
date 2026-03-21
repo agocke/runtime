@@ -207,8 +207,10 @@ areas:
 
 `compare-runtime-packs.sh` verifies that the Bazel-produced runtime archive
 (`dotnet-runtime-*-linux-x64.tar.gz`) has the **same file list** as the one
-produced by CMake+MSBuild's `packs` subset. Content and permission differences
-are reported as warnings (expected since these are independent builds).
+produced by CMake+MSBuild's `packs` subset. For managed DLLs, the script uses
+the SRM-based `compare-pe` tool (see below) to compare PE content after
+stripping PDB-derived hash fields, which differ between independent builds
+even when the logical content is identical.
 
 ```bash
 # Run comparison (builds both systems automatically)
@@ -222,7 +224,7 @@ The script runs three phases:
 | Phase | What it checks |
 |---|---|
 | **File inventory** | Both archives contain exactly the same set of files |
-| **Content** | Every file is bit-for-bit identical (SHA-256 comparison) |
+| **Content** | Bit-for-bit comparison; for DLLs, PE content comparison ignoring PDB-derived hashes |
 | **Permissions** | File permission bits match |
 
 The archive contains ~192 files: the `dotnet` host, `libhostfxr.so`,
@@ -232,6 +234,33 @@ config files (`deps.json`, `runtimeconfig.json`), and license files. The
 (`src/tools/bazel/GenerateDepsFile/`) which reads assembly/file versions
 from the actual DLLs and produces the full RID fallback graph — matching
 the MSBuild `GenerateSharedFrameworkDepsFile` task.
+
+### PE comparison tool (`src/tools/bazel/compare-pe/`)
+
+A single-file C# tool using System.Reflection.Metadata to compare managed
+DLLs. PDB content differs between independent builds (different PDB GUIDs),
+which cascades into five PE fields: TimeDateStamp, MVID, CodeView GUID, PDB
+Checksum hash, and PDB Checksum GUID. The tool zeros all five before comparing.
+
+Exit codes: 0 = byte-identical, 1 = content match (only PDB-derived hashes
+differ), 2 = substantive differences, 3 = error/not a managed PE.
+
+Batch mode (`--batch <pairs-file> <results-file>`) processes all DLL pairs in
+a single `dotnet` invocation, avoiding ~2s JIT overhead per file.
+
+### Managed assembly parity status
+
+With CI mode (`--config=ci` for Bazel, `--ci` for MSBuild), the CSC compiler
+outputs are **content-identical** after stripping PDB-derived hashes. The
+`/pathmap` flags normalize source paths to `/_/` in both build systems.
+
+The pipeline after CSC introduces differences at the ILLink and crossgen2/R2R
+stages:
+
+| Gap | Description | Impact |
+|-----|-------------|--------|
+| **ILLink metadata rewriting** | ILLink rewrites PE metadata tables (heap layout, table ordering) in a way that depends on the ILLink binary itself. MSBuild and Bazel compile ILLink from the same source but produce different binaries, leading to different metadata output. | All managed DLLs differ post-ILLink |
+| **MIBC/PGO data** | MSBuild passes `StandardOptimizationData.mibc` + `--embed-pgo-data` to crossgen2. Bazel doesn't pass MIBC data, producing smaller R2R assemblies without embedded PGO profiles. | R2R assemblies differ in size and content |
 
 ## Syncing with release/10.0
 
