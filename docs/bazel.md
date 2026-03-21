@@ -157,8 +157,9 @@ Clang is the default compiler (matching CMake).
 
 `compare-bazel.sh` automates build-input equivalence checking between Bazel and
 CMake/MSBuild. It compares every compilation unit's source files, preprocessor
-defines, compiler flags, references, and other inputs. The default configuration
-is **release**.
+defines, compiler flags, references, and other inputs. Both scripts pass `--ci`
+to MSBuild and `--config=ci` to Bazel so that deterministic source paths are
+enabled and PDB paths are normalized. The default configuration is **release**.
 
 ```bash
 # Run comparison (builds both systems automatically)
@@ -726,6 +727,10 @@ Mono-only platforms (Browser/WASM, WASI, Tizen) are also excluded.
 - [x] Compiler flag parity verified against CMake (`-g`, `-O3`, `-std=gnu11`/`-std=c++17`, all warning flags, all defines)
 - [x] Managed C# compiler flag parity: `/warnaserror+`, `/warn:9999` matching MSBuild's
   `TreatWarningsAsErrors=true` and `WarningLevel=9999` from `Directory.Build.props`
+- [x] CI mode (`--config=ci`): `/pathmap` normalization matching MSBuild's
+  `ContinuousIntegrationBuild=true` / `DeterministicSourcePaths=true` for deterministic PDB
+  paths (`/_/artifacts/obj/...`). Managed DLL content is byte-identical to MSBuild CI output
+  (only deterministic hash fields differ due to different Roslyn compiler versions).
 - [x] Clang is the default compiler (matching CMake), with GCC available via `--repo_env=CC=gcc`
 - [x] Per-component configuration: `//:clr_config` (debug/checked/release) + `//:libs_config` (debug/release)
 - [ ] `.bazelrc` platform configs for other OS/arch targets (e.g., `build:linux-arm64`, `build:macos-x64`)

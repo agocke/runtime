@@ -87,12 +87,14 @@ for cfg in "${configs[@]}"; do
     log "════════════════════════════════════════════════════"
 
     # ----- Map config to build system flags -----
+    # Always include --ci for MSBuild and --config=ci for Bazel so the
+    # comparison reflects CI-mode deterministic source paths.
     if [[ "$cfg" == "debug" ]]; then
         msbuild_rc="Debug"
-        bazel_aquery_args=(--config=clr_debug)
+        bazel_aquery_args=(--config=clr_debug --config=ci)
     else
         msbuild_rc="Release"
-        bazel_aquery_args=(--config=release)
+        bazel_aquery_args=(--config=release --config=ci)
     fi
 
     # ----- CMake compile_commands.json paths -----
@@ -111,8 +113,8 @@ for cfg in "${configs[@]}"; do
 
     # ----- Step 1: Build with CMake/MSBuild -----
     if [[ "$skip_build" != "true" ]]; then
-        log "Building with CMake/MSBuild (./build.sh clr+libs+libs.tests -c $cfg -rc $cfg -lc $cfg -bl)..."
-        "$scriptroot/build.sh" clr+libs+libs.tests -c "$cfg" -rc "$cfg" -lc "$cfg" -bl
+        log "Building with CMake/MSBuild (./build.sh --ci clr+libs+libs.tests -c $cfg -rc $cfg -lc $cfg -bl)..."
+        "$scriptroot/build.sh" --ci clr+libs+libs.tests -c "$cfg" -rc "$cfg" -lc "$cfg" -bl
     fi
 
     # ----- Step 2: Extract Bazel aquery -----

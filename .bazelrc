@@ -248,3 +248,11 @@ build:libs_release --//:libs_config=release
 build:release --config=clr_release
 build:release --config=libs_release
 # Note: -c opt is on clr_release, so it applies here too.
+
+# =====================================================================
+# --config=ci: CI mode — deterministic source paths
+# Enables /pathmap to normalize source and PDB paths, matching MSBuild's
+# ContinuousIntegrationBuild=true / DeterministicSourcePaths=true.
+# Use with --config=release for comparison against CI-built MSBuild output.
+# =====================================================================
+build:ci --//:ci=true

@@ -39,6 +39,10 @@ _MINOR_VERSION = PRODUCT_VERSION.split(".")[1]
 _ASSEMBLY_VERSION = _MAJOR_VERSION + "." + _MINOR_VERSION + ".0.0"
 _FILE_VERSION = "42.42.42.42424"
 _INFORMATIONAL_VERSION = PRODUCT_VERSION + "-dev"
+CI_INFORMATIONAL_VERSION = select({
+    "//:ci_build": PRODUCT_VERSION + "-ci",
+    "//conditions:default": PRODUCT_VERSION + "-dev",
+})
 
 def _gen_resx_source_impl(ctx):
     resource_name = ctx.attr.resource_name if ctx.attr.resource_name else ("FxResources.%s.SR" % ctx.attr.assembly_name)
@@ -404,6 +408,15 @@ def csharp_library(
     # Common/src/System/SR.cs.  Suppress it for those assemblies to match.
     _nullable_nowarn = ["CS8632"] if kwargs.get("nullable") == "disable" else []
 
+    # In CI mode, construct a pathmap entry that maps the Bazel PDB output
+    # directory to MSBuild's CI-normalized equivalent.  The pathmap key is
+    # the stable portion of the output path (after bazel-out/{hash}/bin/).
+    # At execution time the rules_dotnet worker derives the unstable bin
+    # prefix from the /pdb: argument and prepends it.
+    _pkg = native.package_name()
+    _pathmap_key = "%s/%s/%s" % (_pkg, name, NETCOREAPP_CURRENT)
+    _pathmap_value = "/_/artifacts/obj/%s/Release/%s" % (out, NETCOREAPP_CURRENT)
+
     _base_csharp_library(
         name = name,
         srcs = srcs,
@@ -437,6 +450,12 @@ def csharp_library(
         # WarningLevel=9999.  Placed after rules_dotnet's own /warn:3 so
         # the last-wins semantics of csc give us the correct level.
         compiler_options = compiler_options + ["/warn:9999"],
+        # In CI mode, normalize PDB paths to match MSBuild's CI layout
+        # (ContinuousIntegrationBuild=true → DeterministicSourcePaths → PathMap).
+        pathmap = select({
+            "//:ci_build": {_pathmap_key: _pathmap_value},
+            "//conditions:default": {},
+        }),
         **kwargs
     )
 

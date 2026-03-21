@@ -76,14 +76,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ----- Map config to build system flags -----
+# Always include --ci for MSBuild (deterministic source paths) and
+# --config=ci for Bazel (pathmap normalization) so the comparison
+# matches CI-built output.
 case "$config" in
     debug)
-        msbuild_config_args=()
-        bazel_config_args=(--config=clr_debug)
+        msbuild_config_args=(--ci)
+        bazel_config_args=(--config=clr_debug --config=ci)
         ;;
     release)
-        msbuild_config_args=(-c release -rc release -lc release)
-        bazel_config_args=(--config=release)
+        msbuild_config_args=(-c release -rc release -lc release --ci)
+        bazel_config_args=(--config=release --config=ci)
         ;;
     *)
         echo "Invalid config: $config (must be debug or release)" >&2
