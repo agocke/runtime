@@ -6,6 +6,21 @@ csharp_binary(
     name = "System.Diagnostics.FileVersionInfo.TestAssembly",
     srcs = ["Assembly1.cs"],
     target_frameworks = [NETCOREAPP_CURRENT],
+    nowarn = [
+        # Directory.Build.props global NoWarn
+        "CS8500",
+        "CS8969",
+        "IDE0060",
+        "IDE0100",
+        # Arcade SDK global NoWarn
+        "CS1705",
+        "NU5105",
+        # Directory.Build.props IsTestProject NoWarn
+        "SYSLIB0011",
+        "SYSLIB0050",
+        "SYSLIB0051",
+        "IL2121",
+    ],
     visibility = ["//src/libraries/System.Diagnostics.FileVersionInfo/tests:__subpackages__"],
     deps = [
         "//src/libraries:ref_System.Runtime",
