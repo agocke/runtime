@@ -43,6 +43,20 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 
+# CI mode: when "true", enables deterministic source paths (/pathmap)
+# matching MSBuild's ContinuousIntegrationBuild=true behavior.
+string_flag(
+    name = "ci",
+    build_setting_default = "false",
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "ci_build",
+    flag_values = {"//:ci": "true"},
+    visibility = ["//visibility:public"],
+)
+
 # ── CoreCLR config_settings ──────────────────────────────────────────
 config_setting(
     name = "clr_debug",

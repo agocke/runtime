@@ -157,8 +157,9 @@ Clang is the default compiler (matching CMake).
 
 `compare-bazel.sh` automates build-input equivalence checking between Bazel and
 CMake/MSBuild. It compares every compilation unit's source files, preprocessor
-defines, compiler flags, references, and other inputs. The default configuration
-is **release**.
+defines, compiler flags, references, and other inputs. Both scripts pass `--ci`
+to MSBuild and `--config=ci` to Bazel so that deterministic source paths are
+enabled and PDB paths are normalized. The default configuration is **release**.
 
 ```bash
 # Run comparison (builds both systems automatically)
@@ -206,8 +207,10 @@ areas:
 
 `compare-runtime-packs.sh` verifies that the Bazel-produced runtime archive
 (`dotnet-runtime-*-linux-x64.tar.gz`) has the **same file list** as the one
-produced by CMake+MSBuild's `packs` subset. Content and permission differences
-are reported as warnings (expected since these are independent builds).
+produced by CMake+MSBuild's `packs` subset. For managed DLLs, the script uses
+the SRM-based `compare-pe` tool (see below) to compare PE content after
+stripping PDB-derived hash fields, which differ between independent builds
+even when the logical content is identical.
 
 ```bash
 # Run comparison (builds both systems automatically)
@@ -221,7 +224,7 @@ The script runs three phases:
 | Phase | What it checks |
 |---|---|
 | **File inventory** | Both archives contain exactly the same set of files |
-| **Content** | Every file is bit-for-bit identical (SHA-256 comparison) |
+| **Content** | Bit-for-bit comparison; for DLLs, PE content comparison ignoring PDB-derived hashes |
 | **Permissions** | File permission bits match |
 
 The archive contains ~192 files: the `dotnet` host, `libhostfxr.so`,
@@ -231,6 +234,39 @@ config files (`deps.json`, `runtimeconfig.json`), and license files. The
 (`src/tools/bazel/GenerateDepsFile/`) which reads assembly/file versions
 from the actual DLLs and produces the full RID fallback graph — matching
 the MSBuild `GenerateSharedFrameworkDepsFile` task.
+
+### PE comparison tool (`src/tools/bazel/compare-pe/`)
+
+A single-file C# tool using System.Reflection.Metadata to compare managed
+DLLs. PDB content differs between independent builds (different PDB GUIDs),
+which cascades into five PE fields: TimeDateStamp, MVID, CodeView GUID, PDB
+Checksum hash, and PDB Checksum GUID. The tool zeros all five before comparing.
+
+Exit codes: 0 = byte-identical, 1 = content match (only PDB-derived hashes
+differ), 2 = substantive differences, 3 = error/not a managed PE.
+
+Batch mode (`--batch <pairs-file> <results-file>`) processes all DLL pairs in
+a single `dotnet` invocation, avoiding ~2s JIT overhead per file.
+
+### Managed assembly parity status
+
+With CI mode (`--config=ci` for Bazel, `--ci` for MSBuild), the CSC compiler
+outputs are **content-identical** after stripping PDB-derived hashes. The
+`/pathmap` flags normalize source paths to `/_/` in both build systems.
+
+ILLink outputs are also **content-identical** for assemblies whose CSC input
+matches.  `impl_System.Runtime` is a type-forwarding assembly (936
+`ExportedType` rows → CoreLib); when ILLink resolves types through it, it
+rewrites `AssemblyRef System.Runtime` to `System.Private.CoreLib`.  MSBuild
+avoids this by passing ref assemblies (with real TypeDefs) to ILLink.  Bazel
+mirrors this: `impl_netcoreapp_base` excludes `impl_System.Runtime`, and
+`ref_System.Runtime` is passed separately via `illink_trim(refs = ...)`.
+
+Remaining gaps after ILLink:
+
+| Gap | Description | Impact |
+|-----|-------------|--------|
+| **MIBC/PGO data** | MSBuild passes `StandardOptimizationData.mibc` + `--embed-pgo-data` to crossgen2. Bazel doesn't pass MIBC data, producing smaller R2R assemblies without embedded PGO profiles. | R2R assemblies differ in size and content |
 
 ## Syncing with release/10.0
 
@@ -724,6 +760,12 @@ Mono-only platforms (Browser/WASM, WASI, Tizen) are also excluded.
 - [x] `src/libraries/defs.bzl` — Library macros (netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair)
 - [x] `src/tests/defs.bzl` — Test infrastructure (live_csharp_library, test runner)
 - [x] Compiler flag parity verified against CMake (`-g`, `-O3`, `-std=gnu11`/`-std=c++17`, all warning flags, all defines)
+- [x] Managed C# compiler flag parity: `/warnaserror+`, `/warn:9999` matching MSBuild's
+  `TreatWarningsAsErrors=true` and `WarningLevel=9999` from `Directory.Build.props`
+- [x] CI mode (`--config=ci`): `/pathmap` normalization matching MSBuild's
+  `ContinuousIntegrationBuild=true` / `DeterministicSourcePaths=true` for deterministic PDB
+  paths (`/_/artifacts/obj/...`). Managed DLL content is byte-identical to MSBuild CI output
+  (only deterministic hash fields differ due to different Roslyn compiler versions).
 - [x] Clang is the default compiler (matching CMake), with GCC available via `--repo_env=CC=gcc`
 - [x] Per-component configuration: `//:clr_config` (debug/checked/release) + `//:libs_config` (debug/release)
 - [ ] `.bazelrc` platform configs for other OS/arch targets (e.g., `build:linux-arm64`, `build:macos-x64`)

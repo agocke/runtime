@@ -76,6 +76,9 @@ csharp_library(
         "CS0436",
         "CS0649",
         "CA1872",
+        # AD0001: RegexGenerator analyzer crashes due to missing embedded
+        # resources in the Bazel-built generator.
+        "AD0001",
     ],
     visibility = ["//visibility:public"],
 )

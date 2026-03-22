@@ -29,6 +29,10 @@ load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS")
 _SHARED_COMPILATION_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
 
 COMMON_ATTRS = {
+    "pathmap": attr.string_dict(
+        doc = "Additional /pathmap entries for deterministic builds.",
+        default = {},
+    ),
     "deps": attr.label_list(
         doc = "Other libraries, binaries, or imported DLLs",
         providers = [DotnetAssemblyCompileInfo, DotnetAssemblyRuntimeInfo],

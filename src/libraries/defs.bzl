@@ -1,6 +1,7 @@
 
 load(
     "//:defs.bzl",
+    "CI_INFORMATIONAL_VERSION",
     "MSFT_SNK",
     "NETCOREAPP_CURRENT",
     "csharp_library",
@@ -285,6 +286,7 @@ def netcoreapp_impl_assembly(
     supported_os_platforms = [],
     supported_os_platforms_short = [],
     unsupported_os_platforms = [],
+    generate_documentation_file = True,
     **kwargs
 ):
     base_name = name[len("impl_"):]
@@ -408,6 +410,7 @@ def netcoreapp_impl_assembly(
         name = assembly_info_target,
         out = name + "/" + base_name + ".AssemblyInfo.cs",
         assembly_name = base_name,
+        informational_version = CI_INFORMATIONAL_VERSION,
         cls_compliant = cls_compliant,
         is_trimmable = is_trimmable,
         is_aot_compatible = is_aot_compatible,
@@ -487,6 +490,8 @@ def netcoreapp_impl_assembly(
         # Match MSBuild's langversion:preview
         langversion = "preview",
         nowarn = nowarn,
+        # MSBuild sets GenerateDocumentationFile=true for IsSourceProject
+        generate_documentation_file = generate_documentation_file,
         **kwargs
     )
 
@@ -515,6 +520,7 @@ def live_csharp_library(
     deps = [],
     nullable = "enable",
     compiler_options = [],
+    treat_warnings_as_errors = False,
     **kwargs
 ):
     deps = deps + LIVE_REFPACK_DEPS
@@ -533,5 +539,6 @@ def live_csharp_library(
         compiler_options = compiler_options,
         disable_implicit_framework_refs = True,
         target_frameworks = [ NETCOREAPP_CURRENT ],
+        treat_warnings_as_errors = treat_warnings_as_errors,
         **kwargs
     )

@@ -39,6 +39,10 @@ _MINOR_VERSION = PRODUCT_VERSION.split(".")[1]
 _ASSEMBLY_VERSION = _MAJOR_VERSION + "." + _MINOR_VERSION + ".0.0"
 _FILE_VERSION = "42.42.42.42424"
 _INFORMATIONAL_VERSION = PRODUCT_VERSION + "-dev"
+CI_INFORMATIONAL_VERSION = select({
+    "//:ci_build": PRODUCT_VERSION + "-ci",
+    "//conditions:default": PRODUCT_VERSION + "-dev",
+})
 
 def _gen_resx_source_impl(ctx):
     resource_name = ctx.attr.resource_name if ctx.attr.resource_name else ("FxResources.%s.SR" % ctx.attr.assembly_name)
@@ -347,6 +351,10 @@ def csharp_library(
     nowarn = [],
     suffix_srcs = [],
     use_shared_compilation = True,
+    compiler_options = [],
+    treat_warnings_as_errors = True,
+    warnings_not_as_errors = [],
+    generate_documentation_file = False,
     **kwargs
 ):
     if out == None:
@@ -393,6 +401,22 @@ def csharp_library(
     # where AssemblyInfo.cs and Forwards.cs come after generated SR sources.
     srcs = srcs + suffix_srcs
 
+    # rules_dotnet explicitly passes /nullable:disable for assemblies with
+    # nullable="disable", but MSBuild omits /nullable entirely (disable is
+    # the default).  The explicit flag triggers CS8632 on nullable
+    # annotations (e.g. string?) in shared source files like
+    # Common/src/System/SR.cs.  Suppress it for those assemblies to match.
+    _nullable_nowarn = ["CS8632"] if kwargs.get("nullable") == "disable" else []
+
+    # In CI mode, construct a pathmap entry that maps the Bazel PDB output
+    # directory to MSBuild's CI-normalized equivalent.  The pathmap key is
+    # the stable portion of the output path (after bazel-out/{hash}/bin/).
+    # At execution time the rules_dotnet worker derives the unstable bin
+    # prefix from the /pdb: argument and prepends it.
+    _pkg = native.package_name()
+    _pathmap_key = "%s/%s/%s" % (_pkg, name, NETCOREAPP_CURRENT)
+    _pathmap_value = "/_/artifacts/obj/%s/Release/%s" % (out, NETCOREAPP_CURRENT)
+
     _base_csharp_library(
         name = name,
         srcs = srcs,
@@ -401,7 +425,7 @@ def csharp_library(
         resource_logical_names = resource_logical_names,
         use_shared_compilation = use_shared_compilation,
         shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
-        nowarn = nowarn + [
+        nowarn = nowarn + _nullable_nowarn + [
             "CS1701",
             # Match Directory.Build.props global NoWarn
             "CS8500",
@@ -414,6 +438,24 @@ def csharp_library(
             "IDE0060",
             "IDE0100",
         ],
+        # Match MSBuild's TreatWarningsAsErrors=true from Directory.Build.props.
+        treat_warnings_as_errors = treat_warnings_as_errors,
+        warnings_not_as_errors = warnings_not_as_errors,
+        # MSBuild only generates XML doc files for library source assemblies
+        # (GenerateDocumentationFile=true in src/libraries/Directory.Build.props
+        # when IsSourceProject=true).  Default to False to match MSBuild.
+        generate_documentation_file = generate_documentation_file,
+        # rules_dotnet restricts warning_level to [0..5] so we use
+        # compiler_options to emit /warn:9999, matching MSBuild's
+        # WarningLevel=9999.  Placed after rules_dotnet's own /warn:3 so
+        # the last-wins semantics of csc give us the correct level.
+        compiler_options = compiler_options + ["/warn:9999"],
+        # In CI mode, normalize PDB paths to match MSBuild's CI layout
+        # (ContinuousIntegrationBuild=true → DeterministicSourcePaths → PathMap).
+        pathmap = select({
+            "//:ci_build": {_pathmap_key: _pathmap_value},
+            "//conditions:default": {},
+        }),
         **kwargs
     )
 

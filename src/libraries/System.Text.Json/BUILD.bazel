@@ -112,6 +112,9 @@ csharp_library(
     nowarn = [
         "CS0436",
         "CS1574",
+        # AD0001: RegexGenerator analyzer crashes due to missing embedded
+        # resources in the Bazel-built generator.
+        "AD0001",
     ],
     visibility = ["//visibility:public"],
 )
@@ -137,6 +140,9 @@ netcoreapp_impl_assembly(
     name = "impl_System.Text.Json",
     multitarget = True,
     skip_cs1591 = True,
+    # AD0001: RegexGenerator analyzer crashes due to missing embedded
+    # resources in the Bazel-built generator.
+    nowarn = ["AD0001"],
     analyzers = [
         "//src/libraries/System.Text.RegularExpressions:RegexGenerator",
     ],
