@@ -29,6 +29,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Security.Permissions",
+    skip_locals_init = False,
     multitarget = True,
     partial_facade = True,
     srcs = glob(["src/**/*.cs"]) + [

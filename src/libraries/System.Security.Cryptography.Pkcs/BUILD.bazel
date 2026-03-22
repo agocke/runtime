@@ -23,6 +23,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Security.Cryptography.Pkcs",
+    skip_locals_init = False,
     srcs = [
         # Asn1Reader shared projitems
         "//src/libraries/Common:src/System/Security/Cryptography/Asn1Reader/AsnValueReader.cs",

@@ -15,6 +15,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Data.Odbc",
+    skip_locals_init = False,
     pnse = True,
     pnse_message = "SR.Odbc_PlatformNotSupported",
     pnse_ref_srcs = ["ref/System.Data.Odbc.cs"],

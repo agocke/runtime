@@ -13,6 +13,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.IO.Ports",
+    skip_locals_init = False,
     multitarget = True,
     os_targeted = "unix",
     nullable = "disable",

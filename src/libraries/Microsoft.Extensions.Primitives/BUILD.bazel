@@ -17,6 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Extensions.Primitives",
+    skip_locals_init = False,
     srcs = [
         "//src/libraries/System.Private.CoreLib:src/System/Numerics/Hashing/HashHelpers.cs",
         "//src/libraries/Common:src/Extensions/ChangeCallbackRegistrar.cs",

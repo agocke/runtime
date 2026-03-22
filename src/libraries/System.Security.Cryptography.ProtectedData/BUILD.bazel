@@ -16,6 +16,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Security.Cryptography.ProtectedData",
+    skip_locals_init = False,
     multitarget = True,
     pnse = True,
     pnse_message = "SR.PlatformNotSupported_CryptographyProtectedData",

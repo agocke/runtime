@@ -28,6 +28,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.DirectoryServices",
+    skip_locals_init = False,
     pnse = True,
     pnse_message = "SR.DirectoryServices_PlatformNotSupported",
     pnse_ref_srcs = [

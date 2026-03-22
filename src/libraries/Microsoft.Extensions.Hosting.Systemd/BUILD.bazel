@@ -20,6 +20,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Extensions.Hosting.Systemd",
+    skip_locals_init = False,
     multitarget = True,
     allow_unsafe_blocks = True,
     exclude_sr = True,

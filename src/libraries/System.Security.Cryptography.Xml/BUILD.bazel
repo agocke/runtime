@@ -19,6 +19,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Security.Cryptography.Xml",
+    skip_locals_init = False,
     srcs = [
         # Common linked files
         "//src/libraries/Common:src/System/HexConverter.cs",

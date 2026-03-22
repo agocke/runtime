@@ -19,6 +19,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.ComponentModel.Composition.Registration",
+    skip_locals_init = False,
     multitarget = True,
     srcs = [
         "src/System/ComponentModel/Composition/Registration/ExportBuilder.cs",

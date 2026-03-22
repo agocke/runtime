@@ -21,6 +21,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Extensions.Logging.Configuration",
+    skip_locals_init = False,
     multitarget = True,
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/Extensions/ProviderAliasUtilities/ProviderAliasUtilities.cs",

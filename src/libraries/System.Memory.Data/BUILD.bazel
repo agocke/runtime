@@ -17,6 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Memory.Data",
+    skip_locals_init = False,
     multitarget = True,
     srcs = [
         "src/System/BinaryData.cs",

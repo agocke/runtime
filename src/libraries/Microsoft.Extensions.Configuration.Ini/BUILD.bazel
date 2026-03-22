@@ -20,6 +20,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Extensions.Configuration.Ini",
+    skip_locals_init = False,
     multitarget = True,
     srcs = glob(["src/**/*.cs"]),
     deps = [

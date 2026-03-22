@@ -19,6 +19,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Runtime.Serialization.Schema",
+    skip_locals_init = False,
     multitarget = True,
     srcs = glob(["src/**/*.cs"]),
     deps = [

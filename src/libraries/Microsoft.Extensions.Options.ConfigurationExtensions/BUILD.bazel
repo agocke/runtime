@@ -21,6 +21,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Extensions.Options.ConfigurationExtensions",
+    skip_locals_init = False,
     multitarget = True,
     exclude_sr = True,
     srcs = glob(["src/**/*.cs"]),

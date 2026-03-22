@@ -13,6 +13,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Win32.SystemEvents",
+    skip_locals_init = False,
     pnse = True,
     pnse_message = "SR.PlatformNotSupported_SystemEvents",
     pnse_ref_srcs = ["ref/Microsoft.Win32.SystemEvents.cs"],

@@ -17,6 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.DirectoryServices.Protocols",
+    skip_locals_init = False,
     pnse = True,
     pnse_message = "SR.DirectoryServicesProtocols_PlatformNotSupported",
     pnse_ref_srcs = ["ref/System.DirectoryServices.Protocols.cs"],

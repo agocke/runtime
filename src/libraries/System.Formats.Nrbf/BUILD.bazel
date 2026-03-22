@@ -22,6 +22,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Formats.Nrbf",
+    skip_locals_init = False,
     srcs = [
         "src/System/Formats/Nrbf/AllowedRecordType.cs",
         "src/System/Formats/Nrbf/ArrayInfo.cs",

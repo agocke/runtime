@@ -20,6 +20,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.CodeDom",
+    skip_locals_init = False,
     srcs = [
         "src/Microsoft/CSharp/CSharpCodeGenerator.cs",
         "src/Microsoft/CSharp/CSharpCodeGenerator.PlatformNotSupported.cs",

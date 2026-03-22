@@ -5,6 +5,7 @@ load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
 # framework.
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Bcl.Memory",
+    skip_locals_init = False,
     multitarget = True,
     srcs = [
         "src/Microsoft.Bcl.Memory.Forwards.cs",

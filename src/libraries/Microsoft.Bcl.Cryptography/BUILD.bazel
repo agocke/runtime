@@ -5,6 +5,7 @@ load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
 # PQC / X509Loader code is only compiled for older TFMs.
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Bcl.Cryptography",
+    skip_locals_init = False,
     multitarget = True,
     srcs = [
         "src/Microsoft.Bcl.Cryptography.Forwards.cs",
