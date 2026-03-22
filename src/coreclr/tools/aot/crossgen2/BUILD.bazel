@@ -1,11 +1,11 @@
-load("//:defs.bzl", "csharp_binary")
+load("//:defs.bzl", "FILE_VERSION", "csharp_binary")
 load("//:defs.bzl", "gen_resx_source", "resgen")
 load("@rules_dotnet//dotnet:defs.bzl", "publish_binary")
 
 genrule(
     name = "AssemblyInfo",
     outs = ["AssemblyInfo.g.cs"],
-    cmd = "echo '[assembly: System.Reflection.AssemblyFileVersion(\"10.0.0.0\")]' > $@",
+    cmd = "echo '[assembly: System.Reflection.AssemblyFileVersion(\"" + FILE_VERSION + "\")]' > $@",
 )
 
 gen_resx_source(

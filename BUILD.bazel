@@ -1,7 +1,7 @@
 load("@rules_dotnet//dotnet:defs.bzl", "import_library")
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
-load("//eng/bazel:runtime_archive.bzl", "runtime_staging")
+load("//eng/bazel:runtime_archive.bzl", "runtime_archive", "runtime_staging")
 load("//eng/bazel:runtime_layout.bzl", "runtime_layout")
 load("//eng/bazel:version.bzl", "PRODUCT_VERSION", "PRODUCT_VERSION_FULL")
 load(
@@ -210,9 +210,17 @@ filegroup(
 #   ./compare-runtime-packs.sh \
 #     artifacts/packages/Debug/Shipping/dotnet-runtime-*-linux-x64.tar.gz \
 #     bazel-bin/dotnet-runtime-*-linux-x64.tar.gz
+# Version string for the runtime archive, respecting CI mode.
+# In CI mode (--config=ci), uses "10.0.4-ci" to match MSBuild's CI output.
+# Otherwise uses the default label from version.bzl (e.g. "10.0.4-dev").
+RUNTIME_VERSION = select({
+    "//:ci_build": PRODUCT_VERSION + "-ci",
+    "//conditions:default": PRODUCT_VERSION_FULL,
+})
+
 runtime_staging(
     name = "runtime_staging",
-    version = PRODUCT_VERSION_FULL,
+    version = RUNTIME_VERSION,
     root_files = [
         "//src/native/corehost:dotnet",
     ],
@@ -294,69 +302,37 @@ genrule(
     outs = ["Microsoft.NETCore.App.deps.json"],
     tools = ["//src/tools/bazel/GenerateDepsFile"],
     cmd = "$(location //src/tools/bazel/GenerateDepsFile) " +
-        "$(location :runtime_staging)/shared/Microsoft.NETCore.App/" + PRODUCT_VERSION_FULL + " " +
+        "$(location :runtime_staging)/shared/Microsoft.NETCore.App/" + RUNTIME_VERSION + " " +
         select({
             "@platforms//os:macos": MACOS_RID,
             "//conditions:default": LINUX_RID,
         }) + " " +
-        PRODUCT_VERSION_FULL + " " +
+        RUNTIME_VERSION + " " +
         "$$PWD/eng/bazel/data/RuntimeIdentifierGraph.json " +
         "$@",
 )
 
 # ── Build the runtime archive with correct permissions ────────────────
-# Bazel tree artifacts enforce 555 permissions. This genrule copies the
+# Bazel tree artifacts enforce 555 permissions. This rule copies the
 # staging directory, sets correct permissions (644 for data/DLLs, 755 for
 # executables and shared libraries), injects the generated deps.json, and
 # creates a tar.gz archive matching the MSBuild packs output.
-genrule(
+runtime_archive(
     name = "runtime_archive_linux",
-    srcs = [
-        ":runtime_staging",
-        ":generate_deps_json",
-    ],
-    outs = ["dotnet-runtime-" + PRODUCT_VERSION_FULL + "-" + LINUX_RID + ".tar.gz"],
-    cmd = """
-        set -euo pipefail
-        STAGING="$(location :runtime_staging)"
-        DEPS="$(location :generate_deps_json)"
-        OUT="$@"
-        WORK=$$(mktemp -d)
-        trap "rm -rf $$WORK" EXIT
-        cp -rL "$$STAGING" "$$WORK/archive"
-        cp "$$DEPS" "$$WORK/archive/shared/Microsoft.NETCore.App/""" + PRODUCT_VERSION_FULL + """/Microsoft.NETCore.App.deps.json"
-        # Set permissions: 755 for executables and shared framework native libs, 644 for everything else.
-        # Note: host/fxr/*.so is 644 (loaded by dotnet host, not executed directly).
-        find "$$WORK/archive" -type f -exec chmod 644 {} +
-        find "$$WORK/archive/shared" -type f \\( -name "*.so" -o -name "createdump" \\) -exec chmod 755 {} +
-        chmod 755 "$$WORK/archive/dotnet"
-        tar czf "$$OUT" -C "$$WORK/archive" .
-    """,
+    version = RUNTIME_VERSION,
+    rid = LINUX_RID,
+    staging = ":runtime_staging",
+    deps_json = ":generate_deps_json",
+    native_lib_pattern = '-name "*.so"',
 )
 
-genrule(
+runtime_archive(
     name = "runtime_archive_macos",
-    srcs = [
-        ":runtime_staging",
-        ":generate_deps_json",
-    ],
-    outs = ["dotnet-runtime-" + PRODUCT_VERSION_FULL + "-" + MACOS_RID + ".tar.gz"],
-    cmd = """
-        set -euo pipefail
-        STAGING="$(location :runtime_staging)"
-        DEPS="$(location :generate_deps_json)"
-        OUT="$@"
-        WORK=$$(mktemp -d)
-        trap "rm -rf $$WORK" EXIT
-        cp -rL "$$STAGING" "$$WORK/archive"
-        cp "$$DEPS" "$$WORK/archive/shared/Microsoft.NETCore.App/""" + PRODUCT_VERSION_FULL + """/Microsoft.NETCore.App.deps.json"
-        # Set permissions: 755 for executables and shared framework native libs, 644 for everything else.
-        # Note: host/fxr/*.dylib is 644 (loaded by dotnet host, not executed directly).
-        find "$$WORK/archive" -type f -exec chmod 644 {} +
-        find "$$WORK/archive/shared" -type f \\( -name "*.dylib" -o -name "createdump" \\) -exec chmod 755 {} +
-        chmod 755 "$$WORK/archive/dotnet"
-        tar czf "$$OUT" -C "$$WORK/archive" .
-    """,
+    version = RUNTIME_VERSION,
+    rid = MACOS_RID,
+    staging = ":runtime_staging",
+    deps_json = ":generate_deps_json",
+    native_lib_pattern = '-name "*.dylib"',
 )
 
 alias(

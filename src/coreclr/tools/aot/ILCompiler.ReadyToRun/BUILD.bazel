@@ -1,4 +1,4 @@
-load("//:defs.bzl", "csharp_library")
+load("//:defs.bzl", "FILE_VERSION", "csharp_library")
 
 exports_files([
     "Compiler/FileLayoutOptimizer.cs",
@@ -14,7 +14,7 @@ exports_files([
 genrule(
     name = "AssemblyInfo",
     outs = ["AssemblyInfo.g.cs"],
-    cmd = "echo '[assembly: System.Reflection.AssemblyFileVersion(\"10.0.0.0\")]' > $@",
+    cmd = "echo '[assembly: System.Reflection.AssemblyFileVersion(\"" + FILE_VERSION + "\")]' > $@",
 )
 
 csharp_library(
