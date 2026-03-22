@@ -52,9 +52,6 @@ netcoreapp_impl_assembly(
         # MSBuild's EditorConfig/GlobalConfig configures nullable severity
         # differently; the MSBuild build is clean with the same TreatWarningsAsErrors.
         "CS8604",
-        # AD0001: RegexGenerator analyzer crashes due to missing embedded
-        # resources in the Bazel-built generator.
-        "AD0001",
     ],
     deps = [
         "//src/libraries:ref_System.Private.CoreLib",

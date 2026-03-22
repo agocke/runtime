@@ -1,16 +1,9 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
-load("//:defs.bzl", "csharp_library", "gen_resx_source")
+load("//:defs.bzl", "csharp_library")
 
 exports_files([
     "ref/System.Text.RegularExpressions.cs",
 ] + glob(["src/**/*.cs"]) + glob(["src/**/*.resx"]))
-
-gen_resx_source(
-    name = "gen_resx_RegexGenerator",
-    out = "RegexGenerator/SR.g.cs",
-    assembly_name = "System.Text.RegularExpressions.Generator",
-    resx_file = "gen/Resources/Strings.resx",
-)
 
 csharp_library(
     name = "RegexGenerator",
@@ -23,7 +16,6 @@ csharp_library(
         "gen/UpgradeToGeneratedRegexAnalyzer.cs",
         "gen/UpgradeToGeneratedRegexCodeFixer.cs",
         "gen/Stubs.cs",
-        ":gen_resx_RegexGenerator",
 
         # Common Roslyn helpers
         "//src/libraries/Common:src/Roslyn/DiagnosticDescriptorHelper.cs",
@@ -56,6 +48,7 @@ csharp_library(
         "src/System/Text/RegularExpressions/RegexTreeAnalyzer.cs",
         "src/System/Collections/HashtableExtensions.cs",
     ],
+    resx_file = "gen/Resources/Strings.resx",
     target_frameworks = ["netstandard2.0"],
     langversion = "preview",
     cls_compliant = False,
@@ -76,9 +69,6 @@ csharp_library(
         "CS0436",
         "CS0649",
         "CA1872",
-        # AD0001: RegexGenerator analyzer crashes due to missing embedded
-        # resources in the Bazel-built generator.
-        "AD0001",
     ],
     visibility = ["//visibility:public"],
 )

@@ -4,9 +4,6 @@ exports_files(["src/ILLink/ILLink.Descriptors.LibraryBuild.xml"])
 
 netcoreapp_impl_assembly(
     name = "impl_System.Private.Xml",
-    # AD0001: RegexGenerator analyzer crashes due to missing embedded
-    # resources in the Bazel-built generator.
-    nowarn = ["AD0001"],
     srcs = [
         # Common files (from $(CommonPath))
         "//src/libraries/Common:src/System/Text/StringBuilderCache.cs",

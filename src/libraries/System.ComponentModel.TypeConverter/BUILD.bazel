@@ -30,10 +30,6 @@ netcoreapp_impl_assembly(
     analyzers = [
         "//src/libraries/System.Text.RegularExpressions:RegexGenerator",
     ],
-    # AD0001: RegexGenerator analyzer crashes due to missing embedded resources
-    # in the Bazel-built generator.  This is a Bazel resource-embedding bug,
-    # not a parameter mismatch — MSBuild's generator works fine.
-    nowarn = ["AD0001"],
     srcs = glob(["src/System/**/*.cs"]) + [
         "src/MS/Internal/Xml/Linq/ComponentModel/XComponentModel.cs",
         "//src/libraries/Common:src/System/Drawing/ColorConverterCommon.cs",
