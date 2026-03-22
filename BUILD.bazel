@@ -5,6 +5,10 @@ load("//eng/bazel:runtime_archive.bzl", "runtime_staging")
 load("//eng/bazel:runtime_layout.bzl", "runtime_layout")
 load("//eng/bazel:version.bzl", "PRODUCT_VERSION", "PRODUCT_VERSION_FULL")
 load(
+    "//:defs.bzl",
+    "MIBC_FILES",
+)
+load(
     "//:framework_r2r.bzl",
     "FRAMEWORK_ASSEMBLY_LABELS",
     "R2R_ASSEMBLIES",
@@ -178,6 +182,7 @@ framework_crossgen_targets(
         "@platforms//cpu:arm64": "//src/coreclr/tools/aot/jitinterface:libjitinterface_arm64_dylib",
         "//conditions:default": "//src/coreclr/tools/aot/jitinterface:libjitinterface_x64.so",
     }),
+    mibc = MIBC_FILES,
     target_arch = select({
         "@platforms//cpu:arm64": "arm64",
         "//conditions:default": "x64",

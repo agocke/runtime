@@ -27,9 +27,16 @@ def _crossgen_corelib_impl(ctx):
         args.append("--verify-type-and-field-layout")
         args.append("--enable-cached-interface-dispatch-support")
 
+    # MIBC PGO data (multiple .mibc files from the optimization NuGet package).
+    mibc_files = ctx.files.mibc
+    for m in mibc_files:
+        args.append("-m:%s" % m.path)
+    if mibc_files:
+        args.append("--embed-pgo-data")
+
     args.append(il_assembly.path)
 
-    inputs = [il_assembly, clrjit_file, jitinterface_file]
+    inputs = [il_assembly, clrjit_file, jitinterface_file] + mibc_files
 
     # Native crossgen2 path: use the NativeAOT-compiled binary directly
     if ctx.attr.native_crossgen2:
@@ -120,6 +127,10 @@ crossgen_corelib = rule(
             mandatory = True,
             allow_single_file = True,
             doc = "The jitinterface shared library.",
+        ),
+        "mibc": attr.label_list(
+            allow_files = [".mibc"],
+            doc = "MIBC PGO data files passed as -m: (enables --embed-pgo-data).",
         ),
         "native_crossgen2": attr.label(
             mandatory = False,

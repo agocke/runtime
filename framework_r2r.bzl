@@ -328,7 +328,7 @@ def framework_illink_targets():
             disable_opt_ipconstprop = (name == "System.Linq.Expressions"),
         )
 
-def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os):
+def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os, mibc = []):
     """Generate crossgen_assembly targets for R2R assemblies.
 
     Call after framework_illink_targets() so illink outputs exist.
@@ -338,6 +338,7 @@ def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os):
         jitinterface: Label for the jitinterface shared library.
         target_arch: Target architecture (x64, arm64).
         target_os: Target OS (linux, osx, windows).
+        mibc: MIBC PGO data files passed as -m: to crossgen2.
     """
     # All trimmed framework assemblies plus CoreLib as references.
     # CoreLib isn't in the ILLink pipeline (it has its own crossgen path)
@@ -351,6 +352,7 @@ def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os):
             assembly = ":illink_" + name,
             out = "r2r/" + name + ".dll",
             refs = all_refs,
+            mibc = mibc,
             clrjit = clrjit,
             jitinterface = jitinterface,
             target_arch = target_arch,

@@ -21,6 +21,8 @@ UNICODE_DATA_REPO = "nuget.system.private.runtime.unicodedata.v10.0.0-beta.25418
 ILLINK_TASKS_NET8_REPO = "nuget.microsoft.net.illink.tasks.v8.0.22"
 ILLINK_TASKS_NET9_REPO = "nuget.microsoft.net.illink.tasks.v9.0.11"
 ILLINK_TASKS_NET10_REPO = "nuget.microsoft.net.illink.tasks.v10.0.0"
+MIBC_LINUX_X64_REPO = "nuget.optimization.linux-x64.mibc.runtime.v1.0.0-prerelease.26080.1"
+MIBC_LINUX_ARM64_REPO = "nuget.optimization.linux-arm64.mibc.runtime.v1.0.0-prerelease.26080.1"
 
 # ─── Pre-built labels for commonly used assets ───────────────────────────────
 
@@ -29,6 +31,25 @@ OPEN_SNK = "@{}//:tools/snk/Open.snk".format(ARCADE_SDK_REPO)
 ASPNETCORE_SNK = "@{}//:tools/snk/AspNetCore.snk".format(ARCADE_SDK_REPO)
 ECMA_SNK = "@{}//:tools/snk/ECMA.snk".format(ARCADE_SDK_REPO)
 SILVERLIGHT_SNK = "@{}//:tools/snk/SilverlightPlatformPublicKey.snk".format(ARCADE_SDK_REPO)
+
+# MIBC PGO optimization data files from NuGet (matched to target architecture).
+# MSBuild equivalent: eng/restore/optimizationData.targets selects the right
+# optimization.<OS>-<ARCH>.mibc.runtime package, then crossgen-corelib.proj
+# merges all .mibc files into StandardOptimizationData.mibc via dotnet-pgo.
+# Crossgen2 accepts multiple -m: flags natively, so we skip the merge step.
+_MIBC_FILE_NAMES = [
+    "data/DotNet_Adhoc.mibc",
+    "data/DotNet_FSharp.mibc",
+    "data/DotNet_FirstTimeXP.mibc",
+    "data/DotNet_HelloWorld.mibc",
+    "data/DotNet_OrchardCore.mibc",
+    "data/DotNet_TechEmpower.mibc",
+]
+
+MIBC_FILES = select({
+    "@platforms//cpu:arm64": ["@{}//:{}".format(MIBC_LINUX_ARM64_REPO, f) for f in _MIBC_FILE_NAMES],
+    "//conditions:default": ["@{}//:{}".format(MIBC_LINUX_X64_REPO, f) for f in _MIBC_FILE_NAMES],
+})
 
 # Label for the Roslyn compiler server persistent worker binary.
 _SHARED_COMPILATION_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
