@@ -58,3 +58,5 @@ nuget System.IO.Pipelines 8.0.0
 nuget System.Reflection.Metadata 8.0.1
 nuget System.Security.Cryptography.ProtectedData 8.0.0
 nuget System.Threading.Channels 8.0.0
+nuget optimization.linux-x64.mibc.runtime 1.0.0-prerelease.26080.1
+nuget optimization.linux-arm64.mibc.runtime 1.0.0-prerelease.26080.1
