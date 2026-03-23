@@ -249,7 +249,7 @@ gen_resx_source = rule(
     }
 )
 
-def netcoreapp_impl_assembly(
+def impl_assembly(
     name,
     srcs = [],
     deps = [],
@@ -287,6 +287,7 @@ def netcoreapp_impl_assembly(
     supported_os_platforms_short = [],
     unsupported_os_platforms = [],
     generate_documentation_file = True,
+    skip_locals_init = False,
     **kwargs
 ):
     base_name = name[len("impl_"):]
@@ -362,10 +363,12 @@ def netcoreapp_impl_assembly(
             "//src/libraries/Common:src/System/SR.cs",
         ]
 
-    # Add SkipLocalsInit.cs for non-shim assemblies (matches MSBuild's inclusion
-    # via Common items). Pure shim assemblies (type forwarders with both
-    # exclude_sr=True and skip_cs1591=True) don't include it.
-    if not (exclude_sr and skip_cs1591):
+    # Add SkipLocalsInit.cs for IsNETCoreAppSrc assemblies (matches MSBuild's
+    # Directory.Build.targets condition: IsNETCoreAppSrc=true).  The
+    # netcoreapp_impl_assembly wrapper passes skip_locals_init=True; OOB
+    # assemblies use impl_assembly directly (default False).  Shim/facade
+    # assemblies (both exclude_sr and skip_cs1591) never get it regardless.
+    if skip_locals_init and not (exclude_sr and skip_cs1591):
         srcs = srcs + [
             "//src/libraries/Common:src/SkipLocalsInit.cs",
         ]
@@ -514,6 +517,15 @@ ref_impl_pair = rule(
         ),
     }
 )
+
+def netcoreapp_impl_assembly(skip_locals_init = True, **kwargs):
+    """Wrapper for impl_assembly for assemblies in the shared framework (IsNETCoreAppSrc).
+
+    Defaults skip_locals_init to True (includes SkipLocalsInit.cs), matching
+    MSBuild's Directory.Build.targets condition for IsNETCoreAppSrc assemblies.
+    OOB assemblies should use impl_assembly() directly instead.
+    """
+    impl_assembly(skip_locals_init = skip_locals_init, **kwargs)
 
 def live_csharp_library(
     name,

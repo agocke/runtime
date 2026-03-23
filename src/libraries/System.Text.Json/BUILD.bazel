@@ -1,5 +1,5 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
-load("//:defs.bzl", "csharp_library", "gen_resx_source")
+load("//:defs.bzl", "csharp_library")
 
 exports_files([
     "ref/System.Text.Json.cs",
@@ -7,13 +7,6 @@ exports_files([
     "ref/System.Text.Json.Typeforwards.netcoreapp.cs",
     "src/ILLink/ILLink.Descriptors.LibraryBuild.xml",
 ])
-
-gen_resx_source(
-    name = "gen_resx_JsonSourceGenerator",
-    out = "JsonSourceGenerator/SR.g.cs",
-    assembly_name = "System.Text.Json.SourceGeneration",
-    resx_file = "gen/Resources/Strings.resx",
-)
 
 csharp_library(
     name = "JsonSourceGenerator",
@@ -39,7 +32,6 @@ csharp_library(
         "gen/Model/PropertyInitializerGenerationSpec.cs",
         "gen/Model/SourceGenerationOptionsSpec.cs",
         "gen/Model/TypeGenerationSpec.cs",
-        ":gen_resx_JsonSourceGenerator",
 
         # Common Roslyn helpers
         "//src/libraries/Common:src/Roslyn/DiagnosticDescriptorHelper.cs",
@@ -93,6 +85,7 @@ csharp_library(
         "Common/JsonUnmappedMemberHandling.cs",
         "Common/ThrowHelper.cs",
     ],
+    resx_file = "gen/Resources/Strings.resx",
     target_frameworks = ["netstandard2.0"],
     langversion = "preview",
     defines = ["BUILDING_SOURCE_GENERATOR", "ROSLYN4_0_OR_GREATER", "ROSLYN4_4_OR_GREATER"],
@@ -112,9 +105,6 @@ csharp_library(
     nowarn = [
         "CS0436",
         "CS1574",
-        # AD0001: RegexGenerator analyzer crashes due to missing embedded
-        # resources in the Bazel-built generator.
-        "AD0001",
     ],
     visibility = ["//visibility:public"],
 )
@@ -140,9 +130,6 @@ netcoreapp_impl_assembly(
     name = "impl_System.Text.Json",
     multitarget = True,
     skip_cs1591 = True,
-    # AD0001: RegexGenerator analyzer crashes due to missing embedded
-    # resources in the Bazel-built generator.
-    nowarn = ["AD0001"],
     analyzers = [
         "//src/libraries/System.Text.RegularExpressions:RegexGenerator",
     ],

@@ -21,6 +21,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Obsoletions.cs",
     ],
     resx_file = "src/Resources/Strings.resx",
+    include_default_values = True,
     deps = [
         "//src/libraries:ref_System.ComponentModel.Primitives",
         "//src/libraries:ref_System.Runtime",

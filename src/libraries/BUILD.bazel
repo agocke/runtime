@@ -660,6 +660,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "System.ComponentModel.Primitives/src/Resources/Strings.resx",
+    include_default_values = True,
 )
 
 # ── Ref assemblies for TestUtilities dependencies ────────────────────

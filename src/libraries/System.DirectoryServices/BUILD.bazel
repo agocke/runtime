@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/System.DirectoryServices.cs",
@@ -26,7 +26,7 @@ netcoreapp_ref_assembly(
     ],
 )
 
-netcoreapp_impl_assembly(
+impl_assembly(
     name = "impl_System.DirectoryServices",
     pnse = True,
     pnse_message = "SR.DirectoryServices_PlatformNotSupported",

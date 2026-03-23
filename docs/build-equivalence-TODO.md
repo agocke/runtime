@@ -39,7 +39,8 @@ Tracked by `compare-bazel.sh`. Run with `--skip-build` after a baseline build.
 - **SkipLocalsInit.cs** (20 assemblies): MSBuild includes `Common/src/SkipLocalsInit.cs`
   via Directory.Build.targets. Bazel targets don't include it.
   **Fix**: Add SkipLocalsInit.cs to Bazel srcs for each affected library, or add it
-  as a default common source in the `netcoreapp_impl_assembly` macro.
+  as a default common source in the `impl_assembly` macro (controlled by
+  `skip_locals_init`; `netcoreapp_impl_assembly` defaults it to True).
 
 - **Forwards.cs missing** (11 assemblies): MSBuild generates type-forwarder files via
   GenAPI. Bazel doesn't generate Forwards.cs for these assemblies.

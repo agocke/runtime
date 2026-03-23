@@ -20,13 +20,35 @@ load("@rules_dotnet//dotnet/private/macros:register_tfms.bzl", "get_tfm_value")
 load("//src/libraries:defs.bzl", "LIVE_REFPACK_DEPS", "CORE_ROOT_REFPACK_DEPS")
 load("//src/tests:defs.bzl", "COMMON_ATTRS", "build_binary", "create_launcher")
 
-# Match src/tests/Directory.Build.props NoWarn
+# Match src/tests/Directory.Build.props NoWarn (for JIT/coreclr tests under src/tests/)
 _TEST_NOWARN = [
     "CS0078", "CS0162", "CS0164", "CS0168", "CS0169", "CS0219",
     "CS0251", "CS0252", "CS0414", "CS0429", "CS0618", "CS0642",
     "CS0649", "CS0652", "CS0659", "CS0675", "CS1691", "CS1717",
     "CS1718", "CS3001", "CS3002", "CS3003", "CS3005", "CS3008",
     "CS3016", "CS8981",
+]
+
+# NoWarn for library tests under src/libraries/. These inherit from:
+# - Directory.Build.props global: CS8500, CS8969, IDE0060, IDE0100
+# - Arcade SDK: CS1701, CS1702, CS1705, NU5105
+# - Directory.Build.props (IsTestProject): SYSLIB0011, SYSLIB0050, SYSLIB0051, IL2121
+_LIBRARY_TEST_NOWARN = [
+    # Directory.Build.props global NoWarn
+    "CS8500",
+    "CS8969",
+    "IDE0060",
+    "IDE0100",
+    # Arcade SDK global NoWarn
+    "CS1701",
+    "CS1702",
+    "CS1705",
+    "NU5105",
+    # Directory.Build.props IsTestProject NoWarn
+    "SYSLIB0011",
+    "SYSLIB0050",
+    "SYSLIB0051",
+    "IL2121",
 ]
 
 # Label for the Roslyn compiler server persistent worker binary.
@@ -582,7 +604,7 @@ def library_test(
         deps = deps,
         analyzers = analyzers,
         target_frameworks = [NETCOREAPP_CURRENT],
-        nowarn = nowarn + [ "CS1701" ] + _TEST_NOWARN,
+        nowarn = nowarn + _LIBRARY_TEST_NOWARN,
         size = size,
         nullable = nullable,
         use_shared_compilation = use_shared_compilation,

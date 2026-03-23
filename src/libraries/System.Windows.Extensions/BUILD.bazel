@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 # Minimal ref assembly for System.Windows.Extensions.
 # Only the API contracts are built (no Forwards.cs) to avoid pulling in
@@ -18,7 +18,7 @@ netcoreapp_ref_assembly(
     ],
 )
 
-netcoreapp_impl_assembly(
+impl_assembly(
     name = "impl_System.Windows.Extensions",
     pnse = True,
     pnse_message = "SR.PlatformNotSupported_System_Windows_Extensions",

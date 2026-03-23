@@ -113,11 +113,19 @@ for cfg in "${configs[@]}"; do
 
     # ----- Step 1: Build with CMake/MSBuild -----
     if [[ "$skip_build" != "true" ]]; then
-        log "Building with CMake/MSBuild (./build.sh --ci clr+libs+libs.tests -c $cfg -rc $cfg -lc $cfg -bl)..."
-        "$scriptroot/build.sh" --ci clr+libs+libs.tests -c "$cfg" -rc "$cfg" -lc "$cfg" -bl
+        log "Building with CMake/MSBuild (./build.sh clr+libs+libs.tests --ci -c $cfg -rc $cfg -lc $cfg -bl)..."
+        "$scriptroot/build.sh" clr+libs+libs.tests --ci -c "$cfg" -rc "$cfg" -lc "$cfg" -bl
     fi
 
-    # ----- Step 2: Extract Bazel aquery -----
+    # ----- Step 2: Build with Bazel + extract aquery -----
+    # Build first so that generated source files (AssemblyInfo.cs, System.SR.cs)
+    # are materialized on disk with the correct CI-mode content.  The aquery
+    # alone only performs analysis and does not write generated files.
+    if [[ "$skip_build" != "true" ]]; then
+        log "Building with Bazel (bazel build ${bazel_aquery_args[*]} //...)..."
+        bazel --nohome_rc build "${bazel_aquery_args[@]}" //...
+    fi
+
     log "Extracting Bazel aquery (native)..."
     bazel --nohome_rc aquery \
         "${bazel_aquery_args[@]}" \
