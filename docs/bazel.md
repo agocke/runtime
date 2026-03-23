@@ -704,7 +704,7 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 - [x] Microsoft.Extensions Layer 4 libraries (4): Hosting, Hosting.Systemd, Hosting.WindowsServices, DependencyModel
 - [x] System.ServiceProcess.ServiceController (PNSE stub for non-Windows)
 - [x] 35 type-forwarder shim assemblies (`src/libraries/shims/`)
-- [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
+- [x] `src/libraries/defs.bzl` — netcoreapp_ref_assembly, impl_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair macros
 - [x] Source generators: LibraryImportGenerator, Microsoft.Interop.SourceGeneration, RegexGenerator, JsonSourceGenerator
 - [ ] Remaining 26 NetCoreApp assemblies: 21 NetFxReference shims + 5 non-shim (see §9 for breakdown)
 
@@ -774,7 +774,7 @@ Mono-only platforms (Browser/WASM, WASI, Tizen) are also excluded.
 - [x] `.bazelrc` — Compiler flags matching CMake for linux-x64, per-component config system
 - [x] `BUILD.bazel` (root) — Root package, string_flag build settings, config_settings, runtime layout
 - [x] `defs.bzl` — Shared macros (csharp_library wrapper, gen_resx_source, resgen)
-- [x] `src/libraries/defs.bzl` — Library macros (netcoreapp_ref_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair)
+- [x] `src/libraries/defs.bzl` — Library macros (netcoreapp_ref_assembly, impl_assembly, netcoreapp_impl_assembly, gen_facades, ref_impl_pair)
 - [x] `src/tests/defs.bzl` — Test infrastructure (live_csharp_library, test runner)
 - [x] Compiler flag parity verified against CMake (`-g`, `-O3`, `-std=gnu11`/`-std=c++17`, all warning flags, all defines)
 - [x] Managed C# compiler flag parity: `/warnaserror+`, `/warn:9999` matching MSBuild's

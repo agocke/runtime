@@ -1,8 +1,7 @@
-load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
+load("//src/libraries:defs.bzl", "impl_assembly")
 
-netcoreapp_impl_assembly(
+impl_assembly(
     name = "impl_System.Composition.Hosting",
-    skip_locals_init = False,
     multitarget = True,
     srcs = glob(["src/**/*.cs"]),
     deps = [

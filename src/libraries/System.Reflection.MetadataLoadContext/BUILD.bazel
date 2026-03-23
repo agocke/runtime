@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
 
 netcoreapp_ref_assembly(
     name = "ref_System.Reflection.MetadataLoadContext",
@@ -10,9 +10,8 @@ netcoreapp_ref_assembly(
     ],
 )
 
-netcoreapp_impl_assembly(
+impl_assembly(
     name = "impl_System.Reflection.MetadataLoadContext",
-    skip_locals_init = False,
     srcs = glob(
         ["src/**/*.cs"],
         exclude = [
