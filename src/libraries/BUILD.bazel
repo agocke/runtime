@@ -303,56 +303,6 @@ ref_impl_pair(
 )
 
 netcoreapp_ref_assembly(
-    name = "ref_System.Private.CoreLib",
-    srcs = [
-        "Microsoft.Win32.Primitives/ref/Microsoft.Win32.Primitives.cs",
-        "//src/libraries/System.Diagnostics.Contracts:ref/System.Diagnostics.Contracts.cs",
-        "//src/libraries/System.Diagnostics.Tracing:ref/System.Diagnostics.Tracing.cs",
-        "//src/libraries/System.Diagnostics.Tracing:ref/System.Diagnostics.Tracing.Counters.cs",
-        "//src/libraries/System.Numerics.Vectors:ref/System.Numerics.Vectors.cs",
-        "//src/libraries/System.Reflection.Emit.ILGeneration:ref/System.Reflection.Emit.ILGeneration.cs",
-        "//src/libraries/System.Reflection.Emit.Lightweight:ref/System.Reflection.Emit.Lightweight.cs",
-        "//src/libraries/System.Reflection.Emit:ref/System.Reflection.Emit.cs",
-        "//src/libraries/System.Reflection.Primitives:ref/System.Reflection.Primitives.cs",
-        "//src/libraries/System.Runtime.Intrinsics:ref/System.Runtime.Intrinsics.cs",
-        "//src/libraries/System.Runtime.Loader:ref/System.Runtime.Loader.cs",
-        "System.Runtime/ref/System.Runtime.cs",
-        "//src/libraries/System.Text.Encoding.Extensions:ref/System.Text.Encoding.Extensions.cs",
-        "//src/libraries/System.Threading.Overlapped:ref/System.Threading.Overlapped.cs",
-        "//src/libraries/System.Threading.ThreadPool:ref/System.Threading.ThreadPool.cs",
-        "//src/libraries/System.Threading.Thread:ref/System.Threading.Thread.cs",
-
-        # contracts where types were partially moved to CoreLib, these are used both here and in the contract assemblies and are generated -->
-        "//src/libraries/System.Collections.Concurrent:ref/System.Collections.Concurrent.cs",
-        "//src/libraries/System.Collections:ref/System.Collections.cs",
-        "//src/libraries/System.Diagnostics.StackTrace:ref/System.Diagnostics.StackTrace.cs",
-        "//src/libraries/System.Memory:ref/System.Memory.cs",
-        "//src/libraries/System.Runtime.InteropServices:ref/System.Runtime.InteropServices.cs",
-        "//src/libraries/System.Threading:ref/System.Threading.cs",
-
-        # types only exposed through CoreLib, this is manually maintained -->
-        "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ExtraApis.cs",
-
-        # types not exposed in contracts but forwarded from the mscorlib shim, this is manually maintained -->
-        "//src/libraries/System.Private.CoreLib:ref/System.Private.CoreLib.ManualShimTypeForwards.cs",
-    ],
-    allow_unsafe_blocks = True,
-    defines = ["BUILDING_CORELIB_REFERENCE"],
-    keyfile = SILVERLIGHT_SNK,
-    compiler_options = [
-        "/runtimemetadataversion:v4.0.30319",
-        "/checksumalgorithm:SHA256",
-        "/publicsign+",
-    ],
-    nowarn = nowarn + ref_assembly_nowarns + [
-        # disable warnings about obsolete APIs,
-        # Remove warning disable when nullable attributes are respected,
-        # Type has no accessible constructors which use only CLS-compliant types
-        "CS0809", "CS0618", "CS8614", "CS3015"
-    ],
-)
-
-netcoreapp_ref_assembly(
     name = "ref_System.Runtime",
     srcs = [
         "System.Runtime/ref/System.Runtime.cs",
