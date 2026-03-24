@@ -257,10 +257,11 @@ def _gen_assembly_info_impl(ctx):
     if ctx.attr.include_dll_safe_search_path:
         lines.append("[assembly: System.Runtime.InteropServices.DefaultDllImportSearchPathsAttribute(System.Runtime.InteropServices.DllImportSearchPath.AssemblyDirectory | System.Runtime.InteropServices.DllImportSearchPath.System32)]")
 
+    lines.append('[assembly: System.Reflection.AssemblyCompanyAttribute("Microsoft Corporation")]')
+
     if ctx.attr.assembly_configuration:
         lines.append('[assembly: System.Reflection.AssemblyConfigurationAttribute("%s")]' % ctx.attr.assembly_configuration)
 
-    lines.append('[assembly: System.Reflection.AssemblyCompanyAttribute("Microsoft Corporation")]')
     lines.append('[assembly: System.Reflection.AssemblyCopyrightAttribute("© Microsoft Corporation. All rights reserved.")]')
     desc = ctx.attr.assembly_description if ctx.attr.assembly_description else assembly_name
     # MSBuild's WriteCodeFragment uses CSharpCodeGenerator.QuoteSnippetString which

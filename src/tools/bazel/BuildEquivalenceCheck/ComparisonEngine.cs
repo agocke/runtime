@@ -535,6 +535,9 @@ public static class ComparisonEngine
             var msbuildContent = File.ReadAllText(msbuildDisk).ReplaceLineEndings("\n");
             var bazelContent = File.ReadAllText(bazelDisk).ReplaceLineEndings("\n");
 
+            // Normalize version suffixes: MSBuild CI builds use "-ci" while Bazel uses "-dev".
+            msbuildContent = msbuildContent.Replace("-ci\"", "-dev\"");
+
             return msbuildContent == bazelContent;
         }
         catch

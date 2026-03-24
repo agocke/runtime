@@ -26,6 +26,7 @@ gen_assembly_info(
     assembly_name = "System.Private.CoreLib",
     assembly_version = "10.0.0.0",
     assembly_configuration = "Release",
+    is_trimmable = True,
     cls_compliant = False,
     include_serviceable = False,
     include_neutral_resources_language = False,
