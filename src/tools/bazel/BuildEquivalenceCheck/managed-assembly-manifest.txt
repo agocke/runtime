@@ -16,7 +16,6 @@
 
 match   Microsoft.CSharp
 match Microsoft.VisualBasic
-match Microsoft.VisualBasic.Core
 match Microsoft.Win32.Primitives
 match  Microsoft.Win32.Registry
 match  System
@@ -125,7 +124,7 @@ match System.Runtime.CompilerServices.VisualC
 match System.Runtime.Extensions
 match System.Runtime.Handles
 match   System.Runtime.InteropServices
-diff   System.Runtime.InteropServices.JavaScript
+match  System.Runtime.InteropServices.JavaScript
 match System.Runtime.InteropServices.RuntimeInformation
 match System.Runtime.Intrinsics
 match System.Runtime.Loader
