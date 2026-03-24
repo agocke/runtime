@@ -8,8 +8,8 @@ netcoreapp_impl_assembly(
         "src/System.cs",
     ],
     deps = [
-        # Base types from CoreLib ref assembly (matches MSBuild's /nostdlib+ pattern)
-        "//src/libraries:ref_System.Private.CoreLib",
+        # Base types from CoreLib (matches MSBuild's /nostdlib+ pattern)
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         # Implementation assemblies (MSBuild uses CompileUsingReferenceAssemblies=false)
         "//src/libraries:impl_Microsoft.Win32.Primitives",
         "//src/libraries:impl_System.ComponentModel.Primitives",

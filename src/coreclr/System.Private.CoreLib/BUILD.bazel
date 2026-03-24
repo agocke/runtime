@@ -25,7 +25,7 @@ gen_assembly_info(
     out = "System.Private.CoreLib.AssemblyInfo.cs",
     assembly_name = "System.Private.CoreLib",
     assembly_version = "10.0.0.0",
-    assembly_configuration = "Debug",
+    assembly_configuration = "Release",
     cls_compliant = False,
     include_serviceable = False,
     include_neutral_resources_language = False,
