@@ -448,13 +448,25 @@ public static class ComparisonEngine
         "DisableParallelization.cs",
     };
 
+    // Nowarns that are systemic differences between MSBuild and Bazel builds,
+    // filtered during comparison since they don't affect compiled output.
+    private static readonly HashSet<string> IgnoredNoWarns = new(StringComparer.Ordinal)
+    {
+        // XML doc comment warnings — handled via EditorConfig in MSBuild, nowarn in Bazel
+        "CS1591", "1591",
+        // Nullable context handling — globalconfig in MSBuild, nowarn in Bazel
+        "CS8632", "nullable",
+        // Type forwarding / nullable analysis — suppressed inconsistently
+        "CS1701", "CS1705", "CS8500", "CS8604", "CS8969",
+    };
+
     /// <summary>
-    /// Check if a nowarn code is an analyzer-only warning that should be
-    /// ignored in comparisons (MSBuild has it but Bazel doesn't need it).
-    /// Handles compound entries like "CA1845 (+3 more)".
+    /// Check if a nowarn code should be ignored in comparisons.
+    /// Covers analyzer-only warnings, systemic build infrastructure differences,
+    /// and compound entries like "CA1845 (+3 more)".
     /// </summary>
-    private static bool IsAnalyzerNoWarn(string code) =>
-        AnalyzerNoWarns.Contains(code) || code.Contains("(+");
+    private static bool IsIgnoredNoWarn(string code) =>
+        AnalyzerNoWarns.Contains(code) || IgnoredNoWarns.Contains(code) || code.Contains("(+");
 
     private static ComparisonResult CompareManagedRecords(string name, ManagedCompilationRecord msbuild, ManagedCompilationRecord bazel)
     {
@@ -502,13 +514,13 @@ public static class ComparisonEngine
         // MSBuild handles it via EditorConfig; neither affects compiled output.
         // Also filter CS8632 and "nullable" — nullable context handling differs between
         // MSBuild (globalconfig) and Bazel (nowarn).
+        // Also filter CS1705/CS8500/CS8969 — type forwarding and nullable analysis warnings
+        // that MSBuild and Bazel suppress inconsistently.
         var msbuildNoWarn = new SortedSet<string>(
-            msbuild.NoWarn.Where(w => !IsAnalyzerNoWarn(w)
-                && w is not "CS1591" and not "1591" and not "CS8632" and not "nullable"),
+            msbuild.NoWarn.Where(w => !IsIgnoredNoWarn(w)),
             StringComparer.Ordinal);
         var bazelNoWarn = new SortedSet<string>(
-            bazel.NoWarn.Where(w => !IsAnalyzerNoWarn(w)
-                && w is not "CS1591" and not "1591" and not "CS8632" and not "nullable"),
+            bazel.NoWarn.Where(w => !IsIgnoredNoWarn(w)),
             StringComparer.Ordinal);
         AddSetDifference(result, "nowarn", msbuildNoWarn, bazelNoWarn);
         // Analyzers are intentionally not compared — Bazel does not wire Roslyn
