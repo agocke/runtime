@@ -8,6 +8,7 @@ netcoreapp_impl_assembly(
     pnse_message = "SR.PlatformNotSupported_AccessControl",
     pnse_ref_srcs = [
         "//src/libraries/System.IO.Pipes.AccessControl:ref/System.IO.Pipes.AccessControl.cs",
+        "//src/libraries/System.IO.Pipes.AccessControl:ref/System.IO.Pipes.AccessControl.TypeForwards.cs",
     ],
     srcs = [],
     deps = [

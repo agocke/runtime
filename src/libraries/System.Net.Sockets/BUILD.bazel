@@ -205,7 +205,6 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading.Overlapped:ref_System.Threading.Overlapped",
         "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
         "//src/libraries/System.Threading.ThreadPool:ref_System.Threading.ThreadPool",
-            "//src/libraries/System.Console:ref_System.Console",
-],
+    ],
     supported_os_platforms = ["unix"],
 )

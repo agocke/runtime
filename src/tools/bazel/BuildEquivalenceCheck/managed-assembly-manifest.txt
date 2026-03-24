@@ -18,8 +18,8 @@ match   Microsoft.CSharp
 match Microsoft.VisualBasic
 match Microsoft.VisualBasic.Core
 match Microsoft.Win32.Primitives
-diff   Microsoft.Win32.Registry
-diff   System
+match  Microsoft.Win32.Registry
+match  System
 match System.AppContext
 match System.Buffers
 match   System.Collections
@@ -71,7 +71,7 @@ match   System.IO.IsolatedStorage
 match   System.IO.MemoryMappedFiles
 match   System.IO.Pipelines
 match   System.IO.Pipes
-diff   System.IO.Pipes.AccessControl
+match  System.IO.Pipes.AccessControl
 match System.IO.UnmanagedMemoryStream
 match   System.Linq
 match   System.Linq.AsyncEnumerable
@@ -80,7 +80,7 @@ match   System.Linq.Parallel
 match   System.Linq.Queryable
 match   System.Memory
 match System.Net
-diff   System.Net.Http
+match  System.Net.Http
 match   System.Net.Http.Json
 match   System.Net.HttpListener
 match   System.Net.Mail
@@ -90,10 +90,10 @@ match   System.Net.Ping
 match   System.Net.Primitives
 diff   System.Net.Quic
 match   System.Net.Requests
-diff   System.Net.Security
+match  System.Net.Security
 match   System.Net.ServerSentEvents
 match System.Net.ServicePoint
-diff   System.Net.Sockets
+match  System.Net.Sockets
 match   System.Net.WebClient
 match   System.Net.WebHeaderCollection
 match System.Net.WebProxy
@@ -102,7 +102,7 @@ match   System.Net.WebSockets.Client
 match System.Numerics
 match System.Numerics.Vectors
 match   System.ObjectModel
-diff   System.Private.CoreLib
+match  System.Private.CoreLib
 match   System.Private.DataContractSerialization
 match   System.Private.Uri
 match   System.Private.Xml
@@ -138,7 +138,7 @@ match System.Runtime.Serialization.Xml
 match System.Security
 match   System.Security.AccessControl
 match   System.Security.Claims
-diff   System.Security.Cryptography
+match  System.Security.Cryptography
 match System.Security.Cryptography.Algorithms
 match System.Security.Cryptography.Cng
 match System.Security.Cryptography.Csp
@@ -158,7 +158,7 @@ match   System.Text.Encodings.Web
 match   System.Text.Json
 match   System.Text.RegularExpressions
 match   System.Threading
-diff   System.Threading.AccessControl
+match  System.Threading.AccessControl
 match   System.Threading.Channels
 match System.Threading.Overlapped
 match System.Threading.Tasks

@@ -191,11 +191,11 @@ areas:
   between `.bazelrc`/`coreclr_defs.bzl` and `CMakeLists.txt`. Native define
   normalization (`-DFOO` vs `-DFOO=1`) and optimization normalization (empty vs
   `-O0`) are handled by the tool.
-- **Managed assemblies**: 158 of 412 tracked assemblies fully match MSBuild's CSC
+- **Managed assemblies**: 167 of 411 tracked assemblies fully match MSBuild's CSC
   invocations (defines, nowarn, source files, generated content, references).
-  The remaining 253 differ due to:
-  - **PNSE stub generation**: Bazel generates `.notsupported.cs` via
-    `GenNotSupportedSource`, but reference sets may differ
+  The remaining 244 differ due to:
+  - **PNSE stub generation**: Bazel generates per-file `.notsupported.cs` via
+    `GenNotSupportedSource`, matching MSBuild's per-ref-file output pattern
   - **Non-archive assemblies**: Differ by design — Bazel uses precise deps
     while MSBuild uses the full targeting pack
   - **Source generators**: Different targeting (netstandard2.0 polyfills, etc.)

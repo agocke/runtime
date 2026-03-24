@@ -337,18 +337,29 @@ def impl_assembly(
     if pnse:
         nowarn = nowarn + ["nullable", "CA1052", "CA1821", "CA1823", "CS0169"]
 
-    # When pnse_message is set, generate a .notsupported.cs from the ref assembly
-    # source files, matching MSBuild's GeneratePlatformNotSupportedAssemblyMessage.
+    # When pnse_message is set, generate one .notsupported.cs per ref source file,
+    # matching MSBuild's GeneratePlatformNotSupportedAssemblyMessage (which produces
+    # separate output files like Foo.notsupported.cs, Foo.Extensions.notsupported.cs).
     if pnse_message and pnse_ref_srcs:
-        pnse_target = "pnse_" + name
-        gen_pnse_source(
-            name = pnse_target,
-            out = name + "/" + base_name + ".notsupported.cs",
-            srcs = pnse_ref_srcs,
-            message = pnse_message,
-            api_exclusion_list = pnse_api_exclusion_list,
-        )
-        srcs = srcs + [":" + pnse_target]
+        for pnse_src in pnse_ref_srcs:
+            # Derive the output filename from the ref source: strip directory and
+            # replace .cs with .notsupported.cs — e.g. ref/Foo.Extensions.cs →
+            # Foo.Extensions.notsupported.cs
+            pnse_src_str = str(pnse_src)
+            pnse_basename = pnse_src_str.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+            if pnse_basename.endswith(".cs"):
+                pnse_out_name = pnse_basename[:-3] + ".notsupported.cs"
+            else:
+                pnse_out_name = pnse_basename + ".notsupported.cs"
+            pnse_target = "pnse_" + name + "_" + pnse_out_name.replace(".", "_")
+            gen_pnse_source(
+                name = pnse_target,
+                out = name + "/" + pnse_out_name,
+                srcs = [pnse_src],
+                message = pnse_message,
+                api_exclusion_list = pnse_api_exclusion_list,
+            )
+            srcs = srcs + [":" + pnse_target]
 
     # Multi-targeted assemblies that also target netstandard/net4x suppress
     # warnings about APIs that don't exist in older TFMs.

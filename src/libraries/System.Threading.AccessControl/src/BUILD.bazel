@@ -9,6 +9,7 @@ netcoreapp_impl_assembly(
     pnse_message = "SR.PlatformNotSupported_AccessControl",
     pnse_ref_srcs = [
         "//src/libraries/System.Threading.AccessControl:ref/System.Threading.AccessControl.cs",
+        "//src/libraries/System.Threading.AccessControl:ref/System.Threading.AccessControl.Extensions.cs",
     ],
     srcs = [],
     deps = [

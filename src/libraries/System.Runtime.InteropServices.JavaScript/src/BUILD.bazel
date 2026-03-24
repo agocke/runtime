@@ -9,11 +9,14 @@ netcoreapp_impl_assembly(
     pnse_ref_srcs = [
         "//src/libraries/System.Runtime.InteropServices.JavaScript:ref/System.Runtime.InteropServices.JavaScript.cs",
     ],
-    srcs = [],
+    srcs = [
+        "System.Runtime.InteropServices.JavaScript.SupportedOSPlatform.cs",
+    ],
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
         "//src/libraries/System.Threading:ref_System.Threading",
+        "//src/libraries/System.Threading.Channels:ref_System.Threading.Channels",
     ],
     resx_file = "Resources/Strings.resx",
     include_dll_safe_search_path = True,

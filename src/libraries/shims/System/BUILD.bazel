@@ -5,6 +5,7 @@ netcoreapp_impl_assembly(
     skip_cs1591 = True,
     srcs = [
         "ref/System.cs",
+        "src/System.cs",
     ],
     deps = [
         # Base types from CoreLib ref assembly (matches MSBuild's /nostdlib+ pattern)

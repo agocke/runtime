@@ -48,9 +48,6 @@ netcoreapp_impl_assembly(
     allow_unsafe_blocks = True,
     nowarn = [
         "SYSLIB0038",
-        # CS8604 on DefaultValueTypeConverter.cs — fires in Bazel because
-        # MSBuild's EditorConfig/GlobalConfig configures nullable severity
-        # differently; the MSBuild build is clean with the same TreatWarningsAsErrors.
         "CS8604",
     ],
     deps = [
