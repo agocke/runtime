@@ -12,6 +12,8 @@ string? bazelAqueryManagedPath = null;
 string? jsonOutputPath = null;
 string? managedManifestPath = null;
 string? nativeManifestPath = null;
+string? msbuildJsonPath = null;
+string? extractMsbuildJsonPath = null;
 bool verbose = false;
 
 for (int i = 0; i < args.Length; i++)
@@ -41,6 +43,12 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--native-manifest":
             nativeManifestPath = args[++i];
+            break;
+        case "--msbuild-json":
+            msbuildJsonPath = args[++i];
+            break;
+        case "--extract-msbuild-json":
+            extractMsbuildJsonPath = args[++i];
             break;
         case "--verbose" or "-v":
             verbose = true;
@@ -89,21 +97,43 @@ if (bazelAqueryNativePath is not null && File.Exists(bazelAqueryNativePath))
     Console.WriteLine($"  Bazel native records: {bazelNativeRecords.Count}");
 }
 
-// ── Parse MSBuild binlogs ───────────────────────────────────────────
+// ── Parse MSBuild binlogs or load pre-extracted JSON ────────────────
 var msbuildManagedRecords = new List<ManagedCompilationRecord>();
-foreach (var path in binlogPaths)
+if (msbuildJsonPath is not null)
 {
-    if (!File.Exists(path))
+    if (!File.Exists(msbuildJsonPath))
     {
-        Console.Error.WriteLine($"Binlog not found: {path}");
-        continue;
+        Console.Error.WriteLine($"MSBuild JSON not found: {msbuildJsonPath}");
+        return 1;
     }
 
-    Console.WriteLine($"Parsing MSBuild binlog: {path}");
-    msbuildManagedRecords.AddRange(BinlogParser.Parse(path, repoRoot));
+    Console.WriteLine($"Loading pre-extracted MSBuild records: {msbuildJsonPath}");
+    msbuildManagedRecords = MsbuildJsonStore.Load(msbuildJsonPath);
+    Console.WriteLine($"  MSBuild managed records: {msbuildManagedRecords.Count}");
+}
+else
+{
+    foreach (var path in binlogPaths)
+    {
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"Binlog not found: {path}");
+            continue;
+        }
+
+        Console.WriteLine($"Parsing MSBuild binlog: {path}");
+        msbuildManagedRecords.AddRange(BinlogParser.Parse(path, repoRoot));
+    }
+
+    Console.WriteLine($"  MSBuild managed records: {msbuildManagedRecords.Count}");
 }
 
-Console.WriteLine($"  MSBuild managed records: {msbuildManagedRecords.Count}");
+// ── Extract MSBuild records to JSON if requested ────────────────────
+if (extractMsbuildJsonPath is not null)
+{
+    MsbuildJsonStore.Save(msbuildManagedRecords, extractMsbuildJsonPath);
+    Console.WriteLine($"  Extracted {msbuildManagedRecords.Count} MSBuild records to {extractMsbuildJsonPath}");
+}
 
 // ── Parse Bazel aquery (managed) ────────────────────────────────────
 var bazelManagedRecords = new List<ManagedCompilationRecord>();
@@ -212,6 +242,8 @@ static void PrintUsage()
           --repo-root <path>                 Repository root (auto-detected if not set)
           --cmake-compile-commands <path>    CMake compile_commands.json (can specify multiple)
           --binlog <path>                    MSBuild .binlog file (can specify multiple)
+          --msbuild-json <path>             Pre-extracted MSBuild records JSON (use instead of --binlog)
+          --extract-msbuild-json <path>     Extract MSBuild records from binlogs to JSON file
           --bazel-native-aquery <path>       Bazel aquery JSON for native CppCompile actions
           --bazel-managed-aquery <path>      Bazel aquery JSON for managed CSharpCompile actions
           --json-output <path>               Write detailed JSON report to file
