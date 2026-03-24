@@ -23,6 +23,7 @@ impl_assembly(
     pnse = True,
     pnse_message = "SR.PlatformNotSupported_System_Windows_Extensions",
     pnse_ref_srcs = ["ref/System.Windows.Extensions.cs"],
+    nowarn = ["CP0003"],
     srcs = [],
     deps = [
         "//src/libraries:ref_System.Runtime",

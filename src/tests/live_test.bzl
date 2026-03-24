@@ -603,6 +603,7 @@ def library_test(
     size = "medium",
     use_shared_compilation = True,
     multitarget = False,
+    replace_library_nowarns = None,
     **kwargs
 ):
     """Test macro for library tests that compiles as library and runs via xunit.console.dll."""
@@ -610,7 +611,12 @@ def library_test(
     # Match MSBuild default: src/libraries/Directory.Build.props sets
     # <Nullable>annotations</Nullable> for test projects.
     nullable = kwargs.pop("nullable", "annotations")
-    all_nowarn = nowarn + _LIBRARY_TEST_NOWARN
+    if replace_library_nowarns != None:
+        # Allow overriding the standard _LIBRARY_TEST_NOWARN set (e.g. when MSBuild
+        # csproj <NoWarn> replaces rather than appends to inherited warnings).
+        all_nowarn = nowarn + replace_library_nowarns
+    else:
+        all_nowarn = nowarn + _LIBRARY_TEST_NOWARN
     if multitarget:
         all_nowarn = all_nowarn + _MULTITARGET_NOWARN
     _xunit_library_test(

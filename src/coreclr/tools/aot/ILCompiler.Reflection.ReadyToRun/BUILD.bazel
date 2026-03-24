@@ -12,6 +12,7 @@ csharp_library(
         "//src/coreclr/tools/Common:Pgo/PgoFormat.cs",
     ],
     compiler_options = ["/unsafe"],
+    nowarn = ["1591", "8002", "NU1701"],
     target_frameworks = ["net10.0"],
     visibility = ["//visibility:public"],
 )

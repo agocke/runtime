@@ -36,7 +36,7 @@ match  System.Configuration
 match  System.Console
 match  System.Core
 match  System.Data
-diff   System.Data.Common
+match   System.Data.Common
 match  System.Data.DataSetExtensions
 match  System.Diagnostics.Contracts
 match  System.Diagnostics.Debug
@@ -101,7 +101,7 @@ match  System.Net.WebSockets.Client
 match  System.Numerics
 match  System.Numerics.Vectors
 match  System.ObjectModel
-diff   System.Private.CoreLib
+match   System.Private.CoreLib
 match  System.Private.DataContractSerialization
 match  System.Private.Uri
 match  System.Private.Xml
@@ -306,7 +306,7 @@ diff   System.Data.Common.Tests
 diff   System.Data.Odbc
 match  System.Data.OleDb
 match  System.Diagnostics.Contracts.Tests
-diff   System.Diagnostics.DiagnosticSource.Tests
+match   System.Diagnostics.DiagnosticSource.Tests
 match  System.Diagnostics.EventLog
 match  System.Diagnostics.FileVersionInfo.TestAssembly
 match  System.Diagnostics.FileVersionInfo.Tests
@@ -377,7 +377,7 @@ match  System.Reflection.Emit.Tests
 match  System.Reflection.Extensions.Tests
 match  System.Reflection.Metadata.Tests
 match  System.Reflection.MetadataLoadContext
-diff   System.Reflection.MetadataLoadContext.Tests
+match   System.Reflection.MetadataLoadContext.Tests
 match  System.Reflection.TypeExtensions.Tests
 match  System.Resources.Extensions
 match  System.Resources.Writer.Tests

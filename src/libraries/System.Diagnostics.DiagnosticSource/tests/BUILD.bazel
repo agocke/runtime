@@ -12,6 +12,13 @@ library_test(
     name = "System.Diagnostics.DiagnosticSource.Tests",
     nowarn = ["NU1511"],
     multitarget = True,
+    # MSBuild csproj sets <NoWarn>NU1511</NoWarn> which REPLACES inherited warnings,
+    # so only Arcade SDK nowarns survive (not the full Directory.Build.props set).
+    replace_library_nowarns = [
+        "CS1701",
+        "CS1702",
+        "NU5105",
+    ],
     srcs = glob(
         ["**/*.cs"],
         exclude = [
