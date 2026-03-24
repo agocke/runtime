@@ -24,10 +24,21 @@ impl_assembly(
     pnse_message = "SR.PlatformNotSupported_RegistryAccessControl",
     pnse_ref_srcs = [
         "ref/Microsoft.Win32.Registry.AccessControl.cs",
+        "ref/Microsoft.Win32.Registry.AccessControl.Forwards.cs",
     ],
     multitarget = True,
-    srcs = [
-        "ref/Microsoft.Win32.Registry.AccessControl.Forwards.cs",
+    srcs = [],
+    nowarn = [
+        "SYSLIB0003",
+        "SYSLIB0004",
+        "SYSLIB0015",
+        "SYSLIB0017",
+        "SYSLIB0021",
+        "SYSLIB0022",
+        "SYSLIB0023",
+        "SYSLIB0025",
+        "SYSLIB0032",
+        "SYSLIB0036",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",

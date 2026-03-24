@@ -27,7 +27,6 @@ library_test(
         "//src/libraries/Common/tests:System/IO/TempFile.cs",
     ],
     deps = [
-        ":System.ComponentModel.Composition.Noop.Assembly",
         "//src/libraries/System.ComponentModel.Composition:impl_System.ComponentModel.Composition",
         "//src/libraries/System.ComponentModel.TypeConverter:ref_System.ComponentModel.TypeConverter",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
@@ -47,5 +46,6 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     keyfile = OPEN_SNK,
+    data = [":System.ComponentModel.Composition.Noop.Assembly"],
     size = "large",
 )

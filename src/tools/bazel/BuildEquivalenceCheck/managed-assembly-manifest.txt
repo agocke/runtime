@@ -194,12 +194,12 @@ match  netstandard
 
 match  CollectibleAssembly
 match  DefaultApartmentStateMain
-diff   ILCompiler.Compiler
+match  ILCompiler.Compiler
 match  ILCompiler.DependencyAnalysisFramework
-diff   ILCompiler.Diagnostics
-diff   ILCompiler.MetadataTransform
-diff   ILCompiler.ReadyToRun
-diff   ILCompiler.RyuJit
+match  ILCompiler.Diagnostics
+match  ILCompiler.MetadataTransform
+match  ILCompiler.ReadyToRun
+match  ILCompiler.RyuJit
 match  ILCompiler.TypeSystem
 match  ILLink.Tasks
 match  MTAMain
@@ -269,7 +269,7 @@ diff   Microsoft.Interop.ComInterfaceGenerator
 diff   Microsoft.Interop.LibraryImportGenerator
 diff   Microsoft.Interop.SourceGeneration
 match  Microsoft.Win32.Primitives.Tests
-diff   Microsoft.Win32.Registry.AccessControl
+match  Microsoft.Win32.Registry.AccessControl
 match  Microsoft.Win32.SystemEvents
 match  STAMain
 match  SerializableAssembly
@@ -285,7 +285,7 @@ match  System.ComponentModel.Annotations.Tests
 match  System.ComponentModel.Composition
 diff   System.ComponentModel.Composition.Noop.Assembly
 match  System.ComponentModel.Composition.Registration
-diff   System.ComponentModel.Composition.Tests
+match  System.ComponentModel.Composition.Tests
 match  System.ComponentModel.EventBasedAsync.Tests
 match  System.ComponentModel.Primitives.Tests
 match  System.ComponentModel.Tests
@@ -298,7 +298,7 @@ match  System.Composition.Hosting.Tests
 match  System.Composition.Runtime
 match  System.Composition.TypedParts
 match  System.Composition.TypedParts.Tests
-diff   System.Configuration.ConfigurationManager
+match  System.Configuration.ConfigurationManager
 match  System.Console.Tests
 diff   System.Data.Common.Tests
 diff   System.Data.Odbc
@@ -313,7 +313,7 @@ match  System.Diagnostics.StackTrace.Tests
 match  System.Diagnostics.TextWriterTraceListener.Tests
 match  System.Diagnostics.TraceSource.Tests
 match  System.Diagnostics.Tracing.Tests
-diff   System.DirectoryServices
+match  System.DirectoryServices
 match  System.DirectoryServices.AccountManagement
 diff   System.DirectoryServices.Protocols
 match  System.Drawing.Primitives.Tests
@@ -323,12 +323,13 @@ diff   System.Formats.Cbor.Tests
 match  System.Formats.Nrbf
 match  System.Formats.Nrbf.Tests
 match  System.Formats.Tar.Tests
-diff   System.IO.Compression.Brotli.Tests
+match  System.IO.Compression.Brotli.Tests
 match  System.IO.Compression.Tests
 match  System.IO.Compression.ZipFile.Tests
 match  System.IO.FileSystem.DriveInfo.Tests
 match  System.IO.FileSystem.Watcher.Tests
-diff   System.IO.Hashing.Tests
+match  System.IO.Hashing.Tests
+match  System.IO.Hashing
 match  System.IO.IsolatedStorage.Tests
 match  System.IO.MemoryMappedFiles.Tests
 match  System.IO.Packaging
@@ -398,7 +399,7 @@ match  System.Security.Cryptography.ProtectedData.Tests
 diff   System.Security.Cryptography.Tests
 match  System.Security.Cryptography.Xml
 match  System.Security.Cryptography.Xml.Tests
-diff   System.Security.Permissions
+match  System.Security.Permissions
 match  System.ServiceModel.Syndication
 match  System.ServiceModel.Syndication.Tests
 match  System.ServiceProcess.ServiceController
@@ -425,8 +426,8 @@ match  System.Xml.Linq.Axes.Tests
 match  System.Xml.Linq.SDMSample.Tests
 match  System.Xml.Schema.Extensions.Tests
 diff   TestLibrary
-diff   crossgen2
-diff   ilc
+match  crossgen2
+match  ilc
 match  illink
 
 # ── Unlisted assemblies added during equivalence improvement ──

@@ -32,11 +32,10 @@ impl_assembly(
     pnse_message = "SR.DirectoryServices_PlatformNotSupported",
     pnse_ref_srcs = [
         "ref/System.DirectoryServices.cs",
-    ],
-    multitarget = True,
-    srcs = [
         "ref/System.DirectoryServices.manual.cs",
     ],
+    multitarget = True,
+    srcs = [],
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries:ref_System.ComponentModel.Primitives",

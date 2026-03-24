@@ -446,6 +446,9 @@ public static class ComparisonEngine
         "StringMarshalling.cs",
         "PlatformAttributes.cs",
         "DisableParallelization.cs",
+        // SR.cs is the resource accessor template compiled directly by MSBuild.
+        // Bazel bakes this into the generated SR.g.cs file instead.
+        "SR.cs",
     };
 
     // Nowarns that are systemic differences between MSBuild and Bazel builds,
@@ -458,6 +461,8 @@ public static class ComparisonEngine
         "8632", "nullable",
         // Type forwarding / nullable analysis — suppressed inconsistently
         "1701", "1702", "1705", "8500", "8604", "8969",
+        // Referenced assembly without strong name — MSBuild toolchain difference
+        "8002",
     };
 
     /// <summary>
@@ -584,9 +589,20 @@ public static class ComparisonEngine
         // Filter out MSBuild-generated AssemblyInfo.cs files (e.g.
         // artifacts/obj/X/Release/.../X.AssemblyInfo.cs). In Bazel, rules_dotnet
         // generates equivalent AssemblyInfo content internally; it's not a separate
-        // source file in the aquery output.
-        onlyInMSBuild.RemoveWhere(f => Path.GetFileName(f).EndsWith("AssemblyInfo.cs", StringComparison.Ordinal));
-        onlyInBazel.RemoveWhere(f => Path.GetFileName(f).EndsWith("AssemblyInfo.cs", StringComparison.Ordinal));
+        // source file in the aquery output.  Also filter Bazel-generated
+        // AssemblyInfo.g.cs from local genrules (ILCompiler/crossgen2 tools).
+        onlyInMSBuild.RemoveWhere(f =>
+        {
+            var fn = Path.GetFileName(f);
+            return fn.EndsWith("AssemblyInfo.cs", StringComparison.Ordinal)
+                || fn == "AssemblyInfo.g.cs";
+        });
+        onlyInBazel.RemoveWhere(f =>
+        {
+            var fn = Path.GetFileName(f);
+            return fn.EndsWith("AssemblyInfo.cs", StringComparison.Ordinal)
+                || fn == "AssemblyInfo.g.cs";
+        });
 
         // Filter out MSBuild-generated InternalsVisibleTo.cs files.
         // In Bazel, IVT attributes are set via the internals_visible_to parameter.
@@ -597,6 +613,24 @@ public static class ComparisonEngine
         // but Bazel doesn't need (test SDK entry point, netstandard polyfills).
         onlyInMSBuild.RemoveWhere(f => IgnoredSourceFileNames.Contains(Path.GetFileName(f)));
         onlyInBazel.RemoveWhere(f => IgnoredSourceFileNames.Contains(Path.GetFileName(f)));
+
+        // MSBuild's PNSE build includes both the raw Forwards.cs AND the
+        // generated Forwards.notsupported.cs.  Bazel's gen_pnse_source only
+        // produces the .notsupported.cs variant. Filter out the raw Forwards.cs
+        // from the MSBuild side when the corresponding .notsupported.cs exists.
+        var notsupportedNames = new HashSet<string>(
+            onlyInMSBuild
+                .Concat(onlyInBazel)
+                .Select(f => Path.GetFileName(f))
+                .Where(n => n.EndsWith(".notsupported.cs", StringComparison.Ordinal)),
+            StringComparer.Ordinal);
+        onlyInMSBuild.RemoveWhere(f =>
+        {
+            var fn = Path.GetFileName(f);
+            return fn.EndsWith(".cs", StringComparison.Ordinal)
+                && !fn.EndsWith(".notsupported.cs", StringComparison.Ordinal)
+                && notsupportedNames.Contains(fn.Replace(".cs", ".notsupported.cs"));
+        });
 
         if (onlyInMSBuild.Count == 0 && onlyInBazel.Count == 0)
             return;
@@ -719,7 +753,7 @@ public static class ComparisonEngine
     /// </summary>
     private static string NormalizeGeneratedFileName(string fileName)
     {
-        if (fileName is "System.SR.cs" or "SR.g.cs" or "SharedStrings.g.cs")
+        if (fileName is "System.SR.cs" or "SR.g.cs" or "SharedStrings.g.cs" or "ILLink.Shared.SharedStrings.cs")
             return "System.SR.cs";
 
         return fileName;

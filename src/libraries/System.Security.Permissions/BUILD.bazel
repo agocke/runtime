@@ -32,6 +32,7 @@ impl_assembly(
     multitarget = True,
     partial_facade = True,
     srcs = glob(["src/**/*.cs"]) + [
+        "ref/System.Security.Permissions.Forwards.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",
     ],
     deps = [

@@ -27,6 +27,7 @@ csharp_binary(
         "//src/coreclr/tools/aot/ILCompiler.MetadataTransform",
         "//src/coreclr/tools/aot/ILCompiler.RyuJit",
         "//src/coreclr/tools/aot/ILCompiler.TypeSystem",
+        "@paket.main//microsoft.diasymreader",
         "@paket.main//system.commandline",
     ],
     target_frameworks = ["net10.0"],

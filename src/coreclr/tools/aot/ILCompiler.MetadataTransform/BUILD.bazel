@@ -51,6 +51,7 @@ csharp_library(
     compiler_options = ["/unsafe"],
     deps = [
         "//src/coreclr/tools/aot/ILCompiler.TypeSystem",
+        "@paket.main//microsoft.diasymreader",
     ],
     target_frameworks = ["net10.0"],
     visibility = ["//visibility:public"],

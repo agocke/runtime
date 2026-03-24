@@ -24,19 +24,13 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Configuration.ConfigurationManager",
-    srcs = glob(
-        ["src/**/*.cs"],
-        exclude = [
-            "src/System/Configuration/DpapiProtectedConfigurationProvider.cs",
-        ],
-    ) + [
+    srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/System/IO/TempFileCollection.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",
         "//src/libraries/Common:src/System/Security/IdentityHelper.cs",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",
-        "//src/libraries/System.CodeDom:ref_System.CodeDom",
         "//src/libraries/System.Collections:ref_System.Collections",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
         "//src/libraries/System.Collections.Specialized:ref_System.Collections.Specialized",
@@ -57,7 +51,6 @@ impl_assembly(
         "//src/libraries/System.Runtime.Serialization.Formatters:ref_System.Runtime.Serialization.Formatters",
         "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
         "//src/libraries/System.Security.Cryptography.ProtectedData:ref_System.Security.Cryptography.ProtectedData",
-        "//src/libraries/System.Security.Permissions:ref_System.Security.Permissions",
         "//src/libraries/System.Text.Encoding.Extensions:ref_System.Text.Encoding.Extensions",
         "//src/libraries/System.Text.RegularExpressions:ref_System.Text.RegularExpressions",
         "//src/libraries/System.Threading:ref_System.Threading",
