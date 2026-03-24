@@ -368,7 +368,7 @@ match  System.Reflection.Context
 match  System.Reflection.Context.Tests
 match  System.Reflection.DispatchProxy.TestDependency
 match  System.Reflection.DispatchProxy.Tests
-diff   System.Reflection.Emit.ILGeneration.Tests
+match  System.Reflection.Emit.ILGeneration.Tests
 match  System.Reflection.Emit.Lightweight.Tests
 match  System.Reflection.Emit.Tests
 match  System.Reflection.Extensions.Tests
