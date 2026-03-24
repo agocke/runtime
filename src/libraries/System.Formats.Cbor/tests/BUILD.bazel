@@ -5,6 +5,7 @@ library_test(
     srcs = glob(
         ["**/*.cs"],
         exclude = [
+            # PropertyTests depend on CborDocument (F# project)
             "PropertyTests/**",
             "CborDocument/**",
             "CborTestHelpers.netstandard.cs",
@@ -19,6 +20,9 @@ library_test(
         "//src/libraries/System.Threading:ref_System.Threading",
         "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
         "//src/libraries/Common/tests:TestUtilities",
+        "@paket.main//fscheck",
+        "@paket.main//fscheck.xunit",
+        "@paket.main//fsharp.core",
         "@paket.main//microsoft.dotnet.remoteexecutor",
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//microsoft.dotnet.xunitextensions",

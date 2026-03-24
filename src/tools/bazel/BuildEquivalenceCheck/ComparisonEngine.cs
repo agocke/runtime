@@ -780,9 +780,14 @@ public static class ComparisonEngine
     /// Assign a priority score for TFM selection from multi-targeted MSBuild builds.
     /// Higher is better. Platform-specific TFMs (linux, unix) are preferred
     /// over the plain net10.0 TFM which is often a PNSE stub.
+    /// Stub assemblies (shims/stubs) are deprioritized below all other builds.
     /// </summary>
     private static int TfmPriority(string outputPath)
     {
+        // Stub assemblies (shims/stubs) are type-forward wrappers, not the real impl.
+        if (outputPath.Contains("/stub/", StringComparison.OrdinalIgnoreCase))
+            return -1;
+
         if (outputPath.Contains("net10.0-linux", StringComparison.OrdinalIgnoreCase))
             return 3;
         if (outputPath.Contains("net10.0-unix", StringComparison.OrdinalIgnoreCase))

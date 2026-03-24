@@ -3,13 +3,7 @@ load("//:defs.bzl", "ASPNETCORE_SNK")
 
 library_test(
     name = "Microsoft.Extensions.Configuration.UserSecrets.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            # Requires Newtonsoft.Json which is not available in Bazel
-            "ConfigurationExtensionTest.cs",
-        ],
-    ),
+    srcs = glob(["**/*.cs"]),
     deps = [
         "//src/libraries/Microsoft.Extensions.Configuration.UserSecrets:impl_Microsoft.Extensions.Configuration.UserSecrets",
         "//src/libraries/Microsoft.Extensions.Configuration:ref_Microsoft.Extensions.Configuration",
@@ -18,7 +12,9 @@ library_test(
         "//src/libraries/Microsoft.Extensions.Primitives:ref_Microsoft.Extensions.Primitives",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
+        "//src/libraries/Microsoft.Extensions.Configuration.Json:impl_Microsoft.Extensions.Configuration.Json",
         "//src/libraries/Common/tests:TestUtilities",
+        "@paket.main//newtonsoft.json",
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//microsoft.dotnet.xunitextensions",
         "@paket.main//xunit.abstractions",

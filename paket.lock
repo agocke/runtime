@@ -2,6 +2,14 @@ STORAGE: NONE
 RESTRICTION: == net10.0
 NUGET
   remote: https://api.nuget.org/v3/index.json
+    Castle.Core (5.2.1)
+      System.Diagnostics.EventLog (>= 6.0)
+    FsCheck (2.14.3)
+      FSharp.Core (>= 4.2.3)
+    FsCheck.Xunit (2.14.3)
+      FsCheck (2.14.3)
+      xunit.extensibility.execution (>= 2.2 < 3.0)
+    FSharp.Core (10.1.201)
     Humanizer.Core (2.14.1)
     Microsoft.Build.Framework (17.8.3)
     Microsoft.Build.Utilities.Core (17.8.3)
@@ -50,6 +58,9 @@ NUGET
       System.Security.Cryptography.Cng (>= 4.5)
     Microsoft.NET.StringTools (17.11.4)
     Microsoft.VisualStudio.Setup.Configuration.Interop (3.11.2177)
+    Moq (4.18.4)
+      Castle.Core (>= 5.1.1)
+    Newtonsoft.Json (13.0.3)
     System.Buffers (4.5.1)
     System.Collections.Immutable (8.0)
     System.CommandLine (2.0.4)
