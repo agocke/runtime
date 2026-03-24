@@ -24,14 +24,21 @@ public static class MsbuildJsonStore
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    public static void Save(List<ManagedCompilationRecord> records, string path)
+    public static void Save(List<ManagedCompilationRecord> records, string path, string? repoRoot = null)
     {
+        var root = repoRoot is not null
+            ? Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar
+            : null;
+
         var dtos = records.Select(r => new RecordDto
         {
             AssemblyName = r.AssemblyName,
             SourceFiles = [.. r.SourceFiles],
             Defines = [.. r.Defines],
             References = [.. r.References],
+            ReferencePaths = r.ReferencePaths.Count > 0
+                ? NormalizeRefPaths(r.ReferencePaths, r.IsReferenceAssembly, root)
+                : null,
             NoWarn = [.. r.NoWarn],
             Analyzers = r.Analyzers.Count > 0 ? [.. r.Analyzers] : null,
             Flags = r.Flags.Count > 0 ? [.. r.Flags] : null,
@@ -58,6 +65,7 @@ public static class MsbuildJsonStore
             SourceFileOriginalPaths = [],
             Defines = new SortedSet<string>(d.Defines ?? [], StringComparer.Ordinal),
             References = new SortedSet<string>(d.References ?? [], StringComparer.Ordinal),
+            ReferencePaths = d.ReferencePaths ?? [],
             NoWarn = new SortedSet<string>(d.NoWarn ?? [], StringComparer.Ordinal),
             Analyzers = new SortedSet<string>(d.Analyzers ?? [], StringComparer.Ordinal),
             Flags = new SortedSet<string>(d.Flags ?? [], StringComparer.Ordinal),
@@ -75,6 +83,7 @@ public static class MsbuildJsonStore
         public List<string>? SourceFiles { get; set; }
         public List<string>? Defines { get; set; }
         public List<string>? References { get; set; }
+        public Dictionary<string, string>? ReferencePaths { get; set; }
         public List<string>? NoWarn { get; set; }
         public List<string>? Analyzers { get; set; }
         public List<string>? Flags { get; set; }
@@ -82,5 +91,27 @@ public static class MsbuildJsonStore
         public string? LangVersion { get; set; }
         public string? OutputPath { get; set; }
         public bool? IsReferenceAssembly { get; set; }
+    }
+
+    /// <summary>
+    /// Normalize reference paths to repo-relative and skip ref-assembly/large-ref-set
+    /// records to keep the JSON file small. Only impl records with small ref sets
+    /// (i.e., not targeting-pack consumers) get their paths preserved.
+    /// </summary>
+    private static Dictionary<string, string>? NormalizeRefPaths(
+        Dictionary<string, string> paths, bool isRefAssembly, string? repoRoot)
+    {
+        if (isRefAssembly || paths.Count > 50)
+            return null;
+
+        var result = new Dictionary<string, string>(paths.Count);
+        foreach (var (name, fullPath) in paths)
+        {
+            if (repoRoot is not null && fullPath.StartsWith(repoRoot, StringComparison.Ordinal))
+                result[name] = fullPath[repoRoot.Length..];
+            else
+                result[name] = fullPath;
+        }
+        return result;
     }
 }

@@ -131,7 +131,7 @@ else
 // ── Extract MSBuild records to JSON if requested ────────────────────
 if (extractMsbuildJsonPath is not null)
 {
-    MsbuildJsonStore.Save(msbuildManagedRecords, extractMsbuildJsonPath);
+    MsbuildJsonStore.Save(msbuildManagedRecords, extractMsbuildJsonPath, repoRoot);
     Console.WriteLine($"  Extracted {msbuildManagedRecords.Count} MSBuild records to {extractMsbuildJsonPath}");
 }
 

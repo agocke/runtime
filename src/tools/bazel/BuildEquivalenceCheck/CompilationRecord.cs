@@ -33,6 +33,11 @@ public sealed class ManagedCompilationRecord
     public Dictionary<string, string> SourceFileOriginalPaths { get; init; } = [];
     public required SortedSet<string> Defines { get; init; }
     public required SortedSet<string> References { get; init; }
+    /// <summary>
+    /// Maps reference assembly name → resolved full path on disk.
+    /// Used to distinguish ref vs impl assemblies in MSBuild records.
+    /// </summary>
+    public Dictionary<string, string> ReferencePaths { get; init; } = [];
     public required SortedSet<string> NoWarn { get; init; }
     public required SortedSet<string> Analyzers { get; init; }
     public required SortedSet<string> Flags { get; init; }

@@ -38,6 +38,7 @@ public static class BinlogParser
         var sourceFileOriginalPaths = new Dictionary<string, string>(StringComparer.Ordinal);
         var defines = new SortedSet<string>(StringComparer.Ordinal);
         var references = new SortedSet<string>(StringComparer.Ordinal);
+        var referencePaths = new Dictionary<string, string>(StringComparer.Ordinal);
         var noWarn = new SortedSet<string>(StringComparer.Ordinal);
         var analyzers = new SortedSet<string>(StringComparer.Ordinal);
         var flags = new SortedSet<string>(StringComparer.Ordinal);
@@ -106,7 +107,15 @@ public static class BinlogParser
                         break;
                     case "References" or "ReferencePath":
                         foreach (var item in param.Children.OfType<Item>())
-                            references.Add(Path.GetFileNameWithoutExtension(item.Text));
+                        {
+                            var name = Path.GetFileNameWithoutExtension(item.Text);
+                            references.Add(name);
+                            // Resolve relative paths against the project directory
+                            var fullPath = Path.IsPathRooted(item.Text)
+                                ? Path.GetFullPath(item.Text)
+                                : Path.GetFullPath(Path.Combine(projectDirectory, item.Text));
+                            referencePaths.TryAdd(name, fullPath);
+                        }
                         break;
                     case "Analyzers":
                         foreach (var item in param.Children.OfType<Item>())
@@ -153,6 +162,7 @@ public static class BinlogParser
             SourceFileOriginalPaths = sourceFileOriginalPaths,
             Defines = defines,
             References = references,
+            ReferencePaths = referencePaths,
             NoWarn = noWarn,
             Analyzers = analyzers,
             Flags = flags,
