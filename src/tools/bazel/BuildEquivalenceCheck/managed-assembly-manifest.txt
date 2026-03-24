@@ -265,9 +265,11 @@ match  Microsoft.Extensions.Options.DataAnnotations
 match  Microsoft.Extensions.Options.Tests
 match  Microsoft.Extensions.Primitives
 match  Microsoft.Extensions.Primitives.Tests
-diff   Microsoft.Interop.ComInterfaceGenerator
-diff   Microsoft.Interop.LibraryImportGenerator
-diff   Microsoft.Interop.SourceGeneration
+# Assemblies below target netstandard2.0 in MSBuild and are filtered from
+# comparison (Bazel targets them differently). Removed from active manifest.
+# Microsoft.Interop.ComInterfaceGenerator
+# Microsoft.Interop.LibraryImportGenerator
+# Microsoft.Interop.SourceGeneration
 match  Microsoft.Win32.Primitives.Tests
 match  Microsoft.Win32.Registry.AccessControl
 match  Microsoft.Win32.SystemEvents
@@ -283,13 +285,13 @@ match  System.Collections.Specialized.Tests
 match  System.Collections.Tests
 match  System.ComponentModel.Annotations.Tests
 match  System.ComponentModel.Composition
-diff   System.ComponentModel.Composition.Noop.Assembly
+# System.ComponentModel.Composition.Noop.Assembly  # netstandard2.0, filtered
 match  System.ComponentModel.Composition.Registration
 match  System.ComponentModel.Composition.Tests
 match  System.ComponentModel.EventBasedAsync.Tests
 match  System.ComponentModel.Primitives.Tests
 match  System.ComponentModel.Tests
-diff   System.ComponentModel.TypeConverter.Tests
+match  System.ComponentModel.TypeConverter.Tests
 match  System.Composition.AttributeModel.Tests
 match  System.Composition.AttributedModel
 match  System.Composition.Convention
@@ -347,10 +349,10 @@ match  System.Memory.Data
 match  System.Memory.Data.Tests
 match  System.Memory.Tests
 match  System.Net.Http.WinHttpHandler
-diff   System.Net.HttpListener.Tests
+match  System.Net.HttpListener.Tests
 match  System.Net.Mail.Functional.Tests
 match  System.Net.NameResolution.Functional.Tests
-diff   System.Net.NetworkInformation.Functional.Tests
+match  System.Net.NetworkInformation.Functional.Tests
 match  System.Net.Ping.Functional.Tests
 match  System.Net.Primitives.Functional.Tests
 match  System.Net.Requests.Tests
@@ -363,7 +365,7 @@ match  System.Net.WebSockets.Tests
 match  System.Numerics.Tensors
 match  System.Numerics.Vectors.Tests
 match  System.ObjectModel.Tests
-diff   System.Private.CoreLib.Generators
+# System.Private.CoreLib.Generators  # netstandard2.0, filtered
 match  System.Private.Uri.Functional.Tests
 match  System.Reflection.Context
 match  System.Reflection.Context.Tests
@@ -407,7 +409,7 @@ match  System.Speech
 match  System.Text.Encoding.CodePages.Tests
 match  System.Text.Encoding.Extensions.Tests
 match  System.Text.Encodings.Web.Tests
-diff   System.Text.RegularExpressions.Generator
+# System.Text.RegularExpressions.Generator  # netstandard2.0, filtered
 diff   System.Text.RegularExpressions.Tests
 match  System.Text.RegularExpressions.Unit.Tests
 match  System.Threading.Channels.Tests
@@ -425,13 +427,13 @@ diff   System.Windows.Extensions
 match  System.Xml.Linq.Axes.Tests
 match  System.Xml.Linq.SDMSample.Tests
 match  System.Xml.Schema.Extensions.Tests
-diff   TestLibrary
+# TestLibrary  # netstandard2.0, filtered
+# ExceptionTestAssembly  # netstandard2.0, filtered
 match  crossgen2
 match  ilc
 match  illink
 
 # ── Unlisted assemblies added during equivalence improvement ──
-diff   ExceptionTestAssembly
 diff   ILCompiler.Reflection.ReadyToRun
 diff   System.Text.Json.SourceGeneration
 match  TestUtilities

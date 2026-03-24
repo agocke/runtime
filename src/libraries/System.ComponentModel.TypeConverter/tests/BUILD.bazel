@@ -13,10 +13,6 @@ library_test(
         ["**/*.cs"],
         exclude = [
             "TrimmingTests/**",
-            # Requires System.Net.Security.ExtendedProtectionPolicy
-            "Security/**",
-            # Requires System.Xml.Linq (XElement)
-            "XTypeDescriptionProviderTests.cs",
         ],
     ),
     deps = [
@@ -25,9 +21,12 @@ library_test(
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
         "//src/libraries/System.Diagnostics.Tracing:ref_System.Diagnostics.Tracing",
         "//src/libraries/System.Drawing.Primitives:ref_System.Drawing.Primitives",
+        "//src/libraries/System.Net.Security:ref_System.Net.Security",
         "//src/libraries/System.Runtime.Serialization.Formatters:impl_System.Runtime.Serialization.Formatters",
         "//src/libraries/System.Threading:ref_System.Threading",
         "//src/libraries/System.Threading.Thread:ref_System.Threading.Thread",
+        "//src/libraries/System.Xml.XDocument:ref_System.Xml.XDocument",
+        "//src/libraries/System.Xml.ReaderWriter:ref_System.Xml.ReaderWriter",
         "//src/libraries/Common/tests:TestUtilities",
         "@paket.main//moq",
         "//src/libraries/System.Linq.Expressions:ref_System.Linq.Expressions",
