@@ -453,11 +453,11 @@ public static class ComparisonEngine
     private static readonly HashSet<string> IgnoredNoWarns = new(StringComparer.Ordinal)
     {
         // XML doc comment warnings — handled via EditorConfig in MSBuild, nowarn in Bazel
-        "CS1591", "1591",
+        "1591", "1572", "1574", "1710", "1734",
         // Nullable context handling — globalconfig in MSBuild, nowarn in Bazel
-        "CS8632", "nullable",
+        "8632", "nullable",
         // Type forwarding / nullable analysis — suppressed inconsistently
-        "CS1701", "CS1705", "CS8500", "CS8604", "CS8969",
+        "1701", "1702", "1705", "8500", "8604", "8969",
     };
 
     /// <summary>
@@ -476,12 +476,12 @@ public static class ComparisonEngine
 
         // Defines: Filter TFM-derived platform identifiers (UNIX, LINUX, etc.)
         // MSBuild adds these from the TargetFrameworkMoniker; Bazel doesn't.
-        // Also filter NETSTANDARD which MSBuild adds for multi-targeting.
+        // Also filter BAZEL (Bazel-only) and NETx_0_OR_GREATER version defines.
         var msbuildDefines = new SortedSet<string>(
             msbuild.Defines.Where(d => !IsTfmPlatformDefine(d)),
             StringComparer.Ordinal);
         var bazelDefines = new SortedSet<string>(
-            bazel.Defines.Where(d => !IsTfmPlatformDefine(d)),
+            bazel.Defines.Where(d => !IsTfmPlatformDefine(d) && d != "BAZEL"),
             StringComparer.Ordinal);
         AddSetDifference(result, "defines", msbuildDefines, bazelDefines);
 
@@ -517,10 +517,10 @@ public static class ComparisonEngine
         // Also filter CS1705/CS8500/CS8969 — type forwarding and nullable analysis warnings
         // that MSBuild and Bazel suppress inconsistently.
         var msbuildNoWarn = new SortedSet<string>(
-            msbuild.NoWarn.Where(w => !IsIgnoredNoWarn(w)),
+            msbuild.NoWarn.Select(NormalizeNoWarn).Where(w => !IsIgnoredNoWarn(w)),
             StringComparer.Ordinal);
         var bazelNoWarn = new SortedSet<string>(
-            bazel.NoWarn.Where(w => !IsIgnoredNoWarn(w)),
+            bazel.NoWarn.Select(NormalizeNoWarn).Where(w => !IsIgnoredNoWarn(w)),
             StringComparer.Ordinal);
         AddSetDifference(result, "nowarn", msbuildNoWarn, bazelNoWarn);
         // Analyzers are intentionally not compared — Bazel does not wire Roslyn
@@ -701,6 +701,19 @@ public static class ComparisonEngine
     }
 
     /// <summary>
+    /// Normalize a nowarn code so that "CS0168" and "0168" compare as equal.
+    /// MSBuild typically emits the CS-prefixed form, while Bazel BUILD files
+    /// sometimes use just the numeric code.
+    /// </summary>
+    private static string NormalizeNoWarn(string code)
+    {
+        if (code.StartsWith("CS", StringComparison.Ordinal) && code.Length > 2 && char.IsDigit(code[2]))
+            return code[2..];
+
+        return code;
+    }
+
+    /// <summary>
     /// Normalize generated file names so that variants like "System.SR.cs",
     /// "SR.g.cs", and "SharedStrings.g.cs" are treated as equivalent for matching.
     /// </summary>
@@ -715,11 +728,14 @@ public static class ComparisonEngine
     /// <summary>
     /// Check if a define is a TFM-derived platform identifier that MSBuild
     /// adds from the TargetFrameworkMoniker but Bazel doesn't.
+    /// Also covers NETx_0_OR_GREATER version defines and NETSTANDARD variants.
     /// </summary>
     private static bool IsTfmPlatformDefine(string define) =>
         define is "UNIX" or "UNIX1_0" or "LINUX" or "LINUX1_0"
             or "WINDOWS" or "WINDOWS1_0" or "OSX" or "OSX1_0"
-            or "NETSTANDARD";
+            or "NETSTANDARD" or "Unix"
+        || define.StartsWith("NET") && (define.Contains("_OR_GREATER") || define.Contains("STANDARD"))
+        || define is "NET" or "NET8_0" or "NET9_0" or "NET10_0";
 
     /// <summary>
     /// Normalize language version strings so that "preview" and the

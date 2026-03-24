@@ -5,10 +5,6 @@ library_test(
     name = "System.Net.Sockets.Tests",
     srcs = glob(
         ["**/*.cs"],
-        exclude = [
-            "StartupTests.Windows.cs",
-            "InlineCompletions.Unix.cs",
-        ],
     ) + [
         "//src/libraries/Common/tests:System/Net/Configuration.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.Sockets.cs",

@@ -15,6 +15,8 @@ library_test(
             "BasicEventSourceTest/FuzzyTests.Etw.cs",
             "BasicEventSourceTest/TestsWriteEventToListener.Etw.cs",
             "BasicEventSourceTest/TestsManifestGeneration.Etw.cs",
+            # Not compiled by MSBuild test project
+            "BasicEventSourceTest/TestCallbacks.cs",
             # Trimming tests (require ILLink)
             "TrimmingTests/**",
         ],

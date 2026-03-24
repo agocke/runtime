@@ -31,6 +31,8 @@ library_test(
         exclude = [
             # Windows-only
             "ConsoleEncoding.Windows.cs",
+            # Manual interactive tests — not in automated test project
+            "ManualTests/**",
         ],
     ) + [
         "//src/libraries/System.Console:src/System/TermInfo.WellKnownStrings.cs",

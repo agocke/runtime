@@ -14,6 +14,8 @@ library_test(
         ["**/*.cs"],
         exclude = [
             "TrimmingTests/**",
+            # Separate MSBuild test project (System.Data.DataSetExtensions.Tests)
+            "System.Data.DataSetExtensions.Tests/**",
             # Requires System.Data.SqlClient NuGet package
             "System/Data/FacadeTest.cs",
             "System/Data/Common/DbProviderFactoriesTests.cs",

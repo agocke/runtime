@@ -3,7 +3,13 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Linq.Tests",
-    srcs = glob(["*.cs"]) + [
+    srcs = glob(
+        ["*.cs"],
+        exclude = [
+            # Not compiled by MSBuild test project
+            "CreateOrderedEnumerableTests.cs",
+        ],
+    ) + [
         "//src/libraries/Common/tests:System/Linq/SkipTakeData.cs",
         "//src/libraries/Common/tests:System/Diagnostics/DebuggerAttributes.cs",
     ],

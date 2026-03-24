@@ -3,7 +3,13 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Security.Cryptography.Pkcs.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = glob(
+        ["**/*.cs"],
+        exclude = [
+            # Windows CNG key persistence tests
+            "EnvelopedCms/DecryptTests.KeyPersistence.cs",
+        ],
+    ) + [
         "//src/libraries/Common/tests:System/Security/Cryptography/AlgorithmImplementations/MLDsa/MLDsaTestsData.cs",
         "//src/libraries/Common/tests:System/Security/Cryptography/AlgorithmImplementations/MLDsa/MLDsaTestsData.Ietf.cs",
         "//src/libraries/Common/tests:System/Security/Cryptography/AlgorithmImplementations/SlhDsa/SlhDsaTestData.cs",

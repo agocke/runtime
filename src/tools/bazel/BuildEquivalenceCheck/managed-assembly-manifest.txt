@@ -299,7 +299,7 @@ match  System.Composition.Runtime
 match  System.Composition.TypedParts
 match  System.Composition.TypedParts.Tests
 diff   System.Configuration.ConfigurationManager
-diff   System.Console.Tests
+match  System.Console.Tests
 diff   System.Data.Common.Tests
 diff   System.Data.Odbc
 diff   System.Data.OleDb
@@ -312,7 +312,7 @@ diff   System.Diagnostics.PerformanceCounter
 match  System.Diagnostics.StackTrace.Tests
 match  System.Diagnostics.TextWriterTraceListener.Tests
 match  System.Diagnostics.TraceSource.Tests
-diff   System.Diagnostics.Tracing.Tests
+match  System.Diagnostics.Tracing.Tests
 diff   System.DirectoryServices
 match  System.DirectoryServices.AccountManagement
 diff   System.DirectoryServices.Protocols
@@ -322,7 +322,7 @@ match  System.Formats.Cbor
 diff   System.Formats.Cbor.Tests
 match  System.Formats.Nrbf
 match  System.Formats.Nrbf.Tests
-diff   System.Formats.Tar.Tests
+match  System.Formats.Tar.Tests
 diff   System.IO.Compression.Brotli.Tests
 match  System.IO.Compression.Tests
 match  System.IO.Compression.ZipFile.Tests
@@ -339,9 +339,9 @@ match  System.IO.Ports
 match  System.Linq.AsyncEnumerable.Tests
 match  System.Linq.Expressions.Tests
 match  System.Linq.Parallel.Tests
-diff   System.Linq.Queryable.Tests
-diff   System.Linq.Tests
-diff   System.Management
+match  System.Linq.Queryable.Tests
+match  System.Linq.Tests
+match  System.Management
 match  System.Memory.Data
 match  System.Memory.Data.Tests
 match  System.Memory.Tests
@@ -353,11 +353,11 @@ diff   System.Net.NetworkInformation.Functional.Tests
 match  System.Net.Ping.Functional.Tests
 match  System.Net.Primitives.Functional.Tests
 match  System.Net.Requests.Tests
-diff   System.Net.Sockets.Tests
+match  System.Net.Sockets.Tests
 match  System.Net.WebClient.Tests
 match  System.Net.WebHeaderCollection.Tests
 match  System.Net.WebProxy.Tests
-diff   System.Net.WebSockets.Client.Tests
+match  System.Net.WebSockets.Client.Tests
 match  System.Net.WebSockets.Tests
 match  System.Numerics.Tensors
 match  System.Numerics.Vectors.Tests
@@ -380,8 +380,8 @@ match  System.Resources.Extensions
 match  System.Resources.Writer.Tests
 match  System.Runtime.Caching
 match  System.Runtime.CompilerServices.VisualC.Tests
-diff   System.Runtime.InteropServices.Tests
-diff   System.Runtime.Intrinsics.Tests
+match  System.Runtime.InteropServices.Tests
+match  System.Runtime.Intrinsics.Tests
 diff   System.Runtime.Loader.Tests
 diff   System.Runtime.Numerics.Tests
 match  System.Runtime.Serialization.Json.Tests
@@ -390,9 +390,9 @@ diff   System.Runtime.Serialization.Schema
 diff   System.Runtime.Serialization.Xml.Tests
 match  System.Security.Claims.Tests
 match  System.Security.Cryptography.Cose
-diff   System.Security.Cryptography.Cose.Tests
+match  System.Security.Cryptography.Cose.Tests
 diff   System.Security.Cryptography.Pkcs
-diff   System.Security.Cryptography.Pkcs.Tests
+match  System.Security.Cryptography.Pkcs.Tests
 diff   System.Security.Cryptography.ProtectedData
 match  System.Security.Cryptography.ProtectedData.Tests
 diff   System.Security.Cryptography.Tests
@@ -402,10 +402,10 @@ diff   System.Security.Permissions
 diff   System.ServiceModel.Syndication
 match  System.ServiceModel.Syndication.Tests
 diff   System.ServiceProcess.ServiceController
-diff   System.Speech
+match  System.Speech
 match  System.Text.Encoding.CodePages.Tests
 match  System.Text.Encoding.Extensions.Tests
-diff   System.Text.Encodings.Web.Tests
+match  System.Text.Encodings.Web.Tests
 diff   System.Text.RegularExpressions.Generator
 diff   System.Text.RegularExpressions.Tests
 match  System.Text.RegularExpressions.Unit.Tests
@@ -433,4 +433,4 @@ match  illink
 diff   ExceptionTestAssembly
 diff   ILCompiler.Reflection.ReadyToRun
 diff   System.Text.Json.SourceGeneration
-diff   TestUtilities
+match  TestUtilities

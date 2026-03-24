@@ -8,6 +8,8 @@ live_csharp_library(
         ["TestUtilities/**/*.cs"],
         exclude = [
             "TestUtilities/System/WindowsTestFileShare.cs",
+            # Not compiled by MSBuild TestUtilities project
+            "TestUtilities/System/DisableParallelizationPerAssembly.cs",
         ],
     ) + [
         "//src/libraries/Common:src/System/Text/ValueStringBuilder.cs",

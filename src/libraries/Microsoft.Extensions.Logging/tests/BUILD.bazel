@@ -21,8 +21,6 @@ library_test(
             "Common/LoggerTest.cs",
             "Common/LoggerFactoryTest.cs",
             "Common/LoggerFactoryExtensionsTest.cs",
-            # EventLogLoggerTest accesses EventLog internals and Windows-specific types
-            "Common/EventLogLoggerTest.cs",
         ],
     ) + [
         "DI.Common/Common/src/TestSink.cs",
@@ -37,7 +35,9 @@ library_test(
         "//src/libraries/Microsoft.Extensions.Logging.Abstractions:impl_Microsoft.Extensions.Logging.Abstractions",
         "//src/libraries/Microsoft.Extensions.Logging.Console:impl_Microsoft.Extensions.Logging.Console",
         "//src/libraries/Microsoft.Extensions.Logging.Debug:impl_Microsoft.Extensions.Logging.Debug",
+        "//src/libraries/Microsoft.Extensions.Logging.EventLog:impl_Microsoft.Extensions.Logging.EventLog",
         "//src/libraries/Microsoft.Extensions.Logging.TraceSource:ref_Microsoft.Extensions.Logging.TraceSource",
+        "//src/libraries/System.Diagnostics.EventLog:ref_System.Diagnostics.EventLog",
         "//src/libraries/Microsoft.Extensions.Configuration.Binder:impl_Microsoft.Extensions.Configuration.Binder",
         "//src/libraries/Microsoft.Extensions.Configuration.Json:impl_Microsoft.Extensions.Configuration.Json",
         "//src/libraries/Microsoft.Extensions.Configuration.FileExtensions:impl_Microsoft.Extensions.Configuration.FileExtensions",
