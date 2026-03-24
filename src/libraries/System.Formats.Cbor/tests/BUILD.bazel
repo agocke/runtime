@@ -28,7 +28,10 @@ library_test(
         "@paket.main//microsoft.dotnet.xunitextensions",
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
+        "//src/libraries/shims/netstandard:impl_netstandard",
     ],
     allow_unsafe_blocks = True,
+    nowarn = ["8002", "IL2040"],
+    multitarget = True,
     nullable = "enable",
 )

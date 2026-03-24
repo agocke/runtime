@@ -49,5 +49,6 @@ library_test(
     keyfile = OPEN_SNK,
     data = ["@paket.main//system.text.regularexpressions.testdata:content_files"],
     nowarn = ["xUnit2008", "SYSLIB0036", "SYSLIB1045", "SYSLIB0011", "SYSLIB0050", "SYSLIB0051"],
+    multitarget = True,
     size = "large",
 )
