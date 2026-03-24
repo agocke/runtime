@@ -16,7 +16,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Runtime.Caching",
-    os_targeted = True,
+    nowarn = ["NU5128", "nullable"],
     multitarget = True,
     srcs = [
         "src/System/Runtime/Caching/Counters.cs",

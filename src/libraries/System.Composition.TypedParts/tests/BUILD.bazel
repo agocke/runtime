@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Composition.TypedParts.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/Diagnostics/DebuggerAttributes.cs",
     ],

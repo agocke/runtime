@@ -3,6 +3,7 @@ load("//:defs.bzl", "UNICODE_DATA_REPO")
 
 library_test(
     name = "System.Text.Encodings.Web.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         # Library source files compiled into tests for internal testing
         "//src/libraries/System.Text.Encodings.Web:src/System/Text/Encodings/Web/AllowedBmpCodePointsBitmap.cs",

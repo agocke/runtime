@@ -21,6 +21,9 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Formats.Cbor",
+    multitarget = True,
+    skip_cs1591 = True,
+    nowarn = ["CP0003"],
     srcs = [
         "//src/libraries/Common:src/System/Memory/PointerMemoryManager.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",

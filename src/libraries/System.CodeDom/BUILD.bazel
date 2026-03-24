@@ -20,6 +20,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.CodeDom",
+    multitarget = True,
     srcs = [
         "src/Microsoft/CSharp/CSharpCodeGenerator.cs",
         "src/Microsoft/CSharp/CSharpCodeGenerator.PlatformNotSupported.cs",
@@ -157,7 +158,7 @@ impl_assembly(
     defines = ["CODEDOM"],
     resx_file = "src/Resources/Strings.resx",
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = ["nullable", "CP0003"],
 )
 
 ref_impl_pair(

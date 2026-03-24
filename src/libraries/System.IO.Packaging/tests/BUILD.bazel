@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.IO.Packaging.Tests",
+    multitarget = True,
     srcs = glob(
         ["**/*.cs"],
         exclude = ["Tests.NetFramework.cs"],

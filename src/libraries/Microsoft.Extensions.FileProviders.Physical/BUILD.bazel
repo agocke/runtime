@@ -20,6 +20,8 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.FileProviders.Physical",
+    skip_cs1591 = True,
+    nowarn = ["CA1865", "CA1866"],
     multitarget = True,
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/Extensions/EmptyDisposable.cs",

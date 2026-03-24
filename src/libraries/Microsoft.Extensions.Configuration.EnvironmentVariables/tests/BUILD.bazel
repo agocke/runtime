@@ -3,6 +3,7 @@ load("//:defs.bzl", "ASPNETCORE_SNK")
 
 library_test(
     name = "Microsoft.Extensions.Configuration.EnvironmentVariables.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Microsoft.Extensions.Configuration/tests:ConfigurationProviderTestBase.cs",
         "//src/libraries/Microsoft.Extensions.Configuration/tests:Common/ConfigurationProviderExtensions.cs",

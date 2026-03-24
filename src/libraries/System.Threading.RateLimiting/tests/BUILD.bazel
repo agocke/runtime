@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Threading.RateLimiting.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]),
     deps = [
         "//src/libraries/System.Threading.RateLimiting:ref_System.Threading.RateLimiting",

@@ -8,6 +8,7 @@ genrule(
 
 csharp_library(
     name = "ILCompiler.MetadataTransform",
+    nowarn = ["1591"],
     srcs = [
         ":AssemblyInfo",
         "ILCompiler/Metadata/EntityMap.cs",

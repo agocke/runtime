@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Security.Cryptography.Cose.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/Security/Cryptography/ByteUtils.cs",
         "//src/libraries/Common/tests:System/Security/Cryptography/PlatformSupport.cs",

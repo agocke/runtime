@@ -5,6 +5,7 @@ load("//src/libraries:defs.bzl", "impl_assembly")
 # framework.
 impl_assembly(
     name = "impl_Microsoft.Bcl.Memory",
+    skip_cs1591 = True,
     multitarget = True,
     srcs = [
         "src/Microsoft.Bcl.Memory.Forwards.cs",

@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Threading.Tasks.Dataflow.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/Diagnostics/Tracing/TestEventListener.cs",
         "//src/libraries/Common/tests:System/Diagnostics/DebuggerAttributes.cs",

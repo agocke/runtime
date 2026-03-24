@@ -24,6 +24,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Configuration.ConfigurationManager",
+    nowarn = ["CA2249", "nullable"],
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/System/IO/TempFileCollection.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",

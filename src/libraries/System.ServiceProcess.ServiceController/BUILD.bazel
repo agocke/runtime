@@ -17,6 +17,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.ServiceProcess.ServiceController",
+    multitarget = True,
     pnse = True,
     pnse_message = "SR.PlatformNotSupported_ServiceController",
     pnse_ref_srcs = [
@@ -34,7 +35,7 @@ impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     supported_os_platforms_short = ["windows"],
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = ["nullable", "CA1865", "CA2249", "CP0003"],
 )
 
 ref_impl_pair(

@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Text.Encoding.CodePages.Tests",
+    multitarget = True,
     srcs = glob(["*.cs"]),
     deps = [
         "//src/libraries/System.Text.Encoding.CodePages:live_System.Text.Encoding.CodePages",

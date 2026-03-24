@@ -3,6 +3,7 @@ load("//:defs.bzl", "ASPNETCORE_SNK")
 
 library_test(
     name = "Microsoft.Extensions.Primitives.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/Threading/Tasks/TaskTimeoutExtensions.cs",
     ],

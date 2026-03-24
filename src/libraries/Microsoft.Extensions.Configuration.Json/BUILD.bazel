@@ -20,6 +20,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Configuration.Json",
+    skip_cs1591 = True,
     multitarget = True,
     srcs = glob(["src/**/*.cs"]),
     deps = [

@@ -10,6 +10,7 @@ gen_resx_source(
 
 library_test(
     name = "System.Formats.Tar.Tests",
+    defines = select({"@platforms//os:linux": ["UNIX", "UNIX1_0"], "@platforms//os:macos": ["UNIX", "UNIX1_0"], "//conditions:default": []}),
     srcs = glob(
         ["**/*.cs"],
         exclude = [

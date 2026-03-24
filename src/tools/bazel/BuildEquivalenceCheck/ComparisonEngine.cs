@@ -486,14 +486,14 @@ public static class ComparisonEngine
 
         AddSourceFileDifference(result, msbuild, bazel);
 
-        // Defines: Filter TFM-derived platform identifiers (UNIX, LINUX, etc.)
-        // MSBuild adds these from the TargetFrameworkMoniker; Bazel doesn't.
-        // Also filter BAZEL (Bazel-only) and NETx_0_OR_GREATER version defines.
+        // Defines: compare all defines except BAZEL (Bazel-only infrastructure define)
+        // and build configuration defines (RELEASE/DEBUG/TRACE/CHECKED/NDEBUG) which
+        // depend on the build config, not source structure.
         var msbuildDefines = new SortedSet<string>(
-            msbuild.Defines.Where(d => !IsTfmPlatformDefine(d)),
+            msbuild.Defines.Where(d => !IsConfigDefine(d)),
             StringComparer.Ordinal);
         var bazelDefines = new SortedSet<string>(
-            bazel.Defines.Where(d => !IsTfmPlatformDefine(d) && d != "BAZEL"),
+            bazel.Defines.Where(d => !IsConfigDefine(d) && d != "BAZEL"),
             StringComparer.Ordinal);
         AddSetDifference(result, "defines", msbuildDefines, bazelDefines);
 
@@ -521,18 +521,17 @@ public static class ComparisonEngine
             });
         }
 
-        // NoWarn: Filter analyzer-only warnings (MSBuild runs .NET analyzers, Bazel doesn't).
-        // Also filter CS1591/1591 (XML doc comments) — Bazel adds it via skip_cs1591 macro,
-        // MSBuild handles it via EditorConfig; neither affects compiled output.
-        // Also filter CS8632 and "nullable" — nullable context handling differs between
-        // MSBuild (globalconfig) and Bazel (nowarn).
-        // Also filter CS1705/CS8500/CS8969 — type forwarding and nullable analysis warnings
-        // that MSBuild and Bazel suppress inconsistently.
+        // NoWarn: compare all warning suppressions. Normalize CS prefix for consistency.
+        // Filter CS8632 and "nullable" — rules_dotnet explicitly passes /nullable:disable
+        // for assemblies where nullable is disabled, but MSBuild omits it (disable is the
+        // default). This triggers CS8632 on nullable annotations in shared source files.
+        // MSBuild also passes "nullable" as a nowarn for PNSE assemblies that set
+        // <Nullable>disable</Nullable>. Both are nullable context infrastructure noise.
         var msbuildNoWarn = new SortedSet<string>(
-            msbuild.NoWarn.Select(NormalizeNoWarn).Where(w => !IsIgnoredNoWarn(w)),
+            msbuild.NoWarn.Select(NormalizeNoWarn).Where(w => w is not "8632" and not "nullable"),
             StringComparer.Ordinal);
         var bazelNoWarn = new SortedSet<string>(
-            bazel.NoWarn.Select(NormalizeNoWarn).Where(w => !IsIgnoredNoWarn(w)),
+            bazel.NoWarn.Select(NormalizeNoWarn).Where(w => w is not "8632" and not "nullable"),
             StringComparer.Ordinal);
         AddSetDifference(result, "nowarn", msbuildNoWarn, bazelNoWarn);
         // Analyzers are intentionally not compared — Bazel does not wire Roslyn
@@ -777,6 +776,13 @@ public static class ComparisonEngine
             or "NETSTANDARD" or "Unix"
         || define.StartsWith("NET") && (define.Contains("_OR_GREATER") || define.Contains("STANDARD"))
         || define is "NET" or "NET8_0" or "NET9_0" or "NET10_0";
+
+    /// <summary>
+    /// Build configuration defines that depend on the selected build config
+    /// (debug/release/checked), not on source structure.
+    /// </summary>
+    private static bool IsConfigDefine(string define) =>
+        define is "RELEASE" or "DEBUG" or "TRACE" or "CHECKED" or "NDEBUG";
 
     /// <summary>
     /// Normalize language version strings so that "preview" and the

@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Formats.Nrbf.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/System.Formats.Nrbf:src/System/Formats/Nrbf/BinaryArrayType.cs",
         "//src/libraries/System.Formats.Nrbf:src/System/Formats/Nrbf/BinaryType.cs",

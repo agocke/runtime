@@ -51,6 +51,16 @@ _LIBRARY_TEST_NOWARN = [
     "IL2121",
 ]
 
+# Directory.Build.targets NoWarn for projects that multi-target net4x/netstandard:
+#   <NoWarn Condition="$(TargetFrameworks.Contains('net4'))
+#     or $(TargetFrameworks.Contains('netstandard'))">
+#     $(NoWarn);CA1510;CA1511;CA1512;CA1513;CA1845;CA1846;CA1847
+#   </NoWarn>
+_MULTITARGET_NOWARN = [
+    "CA1510", "CA1511", "CA1512", "CA1513",
+    "CA1845", "CA1846", "CA1847",
+]
+
 # Label for the Roslyn compiler server persistent worker binary.
 _SHARED_COMPILATION_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
 
@@ -592,6 +602,7 @@ def library_test(
     nowarn = [],
     size = "medium",
     use_shared_compilation = True,
+    multitarget = False,
     **kwargs
 ):
     """Test macro for library tests that compiles as library and runs via xunit.console.dll."""
@@ -599,12 +610,15 @@ def library_test(
     # Match MSBuild default: src/libraries/Directory.Build.props sets
     # <Nullable>annotations</Nullable> for test projects.
     nullable = kwargs.pop("nullable", "annotations")
+    all_nowarn = nowarn + _LIBRARY_TEST_NOWARN
+    if multitarget:
+        all_nowarn = all_nowarn + _MULTITARGET_NOWARN
     _xunit_library_test(
         name = name,
         deps = deps,
         analyzers = analyzers,
         target_frameworks = [NETCOREAPP_CURRENT],
-        nowarn = nowarn + _LIBRARY_TEST_NOWARN,
+        nowarn = all_nowarn,
         size = size,
         nullable = nullable,
         use_shared_compilation = use_shared_compilation,

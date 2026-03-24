@@ -10,6 +10,8 @@ gen_resx_source(
 
 library_test(
     name = "System.Diagnostics.DiagnosticSource.Tests",
+    nowarn = ["NU1511"],
+    multitarget = True,
     srcs = glob(
         ["**/*.cs"],
         exclude = [

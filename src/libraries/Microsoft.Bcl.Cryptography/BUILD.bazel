@@ -5,6 +5,7 @@ load("//src/libraries:defs.bzl", "impl_assembly")
 # PQC / X509Loader code is only compiled for older TFMs.
 impl_assembly(
     name = "impl_Microsoft.Bcl.Cryptography",
+    skip_cs1591 = True,
     multitarget = True,
     srcs = [
         "src/Microsoft.Bcl.Cryptography.Forwards.cs",

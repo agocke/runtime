@@ -13,7 +13,7 @@ live_csharp_library(
         "@paket.main//xunit.extensibility.core",
     ],
     nullable = "disable",
-    nowarn = ["nullable", "CA1852", "1591"],
+    nowarn = ["CA1510", "CA1511", "CA1512", "CA1513", "CA1845", "CA1846", "CA1847", "CA1852", "1591", "CP0003"],
     visibility = ["//visibility:public"],
     keyfile = ASPNETCORE_SNK,
 )

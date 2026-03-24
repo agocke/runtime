@@ -3,6 +3,7 @@ load("//:defs.bzl", "ASPNETCORE_SNK")
 
 library_test(
     name = "Microsoft.Extensions.Http.Tests",
+    multitarget = True,
     srcs = glob(
         ["Microsoft.Extensions.Http.Tests/**/*.cs"],
         exclude = [

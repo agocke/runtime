@@ -23,6 +23,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Security.Cryptography.Pkcs",
+    multitarget = True,
     srcs = [
         # Asn1Reader shared projitems
         "//src/libraries/Common:src/System/Security/Cryptography/Asn1Reader/AsnValueReader.cs",
@@ -213,6 +214,7 @@ impl_assembly(
     nowarn = [
         "CA5384",
         "SYSLIB5006",
+        "CP0003",
     ],
     resx_file = "src/Resources/Strings.resx",
     defines = [

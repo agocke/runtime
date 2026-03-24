@@ -430,6 +430,7 @@ def csharp_library(
     # the default).  The explicit flag triggers CS8632 on nullable
     # annotations (e.g. string?) in shared source files like
     # Common/src/System/SR.cs.  Suppress it for those assemblies to match.
+    # This is a rules_dotnet behavioral difference, not a source-level one.
     _nullable_nowarn = ["CS8632"] if kwargs.get("nullable") == "disable" else []
 
     # In CI mode, construct a pathmap entry that maps the Bazel PDB output

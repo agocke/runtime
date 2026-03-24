@@ -16,6 +16,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Reflection.Context",
+    nowarn = ["NU5128"],
     multitarget = True,
     srcs = glob(["src/**/*.cs"]),
     deps = [

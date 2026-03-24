@@ -19,7 +19,8 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Runtime.Serialization.Schema",
-    multitarget = True,
+    skip_cs1591 = True,
+    nowarn = ["CP0003"],
     srcs = glob(["src/**/*.cs"]),
     deps = [
         "//src/libraries:ref_System.Runtime",

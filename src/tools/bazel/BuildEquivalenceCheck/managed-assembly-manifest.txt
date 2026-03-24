@@ -36,7 +36,7 @@ match  System.Configuration
 match  System.Console
 match  System.Core
 match  System.Data
-match  System.Data.Common
+diff   System.Data.Common
 match  System.Data.DataSetExtensions
 match  System.Diagnostics.Contracts
 match  System.Diagnostics.Debug
@@ -101,7 +101,7 @@ match  System.Net.WebSockets.Client
 match  System.Numerics
 match  System.Numerics.Vectors
 match  System.ObjectModel
-match  System.Private.CoreLib
+diff   System.Private.CoreLib
 match  System.Private.DataContractSerialization
 match  System.Private.Uri
 match  System.Private.Xml
@@ -306,7 +306,7 @@ diff   System.Data.Common.Tests
 diff   System.Data.Odbc
 match  System.Data.OleDb
 match  System.Diagnostics.Contracts.Tests
-match  System.Diagnostics.DiagnosticSource.Tests
+diff   System.Diagnostics.DiagnosticSource.Tests
 match  System.Diagnostics.EventLog
 match  System.Diagnostics.FileVersionInfo.TestAssembly
 match  System.Diagnostics.FileVersionInfo.Tests
@@ -436,4 +436,4 @@ match  illink
 # ── Unlisted assemblies added during equivalence improvement ──
 diff   ILCompiler.Reflection.ReadyToRun
 diff   System.Text.Json.SourceGeneration
-match  TestUtilities
+diff   TestUtilities

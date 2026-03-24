@@ -29,6 +29,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Security.Permissions",
+    nowarn = ["nullable"],
     multitarget = True,
     partial_facade = True,
     srcs = glob(["src/**/*.cs"]) + [

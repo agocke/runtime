@@ -32,7 +32,7 @@ impl_assembly(
     ],
     multitarget = True,
     srcs = [],
-    nowarn = ["CS0618", "CS3016"],
+    nowarn = ["CS0618", "CS3016", "CA2249", "SYSLIB0004"],
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries:ref_System.ComponentModel.Primitives",

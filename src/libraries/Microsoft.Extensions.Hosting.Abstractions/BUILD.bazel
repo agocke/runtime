@@ -23,6 +23,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Hosting.Abstractions",
+    skip_cs1591 = True,
     multitarget = True,
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/System/Obsoletions.cs",

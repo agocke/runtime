@@ -17,6 +17,7 @@ genrule(
 
 library_test(
     name = "Microsoft.Extensions.Hosting.Unit.Tests",
+    multitarget = True,
     srcs = glob(["UnitTests/**/*.cs"]) + [
         "//src/libraries/Common/tests:System/IO/TempDirectory.cs",
     ],

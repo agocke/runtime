@@ -3,6 +3,7 @@ load("//:defs.bzl", "ASPNETCORE_SNK")
 
 library_test(
     name = "Microsoft.Extensions.Diagnostics.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Microsoft.Extensions.Diagnostics:src/Metrics/Configuration/MetricsConfigureOptions.cs",
         "//src/libraries/Microsoft.Extensions.Diagnostics:src/Metrics/DebugConsoleMetricListener.cs",

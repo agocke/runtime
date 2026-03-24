@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Reflection.Metadata.Tests",
+    multitarget = True,
     srcs = glob(
         ["**/*.cs"],
         exclude = [
@@ -79,8 +80,7 @@ library_test(
     },
     nowarn = [
         "CS0436",
-        "SYSLIB0037",
-    ],
+        "SYSLIB0037",  "NU1511"],
     size = "large",
     keyfile = OPEN_SNK,
 )

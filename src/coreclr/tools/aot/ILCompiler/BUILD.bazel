@@ -11,6 +11,7 @@ EOF""",
 
 csharp_binary(
     name = "ilc",
+    nowarn = ["1701", "1702", "8002", "IL2121", "NU1701", "NU5105"],
     srcs = glob(
         ["**/*.cs"],
         exclude = ["repro/**"],

@@ -3,6 +3,8 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.IO.Pipelines.Tests",
+    nowarn = ["NU1511"],
+    multitarget = True,
     srcs = glob(["**/*.cs"]),
     deps = [
         "//src/libraries/System.IO.Pipelines:impl_System.IO.Pipelines",

@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Linq.AsyncEnumerable.Tests",
+    multitarget = True,
     srcs = glob(["*.cs"]),
     deps = [
         "//src/libraries/System.Linq.AsyncEnumerable:ref_System.Linq.AsyncEnumerable",

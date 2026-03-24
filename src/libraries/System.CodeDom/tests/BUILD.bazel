@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.CodeDom.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/Collections/IList.NonGeneric.Tests.cs",
         "//src/libraries/Common/tests:System/Collections/ICollection.NonGeneric.Tests.cs",

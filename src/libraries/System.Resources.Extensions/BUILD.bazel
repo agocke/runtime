@@ -17,6 +17,8 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Resources.Extensions",
+    multitarget = True,
+    nowarn = ["CP0003"],
     srcs = [
         "//src/libraries/Common:src/System/Obsoletions.cs",
         "//src/libraries/Common:src/System/Resources/ResourceWriter.cs",

@@ -44,7 +44,7 @@ impl_assembly(
     ],
     resx_file = "src/Resources/Strings.resx",
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = ["nullable", "NU5128"],
 )
 
 ref_impl_pair(

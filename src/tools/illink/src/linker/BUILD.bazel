@@ -31,10 +31,16 @@ _COMMON_RESOURCE_LOGICAL_NAMES = {
 
 _COMMON_NOWARN = [
     "CS1701",
+    "CS1702",
+    "CS1705",
     "CS8500",
     "CS8969",
     "CA1866",
     "CS0436",
+    "CP0003",
+    "IDE0060",
+    "IDE0100",
+    "NU5105",
 ]
 
 csharp_binary(
@@ -51,7 +57,7 @@ csharp_binary(
     cls_compliant = False,
     nullable = "enable",
     target_frameworks = ["net10.0"],
-    nowarn = _COMMON_NOWARN,
+    nowarn = _COMMON_NOWARN + ["CS1591", "NU5131"],
     visibility = ["//visibility:public"],
 )
 
@@ -70,6 +76,6 @@ csharp_library(
     cls_compliant = False,
     nullable = "enable",
     target_frameworks = ["net10.0"],
-    nowarn = _COMMON_NOWARN,
+    nowarn = _COMMON_NOWARN + ["CS1591", "NU5131"],
     visibility = ["//src/tools/illink:__subpackages__"],
 )

@@ -20,6 +20,8 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.DependencyInjection",
+    skip_cs1591 = True,
+    nowarn = ["CP0001"],
     multitarget = True,
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/Extensions/ParameterDefaultValue/ParameterDefaultValue.cs",

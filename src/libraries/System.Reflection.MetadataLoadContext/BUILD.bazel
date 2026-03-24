@@ -12,6 +12,8 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Reflection.MetadataLoadContext",
+    multitarget = True,
+    nowarn = ["CA1865", "CP0003"],
     srcs = glob(
         ["src/**/*.cs"],
         exclude = [

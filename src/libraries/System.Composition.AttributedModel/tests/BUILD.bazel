@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Composition.AttributeModel.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]),
     deps = [
         "//src/libraries/System.Composition.AttributedModel:impl_System.Composition.AttributedModel",

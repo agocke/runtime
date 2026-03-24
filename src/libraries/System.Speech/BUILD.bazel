@@ -31,7 +31,7 @@ impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     supported_os_platforms_short = ["windows"],
     nullable = "disable",
-    nowarn = ["CS0649"],
+    nowarn = ["CS0649", "CA1822", "CA1852", "IDE0059", "NU5128", "SA1129"],
 )
 
 ref_impl_pair(

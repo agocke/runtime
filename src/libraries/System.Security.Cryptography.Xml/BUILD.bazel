@@ -19,6 +19,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Security.Cryptography.Xml",
+    multitarget = True,
     srcs = [
         # Common linked files
         "//src/libraries/Common:src/System/HexConverter.cs",
@@ -120,6 +121,7 @@ impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     nowarn = [
         "CA1850",
+        "CP0003",
     ],
 )
 

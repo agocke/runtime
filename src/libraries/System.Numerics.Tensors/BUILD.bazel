@@ -15,6 +15,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Numerics.Tensors",
+    skip_cs1591 = True,
     srcs = glob(
         ["src/**/*.cs"],
         exclude = ["src/System/Numerics/Tensors/netstandard/**"],

@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Collections.Immutable.Tests",
+    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/System.Collections.Immutable:src/System/Polyfills.cs",
         "//src/libraries/System.Collections.Immutable:src/System/Collections/Frozen/String/Hashing.cs",
@@ -42,7 +43,7 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     allow_unsafe_blocks = True,
-    nowarn = ["CS0436"],
+    nowarn = ["CS0436", "NU1511"],
     size = "large",
     keyfile = OPEN_SNK,
 )

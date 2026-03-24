@@ -30,6 +30,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Hosting",
+    skip_cs1591 = True,
     multitarget = True,
     srcs = glob(
         ["src/**/*.cs"],

@@ -19,6 +19,7 @@ genrule(
 
 csharp_library(
     name = "ILCompiler.ReadyToRun",
+    nowarn = ["1591"],
     srcs = [
         ":AssemblyInfo",
         "CodeGen/ReadyToRunObjectWriter.cs",

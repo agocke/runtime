@@ -8,6 +8,7 @@ genrule(
 
 csharp_library(
     name = "ILCompiler.RyuJit",
+    nowarn = ["1591"],
     srcs = [
         ":AssemblyInfo",
         "Compiler/DependencyAnalysis/MethodCodeNode.cs",

@@ -2,6 +2,7 @@ load("//:defs.bzl", "csharp_library")
 
 csharp_library(
     name = "ILCompiler.DependencyAnalysisFramework",
+    nowarn = ["1591"],
     srcs = glob(["*.cs"]) + [
         "//src/coreclr/tools/Common:Sorting/ArrayAccessor.cs",
         "//src/coreclr/tools/Common:Sorting/ICompareAsEqualAction.cs",

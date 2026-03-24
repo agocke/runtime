@@ -2,6 +2,7 @@ load("//:defs.bzl", "csharp_library")
 
 csharp_library(
     name = "ILCompiler.Diagnostics",
+    nowarn = ["1591"],
     srcs = glob(["*.cs"]),
     defines = ["READYTORUN"],
     compiler_options = ["/unsafe"],

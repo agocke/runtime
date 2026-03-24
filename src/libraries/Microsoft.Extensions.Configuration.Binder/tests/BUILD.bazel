@@ -12,6 +12,7 @@ gen_resx_source(
 
 library_test(
     name = "Microsoft.Extensions.Configuration.Binder.Tests",
+    multitarget = True,
     srcs = [
         "//src/libraries/System.Private.CoreLib:src/System/Runtime/CompilerServices/IsExternalInit.cs",
         "//src/libraries/Microsoft.Extensions.Configuration/tests:Common/ConfigurationProviderExtensions.cs",
