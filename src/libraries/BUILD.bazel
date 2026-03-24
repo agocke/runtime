@@ -453,7 +453,7 @@ netcoreapp_impl_assembly(
         "System.Private.Uri/src/System/ValueStringBuilderExtensions.cs",
     ],
     deps = [
-        ":ref_System.Private.CoreLib",
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
     ],
     allow_unsafe_blocks = True,
     include_neutral_resources_language = True,
@@ -466,7 +466,7 @@ netcoreapp_impl_assembly(
         "System.Runtime/src/System.Runtime.Typeforwards.cs",
     ],
     deps = [
-        ":ref_System.Private.CoreLib",
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         ":impl_System.Private.Uri",
     ],
     partial_facade = True,

@@ -33,7 +33,7 @@ netcoreapp_impl_assembly(
     ],
     deps = [
         "//src/libraries/System.Collections:impl_System.Collections",
-        "//src/libraries:ref_System.Private.CoreLib",
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         "//src/libraries/System.Diagnostics.Tracing:impl_System.Diagnostics.Tracing",
         "//src/libraries/System.Threading:impl_System.Threading",
     ],

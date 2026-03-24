@@ -226,7 +226,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Obsoletions.cs",
     ],
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         "//src/libraries/System.Collections.Concurrent:impl_System.Collections.Concurrent",
     ],
     allow_unsafe_blocks = True,
