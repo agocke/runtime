@@ -377,7 +377,7 @@ match  System.Reflection.Emit.Tests
 match  System.Reflection.Extensions.Tests
 match  System.Reflection.Metadata.Tests
 match  System.Reflection.MetadataLoadContext
-match   System.Reflection.MetadataLoadContext.Tests
+diff   System.Reflection.MetadataLoadContext.Tests
 match  System.Reflection.TypeExtensions.Tests
 match  System.Resources.Extensions
 match  System.Resources.Writer.Tests
