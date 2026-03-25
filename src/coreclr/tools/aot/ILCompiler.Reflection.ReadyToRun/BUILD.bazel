@@ -13,6 +13,11 @@ csharp_library(
     ],
     compiler_options = ["/unsafe"],
     nowarn = ["1591", "8002", "NU1701"],
-    target_frameworks = ["net10.0"],
+    target_frameworks = ["net8.0"],
+    deps = [
+        "@paket.main//system.collections.immutable",
+        "@paket.main//system.reflection.metadata",
+        "@paket.main//system.runtime.compilerservices.unsafe",
+    ],
     visibility = ["//visibility:public"],
 )

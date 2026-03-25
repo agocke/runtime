@@ -434,6 +434,6 @@ match  ilc
 match  illink
 
 # ── Unlisted assemblies added during equivalence improvement ──
-diff   ILCompiler.Reflection.ReadyToRun
+match  ILCompiler.Reflection.ReadyToRun
 diff   System.Text.Json.SourceGeneration
 diff   TestUtilities
