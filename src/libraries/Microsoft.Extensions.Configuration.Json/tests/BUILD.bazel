@@ -12,7 +12,7 @@ library_test(
     ],
     deps = [
         "//src/libraries/Microsoft.Extensions.Configuration.Json:impl_Microsoft.Extensions.Configuration.Json",
-        "//src/libraries/Microsoft.Extensions.Configuration.Binder:ref_Microsoft.Extensions.Configuration.Binder",
+        "//src/libraries/Microsoft.Extensions.Configuration.Binder:impl_Microsoft.Extensions.Configuration.Binder",
         "//src/libraries/Microsoft.Extensions.Configuration:ref_Microsoft.Extensions.Configuration",
         "//src/libraries/Microsoft.Extensions.Configuration.Abstractions:ref_Microsoft.Extensions.Configuration.Abstractions",
         "//src/libraries/Microsoft.Extensions.Configuration.FileExtensions:impl_Microsoft.Extensions.Configuration.FileExtensions",

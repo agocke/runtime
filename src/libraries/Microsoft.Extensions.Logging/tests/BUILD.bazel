@@ -28,7 +28,7 @@ library_test(
         "//src/libraries/Microsoft.Extensions.Logging.Console:impl_Microsoft.Extensions.Logging.Console",
         "//src/libraries/Microsoft.Extensions.Logging.Debug:impl_Microsoft.Extensions.Logging.Debug",
         "//src/libraries/Microsoft.Extensions.Logging.EventLog:impl_Microsoft.Extensions.Logging.EventLog",
-        "//src/libraries/Microsoft.Extensions.Logging.TraceSource:ref_Microsoft.Extensions.Logging.TraceSource",
+        "//src/libraries/Microsoft.Extensions.Logging.TraceSource:impl_Microsoft.Extensions.Logging.TraceSource",
         "//src/libraries/System.Diagnostics.EventLog:ref_System.Diagnostics.EventLog",
         "//src/libraries/Microsoft.Extensions.Configuration.Binder:impl_Microsoft.Extensions.Configuration.Binder",
         "//src/libraries/Microsoft.Extensions.Configuration.Json:impl_Microsoft.Extensions.Configuration.Json",
