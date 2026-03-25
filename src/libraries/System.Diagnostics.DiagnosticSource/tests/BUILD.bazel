@@ -1,5 +1,6 @@
 load("//:defs.bzl", "OPEN_SNK", "gen_resx_source")
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 
 gen_resx_source(
     name = "gen_resx",
@@ -10,8 +11,7 @@ gen_resx_source(
 
 library_test(
     name = "System.Diagnostics.DiagnosticSource.Tests",
-    nowarn = ["NU1511"],
-    multitarget = True,
+    nowarn = MULTITARGET_NOWARN + ["NU1511"],
     # MSBuild csproj sets <NoWarn>NU1511</NoWarn> which REPLACES inherited warnings,
     # so only Arcade SDK nowarns survive (not the full Directory.Build.props set).
     replace_library_nowarns = [

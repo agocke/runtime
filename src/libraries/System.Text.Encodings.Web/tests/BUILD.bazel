@@ -1,9 +1,9 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "UNICODE_DATA_REPO")
 
 library_test(
     name = "System.Text.Encodings.Web.Tests",
-    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         # Library source files compiled into tests for internal testing
         "//src/libraries/System.Text.Encodings.Web:src/System/Text/Encodings/Web/AllowedBmpCodePointsBitmap.cs",
@@ -29,7 +29,7 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     allow_unsafe_blocks = True,
-    nowarn = ["CS3021"],
+    nowarn = MULTITARGET_NOWARN + ["CS3021"],
     resources = ["@{}//:contentFiles/any/any/16.0.0/ucd/UnicodeData.txt".format(UNICODE_DATA_REPO)],
     resource_logical_names = {
         "UnicodeData.txt": "UnicodeData.txt",

@@ -16,6 +16,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Collections.Concurrent",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/ThrowHelper.cs",
         "src/System/Collections/Concurrent/BlockingCollection.cs",

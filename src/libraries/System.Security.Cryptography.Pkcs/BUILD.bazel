@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/System.Security.Cryptography.Pkcs.cs",
@@ -23,7 +23,6 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Security.Cryptography.Pkcs",
-    multitarget = True,
     srcs = [
         # Asn1Reader shared projitems
         "//src/libraries/Common:src/System/Security/Cryptography/Asn1Reader/AsnValueReader.cs",
@@ -211,10 +210,11 @@ impl_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     allow_unsafe_blocks = True,
-    nowarn = [
+    nowarn = MULTITARGET_NOWARN + [
         "CA5384",
         "SYSLIB5006",
         "CP0003",
+        "CS1591",
     ],
     resx_file = "src/Resources/Strings.resx",
     defines = [

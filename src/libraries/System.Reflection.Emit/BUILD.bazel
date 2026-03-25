@@ -19,6 +19,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Reflection.Emit",
+    nowarn = ["CS1591"],
     srcs = glob(["src/System/**/*.cs"]) + [
         "//src/libraries/System.Private.CoreLib:src/System/Reflection/Emit/MethodBuilderInstantiation.cs",
         "//src/libraries/System.Private.CoreLib:src/System/Reflection/Emit/SymbolType.cs",

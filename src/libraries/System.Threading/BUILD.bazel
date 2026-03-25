@@ -16,6 +16,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Threading",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/Threading/Barrier.cs",
         "src/System/Threading/CDSsyncETWBCLProvider.cs",

@@ -1,9 +1,9 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Formats.Nrbf.Tests",
-    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/System.Formats.Nrbf:src/System/Formats/Nrbf/BinaryArrayType.cs",
         "//src/libraries/System.Formats.Nrbf:src/System/Formats/Nrbf/BinaryType.cs",
@@ -24,6 +24,6 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     keyfile = OPEN_SNK,
-    nowarn = ["SYSLIB0011", "SYSLIB0050"],
+    nowarn = MULTITARGET_NOWARN + ["SYSLIB0011", "SYSLIB0050"],
     size = "large",
 )

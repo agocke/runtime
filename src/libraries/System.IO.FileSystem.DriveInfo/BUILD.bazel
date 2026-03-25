@@ -51,6 +51,7 @@ netcoreapp_impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     nowarn = [
         "CS8500", # Address of a pointer to a managed type
+        "CS1591",
     ],
     supported_os_platforms = ["unix"],
 )

@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
 
 netcoreapp_ref_assembly(
     name = "ref_System.Formats.Asn1",
@@ -17,8 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Formats.Asn1",
-    multitarget = True,
-    skip_cs1591 = True,
+    nowarn = MULTITARGET_NOWARN,
     defines = ["CP_NO_ZEROMEMORY"],
     srcs = glob(["src/System/Formats/Asn1/**/*.cs"]) + [
         "//src/libraries/Common:src/System/Security/Cryptography/CryptoPool.cs",

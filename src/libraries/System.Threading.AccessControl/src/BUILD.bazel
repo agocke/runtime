@@ -1,10 +1,10 @@
-load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_impl_assembly")
 
 # PNSE stub assembly — on Linux, all public API throws PlatformNotSupportedException.
 # Matches MSBuild's GeneratePlatformNotSupportedAssemblyMessage behavior.
 netcoreapp_impl_assembly(
     name = "impl_System.Threading.AccessControl",
-    multitarget = True,
+    nowarn = MULTITARGET_NOWARN + ["CS1591"],
     pnse = True,
     pnse_message = "SR.PlatformNotSupported_AccessControl",
     pnse_ref_srcs = [

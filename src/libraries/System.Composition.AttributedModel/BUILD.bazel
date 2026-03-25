@@ -1,8 +1,7 @@
-load("//src/libraries:defs.bzl", "impl_assembly")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "impl_assembly")
 
 impl_assembly(
     name = "impl_System.Composition.AttributedModel",
-    multitarget = True,
     srcs = [
         "src/System/Composition/Convention/AttributedModelProvider.cs",
         "src/System/Composition/ExportAttribute.cs",
@@ -22,6 +21,6 @@ impl_assembly(
         "//src/libraries:ref_System.Runtime",
     ],
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = MULTITARGET_NOWARN + ["nullable", "CS1591"],
     exclude_sr = True,
 )

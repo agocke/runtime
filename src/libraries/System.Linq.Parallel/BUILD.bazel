@@ -19,6 +19,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Linq.Parallel",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/Linq/Parallel/Channels/AsynchronousChannel.cs",
         "src/System/Linq/Parallel/Channels/SynchronousChannel.cs",

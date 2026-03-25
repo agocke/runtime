@@ -24,7 +24,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Configuration.ConfigurationManager",
-    nowarn = ["CA2249", "nullable"],
+    nowarn = ["CA2249", "nullable", "CS1591"],
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/System/IO/TempFileCollection.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",
@@ -60,7 +60,6 @@ impl_assembly(
         "//src/libraries/System.Xml.XmlSerializer:ref_System.Xml.XmlSerializer",
     ],
     resx_file = "src/Resources/Strings.resx",
-    multitarget = True,
     nullable = "disable",
     assembly_description = "Provides types that support using XML configuration files (app.config). This package exists only to support migrating existing .NET Framework code that already uses System.Configuration. When writing new code, use another configuration system instead, such as Microsoft.Extensions.Configuration.",
 )

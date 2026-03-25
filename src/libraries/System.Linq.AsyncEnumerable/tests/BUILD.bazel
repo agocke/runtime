@@ -1,9 +1,9 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Linq.AsyncEnumerable.Tests",
-    multitarget = True,
     srcs = glob(["*.cs"]),
     deps = [
         "//src/libraries/System.Linq.AsyncEnumerable:ref_System.Linq.AsyncEnumerable",
@@ -17,6 +17,6 @@ library_test(
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
     ],
-    nowarn = ["CS1998"],
+    nowarn = MULTITARGET_NOWARN + ["CS1998"],
     keyfile = OPEN_SNK,
 )

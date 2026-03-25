@@ -28,6 +28,13 @@ LIVE_NETCOREAPP_DEPS = [
 #    "//src/libraries:live_System.Collections",
 ]
 
+# Nowarns for assemblies that also target netstandard/net4x in MSBuild.
+# Suppresses warnings about APIs that don't exist in older TFMs.
+MULTITARGET_NOWARN = [
+    "CA1510", "CA1511", "CA1512", "CA1513",
+    "CA1845", "CA1846", "CA1847", "CP0003",
+]
+
 # ── Core_Root library set ─────────────────────────────────────────────
 # This is the single source of truth for what libraries are available to
 # JIT/coreclr tests at both compile time (refs) and runtime (impls).
@@ -277,12 +284,10 @@ def impl_assembly(
     os_targeted = False,
     nowarn = [],
     partial_facade = False,
-    skip_cs1591 = False,
     pnse = False,
     pnse_message = None,
     pnse_ref_srcs = None,
     pnse_api_exclusion_list = None,
-    multitarget = False,
     supported_os_platforms = [],
     supported_os_platforms_short = [],
     unsupported_os_platforms = [],
@@ -307,14 +312,6 @@ def impl_assembly(
             "@platforms//os:macos": ["OSX", "OSX1_0"],
             "//conditions:default": [],
         })
-
-    # MSBuild's intellisense packaging adds CS1591 to most source assemblies
-    # via SkipIntellisenseNoWarnCS1591. Assemblies that don't get CS1591:
-    # - skip_cs1591=True: 4 libraries that enforce doc comments AND pure shim
-    #   assemblies (type forwarders in src/libraries/shims/) which have
-    #   SkipIntellisenseNoWarnCS1591=true via packaging infrastructure.
-    if not skip_cs1591:
-        nowarn = nowarn + ["CS1591"]
 
     # Partial facade assemblies (IsPartialFacadeAssembly=true in MSBuild) suppress
     # obsolete-API warnings for type-forwarding facades.
@@ -361,14 +358,6 @@ def impl_assembly(
             )
             srcs = srcs + [":" + pnse_target]
 
-    # Multi-targeted assemblies that also target netstandard/net4x suppress
-    # warnings about APIs that don't exist in older TFMs.
-    if multitarget:
-        nowarn = nowarn + [
-            "CA1510", "CA1511", "CA1512", "CA1513",
-            "CA1845", "CA1846", "CA1847", "CP0003",
-        ]
-
     if not exclude_sr:
         srcs = srcs + [
             "//src/libraries/Common:src/System/SR.cs",
@@ -378,8 +367,8 @@ def impl_assembly(
     # Directory.Build.targets condition: IsNETCoreAppSrc=true).  The
     # netcoreapp_impl_assembly wrapper passes skip_locals_init=True; OOB
     # assemblies use impl_assembly directly (default False).  Shim/facade
-    # assemblies (both exclude_sr and skip_cs1591) never get it regardless.
-    if skip_locals_init and not (exclude_sr and skip_cs1591):
+    # assemblies have exclude_sr=True and never get it.
+    if skip_locals_init and not exclude_sr:
         srcs = srcs + [
             "//src/libraries/Common:src/SkipLocalsInit.cs",
         ]

@@ -48,6 +48,7 @@ netcoreapp_impl_assembly(
     allow_unsafe_blocks = True,
     nowarn = [
         "SYSLIB0038",
+        "CS1591",
     ],
     deps = [
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",

@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files(["ref/System.Speech.cs"])
 
@@ -19,7 +19,6 @@ impl_assembly(
     pnse = True,
     pnse_message = "SR.PlatformNotSupported_SystemSpeech",
     pnse_ref_srcs = ["ref/System.Speech.cs"],
-    multitarget = True,
     srcs = [],
     deps = [
         "//src/libraries:ref_System.Runtime",
@@ -31,7 +30,7 @@ impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     supported_os_platforms_short = ["windows"],
     nullable = "disable",
-    nowarn = ["CS0649", "CA1822", "CA1852", "IDE0059", "NU5128", "SA1129"],
+    nowarn = MULTITARGET_NOWARN + ["CS0649", "CA1822", "CA1852", "IDE0059", "NU5128", "SA1129", "CS1591"],
 )
 
 ref_impl_pair(

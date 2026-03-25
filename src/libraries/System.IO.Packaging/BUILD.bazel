@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 netcoreapp_ref_assembly(
     name = "ref_System.IO.Packaging",
@@ -15,7 +15,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.IO.Packaging",
-    multitarget = True,
+    nowarn = MULTITARGET_NOWARN + ["CS1591"],
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/System/Obsoletions.cs",
     ],

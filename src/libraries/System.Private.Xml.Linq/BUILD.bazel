@@ -4,6 +4,7 @@ exports_files(["src/ILLink/ILLink.Descriptors.LibraryBuild.xml"])
 
 netcoreapp_impl_assembly(
     name = "impl_System.Private.Xml.Linq",
+    nowarn = ["CS1591"],
     srcs = glob(["src/System/**/*.cs"]) + [
         "//src/libraries/Common:src/System/Collections/Generic/EnumerableHelpers.cs",
         "//src/libraries/Common:src/System/Text/StringBuilderCache.cs",

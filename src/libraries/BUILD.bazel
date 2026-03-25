@@ -326,6 +326,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_Microsoft.Win32.Primitives",
+    nowarn = ["CS1591"],
     deps = [
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
     ],
@@ -373,6 +374,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Private.Uri",
+    nowarn = ["CS1591"],
     srcs = [
         "//src/libraries/Common:src/System/HexConverter.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",
@@ -412,6 +414,7 @@ netcoreapp_impl_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Runtime",
+    nowarn = ["CS1591"],
     srcs = [
         "System.Runtime/src/System.Runtime.Typeforwards.cs",
     ],
@@ -430,6 +433,7 @@ netcoreapp_impl_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Diagnostics.Process",
+    nowarn = ["CS1591"],
     os_targeted = True,
     defines = ["FEATURE_REGISTRY"],
     analyzers = [
@@ -567,6 +571,7 @@ netcoreapp_impl_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.ComponentModel.Primitives",
+    nowarn = ["CS1591"],
     srcs = [
         "System.ComponentModel.Primitives/src/System/ComponentModel/ISynchronizeInvoke.cs",
         "System.ComponentModel.Primitives/src/System/ComponentModel/BrowsableAttribute.cs",

@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
 
 netcoreapp_ref_assembly(
     name = "ref_System.Numerics.Tensors",
@@ -15,14 +15,12 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Numerics.Tensors",
-    skip_cs1591 = True,
     srcs = glob(
         ["src/**/*.cs"],
         exclude = ["src/System/Numerics/Tensors/netstandard/**"],
     ),
     allow_unsafe_blocks = True,
-    multitarget = True,
-    nowarn = ["SA1001"],
+    nowarn = MULTITARGET_NOWARN + ["SA1001"],
     resx_file = "src/Resources/Strings.resx",
     deps = [
         "//src/libraries:ref_System.Runtime",

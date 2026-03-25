@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/System.Data.OleDb.cs",
@@ -30,9 +30,8 @@ impl_assembly(
         "ref/System.Data.OleDb.cs",
         "ref/System.Data.OleDb.Manual.cs",
     ],
-    multitarget = True,
     srcs = [],
-    nowarn = ["CS0618", "CS3016", "CA2249", "SYSLIB0004"],
+    nowarn = MULTITARGET_NOWARN + ["CS0618", "CS3016", "CA2249", "SYSLIB0004", "CS1591"],
     deps = [
         "//src/libraries:ref_System.Runtime",
         "//src/libraries:ref_System.ComponentModel.Primitives",

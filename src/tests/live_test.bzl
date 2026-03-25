@@ -52,15 +52,6 @@ _LIBRARY_TEST_NOWARN = [
 ]
 
 # Directory.Build.targets NoWarn for projects that multi-target net4x/netstandard:
-#   <NoWarn Condition="$(TargetFrameworks.Contains('net4'))
-#     or $(TargetFrameworks.Contains('netstandard'))">
-#     $(NoWarn);CA1510;CA1511;CA1512;CA1513;CA1845;CA1846;CA1847
-#   </NoWarn>
-_MULTITARGET_NOWARN = [
-    "CA1510", "CA1511", "CA1512", "CA1513",
-    "CA1845", "CA1846", "CA1847",
-]
-
 # Label for the Roslyn compiler server persistent worker binary.
 _SHARED_COMPILATION_WORKER = "@rules_dotnet//dotnet/private/tools/compiler_worker"
 
@@ -602,7 +593,6 @@ def library_test(
     nowarn = [],
     size = "medium",
     use_shared_compilation = True,
-    multitarget = False,
     replace_library_nowarns = None,
     **kwargs
 ):
@@ -617,8 +607,6 @@ def library_test(
         all_nowarn = nowarn + replace_library_nowarns
     else:
         all_nowarn = nowarn + _LIBRARY_TEST_NOWARN
-    if multitarget:
-        all_nowarn = all_nowarn + _MULTITARGET_NOWARN
     _xunit_library_test(
         name = name,
         deps = deps,

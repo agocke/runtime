@@ -1,9 +1,9 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Reflection.Metadata.Tests",
-    multitarget = True,
     srcs = glob(
         ["**/*.cs"],
         exclude = [
@@ -78,7 +78,7 @@ library_test(
         "Documents.Embedded.dll": "System.Reflection.Metadata.Tests.Resources.PortablePdbs.Documents.Embedded.dll",
         "Lib.winmd": "System.Reflection.Metadata.Tests.Resources.WinRT.Lib.winmd",
     },
-    nowarn = [
+    nowarn = MULTITARGET_NOWARN + [
         "CS0436",
         "SYSLIB0037",  "NU1511"],
     size = "large",

@@ -14,6 +14,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Diagnostics.TextWriterTraceListener",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/Diagnostics/ConsoleTraceListener.cs",
         "src/System/Diagnostics/DelimitedListTraceListener.cs",

@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/System.CodeDom.cs",
@@ -20,7 +20,6 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.CodeDom",
-    multitarget = True,
     srcs = [
         "src/Microsoft/CSharp/CSharpCodeGenerator.cs",
         "src/Microsoft/CSharp/CSharpCodeGenerator.PlatformNotSupported.cs",
@@ -158,7 +157,7 @@ impl_assembly(
     defines = ["CODEDOM"],
     resx_file = "src/Resources/Strings.resx",
     nullable = "disable",
-    nowarn = ["nullable", "CP0003"],
+    nowarn = MULTITARGET_NOWARN + ["nullable", "CP0003", "CS1591"],
 )
 
 ref_impl_pair(

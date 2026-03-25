@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "impl_assembly", "netcoreapp_ref_assembly", "ref_impl_pair")
 
 netcoreapp_ref_assembly(
     name = "ref_System.Reflection.MetadataLoadContext",
@@ -12,8 +12,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Reflection.MetadataLoadContext",
-    multitarget = True,
-    nowarn = ["CA1865", "CP0003"],
+    nowarn = MULTITARGET_NOWARN + ["CA1865", "CP0003", "CS1591"],
     srcs = glob(
         ["src/**/*.cs"],
         exclude = [

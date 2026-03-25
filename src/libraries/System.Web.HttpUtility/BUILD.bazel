@@ -13,6 +13,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Web.HttpUtility",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/Web/HttpUtility.cs",
         "src/System/Web/IHtmlString.cs",

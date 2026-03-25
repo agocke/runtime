@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 netcoreapp_ref_assembly(
     name = "ref_System.IO.Ports",
@@ -13,10 +13,9 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.IO.Ports",
-    multitarget = True,
     os_targeted = "unix",
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = MULTITARGET_NOWARN + ["nullable", "CS1591"],
     defines = ["SERIAL_PORTS"],
     include_dll_safe_search_path = True,
     analyzers = [

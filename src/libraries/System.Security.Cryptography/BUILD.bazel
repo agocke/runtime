@@ -753,6 +753,7 @@ netcoreapp_impl_assembly(
         "CA5379",
         "CA5384",
         "CS0809",
+        "CS1591",
         "CS8500",
         "SYSLIB0026",
         "SYSLIB5006",

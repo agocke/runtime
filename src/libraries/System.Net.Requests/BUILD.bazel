@@ -60,7 +60,7 @@ netcoreapp_impl_assembly(
     }),
     resx_file = "src/Resources/Strings.resx",
     allow_unsafe_blocks = True,
-    nowarn = ["SYSLIB0014"],
+    nowarn = ["CS1591", "SYSLIB0014"],
     deps = [
         "//src/libraries:ref_Microsoft.Win32.Primitives",
         "//src/libraries:ref_System.Runtime",

@@ -1,11 +1,12 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "ASPNETCORE_SNK")
 
 exports_files(glob(["**/*.cs"]))
 
 library_test(
     name = "Microsoft.Extensions.Configuration.Tests",
-    multitarget = True,
+    nowarn = MULTITARGET_NOWARN,
     srcs = glob(
         ["**/*.cs"],
         exclude = [

@@ -1,5 +1,6 @@
 load("//:defs.bzl", "ASPNETCORE_SNK", "gen_resx_source")
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 
 exports_files(glob(["Common/**/*.cs"]))
 
@@ -12,7 +13,7 @@ gen_resx_source(
 
 library_test(
     name = "Microsoft.Extensions.Configuration.Binder.Tests",
-    multitarget = True,
+    nowarn = MULTITARGET_NOWARN,
     srcs = [
         "//src/libraries/System.Private.CoreLib:src/System/Runtime/CompilerServices/IsExternalInit.cs",
         "//src/libraries/Microsoft.Extensions.Configuration/tests:Common/ConfigurationProviderExtensions.cs",

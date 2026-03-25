@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/Microsoft.Win32.Registry.AccessControl.cs",
@@ -26,9 +26,8 @@ impl_assembly(
         "ref/Microsoft.Win32.Registry.AccessControl.cs",
         "ref/Microsoft.Win32.Registry.AccessControl.Forwards.cs",
     ],
-    multitarget = True,
     srcs = [],
-    nowarn = [
+    nowarn = MULTITARGET_NOWARN + [
         "SYSLIB0003",
         "SYSLIB0004",
         "SYSLIB0015",
@@ -39,6 +38,7 @@ impl_assembly(
         "SYSLIB0025",
         "SYSLIB0032",
         "SYSLIB0036",
+        "CS1591",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",

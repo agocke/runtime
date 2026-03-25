@@ -1,9 +1,9 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.CodeDom.Tests",
-    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/Collections/IList.NonGeneric.Tests.cs",
         "//src/libraries/Common/tests:System/Collections/ICollection.NonGeneric.Tests.cs",
@@ -25,7 +25,7 @@ library_test(
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
     ],
-    nowarn = [
+    nowarn = MULTITARGET_NOWARN + [
         "SYSLIB0011",
     ],
     size = "large",

@@ -17,6 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Memory",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/SequencePosition.cs",
 

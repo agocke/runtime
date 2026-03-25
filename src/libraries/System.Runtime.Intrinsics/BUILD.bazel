@@ -23,6 +23,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Runtime.Intrinsics",
+    nowarn = ["CS1591"],
     srcs = [
         "//src/libraries/Common:src/System/Experimentals.cs",
     ],

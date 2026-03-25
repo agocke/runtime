@@ -28,14 +28,13 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.DirectoryServices",
-    nowarn = ["CA1822", "CA1865", "IDE0059", "NU5128"],
+    nowarn = ["CA1822", "CA1865", "IDE0059", "NU5128", "CS1591"],
     pnse = True,
     pnse_message = "SR.DirectoryServices_PlatformNotSupported",
     pnse_ref_srcs = [
         "ref/System.DirectoryServices.cs",
         "ref/System.DirectoryServices.manual.cs",
     ],
-    multitarget = True,
     srcs = [],
     deps = [
         "//src/libraries:ref_System.Runtime",

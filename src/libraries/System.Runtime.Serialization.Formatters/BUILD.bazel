@@ -21,6 +21,7 @@ netcoreapp_impl_assembly(
         "SYSLIB0011",
         "SYSLIB0050",
         "SYSLIB0051",
+        "CS1591",
     ],
     compiler_options = ["/unsafe"],
     srcs = [

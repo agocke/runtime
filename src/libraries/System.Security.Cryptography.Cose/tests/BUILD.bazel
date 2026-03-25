@@ -1,9 +1,9 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Security.Cryptography.Cose.Tests",
-    multitarget = True,
     srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/Security/Cryptography/ByteUtils.cs",
         "//src/libraries/Common/tests:System/Security/Cryptography/PlatformSupport.cs",
@@ -26,7 +26,7 @@ library_test(
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
     ],
-    nowarn = ["SYSLIB5006"],
+    nowarn = MULTITARGET_NOWARN + ["SYSLIB5006"],
     defines = ["EXCLUDE_PEM_ENCODING_FROM_TEST_DATA"],
     size = "large",
     keyfile = OPEN_SNK,

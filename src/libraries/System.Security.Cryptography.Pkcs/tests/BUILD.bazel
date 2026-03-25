@@ -1,9 +1,9 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Security.Cryptography.Pkcs.Tests",
-    multitarget = True,
     srcs = glob(
         ["**/*.cs"],
         exclude = [
@@ -37,7 +37,7 @@ library_test(
         "@paket.main//xunit.extensibility.core",
     ],
     allow_unsafe_blocks = True,
-    nowarn = ["SYSLIB0057", "SYSLIB5006"],
+    nowarn = MULTITARGET_NOWARN + ["SYSLIB0057", "SYSLIB5006"],
     size = "large",
     keyfile = OPEN_SNK,
 )

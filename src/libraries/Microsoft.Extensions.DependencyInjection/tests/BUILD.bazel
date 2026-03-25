@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "live_csharp_library")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "live_csharp_library")
 load("//src/tests:live_test.bzl", "library_test")
 load("//:defs.bzl", "ASPNETCORE_SNK", "OPEN_SNK")
 
@@ -15,7 +15,7 @@ live_csharp_library(
 
 library_test(
     name = "Microsoft.Extensions.DependencyInjection.Tests",
-    multitarget = True,
+    nowarn = MULTITARGET_NOWARN,
     srcs = glob(["DI.Tests/**/*.cs"]) + [
         "//src/libraries/Common/tests:Extensions/SingleThreadedSynchronizationContext.cs",
     ],
