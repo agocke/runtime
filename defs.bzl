@@ -25,12 +25,15 @@ MIBC_LINUX_X64_REPO = "nuget.optimization.linux-x64.mibc.runtime.v1.0.0-prerelea
 MIBC_LINUX_ARM64_REPO = "nuget.optimization.linux-arm64.mibc.runtime.v1.0.0-prerelease.26080.1"
 
 # ─── Pre-built labels for commonly used assets ───────────────────────────────
+# SNK signing keys are copied to a stable path in //eng:snk/ (via copy_file)
+# so that Arcade SDK version bumps don't invalidate the cache for every
+# signed assembly.  See eng/BUILD.bazel for the copy rules.
 
-MSFT_SNK = "@{}//:tools/snk/MSFT.snk".format(ARCADE_SDK_REPO)
-OPEN_SNK = "@{}//:tools/snk/Open.snk".format(ARCADE_SDK_REPO)
-ASPNETCORE_SNK = "@{}//:tools/snk/AspNetCore.snk".format(ARCADE_SDK_REPO)
-ECMA_SNK = "@{}//:tools/snk/ECMA.snk".format(ARCADE_SDK_REPO)
-SILVERLIGHT_SNK = "@{}//:tools/snk/SilverlightPlatformPublicKey.snk".format(ARCADE_SDK_REPO)
+MSFT_SNK = "//eng:snk/MSFT.snk"
+OPEN_SNK = "//eng:snk/Open.snk"
+ASPNETCORE_SNK = "//eng:snk/AspNetCore.snk"
+ECMA_SNK = "//eng:snk/ECMA.snk"
+SILVERLIGHT_SNK = "//eng:snk/SilverlightPlatformPublicKey.snk"
 
 # MIBC PGO optimization data files from NuGet (matched to target architecture).
 # MSBuild equivalent: eng/restore/optimizationData.targets selects the right
