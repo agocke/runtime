@@ -325,6 +325,10 @@ public static class BazelAqueryParser
     private static string ExtractAssemblyName(string path)
     {
         var fileName = Path.GetFileNameWithoutExtension(path);
+        // Bazel ref_impl_pair targets are named "live_X" and produce DLLs
+        // with that prefix.  Strip it so we compare against the plain assembly name.
+        if (fileName.StartsWith("live_", StringComparison.Ordinal))
+            fileName = fileName["live_".Length..];
         return fileName;
     }
 

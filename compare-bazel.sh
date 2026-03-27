@@ -23,6 +23,7 @@ config="release"
 skip_build=false
 verbose=false
 json_output=""
+msbuild_json=""
 
 # ----- Parse arguments -----
 while [[ $# -gt 0 ]]; do
@@ -41,6 +42,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --json-output)
             json_output="$2"
+            shift 2
+            ;;
+        --msbuild-json)
+            msbuild_json="$2"
             shift 2
             ;;
         -h|--help)
@@ -112,7 +117,7 @@ for cfg in "${configs[@]}"; do
     bazel_managed_aquery="$aquery_dir/${cfg}-managed.json"
 
     # ----- Step 1: Build with CMake/MSBuild -----
-    if [[ "$skip_build" != "true" ]]; then
+    if [[ -z "$msbuild_json" && "$skip_build" != "true" ]]; then
         log "Building with CMake/MSBuild (./build.sh clr+libs+libs.tests --ci -c $cfg -rc $cfg -lc $cfg -bl)..."
         "$scriptroot/build.sh" clr+libs+libs.tests --ci -c "$cfg" -rc "$cfg" -lc "$cfg" -bl
     fi
@@ -142,7 +147,7 @@ for cfg in "${configs[@]}"; do
 
     # ----- Step 3: Find binlog files -----
     binlog_args=()
-    if [[ -d "$binlog_dir" ]]; then
+    if [[ -z "$msbuild_json" && -d "$binlog_dir" ]]; then
         while IFS= read -r -d '' f; do
             binlog_args+=(--binlog "$f")
         done < <(find "$binlog_dir" -name "*.binlog" -print0)
@@ -171,8 +176,12 @@ for cfg in "${configs[@]}"; do
         fi
     done
 
-    # Add binlog files
-    tool_args+=("${binlog_args[@]}")
+    # Use pre-extracted MSBuild JSON if provided, otherwise use binlog files
+    if [[ -n "$msbuild_json" ]]; then
+        tool_args+=(--msbuild-json "$msbuild_json")
+    else
+        tool_args+=("${binlog_args[@]}")
+    fi
 
     if [[ "$verbose" == "true" ]]; then
         tool_args+=(--verbose)

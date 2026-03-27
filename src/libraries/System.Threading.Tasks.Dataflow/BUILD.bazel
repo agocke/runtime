@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/System.Threading.Tasks.Dataflow.cs",
@@ -17,7 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Threading.Tasks.Dataflow",
-    multitarget = True,
+    nowarn = MULTITARGET_NOWARN + ["CS1591"],
     # MSBuild sets UseCompilerGeneratedDocXmlFile=false; uses hand-written XML docs.
     generate_documentation_file = False,
     srcs = [

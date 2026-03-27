@@ -32,15 +32,17 @@ csharp_binary(
         ":AssemblyInfo",
     ],
     resources = [":Resources"],
-    defines = ["READYTORUN"],
     compiler_options = ["/unsafe"],
     deps = [
+        "//src/coreclr/tools/aot/ILCompiler.Diagnostics",
         "//src/coreclr/tools/aot/ILCompiler.DependencyAnalysisFramework",
         "//src/coreclr/tools/aot/ILCompiler.ReadyToRun",
         "//src/coreclr/tools/aot/ILCompiler.TypeSystem",
+        "@paket.main//microsoft.diasymreader",
         "@paket.main//system.commandline",
     ],
     target_frameworks = ["net10.0"],
+    nowarn = ["1701", "1702", "8002", "IL2121", "NU1701", "NU5105"],
     is_aot_compatible = True,
     visibility = ["//visibility:public"],
 )

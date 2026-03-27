@@ -8,6 +8,7 @@ genrule(
 
 csharp_library(
     name = "ILCompiler.MetadataTransform",
+    nowarn = ["1591"],
     srcs = [
         ":AssemblyInfo",
         "ILCompiler/Metadata/EntityMap.cs",
@@ -51,6 +52,7 @@ csharp_library(
     compiler_options = ["/unsafe"],
     deps = [
         "//src/coreclr/tools/aot/ILCompiler.TypeSystem",
+        "@paket.main//microsoft.diasymreader",
     ],
     target_frameworks = ["net10.0"],
     visibility = ["//visibility:public"],

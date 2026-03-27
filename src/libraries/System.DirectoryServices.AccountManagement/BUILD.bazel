@@ -15,10 +15,10 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.DirectoryServices.AccountManagement",
+    nowarn = ["CA1822", "CA1859", "CA2249", "IDE0059", "NU5128", "CS1591"],
     pnse = True,
     pnse_message = "SR.DirectoryServicesAccountManagement_PlatformNotSupported",
     pnse_ref_srcs = ["ref/System.DirectoryServices.AccountManagement.cs"],
-    multitarget = True,
     srcs = [],
     deps = [
         "//src/libraries:ref_System.Runtime",

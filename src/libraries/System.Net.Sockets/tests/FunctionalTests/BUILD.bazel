@@ -3,12 +3,9 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Net.Sockets.Tests",
+    defines = select({"@platforms//os:linux": ["UNIX", "UNIX1_0"], "@platforms//os:macos": ["UNIX", "UNIX1_0"], "//conditions:default": []}),
     srcs = glob(
         ["**/*.cs"],
-        exclude = [
-            "StartupTests.Windows.cs",
-            "InlineCompletions.Unix.cs",
-        ],
     ) + [
         "//src/libraries/Common/tests:System/Net/Configuration.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.Sockets.cs",

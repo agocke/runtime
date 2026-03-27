@@ -25,7 +25,8 @@ gen_assembly_info(
     out = "System.Private.CoreLib.AssemblyInfo.cs",
     assembly_name = "System.Private.CoreLib",
     assembly_version = "10.0.0.0",
-    assembly_configuration = "Debug",
+    assembly_configuration = "Release",
+    is_trimmable = True,
     cls_compliant = False,
     include_serviceable = False,
     include_neutral_resources_language = False,
@@ -317,7 +318,6 @@ csharp_library(
         "src/System/Runtime/JitInfo.CoreCLR.cs",
         "src/System/Runtime/InteropServices/DynamicInterfaceCastableHelpers.cs",
         "src/System/Runtime/InteropServices/GCHandle.CoreCLR.cs",
-        "src/System/Runtime/InteropServices/Java/JavaMarshal.CoreCLR.cs",
         "src/System/Runtime/InteropServices/Marshal.CoreCLR.cs",
         "src/System/Runtime/InteropServices/MemoryMarshal.CoreCLR.cs",
         "src/System/Runtime/InteropServices/NativeLibrary.CoreCLR.cs",
@@ -370,6 +370,15 @@ csharp_library(
     select({
         "@platforms//os:linux": linux_srcs,
         "@platforms//os:macos": macos_srcs,
+    }) +
+    select({
+        # FEATURE_JAVAMARSHAL is debug/checked only; release uses the unsupported stub.
+        "//:clr_release": [
+            "//src/libraries/System.Private.CoreLib:src/System/Runtime/InteropServices/Java/JavaMarshal.Unsupported.cs",
+        ],
+        "//conditions:default": [
+            "src/System/Runtime/InteropServices/Java/JavaMarshal.CoreCLR.cs",
+        ],
     }),
     resx_file = "//src/libraries/System.Private.CoreLib:src/Resources/Strings.resx",
     resource_name = "System.Private.CoreLib.Strings",
@@ -405,7 +414,6 @@ csharp_library(
         "FEATURE_EH_FUNCLETS",
         "FEATURE_PERFTRACING",
         "PROFILING_SUPPORTED",
-        "_LOGGING",
     ] + select({
         "@platforms//cpu:x86_64": [ "TARGET_AMD64", "TARGET_64BIT" ],
         "@platforms//cpu:aarch64": [ "TARGET_ARM64", "TARGET_64BIT" ],
@@ -418,8 +426,8 @@ csharp_library(
         # FEATURE_JAVAMARSHAL and FEATURE_INTERPRETER change the QCall/FCall
         # entry-point tables; a mismatch crashes the runtime at startup.
         # Both debug and checked configs enable these features.
-        "//:clr_release": [ "RELEASE" ],
-        "//conditions:default": [ "DEBUG", "FEATURE_INTERPRETER", "FEATURE_JAVAMARSHAL" ],
+        "//:clr_release": [],
+        "//conditions:default": [ "DEBUG", "_LOGGING", "FEATURE_INTERPRETER", "FEATURE_JAVAMARSHAL" ],
     }),
     nowarn = nowarn,
     visibility = ["//visibility:public"]

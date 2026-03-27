@@ -4,6 +4,7 @@ exports_files(["src/ILLink/ILLink.Descriptors.LibraryBuild.xml"])
 
 netcoreapp_impl_assembly(
     name = "impl_System.Private.Xml",
+    nowarn = ["CS1591"],
     srcs = [
         # Common files (from $(CommonPath))
         "//src/libraries/Common:src/System/Text/StringBuilderCache.cs",

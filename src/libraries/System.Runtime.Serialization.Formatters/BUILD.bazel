@@ -21,6 +21,7 @@ netcoreapp_impl_assembly(
         "SYSLIB0011",
         "SYSLIB0050",
         "SYSLIB0051",
+        "CS1591",
     ],
     compiler_options = ["/unsafe"],
     srcs = [
@@ -55,11 +56,9 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Collections:ref_System.Collections",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
-        "//src/libraries/System.Diagnostics.Tracing:ref_System.Diagnostics.Tracing",
-        "//src/libraries/System.Memory:ref_System.Memory",
+        # MSBuild gets DefaultDllImportSearchPathsAttribute from CoreLib;
+        # Bazel needs explicit ref for include_dll_safe_search_path.
         "//src/libraries/System.Runtime.InteropServices:ref_System.Runtime.InteropServices",
-        "//src/libraries/System.Text.Encoding.Extensions:ref_System.Text.Encoding.Extensions",
-        "//src/libraries/System.Threading:ref_System.Threading",
         "//src/libraries:ref_System.Runtime",
     ],
     resx_file = "src/Resources/Strings.resx",

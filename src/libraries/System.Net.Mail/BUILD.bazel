@@ -21,6 +21,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Net.Mail",
+    nowarn = ["CS1591"],
     os_targeted = "unix",
     srcs = glob(
         ["src/System/**/*.cs"],

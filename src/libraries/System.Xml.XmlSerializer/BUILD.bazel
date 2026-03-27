@@ -16,6 +16,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Xml.XmlSerializer",
+    nowarn = ["CS1591"],
     srcs = [],
     deps = [
         "//src/libraries:ref_System.Runtime",

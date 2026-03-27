@@ -16,7 +16,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Reflection.Context",
-    multitarget = True,
+    nowarn = ["NU5128", "CS1591"],
     srcs = glob(["src/**/*.cs"]),
     deps = [
         "//src/libraries:ref_System.Runtime",

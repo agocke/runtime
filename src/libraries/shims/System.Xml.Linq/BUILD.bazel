@@ -2,7 +2,6 @@ load("//src/libraries:defs.bzl", "netcoreapp_impl_assembly")
 
 netcoreapp_impl_assembly(
     name = "impl_System.Xml.Linq",
-    skip_cs1591 = True,
     srcs = [
         "src/System.Xml.Linq.cs",
     ],

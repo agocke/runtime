@@ -23,11 +23,12 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Runtime.Intrinsics",
+    nowarn = ["CS1591"],
     srcs = [
         "//src/libraries/Common:src/System/Experimentals.cs",
     ],
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
     ],
     partial_facade = True,
     generate_facades = True,

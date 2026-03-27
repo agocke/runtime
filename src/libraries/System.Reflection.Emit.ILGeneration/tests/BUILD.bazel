@@ -3,7 +3,13 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Reflection.Emit.ILGeneration.Tests",
-    srcs = glob(["**/*.cs"]),
+    srcs = glob(
+        ["**/*.cs"],
+        exclude = [
+            # Not compiled by MSBuild test project
+            "Label/LabelId.cs",
+        ],
+    ),
     deps = [
         "//src/libraries/System.Reflection.Emit.ILGeneration:ref_System.Reflection.Emit.ILGeneration",
         "//src/libraries/System.Reflection.Emit:ref_System.Reflection.Emit",

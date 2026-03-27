@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.IO.FileSystem.Watcher.Tests",
+    defines = select({"@platforms//os:linux": ["LINUX", "LINUX1_0"], "//conditions:default": []}),
     srcs = glob(
         ["**/*.cs"],
     ) + [

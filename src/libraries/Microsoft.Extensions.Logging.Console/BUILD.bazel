@@ -22,7 +22,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Logging.Console",
-    multitarget = True,
+    nowarn = ["SYSLIB1100", "SYSLIB1101"],
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/Extensions/Logging/NullExternalScopeProvider.cs",
         "//src/libraries/Common:src/Extensions/Logging/NullScope.cs",

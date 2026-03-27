@@ -3,7 +3,12 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Linq.Queryable.Tests",
-    srcs = glob(["**/*.cs"]) + [
+    srcs = glob(
+        ["**/*.cs"],
+        exclude = [
+            "TrimmingTests/**",
+        ],
+    ) + [
         "//src/libraries/Common/tests:System/Linq/SkipTakeData.cs",
     ],
     deps = [

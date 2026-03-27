@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 netcoreapp_ref_assembly(
     name = "ref_System.ServiceProcess.ServiceController",
@@ -34,7 +34,7 @@ impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     supported_os_platforms_short = ["windows"],
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = MULTITARGET_NOWARN + ["nullable", "CA1865", "CA2249", "CP0003", "CS1591"],
 )
 
 ref_impl_pair(

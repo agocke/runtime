@@ -18,7 +18,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Configuration.CommandLine",
-    multitarget = True,
+    nowarn = ["CA1866"],
     srcs = glob(["src/**/*.cs"]),
     deps = [
         "//src/libraries:ref_System.Runtime",

@@ -3,13 +3,8 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Runtime.Intrinsics.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            # Wasm-specific tests (require PackedSimd hardware support)
-            "Wasm/**",
-        ],
-    ) + [
+    defines = select({"@platforms//os:linux": ["UNIX", "UNIX1_0"], "@platforms//os:macos": ["UNIX", "UNIX1_0"], "//conditions:default": []}),
+    srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/GenericMathTestMemberData.cs",
     ],
     deps = [

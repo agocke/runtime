@@ -1,8 +1,7 @@
-load("//src/libraries:defs.bzl", "impl_assembly")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "impl_assembly")
 
 impl_assembly(
     name = "impl_System.Composition.Convention",
-    multitarget = True,
     srcs = [
         "src/System/Composition/Convention/ConventionBuilder.cs",
         "src/System/Composition/Convention/ExportConventionBuilder.cs",
@@ -28,6 +27,6 @@ impl_assembly(
     ],
     resx_file = "src/Resources/Strings.resx",
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = MULTITARGET_NOWARN + ["nullable", "CS1591"],
     is_trimmable = False,
 )

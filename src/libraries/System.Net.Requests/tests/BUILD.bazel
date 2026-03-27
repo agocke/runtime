@@ -10,6 +10,7 @@ gen_resx_source(
 
 library_test(
     name = "System.Net.Requests.Tests",
+    defines = ["NETSTANDARD"],
     srcs = glob(["*.cs"]) + [
         "//src/libraries/Common/tests:System/Net/Capability.Security.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.cs",

@@ -19,7 +19,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Logging.EventSource",
-    multitarget = True,
+    nowarn = ["PKG0001"],
     exclude_sr = True,
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/Extensions/Logging/NullExternalScopeProvider.cs",

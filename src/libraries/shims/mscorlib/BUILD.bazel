@@ -45,7 +45,6 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_mscorlib",
-    skip_cs1591 = True,
     srcs = [
         "ref/mscorlib.cs",
         "src/mscorlib.cs",
@@ -53,7 +52,7 @@ netcoreapp_impl_assembly(
     ],
     assembly_version = "4.0.0.0",
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
         "//src/libraries/Microsoft.Win32.Registry:impl_Microsoft.Win32.Registry",
         "//src/libraries/System.Collections:impl_System.Collections",
         "//src/libraries/System.Collections.Concurrent:impl_System.Collections.Concurrent",
@@ -64,7 +63,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.IO.FileSystem.AccessControl:impl_System.IO.FileSystem.AccessControl",
         "//src/libraries/System.IO.FileSystem.DriveInfo:impl_System.IO.FileSystem.DriveInfo",
         "//src/libraries/System.IO.IsolatedStorage:impl_System.IO.IsolatedStorage",
-        "//src/libraries/System.Reflection.TypeExtensions:ref_System.Reflection.TypeExtensions",
+        "//src/libraries/System.Reflection.TypeExtensions:impl_System.Reflection.TypeExtensions",
         "//src/libraries/System.Memory:impl_System.Memory",
         "//src/libraries/System.ObjectModel:impl_System.ObjectModel",
     #<ProjectReference Include="$(LibrariesProjectRoot)System.Reflection.TypeExtensions\src\System.Reflection.TypeExtensions.csproj" />

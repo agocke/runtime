@@ -73,7 +73,7 @@ library_test(
         "@paket.main//xunit.abstractions",
         "@paket.main//xunit.extensibility.core",
     ],
-    nowarn = ["xUnit1015", "SYSLIB0014"],
+    nowarn = ["xUnit1015"],
     defines = ["NETSTANDARD"],
     data = ["@paket.main//system.net.testdata:content_files"],
     size = "large",

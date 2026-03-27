@@ -1,4 +1,5 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
@@ -48,6 +49,6 @@ library_test(
     ],
     keyfile = OPEN_SNK,
     data = ["@paket.main//system.text.regularexpressions.testdata:content_files"],
-    nowarn = ["xUnit2008", "SYSLIB0036", "SYSLIB1045", "SYSLIB0011", "SYSLIB0050", "SYSLIB0051"],
+    nowarn = MULTITARGET_NOWARN + ["xUnit2008", "SYSLIB0036", "SYSLIB1045", "SYSLIB0011", "SYSLIB0050", "SYSLIB0051"],
     size = "large",
 )

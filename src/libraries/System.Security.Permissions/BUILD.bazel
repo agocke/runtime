@@ -29,9 +29,10 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Security.Permissions",
-    multitarget = True,
+    nowarn = ["nullable", "CS1591"],
     partial_facade = True,
     srcs = glob(["src/**/*.cs"]) + [
+        "ref/System.Security.Permissions.Forwards.cs",
         "//src/libraries/Common:src/System/Obsoletions.cs",
     ],
     deps = [

@@ -17,6 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Memory",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/SequencePosition.cs",
 
@@ -39,7 +40,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/Common:src/System/Buffers/ArrayBufferWriter.cs",
     ],
     deps = [
-        "//src/libraries:ref_System.Private.CoreLib",
+        "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
     ],
     allow_unsafe_blocks = True,
     partial_facade = True,

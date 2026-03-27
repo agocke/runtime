@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/System.Formats.Nrbf.cs",
@@ -22,6 +22,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Formats.Nrbf",
+    nowarn = MULTITARGET_NOWARN + ["CP0003"],
     srcs = [
         "src/System/Formats/Nrbf/AllowedRecordType.cs",
         "src/System/Formats/Nrbf/ArrayInfo.cs",

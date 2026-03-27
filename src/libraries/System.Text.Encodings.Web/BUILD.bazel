@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/System.Text.Encodings.Web.cs",
@@ -25,7 +25,6 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Text.Encodings.Web",
-    multitarget = True,
     srcs = [
         "src/System/IO/TextWriterExtensions.cs",
         "src/System/Text/Encodings/Web/AllowedBmpCodePointsBitmap.cs",
@@ -65,7 +64,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "src/Resources/Strings.resx",
-    nowarn = ["CS3011"],
+    nowarn = MULTITARGET_NOWARN + ["CS3011", "CS1591"],
     include_dll_safe_search_path = False,
     assembly_description = "Provides types for encoding and escaping strings for use in JavaScript, HyperText Markup Language (HTML), and uniform resource locators (URL).\n\nCommonly Used Types:\nSystem.Text.Encodings.Web.HtmlEncoder\nSystem.Text.Encodings.Web.UrlEncoder\nSystem.Text.Encodings.Web.JavaScriptEncoder",
 )

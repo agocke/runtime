@@ -1,15 +1,11 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "ASPNETCORE_SNK")
 
 library_test(
     name = "Microsoft.Extensions.Primitives.Tests",
-    srcs = glob(
-        ["**/*.cs"],
-        exclude = [
-            # Moq is not available in paket
-            "CompositeChangeTokenTest.cs",
-        ],
-    ) + [
+    nowarn = MULTITARGET_NOWARN,
+    srcs = glob(["**/*.cs"]) + [
         "//src/libraries/Common/tests:System/Threading/Tasks/TaskTimeoutExtensions.cs",
     ],
     deps = [
@@ -18,6 +14,8 @@ library_test(
         "//src/libraries/System.Collections.Immutable:ref_System.Collections.Immutable",
         "//src/libraries/System.Threading:ref_System.Threading",
         "//src/libraries/Common/tests:TestUtilities",
+        "@paket.main//moq",
+        "//src/libraries/System.Linq.Expressions:ref_System.Linq.Expressions",
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//microsoft.dotnet.xunitextensions",
         "@paket.main//xunit.abstractions",

@@ -3,7 +3,6 @@ load("//:defs.bzl", "OPEN_SNK")
 
 netcoreapp_impl_assembly(
     name = "impl_netstandard",
-    skip_cs1591 = True,
     srcs = [
         "src/netstandard.cs",
         "//src/libraries/shims:System.Void.cs",

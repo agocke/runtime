@@ -12,6 +12,6 @@ csharp_library(
     ],
     nullable = "disable",
     target_frameworks = ["net10.0"],
-    nowarn = ["CS1701", "CS8500", "CS8969"],
+    nowarn = ["CS1591", "CS1701", "CS1702", "CS1705", "CS8500", "CS8969", "CP0003", "IDE0060", "IDE0100", "NU5105", "NU5128", "NU5129"],
     visibility = ["//visibility:public"],
 )

@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 netcoreapp_ref_assembly(
     name = "ref_System.ServiceModel.Syndication",
@@ -19,9 +19,8 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.ServiceModel.Syndication",
-    multitarget = True,
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = MULTITARGET_NOWARN + ["nullable", "CS1591"],
     srcs = glob(["src/**/*.cs"]),
     deps = [
         "//src/libraries:ref_System.Runtime",

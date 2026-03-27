@@ -1,8 +1,7 @@
-load("//src/libraries:defs.bzl", "impl_assembly")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "impl_assembly")
 
 impl_assembly(
     name = "impl_System.Composition.TypedParts",
-    multitarget = True,
     srcs = glob(["src/**/*.cs"]) + [
         # Linked from CoreLib shared sources
         "//src/libraries/System.Private.CoreLib:src/System/Numerics/Hashing/HashHelpers.cs",
@@ -19,7 +18,7 @@ impl_assembly(
     ],
     resx_file = "src/Resources/Strings.resx",
     nullable = "disable",
-    nowarn = ["nullable"],
+    nowarn = MULTITARGET_NOWARN + ["nullable", "CS1591"],
     is_trimmable = False,
     is_aot_compatible = False,
 )

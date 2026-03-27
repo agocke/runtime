@@ -310,6 +310,11 @@ public static class ComparisonEngine
         //   3. plain net10.0 (fallback — often a PNSE stub)
         var msbuildByName = msbuildRecords
             .Where(r => !r.IsReferenceAssembly)
+            // Exclude netstandard2.0 builds — Bazel always targets net10.0.
+            // When MSBuild multi-targets, the netstandard build is for NuGet
+            // packaging, not the runtime archive.  Comparing it against the
+            // net10.0 Bazel build produces meaningless diffs.
+            .Where(r => !r.OutputPath.Contains("netstandard2.0", StringComparison.OrdinalIgnoreCase))
             .GroupBy(r => r.AssemblyName)
             .ToDictionary(g => g.Key, g =>
                 g.OrderByDescending(r => TfmPriority(r.OutputPath))
@@ -398,14 +403,137 @@ public static class ComparisonEngine
         return result;
     }
 
+    // Analyzer-only nowarns that MSBuild suppresses but Bazel doesn't need
+    // (Bazel doesn't run these analyzers). Entries with compound format like
+    // "CA1845 (+3 more)" are also filtered.
+    private static readonly HashSet<string> AnalyzerNoWarns = new(StringComparer.Ordinal)
+    {
+        // Use throw helper (CA1510–CA1513)
+        "CA1510", "CA1511", "CA1512", "CA1513",
+        // String comparison / optimization analyzers
+        "CA1845", "CA1846", "CA1847", "CA1850", "CA1852", "CA1859",
+        "CA1865", "CA1866", "CA1867",
+        // Other code quality analyzers
+        "CA1052", "CA1821", "CA1822", "CA1823", "CA1838", "CA2249",
+        // NuGet warnings
+        "NU1511", "NU1701", "NU5105", "NU5128", "NU5129", "NU5131",
+        // IDE suggestions
+        "IDE0059", "IDE0060", "IDE0100",
+        // API compat
+        "CP0001", "CP0003",
+        // Source generator warnings
+        "RS1038", "RS2008",
+        // Serialization compat
+        "SYSLIB0003", "SYSLIB0004", "SYSLIB0011", "SYSLIB0015", "SYSLIB0017",
+        "SYSLIB0050", "SYSLIB0051", "SYSLIB1100", "SYSLIB1101",
+        // Package validation
+        "PKG0001",
+        // StyleCop
+        "SA1121", "SA1129",
+        // ILLinker warnings
+        "IL2121",
+        // CS1702 — assembly reference identity warnings (MSBuild toolchain)
+        "CS1702",
+        // CS8002 — referenced assembly without strong name (MSBuild toolchain)
+        "CS8002",
+    };
+
+    // Source files that are test-SDK or polyfill artifacts — present in MSBuild but
+    // not in Bazel because Bazel doesn't use the test SDK or need netstandard polyfills.
+    private static readonly HashSet<string> IgnoredSourceFileNames = new(StringComparer.Ordinal)
+    {
+        "Microsoft.NET.Test.Sdk.Program.cs",
+        "DisableRuntimeMarshalling.cs",
+        "ExceptionPolyfills.cs",
+        "NullableAttributes.cs",
+        "CallerArgumentExpressionAttribute.cs",
+        "LibraryImportAttribute.cs",
+        "StringMarshalling.cs",
+        "PlatformAttributes.cs",
+        "DisableParallelization.cs",
+        // SR.cs is the resource accessor template compiled directly by MSBuild.
+        // Bazel bakes this into the generated SR.g.cs file instead.
+        "SR.cs",
+    };
+
+    // Nowarns that are systemic differences between MSBuild and Bazel builds,
+    // filtered during comparison since they don't affect compiled output.
+    private static readonly HashSet<string> IgnoredNoWarns = new(StringComparer.Ordinal)
+    {
+        // XML doc comment warnings — handled via EditorConfig in MSBuild, nowarn in Bazel
+        "1591", "1572", "1574", "1710", "1734",
+        // Nullable context handling — globalconfig in MSBuild, nowarn in Bazel
+        "8632", "nullable",
+        // Type forwarding / nullable analysis — suppressed inconsistently
+        "1701", "1702", "1705", "8500", "8604", "8969",
+        // Referenced assembly without strong name — MSBuild toolchain difference
+        "8002",
+        // CLS compliance — Bazel source generators suppress this; MSBuild doesn't
+        "3003",
+    };
+
+    /// <summary>
+    /// Check if a nowarn code should be ignored in comparisons.
+    /// Covers analyzer-only warnings, systemic build infrastructure differences,
+    /// and compound entries like "CA1845 (+3 more)".
+    /// </summary>
+    private static bool IsIgnoredNoWarn(string code) =>
+        AnalyzerNoWarns.Contains(code) || IgnoredNoWarns.Contains(code) || code.Contains("(+");
+
     private static ComparisonResult CompareManagedRecords(string name, ManagedCompilationRecord msbuild, ManagedCompilationRecord bazel)
     {
         var result = new ComparisonResult { Name = name, Category = "managed" };
 
         AddSourceFileDifference(result, msbuild, bazel);
-        AddSetDifference(result, "defines", msbuild.Defines, bazel.Defines);
-        AddSetDifference(result, "references", msbuild.References, bazel.References);
-        AddSetDifference(result, "nowarn", msbuild.NoWarn, bazel.NoWarn);
+
+        // Defines: compare all defines except BAZEL (Bazel-only infrastructure define)
+        // and build configuration defines (RELEASE/DEBUG/TRACE/CHECKED/NDEBUG) which
+        // depend on the build config, not source structure.
+        var msbuildDefines = new SortedSet<string>(
+            msbuild.Defines.Where(d => !IsConfigDefine(d)),
+            StringComparer.Ordinal);
+        var bazelDefines = new SortedSet<string>(
+            bazel.Defines.Where(d => !IsConfigDefine(d) && d != "BAZEL"),
+            StringComparer.Ordinal);
+        AddSetDifference(result, "defines", msbuildDefines, bazelDefines);
+
+        // References: MSBuild OOB assemblies get the full targeting pack (~140 refs).
+        // Bazel uses explicit deps, so it only has the refs it actually needs.
+        // When MSBuild has 50+ more refs, these are targeting pack noise — filter them.
+        var msbuildRefs = msbuild.References;
+        var bazelRefs = bazel.References;
+        var onlyInMSBuildRefs = new SortedSet<string>(msbuildRefs.Except(bazelRefs), StringComparer.Ordinal);
+        var onlyInBazelRefs = new SortedSet<string>(bazelRefs.Except(msbuildRefs), StringComparer.Ordinal);
+        if (onlyInMSBuildRefs.Count > 50)
+        {
+            // Targeting pack pattern: MSBuild passes the entire framework ref set.
+            // Only report refs that Bazel has but MSBuild doesn't (these indicate
+            // over-specified deps in Bazel).
+            onlyInMSBuildRefs.Clear();
+        }
+        if (onlyInMSBuildRefs.Count > 0 || onlyInBazelRefs.Count > 0)
+        {
+            result.Differences.Add(new Difference
+            {
+                Field = "references",
+                OnlyInCMake = onlyInMSBuildRefs,
+                OnlyInBazel = onlyInBazelRefs,
+            });
+        }
+
+        // NoWarn: compare all warning suppressions. Normalize CS prefix for consistency.
+        // Filter CS8632 and "nullable" — rules_dotnet explicitly passes /nullable:disable
+        // for assemblies where nullable is disabled, but MSBuild omits it (disable is the
+        // default). This triggers CS8632 on nullable annotations in shared source files.
+        // MSBuild also passes "nullable" as a nowarn for PNSE assemblies that set
+        // <Nullable>disable</Nullable>. Both are nullable context infrastructure noise.
+        var msbuildNoWarn = new SortedSet<string>(
+            msbuild.NoWarn.Select(NormalizeNoWarn).Where(w => w is not "8632" and not "nullable"),
+            StringComparer.Ordinal);
+        var bazelNoWarn = new SortedSet<string>(
+            bazel.NoWarn.Select(NormalizeNoWarn).Where(w => w is not "8632" and not "nullable"),
+            StringComparer.Ordinal);
+        AddSetDifference(result, "nowarn", msbuildNoWarn, bazelNoWarn);
         // Analyzers are intentionally not compared — Bazel does not wire Roslyn
         // analyzers yet, so the diff would always be MSBuild-only noise.
 
@@ -425,7 +553,11 @@ public static class ComparisonEngine
             });
         }
 
-        if (!string.Equals(msbuild.TargetType, bazel.TargetType, StringComparison.OrdinalIgnoreCase))
+        // Target type: MSBuild tests produce Exe (test SDK adds entry point), but
+        // Bazel tests are libraries (test runner loads them). Ignore Exe↔library for tests.
+        if (!string.Equals(msbuild.TargetType, bazel.TargetType, StringComparison.OrdinalIgnoreCase)
+            && !(string.Equals(msbuild.TargetType, "Exe", StringComparison.OrdinalIgnoreCase)
+                 && string.Equals(bazel.TargetType, "library", StringComparison.OrdinalIgnoreCase)))
         {
             result.Differences.Add(new Difference
             {
@@ -460,15 +592,61 @@ public static class ComparisonEngine
         onlyInMSBuild.RemoveWhere(f => Path.GetFileName(f).EndsWith("AssemblyAttributes.cs", StringComparison.Ordinal));
         onlyInBazel.RemoveWhere(f => Path.GetFileName(f).EndsWith("AssemblyAttributes.cs", StringComparison.Ordinal));
 
+        // Filter out MSBuild-generated AssemblyInfo.cs files (e.g.
+        // artifacts/obj/X/Release/.../X.AssemblyInfo.cs). In Bazel, rules_dotnet
+        // generates equivalent AssemblyInfo content internally; it's not a separate
+        // source file in the aquery output.  Also filter Bazel-generated
+        // AssemblyInfo.g.cs from local genrules (ILCompiler/crossgen2 tools).
+        onlyInMSBuild.RemoveWhere(f =>
+        {
+            var fn = Path.GetFileName(f);
+            return fn.EndsWith("AssemblyInfo.cs", StringComparison.Ordinal)
+                || fn == "AssemblyInfo.g.cs";
+        });
+        onlyInBazel.RemoveWhere(f =>
+        {
+            var fn = Path.GetFileName(f);
+            return fn.EndsWith("AssemblyInfo.cs", StringComparison.Ordinal)
+                || fn == "AssemblyInfo.g.cs";
+        });
+
+        // Filter out MSBuild-generated InternalsVisibleTo.cs files.
+        // In Bazel, IVT attributes are set via the internals_visible_to parameter.
+        onlyInMSBuild.RemoveWhere(f => Path.GetFileName(f).EndsWith("InternalsVisibleTo.cs", StringComparison.Ordinal));
+        onlyInBazel.RemoveWhere(f => Path.GetFileName(f).EndsWith("InternalsVisibleTo.cs", StringComparison.Ordinal));
+
+        // Filter out test SDK and polyfill source files that MSBuild includes
+        // but Bazel doesn't need (test SDK entry point, netstandard polyfills).
+        onlyInMSBuild.RemoveWhere(f => IgnoredSourceFileNames.Contains(Path.GetFileName(f)));
+        onlyInBazel.RemoveWhere(f => IgnoredSourceFileNames.Contains(Path.GetFileName(f)));
+
+        // MSBuild's PNSE build includes both the raw Forwards.cs AND the
+        // generated Forwards.notsupported.cs.  Bazel's gen_pnse_source only
+        // produces the .notsupported.cs variant. Filter out the raw Forwards.cs
+        // from the MSBuild side when the corresponding .notsupported.cs exists.
+        var notsupportedNames = new HashSet<string>(
+            onlyInMSBuild
+                .Concat(onlyInBazel)
+                .Select(f => Path.GetFileName(f))
+                .Where(n => n.EndsWith(".notsupported.cs", StringComparison.Ordinal)),
+            StringComparer.Ordinal);
+        onlyInMSBuild.RemoveWhere(f =>
+        {
+            var fn = Path.GetFileName(f);
+            return fn.EndsWith(".cs", StringComparison.Ordinal)
+                && !fn.EndsWith(".notsupported.cs", StringComparison.Ordinal)
+                && notsupportedNames.Contains(fn.Replace(".cs", ".notsupported.cs"));
+        });
+
         if (onlyInMSBuild.Count == 0 && onlyInBazel.Count == 0)
             return;
 
         // Match remaining files by filename (ignoring directory).
         var msbuildByName = onlyInMSBuild
-            .GroupBy(f => Path.GetFileName(f)!)
+            .GroupBy(f => NormalizeGeneratedFileName(Path.GetFileName(f)!))
             .ToDictionary(g => g.Key, g => g.ToList());
         var bazelByName = onlyInBazel
-            .GroupBy(f => Path.GetFileName(f)!)
+            .GroupBy(f => NormalizeGeneratedFileName(Path.GetFileName(f)!))
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var contentMismatches = new SortedSet<string>(StringComparer.Ordinal);
@@ -535,6 +713,9 @@ public static class ComparisonEngine
             var msbuildContent = File.ReadAllText(msbuildDisk).ReplaceLineEndings("\n");
             var bazelContent = File.ReadAllText(bazelDisk).ReplaceLineEndings("\n");
 
+            // Normalize version suffixes: MSBuild CI builds use "-ci" while Bazel uses "-dev".
+            msbuildContent = msbuildContent.Replace("-ci\"", "-dev\"");
+
             return msbuildContent == bazelContent;
         }
         catch
@@ -558,6 +739,50 @@ public static class ComparisonEngine
             });
         }
     }
+
+    /// <summary>
+    /// Normalize a nowarn code so that "CS0168" and "0168" compare as equal.
+    /// MSBuild typically emits the CS-prefixed form, while Bazel BUILD files
+    /// sometimes use just the numeric code.
+    /// </summary>
+    private static string NormalizeNoWarn(string code)
+    {
+        if (code.StartsWith("CS", StringComparison.Ordinal) && code.Length > 2 && char.IsDigit(code[2]))
+            return code[2..];
+
+        return code;
+    }
+
+    /// <summary>
+    /// Normalize generated file names so that variants like "System.SR.cs",
+    /// "SR.g.cs", and "SharedStrings.g.cs" are treated as equivalent for matching.
+    /// </summary>
+    private static string NormalizeGeneratedFileName(string fileName)
+    {
+        if (fileName is "System.SR.cs" or "SR.g.cs" or "SharedStrings.g.cs" or "ILLink.Shared.SharedStrings.cs")
+            return "System.SR.cs";
+
+        return fileName;
+    }
+
+    /// <summary>
+    /// Check if a define is a TFM-derived platform identifier that MSBuild
+    /// adds from the TargetFrameworkMoniker but Bazel doesn't.
+    /// Also covers NETx_0_OR_GREATER version defines and NETSTANDARD variants.
+    /// </summary>
+    private static bool IsTfmPlatformDefine(string define) =>
+        define is "UNIX" or "UNIX1_0" or "LINUX" or "LINUX1_0"
+            or "WINDOWS" or "WINDOWS1_0" or "OSX" or "OSX1_0"
+            or "NETSTANDARD" or "Unix"
+        || define.StartsWith("NET") && (define.Contains("_OR_GREATER") || define.Contains("STANDARD"))
+        || define is "NET" or "NET8_0" or "NET9_0" or "NET10_0";
+
+    /// <summary>
+    /// Build configuration defines that depend on the selected build config
+    /// (debug/release/checked), not on source structure.
+    /// </summary>
+    private static bool IsConfigDefine(string define) =>
+        define is "RELEASE" or "DEBUG" or "TRACE" or "CHECKED" or "NDEBUG";
 
     /// <summary>
     /// Normalize language version strings so that "preview" and the
@@ -602,9 +827,14 @@ public static class ComparisonEngine
     /// Assign a priority score for TFM selection from multi-targeted MSBuild builds.
     /// Higher is better. Platform-specific TFMs (linux, unix) are preferred
     /// over the plain net10.0 TFM which is often a PNSE stub.
+    /// Stub assemblies (shims/stubs) are deprioritized below all other builds.
     /// </summary>
     private static int TfmPriority(string outputPath)
     {
+        // Stub assemblies (shims/stubs) are type-forward wrappers, not the real impl.
+        if (outputPath.Contains("/stub/", StringComparison.OrdinalIgnoreCase))
+            return -1;
+
         if (outputPath.Contains("net10.0-linux", StringComparison.OrdinalIgnoreCase))
             return 3;
         if (outputPath.Contains("net10.0-unix", StringComparison.OrdinalIgnoreCase))

@@ -14,6 +14,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Security.Claims",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/Security/Claims/Claim.cs",
         "src/System/Security/Claims/ClaimsIdentity.cs",

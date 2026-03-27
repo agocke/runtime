@@ -1,8 +1,10 @@
 load("//src/tests:live_test.bzl", "library_test")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN")
 load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Text.Encoding.CodePages.Tests",
+    nowarn = MULTITARGET_NOWARN,
     srcs = glob(["*.cs"]),
     deps = [
         "//src/libraries/System.Text.Encoding.CodePages:live_System.Text.Encoding.CodePages",

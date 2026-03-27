@@ -15,6 +15,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.ComponentModel.Annotations",
+    nowarn = ["CS1591"],
     srcs = glob(["src/System/**/*.cs"]) + [
         # Common sources
         "//src/libraries/Common:src/System/NotImplemented.cs",

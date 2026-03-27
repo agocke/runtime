@@ -2,11 +2,13 @@ load("//:defs.bzl", "csharp_library")
 
 csharp_library(
     name = "ILCompiler.Diagnostics",
+    nowarn = ["1591"],
     srcs = glob(["*.cs"]),
     defines = ["READYTORUN"],
     compiler_options = ["/unsafe"],
     deps = [
         "//src/coreclr/tools/aot/ILCompiler.TypeSystem",
+        "@paket.main//microsoft.diasymreader",
     ],
     target_frameworks = ["net10.0"],
     visibility = ["//visibility:public"],

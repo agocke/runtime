@@ -14,6 +14,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.IO.FileSystem.AccessControl",
+    nowarn = ["CS1591"],
     pnse = True,
     resx_file = "src/Resources/Strings.resx",
     srcs = [

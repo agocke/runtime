@@ -3,6 +3,7 @@ load("//:defs.bzl", "OPEN_SNK")
 
 library_test(
     name = "System.Net.WebClient.Tests",
+    defines = ["NETSTANDARD"],
     srcs = glob(["*.cs"]) + [
         "//src/libraries/Common/tests:System/Net/Capability.Security.cs",
         "//src/libraries/Common/tests:System/Net/Configuration.cs",

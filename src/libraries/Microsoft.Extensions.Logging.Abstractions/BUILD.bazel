@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/Microsoft.Extensions.Logging.Abstractions.cs",
@@ -18,7 +18,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Logging.Abstractions",
-    multitarget = True,
+    nowarn = MULTITARGET_NOWARN,
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/Extensions/TypeNameHelper/TypeNameHelper.cs",
         "//src/libraries/Common:src/Extensions/Logging/NullExternalScopeProvider.cs",

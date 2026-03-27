@@ -1,7 +1,10 @@
 load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "netcoreapp_impl_assembly")
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
-exports_files(["src/ILLink/ILLink.Descriptors.LibraryBuild.xml"])
+exports_files([
+    "src/ILLink/ILLink.Descriptors.LibraryBuild.xml",
+    "src/Resources/Strings.resx",
+])
 
 netcoreapp_ref_assembly(
     name = "ref_System.Security.Cryptography",
@@ -726,7 +729,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Collections:ref_System.Collections",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
-        "//src/libraries/System.Console:ref_System.Console", # TODO: only needed in debug
+        "//src/libraries/System.Console:ref_System.Console",
         "//src/libraries/System.Diagnostics.Tracing:ref_System.Diagnostics.Tracing",
         "//src/libraries/System.Diagnostics.StackTrace:ref_System.Diagnostics.StackTrace",
         "//src/libraries/System.IO.MemoryMappedFiles:ref_System.IO.MemoryMappedFiles",
@@ -751,6 +754,7 @@ netcoreapp_impl_assembly(
         "CA5379",
         "CA5384",
         "CS0809",
+        "CS1591",
         "CS8500",
         "SYSLIB0026",
         "SYSLIB5006",
@@ -759,7 +763,6 @@ netcoreapp_impl_assembly(
     defines = [
         "NET",
         "INTERNAL_ASYMMETRIC_IMPLEMENTATIONS",
-        "DESIGNTIMEINTERFACES",
         "SYSTEM_SECURITY_CRYPTOGRAPHY",
     ],
     supported_os_platforms = ["unix"],

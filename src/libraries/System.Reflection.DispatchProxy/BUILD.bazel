@@ -20,6 +20,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Reflection.DispatchProxy",
+    nowarn = ["CS1591"],
     srcs = [
         "src/System/Reflection/DispatchProxy.cs",
         "src/System/Reflection/DispatchProxyGenerator.cs",

@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/Microsoft.Win32.Registry.AccessControl.cs",
@@ -24,10 +24,21 @@ impl_assembly(
     pnse_message = "SR.PlatformNotSupported_RegistryAccessControl",
     pnse_ref_srcs = [
         "ref/Microsoft.Win32.Registry.AccessControl.cs",
-    ],
-    multitarget = True,
-    srcs = [
         "ref/Microsoft.Win32.Registry.AccessControl.Forwards.cs",
+    ],
+    srcs = [],
+    nowarn = MULTITARGET_NOWARN + [
+        "SYSLIB0003",
+        "SYSLIB0004",
+        "SYSLIB0015",
+        "SYSLIB0017",
+        "SYSLIB0021",
+        "SYSLIB0022",
+        "SYSLIB0023",
+        "SYSLIB0025",
+        "SYSLIB0032",
+        "SYSLIB0036",
+        "CS1591",
     ],
     deps = [
         "//src/libraries:ref_System.Runtime",

@@ -12,7 +12,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Resources.Writer",
-    nowarn = ["CA1510"],
+    nowarn = ["CA1510", "CS1591"],
     srcs = [
         "src/System/Resources/__FastResourceComparer.cs",
         "src/System/Resources/IResourceWriter.cs",
