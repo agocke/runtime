@@ -334,22 +334,9 @@ Exit codes: `0` = clean, `1` = build-changes, `2` = conflict.
 
 ### Key patterns to know when fixing BUILD.bazel files
 
-| MSBuild (.csproj) | Bazel (BUILD.bazel) |
-|--------------------|---------------------|
-| `<Compile Include="path">` | `srcs = ["src/path"]` |
-| `$(CoreLibSharedDir)path` | `"//src/libraries/System.Private.CoreLib:src/path"` |
-| `$(CommonPath)path` | `"//src/libraries/Common:src/path"` |
-| `<ProjectReference Include="...">` | `deps = ["//src/libraries:ref_AssemblyName"]` |
-| `<DefineConstants>FOO</DefineConstants>` | `defines = ["FOO"]` |
-
-### Adding a NuGet package to Bazel
-
-1. Add `nuget <name> <version>` to `paket.dependencies`
-2. Run `paket install` to update `paket.lock`
-3. Run `bash sync-paket.sh` to regenerate `paket/paket.main.bzl`
-4. If you reference files from the package directly (not just as a `deps` entry),
-   add the repo name to `use_repo()` in `MODULE.bazel` and add a constant to
-   `defs.bzl` following the existing pattern
+See [MSBuild to Bazel Translation Guide](msbuild-to-bazel.md) for the full
+reference table and detailed patterns (debug-conditional deps, NuGet packages,
+etc.).
 
 ## Platform Support Status
 
