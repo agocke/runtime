@@ -22,7 +22,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Logging",
-    nowarn = MULTITARGET_NOWARN,
+    nowarn = MULTITARGET_NOWARN + ["CP0003"],
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/Extensions/ProviderAliasUtilities/ProviderAliasUtilities.cs",
         "//src/libraries/Common:src/Extensions/Logging/NullExternalScopeProvider.cs",

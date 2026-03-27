@@ -18,6 +18,6 @@ impl_assembly(
     ],
     resx_file = "src/Resources/Strings.resx",
     nullable = "disable",
-    nowarn = MULTITARGET_NOWARN + ["nullable", "CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "nullable", "CS1591"],
     is_aot_compatible = False,
 )

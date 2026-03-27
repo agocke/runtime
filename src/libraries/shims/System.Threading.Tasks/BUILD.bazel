@@ -4,6 +4,7 @@ exports_files(["src/System.Threading.Tasks.cs"])
 
 netcoreapp_impl_assembly(
     name = "impl_System.Threading.Tasks",
+    skip_locals_init = False,
     srcs = ["src/System.Threading.Tasks.cs"],
     deps = [
         "//src/libraries:ref_System.Runtime",

@@ -20,7 +20,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Hosting.Systemd",
-    nowarn = MULTITARGET_NOWARN,
+    nowarn = MULTITARGET_NOWARN + ["CP0003"],
     allow_unsafe_blocks = True,
     exclude_sr = True,
     srcs = glob(

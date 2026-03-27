@@ -17,7 +17,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Memory.Data",
-    nowarn = MULTITARGET_NOWARN + ["CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "CS1591"],
     srcs = [
         "src/System/BinaryData.cs",
         "src/System/BinaryDataConverter.cs",

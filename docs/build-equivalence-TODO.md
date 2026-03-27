@@ -25,10 +25,21 @@ Tracked by `compare-bazel.sh`. Run with `--skip-build` after a baseline build.
 - [x] Filter SDK-generated AssemblyAttributes.cs
 - [x] Skip analyzer comparison (Bazel doesn't wire analyzers yet)
 
-## Already fixed (rules_dotnet)
+## Already fixed (Bazel BUILD files)
 
 - [x] Add NETCOREAPP define for net5.0+ targets
 - [x] Filter NETSTANDARD*_OR_GREATER for non-netstandard targets
+- [x] Decouple `skip_locals_init` from `exclude_sr` in `impl_assembly` macro —
+  SkipLocalsInit.cs is now added for all `IsNETCoreAppSrc` assemblies regardless
+  of whether they have a resx file
+- [x] Remove CP0003 from `MULTITARGET_NOWARN` — CP0003 (NuGet packaging compat)
+  only applies to source assemblies, not tests; now added per-assembly
+- [x] Add `MULTITARGET_NOWARN + ["CP0003"]` to 11 multi-target OOB libraries
+  missing CA1510-CA1513/CA1845-CA1847 nowarns from MSBuild's Directory.Build.targets
+- [x] Add `skip_locals_init = False` to 60 shim/facade assemblies that are not
+  `IsNETCoreAppSrc` in MSBuild
+- [x] Remove debug-only `System.Console` reference from System.Net.Security and
+  System.Security.Cryptography BUILD files (MSBuild only includes it in Debug config)
 
 ---
 

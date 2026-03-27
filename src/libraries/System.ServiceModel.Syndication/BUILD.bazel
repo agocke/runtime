@@ -20,7 +20,7 @@ netcoreapp_ref_assembly(
 impl_assembly(
     name = "impl_System.ServiceModel.Syndication",
     nullable = "disable",
-    nowarn = MULTITARGET_NOWARN + ["nullable", "CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "nullable", "CS1591"],
     srcs = glob(["src/**/*.cs"]),
     deps = [
         "//src/libraries:ref_System.Runtime",

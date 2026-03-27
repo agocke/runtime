@@ -32,7 +32,7 @@ LIVE_NETCOREAPP_DEPS = [
 # Suppresses warnings about APIs that don't exist in older TFMs.
 MULTITARGET_NOWARN = [
     "CA1510", "CA1511", "CA1512", "CA1513",
-    "CA1845", "CA1846", "CA1847", "CP0003",
+    "CA1845", "CA1846", "CA1847",
 ]
 
 # ── Core_Root library set ─────────────────────────────────────────────
@@ -366,9 +366,8 @@ def impl_assembly(
     # Add SkipLocalsInit.cs for IsNETCoreAppSrc assemblies (matches MSBuild's
     # Directory.Build.targets condition: IsNETCoreAppSrc=true).  The
     # netcoreapp_impl_assembly wrapper passes skip_locals_init=True; OOB
-    # assemblies use impl_assembly directly (default False).  Shim/facade
-    # assemblies have exclude_sr=True and never get it.
-    if skip_locals_init and not exclude_sr:
+    # assemblies use impl_assembly directly (default False).
+    if skip_locals_init:
         srcs = srcs + [
             "//src/libraries/Common:src/SkipLocalsInit.cs",
         ]

@@ -27,7 +27,7 @@ impl_assembly(
         "ref/Microsoft.Win32.Registry.AccessControl.Forwards.cs",
     ],
     srcs = [],
-    nowarn = MULTITARGET_NOWARN + [
+    nowarn = MULTITARGET_NOWARN + ["CP0003", 
         "SYSLIB0003",
         "SYSLIB0004",
         "SYSLIB0015",

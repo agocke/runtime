@@ -45,6 +45,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_mscorlib",
+    skip_locals_init = False,
     srcs = [
         "ref/mscorlib.cs",
         "src/mscorlib.cs",

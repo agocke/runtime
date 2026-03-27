@@ -43,7 +43,7 @@ impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     supported_os_platforms_short = ["windows"],
     nullable = "disable",
-    nowarn = MULTITARGET_NOWARN + ["CS0618", "CA1822", "CA1865", "IDE0059", "NU5128", "CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "CS0618", "CA1822", "CA1865", "IDE0059", "NU5128", "CS1591"],
 )
 
 ref_impl_pair(
