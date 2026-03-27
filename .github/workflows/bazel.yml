@@ -43,8 +43,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -qq -y clang-18 lld libkrb5-dev liblttng-ust-dev
 
-      - name: Mount Bazel cache
-        uses: actions/cache@v4
+      - name: Restore Bazel cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/bazel-disk
           key: bazel-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
@@ -58,3 +58,10 @@ jobs:
       - name: Test
         if: ${{ !matrix.targets }}
         run: bazel test //... --config=${{ matrix.config }} --disk_cache=~/.cache/bazel-disk --test_output=errors
+
+      - name: Save Bazel cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
