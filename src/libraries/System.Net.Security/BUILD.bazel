@@ -227,7 +227,6 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Collections:ref_System.Collections",
         "//src/libraries/System.Collections.Concurrent:ref_System.Collections.Concurrent",
         "//src/libraries/System.Collections.NonGeneric:ref_System.Collections.NonGeneric",
-        "//src/libraries/System.Console:ref_System.Console",
         "//src/libraries/System.Diagnostics.DiagnosticSource:ref_System.Diagnostics.DiagnosticSource",
         "//src/libraries/System.Diagnostics.Tracing:ref_System.Diagnostics.Tracing",
         "//src/libraries/System.Linq:ref_System.Linq",
@@ -243,6 +242,13 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Diagnostics.StackTrace:ref_System.Diagnostics.StackTrace",
         "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
         "//src/libraries/System.Formats.Asn1:ref_System.Formats.Asn1",
-    ],
+    ] + select({
+        # SafeX509Handles.Unix.cs uses Console.WriteLine under #if DEBUG.
+        # rules_dotnet defines DEBUG for fastbuild and dbg, but not opt.
+        "//:opt_mode": [],
+        "//conditions:default": [
+            "//src/libraries/System.Console:ref_System.Console",
+        ],
+    }),
     supported_os_platforms = ["linux"],
 )

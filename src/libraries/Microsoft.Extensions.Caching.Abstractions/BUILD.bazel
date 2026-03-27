@@ -22,7 +22,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.Caching.Abstractions",
-    nowarn = MULTITARGET_NOWARN,
+    nowarn = MULTITARGET_NOWARN + ["CP0003"],
     exclude_sr = True,
     srcs = glob(["src/**/*.cs"]),
     deps = [

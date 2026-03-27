@@ -17,7 +17,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Formats.Asn1",
-    nowarn = MULTITARGET_NOWARN,
+    nowarn = MULTITARGET_NOWARN + ["CP0003"],
     defines = ["CP_NO_ZEROMEMORY"],
     srcs = glob(["src/System/Formats/Asn1/**/*.cs"]) + [
         "//src/libraries/Common:src/System/Security/Cryptography/CryptoPool.cs",

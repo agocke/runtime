@@ -16,7 +16,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Net.Http.Json",
-    nowarn = MULTITARGET_NOWARN + ["CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "CS1591"],
     srcs = [
         "src/System/Net/Http/Json/HttpClientJsonExtensions.Get.AsyncEnumerable.cs",
         "src/System/Net/Http/Json/HttpClientJsonExtensions.cs",

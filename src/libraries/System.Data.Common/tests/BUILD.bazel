@@ -16,9 +16,6 @@ library_test(
             "TrimmingTests/**",
             # Separate MSBuild test project (System.Data.DataSetExtensions.Tests)
             "System.Data.DataSetExtensions.Tests/**",
-            # Requires System.Data.SqlClient NuGet package
-            "System/Data/FacadeTest.cs",
-            "System/Data/Common/DbProviderFactoriesTests.cs",
         ],
     ) + [
         "//src/libraries/Common/tests:System/Diagnostics/Tracing/TestEventListener.cs",
@@ -41,6 +38,7 @@ library_test(
         "//src/libraries/System.Runtime.Numerics:ref_System.Runtime.Numerics",
         "//src/libraries/System.Text.Encoding.CodePages:ref_System.Text.Encoding.CodePages",
         "//src/libraries/Common/tests:TestUtilities",
+        "@paket.main//system.data.sqlclient",
         "@paket.main//microsoft.dotnet.remoteexecutor",
         "@paket.main//microsoft.dotnet.xunitassert",
         "@paket.main//microsoft.dotnet.xunitextensions",

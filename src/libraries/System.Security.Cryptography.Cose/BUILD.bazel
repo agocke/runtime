@@ -14,7 +14,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Security.Cryptography.Cose",
-    nowarn = MULTITARGET_NOWARN + ["CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "CS1591"],
     srcs = glob(["src/**/*.cs"]) + [
         "//src/libraries/Common:src/System/Experimentals.cs",
         "//src/libraries/Common:src/System/HashCodeRandomization.cs",

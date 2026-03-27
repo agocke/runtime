@@ -5,7 +5,7 @@ load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "impl_assembly")
 # framework.
 impl_assembly(
     name = "impl_Microsoft.Bcl.Memory",
-    nowarn = MULTITARGET_NOWARN,
+    nowarn = MULTITARGET_NOWARN + ["CP0003"],
     srcs = [
         "src/Microsoft.Bcl.Memory.Forwards.cs",
     ],

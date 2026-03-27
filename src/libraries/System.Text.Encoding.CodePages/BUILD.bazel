@@ -53,7 +53,7 @@ netcoreapp_impl_assembly(
     resx_file = "src/Resources/Strings.resx",
     resources = ["src/Data/codepages.nlp"],
     resource_logical_names = {"codepages.nlp": "codepages.nlp"},
-    nowarn = MULTITARGET_NOWARN + ["NU5128", "CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "NU5128", "CS1591"],
     assembly_description = "Provides support for code-page based encodings, including Windows-1252, Shift-JIS, and GB2312.\n\nCommonly Used Types:\nSystem.Text.CodePagesEncodingProvider",
 )
 

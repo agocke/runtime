@@ -19,7 +19,7 @@ netcoreapp_ref_assembly(
 
 netcoreapp_impl_assembly(
     name = "impl_System.Net.ServerSentEvents",
-    nowarn = MULTITARGET_NOWARN,
+    nowarn = MULTITARGET_NOWARN + ["CP0003"],
     srcs = [
         "src/System/Net/ServerSentEvents/Helpers.cs",
         "src/System/Net/ServerSentEvents/PooledByteBufferWriter.cs",

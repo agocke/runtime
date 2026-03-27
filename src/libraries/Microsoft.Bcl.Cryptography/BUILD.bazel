@@ -14,6 +14,6 @@ impl_assembly(
         "//src/libraries:ref_System.Runtime",
         "//src/libraries/System.Security.Cryptography:ref_System.Security.Cryptography",
     ],
-    nowarn = MULTITARGET_NOWARN + ["SYSLIB5006"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "SYSLIB5006"],
     exclude_sr = True,
 )

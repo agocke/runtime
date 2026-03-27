@@ -254,7 +254,17 @@ def _gen_assembly_info_impl(ctx):
     for platform in ctx.attr.unsupported_os_platforms:
         lines.append('[assembly: System.Runtime.Versioning.UnsupportedOSPlatform("%s")]' % platform)
 
-    if ctx.attr.include_dll_safe_search_path:
+    if ctx.attr.include_dll_safe_search_path < 0:
+        _include_dll_safe_search = False
+        for d in ctx.attr.ref_deps:
+            dep_str = str(d.label)
+            if "System.Private.CoreLib" in dep_str or "System.Runtime.InteropServices" in dep_str:
+                _include_dll_safe_search = True
+                break
+    else:
+        _include_dll_safe_search = ctx.attr.include_dll_safe_search_path > 0
+
+    if _include_dll_safe_search:
         lines.append("[assembly: System.Runtime.InteropServices.DefaultDllImportSearchPathsAttribute(System.Runtime.InteropServices.DllImportSearchPath.AssemblyDirectory | System.Runtime.InteropServices.DllImportSearchPath.System32)]")
 
     lines.append('[assembly: System.Reflection.AssemblyCompanyAttribute("Microsoft Corporation")]')
@@ -299,7 +309,15 @@ gen_assembly_info = rule(
         "is_trimmable": attr.bool(default = True),
         "is_aot_compatible": attr.bool(default = True),
         "include_serviceable": attr.bool(default = True),
-        "include_dll_safe_search_path": attr.bool(default = False),
+        "include_dll_safe_search_path": attr.int(
+            default = -1,
+            doc = "Emit DefaultDllImportSearchPathsAttribute. " +
+                  "-1 (default) = auto-detect from ref_deps, 0 = no, 1 = yes.",
+        ),
+        "ref_deps": attr.label_list(
+            default = [],
+            doc = "Assembly deps, used only to auto-detect include_dll_safe_search_path.",
+        ),
         "include_neutral_resources_language": attr.bool(default = True),
         "assembly_description": attr.string(default = ""),
         "assembly_configuration": attr.string(default = ""),

@@ -64,7 +64,7 @@ netcoreapp_impl_assembly(
         "//src/libraries/System.Threading:ref_System.Threading",
     ],
     resx_file = "src/Resources/Strings.resx",
-    nowarn = MULTITARGET_NOWARN + ["CS3011", "CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "CS3011", "CS1591"],
     include_dll_safe_search_path = False,
     assembly_description = "Provides types for encoding and escaping strings for use in JavaScript, HyperText Markup Language (HTML), and uniform resource locators (URL).\n\nCommonly Used Types:\nSystem.Text.Encodings.Web.HtmlEncoder\nSystem.Text.Encodings.Web.UrlEncoder\nSystem.Text.Encodings.Web.JavaScriptEncoder",
 )

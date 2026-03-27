@@ -18,7 +18,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_Microsoft.Extensions.DependencyModel",
-    nowarn = MULTITARGET_NOWARN + ["CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "CS1591"],
     srcs = glob(
         ["src/**/*.cs"],
         exclude = [

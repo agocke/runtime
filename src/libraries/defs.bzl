@@ -32,7 +32,7 @@ LIVE_NETCOREAPP_DEPS = [
 # Suppresses warnings about APIs that don't exist in older TFMs.
 MULTITARGET_NOWARN = [
     "CA1510", "CA1511", "CA1512", "CA1513",
-    "CA1845", "CA1846", "CA1847", "CP0003",
+    "CA1845", "CA1846", "CA1847",
 ]
 
 # ── Core_Root library set ─────────────────────────────────────────────
@@ -366,9 +366,8 @@ def impl_assembly(
     # Add SkipLocalsInit.cs for IsNETCoreAppSrc assemblies (matches MSBuild's
     # Directory.Build.targets condition: IsNETCoreAppSrc=true).  The
     # netcoreapp_impl_assembly wrapper passes skip_locals_init=True; OOB
-    # assemblies use impl_assembly directly (default False).  Shim/facade
-    # assemblies have exclude_sr=True and never get it.
-    if skip_locals_init and not exclude_sr:
+    # assemblies use impl_assembly directly (default False).
+    if skip_locals_init:
         srcs = srcs + [
             "//src/libraries/Common:src/SkipLocalsInit.cs",
         ]
@@ -390,18 +389,12 @@ def impl_assembly(
     # 2. System.SR.cs is added by the csharp_library wrapper via resx_file
 
     # 3. Generate the full AssemblyInfo.cs matching MSBuild's WriteCodeFragment
-    # MSBuild adds DefaultDllImportSearchPathsAttribute when any ReferencePath
-    # has Filename of System.Runtime.InteropServices or System.Private.CoreLib.
-    # Auto-detect from deps if not explicitly specified.
-    if include_dll_safe_search_path == None:
-        _include_dll_safe_search = False
-        for d in deps:
-            dep_str = str(d)
-            if "System.Private.CoreLib" in dep_str or "System.Runtime.InteropServices" in dep_str:
-                _include_dll_safe_search = True
-                break
-    else:
-        _include_dll_safe_search = include_dll_safe_search_path
+    # 3. Generate the full AssemblyInfo.cs matching MSBuild's WriteCodeFragment
+    # MSBuild's CalculateIncludeDllSafeSearchPathAttribute target
+    # (eng/versioning.targets) adds DefaultDllImportSearchPathsAttribute when
+    # any resolved reference has Filename of System.Runtime.InteropServices or
+    # System.Private.CoreLib.  gen_assembly_info auto-detects from ref_deps at
+    # analysis time, so select() in deps is fully supported.
 
     assembly_info_target = "assemblyinfo_" + base_name
     assembly_info_kwargs = {}
@@ -409,6 +402,8 @@ def impl_assembly(
         assembly_info_kwargs["assembly_version"] = assembly_version
     if assembly_description:
         assembly_info_kwargs["assembly_description"] = assembly_description
+    if include_dll_safe_search_path != None:
+        assembly_info_kwargs["include_dll_safe_search_path"] = 1 if include_dll_safe_search_path else 0
     gen_assembly_info(
         name = assembly_info_target,
         out = name + "/" + base_name + ".AssemblyInfo.cs",
@@ -417,7 +412,7 @@ def impl_assembly(
         cls_compliant = cls_compliant,
         is_trimmable = is_trimmable,
         is_aot_compatible = is_aot_compatible,
-        include_dll_safe_search_path = _include_dll_safe_search,
+        ref_deps = deps,
         include_neutral_resources_language = include_neutral_resources_language if include_neutral_resources_language != None else (resx_file != None),
         not_supported = pnse,
         supported_os_platforms = supported_os_platforms,

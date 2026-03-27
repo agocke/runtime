@@ -133,6 +133,15 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+# Opt mode detection: matches -c opt (--compilation_mode=opt).
+# rules_dotnet defines DEBUG for fastbuild and dbg, but not opt.
+# Use this to conditionally include deps needed only under #if DEBUG.
+config_setting(
+    name = "opt_mode",
+    values = {"compilation_mode": "opt"},
+    visibility = ["//visibility:public"],
+)
+
 # Legacy runtime_debug config_setting — kept for backward compatibility.
 # Prefer //:clr_debug or //:clr_checked for new code.
 config_setting(

@@ -1,4 +1,4 @@
-load("//src/libraries:defs.bzl", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
+load("//src/libraries:defs.bzl", "MULTITARGET_NOWARN", "netcoreapp_ref_assembly", "impl_assembly", "ref_impl_pair")
 
 exports_files([
     "ref/System.Security.Permissions.cs",
@@ -29,7 +29,7 @@ netcoreapp_ref_assembly(
 
 impl_assembly(
     name = "impl_System.Security.Permissions",
-    nowarn = ["nullable", "CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "nullable", "CS1591"],
     partial_facade = True,
     srcs = glob(["src/**/*.cs"]) + [
         "ref/System.Security.Permissions.Forwards.cs",

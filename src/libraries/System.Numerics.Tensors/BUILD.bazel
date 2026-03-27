@@ -20,7 +20,7 @@ impl_assembly(
         exclude = ["src/System/Numerics/Tensors/netstandard/**"],
     ),
     allow_unsafe_blocks = True,
-    nowarn = MULTITARGET_NOWARN + ["SA1001"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "SA1001"],
     resx_file = "src/Resources/Strings.resx",
     deps = [
         "//src/libraries:ref_System.Runtime",

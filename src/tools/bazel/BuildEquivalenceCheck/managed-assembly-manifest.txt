@@ -398,7 +398,7 @@ match  System.Security.Cryptography.Pkcs
 match  System.Security.Cryptography.Pkcs.Tests
 diff   System.Security.Cryptography.ProtectedData
 match  System.Security.Cryptography.ProtectedData.Tests
-diff   System.Security.Cryptography.Tests
+match  System.Security.Cryptography.Tests
 match  System.Security.Cryptography.Xml
 match  System.Security.Cryptography.Xml.Tests
 match  System.Security.Permissions

@@ -15,7 +15,7 @@ impl_assembly(
     name = "impl_System.IO.Ports",
     os_targeted = "unix",
     nullable = "disable",
-    nowarn = MULTITARGET_NOWARN + ["nullable", "CS1591"],
+    nowarn = MULTITARGET_NOWARN + ["CP0003", "nullable", "CS1591"],
     defines = ["SERIAL_PORTS"],
     include_dll_safe_search_path = True,
     analyzers = [
