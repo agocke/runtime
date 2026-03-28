@@ -544,7 +544,8 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
   - [x] `nativeresourcestring` static lib (resourcestring.cpp)
 
 ### 4.4 GC — ✅ DONE (linux-x64)
-- [x] `src/coreclr/gc/BUILD.bazel` — `gc_headers` (headers + inlines + defs + env/ + vxsort/ + unix/)
+- [x] `src/coreclr/gc/BUILD.bazel` — `gc_headers` (public headers + inlines + defs + env/ + vxsort/ + unix/)
+- [x] `gc_internal_headers` — private GC headers (gcpriv.h, gcimpl.h, handletablepriv.h), separated for cache efficiency
 - [x] `gc_pal` cc_library (OBJECT) — Unix PAL (gcenv.unix.cpp, numasupport.cpp, events.cpp, cgroup.cpp)
 - [x] `gc_vxsort` cc_library (OBJECT) — Vectorized sorting (AMD64 AVX2/AVX512 sources with `-mavx2`)
 - [x] Data descriptor stubs (gc_dll_wks_descriptor, gc_dll_svr_descriptor, gcexp_dll_wks_descriptor, gcexp_dll_svr_descriptor)
@@ -559,9 +560,11 @@ The main CLR runtime engine. Large C++ codebase, 86 CMakeLists.txt files.
 ### 4.6 VM (execution engine) — ✅ DONE (linux-x64)
 - [x] `src/coreclr/vm/BUILD.bazel` — `vm_headers` (headers + hpp + inlines + amd64/ + i386/)
 - [x] `cee_wks_asm` cc_library (23 .S assembly files, separate target without PCH)
-- [x] `cee_wks_core` cc_library (~220 .cpp VM core sources)
+- [x] `cee_wks_gc` cc_library (17 GC .cpp sources, uses `implementation_deps` for private GC headers)
+- [x] `cee_wks_core` cc_library (~220 .cpp VM core sources, depends on `cee_wks_gc`)
 - [x] `cee_wks` cc_library (ceemain.cpp, codeman.cpp, peimagelayout.cpp)
-- [x] `cee_dac` cc_library (~100 sources — DAC variant of the VM)
+- [x] `cee_dac_gc` cc_library (4 GC handle table .cpp sources, DAC variant with `implementation_deps`)
+- [x] `cee_dac` cc_library (~100 sources — DAC variant of the VM, depends on `cee_dac_gc`)
 - [x] `src/coreclr/vm/eventing/BUILD.bazel`
   - [x] `eventing_headers` — pre-generated event headers for linux-glibc-x64
   - [x] `eventpipe_gen_srcs` — pre-generated eventpipe C++ sources (5 files)
