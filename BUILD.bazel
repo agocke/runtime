@@ -192,6 +192,7 @@ framework_crossgen_targets(
         "//conditions:default": "//src/coreclr/tools/aot/jitinterface:libjitinterface_x64.so",
     }),
     mibc = MIBC_FILES,
+    native_crossgen2 = "//src/coreclr/tools/aot/crossgen2:crossgen2-publish",
     target_arch = select({
         "@platforms//cpu:arm64": "arm64",
         "//conditions:default": "x64",
