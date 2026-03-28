@@ -257,12 +257,10 @@ _SERVER_GC_SRCS = [
 
 # Server GC textual headers already included via _GC_TEXTUAL_HDRS
 
-# All COMMON sources combined
+# All COMMON sources combined (excluding GC — GC is in separate library targets)
 _ALL_COMMON = (
     _NATIVEAOT_RUNTIME_SRCS +
     _CORECLR_RUNTIME_SRCS +
-    _GC_SRCS +
-    _GC_UNIX_SRCS +
     _UNIX_RUNTIME_SRCS
 )
 
@@ -390,6 +388,49 @@ cc_library(
 # generation is ported to Bazel.
 
 # ---------------------------------------------------------------------------
+# GC static libraries (compiled with NativeAOT defines)
+# ---------------------------------------------------------------------------
+# GC sources are compiled as separate libraries so that private GC headers
+# (gcpriv.h, gcimpl.h, handletablepriv.h) don't propagate to the ~100
+# NativeAOT runtime sources via implementation_deps.
+
+cc_library(
+    name = "nativeaot_gc_wks",
+    srcs = _GC_SRCS + _GC_UNIX_SRCS + _CORECLR_INC_FILES,
+    textual_hdrs = _GC_TEXTUAL_HDRS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    includes = _GC_UNIX_INCLUDES,
+    defines = NATIVEAOT_DEFINES,
+    local_defines = CLR_BASE_CONFIG_DEFINES,
+    alwayslink = True,
+    linkstatic = True,
+    implementation_deps = [
+        "//src/coreclr/gc:gc_internal_headers",
+    ],
+    deps = _RUNTIME_DEPS + [
+        ":nativeaot_generated_headers",
+    ],
+)
+
+cc_library(
+    name = "nativeaot_gc_svr",
+    srcs = _GC_SRCS + _GC_UNIX_SRCS + _SERVER_GC_SRCS + _CORECLR_INC_FILES,
+    textual_hdrs = _GC_TEXTUAL_HDRS,
+    copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
+    includes = _GC_UNIX_INCLUDES,
+    defines = NATIVEAOT_DEFINES + ["FEATURE_SVR_GC"],
+    local_defines = CLR_BASE_CONFIG_DEFINES,
+    alwayslink = True,
+    linkstatic = True,
+    implementation_deps = [
+        "//src/coreclr/gc:gc_internal_headers",
+    ],
+    deps = _RUNTIME_DEPS + [
+        ":nativeaot_generated_headers",
+    ],
+)
+
+# ---------------------------------------------------------------------------
 # Runtime.WorkstationGC
 # ---------------------------------------------------------------------------
 
@@ -397,7 +438,7 @@ cc_library(
     name = "nativeaot_runtime_wks",
     srcs = _ALL_COMMON + _ALL_FULL + _ALL_ASM + _ASM_INCLUDES + _GENERATED_SRCS + _CORECLR_INC_FILES,
     hdrs = _RUNTIME_HDRS,
-    textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
+    textual_hdrs = _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
     includes = _GC_UNIX_INCLUDES + _EVENTING_INCLUDES,
     defines = NATIVEAOT_DEFINES,
@@ -405,6 +446,7 @@ cc_library(
     linkstatic = True,
     deps = _RUNTIME_DEPS + [
         ":eventpipe_disabled",
+        ":nativeaot_gc_wks",
         ":nativeaot_generated_headers",
     ],
 )
@@ -415,9 +457,9 @@ cc_library(
 
 cc_library(
     name = "nativeaot_runtime_svr",
-    srcs = _ALL_COMMON + _ALL_FULL + _ALL_ASM + _ASM_INCLUDES + _SERVER_GC_SRCS + _GENERATED_SRCS + _CORECLR_INC_FILES,
+    srcs = _ALL_COMMON + _ALL_FULL + _ALL_ASM + _ASM_INCLUDES + _GENERATED_SRCS + _CORECLR_INC_FILES,
     hdrs = _RUNTIME_HDRS,
-    textual_hdrs = _GC_TEXTUAL_HDRS + _TEXTUAL_CPP_INCLUDES,
+    textual_hdrs = _TEXTUAL_CPP_INCLUDES,
     copts = NATIVEAOT_COPTS + CLR_CONFIG_COPTS,
     includes = _GC_UNIX_INCLUDES + _EVENTING_INCLUDES,
     defines = NATIVEAOT_DEFINES + ["FEATURE_SVR_GC"],
@@ -425,6 +467,7 @@ cc_library(
     linkstatic = True,
     deps = _RUNTIME_DEPS + [
         ":eventpipe_disabled",
+        ":nativeaot_gc_svr",
         ":nativeaot_generated_headers",
     ],
 )

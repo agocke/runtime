@@ -328,7 +328,7 @@ def framework_illink_targets():
             disable_opt_ipconstprop = (name == "System.Linq.Expressions"),
         )
 
-def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os, mibc = []):
+def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os, mibc = [], native_crossgen2 = None):
     """Generate crossgen_assembly targets for R2R assemblies.
 
     Call after framework_illink_targets() so illink outputs exist.
@@ -339,6 +339,7 @@ def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os, mib
         target_arch: Target architecture (x64, arm64).
         target_os: Target OS (linux, osx, windows).
         mibc: MIBC PGO data files passed as -m: to crossgen2.
+        native_crossgen2: Optional label for NativeAOT-compiled crossgen2 binary.
     """
     # All trimmed framework assemblies plus CoreLib as references.
     # CoreLib isn't in the ILLink pipeline (it has its own crossgen path)
@@ -347,7 +348,7 @@ def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os, mib
         "//src/coreclr/System.Private.CoreLib:impl_System.Private.CoreLib",
     ]
     for name in R2R_ASSEMBLIES:
-        crossgen_assembly(
+        kwargs = dict(
             name = "crossgen_" + name,
             assembly = ":illink_" + name,
             out = "r2r/" + name + ".dll",
@@ -358,3 +359,6 @@ def framework_crossgen_targets(clrjit, jitinterface, target_arch, target_os, mib
             target_arch = target_arch,
             target_os = target_os,
         )
+        if native_crossgen2:
+            kwargs["native_crossgen2"] = native_crossgen2
+        crossgen_assembly(**kwargs)
