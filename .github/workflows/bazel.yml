@@ -50,9 +50,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
+          key: bazel-${{ runner.os }}-${{ matrix.config }}-${{ github.sha }}
           restore-keys: |
-            bazel-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-
             bazel-${{ runner.os }}-${{ matrix.config }}-
 
       - name: Build
@@ -63,8 +62,8 @@ jobs:
         run: bazel test //... --config=${{ matrix.config }} ${{ matrix.libs_config && format('--config={0}', matrix.libs_config) || '' }} --disk_cache=~/.cache/bazel-disk --test_output=errors
 
       - name: Save Bazel cache
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: actions/cache/save@v4
         with:
           path: ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}-${{ github.sha }}
+          key: bazel-${{ runner.os }}-${{ matrix.config }}-${{ github.sha }}
