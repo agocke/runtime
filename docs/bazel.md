@@ -977,21 +977,21 @@ targets line-by-line:
 - UCRT: api-ms-win-crt-*.lib (dynamic linking)
 - Optional: `/CETCOMPAT`, `/guard:cf`, `/guard:ehcont`, `/safeseh` (x86), `/STACK:`
 
-### Bootstrap Mode (TODO)
+### NativeAOT Crossgen2
 
-MSBuild supports `UseBootstrap=true` which:
-1. Builds crossgen2 from source
-2. NativeAOT-publishes it (`crossgen2_publish.csproj`)
-3. Uses that native crossgen2 to compile System.Private.CoreLib
+All R2R compilation (CoreLib and framework assemblies) uses the NativeAOT-compiled
+crossgen2 binary. This matches the MSBuild production path (`crossgen2_publish.csproj`
+with `PublishAot=true`).
 
-The Bazel infrastructure is partially in place:
-- `crossgen_corelib` rule has a `native_crossgen2` attr
-- `crossgen2-publish` nativeaot_binary target exists (or will exist)
-
-**Not yet wired together.** Needs a `bool_flag` (e.g., `--//src/coreclr:bootstrap`)
-that toggles `crossgen_corelib` between:
-- **Default**: LKG SDK crossgen2 (fast, no circular dependency)
-- **Bootstrap**: from-source `//src/coreclr/tools/aot/crossgen2:crossgen2-publish`
+**How it works:**
+- `//src/coreclr/tools/aot/crossgen2:crossgen2-publish` — `publish_binary` with
+  `aot=True` that NativeAOT-compiles crossgen2 into a standalone native binary (~14 MB)
+- `crossgen_corelib` and `crossgen_assembly` rules take a mandatory `native_crossgen2`
+  attr pointing to this binary
+- The rules set `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH` so the binary can find
+  `libjitinterface` at runtime via `NativeLibrary.Load`
+- The ILC compile cost (~25s) is cached by Bazel; subsequent builds use the cached
+  native binary directly
 
 ### NativeAOT Versioning (TODO)
 

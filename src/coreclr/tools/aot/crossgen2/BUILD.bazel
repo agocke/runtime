@@ -55,8 +55,5 @@ publish_binary(
     aot = True,
     optimization_mode = "speed",
     invariant_globalization = True,
-    # TODO: crossgen2 needs libjitinterface and libclrjit linked in.
-    # This requires adding a native_deps label_list attribute to publish_binary
-    # in rules_dotnet to support additional native library inputs during linking.
     visibility = ["//visibility:public"],
 )
