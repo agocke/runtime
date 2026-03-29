@@ -1,0 +1,6 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "Android.Device_Emulator.Aot_Llvm.Test",
+    srcs = ["Program.cs"],
+)

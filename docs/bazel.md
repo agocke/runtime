@@ -709,15 +709,34 @@ and System.Net.Quic (msquic native library + full Linux implementation).
 
 ### 5.4 Tests — 🔨 Partial
 - [x] `src/tests/defs.bzl` — test infrastructure, live_csharp_library, xUnit runner
-- [x] `src/tests/live_test.bzl` — `library_test` macro for library unit tests
-- [x] 18 test BUILD files (JIT directed tests, common infrastructure)
+- [x] `src/tests/live_test.bzl` — `library_test` macro for library unit tests;
+  `coreclr_test` / `il_coreclr_test` macros for CoreCLR tests with `pri` param
+  for priority tagging
+- [x] ~2886 BUILD.bazel files across `src/tests/` (~7446 test targets):
+  - JIT: 2370 BUILD files
+  - Loader: 189 BUILD files
+  - Regressions: 78 BUILD files
+  - baseservices: 66 BUILD files
+  - GC: 45 BUILD files
+  - FunctionalTests: 34 BUILD files
+  - async: 31 BUILD files
+  - Interop: 17 BUILD files
+  - CoreMangLib: 16 BUILD files
+  - readytorun: 16 BUILD files
+  - reflection: 12 BUILD files
+  - plus smaller counts in Exceptions, nativeaot, profiler, tracing, ilasm, managed
+- [x] Pri1 test filtering: `--test_tag_filters=-pri1` in `.bazelrc` excludes expensive
+  tests by default; run `bazel test //... --test_tag_filters=` to include them
+- [x] ~134 tests tagged `manual` (need native deps, multi-project builds, or sandbox-incompatible)
+- [x] ~23 tests with `target_compatible_with = ["@platforms//os:windows"]` for Windows-only tests
 - [x] 117 library test suites (see §1 "What Works" for full list;
   includes 5 platform-constrained suites: Microsoft.Win32.Registry (Windows),
   System.Resources.Extensions (needs System.Drawing.Common),
   System.Runtime.Serialization.Formatters (needs System.Drawing.Common),
   System.Security.AccessControl (Windows),
   System.Security.Principal.Windows (Windows))
-- [ ] Remaining CoreCLR test suite (~thousands of tests)
+- [ ] Tests with CMakeProjectReference (~273 tests need native code built first)
+- [ ] Tests with ReferenceXUnitWrapperGenerator=false (~554 exe-style tests)
 - [ ] Remaining library unit tests (~78 libraries)
 
 ### 5.5 Installer / Packaging
@@ -896,6 +915,9 @@ special support**. The `impl_netcoreapp` filegroup contains 165 total entries
 - Test commands (linux-x64):
   - **All tests**: `bazel test //... --config=clr_checked`
   - **Library tests**: `bazel test //src/tests:all --config=clr_checked`
+  - **CoreCLR tests (all non-JIT)**: `bazel test //src/tests/GC/... //src/tests/Loader/... //src/tests/baseservices/... //src/tests/async/... //src/tests/Regressions/... //src/tests/CoreMangLib/... //src/tests/reflection/... --config=clr_checked`
+  - **Include pri1 tests**: `bazel test //... --config=clr_checked --test_tag_filters=`
+  - **Only pri1 tests**: `bazel test //... --config=clr_checked --test_tag_filters=pri1`
 
 ---
 

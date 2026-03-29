@@ -256,3 +256,10 @@ build:release --config=libs_release
 # Use with --config=release for comparison against CI-built MSBuild output.
 # =====================================================================
 build:ci --//:ci=true
+
+# =====================================================================
+# Default test tag filters: exclude pri1 tests (expensive / not default)
+# To include pri1 tests: bazel test --test_tag_filters= //...
+# To run ONLY pri1 tests: bazel test --test_tag_filters=pri1 //...
+# =====================================================================
+test --test_tag_filters=-pri1

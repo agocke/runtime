@@ -1,0 +1,7 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "pinvoke",
+    srcs = ["pinvoke.cs"],
+    optimize = True,
+)

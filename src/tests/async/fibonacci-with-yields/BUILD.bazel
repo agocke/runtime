@@ -1,0 +1,7 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "fibonacci-with-yields",
+    srcs = ["fibonacci-with-yields.cs"],
+    optimize = True,
+)

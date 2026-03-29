@@ -30,6 +30,7 @@ coreclr_test(
     srcs = ["ExceptionSetsPropagation_Hwi.cs"],
     pri = 1,
     optimize = True,
+    size = "medium",
 )
 
 coreclr_test(
@@ -37,6 +38,7 @@ coreclr_test(
     srcs = ["ExceptionSets.cs"],
     pri = 1,
     optimize = True,
+    size = "medium",
 )
 
 coreclr_test(
@@ -55,6 +57,7 @@ il_coreclr_test(
     srcs = ["ExceptionSetsPropagation_LclHeap.il"],
     pri = 1,
     optimize = True,
+    size = "medium",
 )
 
 coreclr_test(

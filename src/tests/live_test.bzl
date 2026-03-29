@@ -634,6 +634,7 @@ def coreclr_test(
     compiler_options = [],
     use_shared_compilation = True,
     nullable = "annotations",
+    allow_unsafe_blocks = True,  # Match src/tests/Directory.Build.props global setting
     **kwargs
 ):
     # Build complete deps list for JIT tests:
@@ -672,6 +673,7 @@ def coreclr_test(
         use_shared_compilation = use_shared_compilation,
         nullable = nullable,
         generate_documentation_file = False,
+        allow_unsafe_blocks = allow_unsafe_blocks,
         **kwargs
     )
 
@@ -689,6 +691,7 @@ def coreclr_test(
         shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         nullable = nullable,
         generate_documentation_file = False,
+        allow_unsafe_blocks = allow_unsafe_blocks,
         **kwargs
     )
 
