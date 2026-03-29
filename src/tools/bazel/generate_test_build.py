@@ -13,7 +13,7 @@ from pathlib import Path
 from collections import defaultdict
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 # Directories to process (all test directories under src/tests)
 TEST_ROOT = REPO_ROOT / "src" / "tests"

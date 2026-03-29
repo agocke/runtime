@@ -899,6 +899,9 @@ special support**. The `impl_netcoreapp` filegroup contains 165 total entries
 
 ## Notes
 
+- **Bazel-specific infrastructure** (scripts, build tools, generators) lives in
+  `src/tools/bazel/`. New Bazel tooling should go there rather than `eng/` or
+  the repo root.
 - **No CMake files are modified or deleted** — Bazel files are purely additive
 - Config headers (`pal_config.h`, `minipalconfig.h`, `config.h`, `pal_crypto_config.h`) live in platform-specific subdirectories under `bazel/` (e.g., `bazel/linux-glibc-x64/`). The directory name encodes the relevant dimensions (OS, libc, arch). Multi-platform support will add sibling directories and `select()` rules to pick the right one.
 - Platform-specific libraries (Browser, Android, Apple) each need their own platform toolchains before they can be ported
