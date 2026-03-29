@@ -6,7 +6,7 @@ il_coreclr_test(
         "callipinvoke_d.il",
         "callipinvoke.il",
     ],
-    tags = ["manual"]  # Calli PInvoke test
+    target_compatible_with = ["@platforms//os:windows"],
 )
 
 il_coreclr_test(
@@ -15,5 +15,5 @@ il_coreclr_test(
         "callipinvoke_r.il",
         "callipinvoke.il",
     ],
-    tags = ["manual"]  # Calli PInvoke test
+    target_compatible_with = ["@platforms//os:windows"],
 )

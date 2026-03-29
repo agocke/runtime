@@ -3,5 +3,5 @@ load("//src/tests:live_test.bzl", "coreclr_test")
 coreclr_test(
     name = "InteropTestsWebsite",
     srcs = glob(["*.cs"]),
-    tags = ["manual"],  # Needs additional deps not yet available
+    target_compatible_with = ["@platforms//os:android"],
 )

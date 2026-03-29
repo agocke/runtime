@@ -3,5 +3,5 @@ load("//src/tests:live_test.bzl", "coreclr_test")
 coreclr_test(
     name = "iOS.Simulator.XmlSerializer_Deserialize.Test",
     srcs = ["Program.cs"],
-    tags = ["manual"],  # Needs additional deps not yet available
+    target_compatible_with = ["@platforms//os:ios"],
 )

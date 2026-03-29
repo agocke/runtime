@@ -4,5 +4,5 @@ il_coreclr_test(
     name = "Runtime_75312",
     srcs = ["Runtime_75312.il"],
     optimize = True,
-    tags = ["manual"],  # x86 IntPtr overflow
+    target_compatible_with = ["@platforms//cpu:i386"],  # 32-bit only
 )

@@ -3,5 +3,5 @@ load("//src/tests:live_test.bzl", "coreclr_test")
 coreclr_test(
     name = "Android.Device_Emulator.NativeAOT.Test",
     srcs = ["Program.cs"],
-    tags = ["manual"],  # Platform-specific test (iOS/Android/tvOS)
+    target_compatible_with = ["@platforms//os:android"],
 )
