@@ -12,4 +12,5 @@ il_coreclr_test(
     name = "TailWinApi",
     srcs = ["tailwinapi.il"],
     optimize = True,
+    tags = ["manual"]  # Vararg/calli PInvoke not supported
 )

@@ -4,4 +4,5 @@ coreclr_test(
     name = "JittedMethodsCountingTest",
     srcs = ["JittedMethodsCountingTest.cs"],
     optimize = True,
+    tags = ["manual"],  # Needs CORE_ROOT env var
 )

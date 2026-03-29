@@ -2,6 +2,7 @@ load("//src/tests:live_test.bzl", "coreclr_test")
 
 coreclr_test(
     name = "k-nucleotide-1",
+    tags = ["manual"],  # Needs EmbeddedResource support
     srcs = [
         "k-nucleotide-1.cs",
         "harness-helpers.cs",
@@ -11,6 +12,7 @@ coreclr_test(
 
 coreclr_test(
     name = "k-nucleotide-9",
+    tags = ["manual"],  # Needs EmbeddedResource support
     srcs = [
         "k-nucleotide-9.cs",
         "harness-helpers.cs",

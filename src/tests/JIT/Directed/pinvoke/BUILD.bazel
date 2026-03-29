@@ -4,6 +4,7 @@ il_coreclr_test(
     name = "calli_excep",
     srcs = ["calli_excep.il"],
     optimize = True,
+    tags = ["manual"]  # Vararg/calli PInvoke not supported
 )
 
 il_coreclr_test(

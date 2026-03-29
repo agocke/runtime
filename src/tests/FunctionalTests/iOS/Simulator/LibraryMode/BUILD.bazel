@@ -3,4 +3,5 @@ load("//src/tests:live_test.bzl", "coreclr_test")
 coreclr_test(
     name = "iOS.Simulator.LibraryMode.Test",
     srcs = ["ClassLibrary.cs"],
+    tags = ["manual"],  # Platform-specific test (iOS/Android/tvOS)
 )

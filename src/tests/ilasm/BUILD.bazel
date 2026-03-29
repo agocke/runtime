@@ -8,4 +8,5 @@ coreclr_test(
         "PortablePdb/IlasmPortablePdbTesterTypes.cs",
         "MethodImplOptions/MethodImplOptionsTests.cs",
     ],
+    tags = ["manual"],  # Needs ilasm binary in Core_Root
 )
