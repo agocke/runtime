@@ -4,7 +4,7 @@ bazel_dep(name = "rules_dotnet")
 git_override(
     module_name = "rules_dotnet",
     remote = "https://github.com/agocke/rules_dotnet.git",
-    commit = "14e4d2b8f0ed5903576de2783d05092bfc63cda3",
+    commit = "e02dc11e69a60652b6ab6a1ca9cceeba0c615e29",
 )
 
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
