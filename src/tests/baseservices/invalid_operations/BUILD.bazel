@@ -6,6 +6,7 @@ coreclr_test(
         "ManagedPointers.cs",
         "Arrays.cs",
     ],
+    optimize = False,  # csproj: "Make sure that invalid operations are not optimized out by Roslyn"
     deps = [
         "//src/tests/Common:TestLibrary",
         "@paket.main//microsoft.dotnet.xunitextensions",

@@ -2,6 +2,7 @@ load("//src/tests:live_test.bzl", "coreclr_test")
 
 coreclr_test(
     name = "stackoverflowtester",
+    optimize = False,
     srcs = ["stackoverflowtester.cs"],
     tags = ["manual"],  # Launches child test processes from adjacent directories
 )

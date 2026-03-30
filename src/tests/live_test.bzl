@@ -629,8 +629,9 @@ def coreclr_test(
     size = "small",
     pri = 0,
     tags = [],
+    flaky = False,
     debug_type = "portable", # TODO: plum through to compiler
-    optimize = False, # TODO: plum through to compiler
+    optimize = True, # Match src/tests/Directory.Build.props Checked configuration default
     compiler_options = [],
     use_shared_compilation = True,
     nullable = "annotations",
@@ -684,6 +685,7 @@ def coreclr_test(
         analyzers = analyzers,
         size = size,
         tags = tags + ["pri%d" % pri],
+        flaky = flaky,
         compiler_options = compiler_options,
         target_frameworks = [NETCOREAPP_CURRENT],
         nowarn = ["CS1701"] + _TEST_NOWARN,

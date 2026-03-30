@@ -3,6 +3,7 @@ load("//src/tests:live_test.bzl", "coreclr_test")
 coreclr_test(
     name = "CriticalFinalizer",
     srcs = ["CriticalFinalizer.cs"],
+    flaky = True,  # GC finalization ordering is non-deterministic
 )
 
 coreclr_test(

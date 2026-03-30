@@ -77,7 +77,7 @@ def parse_csproj(csproj_path: Path) -> dict | None:
     result = {
         "name": csproj_path.stem,
         "allow_unsafe_blocks": find_text("AllowUnsafeBlocks", "false").lower() == "true",
-        "optimize": find_text("Optimize", "false").lower() == "true",
+        "optimize": find_text("Optimize", ""),  # empty means no explicit setting (uses macro default=True)
         "pri": 1 if find_text("CLRTestPriority", "0") == "1" else 0,
         "sources": [],
         "deps": [],
@@ -245,8 +245,9 @@ def generate_cs_test(test: dict) -> list[str]:
     # Note: allow_unsafe_blocks defaults to True in coreclr_test macro
     # (matching src/tests/Directory.Build.props), so we don't emit it.
     
-    if test["optimize"]:
-        lines.append("    optimize = True,")
+    # Only emit optimize when explicitly set in csproj (macro default is True)
+    if test["optimize"].lower() == "false":
+        lines.append("    optimize = False,")
     
     if test["pri"] == 1:
         lines.append("    pri = 1,")
@@ -293,8 +294,8 @@ def generate_il_test(test: dict) -> list[str]:
             lines.append(f'        "{s}",')
         lines.append("    ],")
     
-    if test["optimize"]:
-        lines.append("    optimize = True,")
+    if test["optimize"].lower() == "false":
+        lines.append("    optimize = False,")
     
     if test["pri"] == 1:
         lines.append("    pri = 1,")

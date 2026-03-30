@@ -16,6 +16,7 @@ live_csharp_library(
 coreclr_test(
     name = "test1-xassem",
     srcs = ["test1.cs"],
+    optimize = False,
     pri = 1,
     defines = ["XASSEM"],
     deps = [":teststr", ":testgenstr",
@@ -28,6 +29,7 @@ coreclr_test(
 
 coreclr_test(
     name = "test4-xassem",
+    optimize = False,
     srcs = ["test4.cs"],
     pri = 1,
     defines = ["XASSEM"],
@@ -42,6 +44,7 @@ coreclr_test(
 coreclr_test(
     name = "test2-xassem",
     srcs = ["test2.cs"],
+    optimize = False,
     pri = 1,
     defines = ["XASSEM"],
     deps = [":teststr", ":testgenstr",

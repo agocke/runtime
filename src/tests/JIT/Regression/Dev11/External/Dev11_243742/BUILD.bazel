@@ -9,6 +9,7 @@ live_csharp_library(
 
 coreclr_test(
     name = "app",
+    optimize = False,
     srcs = ["app.cs"],
     pri = 1,
     debug_type = "pdbonly",
