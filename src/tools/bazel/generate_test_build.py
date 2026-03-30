@@ -85,11 +85,14 @@ def parse_csproj(csproj_path: Path) -> dict | None:
         "windows_only": False,
     }
 
-    # Check for CLRTestTargetUnsupported with TargetsWindows condition
+    # Check for CLRTestTargetUnsupported with platform conditions
     for elem in find_all("CLRTestTargetUnsupported"):
         cond = elem.get("Condition", "")
         if "TargetsWindows" in cond or ("'windows'" in cond.lower() and "TargetOS" in cond):
             result["windows_only"] = True
+            break
+        if "TargetsOSX" in cond:
+            result["macos_unsupported"] = True
             break
     
     # Extract source files
@@ -262,6 +265,11 @@ def generate_cs_test(test: dict) -> list[str]:
     # Platform constraints
     if test.get("windows_only"):
         lines.append('    target_compatible_with = ["@platforms//os:windows"],')
+    elif test.get("macos_unsupported"):
+        lines.append("    target_compatible_with = select({")
+        lines.append('        "@platforms//os:macos": ["@platforms//:incompatible"],')
+        lines.append('        "//conditions:default": [],')
+        lines.append("    }),")
     
     lines.append(")")
     return lines
@@ -295,6 +303,11 @@ def generate_il_test(test: dict) -> list[str]:
     # Platform constraints
     if test.get("windows_only"):
         lines.append('    target_compatible_with = ["@platforms//os:windows"],')
+    elif test.get("macos_unsupported"):
+        lines.append("    target_compatible_with = select({")
+        lines.append('        "@platforms//os:macos": ["@platforms//:incompatible"],')
+        lines.append('        "//conditions:default": [],')
+        lines.append("    }),")
     
     lines.append(")")
     return lines
