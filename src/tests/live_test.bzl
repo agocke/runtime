@@ -629,11 +629,13 @@ def coreclr_test(
     size = "small",
     pri = 0,
     tags = [],
+    flaky = False,
     debug_type = "portable", # TODO: plum through to compiler
-    optimize = False, # TODO: plum through to compiler
+    optimize = True, # Match src/tests/Directory.Build.props Checked configuration default
     compiler_options = [],
     use_shared_compilation = True,
     nullable = "annotations",
+    allow_unsafe_blocks = True,  # Match src/tests/Directory.Build.props global setting
     **kwargs
 ):
     # Build complete deps list for JIT tests:
@@ -672,6 +674,7 @@ def coreclr_test(
         use_shared_compilation = use_shared_compilation,
         nullable = nullable,
         generate_documentation_file = False,
+        allow_unsafe_blocks = allow_unsafe_blocks,
         **kwargs
     )
 
@@ -682,6 +685,7 @@ def coreclr_test(
         analyzers = analyzers,
         size = size,
         tags = tags + ["pri%d" % pri],
+        flaky = flaky,
         compiler_options = compiler_options,
         target_frameworks = [NETCOREAPP_CURRENT],
         nowarn = ["CS1701"] + _TEST_NOWARN,
@@ -689,6 +693,7 @@ def coreclr_test(
         shared_compilation_worker = _SHARED_COMPILATION_WORKER if use_shared_compilation else None,
         nullable = nullable,
         generate_documentation_file = False,
+        allow_unsafe_blocks = allow_unsafe_blocks,
         **kwargs
     )
 

@@ -1,0 +1,7 @@
+load("//src/tests:live_test.bzl", "coreclr_test")
+
+coreclr_test(
+    name = "inst-unbox-thunks",
+    srcs = ["inst-unbox-thunks.cs"],
+    optimize = True,
+)
