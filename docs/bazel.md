@@ -727,7 +727,9 @@ and System.Net.Quic (msquic native library + full Linux implementation).
   - plus smaller counts in Exceptions, nativeaot, profiler, tracing, ilasm, managed
 - [x] Pri1 test filtering: `--test_tag_filters=-pri1` in `.bazelrc` excludes expensive
   tests by default; run `bazel test //... --test_tag_filters=` to include them
-- [x] ~134 tests tagged `manual` (need native deps, multi-project builds, or sandbox-incompatible)
+- [x] ~150 tests tagged `manual` (need native deps, multi-project builds, sandbox-incompatible,
+  or runtime-async support not yet available); all 31 async tests are `manual` because the
+  `runtime-async=on` compiler feature they require is not yet supported by the Bazel-built runtime
 - [x] ~23 tests with `target_compatible_with = ["@platforms//os:windows"]` for Windows-only tests
 - [x] 117 library test suites (see §1 "What Works" for full list;
   includes 5 platform-constrained suites: Microsoft.Win32.Registry (Windows),
