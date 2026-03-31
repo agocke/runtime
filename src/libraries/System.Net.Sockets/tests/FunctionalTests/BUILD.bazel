@@ -57,5 +57,6 @@ library_test(
     ],
     allow_unsafe_blocks = True,
     size = "large",
+    flaky = True,  # Flaky in debug (libs_config=debug); Bazel flaky is not configurable
     keyfile = OPEN_SNK,
 )
