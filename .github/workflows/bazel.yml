@@ -62,7 +62,7 @@ jobs:
         run: bazel test //... --config=${{ matrix.config }} ${{ matrix.libs_config && format('--config={0}', matrix.libs_config) || '' }} --disk_cache=~/.cache/bazel-disk --test_output=errors
 
       - name: Save Bazel cache
-        if: always() && github.event_name != 'pull_request'
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: ~/.cache/bazel-disk
