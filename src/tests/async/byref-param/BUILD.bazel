@@ -2,6 +2,11 @@ load("//src/tests:live_test.bzl", "coreclr_test")
 
 coreclr_test(
     name = "byref-param",
-    srcs = ["byref-param.cs"],
+    srcs = [
+        "byref-param.cs",
+        "//src/tests/async:RuntimeAsyncMethodGenerationAttribute.cs",
+    ],
     optimize = True,
+    compiler_options = ["/features:runtime-async=on", "/nowarn:SYSLIB5007"],
+    tags = ["manual"],  # Requires runtime-async support not yet in Bazel runtime
 )
