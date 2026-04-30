@@ -17,7 +17,7 @@ using System.Xml.Serialization;
 using SerializationTypes;
 using Xunit;
 
-public static partial class XmlSerializerTests
+public partial class XmlSerializerTests
 {
     [Fact]
     public static void Xml_BoolAsRoot()

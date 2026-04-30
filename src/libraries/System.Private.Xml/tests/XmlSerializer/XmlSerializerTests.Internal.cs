@@ -9,7 +9,7 @@ using System.Xml.Serialization;
 using SerializationTypes;
 using Xunit;
 
-public static partial class XmlSerializerTests
+public partial class XmlSerializerTests
 {
     // Move this test to XmlSerializerTests.cs once #1398 is fixed for the ReflectionOnly serializer.
     [Fact]
