@@ -218,6 +218,9 @@ namespace System.Diagnostics.Tracing
         public void Write<[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties)] T>(string? eventName, ref System.Diagnostics.Tracing.EventSourceOptions options, ref T data) { }
         [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EventSource will serialize the whole object graph. Trimmer will not safely handle this case because properties may be trimmed. This can be suppressed if the object is a primitive type")]
         public void Write<[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties)] T>(string? eventName, T data) { }
+        public void Write<T>(string? eventName, in T data, System.Diagnostics.Tracing.ITraceLoggingTypeDescriptor<T> descriptor) { }
+        public void Write<T>(string? eventName, System.Diagnostics.Tracing.EventSourceOptions options, in T data, System.Diagnostics.Tracing.ITraceLoggingTypeDescriptor<T> descriptor) { }
+        public void Write<T>(string? eventName, ref System.Diagnostics.Tracing.EventSourceOptions options, ref System.Guid activityId, ref System.Guid relatedActivityId, in T data, System.Diagnostics.Tracing.ITraceLoggingTypeDescriptor<T> descriptor) { }
         [System.Runtime.InteropServices.StructLayoutAttribute(System.Runtime.InteropServices.LayoutKind.Sequential)]
         public readonly struct EventSourcePrimitive
         {
@@ -335,5 +338,95 @@ namespace System.Diagnostics.Tracing
     public sealed partial class NonEventAttribute : System.Attribute
     {
         public NonEventAttribute() { }
+    }
+    public enum TraceLoggingDataType
+    {
+        Nil = 0,
+        Utf16String = 1,
+        MbcsString = 2,
+        Int8 = 3,
+        UInt8 = 4,
+        Int16 = 5,
+        UInt16 = 6,
+        Int32 = 7,
+        UInt32 = 8,
+        Int64 = 9,
+        UInt64 = 10,
+        Float = 11,
+        Double = 12,
+        Boolean32 = 13,
+        Binary = 14,
+        Guid = 15,
+        FileTime = 17,
+        SystemTime = 18,
+        HexInt32 = 20,
+        HexInt64 = 21,
+        CountedUtf16String = 22,
+        CountedMbcsString = 23,
+        Struct = 24,
+        Char16 = 518,
+        Char8 = 516,
+        Boolean8 = 772,
+        HexInt8 = 1028,
+        HexInt16 = 1030,
+        Utf16Xml = 2817,
+        MbcsXml = 2818,
+        CountedUtf16Xml = 2838,
+        CountedMbcsXml = 2839,
+        Utf16Json = 3073,
+        MbcsJson = 3074,
+        CountedUtf16Json = 3094,
+        CountedMbcsJson = 3095,
+        HResult = 3847,
+    }
+    public readonly partial struct TraceLoggingFieldDescriptor
+    {
+        public TraceLoggingFieldDescriptor(string name, System.Diagnostics.Tracing.TraceLoggingDataType type) { throw null; }
+        public TraceLoggingFieldDescriptor(string name, params System.Diagnostics.Tracing.TraceLoggingFieldDescriptor[] children) { throw null; }
+        public TraceLoggingFieldDescriptor(string name, System.Diagnostics.Tracing.TraceLoggingDataType elementType, bool isArray) { throw null; }
+        public string Name { get { throw null; } }
+        public System.Diagnostics.Tracing.TraceLoggingDataType DataType { get { throw null; } }
+        public System.Diagnostics.Tracing.TraceLoggingFieldDescriptor[] Children { get { throw null; } }
+        public bool IsArray { get { throw null; } }
+    }
+    public ref partial struct EventDataWriter
+    {
+        public void WriteBoolean(bool value) { }
+        public void WriteByte(byte value) { }
+        [System.CLSCompliantAttribute(false)]
+        public void WriteSByte(sbyte value) { }
+        public void WriteChar(char value) { }
+        public void WriteInt16(short value) { }
+        [System.CLSCompliantAttribute(false)]
+        public void WriteUInt16(ushort value) { }
+        public void WriteInt32(int value) { }
+        [System.CLSCompliantAttribute(false)]
+        public void WriteUInt32(uint value) { }
+        public void WriteInt64(long value) { }
+        [System.CLSCompliantAttribute(false)]
+        public void WriteUInt64(ulong value) { }
+        public void WriteIntPtr(nint value) { }
+        [System.CLSCompliantAttribute(false)]
+        public void WriteUIntPtr(nuint value) { }
+        public void WriteSingle(float value) { }
+        public void WriteDouble(double value) { }
+        public void WriteGuid(System.Guid value) { }
+        public void WriteDateTime(System.DateTime value) { }
+        public void WriteDateTimeOffset(System.DateTimeOffset value) { }
+        public void WriteTimeSpan(System.TimeSpan value) { }
+        public void WriteDecimal(decimal value) { }
+        public void WriteString(string? value) { }
+        public void WriteArray<T>(T[]? value) where T : unmanaged { }
+        public void BeginGroup() { }
+        public void EndGroup() { }
+    }
+    public partial interface ITraceLoggingTypeDescriptor<T>
+    {
+        System.Diagnostics.Tracing.TraceLoggingEventMetadata Metadata { get; }
+        void Write(System.Diagnostics.Tracing.EventDataWriter writer, T data);
+    }
+    public sealed partial class TraceLoggingEventMetadata
+    {
+        public TraceLoggingEventMetadata(string name, params System.Diagnostics.Tracing.TraceLoggingFieldDescriptor[] fields) { }
     }
 }

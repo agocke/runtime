@@ -44,6 +44,7 @@
     <Compile Include="BasicEventSourceTest\TestsWriteEventToListener.cs" />
     <Compile Include="BasicEventSourceTest\LoudListener.cs" />
     <Compile Include="BasicEventSourceTest\TestsWrite.cs" />
+    <Compile Include="BasicEventSourceTest\TestsWriteDescriptor.cs" />
     <Compile Include="BasicEventSourceTest\TestsUserErrors.cs" />
     <Compile Include="BasicEventSourceTest\TestUtilities.cs" />
     <Compile Include="BasicEventSourceTest\XUnitAssemblyAttributes.cs" />

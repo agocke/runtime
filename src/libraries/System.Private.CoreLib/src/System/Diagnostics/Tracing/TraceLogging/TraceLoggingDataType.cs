@@ -15,7 +15,7 @@ namespace System.Diagnostics.Tracing
     /// be decoded as the corresponding core type (i.e. the decoder will
     /// mask off any unrecognized OutType value).
     /// </summary>
-    internal enum TraceLoggingDataType
+    public enum TraceLoggingDataType
     {
         /// <summary>
         /// Core type.

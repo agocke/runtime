@@ -294,6 +294,105 @@ namespace System.Diagnostics.Tracing
         }
 
         /// <summary>
+        /// Writes an event using an AOT-compatible type descriptor.
+        /// (Native API: EventWriteTransfer)
+        /// </summary>
+        /// <typeparam name="T">The type that defines the event payload.</typeparam>
+        /// <param name="eventName">
+        /// The name for the event. If null, the default name from the descriptor's metadata is used.
+        /// </param>
+        /// <param name="data">The event payload data.</param>
+        /// <param name="descriptor">
+        /// The type descriptor providing metadata and serialization logic.
+        /// </param>
+        public unsafe void Write<T>(
+            string? eventName,
+            in T data,
+            ITraceLoggingTypeDescriptor<T> descriptor)
+        {
+            if (!this.IsEnabled())
+            {
+                return;
+            }
+
+            EventSourceOptions options = default;
+            this.WriteImpl(eventName, ref options, in data, null, null, descriptor);
+        }
+
+        /// <summary>
+        /// Writes an event using an AOT-compatible type descriptor with options.
+        /// (Native API: EventWriteTransfer)
+        /// </summary>
+        /// <typeparam name="T">The type that defines the event payload.</typeparam>
+        /// <param name="eventName">
+        /// The name for the event. If null, the default name from the descriptor's metadata is used.
+        /// </param>
+        /// <param name="options">
+        /// Options for the event, such as the level, keywords, and opcode.
+        /// </param>
+        /// <param name="data">The event payload data.</param>
+        /// <param name="descriptor">
+        /// The type descriptor providing metadata and serialization logic.
+        /// </param>
+        public unsafe void Write<T>(
+            string? eventName,
+            EventSourceOptions options,
+            in T data,
+            ITraceLoggingTypeDescriptor<T> descriptor)
+        {
+            if (!this.IsEnabled())
+            {
+                return;
+            }
+
+            this.WriteImpl(eventName, ref options, in data, null, null, descriptor);
+        }
+
+        /// <summary>
+        /// Writes an event using an AOT-compatible type descriptor with options and activity IDs.
+        /// (Native API: EventWriteTransfer)
+        /// </summary>
+        /// <typeparam name="T">The type that defines the event payload.</typeparam>
+        /// <param name="eventName">
+        /// The name for the event. If null, the default name from the descriptor's metadata is used.
+        /// </param>
+        /// <param name="options">
+        /// Options for the event, such as the level, keywords, and opcode.
+        /// </param>
+        /// <param name="activityId">The GUID of the activity associated with this event.</param>
+        /// <param name="relatedActivityId">
+        /// The GUID of a related activity, or <see cref="Guid.Empty"/> if none.
+        /// </param>
+        /// <param name="data">The event payload data.</param>
+        /// <param name="descriptor">
+        /// The type descriptor providing metadata and serialization logic.
+        /// </param>
+        public unsafe void Write<T>(
+            string? eventName,
+            ref EventSourceOptions options,
+            ref Guid activityId,
+            ref Guid relatedActivityId,
+            in T data,
+            ITraceLoggingTypeDescriptor<T> descriptor)
+        {
+            if (!this.IsEnabled())
+            {
+                return;
+            }
+
+            fixed (Guid* pActivity = &activityId, pRelated = &relatedActivityId)
+            {
+                this.WriteImpl(
+                    eventName,
+                    ref options,
+                    in data,
+                    pActivity,
+                    relatedActivityId == Guid.Empty ? null : pRelated,
+                    descriptor);
+            }
+        }
+
+        /// <summary>
         /// Writes an extended event, where the values of the event are the
         /// combined properties of any number of values. This method is
         /// intended for use in advanced logging scenarios that support a
@@ -671,6 +770,126 @@ namespace System.Diagnostics.Tracing
                                 var eventData = (EventPayload?)(eventTypes.typeInfos[0].GetData(data));
                                 WriteToAllListeners(eventName, ref descriptor, nameInfo.tags, pActivityId, pRelatedActivityId, eventData);
                             }
+                        }
+                        catch (Exception ex)
+                        {
+                            if (ex is EventSourceException)
+                                throw;
+                            else
+                                ThrowEventSourceException(eventName, ex);
+                        }
+                        finally
+                        {
+                            WriteCleanup(pins, pinCount);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ex is EventSourceException)
+                    throw;
+                else
+                    ThrowEventSourceException(eventName, ex);
+            }
+        }
+
+        private unsafe void WriteImpl<T>(
+            string? eventName,
+            ref EventSourceOptions options,
+            in T data,
+            Guid* pActivityId,
+            Guid* pRelatedActivityId,
+            ITraceLoggingTypeDescriptor<T> descriptor)
+        {
+            try
+            {
+                TraceLoggingEventTypes eventTypes = descriptor.Metadata.EventTypes;
+
+                fixed (EventSourceOptions* pOptions = &options)
+                {
+                    options.Opcode = options.IsOpcodeSet ? options.Opcode : GetOpcodeWithDefault(options.Opcode, eventName);
+                    NameInfo? nameInfo = this.UpdateDescriptor(eventName, eventTypes, ref options, out EventDescriptor eventDescriptor);
+                    if (nameInfo is null)
+                    {
+                        return;
+                    }
+
+#if FEATURE_PERFTRACING
+                    IntPtr eventHandle = nameInfo.GetOrCreateEventHandle(m_eventPipeProvider, m_eventHandleTable, eventDescriptor, eventTypes);
+                    Debug.Assert(eventHandle != IntPtr.Zero);
+#else
+                    IntPtr eventHandle = IntPtr.Zero;
+#endif
+
+                    int pinCount = eventTypes.pinCount;
+                    byte* scratch = stackalloc byte[eventTypes.scratchSize];
+                    EventData* descriptors = stackalloc EventData[eventTypes.dataCount + 3];
+                    for (int i = 0; i < eventTypes.dataCount + 3; i++)
+                        descriptors[i] = default;
+
+                    GCHandle* pins = stackalloc GCHandle[pinCount];
+                    for (int i = 0; i < pinCount; i++)
+                        pins[i] = default;
+
+                    var providerMetadata = ProviderMetadata;
+                    fixed (byte*
+                        pMetadata0 = providerMetadata,
+                        pMetadata1 = nameInfo.nameMetadata,
+                        pMetadata2 = eventTypes.typeMetadata)
+                    {
+                        descriptors[0].SetMetadata(pMetadata0, providerMetadata.Length, 2);
+                        descriptors[1].SetMetadata(pMetadata1, nameInfo.nameMetadata.Length, 1);
+                        descriptors[2].SetMetadata(pMetadata2, eventTypes.typeMetadata.Length, 1);
+
+                        EventOpcode opcode = (EventOpcode)eventDescriptor.Opcode;
+
+                        Guid activityId = Guid.Empty;
+                        Guid relatedActivityId = Guid.Empty;
+                        if (pActivityId == null && pRelatedActivityId == null &&
+                           ((options.ActivityOptions & EventActivityOptions.Disable) == 0))
+                        {
+                            if (opcode == EventOpcode.Start)
+                            {
+                                Debug.Assert(eventName != null, "GetOpcodeWithDefault should not returned Start when eventName is null");
+                                m_activityTracker.OnStart(m_name, eventName, 0, ref activityId, ref relatedActivityId, options.ActivityOptions);
+                            }
+                            else if (opcode == EventOpcode.Stop)
+                            {
+                                Debug.Assert(eventName != null, "GetOpcodeWithDefault should not returned Stop when eventName is null");
+                                m_activityTracker.OnStop(m_name, eventName, 0, ref activityId);
+                            }
+                            if (activityId != Guid.Empty)
+                                pActivityId = &activityId;
+                            if (relatedActivityId != Guid.Empty)
+                                pRelatedActivityId = &relatedActivityId;
+                        }
+
+                        try
+                        {
+                            DataCollector.ThreadInstance.Enable(
+                                scratch,
+                                eventTypes.scratchSize,
+                                descriptors + 3,
+                                eventTypes.dataCount,
+                                pins,
+                                pinCount);
+
+                            EventDataWriter writer = default;
+                            descriptor.Write(writer, data);
+
+                            this.WriteEventRaw(
+                                eventName,
+                                ref eventDescriptor,
+                                eventHandle,
+                                pActivityId,
+                                pRelatedActivityId,
+                                (int)(DataCollector.ThreadInstance.Finish() - descriptors),
+                                (IntPtr)descriptors);
+
+                            // Note: EventListener dispatch for descriptor-based events is not yet implemented.
+                            // The existing WriteImpl uses TypeInfo.GetData() to build EventPayload for listeners.
+                            // A future enhancement could add listener support here.
                         }
                         catch (Exception ex)
                         {

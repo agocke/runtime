@@ -142,6 +142,29 @@ namespace System.Diagnostics.Tracing
         }
 
         /// <summary>
+        /// Initializes a new instance from pre-computed metadata.
+        /// Used by TraceLoggingEventMetadata to bypass reflection-based TypeInfo creation.
+        /// </summary>
+        internal TraceLoggingEventTypes(
+            string name,
+            byte[] typeMetadata,
+            int scratchSize,
+            int dataCount,
+            int pinCount)
+        {
+            ArgumentNullException.ThrowIfNull(name);
+
+            this.typeInfos = [];
+            this.name = name;
+            this.tags = EventTags.None;
+            this.level = Statics.DefaultLevel;
+            this.typeMetadata = typeMetadata;
+            this.scratchSize = scratchSize;
+            this.dataCount = dataCount;
+            this.pinCount = pinCount;
+        }
+
+        /// <summary>
         /// Gets the default name that will be used for events with this descriptor.
         /// </summary>
         internal string Name => this.name;
