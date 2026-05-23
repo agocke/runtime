@@ -19,6 +19,14 @@ bool AddSignalHandler(int signal, SignalHandler handler, struct sigaction* previ
     newAction.sa_sigaction = handler;
     newAction.sa_flags |= SA_SIGINFO;
 
+    // Run our signal handlers on the alternate stack so we coexist correctly with
+    // hosts (Go c-shared, JVM, etc.) that require all installed signal handlers honor
+    // SA_ONSTACK. The runtime arranges for an alternate stack to be installed on every
+    // managed thread via EnsureSignalAlternateStack.
+#if !defined(TARGET_WASM)
+    newAction.sa_flags |= SA_ONSTACK;
+#endif
+
     sigemptyset(&newAction.sa_mask);
 
     if (sigaction(signal, NULL, previousAction) == -1)
@@ -29,12 +37,9 @@ bool AddSignalHandler(int signal, SignalHandler handler, struct sigaction* previ
 
     if (previousAction->sa_flags & SA_ONSTACK)
     {
-        // If the previous signal handler uses an alternate stack, we need to use it too
-        // so that when we chain-call the previous handler, it is called on the kind of
-        // stack it expects.
-        // We also copy the signal mask to make sure that if some signals were blocked
-        // from execution on the alternate stack by the previous action, we honor that.
-        newAction.sa_flags |= SA_ONSTACK;
+        // If the previous signal handler had additional signals in its mask we honor
+        // that, so when we chain-call the previous handler those signals remain blocked
+        // for the duration of the handler.
         newAction.sa_mask = previousAction->sa_mask;
     }
 

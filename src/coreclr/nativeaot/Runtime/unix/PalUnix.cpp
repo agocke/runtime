@@ -201,6 +201,156 @@ static void UnmaskActivationSignal()
     _ASSERTE(sigmaskRet == 0);
 }
 
+#if !defined(TARGET_WASM)
+
+// Per-thread alternate stack used for signal handling. Installed lazily on the first
+// PalAttachThread call from each thread, and torn down when the thread exits via a
+// dedicated pthread key destructor. Allocated with a leading guard page to catch
+// overflow of the signal handlers themselves.
+struct SignalAlternateStackInfo
+{
+    void* addr;
+    size_t size;
+};
+
+static pthread_key_t s_signalAltStackKey;
+static bool s_signalAltStackKeyValid;
+
+static void FreeSignalAlternateStackDestructor(void* arg)
+{
+    SignalAlternateStackInfo* info = (SignalAlternateStackInfo*)arg;
+    if (info == nullptr)
+    {
+        return;
+    }
+
+    void* addr = info->addr;
+    size_t size = info->size;
+    free(info);
+
+    if (addr == nullptr)
+    {
+        return;
+    }
+
+    stack_t ss;
+    stack_t oss;
+    // MUSL requires ss_size to be at least MINSIGSTKSZ even when SS_DISABLE is set,
+    // even though POSIX says the other fields are ignored in that case.
+    ss.ss_sp = NULL;
+    ss.ss_size = MINSIGSTKSZ;
+    ss.ss_flags = SS_DISABLE;
+    int st = sigaltstack(&ss, &oss);
+    if ((st == 0) && ((oss.ss_flags & SS_DISABLE) == 0) && (oss.ss_sp == addr))
+    {
+        munmap(addr, size);
+    }
+}
+
+static bool InitializeSignalAlternateStackKey()
+{
+    if (pthread_key_create(&s_signalAltStackKey, FreeSignalAlternateStackDestructor) != 0)
+    {
+        return false;
+    }
+    s_signalAltStackKeyValid = true;
+    return true;
+}
+
+bool EnsureSignalAlternateStack()
+{
+    if (!s_signalAltStackKeyValid)
+    {
+        return true;
+    }
+
+    if (pthread_getspecific(s_signalAltStackKey) != nullptr)
+    {
+        return true;
+    }
+
+    stack_t oss;
+    if (sigaltstack(NULL, &oss) != 0)
+    {
+        return false;
+    }
+
+    // Respect a previously installed alternate stack (e.g. from a host process or another
+    // runtime). Our handlers only need *some* alt stack to be active when SA_ONSTACK is set.
+    if ((oss.ss_flags & SS_DISABLE) == 0)
+    {
+        return true;
+    }
+
+    size_t pageSize = (size_t)getpagesize();
+    // Match the budget used by the CoreCLR PAL: SIGSTKSZ for the handler frames plus an
+    // extra page that absorbs the worst-case context save area we have observed on ARM64.
+    size_t altStackSize = SIGSTKSZ + pageSize;
+#ifdef HAS_ADDRESS_SANITIZER
+    // ASan installs its own handler on the alternate stack as well; bump the size so the
+    // two share the area without overflow. See kAltStackSize in
+    // compiler-rt/lib/sanitizer_common/sanitizer_posix_libcdep.cc.
+    altStackSize += SIGSTKSZ * 4;
+#endif
+    altStackSize = ALIGN_UP(altStackSize, pageSize);
+
+    int flags = MAP_ANONYMOUS | MAP_PRIVATE;
+#ifdef MAP_STACK
+    flags |= MAP_STACK;
+#endif
+    void* altStack = mmap(NULL, altStackSize, PROT_READ | PROT_WRITE, flags, -1, 0);
+    if (altStack == MAP_FAILED)
+    {
+        return false;
+    }
+
+    // Guard page at the low end of the mapping catches overflow of the alt stack itself.
+    if (mprotect(altStack, pageSize, PROT_NONE) != 0)
+    {
+        munmap(altStack, altStackSize);
+        return false;
+    }
+
+    stack_t ss;
+    ss.ss_sp = (char*)altStack;
+    ss.ss_size = altStackSize;
+    ss.ss_flags = 0;
+    if (sigaltstack(&ss, NULL) != 0)
+    {
+        munmap(altStack, altStackSize);
+        return false;
+    }
+
+    SignalAlternateStackInfo* info = (SignalAlternateStackInfo*)malloc(sizeof(*info));
+    if (info == nullptr)
+    {
+        // The alt stack is installed; best effort lets it leak rather than tearing it down.
+        return false;
+    }
+    info->addr = altStack;
+    info->size = altStackSize;
+    if (pthread_setspecific(s_signalAltStackKey, info) != 0)
+    {
+        free(info);
+        return false;
+    }
+    return true;
+}
+
+#else // TARGET_WASM
+
+static bool InitializeSignalAlternateStackKey()
+{
+    return true;
+}
+
+bool EnsureSignalAlternateStack()
+{
+    return true;
+}
+
+#endif // !TARGET_WASM
+
 static void TimeSpecAdd(timespec* time, uint32_t milliseconds)
 {
     uint64_t nsec = time->tv_nsec + (uint64_t)milliseconds * tccMilliSecondsToNanoSeconds;
@@ -556,6 +706,11 @@ bool PalInit()
     }
 #endif
 
+    if (!InitializeSignalAlternateStackKey())
+    {
+        return false;
+    }
+
     return true;
 }
 
@@ -614,6 +769,11 @@ void PalAttachThread(void* thread)
 #else
     tls_destructionMonitor.SetThread(thread);
 #endif
+
+    // Install a per-thread alternate signal stack so our SA_ONSTACK-registered handlers
+    // run on it. Best-effort: a failure here just means signals run on the regular stack,
+    // which is the legacy behavior. Skip when a host has already installed an alt stack.
+    EnsureSignalAlternateStack();
 
     UnmaskActivationSignal();
 }
