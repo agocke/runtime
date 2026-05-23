@@ -91,6 +91,10 @@ static void sigint_handler(int code, siginfo_t *siginfo, void *context);
 static void sigquit_handler(int code, siginfo_t *siginfo, void *context);
 static void sigabrt_handler(int code, siginfo_t *siginfo, void *context);
 
+#ifdef INJECT_ACTIVATION_SIGNAL
+static void inject_activation_handler_body(siginfo_t *siginfo, void *context);
+#endif
+
 static bool common_signal_handler(int code, siginfo_t *siginfo, void *sigcontext, int numParams, ...);
 
 static void handle_signal(int signal_id, SIGFUNC sigfunc, struct sigaction *previousAction, int additionalFlags = 0, bool skipIgnored = false);
@@ -130,6 +134,14 @@ volatile void* g_stackOverflowHandlerStack = NULL;
 
 // Flag that is or-ed with SIGSEGV to indicate that the SIGSEGV was a stack overflow
 const int StackOverflowFlag = 0x40000000;
+
+#ifdef INJECT_ACTIVATION_SIGNAL
+// Flag that is or-ed with INJECT_ACTIVATION_SIGNAL to indicate that signal_handler_worker
+// should dispatch to the activation handler body rather than common_signal_handler. This is
+// used to trampoline activation work back to the interrupted thread's stack when the
+// activation signal handler runs on an alternate stack (SA_ONSTACK).
+const int ActivationFlag = 0x20000000;
+#endif
 
 #endif // !HAVE_MACH_EXCEPTIONS
 
@@ -291,7 +303,18 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
         // }
 #endif // __APPLE__
 
-        handle_signal(INJECT_ACTIVATION_SIGNAL, inject_activation_handler, &g_previous_activation);
+        handle_signal(INJECT_ACTIVATION_SIGNAL, inject_activation_handler, &g_previous_activation,
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK && !defined(TARGET_SUNOS)
+            // Run the activation handler on the per-thread alternate stack so it cannot
+            // interfere with managed code stack expectations at the injection point. The
+            // handler trampolines back to the interrupted thread's stack via
+            // SwitchStackAndExecuteHandler to perform the activation body, since that
+            // work can require more stack than SIGSTKSZ.
+            SA_ONSTACK
+#else
+            0
+#endif
+            );
         g_registered_activation_handler = true;
     }
 #endif
@@ -594,6 +617,25 @@ extern "C" void signal_handler_worker(int code, siginfo_t *siginfo, void *contex
     // TODO: First variable parameter says whether a read (0) or write (non-0) caused the
     // fault. We must disassemble the instruction at record.ExceptionAddress
     // to correctly fill in this value.
+
+#ifdef INJECT_ACTIVATION_SIGNAL
+    if ((code & ActivationFlag) != 0)
+    {
+        // The activation handler was running on an alternate stack and trampolined here
+        // to perform the (potentially deep) activation work on the interrupted thread's
+        // own stack. Activation work can run managed exception dispatch, stack walking,
+        // and return-address hijacking, all of which need more headroom than SIGSTKSZ.
+        UnmaskActivationSignal();
+
+        inject_activation_handler_body(siginfo, context);
+
+        // We are going to return to the alternate stack, so block the activation signal again.
+        MaskActivationSignal();
+
+        returnPoint->returnFromHandler = true;
+        RtlRestoreContext(&returnPoint->context, NULL);
+    }
+#endif // INJECT_ACTIVATION_SIGNAL
 
     if (code != (SIGSEGV | StackOverflowFlag))
     {
@@ -920,6 +962,55 @@ static void InvokeActivationHandler(CONTEXT *pWinContext)
 
 /*++
 Function :
+    inject_activation_handler_body
+
+    Perform the activation work for a thread interrupted by INJECT_ACTIVATION_SIGNAL:
+    capture the interrupted CONTEXT, publish the FP-relative offset of that CONTEXT so
+    PAL_VirtualUnwind can skip the signal trampoline, and invoke the registered activation
+    function. May be called either directly from inject_activation_handler (running on the
+    interrupted thread's own stack) or via signal_handler_worker after the handler
+    trampolines back from an alternate stack.
+
+Parameters :
+    siginfo, context - the same parameters passed to the signal handler
+
+(no return value)
+--*/
+__attribute__((noinline))
+static void inject_activation_handler_body(siginfo_t *siginfo, void *context)
+{
+    native_context_t *ucontext = (native_context_t *)context;
+
+    CONTEXT winContext;
+    // Pre-populate context with data from current frame, because ucontext doesn't have some data (e.g. SS register)
+    // which is required for restoring context
+    RtlCaptureContext(&winContext);
+
+    ULONG contextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT;
+
+#if defined(HOST_AMD64) || defined(HOST_ARM64)
+    contextFlags |= CONTEXT_XSTATE;
+#endif
+
+    CONTEXTFromNativeContext(
+        ucontext,
+        &winContext,
+        contextFlags);
+
+    if (g_safeActivationCheckFunction(CONTEXTGetPC(&winContext)))
+    {
+        g_inject_activation_context_locvar_offset = (int)((char*)&winContext - (char*)__builtin_frame_address(0));
+        int savedErrNo = errno; // Make sure that errno is not modified
+        InvokeActivationHandler(&winContext);
+        errno = savedErrNo;
+
+        // Activation function may have modified the context, so update it.
+        CONTEXTToNativeContext(&winContext, ucontext);
+    }
+}
+
+/*++
+Function :
     inject_activation_handler
 
     Handle the INJECT_ACTIVATION_SIGNAL signal. This signal interrupts a running thread
@@ -943,34 +1034,21 @@ static void inject_activation_handler(int code, siginfo_t *siginfo, void *contex
     {
         _ASSERTE(g_safeActivationCheckFunction != NULL);
 
-        native_context_t *ucontext = (native_context_t *)context;
-
-        CONTEXT winContext;
-        // Pre-populate context with data from current frame, because ucontext doesn't have some data (e.g. SS register)
-        // which is required for restoring context
-        RtlCaptureContext(&winContext);
-
-        ULONG contextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT;
-
-#if defined(HOST_AMD64) || defined(HOST_ARM64)
-        contextFlags |= CONTEXT_XSTATE;
-#endif
-
-        CONTEXTFromNativeContext(
-            ucontext,
-            &winContext,
-            contextFlags);
-
-        if (g_safeActivationCheckFunction(CONTEXTGetPC(&winContext)))
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK
+        if (GetCurrentPalThread() && IsRunningOnAlternateStack(context))
         {
-            g_inject_activation_context_locvar_offset = (int)((char*)&winContext - (char*)__builtin_frame_address(0));
-            int savedErrNo = errno; // Make sure that errno is not modified
-            InvokeActivationHandler(&winContext);
-            errno = savedErrNo;
-
-            // Activation function may have modified the context, so update it.
-            CONTEXTToNativeContext(&winContext, ucontext);
+            // Activation work (managed exception dispatch, stack walking, return-address
+            // hijacking) can consume more stack than the per-thread alternate stack
+            // (SIGSTKSZ + a small headroom) can safely provide. Trampoline back to the
+            // interrupted thread's stack to run the body there, mirroring what
+            // sigsegv_handler does for non-stack-overflow SIGSEGVs.
+            // sp == 0 indicates execution on the original stack where the signal occurred.
+            SwitchStackAndExecuteHandler(code | ActivationFlag, siginfo, context, 0);
+            return;
         }
+#endif // !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK
+
+        inject_activation_handler_body(siginfo, context);
     }
     else
     {
