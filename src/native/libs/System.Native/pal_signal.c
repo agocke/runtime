@@ -471,7 +471,15 @@ static bool InstallSignalHandler(int sig, int flags)
     {
         memset(&newAction, 0, sizeof(struct sigaction));
     }
-    newAction.sa_flags |= flags | SA_SIGINFO;
+    // Always request SA_ONSTACK so the kernel delivers the signal on the thread's
+    // alternate stack when one is installed. The handler body only chains to the
+    // previously installed handler and writes a single byte to a pipe, so it is
+    // safe to execute on the alternate stack. This also preserves the SA_ONSTACK
+    // contract for any handler we override (e.g. CoreCLR's SIGINT/SIGQUIT handlers
+    // are themselves registered with SA_ONSTACK), and matches the expectations of
+    // hosting frameworks such as Go c-shared that require every signal handler to
+    // honor SA_ONSTACK.
+    newAction.sa_flags |= flags | SA_SIGINFO | SA_ONSTACK;
 #pragma clang diagnostic pop
     newAction.sa_sigaction = &SignalHandler;
 
