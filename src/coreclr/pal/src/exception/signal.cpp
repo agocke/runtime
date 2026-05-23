@@ -95,6 +95,10 @@ static void sigabrt_handler(int code, siginfo_t *siginfo, void *context);
 static void inject_activation_handler_body(siginfo_t *siginfo, void *context);
 #endif
 
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK
+static bool SwitchStackAndExecuteHandler(int code, siginfo_t *siginfo, void *context, size_t sp);
+#endif
+
 static bool common_signal_handler(int code, siginfo_t *siginfo, void *sigcontext, int numParams, ...);
 
 static void handle_signal(int signal_id, SIGFUNC sigfunc, struct sigaction *previousAction, int additionalFlags = 0, bool skipIgnored = false);
@@ -208,27 +212,35 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
 
            see sigaction man page for more details
            */
-        handle_signal(SIGILL, sigill_handler, &g_previous_sigill);
-        handle_signal(SIGFPE, sigfpe_handler, &g_previous_sigfpe);
-        handle_signal(SIGBUS, sigbus_handler, &g_previous_sigbus);
-        handle_signal(SIGABRT, sigabrt_handler, &g_previous_sigabrt);
+        // On platforms with sigaltstack support, register all our signal handlers with
+        // SA_ONSTACK so they execute on the per-thread alternate stack. This is required
+        // for interop with frameworks (e.g. Go c-shared, Java) that install signal
+        // handlers expecting SA_ONSTACK; without it the kernel may deliver a signal that
+        // such a framework chains to back onto its own thread stack and corrupt it.
+        // The hardware-exception handlers (SIGILL/SIGFPE/SIGTRAP/SIGBUS) and the
+        // activation handler all trampoline back to the interrupted thread's original
+        // stack to do the heavy lifting (SEH dispatch, managed EH, GC suspension), so
+        // we only need a small fixed budget on the alternate stack.
+        int additionalFlags = 0;
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK && !defined(TARGET_SUNOS)
+        additionalFlags = SA_ONSTACK;
+#endif
+
+        handle_signal(SIGILL, sigill_handler, &g_previous_sigill, additionalFlags);
+        handle_signal(SIGFPE, sigfpe_handler, &g_previous_sigfpe, additionalFlags);
+        handle_signal(SIGBUS, sigbus_handler, &g_previous_sigbus, additionalFlags);
+        handle_signal(SIGABRT, sigabrt_handler, &g_previous_sigabrt, additionalFlags);
         // We don't setup a handler for SIGINT/SIGQUIT when those signals are ignored.
         // Otherwise our child processes would reset to the default on exec causing them
         // to terminate on these signals.
-        handle_signal(SIGINT, sigint_handler, &g_previous_sigint, 0 /* additionalFlags */, true /* skipIgnored */);
-        handle_signal(SIGQUIT, sigquit_handler, &g_previous_sigquit, 0 /* additionalFlags */, true /* skipIgnored */);
+        handle_signal(SIGINT, sigint_handler, &g_previous_sigint, additionalFlags, true /* skipIgnored */);
+        handle_signal(SIGQUIT, sigquit_handler, &g_previous_sigquit, additionalFlags, true /* skipIgnored */);
 
 #if HAVE_MACH_EXCEPTIONS || !HAVE_SIGALTSTACK
         handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv);
 #else
-        handle_signal(SIGTRAP, sigtrap_handler, &g_previous_sigtrap);
-        int additionalFlagsForSigSegv = 0;
-#ifndef TARGET_SUNOS
-        // On platforms that support signal handlers that don't return,
-        // SIGSEGV handler runs on a separate stack so that we can handle stack overflow
-        additionalFlagsForSigSegv |= SA_ONSTACK;
-#endif
-        handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv, additionalFlagsForSigSegv);
+        handle_signal(SIGTRAP, sigtrap_handler, &g_previous_sigtrap, additionalFlags);
+        handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv, additionalFlags);
 
         if (!pthrCurrent->EnsureSignalAlternateStack())
         {
@@ -276,7 +288,11 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
     if (flags & PAL_INITIALIZE_REGISTER_SIGTERM_HANDLER)
     {
         g_registered_sigterm_handler = true;
-        handle_signal(SIGTERM, sigterm_handler, &g_previous_sigterm);
+        int additionalFlagsForSigTerm = 0;
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK && !defined(TARGET_SUNOS)
+        additionalFlagsForSigTerm = SA_ONSTACK;
+#endif
+        handle_signal(SIGTERM, sigterm_handler, &g_previous_sigterm, additionalFlagsForSigTerm);
     }
 
 #ifdef INJECT_ACTIVATION_SIGNAL
@@ -538,9 +554,21 @@ static void sigill_handler(int code, siginfo_t *siginfo, void *context)
 {
     if (PALIsInitialized())
     {
-        if (common_signal_handler(code, siginfo, context, 0))
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK
+        if (GetCurrentPalThread() && IsRunningOnAlternateStack(context))
         {
-            return;
+            if (SwitchStackAndExecuteHandler(code, siginfo, context, 0 /* sp */))
+            {
+                return;
+            }
+        }
+        else
+#endif
+        {
+            if (common_signal_handler(code, siginfo, context, 0))
+            {
+                return;
+            }
         }
     }
 
@@ -562,9 +590,21 @@ static void sigfpe_handler(int code, siginfo_t *siginfo, void *context)
 {
     if (PALIsInitialized())
     {
-        if (common_signal_handler(code, siginfo, context, 0))
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK
+        if (GetCurrentPalThread() && IsRunningOnAlternateStack(context))
         {
-            return;
+            if (SwitchStackAndExecuteHandler(code, siginfo, context, 0 /* sp */))
+            {
+                return;
+            }
+        }
+        else
+#endif
+        {
+            if (common_signal_handler(code, siginfo, context, 0))
+            {
+                return;
+            }
         }
     }
 
@@ -645,7 +685,20 @@ extern "C" void signal_handler_worker(int code, siginfo_t *siginfo, void *contex
         UnmaskActivationSignal();
     }
 
-    returnPoint->returnFromHandler = common_signal_handler(code, siginfo, context, 2, (size_t)0, (size_t)siginfo->si_addr);
+    // SIGSEGV and SIGBUS report a faulting address (siginfo->si_addr) as the second
+    // ExceptionInformation slot. Other hardware exceptions (SIGILL/SIGFPE/SIGTRAP)
+    // have no defined ExceptionInformation parameters in Windows SEH; preserve that
+    // by passing numParams=0 so consumers of EXCEPTION_RECORD (e.g. IsWellFormedAV)
+    // see the same shape they would from the in-place handler paths.
+    int rawCode = code & ~StackOverflowFlag;
+    if (rawCode == SIGSEGV || rawCode == SIGBUS)
+    {
+        returnPoint->returnFromHandler = common_signal_handler(code, siginfo, context, 2, (size_t)0, (size_t)siginfo->si_addr);
+    }
+    else
+    {
+        returnPoint->returnFromHandler = common_signal_handler(code, siginfo, context, 0);
+    }
 
     // We are going to return to the alternate stack, so block the activation signal again
     MaskActivationSignal();
@@ -820,9 +873,21 @@ static void sigtrap_handler(int code, siginfo_t *siginfo, void *context)
 {
     if (PALIsInitialized())
     {
-        if (common_signal_handler(code, siginfo, context, 0))
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK
+        if (GetCurrentPalThread() && IsRunningOnAlternateStack(context))
         {
-            return;
+            if (SwitchStackAndExecuteHandler(code, siginfo, context, 0 /* sp */))
+            {
+                return;
+            }
+        }
+        else
+#endif
+        {
+            if (common_signal_handler(code, siginfo, context, 0))
+            {
+                return;
+            }
         }
     }
 
@@ -845,12 +910,24 @@ static void sigbus_handler(int code, siginfo_t *siginfo, void *context)
 {
     if (PALIsInitialized())
     {
-        // TODO: First variable parameter says whether a read (0) or write (non-0) caused the
-        // fault. We must disassemble the instruction at record.ExceptionAddress
-        // to correctly fill in this value.
-        if (common_signal_handler(code, siginfo, context, 2, (size_t)0, (size_t)siginfo->si_addr))
+#if !HAVE_MACH_EXCEPTIONS && HAVE_SIGALTSTACK
+        if (GetCurrentPalThread() && IsRunningOnAlternateStack(context))
         {
-            return;
+            if (SwitchStackAndExecuteHandler(code, siginfo, context, 0 /* sp */))
+            {
+                return;
+            }
+        }
+        else
+#endif
+        {
+            // TODO: First variable parameter says whether a read (0) or write (non-0) caused the
+            // fault. We must disassemble the instruction at record.ExceptionAddress
+            // to correctly fill in this value.
+            if (common_signal_handler(code, siginfo, context, 2, (size_t)0, (size_t)siginfo->si_addr))
+            {
+                return;
+            }
         }
     }
 
