@@ -70,6 +70,13 @@ namespace ILCompiler.ObjectWriter
         // them, at every 2^RelocAnchorLog2Granularity bytes, and rebase each
         // IMAGE_REL_BASED_RELPTR32 relocation's SUBTRACTOR onto the nearest anchor
         // instead of the section start.
+        //
+        // The anchors are marked N_ALT_ENTRY so the linker treats them as
+        // additional names for whichever atom already contains their offset
+        // (MH_SUBSECTIONS_VIA_SYMBOLS would otherwise split atoms at every defined
+        // symbol). This lets us place anchors at fixed offsets without regard for
+        // atom boundaries, so the symbol-table position of the anchor for any
+        // given relocation site is just `firstAnchor + (offset >> log2granularity)`.
         private const int RelocAnchorLog2Granularity = 19; // 512 KiB; addend bias <= 2^19 - 1 fits signed 20-bit
         private const long RelocAnchorGranularity = 1L << RelocAnchorLog2Granularity;
 
@@ -567,7 +574,11 @@ namespace ILCompiler.ObjectWriter
                         Name = relocAnchorNameBuilder.ToUtf8String(),
                         Section = section,
                         Value = section.VirtualAddress + (ulong)labelOffset,
-                        Descriptor = N_NO_DEAD_STRIP,
+                        // N_ALT_ENTRY makes this symbol an additional name for the atom
+                        // that already covers `labelOffset` instead of starting a new atom.
+                        // Without it, MH_SUBSECTIONS_VIA_SYMBOLS would split the containing
+                        // atom (an EEType, sealed vtable, FDE, etc.) at every anchor position.
+                        Descriptor = N_NO_DEAD_STRIP | N_ALT_ENTRY,
                         Type = N_SECT,
                     });
                     symbolIndex++;
