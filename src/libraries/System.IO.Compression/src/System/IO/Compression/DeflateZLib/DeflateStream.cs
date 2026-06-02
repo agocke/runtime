@@ -420,10 +420,10 @@ namespace System.IO.Compression
             return TaskToAsyncResult.End<int>(asyncResult);
         }
 
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
             ValidateBufferArguments(buffer, offset, count);
-            return ReadAsyncMemory(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
+            return await ReadAsyncMemory(new Memory<byte>(buffer, offset, count), cancellationToken).ConfigureAwait(false);
         }
 
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
