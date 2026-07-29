@@ -81,6 +81,10 @@ to define equivalents that the linker can resolve:
   and is mutually exclusive with `standalonegc-enabled`/`standalonegc-disabled`, since all
   three define `InitializeGCSelector`.
 
+`IlcManagedGC` is rejected on x86: `WindowsNodeMangler.ExternMethod` leaves runtime export names
+undecorated, while a C declaration of the same function references the cdecl-decorated
+`_ManagedGC_Initialize`, so the two would not link. Supporting x86 needs an explicit ABI shim.
+
 ## Layout verification
 
 Types that cross the GC/EE boundary must be laid out exactly like their C++ counterparts.

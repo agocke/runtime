@@ -25,8 +25,10 @@
 // Emitted by ILC from System.Private.GC's ManagedGCEntryPoints. See
 // Microsoft.NETCore.Native.targets, which only passes the assembly to
 // --generateunmanagedentrypoints when IlcManagedGC is set.
-extern "C" void ManagedGC_VersionInfo(/* InOut */ VersionInfo* info);
-extern "C" HRESULT ManagedGC_Initialize(
+// LOCALGC_CALLCONV matches how gcheaputilities.cpp declares the C++ GC's GC_Initialize; these
+// symbols stand in for the same contract.
+extern "C" void LOCALGC_CALLCONV ManagedGC_VersionInfo(/* InOut */ VersionInfo* info);
+extern "C" HRESULT LOCALGC_CALLCONV ManagedGC_Initialize(
     /* In  */ IGCToCLR* clrToGC,
     /* Out */ IGCHeap** gcHeap,
     /* Out */ IGCHandleManager** gcHandleManager,
@@ -62,6 +64,10 @@ static void FlushStashedEventState()
 
 HRESULT InitializeGCSelector()
 {
+    // Deliberately never freed, on every path below: ManagedGC_Initialize hands this to the
+    // managed GCToEEInterface, which keeps it in a static for the lifetime of the process.
+    // That remains true when the managed GC declines to provide a heap, because the
+    // configuration it already read stays reachable. Matches clrgc.enabled.cpp.
     IGCToCLR* gcToClr = new (nothrow) standalone::GCToEEInterface();
     if (!gcToClr)
     {
