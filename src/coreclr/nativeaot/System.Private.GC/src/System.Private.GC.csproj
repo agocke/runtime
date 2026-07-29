@@ -26,9 +26,14 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCConfig.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventEnums.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventStatus.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCHeapMemory.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCToOSInterface.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\IntroSort.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCEntryPoints.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHandleManager.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHeap.cs" />
     <Compile Include="System\Runtime\RuntimeExportAttribute.cs" />
+    <Compile Include="System\Runtime\RuntimeImportAttribute.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCInterfaceEnums.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCInterfaceLayout.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCInterfaceStructs.cs" />

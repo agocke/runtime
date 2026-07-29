@@ -137,6 +137,12 @@ The .NET Foundation licenses this file to you under the MIT license.
          so the two would not link. Fail with something actionable instead. -->
     <Error Condition="'$(IlcManagedGC)' == 'true' and '$(_targetArchitecture)' == 'x86'"
            Text="IlcManagedGC is not supported on x86: runtime export symbols are emitted undecorated, which does not match the cdecl decoration the native GC selector references." />
+    <!-- ARM32 and WASM build the runtime with FEATURE_64BIT_ALIGNMENT, so the allocation slow
+         path passes GC_ALLOC_ALIGN8/GC_ALLOC_ALIGN8_BIAS and expects the heap to honor them.
+         ManagedGCHeap.Alloc only aligns to pointer size, so it would hand back objects that are
+         misaligned for 64-bit fields. Block the target rather than silently misalign. -->
+    <Error Condition="'$(IlcManagedGC)' == 'true' and ('$(_targetArchitecture)' == 'arm' or '$(_targetArchitecture)' == 'wasm')"
+           Text="IlcManagedGC is not supported on $(_targetArchitecture): the managed heap does not implement the GC_ALLOC_ALIGN8 alignment that FEATURE_64BIT_ALIGNMENT targets require." />
 
     <ItemGroup>
       <_NETCoreAppFrameworkReference Include="@(ResolvedFrameworkReference)" Condition="'%(ResolvedFrameworkReference.RuntimePackName)' == 'Microsoft.NETCore.App.Runtime.NativeAOT.$(RuntimeIdentifier)'" />

@@ -2,60 +2,106 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Runtime.InteropServices;
+using System.Threading;
 
 // Built with IlcManagedGC=true, which links the managed GC selector (clrgc.managed.cpp) in
 // place of the standalone GC loader and roots the [RuntimeExport] entry points in
 // System.Private.GC. Reaching Main at all means ILC emitted ManagedGC_Initialize, the linker
-// resolved it from native, and the managed bring-up path ran to completion during startup.
+// resolved it from native, and the runtime brought the whole process up on a heap written in
+// C#: startup, module frozen object segments, statics, and every allocation below.
 //
-// The managed heap itself is still being ported, so ManagedGC_Initialize currently reports
-// that it has no heap to offer and the runtime falls back to the C++ GC. The assertions below
-// are therefore about the process being healthy, not about which GC serviced the allocations.
+// The managed heap allocates but does not collect yet, so this exercises what it does have --
+// the bump allocator, the write barrier globals it publishes, and the handle table -- rather
+// than anything that needs a collector.
 internal static class ManagedGCTest
 {
     private static int Main()
     {
-        if (!AllocationSurvivesCollection())
+        if (!NothingIsReclaimed())
         {
             return 1;
         }
 
-        if (!CollectionCountAdvances())
+        if (!AllocationsAreDistinctAndZeroed())
         {
             return 2;
         }
 
-        if (!FinalizerRuns())
+        if (!ReferenceWritesWork())
         {
             return 3;
+        }
+
+        if (!LargeObjectsWork())
+        {
+            return 4;
+        }
+
+        if (!HandlesWork())
+        {
+            return 5;
+        }
+
+        if (!ThreadsCanAllocateConcurrently())
+        {
+            return 6;
+        }
+
+        if (!CollectionsAreCounted())
+        {
+            return 7;
         }
 
         Console.WriteLine("ManagedGC smoke test passed.");
         return 100;
     }
 
-    private static bool AllocationSurvivesCollection()
+    /// <summary>
+    /// Distinguishes the managed heap from the C++ GC the selector falls back to. A collector
+    /// would reclaim the garbage below and report a smaller heap afterwards; the managed heap
+    /// cannot, so its reported size only ever grows. Delete this once the port collects.
+    /// </summary>
+    private static bool NothingIsReclaimed()
     {
-        byte[][] live = new byte[64][];
-        for (int i = 0; i < live.Length; i++)
-        {
-            live[i] = new byte[4096];
-            live[i][0] = (byte)i;
-        }
-
-        // Garbage for the collector to actually reclaim.
-        for (int i = 0; i < 10000; i++)
+        for (int i = 0; i < 16 * 1024; i++)
         {
             _ = new byte[512];
         }
 
+        long before = GC.GetTotalMemory(false);
         GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
+        return GC.GetTotalMemory(false) >= before;
+    }
 
-        for (int i = 0; i < live.Length; i++)
+    private static bool AllocationsAreDistinctAndZeroed()
+    {
+        const int Count = 2048;
+        byte[][] arrays = new byte[Count][];
+
+        for (int i = 0; i < Count; i++)
         {
-            if (live[i] is null || live[i].Length != 4096 || live[i][0] != (byte)i)
+            byte[] array = new byte[64];
+
+            // Fresh heap memory is handed out once and comes from a fresh commit, so it must
+            // already read as zero; the runtime relies on that rather than clearing it.
+            foreach (byte b in array)
+            {
+                if (b != 0)
+                {
+                    return false;
+                }
+            }
+
+            array[0] = (byte)i;
+            array[63] = (byte)~i;
+            arrays[i] = array;
+        }
+
+        // If any two allocations overlapped, one of these patterns is now wrong.
+        for (int i = 0; i < Count; i++)
+        {
+            if (arrays[i][0] != (byte)i || arrays[i][63] != (byte)~i)
             {
                 return false;
             }
@@ -64,33 +110,172 @@ internal static class ManagedGCTest
         return true;
     }
 
-    private static bool CollectionCountAdvances()
+    /// <summary>
+    /// Stores references into heap objects, which runs the EE's write barrier against the card
+    /// tables the managed heap built and published through StompWriteBarrier.
+    /// </summary>
+    private static bool ReferenceWritesWork()
+    {
+        const int Length = 4096;
+
+        Node head = null;
+        for (int i = 0; i < Length; i++)
+        {
+            head = new Node { Value = i, Next = head };
+        }
+
+        // Also write references into an array, which takes a different barrier helper.
+        object[] boxes = new object[Length];
+        for (int i = 0; i < Length; i++)
+        {
+            boxes[i] = i;
+        }
+
+        int expected = Length - 1;
+        for (Node node = head; node is not null; node = node.Next)
+        {
+            if (node.Value != expected || (int)boxes[expected] != expected)
+            {
+                return false;
+            }
+
+            expected--;
+        }
+
+        return expected == -1;
+    }
+
+    private static bool LargeObjectsWork()
+    {
+        // Past the 85000-byte threshold, so the heap allocates these outside the allocation
+        // context rather than from it.
+        byte[] large = new byte[200_000];
+        if (large[0] != 0 || large[^1] != 0)
+        {
+            return false;
+        }
+
+        large[0] = 1;
+        large[^1] = 2;
+
+        byte[] second = new byte[200_000];
+        return second[0] == 0 && second[^1] == 0 && large[0] == 1 && large[^1] == 2;
+    }
+
+    private static bool HandlesWork()
+    {
+        object target = new Node { Value = 42 };
+
+        GCHandle normal = GCHandle.Alloc(target);
+        GCHandle weak = GCHandle.Alloc(target, GCHandleType.Weak);
+        GCHandle pinned = GCHandle.Alloc(new byte[16], GCHandleType.Pinned);
+
+        try
+        {
+            if (!ReferenceEquals(normal.Target, target) || !ReferenceEquals(weak.Target, target))
+            {
+                return false;
+            }
+
+            if (pinned.AddrOfPinnedObject() == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            object replacement = new Node { Value = 43 };
+            normal.Target = replacement;
+            if (!ReferenceEquals(normal.Target, replacement))
+            {
+                return false;
+            }
+        }
+        finally
+        {
+            normal.Free();
+            weak.Free();
+            pinned.Free();
+        }
+
+        // Churn handles so that freed slots are taken off the free list and handed out again.
+        for (int i = 0; i < 4096; i++)
+        {
+            GCHandle handle = GCHandle.Alloc(target);
+            if (!ReferenceEquals(handle.Target, target))
+            {
+                return false;
+            }
+
+            handle.Free();
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Several threads allocating at once, which is the only thing that exercises the
+    /// interlocked bump pointer and the per-thread allocation contexts against each other.
+    /// </summary>
+    private static bool ThreadsCanAllocateConcurrently()
+    {
+        const int ThreadCount = 4;
+        const int PerThread = 4096;
+
+        bool[] results = new bool[ThreadCount];
+        Thread[] threads = new Thread[ThreadCount];
+
+        for (int t = 0; t < ThreadCount; t++)
+        {
+            int index = t;
+            threads[t] = new Thread(() =>
+            {
+                byte[][] arrays = new byte[PerThread][];
+                for (int i = 0; i < PerThread; i++)
+                {
+                    arrays[i] = new byte[32];
+                    arrays[i][0] = (byte)index;
+                    arrays[i][31] = (byte)i;
+                }
+
+                for (int i = 0; i < PerThread; i++)
+                {
+                    if (arrays[i][0] != (byte)index || arrays[i][31] != (byte)i)
+                    {
+                        return;
+                    }
+                }
+
+                results[index] = true;
+            });
+
+            threads[t].Start();
+        }
+
+        foreach (Thread thread in threads)
+        {
+            thread.Join();
+        }
+
+        foreach (bool result in results)
+        {
+            if (!result)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool CollectionsAreCounted()
     {
         int before = GC.CollectionCount(0);
         GC.Collect();
         return GC.CollectionCount(0) > before;
     }
 
-    private static bool FinalizerRuns()
+    private sealed class Node
     {
-        AllocateFinalizable();
-
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-
-        return s_finalized;
-    }
-
-    // Kept in a separate non-inlined method so the instance is unreachable by the time the
-    // collection below runs.
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static void AllocateFinalizable() => GC.KeepAlive(new Finalizable());
-
-    private static bool s_finalized;
-
-    private sealed class Finalizable
-    {
-        ~Finalizable() => s_finalized = true;
+        public int Value;
+        public Node Next;
     }
 }

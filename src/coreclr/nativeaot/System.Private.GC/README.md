@@ -43,9 +43,45 @@ Ported so far:
 | `Interface/GCToEEInterface.cs` | `gcenv.ee.standalone.inl` |
 | `GCConfig.cs` | `gcconfig.h`, `gcconfig.cpp` |
 | `ManagedGCEntryPoints.cs` | `gcload.cpp` (`GC_VersionInfo`, `GC_Initialize`) |
+| `GCToOSInterface.cs` | `gcenv.os.h` (virtual memory only) |
+| `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
+| `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
+| `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
 
-`ParseGCHeapAffinitizeRanges` is not ported yet: it needs `GCToOSInterface`, which is the next
-step.
+`ParseGCHeapAffinitizeRanges` is not ported yet: it needs the affinity half of
+`GCToOSInterface`, which only the real collector will use.
+
+### The heap is a bump allocator that never collects
+
+`ManagedGCHeap` implements enough of `IGCHeap` to boot and run an application, and no more. It
+reserves one 256 MB region up front and hands it out with an interlocked bump pointer. It never
+frees anything, so:
+
+* An application that allocates more than 256 MB gets `OutOfMemoryException`, permanently.
+* Finalizers never run, and `GC.Collect` only increments a counter.
+* `GC.GetTotalMemory` only ever grows -- which is what the smoke test uses to tell the managed
+  heap apart from the C++ GC it would otherwise fall back to.
+
+Note that the fallback to the C++ GC only covers `ManagedGC_Initialize` declining to provide a
+heap. Once it has returned `S_OK`, a later failure in `IGCHeap::Initialize` -- reserving or
+committing the 256 MB -- fails runtime startup outright rather than falling back.
+
+`IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
+stub rather than a plausible-looking wrong answer, so the first caller that needs a real
+collector is a crash with a stack trace rather than silent corruption.
+
+Two pieces are real rather than stubbed, because startup does not work without them:
+
+* **Write-barrier globals.** The heap publishes `g_card_table`, the card bundle table and the
+  heap bounds through `GCToEEInterface.StompWriteBarrier`. Both tables are *biased* -- the
+  assembly barrier indexes them by absolute address (`dst >> 11` and `dst >> 21`), so the
+  published pointer is `table_base - (lowest_address >> shift)`. The card bundle table is
+  dereferenced with no null check on every architecture that sets
+  `FEATURE_MANUALLY_MANAGED_CARD_BUNDLES`, so it has to exist even though nothing reads the
+  cards back.
+* **Frozen segments.** `StartupCodeHelpers` fail-fasts if `RegisterFrozenSegment` returns null.
+  Frozen segments are kept outside `[lowest_address, highest_address)`, matching the assert in
+  `gc_heap::insert_ro_segment`.
 
 ## Building an application against the managed GC
 
@@ -57,10 +93,9 @@ dotnet publish -r linux-x64 -p:PublishAot=true -p:IlcManagedGC=true
 
 or, for an in-tree smoke test, see `src/tests/nativeaot/SmokeTests/ManagedGC`.
 
-The heap itself is not ported yet, so `ManagedGC_Initialize` currently reports that it has no
-heap to offer (`S_FALSE`) and the runtime falls back to the C++ GC, which keeps the application
-working. The managed path is still exercised: it verifies the interface layout and reads the
-whole configuration table through the real `IGCToCLR` vtable during startup.
+The application then runs entirely on the C# heap: startup, module frozen object segments,
+statics, threads and every allocation. The C++ GC is still linked in and is still the default;
+`IlcManagedGC` only changes which one `InitializeGCSelector` hands back.
 
 ### How the linkage works
 
@@ -69,8 +104,18 @@ to define equivalents that the linker can resolve:
 
 * `ManagedGCEntryPoints` declares them with `[RuntimeExport]`. That attribute, rather than
   `[UnmanagedCallersOnly]`, because a runtime export is a direct native-to-managed call with no
-  reverse-P/Invoke thread attach and no cooperative/preemptive transition — neither of which is
+  reverse-P/Invoke thread attach and no cooperative/preemptive transition -- neither of which is
   available during startup or with the world suspended.
+
+  The same reasoning applies to the vtable slots, which is why they are typed as *managed*
+  function pointers (`delegate*<...>`) rather than `delegate* unmanaged<...>`. ILC compiles a
+  static method with a blittable signature to the platform C ABI, so native can call it
+  directly -- that property is exactly what makes `[RuntimeExport]` work, and taking the
+  method's address gives the same entry point the export alias would name. Marking these
+  methods `[UnmanagedCallersOnly]` instead is not merely redundant, it is wrong: ILC sets
+  `CORJIT_FLAG_REVERSE_PINVOKE` unconditionally for such methods
+  (`CorInfoImpl.cs`), so the EE calling `IGCHeap::Alloc` from cooperative mode fail-fasts in
+  `Thread::ReversePInvokeAttachOrTrapThread`.
 * ILC only emits the symbols when the assembly is passed to `--generateunmanagedentrypoints`,
   which `Microsoft.NETCore.Native.targets` does only under `IlcManagedGC`. The assembly is
   always referenced (it lives in `aotsdk`, which ILC picks up wholesale), but nothing in it is
@@ -84,6 +129,10 @@ to define equivalents that the linker can resolve:
 `IlcManagedGC` is rejected on x86: `WindowsNodeMangler.ExternMethod` leaves runtime export names
 undecorated, while a C declaration of the same function references the cdecl-decorated
 `_ManagedGC_Initialize`, so the two would not link. Supporting x86 needs an explicit ABI shim.
+
+It is also rejected on ARM32 and WASM, which build the runtime with `FEATURE_64BIT_ALIGNMENT`.
+Those targets pass `GC_ALLOC_ALIGN8`/`GC_ALLOC_ALIGN8_BIAS` down to `IGCHeap::Alloc` and expect
+the heap to honor them; the bump allocator only aligns to pointer size.
 
 ## Layout verification
 

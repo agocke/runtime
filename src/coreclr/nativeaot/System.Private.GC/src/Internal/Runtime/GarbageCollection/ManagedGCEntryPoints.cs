@@ -26,7 +26,7 @@ namespace Internal.Runtime.GarbageCollection
     /// </remarks>
     internal static unsafe class ManagedGCEntryPoints
     {
-        private const int S_FALSE = 1;
+        private const int S_OK = 0;
         private const int E_FAIL = unchecked((int)0x80004005);
 
         // Must match GC_INTERFACE_MAJOR_VERSION / GC_INTERFACE_MINOR_VERSION in gcinterface.h.
@@ -67,12 +67,11 @@ namespace Internal.Runtime.GarbageCollection
         /// Brings up the managed GC. Port of <c>GC_Initialize</c>.
         /// </summary>
         /// <remarks>
-        /// The heap itself is not ported yet, so this currently runs the self-checks that the
-        /// ported modules make possible and then returns <c>S_FALSE</c>, which the native
-        /// selector treats as "managed GC declined, use the C++ GC". That keeps the managed
-        /// path exercised end-to-end in a real process — the interface layout check and the
-        /// ~80 configuration reads below all go through the ported <c>IGCToCLR</c> vtable —
-        /// without the port having to be complete to produce a working application.
+        /// The heap this hands back allocates but never collects (see
+        /// <see cref="ManagedGCHeap"/>), so an application runs until it has exhausted the
+        /// region and then gets OOM. Returning <c>S_FALSE</c> instead tells the native selector
+        /// that the managed GC declined and the C++ GC should be used; that path is kept for
+        /// the failure cases below, which happen before anything has been published to the EE.
         /// </remarks>
         [RuntimeExport("ManagedGC_Initialize")]
         internal static int ManagedGC_Initialize(void* clrToGC, void** gcHeap, void** gcHandleManager, void* gcDacVars)
@@ -98,7 +97,14 @@ namespace Internal.Runtime.GarbageCollection
             // GCConfig that PalInit already initialized for the C++ GC.
             GCConfig.Initialize();
 
-            return S_FALSE;
+            // The EE calls Initialize() on both of these before it uses them, so all that
+            // happens here is that the vtables are built; neither touches memory yet.
+            *gcHeap = ManagedGCHeap.Create();
+            *gcHandleManager = ManagedGCHandleManager.Create();
+
+            // gcDacVars is left zeroed. It exists for the DAC to find the GC's data structures
+            // by offset, and this heap has none of the structures it describes.
+            return S_OK;
         }
     }
 }

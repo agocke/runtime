@@ -38,6 +38,29 @@ extern "C" HRESULT LOCALGC_CALLCONV ManagedGC_Initialize(
 // for what the managed side means by it.
 static const HRESULT ManagedGC_S_FALSE = (HRESULT)1;
 
+// Virtual memory for the managed GC. GCToOSInterface is not ported yet, so the managed heap
+// reaches the OS through these, which it calls with [RuntimeImport] — a direct call to a
+// linked symbol, with no marshalling and no GC mode transition, which is what code running
+// with the world suspended requires. Porting GCToOSInterface (plan step 3) replaces these.
+extern "C" void* ManagedGC_VirtualReserve(size_t size, size_t alignment)
+{
+    return GCToOSInterface::VirtualReserve(size, alignment, 0 /* flags */);
+}
+
+extern "C" UInt32_BOOL ManagedGC_VirtualCommit(void* address, size_t size)
+{
+    return GCToOSInterface::VirtualCommit(address, size) ? UInt32_TRUE : UInt32_FALSE;
+}
+
+// Stands in for the C++ GC's PURE_VIRTUAL: the managed heap points every IGCHeap slot it has
+// not implemented yet at this, so reaching one stops the process at the call rather than
+// crashing later on a null slot or a bogus return value.
+extern "C" void ManagedGC_Unsupported()
+{
+    ASSERT_UNCONDITIONALLY("The managed GC does not implement this IGCHeap/IGCHandleManager method yet.");
+    RhFailFast();
+}
+
 CrstStatic g_eventStashLock;
 
 GCEventLevel g_stashedLevel = GCEventLevel_None;

@@ -9,6 +9,21 @@
 //
 // C++ `bool` is mapped to `byte` because `bool` is not blittable in a `delegate* unmanaged`
 // signature, and `Object*` is mapped to `byte*` because the GC never holds a managed reference.
+//
+// Slot types differ by direction, and the difference is load-bearing:
+//
+// * IGCToCLR/IGCToCLREventSink are implemented by the native EE, so their slots are
+//   `delegate* unmanaged<...>` -- genuinely foreign function pointers.
+// * IGCHeap/IGCHandleManager/IGCHandleStore are implemented here, so their slots are
+//   *managed* `delegate*<...>` holding the address of a static C# method. ILC compiles a
+//   static method with a blittable signature to the platform C ABI, so the native EE can call
+//   it directly; that is the same property `[RuntimeExport]` relies on, and taking the
+//   method's address yields the entry point the export alias would name.
+//
+//   Do not "fix" these to `delegate* unmanaged<...>` by marking the implementations
+//   `[UnmanagedCallersOnly]`. ILC sets CORJIT_FLAG_REVERSE_PINVOKE unconditionally for such
+//   methods, and the resulting thread attach fail-fasts when the EE calls the GC from
+//   cooperative mode -- which is every allocation.
 
 namespace Internal.Runtime.GarbageCollection
 {
@@ -20,12 +35,12 @@ namespace Internal.Runtime.GarbageCollection
         /// <summary>Number of virtual slots this vtable describes.</summary>
         public const int SlotCount = 6;
 
-        public delegate* unmanaged<void*, void> Uproot;
-        public delegate* unmanaged<void*, OBJECTHANDLE, byte> ContainsHandle;
-        public delegate* unmanaged<void*, byte*, HandleType, OBJECTHANDLE> CreateHandleOfType;
-        public delegate* unmanaged<void*, byte*, HandleType, int, OBJECTHANDLE> CreateHandleOfType_2;
-        public delegate* unmanaged<void*, byte*, HandleType, void*, OBJECTHANDLE> CreateHandleWithExtraInfo;
-        public delegate* unmanaged<void*, byte*, byte*, OBJECTHANDLE> CreateDependentHandle;
+        public delegate*<void*, void> Uproot;
+        public delegate*<void*, OBJECTHANDLE, byte> ContainsHandle;
+        public delegate*<void*, byte*, HandleType, OBJECTHANDLE> CreateHandleOfType;
+        public delegate*<void*, byte*, HandleType, int, OBJECTHANDLE> CreateHandleOfType_2;
+        public delegate*<void*, byte*, HandleType, void*, OBJECTHANDLE> CreateHandleWithExtraInfo;
+        public delegate*<void*, byte*, byte*, OBJECTHANDLE> CreateDependentHandle;
 
         // IGCHandleStore also declares a virtual destructor, which the Itanium C++ ABI
         // places in two additional slots after the ones above. It is declared last, so the
@@ -40,24 +55,24 @@ namespace Internal.Runtime.GarbageCollection
         /// <summary>Number of virtual slots this vtable describes.</summary>
         public const int SlotCount = 18;
 
-        public delegate* unmanaged<void*, byte> Initialize;
-        public delegate* unmanaged<void*, void> Shutdown;
-        public delegate* unmanaged<void*, void*> GetGlobalHandleStore;
-        public delegate* unmanaged<void*, void*> CreateHandleStore;
-        public delegate* unmanaged<void*, void*, void> DestroyHandleStore;
-        public delegate* unmanaged<void*, byte*, HandleType, OBJECTHANDLE> CreateGlobalHandleOfType;
-        public delegate* unmanaged<void*, OBJECTHANDLE, OBJECTHANDLE> CreateDuplicateHandle;
-        public delegate* unmanaged<void*, OBJECTHANDLE, HandleType, void> DestroyHandleOfType;
-        public delegate* unmanaged<void*, OBJECTHANDLE, void> DestroyHandleOfUnknownType;
-        public delegate* unmanaged<void*, OBJECTHANDLE, HandleType, void*, void> SetExtraInfoForHandle;
-        public delegate* unmanaged<void*, OBJECTHANDLE, void*> GetExtraInfoFromHandle;
-        public delegate* unmanaged<void*, OBJECTHANDLE, byte*, void> StoreObjectInHandle;
-        public delegate* unmanaged<void*, OBJECTHANDLE, byte*, byte> StoreObjectInHandleIfNull;
-        public delegate* unmanaged<void*, OBJECTHANDLE, byte*, void> SetDependentHandleSecondary;
-        public delegate* unmanaged<void*, OBJECTHANDLE, byte*> GetDependentHandleSecondary;
-        public delegate* unmanaged<void*, OBJECTHANDLE, byte*, byte*, byte*> InterlockedCompareExchangeObjectInHandle;
-        public delegate* unmanaged<void*, OBJECTHANDLE, HandleType> HandleFetchType;
-        public delegate* unmanaged<void*, delegate* unmanaged<byte**, nuint*, nuint, nuint, void>, nuint, nuint, void> TraceRefCountedHandles;
+        public delegate*<void*, byte> Initialize;
+        public delegate*<void*, void> Shutdown;
+        public delegate*<void*, void*> GetGlobalHandleStore;
+        public delegate*<void*, void*> CreateHandleStore;
+        public delegate*<void*, void*, void> DestroyHandleStore;
+        public delegate*<void*, byte*, HandleType, OBJECTHANDLE> CreateGlobalHandleOfType;
+        public delegate*<void*, OBJECTHANDLE, OBJECTHANDLE> CreateDuplicateHandle;
+        public delegate*<void*, OBJECTHANDLE, HandleType, void> DestroyHandleOfType;
+        public delegate*<void*, OBJECTHANDLE, void> DestroyHandleOfUnknownType;
+        public delegate*<void*, OBJECTHANDLE, HandleType, void*, void> SetExtraInfoForHandle;
+        public delegate*<void*, OBJECTHANDLE, void*> GetExtraInfoFromHandle;
+        public delegate*<void*, OBJECTHANDLE, byte*, void> StoreObjectInHandle;
+        public delegate*<void*, OBJECTHANDLE, byte*, byte> StoreObjectInHandleIfNull;
+        public delegate*<void*, OBJECTHANDLE, byte*, void> SetDependentHandleSecondary;
+        public delegate*<void*, OBJECTHANDLE, byte*> GetDependentHandleSecondary;
+        public delegate*<void*, OBJECTHANDLE, byte*, byte*, byte*> InterlockedCompareExchangeObjectInHandle;
+        public delegate*<void*, OBJECTHANDLE, HandleType> HandleFetchType;
+        public delegate*<void*, delegate* unmanaged<byte**, nuint*, nuint, nuint, void>, nuint, nuint, void> TraceRefCountedHandles;
     }
 
     /// <summary>
@@ -68,95 +83,95 @@ namespace Internal.Runtime.GarbageCollection
         /// <summary>Number of virtual slots this vtable describes.</summary>
         public const int SlotCount = 89;
 
-        public delegate* unmanaged<void*, nuint, byte> IsValidSegmentSize;
-        public delegate* unmanaged<void*, nuint, byte> IsValidGen0MaxSize;
-        public delegate* unmanaged<void*, byte, nuint> GetValidSegmentSize;
-        public delegate* unmanaged<void*, nuint, void> SetReservedVMLimit;
-        public delegate* unmanaged<void*, void> WaitUntilConcurrentGCComplete;
-        public delegate* unmanaged<void*, byte> IsConcurrentGCInProgress;
-        public delegate* unmanaged<void*, void> TemporaryEnableConcurrentGC;
-        public delegate* unmanaged<void*, void> TemporaryDisableConcurrentGC;
-        public delegate* unmanaged<void*, byte> IsConcurrentGCEnabled;
-        public delegate* unmanaged<void*, int, int> WaitUntilConcurrentGCCompleteAsync;
-        public delegate* unmanaged<void*, nuint> GetNumberOfFinalizable;
-        public delegate* unmanaged<void*, byte*> GetNextFinalizable;
-        public delegate* unmanaged<void*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, uint*, uint*, byte*, byte*, ulong*, ulong*, int, void> GetMemoryInfo;
-        public delegate* unmanaged<void*, uint> GetMemoryLoad;
-        public delegate* unmanaged<void*, int> GetGcLatencyMode;
-        public delegate* unmanaged<void*, int, int> SetGcLatencyMode;
-        public delegate* unmanaged<void*, int> GetLOHCompactionMode;
-        public delegate* unmanaged<void*, int, void> SetLOHCompactionMode;
-        public delegate* unmanaged<void*, uint, uint, byte> RegisterForFullGCNotification;
-        public delegate* unmanaged<void*, byte> CancelFullGCNotification;
-        public delegate* unmanaged<void*, int, int> WaitForFullGCApproach;
-        public delegate* unmanaged<void*, int, int> WaitForFullGCComplete;
-        public delegate* unmanaged<void*, byte*, uint> WhichGeneration;
-        public delegate* unmanaged<void*, int, int, int> CollectionCount;
-        public delegate* unmanaged<void*, ulong, byte, ulong, byte, int> StartNoGCRegion;
-        public delegate* unmanaged<void*, int> EndNoGCRegion;
-        public delegate* unmanaged<void*, nuint> GetTotalBytesInUse;
-        public delegate* unmanaged<void*, ulong> GetTotalAllocatedBytes;
-        public delegate* unmanaged<void*, int, byte, int, int> GarbageCollect;
-        public delegate* unmanaged<void*, uint> GetMaxGeneration;
-        public delegate* unmanaged<void*, byte*, void> SetFinalizationRun;
-        public delegate* unmanaged<void*, int, byte*, byte> RegisterForFinalization;
-        public delegate* unmanaged<void*, int> GetLastGCPercentTimeInGC;
-        public delegate* unmanaged<void*, int, nuint> GetLastGCGenerationSize;
-        public delegate* unmanaged<void*, int> Initialize;
-        public delegate* unmanaged<void*, byte*, byte> IsPromoted;
-        public delegate* unmanaged<void*, void*, byte, byte> IsHeapPointer;
-        public delegate* unmanaged<void*, uint> GetCondemnedGeneration;
-        public delegate* unmanaged<void*, byte, byte> IsGCInProgressHelper;
-        public delegate* unmanaged<void*, uint> GetGcCount;
-        public delegate* unmanaged<void*, gc_alloc_context*, int, byte> IsThreadUsingAllocationContextHeap;
-        public delegate* unmanaged<void*, byte*, byte> IsEphemeral;
-        public delegate* unmanaged<void*, byte, uint> WaitUntilGCComplete;
-        public delegate* unmanaged<void*, gc_alloc_context*, void*, void*, void> FixAllocContext;
-        public delegate* unmanaged<void*, nuint> GetCurrentObjSize;
-        public delegate* unmanaged<void*, byte, void> SetGCInProgress;
-        public delegate* unmanaged<void*, byte> RuntimeStructuresValid;
-        public delegate* unmanaged<void*, byte, void> SetSuspensionPending;
-        public delegate* unmanaged<void*, float, void> SetYieldProcessorScalingFactor;
-        public delegate* unmanaged<void*, void> Shutdown;
-        public delegate* unmanaged<void*, int, nuint> GetLastGCStartTime;
-        public delegate* unmanaged<void*, int, nuint> GetLastGCDuration;
-        public delegate* unmanaged<void*, nuint> GetNow;
-        public delegate* unmanaged<void*, gc_alloc_context*, nuint, uint, byte*> Alloc;
-        public delegate* unmanaged<void*, byte*, void> PublishObject;
-        public delegate* unmanaged<void*, void> SetWaitForGCEvent;
-        public delegate* unmanaged<void*, void> ResetWaitForGCEvent;
-        public delegate* unmanaged<void*, byte*, byte> IsLargeObject;
-        public delegate* unmanaged<void*, byte*, void> ValidateObjectMember;
-        public delegate* unmanaged<void*, byte*, byte*> NextObj;
-        public delegate* unmanaged<void*, void*, byte, byte*> GetContainingObject;
-        public delegate* unmanaged<void*, byte*, delegate* unmanaged<byte*, void*, byte>, void*, void> DiagWalkObject;
-        public delegate* unmanaged<void*, byte*, delegate* unmanaged<byte*, byte**, void*, byte>, void*, void> DiagWalkObject2;
-        public delegate* unmanaged<void*, delegate* unmanaged<byte*, void*, byte>, void*, int, byte, void> DiagWalkHeap;
-        public delegate* unmanaged<void*, void*, delegate* unmanaged<byte*, byte*, nint, void*, byte, byte, void>, void*, walk_surv_type, int, void> DiagWalkSurvivorsWithType;
-        public delegate* unmanaged<void*, void*, delegate* unmanaged<byte, void*, void>, void> DiagWalkFinalizeQueue;
-        public delegate* unmanaged<void*, delegate* unmanaged<byte**, ScanContext*, uint, void>, ScanContext*, void> DiagScanFinalizeQueue;
-        public delegate* unmanaged<void*, delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void>, int, ScanContext*, void> DiagScanHandles;
-        public delegate* unmanaged<void*, delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void>, int, ScanContext*, void> DiagScanDependentHandles;
-        public delegate* unmanaged<void*, delegate* unmanaged<void*, int, byte*, byte*, byte*, void>, void*, void> DiagDescrGenerations;
-        public delegate* unmanaged<void*, void> DiagTraceGCSegments;
-        public delegate* unmanaged<void*, EtwGCSettingsInfo*, void> DiagGetGCSettings;
-        public delegate* unmanaged<void*, gc_alloc_context*, byte> StressHeap;
-        public delegate* unmanaged<void*, segment_info*, segment_handle> RegisterFrozenSegment;
-        public delegate* unmanaged<void*, segment_handle, void> UnregisterFrozenSegment;
-        public delegate* unmanaged<void*, byte*, byte> IsInFrozenSegment;
-        public delegate* unmanaged<void*, GCEventKeyword, GCEventLevel, void> ControlEvents;
-        public delegate* unmanaged<void*, GCEventKeyword, GCEventLevel, void> ControlPrivateEvents;
-        public delegate* unmanaged<void*, byte*, byte**, byte**, byte**, uint> GetGenerationWithRange;
-        public delegate* unmanaged<void*, long> GetTotalPauseDuration;
-        public delegate* unmanaged<void*, void*, delegate* unmanaged<void*, byte*, byte*, GCConfigurationType, long, void>, void> EnumerateConfigurationValues;
-        public delegate* unmanaged<void*, segment_handle, byte*, byte*, void> UpdateFrozenSegment;
-        public delegate* unmanaged<void*, int> RefreshMemoryLimit;
-        public delegate* unmanaged<void*, NoGCRegionCallbackFinalizerWorkItem*, ulong, enable_no_gc_region_callback_status> EnableNoGCRegionCallback;
-        public delegate* unmanaged<void*, FinalizerWorkItem*> GetExtraWorkForFinalization;
-        public delegate* unmanaged<void*, int, ulong> GetGenerationBudget;
-        public delegate* unmanaged<void*, nuint> GetLOHThreshold;
-        public delegate* unmanaged<void*, delegate* unmanaged<byte*, void*, byte>, void*, int, byte, void> DiagWalkHeapWithACHandling;
-        public delegate* unmanaged<void*, nuint, void*, void> NullBridgeObjectsWeakRefs;
+        public delegate*<void*, nuint, byte> IsValidSegmentSize;
+        public delegate*<void*, nuint, byte> IsValidGen0MaxSize;
+        public delegate*<void*, byte, nuint> GetValidSegmentSize;
+        public delegate*<void*, nuint, void> SetReservedVMLimit;
+        public delegate*<void*, void> WaitUntilConcurrentGCComplete;
+        public delegate*<void*, byte> IsConcurrentGCInProgress;
+        public delegate*<void*, void> TemporaryEnableConcurrentGC;
+        public delegate*<void*, void> TemporaryDisableConcurrentGC;
+        public delegate*<void*, byte> IsConcurrentGCEnabled;
+        public delegate*<void*, int, int> WaitUntilConcurrentGCCompleteAsync;
+        public delegate*<void*, nuint> GetNumberOfFinalizable;
+        public delegate*<void*, byte*> GetNextFinalizable;
+        public delegate*<void*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, ulong*, uint*, uint*, byte*, byte*, ulong*, ulong*, int, void> GetMemoryInfo;
+        public delegate*<void*, uint> GetMemoryLoad;
+        public delegate*<void*, int> GetGcLatencyMode;
+        public delegate*<void*, int, int> SetGcLatencyMode;
+        public delegate*<void*, int> GetLOHCompactionMode;
+        public delegate*<void*, int, void> SetLOHCompactionMode;
+        public delegate*<void*, uint, uint, byte> RegisterForFullGCNotification;
+        public delegate*<void*, byte> CancelFullGCNotification;
+        public delegate*<void*, int, int> WaitForFullGCApproach;
+        public delegate*<void*, int, int> WaitForFullGCComplete;
+        public delegate*<void*, byte*, uint> WhichGeneration;
+        public delegate*<void*, int, int, int> CollectionCount;
+        public delegate*<void*, ulong, byte, ulong, byte, int> StartNoGCRegion;
+        public delegate*<void*, int> EndNoGCRegion;
+        public delegate*<void*, nuint> GetTotalBytesInUse;
+        public delegate*<void*, ulong> GetTotalAllocatedBytes;
+        public delegate*<void*, int, byte, int, int> GarbageCollect;
+        public delegate*<void*, uint> GetMaxGeneration;
+        public delegate*<void*, byte*, void> SetFinalizationRun;
+        public delegate*<void*, int, byte*, byte> RegisterForFinalization;
+        public delegate*<void*, int> GetLastGCPercentTimeInGC;
+        public delegate*<void*, int, nuint> GetLastGCGenerationSize;
+        public delegate*<void*, int> Initialize;
+        public delegate*<void*, byte*, byte> IsPromoted;
+        public delegate*<void*, void*, byte, byte> IsHeapPointer;
+        public delegate*<void*, uint> GetCondemnedGeneration;
+        public delegate*<void*, byte, byte> IsGCInProgressHelper;
+        public delegate*<void*, uint> GetGcCount;
+        public delegate*<void*, gc_alloc_context*, int, byte> IsThreadUsingAllocationContextHeap;
+        public delegate*<void*, byte*, byte> IsEphemeral;
+        public delegate*<void*, byte, uint> WaitUntilGCComplete;
+        public delegate*<void*, gc_alloc_context*, void*, void*, void> FixAllocContext;
+        public delegate*<void*, nuint> GetCurrentObjSize;
+        public delegate*<void*, byte, void> SetGCInProgress;
+        public delegate*<void*, byte> RuntimeStructuresValid;
+        public delegate*<void*, byte, void> SetSuspensionPending;
+        public delegate*<void*, float, void> SetYieldProcessorScalingFactor;
+        public delegate*<void*, void> Shutdown;
+        public delegate*<void*, int, nuint> GetLastGCStartTime;
+        public delegate*<void*, int, nuint> GetLastGCDuration;
+        public delegate*<void*, nuint> GetNow;
+        public delegate*<void*, gc_alloc_context*, nuint, uint, byte*> Alloc;
+        public delegate*<void*, byte*, void> PublishObject;
+        public delegate*<void*, void> SetWaitForGCEvent;
+        public delegate*<void*, void> ResetWaitForGCEvent;
+        public delegate*<void*, byte*, byte> IsLargeObject;
+        public delegate*<void*, byte*, void> ValidateObjectMember;
+        public delegate*<void*, byte*, byte*> NextObj;
+        public delegate*<void*, void*, byte, byte*> GetContainingObject;
+        public delegate*<void*, byte*, delegate* unmanaged<byte*, void*, byte>, void*, void> DiagWalkObject;
+        public delegate*<void*, byte*, delegate* unmanaged<byte*, byte**, void*, byte>, void*, void> DiagWalkObject2;
+        public delegate*<void*, delegate* unmanaged<byte*, void*, byte>, void*, int, byte, void> DiagWalkHeap;
+        public delegate*<void*, void*, delegate* unmanaged<byte*, byte*, nint, void*, byte, byte, void>, void*, walk_surv_type, int, void> DiagWalkSurvivorsWithType;
+        public delegate*<void*, void*, delegate* unmanaged<byte, void*, void>, void> DiagWalkFinalizeQueue;
+        public delegate*<void*, delegate* unmanaged<byte**, ScanContext*, uint, void>, ScanContext*, void> DiagScanFinalizeQueue;
+        public delegate*<void*, delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void>, int, ScanContext*, void> DiagScanHandles;
+        public delegate*<void*, delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void>, int, ScanContext*, void> DiagScanDependentHandles;
+        public delegate*<void*, delegate* unmanaged<void*, int, byte*, byte*, byte*, void>, void*, void> DiagDescrGenerations;
+        public delegate*<void*, void> DiagTraceGCSegments;
+        public delegate*<void*, EtwGCSettingsInfo*, void> DiagGetGCSettings;
+        public delegate*<void*, gc_alloc_context*, byte> StressHeap;
+        public delegate*<void*, segment_info*, segment_handle> RegisterFrozenSegment;
+        public delegate*<void*, segment_handle, void> UnregisterFrozenSegment;
+        public delegate*<void*, byte*, byte> IsInFrozenSegment;
+        public delegate*<void*, GCEventKeyword, GCEventLevel, void> ControlEvents;
+        public delegate*<void*, GCEventKeyword, GCEventLevel, void> ControlPrivateEvents;
+        public delegate*<void*, byte*, byte**, byte**, byte**, uint> GetGenerationWithRange;
+        public delegate*<void*, long> GetTotalPauseDuration;
+        public delegate*<void*, void*, delegate* unmanaged<void*, byte*, byte*, GCConfigurationType, long, void>, void> EnumerateConfigurationValues;
+        public delegate*<void*, segment_handle, byte*, byte*, void> UpdateFrozenSegment;
+        public delegate*<void*, int> RefreshMemoryLimit;
+        public delegate*<void*, NoGCRegionCallbackFinalizerWorkItem*, ulong, enable_no_gc_region_callback_status> EnableNoGCRegionCallback;
+        public delegate*<void*, FinalizerWorkItem*> GetExtraWorkForFinalization;
+        public delegate*<void*, int, ulong> GetGenerationBudget;
+        public delegate*<void*, nuint> GetLOHThreshold;
+        public delegate*<void*, delegate* unmanaged<byte*, void*, byte>, void*, int, byte, void> DiagWalkHeapWithACHandling;
+        public delegate*<void*, nuint, void*, void> NullBridgeObjectsWeakRefs;
     }
 
     /// <summary>
