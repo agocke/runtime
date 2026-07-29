@@ -42,11 +42,44 @@ Ported so far:
 | `Interface/GCInterfaceLayout.cs` | layout check against `GCInterfaceOffsets.h` |
 | `Interface/GCToEEInterface.cs` | `gcenv.ee.standalone.inl` |
 | `GCConfig.cs` | `gcconfig.h`, `gcconfig.cpp` |
+| `ManagedGCEntryPoints.cs` | `gcload.cpp` (`GC_VersionInfo`, `GC_Initialize`) |
 
 `ParseGCHeapAffinitizeRanges` is not ported yet: it needs `GCToOSInterface`, which is the next
 step.
 
-Nothing here is wired into the runtime build yet.
+## Building an application against the managed GC
+
+Publish a NativeAOT application with `IlcManagedGC=true`:
+
+```
+dotnet publish -r linux-x64 -p:PublishAot=true -p:IlcManagedGC=true
+```
+
+or, for an in-tree smoke test, see `src/tests/nativeaot/SmokeTests/ManagedGC`.
+
+The heap itself is not ported yet, so `ManagedGC_Initialize` currently reports that it has no
+heap to offer (`S_FALSE`) and the runtime falls back to the C++ GC, which keeps the application
+working. The managed path is still exercised: it verifies the interface layout and reads the
+whole configuration table through the real `IGCToCLR` vtable during startup.
+
+### How the linkage works
+
+`GC_Initialize` and `GC_VersionInfo` are plain `extern "C"` symbols, so the managed GC only has
+to define equivalents that the linker can resolve:
+
+* `ManagedGCEntryPoints` declares them with `[RuntimeExport]`. That attribute, rather than
+  `[UnmanagedCallersOnly]`, because a runtime export is a direct native-to-managed call with no
+  reverse-P/Invoke thread attach and no cooperative/preemptive transition — neither of which is
+  available during startup or with the world suspended.
+* ILC only emits the symbols when the assembly is passed to `--generateunmanagedentrypoints`,
+  which `Microsoft.NETCore.Native.targets` does only under `IlcManagedGC`. The assembly is
+  always referenced (it lives in `aotsdk`, which ILC picks up wholesale), but nothing in it is
+  reachable otherwise, so default builds are unaffected.
+* `nativeaot/Runtime/clrgc.managed.cpp` is the native side. It is the static-linking
+  counterpart of `clrgc.enabled.cpp`: the same loader protocol, except the entry points are
+  resolved by the linker instead of `PalGetProcAddress`. It is archived as `managedgc-enabled`
+  and is mutually exclusive with `standalonegc-enabled`/`standalonegc-disabled`, since all
+  three define `InitializeGCSelector`.
 
 ## Layout verification
 

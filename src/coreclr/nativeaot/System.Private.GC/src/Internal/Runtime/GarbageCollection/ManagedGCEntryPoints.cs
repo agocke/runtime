@@ -34,17 +34,34 @@ namespace Internal.Runtime.GarbageCollection
         private const uint GC_INTERFACE_MINOR_VERSION = 8;
 
         /// <summary>
-        /// Reports the GC/EE interface version this GC was built against. Port of
-        /// <c>GC_VersionInfo</c>.
+        /// Reports the GC/EE interface version this GC was built against, and records the
+        /// version the runtime reports it supports. Port of <c>GC_VersionInfo</c>.
         /// </summary>
         [RuntimeExport("ManagedGC_VersionInfo")]
         internal static void ManagedGC_VersionInfo(VersionInfo* info)
         {
+            // On entry the runtime has filled this in with the interface version it supports,
+            // which exists so a newer GC can avoid calling IGCToCLR methods an older runtime
+            // does not have. The C++ GC only records this when built standalone; the managed
+            // GC is always loaded through the standalone-shaped protocol.
+            s_runtimeSupportedVersion = *info;
+
             info->MajorVersion = GC_INTERFACE_MAJOR_VERSION;
             info->MinorVersion = GC_INTERFACE_MINOR_VERSION;
             info->BuildVersion = 0;
-            info->Name = null;
+
+            // A utf8 literal is image data rather than a heap object, so the pointer stays
+            // valid after the fixed block ends.
+            fixed (byte* name = "Managed GC\0"u8)
+            {
+                info->Name = name;
+            }
         }
+
+        /// <summary>The interface version the runtime reported in <see cref="ManagedGC_VersionInfo"/>.</summary>
+        public static VersionInfo RuntimeSupportedVersion => s_runtimeSupportedVersion;
+
+        private static VersionInfo s_runtimeSupportedVersion;
 
         /// <summary>
         /// Brings up the managed GC. Port of <c>GC_Initialize</c>.
@@ -77,6 +94,8 @@ namespace Internal.Runtime.GarbageCollection
                 return E_FAIL;
             }
 
+            // The managed GC keeps its own configuration state, independent of the native
+            // GCConfig that PalInit already initialized for the C++ GC.
             GCConfig.Initialize();
 
             return S_FALSE;
