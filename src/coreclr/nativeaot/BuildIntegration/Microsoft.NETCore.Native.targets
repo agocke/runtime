@@ -110,6 +110,10 @@ The .NET Foundation licenses this file to you under the MIT license.
 
   <ItemGroup Condition="$(IlcSystemModule) == ''">
     <UnmanagedEntryPointsAssembly Include="System.Private.CoreLib,HIDDEN" />
+    <!-- Emits the ManagedGC_Initialize / ManagedGC_VersionInfo symbols that
+         clrgc.managed.cpp (linked as managedgc-enabled) resolves against. Without this the
+         assembly is still referenced, but nothing in it is rooted, so it costs nothing. -->
+    <UnmanagedEntryPointsAssembly Include="System.Private.GC,HIDDEN" Condition="'$(IlcManagedGC)' == 'true'" />
     <AutoInitializedAssemblies Include="System.Private.CoreLib" />
     <AutoInitializedAssemblies Include="System.Private.StackTraceMetadata" Condition="$(StackTraceSupport) != 'false'" />
     <AutoInitializedAssemblies Include="System.Private.TypeLoader" />

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <CLRTestPriority>0</CLRTestPriority>
+    <!-- Links clrgc.managed.cpp as the GC selector and roots the runtime exports in
+         System.Private.GC, so the managed GC bring-up path runs during startup. -->
+    <IlcManagedGC>true</IlcManagedGC>
+    <RequiresProcessIsolation>true</RequiresProcessIsolation>
+    <ReferenceXUnitWrapperGenerator>false</ReferenceXUnitWrapperGenerator>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ManagedGC.cs" />
+  </ItemGroup>
+</Project>

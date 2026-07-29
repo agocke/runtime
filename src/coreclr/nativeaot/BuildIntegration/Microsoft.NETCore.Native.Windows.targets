@@ -27,6 +27,9 @@ The .NET Foundation licenses this file to you under the MIT license.
     <VxSortSupportName Condition="'$(OptimizationPreference)' == 'Speed' or '$(IlcEnableVxsort)' == 'true'">Runtime.VxsortEnabled</VxSortSupportName>
     <StandaloneGCSupportName>standalonegc-disabled</StandaloneGCSupportName>
     <StandaloneGCSupportName Condition="'$(IlcStandaloneGCSupport)' == 'true'">standalonegc-enabled</StandaloneGCSupportName>
+    <!-- The managed GC replaces the GC selector outright, so it is mutually exclusive with
+         the standalone GC loader rather than layered on top of it. -->
+    <StandaloneGCSupportName Condition="'$(IlcManagedGC)' == 'true'">managedgc-enabled</StandaloneGCSupportName>
     <EntryPointSymbol Condition="'$(EntryPointSymbol)' == ''">wmainCRTStartup</EntryPointSymbol>
     <LinkerSubsystem Condition="'$(OutputType)' == 'WinExe' and '$(LinkerSubsystem)' == ''">WINDOWS</LinkerSubsystem>
     <LinkerSubsystem Condition="'$(OutputType)' == 'Exe' and '$(LinkerSubsystem)' == ''">CONSOLE</LinkerSubsystem>

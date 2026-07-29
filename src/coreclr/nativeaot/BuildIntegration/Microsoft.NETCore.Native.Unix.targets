@@ -91,6 +91,9 @@ The .NET Foundation licenses this file to you under the MIT license.
       <VxSortSupportName Condition="'$(OptimizationPreference)' == 'Speed' or '$(IlcEnableVxsort)' == 'true'">libRuntime.VxsortEnabled</VxSortSupportName>
       <StandaloneGCSupportName>libstandalonegc-disabled</StandaloneGCSupportName>
       <StandaloneGCSupportName Condition="'$(IlcStandaloneGCSupport)' == 'true'">libstandalonegc-enabled</StandaloneGCSupportName>
+      <!-- The managed GC replaces the GC selector outright, so it is mutually exclusive with
+           the standalone GC loader rather than layered on top of it. -->
+      <StandaloneGCSupportName Condition="'$(IlcManagedGC)' == 'true'">libmanagedgc-enabled</StandaloneGCSupportName>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(_IsiOSLikePlatform)' == 'true'">
