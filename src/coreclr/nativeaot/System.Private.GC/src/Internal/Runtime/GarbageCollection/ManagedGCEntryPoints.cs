@@ -69,9 +69,8 @@ namespace Internal.Runtime.GarbageCollection
         /// <remarks>
         /// The heap this hands back allocates but never collects (see
         /// <see cref="ManagedGCHeap"/>), so an application runs until it has exhausted the
-        /// region and then gets OOM. Returning <c>S_FALSE</c> instead tells the native selector
-        /// that the managed GC declined and the C++ GC should be used; that path is kept for
-        /// the failure cases below, which happen before anything has been published to the EE.
+        /// region and then gets OOM. Because <c>IlcManagedGC</c> is an explicit opt-in,
+        /// initialization failures fail runtime startup rather than selecting the C++ GC.
         /// </remarks>
         [RuntimeExport("ManagedGC_Initialize")]
         internal static int ManagedGC_Initialize(void* clrToGC, void** gcHeap, void** gcHandleManager, void* gcDacVars)

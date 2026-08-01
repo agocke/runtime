@@ -34,8 +34,8 @@ The C# implementation must remain directly comparable with the C++ implementatio
 The following prerequisites are already working:
 
 - `System.Private.GC` is built into the NativeAOT SDK and selected with `IlcManagedGC=true`.
-- A NativeAOT application can boot and run entirely on the managed heap without silently
-  falling back to the C++ GC.
+- A NativeAOT application can boot and run entirely on the managed heap. Managed-GC
+  initialization failures fail startup rather than selecting the C++ GC.
 - The current heap is a fixed-size, non-collecting bump allocator with a flat handle table.
 - Write-barrier globals and frozen segments are initialized sufficiently for application
   startup.

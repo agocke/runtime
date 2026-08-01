@@ -38,10 +38,6 @@ extern "C" HRESULT LOCALGC_CALLCONV ManagedGC_Initialize(
     /* Out */ IGCHandleManager** gcHandleManager,
     /* Out */ GcDacVars* gcDacVars);
 
-// S_FALSE. The NativeAOT PAL headers declare S_OK but not S_FALSE. See ManagedGC_Initialize
-// for what the managed side means by it.
-static const HRESULT ManagedGC_S_FALSE = (HRESULT)1;
-
 // Virtual memory for the managed GC. GCToOSInterface is not ported yet, so the managed heap
 // reaches the OS through these, which it calls with [RuntimeImport] — a direct call to a
 // linked symbol, with no marshalling and no GC mode transition, which is what code running
@@ -119,10 +115,9 @@ static void FlushStashedEventState()
 
 HRESULT InitializeGCSelector()
 {
-    // Deliberately never freed, on every path below: ManagedGC_Initialize hands this to the
-    // managed GCToEEInterface, which keeps it in a static for the lifetime of the process.
-    // That remains true when the managed GC declines to provide a heap, because the
-    // configuration it already read stays reachable. Matches clrgc.enabled.cpp.
+    // Deliberately never freed: ManagedGC_Initialize hands this to the managed
+    // GCToEEInterface, which keeps it in a static for the lifetime of the process. Matches
+    // clrgc.enabled.cpp.
     IGCToCLR* gcToClr = new (nothrow) standalone::GCToEEInterface();
     if (!gcToClr)
     {
@@ -148,22 +143,6 @@ HRESULT InitializeGCSelector()
     IGCHeap* heap = nullptr;
     IGCHandleManager* manager = nullptr;
     HRESULT initResult = ManagedGC_Initialize(gcToClr, &heap, &manager, &g_gc_dac_vars);
-
-    // S_FALSE means the managed GC completed its bring-up self-checks but does not provide a
-    // heap yet. The port is incremental, so fall back to the statically linked C++ GC and let
-    // the application run. Once the managed heap is complete this becomes a hard failure.
-    if (initResult == ManagedGC_S_FALSE)
-    {
-        LOG((LF_GC, LL_INFO100, "Managed GC declined to provide a heap; falling back to the C++ GC.\n"));
-
-        HRESULT fallbackResult = GCHeapUtilities::InitializeDefaultGC();
-        if (SUCCEEDED(fallbackResult))
-        {
-            FlushStashedEventState();
-        }
-
-        return fallbackResult;
-    }
 
     if (FAILED(initResult))
     {

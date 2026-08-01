@@ -63,12 +63,12 @@ frees anything, so:
 * An application that allocates more than 256 MB gets `OutOfMemoryException`, permanently.
 * Finalizers never run. `GC.Collect` performs a real suspend/restart cycle and increments a
   counter, but does not scan roots or reclaim memory.
-* `GC.GetTotalMemory` only ever grows -- which is what the smoke test uses to tell the managed
-  heap apart from the C++ GC it would otherwise fall back to.
+* `GC.GetTotalMemory` only ever grows -- which is what the smoke test uses to prove that the
+  process is running on the managed heap rather than the statically linked C++ GC.
 
-Note that the fallback to the C++ GC only covers `ManagedGC_Initialize` declining to provide a
-heap. Once it has returned `S_OK`, a later failure in `IGCHeap::Initialize` -- reserving or
-committing the 256 MB -- fails runtime startup outright rather than falling back.
+`IlcManagedGC` is fail-closed: if `ManagedGC_Initialize` or the later `IGCHeap::Initialize`
+fails, runtime startup fails. The selector never falls back to the C++ GC. The native collector
+is still linked temporarily, but it is not selected in a managed-GC build.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real
