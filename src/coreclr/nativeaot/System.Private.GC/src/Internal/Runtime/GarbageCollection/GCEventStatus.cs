@@ -13,6 +13,18 @@
 // It is the responsibility of the EE to inform the GC of changes to eventing state. This is
 // accomplished by invoking the IGCHeap::ControlEvents and IGCHeap::ControlPrivateEvents callbacks
 // on the EE's heap instance, which ultimately will enable and disable keywords and levels here.
+//
+// Two parts of gceventstatus.h are deliberately not translated here:
+//
+// * GCEventStatus::DebugDumpState, which the commented-out TRACE_GC_EVENT_STATE define in the
+//   C++ header turns on. It is an fprintf-based dump, and the managed GC has no string-free
+//   logging facility to write it with yet; it belongs with the rest of the GC's tracing support.
+// * FireDynamicEvent, the KNOWN_EVENT / DYNAMIC_EVENT macro expansions of gcevents.h, and the
+//   EVENT_ENABLED / FIRE_EVENT macros. Those need gcevents.h and gcevent_serializers.h, which
+//   are ported with the rest of the standalone GC event plumbing rather than with this leaf.
+//
+// The two providers are indexed with GCEventProvider, whose values are checked against the native
+// enum by GCInterfaceLayout.Verify().
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;

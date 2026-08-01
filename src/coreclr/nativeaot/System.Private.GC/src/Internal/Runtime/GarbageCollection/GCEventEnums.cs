@@ -2,6 +2,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Ported from src/coreclr/gc/gcinterface.h.
+//
+// Every value here is pinned by GCInterfaceOffsets.h, which the native build turns into
+// static_asserts against the C++ enums and GCInterfaceLayout.Verify() checks these against.
 
 namespace Internal.Runtime.GarbageCollection
 {

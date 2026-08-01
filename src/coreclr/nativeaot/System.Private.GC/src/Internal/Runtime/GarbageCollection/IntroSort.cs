@@ -5,6 +5,11 @@
 //
 // Sorts an array of object addresses in place. The pointer comparisons below are unsigned, which
 // matches the C++ original (pointer comparison in both languages is unsigned).
+//
+// The C++ `sort` takes a third `int ignored` parameter that it immediately overwrites with 0. It
+// exists only so that `introsort::sort` can be aliased to the `_sort` macro that plan_phase.cpp
+// also binds to `qsort1 (low, high, depth)`; nothing reads it. The macro has no C# counterpart,
+// so the parameter is dropped rather than translated into a dead argument.
 
 namespace Internal.Runtime.GarbageCollection
 {

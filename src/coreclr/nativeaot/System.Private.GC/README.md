@@ -54,6 +54,28 @@ Ported so far:
 `ParseGCHeapAffinitizeRanges` is not ported yet: it needs the affinity half of
 `GCToOSInterface`, which only the real collector will use.
 
+`gceventstatus.h` is ported except for two pieces that are not leaves. `DebugDumpState` is a
+`fprintf` dump behind the commented-out `TRACE_GC_EVENT_STATE`, and there is no string-free way
+to write it until the GC's tracing support is ported. `FireDynamicEvent` and the
+`KNOWN_EVENT`/`DYNAMIC_EVENT`/`EVENT_ENABLED`/`FIRE_EVENT` macros need `gcevents.h` and
+`gcevent_serializers.h`, which belong with the rest of the standalone GC event plumbing.
+
+## Testing the ported leaves
+
+`tests/ManagedGC.Foundation.Tests.csproj` is a regular xUnit project that compiles the
+dependency-free leaf sources directly. Their behavior is tested independently of the NativeAOT
+runtime integration smoke test and independently of which paths the bootstrap heap happens to
+exercise.
+
+`IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
+whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:
+that the multiset is preserved (a partition or sift that duplicates or drops an entry would be a
+mark list entry silently lost), that the ordering is the unsigned one that pointer comparison
+gives in both languages, that nothing outside the sorted range is written, and that the
+depth-limited recursion terminates. Reaching `heapsort` at all needs input that exhausts
+`max_depth`, which no natural input does, so the test carries a vector produced by McIlroy's
+quicksort adversary.
+
 ### The heap is a bump allocator that never collects
 
 `ManagedGCHeap` implements enough of `IGCHeap` to boot and run an application, and no more. It
@@ -64,7 +86,7 @@ frees anything, so:
 * Finalizers never run. `GC.Collect` performs a real suspend/restart cycle and increments a
   counter, but does not scan roots or reclaim memory.
 * `GC.GetTotalMemory` only ever grows -- which is what the smoke test uses to prove that the
-  process is running on the managed heap rather than the statically linked C++ GC.
+  process is running on the current non-collecting managed heap.
 
 `IlcManagedGC` is fail-closed: if `ManagedGC_Initialize` or the later `IGCHeap::Initialize`
 fails, runtime startup fails. The selector never falls back to the C++ GC. The native collector
@@ -187,6 +209,11 @@ Types that cross the GC/EE boundary must be laid out exactly like their C++ coun
 
 This mirrors the existing `AsmOffsets.h`/`AsmOffsets.cspp` mechanism used by
 `System.Private.CoreLib`.
+
+The same table also pins the `GCEventProvider`, `GCEventLevel` and `GCEventKeyword` enumerators.
+Those are values rather than offsets, but they are equally part of the ABI -- the EE passes them
+to `IGCHeap::ControlEvents` and the GC passes them back through `IGCToCLR::UpdateGCEventStatus` --
+and the keyword bits come from the ETW manifest.
 
 Vtable order is verified separately because C++ does not provide a portable `offsetof` equivalent
 for virtual slots. `tools/verify-gc-interface-vtables.py` parses the virtual methods from

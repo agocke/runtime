@@ -2,9 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Checks that the managed definitions of the GC/EE interface types agree with the layout table in
-// GCInterfaceOffsets.h. The other half of that table is turned into static_asserts against the
-// real C++ headers by nativeaot/Runtime/GCInterfaceOffsetsVerify.cpp, so agreement here means the
-// managed structs are laid out exactly like their native counterparts.
+// GCInterfaceOffsets.h, and that the managed copies of the GC/EE interface enums agree with the
+// constants in that same table. The other half of that table is turned into static_asserts
+// against the real C++ headers by nativeaot/Runtime/GCInterfaceOffsetsVerify.cpp, so agreement
+// here means the managed structs are laid out exactly like their native counterparts and the
+// managed enumerators have exactly the native values.
 //
 // The check is a runtime one because C# has no compile-time offsetof, but it is cheap, has no
 // dependencies, and is expected to be called once during GC startup in checked builds.
@@ -157,8 +159,59 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            if (!VerifyEventEnums())
+            {
+                return false;
+            }
+
             return true;
         }
+
+        /// <summary>
+        /// Returns true if the event enums of GCEventEnums.cs still agree with the
+        /// <c>GCEventProvider</c> / <c>GCEventLevel</c> / <c>GCEventKeyword</c> enumerators of
+        /// gcinterface.h. These are values rather than offsets, but they are just as much part of
+        /// the GC/EE ABI: the EE passes them to <c>IGCHeap::ControlEvents</c> and the GC passes
+        /// them back through <c>IGCToCLR::UpdateGCEventStatus</c>, and the keyword bits are the
+        /// ones in the ETW manifest.
+        /// </summary>
+        /// <remarks>
+        /// Written as one expression per enum rather than with early returns because both sides
+        /// are compile-time constants: a branch on one would be unreachable code in a build that
+        /// agrees, and the whole check folds away in a build that does.
+        /// </remarks>
+        private static bool VerifyEventEnums() => VerifyProviders() && VerifyLevels() && VerifyKeywords();
+
+        private static bool VerifyProviders() =>
+            (int)GCEventProvider.Default == GCInterfaceOffsets.GCEventProvider_Default
+            && (int)GCEventProvider.Private == GCInterfaceOffsets.GCEventProvider_Private
+            // Count is not a native enumerator: it is the length of the two per-provider arrays
+            // that gceventstatus.cpp declares, which GCEventStatus indexes by provider.
+            && (int)GCEventProvider.Count == GCInterfaceOffsets.GCEventProvider_Private + 1;
+
+        private static bool VerifyLevels() =>
+            (int)GCEventLevel.None == GCInterfaceOffsets.GCEventLevel_None
+            && (int)GCEventLevel.Fatal == GCInterfaceOffsets.GCEventLevel_Fatal
+            && (int)GCEventLevel.Error == GCInterfaceOffsets.GCEventLevel_Error
+            && (int)GCEventLevel.Warning == GCInterfaceOffsets.GCEventLevel_Warning
+            && (int)GCEventLevel.Information == GCInterfaceOffsets.GCEventLevel_Information
+            && (int)GCEventLevel.Verbose == GCInterfaceOffsets.GCEventLevel_Verbose
+            && (int)GCEventLevel.Max == GCInterfaceOffsets.GCEventLevel_Max
+            && (int)GCEventLevel.LogAlways == GCInterfaceOffsets.GCEventLevel_LogAlways;
+
+        private static bool VerifyKeywords() =>
+            (int)GCEventKeyword.None == GCInterfaceOffsets.GCEventKeyword_None
+            && (int)GCEventKeyword.GC == GCInterfaceOffsets.GCEventKeyword_GC
+            && (int)GCEventKeyword.GCPrivate == GCInterfaceOffsets.GCEventKeyword_GCPrivate
+            && (int)GCEventKeyword.GCHandle == GCInterfaceOffsets.GCEventKeyword_GCHandle
+            && (int)GCEventKeyword.GCHandlePrivate == GCInterfaceOffsets.GCEventKeyword_GCHandlePrivate
+            && (int)GCEventKeyword.GCHeapDump == GCInterfaceOffsets.GCEventKeyword_GCHeapDump
+            && (int)GCEventKeyword.GCSampledObjectAllocationHigh == GCInterfaceOffsets.GCEventKeyword_GCSampledObjectAllocationHigh
+            && (int)GCEventKeyword.GCHeapSurvivalAndMovement == GCInterfaceOffsets.GCEventKeyword_GCHeapSurvivalAndMovement
+            && (int)GCEventKeyword.ManagedHeapCollect == GCInterfaceOffsets.GCEventKeyword_ManagedHeapCollect
+            && (int)GCEventKeyword.GCHeapAndTypeNames == GCInterfaceOffsets.GCEventKeyword_GCHeapAndTypeNames
+            && (int)GCEventKeyword.GCSampledObjectAllocationLow == GCInterfaceOffsets.GCEventKeyword_GCSampledObjectAllocationLow
+            && (int)GCEventKeyword.All == GCInterfaceOffsets.GCEventKeyword_All;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int OffsetOf(void* structure, void* field) => (int)((byte*)field - (byte*)structure);

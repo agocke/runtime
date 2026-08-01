@@ -118,3 +118,33 @@ GC_CONST(     4,     4, EE_INTERFACE_MAJOR_VERSION)
 GC_CONST( 14C08, 14C08, LARGE_OBJECT_SIZE)
 GC_CONST(     c,    18, min_obj_size)
 GC_CONST(     c,     c, SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift)
+
+// The GCEventProvider / GCEventLevel / GCEventKeyword enumerators of gcinterface.h. These are
+// not a memory layout, but they are an ABI: they cross the GC/EE boundary in
+// IGCHeap::ControlEvents, IGCHeap::ControlPrivateEvents and IGCToCLR::UpdateGCEventStatus, and
+// the keyword values come from the ETW manifest. The managed copies are in GCEventEnums.cs.
+//         32-bit, 64-bit, constant symbol
+GC_CONST(      0,       0, GCEventProvider_Default)
+GC_CONST(      1,       1, GCEventProvider_Private)
+
+GC_CONST(      0,       0, GCEventLevel_None)
+GC_CONST(      1,       1, GCEventLevel_Fatal)
+GC_CONST(      2,       2, GCEventLevel_Error)
+GC_CONST(      3,       3, GCEventLevel_Warning)
+GC_CONST(      4,       4, GCEventLevel_Information)
+GC_CONST(      5,       5, GCEventLevel_Verbose)
+GC_CONST(      6,       6, GCEventLevel_Max)
+GC_CONST(     ff,      ff, GCEventLevel_LogAlways)
+
+GC_CONST(      0,       0, GCEventKeyword_None)
+GC_CONST(      1,       1, GCEventKeyword_GC)
+GC_CONST(      1,       1, GCEventKeyword_GCPrivate)
+GC_CONST(      2,       2, GCEventKeyword_GCHandle)
+GC_CONST(   4000,    4000, GCEventKeyword_GCHandlePrivate)
+GC_CONST( 100000,  100000, GCEventKeyword_GCHeapDump)
+GC_CONST( 200000,  200000, GCEventKeyword_GCSampledObjectAllocationHigh)
+GC_CONST( 400000,  400000, GCEventKeyword_GCHeapSurvivalAndMovement)
+GC_CONST( 800000,  800000, GCEventKeyword_ManagedHeapCollect)
+GC_CONST(1000000, 1000000, GCEventKeyword_GCHeapAndTypeNames)
+GC_CONST(2000000, 2000000, GCEventKeyword_GCSampledObjectAllocationLow)
+GC_CONST(3f04003, 3f04003, GCEventKeyword_All)

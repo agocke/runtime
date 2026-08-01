@@ -53,7 +53,7 @@ These items validate integration but do not mark the corresponding collector mod
 
 ### 1. Foundations
 
-**Status: In progress**
+**Status: Complete**
 
 Port the project foundations and dependency-free leaves:
 
@@ -64,6 +64,18 @@ Port the project foundations and dependency-free leaves:
 
 **Complete when:** every dependency-free leaf used by NativeAOT has a mechanically comparable
 C# implementation with focused tests.
+
+All three leaves are translated, and `tests/ManagedGC.Foundation.Tests.csproj` drives each of
+them directly as regular xUnit tests, independently of the NativeAOT runtime integration smoke
+test. The event enumerator values are checked against the C++ enums by the
+`GCInterfaceOffsets.h` table, in the same way as the interface struct layouts.
+
+Two pieces of `gceventstatus.h` are deliberately deferred rather than missing: `DebugDumpState`
+needs a string-free logging facility and belongs with GC tracing in stage 11, and
+`FireDynamicEvent` plus the `KNOWN_EVENT`/`DYNAMIC_EVENT` macro expansions need `gcevents.h` and
+`gcevent_serializers.h` from stage 4. Publishing the initial event status to the EE with
+`GCToEEInterface::UpdateGCEventStatus`, which `init.cpp` and `collect.cpp` do, arrives with the
+collector modules that contain those call sites.
 
 ### 2. GC/EE interface surface
 

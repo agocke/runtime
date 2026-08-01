@@ -515,6 +515,8 @@
       Test="true" Category="clr" Condition="'$(DotNetBuildSourceOnly)' != 'true' and '$(NativeAotSupported)' == 'true'"/>
     <ProjectToBuild Include="$(CoreClrProjectRoot)tools\aot\ILCompiler.ReadyToRun.Tests\ILCompiler.ReadyToRun.Tests.csproj"
       Test="true" Category="clr" Condition="'$(DotNetBuildSourceOnly)' != 'true' and '$(NativeAotSupported)' == 'true'"/>
+    <ProjectToBuild Include="$(CoreClrProjectRoot)nativeaot\System.Private.GC\tests\ManagedGC.Foundation.Tests.csproj"
+      Test="true" Category="clr" Condition="'$(DotNetBuildSourceOnly)' != 'true' and '$(NativeAotSupported)' == 'true'"/>
     <ProjectToBuild Include="$(CoreClrProjectRoot)tools\ILVerification.Tests\ILVerification.Tests.csproj"
       Test="true" Category="clr" Condition="'$(DotNetBuildSourceOnly)' != 'true'"/>
     <ProjectToBuild Include="$(CoreClrProjectRoot)tools\ILTrim.Tests\ILTrim.Tests.csproj"

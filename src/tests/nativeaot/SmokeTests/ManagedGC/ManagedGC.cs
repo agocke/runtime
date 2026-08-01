@@ -14,6 +14,9 @@ using System.Threading;
 // The managed heap allocates but does not collect yet, so this exercises what it does have --
 // the bump allocator, the write barrier globals it publishes, and the handle table -- rather
 // than anything that needs a collector.
+//
+// Dependency-free utility coverage lives in ManagedGC.Foundation.Tests; this test stays focused
+// on end-to-end NativeAOT runtime integration.
 internal static class ManagedGCTest
 {
     private static int Main()
