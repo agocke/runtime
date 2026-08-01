@@ -13,7 +13,8 @@
 // Slot types differ by direction, and the difference is load-bearing:
 //
 // * IGCToCLR/IGCToCLREventSink are implemented by the native EE, so their slots are
-//   `delegate* unmanaged<...>` -- genuinely foreign function pointers.
+//   `delegate* unmanaged[SuppressGCTransition]<...>` -- genuinely foreign function pointers
+//   that preserve the GC thread's cooperative mode, matching calls from the C++ GC.
 // * IGCHeap/IGCHandleManager/IGCHandleStore are implemented here, so their slots are
 //   *managed* `delegate*<...>` holding the address of a static C# method. ILC compiles a
 //   static method with a blittable signature to the platform C ABI, so the native EE can call
@@ -24,6 +25,8 @@
 //   `[UnmanagedCallersOnly]`. ILC sets CORJIT_FLAG_REVERSE_PINVOKE unconditionally for such
 //   methods, and the resulting thread attach fail-fasts when the EE calls the GC from
 //   cooperative mode -- which is every allocation.
+
+using System.Runtime.CompilerServices;
 
 namespace Internal.Runtime.GarbageCollection
 {
@@ -182,58 +185,58 @@ namespace Internal.Runtime.GarbageCollection
         /// <summary>Number of virtual slots this vtable describes.</summary>
         public const int SlotCount = 52;
 
-        public delegate* unmanaged<void*, SUSPEND_REASON, void> SuspendEE;
-        public delegate* unmanaged<void*, byte, void> RestartEE;
-        public delegate* unmanaged<void*, delegate* unmanaged<byte**, ScanContext*, uint, void>, int, int, ScanContext*, void> GcScanRoots;
-        public delegate* unmanaged<void*, int, int, void> GcStartWork;
-        public delegate* unmanaged<void*, int, byte, byte, void> BeforeGcScanRoots;
-        public delegate* unmanaged<void*, int, int, ScanContext*, void> AfterGcScanRoots;
-        public delegate* unmanaged<void*, int, void> GcDone;
-        public delegate* unmanaged<void*, byte*, byte> RefCountedHandleCallbacks;
-        public delegate* unmanaged<void*, delegate* unmanaged<byte**, nuint*, nuint, nuint, void>, nuint, nuint, void> SyncBlockCacheWeakPtrScan;
-        public delegate* unmanaged<void*, int, void> SyncBlockCacheDemote;
-        public delegate* unmanaged<void*, int, void> SyncBlockCachePromotionsGranted;
-        public delegate* unmanaged<void*, uint> GetActiveSyncBlockCount;
-        public delegate* unmanaged<void*, byte> IsPreemptiveGCDisabled;
-        public delegate* unmanaged<void*, byte> EnablePreemptiveGC;
-        public delegate* unmanaged<void*, void> DisablePreemptiveGC;
-        public delegate* unmanaged<void*, void*> GetThread;
-        public delegate* unmanaged<void*, gc_alloc_context*> GetAllocContext;
-        public delegate* unmanaged<void*, delegate* unmanaged<gc_alloc_context*, void*, void>, void*, void> GcEnumAllocContexts;
-        public delegate* unmanaged<void*, byte*, byte*> GetLoaderAllocatorObjectForGC;
-        public delegate* unmanaged<void*, delegate* unmanaged<void*, void>, void*, byte, byte*, byte> CreateThread;
-        public delegate* unmanaged<void*, int, byte, void> DiagGCStart;
-        public delegate* unmanaged<void*, void> DiagUpdateGenerationBounds;
-        public delegate* unmanaged<void*, nuint, int, int, byte, void> DiagGCEnd;
-        public delegate* unmanaged<void*, void*, void> DiagWalkFReachableObjects;
-        public delegate* unmanaged<void*, void*, byte, void> DiagWalkSurvivors;
-        public delegate* unmanaged<void*, void*, int, void> DiagWalkUOHSurvivors;
-        public delegate* unmanaged<void*, void*, void> DiagWalkBGCSurvivors;
-        public delegate* unmanaged<void*, WriteBarrierParameters*, void> StompWriteBarrier;
-        public delegate* unmanaged<void*, byte, void> EnableFinalization;
-        public delegate* unmanaged<void*, uint, void> HandleFatalError;
-        public delegate* unmanaged<void*, byte*, byte> EagerFinalized;
-        public delegate* unmanaged<void*, void*> GetFreeObjectMethodTable;
-        public delegate* unmanaged<void*, byte*, byte*, byte*, byte> GetBooleanConfigValue;
-        public delegate* unmanaged<void*, byte*, byte*, long*, byte> GetIntConfigValue;
-        public delegate* unmanaged<void*, byte*, byte*, byte**, byte> GetStringConfigValue;
-        public delegate* unmanaged<void*, byte*, void> FreeStringConfigValue;
-        public delegate* unmanaged<void*, byte> IsGCThread;
-        public delegate* unmanaged<void*, byte> WasCurrentThreadCreatedByGC;
-        public delegate* unmanaged<void*, byte*, ScanContext*, delegate* unmanaged<byte**, ScanContext*, uint, void>, void> WalkAsyncPinnedForPromotion;
-        public delegate* unmanaged<void*, byte*, void*, delegate* unmanaged<byte*, byte*, void*, void>, void> WalkAsyncPinned;
-        public delegate* unmanaged<void*, void*> EventSink;
-        public delegate* unmanaged<void*, uint> GetTotalNumSizedRefHandles;
-        public delegate* unmanaged<void*, int, byte> AnalyzeSurvivorsRequested;
-        public delegate* unmanaged<void*, nuint, int, ulong, delegate* unmanaged<void>, void> AnalyzeSurvivorsFinished;
-        public delegate* unmanaged<void*, void> VerifySyncTableEntry;
-        public delegate* unmanaged<void*, int, int, int, int, void> UpdateGCEventStatus;
-        public delegate* unmanaged<void*, uint, uint, void*, void> LogStressMsg;
-        public delegate* unmanaged<void*, uint> GetCurrentProcessCpuCount;
-        public delegate* unmanaged<void*, int, byte*, byte*, byte*, void> DiagAddNewRegion;
-        public delegate* unmanaged<void*, byte*, void> LogErrorToHost;
-        public delegate* unmanaged<void*, void*, ulong> GetThreadOSThreadId;
-        public delegate* unmanaged<void*, MarkCrossReferencesArgs*, void> TriggerClientBridgeProcessing;
+        public delegate* unmanaged[SuppressGCTransition]<void*, SUSPEND_REASON, void> SuspendEE;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte, void> RestartEE;
+        public delegate* unmanaged[SuppressGCTransition]<void*, delegate* unmanaged<byte**, ScanContext*, uint, void>, int, int, ScanContext*, void> GcScanRoots;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, int, void> GcStartWork;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, byte, byte, void> BeforeGcScanRoots;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, int, ScanContext*, void> AfterGcScanRoots;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, void> GcDone;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte> RefCountedHandleCallbacks;
+        public delegate* unmanaged[SuppressGCTransition]<void*, delegate* unmanaged<byte**, nuint*, nuint, nuint, void>, nuint, nuint, void> SyncBlockCacheWeakPtrScan;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, void> SyncBlockCacheDemote;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, void> SyncBlockCachePromotionsGranted;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint> GetActiveSyncBlockCount;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte> IsPreemptiveGCDisabled;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte> EnablePreemptiveGC;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> DisablePreemptiveGC;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*> GetThread;
+        public delegate* unmanaged[SuppressGCTransition]<void*, gc_alloc_context*> GetAllocContext;
+        public delegate* unmanaged[SuppressGCTransition]<void*, delegate* unmanaged<gc_alloc_context*, void*, void>, void*, void> GcEnumAllocContexts;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*> GetLoaderAllocatorObjectForGC;
+        public delegate* unmanaged[SuppressGCTransition]<void*, delegate* unmanaged<void*, void>, void*, byte, byte*, byte> CreateThread;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, byte, void> DiagGCStart;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> DiagUpdateGenerationBounds;
+        public delegate* unmanaged[SuppressGCTransition]<void*, nuint, int, int, byte, void> DiagGCEnd;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, void> DiagWalkFReachableObjects;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, byte, void> DiagWalkSurvivors;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, int, void> DiagWalkUOHSurvivors;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, void> DiagWalkBGCSurvivors;
+        public delegate* unmanaged[SuppressGCTransition]<void*, WriteBarrierParameters*, void> StompWriteBarrier;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte, void> EnableFinalization;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, void> HandleFatalError;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte> EagerFinalized;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*> GetFreeObjectMethodTable;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*, byte*, byte> GetBooleanConfigValue;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*, long*, byte> GetIntConfigValue;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*, byte**, byte> GetStringConfigValue;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, void> FreeStringConfigValue;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte> IsGCThread;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte> WasCurrentThreadCreatedByGC;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, ScanContext*, delegate* unmanaged<byte**, ScanContext*, uint, void>, void> WalkAsyncPinnedForPromotion;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, void*, delegate* unmanaged<byte*, byte*, void*, void>, void> WalkAsyncPinned;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*> EventSink;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint> GetTotalNumSizedRefHandles;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, byte> AnalyzeSurvivorsRequested;
+        public delegate* unmanaged[SuppressGCTransition]<void*, nuint, int, ulong, delegate* unmanaged<void>, void> AnalyzeSurvivorsFinished;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> VerifySyncTableEntry;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, int, int, int, void> UpdateGCEventStatus;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, uint, void*, void> LogStressMsg;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint> GetCurrentProcessCpuCount;
+        public delegate* unmanaged[SuppressGCTransition]<void*, int, byte*, byte*, byte*, void> DiagAddNewRegion;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, void> LogErrorToHost;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, ulong> GetThreadOSThreadId;
+        public delegate* unmanaged[SuppressGCTransition]<void*, MarkCrossReferencesArgs*, void> TriggerClientBridgeProcessing;
     }
 
     /// <summary>
@@ -244,43 +247,43 @@ namespace Internal.Runtime.GarbageCollection
         /// <summary>Number of virtual slots this vtable describes.</summary>
         public const int SlotCount = 38;
 
-        public delegate* unmanaged<void*, byte*, void*, uint, void> FireDynamicEvent;
-        public delegate* unmanaged<void*, uint, uint, uint, uint, void> FireGCStart_V2;
-        public delegate* unmanaged<void*, uint, uint, void> FireGCEnd_V1;
-        public delegate* unmanaged<void*, byte, void*, ulong, ulong, void> FireGCGenerationRange;
-        public delegate* unmanaged<void*, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, uint, uint, uint, void> FireGCHeapStats_V2;
-        public delegate* unmanaged<void*, void*, nuint, uint, void> FireGCCreateSegment_V1;
-        public delegate* unmanaged<void*, void*, void> FireGCFreeSegment_V1;
-        public delegate* unmanaged<void*, void> FireGCCreateConcurrentThread_V1;
-        public delegate* unmanaged<void*, void> FireGCTerminateConcurrentThread_V1;
-        public delegate* unmanaged<void*, uint, void> FireGCTriggered;
-        public delegate* unmanaged<void*, uint, uint, ulong, void> FireGCMarkWithType;
-        public delegate* unmanaged<void*, uint, uint, uint, uint, void> FireGCJoin_V2;
-        public delegate* unmanaged<void*, ulong, int, uint, uint, uint, uint, uint, uint, uint, uint, uint, uint, void*, void> FireGCGlobalHeapHistory_V4;
-        public delegate* unmanaged<void*, uint, uint, void> FireGCAllocationTick_V1;
-        public delegate* unmanaged<void*, ulong, uint, uint, void*, ulong, void> FireGCAllocationTick_V4;
-        public delegate* unmanaged<void*, void*, byte**, void> FirePinObjectAtGCTime;
-        public delegate* unmanaged<void*, byte*, byte*, byte*, void> FirePinPlugAtGCTime;
-        public delegate* unmanaged<void*, void*, void*, void*, void*, void*, void*, uint, uint, uint, uint, uint, uint, void*, uint, uint, void*, void> FireGCPerHeapHistory_V3;
-        public delegate* unmanaged<void*, ushort, uint, void*, void> FireGCLOHCompact;
-        public delegate* unmanaged<void*, ushort, nuint, ushort, uint, void*, void> FireGCFitBucketInfo;
-        public delegate* unmanaged<void*, void> FireBGCBegin;
-        public delegate* unmanaged<void*, void> FireBGC1stNonConEnd;
-        public delegate* unmanaged<void*, void> FireBGC1stConEnd;
-        public delegate* unmanaged<void*, uint, void> FireBGC1stSweepEnd;
-        public delegate* unmanaged<void*, void> FireBGC2ndNonConBegin;
-        public delegate* unmanaged<void*, void> FireBGC2ndNonConEnd;
-        public delegate* unmanaged<void*, void> FireBGC2ndConBegin;
-        public delegate* unmanaged<void*, void> FireBGC2ndConEnd;
-        public delegate* unmanaged<void*, ulong, void> FireBGCDrainMark;
-        public delegate* unmanaged<void*, ulong, ulong, uint, void> FireBGCRevisit;
-        public delegate* unmanaged<void*, ulong, ulong, ulong, uint, uint, void> FireBGCOverflow_V1;
-        public delegate* unmanaged<void*, uint, void> FireBGCAllocWaitBegin;
-        public delegate* unmanaged<void*, uint, void> FireBGCAllocWaitEnd;
-        public delegate* unmanaged<void*, uint, uint, void> FireGCFullNotify_V1;
-        public delegate* unmanaged<void*, void*, void*, uint, uint, void> FireSetGCHandle;
-        public delegate* unmanaged<void*, void*, void*, uint, uint, void> FirePrvSetGCHandle;
-        public delegate* unmanaged<void*, void*, void> FireDestroyGCHandle;
-        public delegate* unmanaged<void*, void*, void> FirePrvDestroyGCHandle;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, void*, uint, void> FireDynamicEvent;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, uint, uint, uint, void> FireGCStart_V2;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, uint, void> FireGCEnd_V1;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte, void*, ulong, ulong, void> FireGCGenerationRange;
+        public delegate* unmanaged[SuppressGCTransition]<void*, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, ulong, uint, uint, uint, void> FireGCHeapStats_V2;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, uint, void> FireGCCreateSegment_V1;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, void> FireGCFreeSegment_V1;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireGCCreateConcurrentThread_V1;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireGCTerminateConcurrentThread_V1;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, void> FireGCTriggered;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, uint, ulong, void> FireGCMarkWithType;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, uint, uint, uint, void> FireGCJoin_V2;
+        public delegate* unmanaged[SuppressGCTransition]<void*, ulong, int, uint, uint, uint, uint, uint, uint, uint, uint, uint, uint, void*, void> FireGCGlobalHeapHistory_V4;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, uint, void> FireGCAllocationTick_V1;
+        public delegate* unmanaged[SuppressGCTransition]<void*, ulong, uint, uint, void*, ulong, void> FireGCAllocationTick_V4;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, byte**, void> FirePinObjectAtGCTime;
+        public delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*, byte*, void> FirePinPlugAtGCTime;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, void*, void*, void*, void*, void*, uint, uint, uint, uint, uint, uint, void*, uint, uint, void*, void> FireGCPerHeapHistory_V3;
+        public delegate* unmanaged[SuppressGCTransition]<void*, ushort, uint, void*, void> FireGCLOHCompact;
+        public delegate* unmanaged[SuppressGCTransition]<void*, ushort, nuint, ushort, uint, void*, void> FireGCFitBucketInfo;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireBGCBegin;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireBGC1stNonConEnd;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireBGC1stConEnd;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, void> FireBGC1stSweepEnd;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireBGC2ndNonConBegin;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireBGC2ndNonConEnd;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireBGC2ndConBegin;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void> FireBGC2ndConEnd;
+        public delegate* unmanaged[SuppressGCTransition]<void*, ulong, void> FireBGCDrainMark;
+        public delegate* unmanaged[SuppressGCTransition]<void*, ulong, ulong, uint, void> FireBGCRevisit;
+        public delegate* unmanaged[SuppressGCTransition]<void*, ulong, ulong, ulong, uint, uint, void> FireBGCOverflow_V1;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, void> FireBGCAllocWaitBegin;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, void> FireBGCAllocWaitEnd;
+        public delegate* unmanaged[SuppressGCTransition]<void*, uint, uint, void> FireGCFullNotify_V1;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, void*, uint, uint, void> FireSetGCHandle;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, void*, uint, uint, void> FirePrvSetGCHandle;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, void> FireDestroyGCHandle;
+        public delegate* unmanaged[SuppressGCTransition]<void*, void*, void> FirePrvDestroyGCHandle;
     }
 }

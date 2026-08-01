@@ -55,6 +55,7 @@ namespace Internal.Runtime.GarbageCollection
 
         private static long s_totalAllocatedBytes;
         private static int s_gcCount;
+        private static int s_gcInProgress;
 
         private static FrozenSegment* s_frozenSegments;
         private static int s_frozenSegmentCount;
@@ -222,6 +223,14 @@ namespace Internal.Runtime.GarbageCollection
         /// </remarks>
         private static byte* Alloc(void* thisPtr, gc_alloc_context* acontext, nuint size, uint flags)
         {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+            byte* result = AllocCore(acontext, size, flags);
+            criticalRegion.Exit();
+            return result;
+        }
+
+        private static byte* AllocCore(gc_alloc_context* acontext, nuint size, uint flags)
+        {
             size = (size + (nuint)sizeof(nuint) - 1) & ~((nuint)sizeof(nuint) - 1);
 
             // Large objects are handed out whole rather than from the allocation context, both
@@ -268,8 +277,10 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         private static void FixAllocContext(void* thisPtr, gc_alloc_context* acontext, void* arg, void* heap)
         {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
             acontext->alloc_ptr = null;
             acontext->alloc_limit = null;
+            criticalRegion.Exit();
         }
 
         private static void PublishObject(void* thisPtr, byte* obj)
@@ -289,12 +300,16 @@ namespace Internal.Runtime.GarbageCollection
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// Port of <c>IGCHeap::GarbageCollect</c>. Nothing is collected, but the count is still
-        /// advanced so that <c>GC.CollectionCount</c> reflects the requests that were made.
+        /// Port of <c>IGCHeap::GarbageCollect</c>. The EE is suspended and restarted so the
+        /// managed heap exercises the real stop-the-world protocol, but nothing is reclaimed.
         /// </summary>
         private static int GarbageCollect(void* thisPtr, int generation, byte low_memory_p, int mode)
         {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+            GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
             Interlocked.Increment(ref s_gcCount);
+            GCToEEInterface.RestartEE(1);
+            criticalRegion.Exit();
             return S_OK;
         }
 
@@ -306,10 +321,12 @@ namespace Internal.Runtime.GarbageCollection
 
         private static uint GetGcCount(void* thisPtr) => (uint)Volatile.Read(ref s_gcCount);
 
-        private static byte IsGCInProgressHelper(void* thisPtr, byte bConsiderGCStart) => 0;
+        private static byte IsGCInProgressHelper(void* thisPtr, byte bConsiderGCStart) =>
+            Volatile.Read(ref s_gcInProgress) != 0 ? (byte)1 : (byte)0;
 
         private static void SetGCInProgress(void* thisPtr, byte fInProgress)
         {
+            Volatile.Write(ref s_gcInProgress, fInProgress);
         }
 
         private static uint WaitUntilGCComplete(void* thisPtr, byte bConsiderGCStart) => 0;
@@ -424,6 +441,14 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         private static segment_handle RegisterFrozenSegment(void* thisPtr, segment_info* pseginfo)
         {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+            segment_handle result = RegisterFrozenSegmentCore(pseginfo);
+            criticalRegion.Exit();
+            return result;
+        }
+
+        private static segment_handle RegisterFrozenSegmentCore(segment_info* pseginfo)
+        {
             while (true)
             {
                 int count = Volatile.Read(ref s_frozenSegmentCount);
@@ -447,7 +472,9 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void UpdateFrozenSegment(void* thisPtr, segment_handle seg, byte* allocated, byte* committed)
         {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
             Volatile.Write(ref ((FrozenSegment*)seg.Value)->End, (nint)allocated);
+            criticalRegion.Exit();
         }
 
         /// <summary>
@@ -457,9 +484,11 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         private static void UnregisterFrozenSegment(void* thisPtr, segment_handle seg)
         {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
             FrozenSegment* segment = (FrozenSegment*)seg.Value;
             Volatile.Write(ref segment->Start, 0);
             segment->End = 0;
+            criticalRegion.Exit();
         }
 
         private static byte IsInFrozenSegment(void* thisPtr, byte* obj) => FindFrozenSegment(obj) != null ? (byte)1 : (byte)0;
@@ -607,11 +636,15 @@ namespace Internal.Runtime.GarbageCollection
         // Diagnostics
         // ------------------------------------------------------------------------------------
 
-        private static void ControlEvents(void* thisPtr, GCEventKeyword keyword, GCEventLevel level) =>
+        private static void ControlEvents(void* thisPtr, GCEventKeyword keyword, GCEventLevel level)
+        {
             GCEventStatus.Set(GCEventProvider.Default, keyword, level);
+        }
 
-        private static void ControlPrivateEvents(void* thisPtr, GCEventKeyword keyword, GCEventLevel level) =>
+        private static void ControlPrivateEvents(void* thisPtr, GCEventKeyword keyword, GCEventLevel level)
+        {
             GCEventStatus.Set(GCEventProvider.Private, keyword, level);
+        }
 
         private static void DiagScanFinalizeQueue(void* thisPtr, delegate* unmanaged<byte**, ScanContext*, uint, void> fn, ScanContext* sc)
         {

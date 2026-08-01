@@ -58,7 +58,8 @@ reserves one 256 MB region up front and hands it out with an interlocked bump po
 frees anything, so:
 
 * An application that allocates more than 256 MB gets `OutOfMemoryException`, permanently.
-* Finalizers never run, and `GC.Collect` only increments a counter.
+* Finalizers never run. `GC.Collect` performs a real suspend/restart cycle and increments a
+  counter, but does not scan roots or reclaim memory.
 * `GC.GetTotalMemory` only ever grows -- which is what the smoke test uses to tell the managed
   heap apart from the C++ GC it would otherwise fall back to.
 
@@ -82,6 +83,36 @@ Two pieces are real rather than stubbed, because startup does not work without t
 * **Frozen segments.** `StartupCodeHelpers` fail-fasts if `RegisterFrozenSegment` returns null.
   Frozen segments are kept outside `[lowest_address, highest_address)`, matching the assert in
   `gc_heap::insert_ro_segment`.
+
+### Suspension safety
+
+The managed vtable methods are visible to NativeAOT's code manager as managed code. Without an
+additional guard, another thread initiating a GC could suspend one at a managed safe point in the
+middle of updating an allocation context, handle free list, frozen segment, or other GC-owned
+state. The C++ GC does not have that exposure: an `IGCHeap` call remains cooperative native code
+until it returns.
+
+`GCHeapCriticalRegion` preserves the native contract around multi-step mutations. Its runtime
+shims set `TSF_DoNotTriggerGc`, which makes both explicit GC polls (`RhpGcPoll2`) and asynchronous
+hijacking (`HijackCallback`) leave the thread running until the region exits. The shim preserves a
+flag that was already set by its caller, so nested runtime callouts remain valid. Read-only vtable
+methods do not need a region because their state is consistent at every instruction; newly ported
+methods must enter one before making GC-owned state temporarily inconsistent.
+
+Calls from the managed GC back into `IGCToCLR` and `IGCToCLREventSink` use
+`delegate* unmanaged[SuppressGCTransition]`. The C++ GC makes the same calls without changing GC
+mode, and preserving cooperative mode is also required while a critical region has
+`TSF_DoNotTriggerGc` set.
+
+The thread that actually suspends the EE is excluded from `ThreadStore::SuspendAllThreads`, and GC
+worker threads are marked GC-special and are never hijacked. `GarbageCollect` still uses a critical
+region: after `SuspendEE` sets the global trap, an explicit poll in the remaining managed method
+must not make the suspending thread wait for the collection that only it can finish. Other critical
+regions protect mutators that can run on ordinary application threads. The managed-GC smoke test
+repeatedly performs the null collector's real suspend/restart cycle while other threads allocate,
+covering the integration path and detecting deadlocks or post-suspension allocation corruption. A
+future collector that scans allocation contexts while stopped will directly validate their
+invariants.
 
 ## Building an application against the managed GC
 
@@ -146,3 +177,11 @@ Types that cross the GC/EE boundary must be laid out exactly like their C++ coun
 
 This mirrors the existing `AsmOffsets.h`/`AsmOffsets.cspp` mechanism used by
 `System.Private.CoreLib`.
+
+Vtable order is verified separately because C++ does not provide a portable `offsetof` equivalent
+for virtual slots. `tools/verify-gc-interface-vtables.py` parses the virtual methods from
+`gcinterface.h` and `gcinterface.ee.h`, parses the function-pointer fields and `SlotCount` values
+from `GCInterfaceVtables.cs`, and compares all five interfaces by name and declaration order. The
+NativeAOT runtime build runs this check before producing `Runtime.WorkstationGC` or
+`Runtime.ServerGC`, so adding, removing, or reordering a native slot without the matching managed
+change fails the build.

@@ -43,7 +43,7 @@ internal static class ManagedGCTest
             return 5;
         }
 
-        if (!ThreadsCanAllocateConcurrently())
+        if (!ThreadsCanAllocateWhileCollectionsSuspendThem())
         {
             return 6;
         }
@@ -212,22 +212,28 @@ internal static class ManagedGCTest
     }
 
     /// <summary>
-    /// Several threads allocating at once, which is the only thing that exercises the
-    /// interlocked bump pointer and the per-thread allocation contexts against each other.
+    /// Several threads allocate while the main thread repeatedly suspends the EE. This verifies
+    /// that the suspend/restart path does not deadlock and that allocations remain intact across
+    /// repeated stops.
     /// </summary>
-    private static bool ThreadsCanAllocateConcurrently()
+    private static bool ThreadsCanAllocateWhileCollectionsSuspendThem()
     {
         const int ThreadCount = 4;
-        const int PerThread = 4096;
+        const int PerThread = 8192;
 
         bool[] results = new bool[ThreadCount];
         Thread[] threads = new Thread[ThreadCount];
+        using CountdownEvent ready = new CountdownEvent(ThreadCount);
+        using ManualResetEventSlim startAllocating = new ManualResetEventSlim(false);
 
         for (int t = 0; t < ThreadCount; t++)
         {
             int index = t;
             threads[t] = new Thread(() =>
             {
+                ready.Signal();
+                startAllocating.Wait();
+
                 byte[][] arrays = new byte[PerThread][];
                 for (int i = 0; i < PerThread; i++)
                 {
@@ -248,6 +254,13 @@ internal static class ManagedGCTest
             });
 
             threads[t].Start();
+        }
+
+        ready.Wait();
+        startAllocating.Set();
+        for (int i = 0; i < 32; i++)
+        {
+            GC.Collect();
         }
 
         foreach (Thread thread in threads)

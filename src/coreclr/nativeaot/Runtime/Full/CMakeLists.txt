@@ -3,6 +3,38 @@ project(Runtime)
 # Full version of the runtime is required by the JIT CodeGen.
 # The low-level helpers can be implemented in assembly code.
 
+find_package(Python REQUIRED COMPONENTS Interpreter)
+
+set(GC_INTERFACE_VTABLE_VERIFY_SCRIPT
+    ${NATIVEAOT_RUNTIME_DIR}/../System.Private.GC/tools/verify-gc-interface-vtables.py)
+set(GC_INTERFACE_VTABLES_CS
+    ${NATIVEAOT_RUNTIME_DIR}/../System.Private.GC/src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceVtables.cs)
+set(GC_INTERFACE_DIR
+    ${NATIVEAOT_RUNTIME_DIR}/../../gc)
+set(GC_INTERFACE_VTABLE_VERIFY_STAMP
+    ${CMAKE_CURRENT_BINARY_DIR}/GCInterfaceVtables.verified)
+
+add_custom_command(
+  OUTPUT "${GC_INTERFACE_VTABLE_VERIFY_STAMP}"
+  COMMAND ${Python_EXECUTABLE} "${GC_INTERFACE_VTABLE_VERIFY_SCRIPT}"
+          --gcinterface "${GC_INTERFACE_DIR}/gcinterface.h"
+          --gcinterface-ee "${GC_INTERFACE_DIR}/gcinterface.ee.h"
+          --managed "${GC_INTERFACE_VTABLES_CS}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${GC_INTERFACE_VTABLE_VERIFY_STAMP}"
+  DEPENDS
+    "${GC_INTERFACE_VTABLE_VERIFY_SCRIPT}"
+    "${GC_INTERFACE_VTABLES_CS}"
+    "${GC_INTERFACE_DIR}/gcinterface.h"
+    "${GC_INTERFACE_DIR}/gcinterface.ee.h"
+  COMMENT "Verifying managed GC vtable slot order"
+  VERBATIM
+)
+
+add_custom_target(
+  VerifyGCInterfaceVtables
+  DEPENDS "${GC_INTERFACE_VTABLE_VERIFY_STAMP}"
+)
+
 # Include auto-generated files on include path
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -115,6 +147,7 @@ add_library(Runtime.WorkstationGC STATIC
     ${NATIVEAOT_PRIVATE_LIBUNWIND_OBJECT}
     ${RUNTIME_ARCH_ASM_OBJECTS}
     $<TARGET_OBJECTS:Runtime.GC.Workstation>)
+add_dependencies(Runtime.WorkstationGC VerifyGCInterfaceVtables)
 if(FEATURE_PERFTRACING)
   add_dependencies(Runtime.WorkstationGC aot_eventing_headers)
 endif()
@@ -127,6 +160,7 @@ add_library(Runtime.ServerGC STATIC
     ${RUNTIME_ARCH_ASM_OBJECTS}
     $<TARGET_OBJECTS:Runtime.GC.Workstation>
     $<TARGET_OBJECTS:Runtime.GC.Server>)
+add_dependencies(Runtime.ServerGC VerifyGCInterfaceVtables)
 if(FEATURE_PERFTRACING)
   add_dependencies(Runtime.ServerGC aot_eventing_headers)
 endif()

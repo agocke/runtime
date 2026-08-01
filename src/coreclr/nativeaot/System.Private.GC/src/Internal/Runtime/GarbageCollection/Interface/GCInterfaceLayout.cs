@@ -145,9 +145,9 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
-            // The vtable structs have one pointer-sized field per virtual slot, so their size is
-            // the only thing that can be checked mechanically; the order of the slots has to match
-            // the declaration order in the C++ header, which is enforced by review.
+            // The vtable structs have one pointer-sized field per virtual slot. Their order is
+            // checked against the native headers at build time by verify-gc-interface-vtables.py;
+            // this startup check covers the managed size used by the running application.
             if (sizeof(IGCHandleStoreVtable) != IGCHandleStoreVtable.SlotCount * sizeof(void*)
                 || sizeof(IGCHandleManagerVtable) != IGCHandleManagerVtable.SlotCount * sizeof(void*)
                 || sizeof(IGCHeapVtable) != IGCHeapVtable.SlotCount * sizeof(void*)

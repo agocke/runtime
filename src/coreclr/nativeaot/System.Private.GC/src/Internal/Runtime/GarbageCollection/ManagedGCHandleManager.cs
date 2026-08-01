@@ -171,6 +171,13 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void FreeSlot(HandleSlot* slot)
         {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+            FreeSlotCore(slot);
+            criticalRegion.Exit();
+        }
+
+        private static void FreeSlotCore(HandleSlot* slot)
+        {
             slot->Object = 0;
             slot->ExtraInfo = 0;
 
@@ -189,6 +196,14 @@ namespace Internal.Runtime.GarbageCollection
         }
 
         private static OBJECTHANDLE CreateHandle(byte* obj, HandleType type, void* extraInfo)
+        {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+            OBJECTHANDLE result = CreateHandleCore(obj, type, extraInfo);
+            criticalRegion.Exit();
+            return result;
+        }
+
+        private static OBJECTHANDLE CreateHandleCore(byte* obj, HandleType type, void* extraInfo)
         {
             HandleSlot* slot = AllocateSlot();
             if (slot == null)

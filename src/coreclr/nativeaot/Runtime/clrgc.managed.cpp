@@ -16,6 +16,10 @@
 #undef SKIP_TRACING_DEFINITIONS
 #include "gcheaputilities.h"
 #include "gchandleutilities.h"
+#include "thread.h"
+#include "threadstore.h"
+#include "threadstore.inl"
+#include "thread.inl"
 
 #include "gceventstatus.h"
 #include "holder.h"
@@ -50,6 +54,34 @@ extern "C" void* ManagedGC_VirtualReserve(size_t size, size_t alignment)
 extern "C" UInt32_BOOL ManagedGC_VirtualCommit(void* address, size_t size)
 {
     return GCToOSInterface::VirtualCommit(address, size) ? UInt32_TRUE : UInt32_FALSE;
+}
+
+// Managed GC methods are ordinary managed code, so the runtime would otherwise be allowed to
+// suspend a thread at one of their safe points. That differs from the C++ GC, where a thread in
+// an IGCHeap method remains in cooperative native code until the operation is complete. Bracket
+// multi-step heap mutations with TSF_DoNotTriggerGc to preserve that contract: RhpGcPoll2 returns
+// immediately while the flag is set, and HijackCallback refuses to suspend the thread.
+//
+// The calls are nesting-safe because some runtime paths already set TSF_DoNotTriggerGc before
+// calling managed code. Only the outermost managed-GC critical region owns the flag.
+extern "C" UInt32_BOOL ManagedGC_EnterCriticalRegion()
+{
+    Thread* thread = ThreadStore::GetCurrentThread();
+    if (thread->IsDoNotTriggerGcSet())
+    {
+        return UInt32_FALSE;
+    }
+
+    thread->SetDoNotTriggerGc();
+    return UInt32_TRUE;
+}
+
+extern "C" void ManagedGC_ExitCriticalRegion(UInt32_BOOL entered)
+{
+    if (entered)
+    {
+        ThreadStore::GetCurrentThread()->ClearDoNotTriggerGc();
+    }
 }
 
 // Stands in for the C++ GC's PURE_VIRTUAL: the managed heap points every IGCHeap slot it has
