@@ -9,6 +9,9 @@ The port proceeds bottom-up: leaf modules with no dependency on the GC/EE interf
 Each source file here corresponds to one or more files in `src/coreclr/gc`; the header comment
 of every file records which ones.
 
+See [ROADMAP.md](ROADMAP.md) for the dependency-ordered port plan, completion criteria, and
+validation strategy.
+
 ## Rules for code in this library
 
 The GC runs while the world is suspended and while the heap is in an inconsistent state, so
