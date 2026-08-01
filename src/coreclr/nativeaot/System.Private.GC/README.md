@@ -68,7 +68,8 @@ frees anything, so:
 
 `IlcManagedGC` is fail-closed: if `ManagedGC_Initialize` or the later `IGCHeap::Initialize`
 fails, runtime startup fails. The selector never falls back to the C++ GC. The native collector
-is still linked temporarily, but it is not selected in a managed-GC build.
+is not included in a managed-GC application link. Native runtime and `gcenv` support remains
+temporarily while the corresponding environment modules are ported.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real
@@ -128,8 +129,10 @@ dotnet publish -r linux-x64 -p:PublishAot=true -p:IlcManagedGC=true
 or, for an in-tree smoke test, see `src/tests/nativeaot/SmokeTests/ManagedGC`.
 
 The application then runs entirely on the C# heap: startup, module frozen object segments,
-statics, threads and every allocation. The C++ GC is still linked in and is still the default;
-`IlcManagedGC` only changes which one `InitializeGCSelector` hands back.
+statics, threads and every allocation. `IlcManagedGC` selects `Runtime.ManagedGC`, which excludes
+the C++ collector, native handle table, GC loader, bridge, scanner, event status, and software
+write watch. Applications that do not opt in continue to link `Runtime.WorkstationGC` or
+`Runtime.ServerGC`.
 
 ### How the linkage works
 
@@ -159,6 +162,10 @@ to define equivalents that the linker can resolve:
   resolved by the linker instead of `PalGetProcAddress`. It is archived as `managedgc-enabled`
   and is mutually exclusive with `standalonegc-enabled`/`standalonegc-disabled`, since all
   three define `InitializeGCSelector`.
+* `Runtime.ManagedGC` contains the NativeAOT runtime support still needed by managed-GC
+  applications, but omits the C++ collector object files and native modules already replaced by
+  managed code. `FEATURE_MANAGED_GC` also removes the default `GC_Initialize` dependency from
+  `gcheaputilities.cpp`, preventing static archive extraction from pulling the collector back in.
 
 `IlcManagedGC` is rejected on x86: `WindowsNodeMangler.ExternMethod` leaves runtime export names
 undecorated, while a C declaration of the same function references the cdecl-decorated
@@ -186,5 +193,5 @@ for virtual slots. `tools/verify-gc-interface-vtables.py` parses the virtual met
 `gcinterface.h` and `gcinterface.ee.h`, parses the function-pointer fields and `SlotCount` values
 from `GCInterfaceVtables.cs`, and compares all five interfaces by name and declaration order. The
 NativeAOT runtime build runs this check before producing `Runtime.WorkstationGC` or
-`Runtime.ServerGC`, so adding, removing, or reordering a native slot without the matching managed
-change fails the build.
+`Runtime.ServerGC`, or `Runtime.ManagedGC`, so adding, removing, or reordering a native slot
+without the matching managed change fails the build.

@@ -374,7 +374,23 @@ set(NATIVEAOT_RUNTIME_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 list(APPEND COMMON_RUNTIME_SOURCES ${GC_HEADERS})
 
+set(MANAGED_GC_RUNTIME_SOURCES ${COMMON_RUNTIME_SOURCES})
+list(REMOVE_ITEM MANAGED_GC_RUNTIME_SOURCES
+    ${GC_DIR}/gceventstatus.cpp
+    ${GC_DIR}/gcbridge.cpp
+    ${GC_DIR}/gcload.cpp
+    ${GC_DIR}/gchandletable.cpp
+    ${GC_DIR}/gcscan.cpp
+    ${GC_DIR}/handletable.cpp
+    ${GC_DIR}/handletablecache.cpp
+    ${GC_DIR}/handletablecore.cpp
+    ${GC_DIR}/handletablescan.cpp
+    ${GC_DIR}/objecthandle.cpp
+    ${GC_DIR}/softwarewritewatch.cpp
+)
+
 convert_to_absolute_path(COMMON_RUNTIME_SOURCES ${COMMON_RUNTIME_SOURCES})
+convert_to_absolute_path(MANAGED_GC_RUNTIME_SOURCES ${MANAGED_GC_RUNTIME_SOURCES})
 convert_to_absolute_path(FULL_RUNTIME_SOURCES ${FULL_RUNTIME_SOURCES})
 convert_to_absolute_path(GC_WKS_SVR_SOURCES ${GC_WKS_SVR_SOURCES})
 convert_to_absolute_path(STANDALONEGC_DISABLED_SOURCES ${STANDALONEGC_DISABLED_SOURCES})

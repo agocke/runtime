@@ -36,6 +36,9 @@ The following prerequisites are already working:
 - `System.Private.GC` is built into the NativeAOT SDK and selected with `IlcManagedGC=true`.
 - A NativeAOT application can boot and run entirely on the managed heap. Managed-GC
   initialization failures fail startup rather than selecting the C++ GC.
+- Managed-GC applications link `Runtime.ManagedGC` and do not include the C++ workstation or
+  server collector, native handle table, GC loader, bridge, scanner, or software write watch.
+  Native runtime and `gcenv` support remains temporarily.
 - The current heap is a fixed-size, non-collecting bump allocator with a flat handle table.
 - Write-barrier globals and frozen segments are initialized sufficiently for application
   startup.
@@ -257,19 +260,22 @@ performance is comparable to the native implementation.
 
 ### 13. NativeAOT and ILC integration
 
-**Status: Bootstrap complete; production integration incomplete**
+**Status: Collector-free bootstrap complete; production integration incomplete**
 
 Continue the existing integration work:
 
 - Compile the managed GC into the NativeAOT runtime.
-- Replace `Runtime.WorkstationGC` and `Runtime.ServerGC` for managed-GC builds.
+- Keep the managed-only `Runtime.ManagedGC` archive synchronized as additional native GC modules
+  are replaced.
 - Ensure ILC emits GC code without unsupported runtime dependencies.
 - Preserve cooperative-mode, no-transition, and no-suspension regions.
 - Keep an opt-in switch until the managed collector passes the full validation matrix.
-- Remove the C++ GC from managed-GC application links only after the port is complete.
+- Remove the temporary native `gcenv`, configuration, and common support as their managed
+  translations become usable.
 
 **Complete when:** supported NativeAOT applications build and run without compiling or linking
-the C++ GC, while the default C++ path remains available during rollout.
+any C++ GC implementation or environment support, while the default C++ path remains available
+during rollout.
 
 ### 14. Validation
 

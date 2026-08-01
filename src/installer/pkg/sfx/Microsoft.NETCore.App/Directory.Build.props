@@ -152,6 +152,8 @@
     <PlatformManifestFileEntry Include="libbootstrapperdll.o" IsNative="true" />
     <PlatformManifestFileEntry Include="libeventpipe-disabled.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libeventpipe-enabled.a" IsNative="true" />
+    <PlatformManifestFileEntry Include="libmanagedgc-enabled.a" IsNative="true" />
+    <PlatformManifestFileEntry Include="libRuntime.ManagedGC.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libRuntime.ServerGC.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libRuntime.WorkstationGC.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libRuntime.VxSortDisabled.a" IsNative="true" />
@@ -166,6 +168,8 @@
     <PlatformManifestFileEntry Include="dllmain.obj" IsNative="true" />
     <PlatformManifestFileEntry Include="eventpipe-disabled.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="eventpipe-enabled.lib" IsNative="true" />
+    <PlatformManifestFileEntry Include="managedgc-enabled.lib" IsNative="true" />
+    <PlatformManifestFileEntry Include="Runtime.ManagedGC.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="Runtime.ServerGC.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="Runtime.WorkstationGC.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="Runtime.VxsortEnabled.lib" IsNative="true" />
@@ -177,6 +181,7 @@
     <PlatformManifestFileEntry Include="aotminipal.lib" IsNative="true" />
     <!-- NativeAOT managed specific files -->
     <PlatformManifestFileEntry Include="System.Private.Reflection.Execution.dll" />
+    <PlatformManifestFileEntry Include="System.Private.GC.dll" />
     <PlatformManifestFileEntry Include="System.Private.StackTraceMetadata.dll" />
     <PlatformManifestFileEntry Include="System.Private.TypeLoader.dll" />
     <!-- Mono-specific files -->

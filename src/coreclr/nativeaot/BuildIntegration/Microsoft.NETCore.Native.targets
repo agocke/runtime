@@ -129,6 +129,11 @@ The .NET Foundation licenses this file to you under the MIT license.
 
   <!-- The properties below need to be defined only after we've found the correct runtime package reference -->
   <Target Name="SetupProperties" DependsOnTargets="$(IlcSetupPropertiesDependsOn)">
+    <PropertyGroup Condition="'$(IlcManagedGC)' == 'true'">
+      <FullRuntimeName Condition="'$(_targetOS)' == 'win'">Runtime.ManagedGC</FullRuntimeName>
+      <FullRuntimeName Condition="'$(_targetOS)' != 'win'">libRuntime.ManagedGC</FullRuntimeName>
+    </PropertyGroup>
+
     <!-- Both pick the GC selector that gets linked, so one would silently win over the other. -->
     <Error Condition="'$(IlcStandaloneGCSupport)' == 'true' and '$(IlcManagedGC)' == 'true'"
            Text="IlcStandaloneGCSupport and IlcManagedGC are mutually exclusive: the managed GC replaces the GC selector that loads a standalone GC library." />

@@ -58,10 +58,9 @@ internal static class ManagedGCTest
     }
 
     /// <summary>
-    /// Proves that the process is using the managed heap rather than the statically linked C++
-    /// GC. A collector would reclaim the garbage below and report a smaller heap afterwards;
-    /// the managed heap cannot, so its reported size only ever grows. Delete this once the port
-    /// collects.
+    /// Proves that the process is using the current non-collecting managed heap. A collector
+    /// would reclaim the garbage below and report a smaller heap afterwards; the managed heap
+    /// cannot, so its reported size only ever grows. Delete this once the port collects.
     /// </summary>
     private static bool NothingIsReclaimed()
     {

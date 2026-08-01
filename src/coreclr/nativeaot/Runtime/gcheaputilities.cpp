@@ -39,12 +39,14 @@ GPTR_IMPL(GcDacVars, g_gcDacGlobals);
 
 // GC entrypoints for the linked-in GC. These symbols are invoked
 // directly if we are not using a standalone GC.
+#ifndef FEATURE_MANAGED_GC
 extern "C" HRESULT LOCALGC_CALLCONV GC_Initialize(
     /* In  */ IGCToCLR* clrToGC,
     /* Out */ IGCHeap** gcHeap,
     /* Out */ IGCHandleManager** gcHandleManager,
     /* Out */ GcDacVars* gcDacVars
 );
+#endif // !FEATURE_MANAGED_GC
 
 #ifndef DACCESS_COMPILE
 
@@ -55,6 +57,7 @@ HRESULT GCHeapUtilities::InitializeGC()
     return InitializeGCSelector();
 }
 
+#ifndef FEATURE_MANAGED_GC
 HRESULT InitializeDefaultGC()
 {
     return GCHeapUtilities::InitializeDefaultGC();
@@ -89,5 +92,6 @@ HRESULT GCHeapUtilities::InitializeDefaultGC()
 
     return initResult;
 }
+#endif // !FEATURE_MANAGED_GC
 
 #endif // DACCESS_COMPILE

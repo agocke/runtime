@@ -153,6 +153,18 @@ if(FEATURE_PERFTRACING)
 endif()
 target_link_libraries(Runtime.WorkstationGC PRIVATE aotminipal nativeaot_cdac_contract_descriptor nativeaot_gc_wks_descriptor)
 
+add_library(Runtime.ManagedGC STATIC
+    ${MANAGED_GC_RUNTIME_SOURCES}
+    ${FULL_RUNTIME_SOURCES}
+    ${NATIVEAOT_PRIVATE_LIBUNWIND_OBJECT}
+    ${RUNTIME_ARCH_ASM_OBJECTS})
+add_dependencies(Runtime.ManagedGC VerifyGCInterfaceVtables)
+if(FEATURE_PERFTRACING)
+  add_dependencies(Runtime.ManagedGC aot_eventing_headers)
+endif()
+target_compile_definitions(Runtime.ManagedGC PRIVATE FEATURE_MANAGED_GC)
+target_link_libraries(Runtime.ManagedGC PRIVATE aotminipal nativeaot_cdac_contract_descriptor)
+
 add_library(Runtime.ServerGC STATIC
     ${COMMON_RUNTIME_SOURCES}
     ${FULL_RUNTIME_SOURCES}
@@ -255,9 +267,11 @@ add_library(Runtime.AsmHelpers OBJECT ${RUNTIME_SOURCES_ARCH_ASM})
 add_dependencies(Runtime.AsmHelpers RuntimeAsmHelpers)
 
 target_link_libraries(Runtime.WorkstationGC PRIVATE Runtime.AsmHelpers)
+target_link_libraries(Runtime.ManagedGC PRIVATE Runtime.AsmHelpers)
 target_link_libraries(Runtime.ServerGC PRIVATE Runtime.AsmHelpers)
 
 install_static_library(Runtime.WorkstationGC aotsdk nativeaot)
+install_static_library(Runtime.ManagedGC aotsdk nativeaot)
 install_static_library(Runtime.ServerGC aotsdk nativeaot)
 install_static_library(standalonegc-disabled aotsdk nativeaot)
 install_static_library(standalonegc-enabled aotsdk nativeaot)
