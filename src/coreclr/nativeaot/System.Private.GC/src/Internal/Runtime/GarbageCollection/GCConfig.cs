@@ -2103,5 +2103,81 @@ namespace Internal.Runtime.GarbageCollection
                 configurationValueFunc(context, configNameGCCacheSizeFromSysConf, null, GCConfigurationType.Boolean, (long)s_UpdatedGCCacheSizeFromSysConf);
 
         }
+
+        /// <summary>
+        /// Turns the GCHeapAffinitizeRanges config string into an affinity set and an affinity
+        /// mask. Returns false if the string is not well formed.
+        /// </summary>
+        /// <remarks>
+        /// A free function of <c>gcconfig.cpp</c> in C++, which C# has no place for outside a
+        /// type; the entry parser it calls is platform specific and stays in
+        /// <see cref="GCToOSInterface.ParseGCHeapAffinitizeRangesEntry"/>.
+        /// </remarks>
+        public static bool ParseGCHeapAffinitizeRanges(byte* cpu_index_ranges, AffinitySet* config_affinity_set, ref nuint config_affinity_mask)
+        {
+            bool success = true;
+
+            // Case 1: config_affinity_mask and config_affinity_set are both null. No affinitization.
+            // Case 2: config_affinity_mask is not null but config_affinity_set is null. Affinitization is based on config_affinity_mask.
+            if (cpu_index_ranges == null)
+            {
+                // Case 2.5: If CPU Groups are enabled, however, if the user passes in the config_affinity_mask, it can't apply.
+                // Therefore, we return a CLR_E_GC_BAD_AFFINITY_CONFIG_FORMAT error.
+                if (config_affinity_mask != 0 && GCToOSInterface.CanEnableGCCPUGroups())
+                {
+                    success = false;
+                }
+
+                return success;
+            }
+
+            // Case 3: config_affinity_mask is null but cpu_index_ranges isn't.
+            // To facilitate the case where there are less than 65 cores but the user passes in an affinitized range associated
+            // with the 0th CPU Group, we override the config_affinity_mask with the same contents as the cpu_index_ranges.
+            else if (config_affinity_mask == 0)
+            {
+                // Unix:
+                //  The cpu index ranges is a comma separated list of indices or ranges of indices (e.g. 1-5).
+                //  Example 1,3,5,7-9,12
+                // Windows:
+                //  The cpu index ranges is a comma separated list of group-annotated indices or ranges of indices.
+                //  The group number always prefixes index or range and is followed by colon.
+                //  Example 0:1,0:3,0:5,1:7-9,1:12
+
+                byte* number_end = cpu_index_ranges;
+
+                do
+                {
+                    nuint start_index, end_index;
+                    if (!GCToOSInterface.ParseGCHeapAffinitizeRangesEntry(&cpu_index_ranges, &start_index, &end_index))
+                    {
+                        break;
+                    }
+
+                    nuint maxCpuCount = GCToOSInterface.GetMaxProcessorCount();
+                    if ((start_index >= maxCpuCount) || (end_index >= maxCpuCount) || (end_index < start_index))
+                    {
+                        // Invalid CPU index values or range
+                        break;
+                    }
+
+                    nuint BitsPerBitsetEntry = 8 * (nuint)sizeof(nuint);
+
+                    for (nuint i = start_index; i <= end_index; i++)
+                    {
+                        config_affinity_set->Add(i);
+                        config_affinity_mask |= (nuint)1 << (int)(i & (BitsPerBitsetEntry - 1));
+                    }
+
+                    number_end = cpu_index_ranges;
+                    cpu_index_ranges++;
+                }
+                while (*number_end == (byte)',');
+
+                success = *number_end == 0;
+            }
+
+            return success;
+        }
     }
 }

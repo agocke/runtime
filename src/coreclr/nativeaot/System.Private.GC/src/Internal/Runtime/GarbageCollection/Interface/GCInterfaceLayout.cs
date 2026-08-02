@@ -31,6 +31,7 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         public static bool Verify() =>
             VerifySharedStructs()
+            && VerifyEnvironmentTypes()
             && VerifyDacTypes()
             && VerifyVtables()
             && VerifyEnumSizes()
@@ -196,6 +197,45 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// The types of the environment layer -- gcenv.structs.h and gcenv.os.h. They do not
+        /// cross the GC/EE boundary, but they do cross the boundary between the managed GC and
+        /// the C++ GCToOSInterface it still forwards to.
+        /// </summary>
+        /// <remarks>
+        /// Several of the C++ classes keep their members private, so the table pins their size
+        /// and alignment only; each of those has a single field or two pointer-sized fields in a
+        /// fixed order, which size and alignment together determine.
+        /// </remarks>
+        private static bool VerifyEnvironmentTypes()
+        {
+            GCSystemInfo systemInfo;
+            if (sizeof(GCSystemInfo) != GCInterfaceOffsets.SIZEOF__GCSystemInfo
+                || AlignOf<GCSystemInfo>() != GCInterfaceOffsets.ALIGNOF__GCSystemInfo
+                || OffsetOf(&systemInfo, &systemInfo.dwNumberOfProcessors) != GCInterfaceOffsets.OFFSETOF__GCSystemInfo__dwNumberOfProcessors
+                || OffsetOf(&systemInfo, &systemInfo.dwPageSize) != GCInterfaceOffsets.OFFSETOF__GCSystemInfo__dwPageSize
+                || OffsetOf(&systemInfo, &systemInfo.dwAllocationGranularity) != GCInterfaceOffsets.OFFSETOF__GCSystemInfo__dwAllocationGranularity)
+            {
+                return false;
+            }
+
+            if (sizeof(AffinitySet) != GCInterfaceOffsets.SIZEOF__AffinitySet
+                || AlignOf<AffinitySet>() != GCInterfaceOffsets.ALIGNOF__AffinitySet
+                || sizeof(GCEvent) != GCInterfaceOffsets.SIZEOF__GCEvent
+                || AlignOf<GCEvent>() != GCInterfaceOffsets.ALIGNOF__GCEvent)
+            {
+                return false;
+            }
+
+            return GCToOSInterface.NUMA_NODE_UNDEFINED == GCInterfaceOffsets.NUMA_NODE_UNDEFINED
+                && GCToOSInterface.MAX_SUPPORTED_HEAPS == GCInterfaceOffsets.MAX_SUPPORTED_HEAPS
+                && GCToOSInterface.MAX_SUPPORTED_NODES == GCInterfaceOffsets.MAX_SUPPORTED_NODES
+                && (int)VirtualReserveFlags.None == GCInterfaceOffsets.VirtualReserveFlags_None
+                && (int)VirtualReserveFlags.WriteWatch == GCInterfaceOffsets.VirtualReserveFlags_WriteWatch
+                && GCEnv.WAIT_OBJECT_0 == GCInterfaceOffsets.WAIT_OBJECT_0
+                && GCEnv.WAIT_TIMEOUT == GCInterfaceOffsets.WAIT_TIMEOUT;
         }
 
         /// <summary>

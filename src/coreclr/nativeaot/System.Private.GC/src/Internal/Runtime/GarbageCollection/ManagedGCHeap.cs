@@ -248,7 +248,7 @@ namespace Internal.Runtime.GarbageCollection
                 if (uoh != null)
                 {
                     acontext->alloc_bytes_uoh += (long)size;
-                    Interlocked.Add(ref s_totalAllocatedBytes, (long)size);
+                    Interlocked.ExchangeAdd64(ref s_totalAllocatedBytes, (long)size);
                 }
 
                 return uoh;
@@ -274,7 +274,7 @@ namespace Internal.Runtime.GarbageCollection
             acontext->alloc_limit = region + quantum;
             acontext->alloc_bytes += (long)quantum;
             acontext->alloc_count++;
-            Interlocked.Add(ref s_totalAllocatedBytes, (long)quantum);
+            Interlocked.ExchangeAdd64(ref s_totalAllocatedBytes, (long)quantum);
             return region;
         }
 

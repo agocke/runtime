@@ -51,6 +51,13 @@ public sealed class GCInterfaceLayoutTests
         // producing a different C# constant per build. Its offset is the same either way and is
         // pinned by the size of ScanContext together with the offset of the field before it.
         ["ScanContext.dwEtwRootKind"] = "conditionally named in the C++ header",
+
+        // The C++ members are private, so the table cannot take their offsets. Both types have
+        // pointer-sized members in a fixed declaration order, which their pinned size and
+        // alignment determine between them.
+        ["AffinitySet.m_bitset"] = "private in the C++ class",
+        ["AffinitySet.m_bitsetDataSize"] = "private in the C++ class",
+        ["GCEvent.m_impl"] = "private in the C++ class",
     };
 
     /// <summary>
@@ -306,9 +313,11 @@ public sealed class GCInterfaceLayoutTests
             {
                 foreach (FieldInfo field in type.GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
                 {
-                    if (field.IsLiteral && field.FieldType == typeof(int))
+                    // Any integral constant, not just int: the port gives each constant the
+                    // width its C++ counterpart has, and the table pins the value, not the type.
+                    if (field.IsLiteral && ToInt64(field.GetRawConstantValue()) is long value)
                     {
-                        constants.TryAdd(field.Name, (int)field.GetRawConstantValue());
+                        constants.TryAdd(field.Name, value);
                     }
                 }
             }
@@ -316,6 +325,22 @@ public sealed class GCInterfaceLayoutTests
 
         return constants;
     }
+
+    /// <summary>
+    /// The value of an integral constant, or null if the constant is not an integer.
+    /// </summary>
+    private static long? ToInt64(object value) => value switch
+    {
+        sbyte v => v,
+        byte v => v,
+        short v => v,
+        ushort v => v,
+        int v => v,
+        uint v => v,
+        long v => v,
+        ulong v => unchecked((long)v),
+        _ => null,
+    };
 
     private static IReadOnlyList<Entry> Table { get; } = ReadTable();
 

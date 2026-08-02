@@ -38,20 +38,6 @@ extern "C" HRESULT LOCALGC_CALLCONV ManagedGC_Initialize(
     /* Out */ IGCHandleManager** gcHandleManager,
     /* Out */ GcDacVars* gcDacVars);
 
-// Virtual memory for the managed GC. GCToOSInterface is not ported yet, so the managed heap
-// reaches the OS through these, which it calls with [RuntimeImport] — a direct call to a
-// linked symbol, with no marshalling and no GC mode transition, which is what code running
-// with the world suspended requires. Porting GCToOSInterface (plan step 3) replaces these.
-extern "C" void* ManagedGC_VirtualReserve(size_t size, size_t alignment)
-{
-    return GCToOSInterface::VirtualReserve(size, alignment, 0 /* flags */);
-}
-
-extern "C" UInt32_BOOL ManagedGC_VirtualCommit(void* address, size_t size)
-{
-    return GCToOSInterface::VirtualCommit(address, size) ? UInt32_TRUE : UInt32_FALSE;
-}
-
 // Managed GC methods are ordinary managed code, so the runtime would otherwise be allowed to
 // suspend a thread at one of their safe points. That differs from the C++ GC, where a thread in
 // an IGCHeap method remains in cooperative native code until the operation is complete. Bracket

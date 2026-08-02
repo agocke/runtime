@@ -72,7 +72,7 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         public static bool Initialize()
         {
-            byte* heap = GCToOSInterface.VirtualReserve(HeapSize, 0);
+            byte* heap = GCToOSInterface.VirtualReserve(HeapSize, 0, (uint)VirtualReserveFlags.None);
             if (heap == null || !GCToOSInterface.VirtualCommit(heap, HeapSize))
             {
                 return false;
@@ -118,7 +118,7 @@ namespace Internal.Runtime.GarbageCollection
         private static byte* CommitTable(nuint size)
         {
             size += 1;
-            byte* table = GCToOSInterface.VirtualReserve(size, 0);
+            byte* table = GCToOSInterface.VirtualReserve(size, 0, (uint)VirtualReserveFlags.None);
             return table != null && GCToOSInterface.VirtualCommit(table, size) ? table : null;
         }
 

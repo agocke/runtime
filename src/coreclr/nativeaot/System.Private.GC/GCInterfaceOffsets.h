@@ -465,3 +465,35 @@ GC_CONST(    12,    12, GENERATION_TABLE_FIELD_INDEX)
 GC_CONST(     1,     1, build_variant_use_region)
 GC_CONST(     2,     2, build_variant_background_gc)
 GC_CONST(     4,     4, build_variant_dynamic_heap_count)
+
+//
+// The environment layer: the types of gcenv.structs.h and gcenv.os.h that the C# port defines
+// itself. These do not cross the GC/EE boundary, but they do cross the boundary between the
+// managed GC and the C++ GCToOSInterface it still forwards to.
+//
+// Several of the C++ classes keep their members private, so the table can only pin their size
+// and alignment; each of them has a single field or two pointer-sized fields in a fixed order,
+// which size and alignment together determine.
+//
+
+GC_OFFSET(     0,     0, GCSystemInfo, dwNumberOfProcessors)
+GC_OFFSET(     4,     4, GCSystemInfo, dwPageSize)
+GC_OFFSET(     8,     8, GCSystemInfo, dwAllocationGranularity)
+GC_SIZEOF(     c,     c, GCSystemInfo)
+GC_ALIGNOF(     4,     4, GCSystemInfo)
+
+GC_SIZEOF(     8,    10, AffinitySet)
+GC_ALIGNOF(     4,     8, AffinitySet)
+
+GC_SIZEOF(     4,     8, GCEvent)
+GC_ALIGNOF(     4,     8, GCEvent)
+
+GC_CONST(  ffff,  ffff, NUMA_NODE_UNDEFINED)
+GC_CONST(    40,   400, MAX_SUPPORTED_HEAPS)
+GC_CONST(    10,    40, MAX_SUPPORTED_NODES)
+
+GC_VALUE(     0,     0, VirtualReserveFlags_None, VirtualReserveFlags::None)
+GC_VALUE(     1,     1, VirtualReserveFlags_WriteWatch, VirtualReserveFlags::WriteWatch)
+
+GC_CONST(     0,     0, WAIT_OBJECT_0)
+GC_CONST(   102,   102, WAIT_TIMEOUT)

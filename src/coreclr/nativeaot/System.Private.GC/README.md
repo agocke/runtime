@@ -47,13 +47,17 @@ Ported so far:
 | `Interface/GCToEEInterface.cs` | `gcenv.ee.standalone.inl` |
 | `GCConfig.cs` | `gcconfig.h`, `gcconfig.cpp` |
 | `ManagedGCEntryPoints.cs` | `gcload.cpp` (`GC_VersionInfo`, `GC_Initialize`) |
-| `GCToOSInterface.cs` | `gcenv.os.h` (virtual memory only) |
+| `Environment/GCEnv.Base.cs` | `env/gcenv.base.h`, plus `ParseIndexOrRange` of `gcconfig.cpp` |
+| `Environment/GCEnv.Volatile.cs` | `env/volatile.h` (the free functions) |
+| `Environment/Interlocked.cs` | `env/gcenv.interlocked.h`, `env/gcenv.interlocked.inl` |
+| `Environment/GCEnvStructs.cs` | `env/gcenv.structs.h` |
+| `Environment/AffinitySet.cs` | `env/gcenv.os.h` (`AffinitySet`) |
+| `Environment/GCEvent.cs` | `env/gcenv.os.h` (`GCEvent`) |
+| `Environment/GCEnvSync.cs` | `env/gcenv.os.h` (`CLRCriticalSection`), `env/gcenv.sync.h` |
+| `Environment/GCToOSInterface.cs` | `env/gcenv.os.h` (`GCToOSInterface`) |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
-
-`ParseGCHeapAffinitizeRanges` is not ported yet: it needs the affinity half of
-`GCToOSInterface`, which only the real collector will use.
 
 `gcinterface.dac.h` is translated except for `dac_generation` and `dac_gc_heap`, which are
 generated from the `dac_generation_fields.h` / `dac_gcheap_fields.h` field lists and therefore
@@ -69,10 +73,68 @@ to write it until the GC's tracing support is ported. `FireDynamicEvent` and the
 `KNOWN_EVENT`/`DYNAMIC_EVENT`/`EVENT_ENABLED`/`FIRE_EVENT` macros need `gcevents.h` and
 `gcevent_serializers.h`, which belong with the rest of the standalone GC event plumbing.
 
+## The environment layer
+
+`Environment/` is the port of `gcenv`: everything the collector gets from below it rather than
+from the EE. It is split in two by what the code actually does.
+
+Pure computation is translated outright and is exercised by
+`tests/GCEnvironmentTests.cs`: the alignment helpers, bit scans, HRESULT helpers and constants of
+`gcenv.base.h`; the `Interlocked` class of `gcenv.interlocked.h`/`.inl`; the `VolatileLoad` /
+`VolatileStore` family of `volatile.h`; the `AffinitySet` bitset of `gcenv.os.h`; and
+`ParseIndexOrRange` plus `ParseGCHeapAffinitizeRanges` from `gcconfig.cpp`.
+
+Everything that reaches the operating system is declared with the C++ signature and forwarded,
+for now, to a one-line shim in `nativeaot/Runtime/gcenv.managed.cpp` that calls the existing C++
+`GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.windows.cpp`. Those shims are
+the whole retained-native surface of this layer:
+
+* one per `GCToOSInterface` method (`ManagedGC_OS_*`) -- virtual memory, write watch, sleep and
+  yield, processor number and affinity, thread priority and ids, cache and memory limits, the
+  performance counter, processor counts, NUMA and CPU groups, and the platform-specific affinity
+  range entry parser;
+* one per `GCEvent` method (`ManagedGC_GCEvent_*`);
+* four for `CLRCriticalSection` (`ManagedGC_CriticalSection_*`);
+* `ManagedGC_AllocZeroed` / `ManagedGC_Free`, which stand in for the `new (nothrow) uintptr_t[]`
+  and `delete[]` that `AffinitySet::Initialize` and `~AffinitySet` use, and which are the only
+  heap allocation the managed GC performs.
+
+Each of them is deleted when the platform code behind it is ported; that is the remainder of
+plan step 3 in [ROADMAP.md](ROADMAP.md), which lists the modules by name. The calls are
+`[RuntimeImport]`, so they are direct calls to linked symbols with no marshalling and no GC mode
+transition -- what the C++ GC gets for free by being native code, and what a `[DllImport]` would
+not give.
+
+Three shapes differ from the C++ on purpose, each for a reason C# forces:
+
+* `AffinitySet` is a struct, so it has no destructor; `~AffinitySet` becomes an explicit
+  `Destroy()`. Its two fields are laid out exactly like the C++ ones, because
+  `SetGCThreadsAffinitySet` passes one across to the platform layer and hands back the platform
+  layer's own.
+* `CLRCriticalSection` holds a pointer to a natively allocated critical section instead of
+  embedding a `minipal_mutex` by value. The embedded object is a `pthread_mutex_t` or a
+  `CRITICAL_SECTION`, whose size differs per operating system, and `GCInterfaceOffsets.h` carries
+  one value per pointer size rather than one per platform. Nothing passes a `CLRCriticalSection`
+  across a boundary, so no layout depends on the difference.
+* `EEThreadId` stores an OS thread id on both platforms rather than a `pthread_t` on Unix and a
+  Windows thread id on Windows. It is only read by the debug-only lock-ownership assertions.
+
+`gcenv.object.h` is deliberately **not** ported. NativeAOT does not use it: its own `gcenv.h`
+supplies `MethodTable`, `Object`, `ObjHeader` and `ArrayBase` from `Runtime/inc/MethodTable.h` and
+`Runtime/ObjectLayout.h` instead, and those are the definitions the collector and the EE actually
+agree on. Translating `gcenv.object.h` would produce an object model the runtime does not have;
+the NativeAOT one is ported with the core data structures.
+
+`CLREventStatic` of `gcenv.sync.h` is not ported either -- the GC does not use it. Only the
+NativeAOT runtime does, from its own C++.
+
+`GCToOSInterface::Initialize` and `Shutdown` are declared but never called by the managed GC:
+NativeAOT initializes the C++ `GCToOSInterface` from `PalInit`, before any managed code runs.
+
 ## Testing the ported leaves
 
 `tests/ManagedGC.Foundation.Tests.csproj` is a regular xUnit project that compiles the
-dependency-free leaf sources and the GC/EE interface types directly. Their behavior and layout is
+dependency-free leaf sources, the GC/EE interface types and the environment layer directly. Their behavior and layout is
 tested independently of the NativeAOT runtime integration smoke test and independently of which
 paths the bootstrap heap happens to exercise. `GCInterfaceLayoutTests` covers the layout table as
 described under [layout verification](#layout-verification); the rest is behavior.

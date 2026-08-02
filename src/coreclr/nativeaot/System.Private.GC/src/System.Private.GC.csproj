@@ -28,7 +28,14 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventStatus.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCHeapCriticalRegion.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCHeapMemory.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\GCToOSInterface.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\AffinitySet.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnv.Base.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnv.Volatile.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnvStructs.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnvSync.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEvent.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\Interlocked.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\IntroSort.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCEntryPoints.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHandleManager.cs" />

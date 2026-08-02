@@ -226,7 +226,7 @@ namespace Internal.Runtime.GarbageCollection
         private static byte Initialize(void* thisPtr)
         {
             nuint size = (nuint)(sizeof(HandleSlot) * MaxHandles);
-            byte* table = GCToOSInterface.VirtualReserve(size, 0);
+            byte* table = GCToOSInterface.VirtualReserve(size, 0, (uint)VirtualReserveFlags.None);
             if (table == null || !GCToOSInterface.VirtualCommit(table, size))
             {
                 return 0;

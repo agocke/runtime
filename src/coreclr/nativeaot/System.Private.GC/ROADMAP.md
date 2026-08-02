@@ -38,7 +38,8 @@ The following prerequisites are already working:
   initialization failures fail startup rather than selecting the C++ GC.
 - Managed-GC applications link `Runtime.ManagedGC` and do not include the C++ workstation or
   server collector, native handle table, GC loader, bridge, scanner, or software write watch.
-  Native runtime and `gcenv` support remains temporarily.
+  Native runtime and `gcenv` support remains temporarily; the managed environment layer reaches
+  it through the documented `ManagedGC_*` forwarders of `nativeaot/Runtime/gcenv.managed.cpp`.
 - The current heap is a fixed-size, non-collecting bump allocator with a flat handle table.
 - Write-barrier globals and frozen segments are initialized sufficiently for application
   startup.
@@ -120,7 +121,7 @@ in `gcevents.h`; that arrives with the rest of the event plumbing in stage 4.
 
 ### 3. `gcenv` and platform abstraction layer
 
-**Status: In progress**
+**Status: In progress -- the interface is complete, the platform implementations are not**
 
 Translate:
 
@@ -136,6 +137,79 @@ be removed as their implementations are ported.
 
 **Complete when:** every environment service used by the collector is available with the same
 semantics as C++, including suspension-safe calls made while the runtime is stopped.
+
+#### Done
+
+- `env/gcenv.base.h`: alignment helpers, bit scans, HRESULT helpers, `FitsInU1`,
+  `YieldProcessor`, `MemoryBarrier`, and the constants, as `GCEnv`.
+- `env/gcenv.interlocked.h` and `env/gcenv.interlocked.inl`, as `Interlocked`. The
+  `InterlockedOperationBarrier` of the C++ version has no counterpart: the
+  `System.Threading.Interlocked` operations it forwards to are full barriers on every
+  architecture, so the extra fence is already part of them.
+- The free functions of `env/volatile.h`, as members of `GCEnv`. The `WithoutBarrier` variants
+  use an acquire/release access, which is stronger than the C++ ones and therefore still correct;
+  C# has no "not removable but freely reorderable" access.
+- `env/gcenv.structs.h`.
+- `env/gcenv.sync.h`, less `CLREventStatic`, which the GC does not use.
+- The whole declared surface of `GCToOSInterface`, `GCEvent`, `CLRCriticalSection` and
+  `AffinitySet` from `env/gcenv.os.h`, with `AffinitySet` implemented rather than forwarded.
+- `ParseIndexOrRange` and `ParseGCHeapAffinitizeRanges` of `gcconfig.cpp`, which needed the
+  affinity half of `GCToOSInterface`.
+- `GCToEEInterface` was already complete in stage 2.
+- Layout verification for `GCSystemInfo`, `AffinitySet` and `GCEvent`, and value verification for
+  `NUMA_NODE_UNDEFINED`, `MAX_SUPPORTED_HEAPS`, `MAX_SUPPORTED_NODES`, `VirtualReserveFlags`,
+  `WAIT_OBJECT_0` and `WAIT_TIMEOUT`, through `GCInterfaceOffsets.h`.
+- Focused xUnit coverage of every piece above that is pure computation, in
+  `tests/GCEnvironmentTests.cs`.
+
+#### Remaining submodules
+
+Each item below is a native module that `nativeaot/Runtime/gcenv.managed.cpp` currently forwards
+to. The managed declaration already exists and does not change when the implementation lands;
+only the body and its shim do. They are listed in the order they become blocking.
+
+1. **Virtual memory** -- `VirtualReserve`, `VirtualRelease`, `VirtualCommit`, `VirtualDecommit`,
+   `VirtualReset`, `VirtualReserveAndCommitLargePages`, `GetPageSize`,
+   `GetVirtualMemoryLimit`, `GetVirtualMemoryMaxAddress`. `mmap`/`mprotect` in
+   `gc/unix/gcenv.unix.cpp` and `VirtualAlloc`/`VirtualFree` in `gc/windows/gcenv.windows.cpp`.
+   Blocks stage 7.
+2. **Write watch** -- `SupportsWriteWatch`, `ResetWriteWatch`, `GetWriteWatch`. Windows only;
+   Unix returns false. Blocks the concurrent parts of stage 10.
+3. **Events and locks** -- the `GCEvent::Impl` of `gc/unix/events.cpp` and its Win32 counterpart,
+   and the `minipal_mutex` behind `CLRCriticalSection`. A managed implementation needs a futex or
+   equivalent that is safe to call with the world suspended. Blocks stages 9 and 10.
+4. **Sleep and yield** -- `Sleep`, `YieldThread`.
+5. **Memory limits** -- `GetPhysicalMemoryLimit`, `GetMemoryStatus`, `GetCacheSizePerLogicalCpu`.
+   These read cgroup v1/v2 files (`gc/unix/cgroup.cpp`), `sysconf`, `sysctl` and Windows job
+   objects. Blocks the hard-limit and dynamic tuning parts of stage 10.
+6. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
+   `GetLowPrecisionTimeStamp`.
+7. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
+   `GetCurrentProcessorNumber`, `CanGetCurrentProcessorNumber`, `GetCurrentProcessId`,
+   `GetCurrentThreadIdForLogging`.
+8. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
+   `SetCurrentThreadIdealAffinity`, `GetCurrentThreadIdealProc`, `SetGCThreadsAffinitySet`,
+   `CanEnableGCNumaAware`, `GetNumaInfo`, `CanEnableGCCPUGroups`, `GetProcessorForHeap`,
+   `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp`. Blocks
+   server GC in stage 10.
+9. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
+   `PalInit`, so the managed GC never calls these; they land last, together with moving that call
+   out of `PalInit`.
+10. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
+    stand in for the `new (nothrow) uintptr_t[]` and `delete[]` of `AffinitySet`. They can only go
+    away once the GC has memory of its own to take that bitset from, which is stage 7.
+
+`env/gcenv.object.h` is **not** part of this stage after all. NativeAOT overrides it: its own
+`nativeaot/Runtime/gcenv.h` supplies `MethodTable`, `Object`, `ObjHeader` and `ArrayBase` from
+`Runtime/inc/MethodTable.h` and `Runtime/ObjectLayout.h`, and those -- not the `gcenv.object.h`
+definitions -- are what the collector and the EE agree on. The NativeAOT object model is ported
+with the core data structures in stage 6.
+
+`nativeaot/Runtime/gcenv.ee.cpp` is likewise not part of this stage: it is the EE's
+implementation of `IGCToCLR`, not GC code, and it stays native for as long as the EE does.
+
+Native `gcenv` sources therefore remain in `Runtime.ManagedGC`. Nothing can be removed from that
+source list until the modules above are implemented in managed code.
 
 ### 4. Standalone GC infrastructure
 

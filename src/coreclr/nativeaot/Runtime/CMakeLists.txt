@@ -90,8 +90,11 @@ set(STANDALONEGC_ENABLED_SOURCES
 )
 
 # Selects the managed (C#) GC from System.Private.GC. Mutually exclusive with the two above.
+# gcenv.managed.cpp forwards the environment services that System.Private.GC has not taken over
+# from the C++ GCToOSInterface yet.
 set(MANAGEDGC_ENABLED_SOURCES
     clrgc.managed.cpp
+    gcenv.managed.cpp
 )
 
 set(FULL_RUNTIME_SOURCES
