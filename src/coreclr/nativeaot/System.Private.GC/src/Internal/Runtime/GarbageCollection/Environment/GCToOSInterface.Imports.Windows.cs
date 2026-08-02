@@ -102,6 +102,31 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SwitchToThread();
 
+        // QueryPerformanceCounter and QueryPerformanceFrequency of <windows.h>. Their managed
+        // names are prefixed because GCToOSInterface has methods of its own with the Win32
+        // names; [RuntimeImport] names the symbol, so the two need not agree. The prefix is
+        // spelling only: these are not overloads of the parameterless methods in
+        // GCToOSInterface.Timers.Windows.cs that call them. The LARGE_INTEGER
+        // out parameter is spelled as the long that its QuadPart is: a LARGE_INTEGER is a union
+        // of that field with a two-DWORD struct, so it is eight bytes with QuadPart at offset
+        // zero, and the C++ reads nothing but QuadPart.
+
+        [RuntimeImport(RuntimeLibrary, "QueryPerformanceCounter")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int Win32QueryPerformanceCounter(long* lpPerformanceCount);
+
+        [RuntimeImport(RuntimeLibrary, "QueryPerformanceFrequency")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int Win32QueryPerformanceFrequency(long* lpFrequency);
+
+        /// <summary>
+        /// <c>QueryUnbiasedInterruptTime</c> of <c>&lt;windows.h&gt;</c>, which counts 100ns
+        /// intervals since boot without the time the system spent asleep.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "QueryUnbiasedInterruptTime")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int QueryUnbiasedInterruptTime(ulong* UnbiasedTime);
+
         [RuntimeImport(RuntimeLibrary, "IsProcessInJob")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int IsProcessInJob(void* ProcessHandle, void* JobHandle, int* Result);

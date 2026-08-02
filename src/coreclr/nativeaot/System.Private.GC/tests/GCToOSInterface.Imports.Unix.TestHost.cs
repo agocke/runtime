@@ -19,12 +19,19 @@
 // back a value the test sets, and every substitute here still defaults to the real call so that
 // a test that does not inject sees the machine.
 //
+// The three minipal timer substitutes are the one group with nothing real underneath: minipal is
+// a static library this test process does not link. They therefore compute what
+// src/native/minipal/time.c computes on Unix -- a monotonic nanosecond count, and the fixed
+// nanosecond frequency -- unless a test injects, which is what makes the exact forwarding and
+// the millisecond scaling of the port assertable.
+//
 // A [DllImport] is exactly what the GC must not use; it is fine here because this file is never
 // compiled into the GC. The methods it replaces are the boundary of the port: everything the
 // tests exercise above them is the shipping code.
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -336,6 +343,70 @@ internal static unsafe partial class GCToOSInterface
         s_tryReadMemInfoFailed = false;
         g_RestrictedPhysicalMemoryLimit = 0;
     }
+
+    //
+    // The three src/native/minipal/time.h entry points of the timer port. minipal is a static
+    // library that this test process does not link, so the substitutes stand in for it: each
+    // one either hands back an injected value or computes what time.c computes on this
+    // platform, which is a monotonic nanosecond count and a fixed nanosecond frequency.
+    //
+
+    internal static bool HiresTicksInject;
+    internal static long HiresTicksValue;
+    internal static int HiresTicksCalls;
+
+    internal static bool HiresTickFrequencyInject;
+    internal static long HiresTickFrequencyValue;
+    internal static int HiresTickFrequencyCalls;
+
+    internal static bool LowresTicksInject;
+    internal static long LowresTicksValue;
+    internal static int LowresTicksCalls;
+
+    /// <summary>Forgets every timer recording and clears every injection.</summary>
+    internal static void ResetTimerRecording()
+    {
+        HiresTicksInject = false;
+        HiresTicksValue = 0;
+        HiresTicksCalls = 0;
+        HiresTickFrequencyInject = false;
+        HiresTickFrequencyValue = 0;
+        HiresTickFrequencyCalls = 0;
+        LowresTicksInject = false;
+        LowresTicksValue = 0;
+        LowresTicksCalls = 0;
+    }
+
+    private static long minipal_hires_ticks()
+    {
+        HiresTicksCalls++;
+        return HiresTicksInject ? HiresTicksValue : MonotonicNanoseconds();
+    }
+
+    private static long minipal_hires_tick_frequency()
+    {
+        HiresTickFrequencyCalls++;
+
+        // tccSecondsToNanoSeconds of src/native/minipal/time.c, which is what that file returns
+        // on every Unix platform because both clocks it can read count nanoseconds.
+        return HiresTickFrequencyInject ? HiresTickFrequencyValue : 1000000000;
+    }
+
+    private static long minipal_lowres_ticks()
+    {
+        LowresTicksCalls++;
+
+        // tccMilliSecondsToNanoSeconds of the same file.
+        return LowresTicksInject ? LowresTicksValue : MonotonicNanoseconds() / 1000000;
+    }
+
+    /// <summary>
+    /// The monotonic nanosecond count that <c>minipal_hires_ticks</c> returns. On Unix
+    /// <c>Stopwatch</c> reads the same <c>CLOCK_MONOTONIC</c> that
+    /// <c>src/native/minipal/time.c</c> does, so this is the same clock the shipping code sees.
+    /// </summary>
+    private static long MonotonicNanoseconds() =>
+        (long)(Stopwatch.GetTimestamp() * (1000000000.0 / Stopwatch.Frequency));
 
     private static nint sysconf(int name)
     {

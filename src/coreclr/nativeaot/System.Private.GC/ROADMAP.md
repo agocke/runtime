@@ -262,8 +262,23 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   anonymous-namespace `CGroup` of `cgroup.cpp`, and `ManagedGC_Unix_ReadMemoryValueFromFile`,
   `ManagedGC_Unix_ReadMemAvailable`, `ManagedGC_Unix_GetCurrentVirtualMemorySize` and
   `ManagedGC_Unix_GetProcessAffinitySet` over the `static` `/sys` and `/proc` readers and the
-  affinity set of `gcenv.unix.cpp`. They are deleted with submodules 3 and 4 below; Windows
+  affinity set of `gcenv.unix.cpp`. They are deleted with submodules 1 and 3 below; Windows
   retains nothing.
+- Timers: `QueryPerformanceCounter`, `QueryPerformanceFrequency` and `GetLowPrecisionTimeStamp`,
+  from `gc/unix/gcenv.unix.cpp` and `gc/windows/gcenv.windows.cpp`. On Unix each one is a single
+  call into `src/native/minipal/time.h`, which is already on every NativeAOT link line, so
+  `minipal_hires_ticks`, `minipal_hires_tick_frequency` and `minipal_lowres_ticks` are imported
+  directly rather than reimplemented -- `time.c` selects its clock on configure-time probes that
+  C# cannot spell. On Windows the C++ calls Win32 directly and so does the port:
+  `QueryPerformanceCounter`, `QueryPerformanceFrequency` and `QueryUnbiasedInterruptTime`, each
+  asserting on a zero return and then returning the value the failed call left behind rather
+  than a sentinel of its own, and the last divided by the same `TicksPerMillisecond` of 10000.
+  The output locals carry no initializer, as in the C++; `.locals init`, which this assembly
+  does not opt out of, makes the unreachable failure path return zero instead of stack residue. `LARGE_INTEGER` is spelled `long`,
+  which `gcenv.managed.cpp` asserts along with the width of `QuadPart` and the existence and
+  return width of all six entry points. `FEATURE_MANAGED_GC` excludes the timer sections of
+  `gcenv.unix.cpp` and `gcenv.windows.cpp`, the three `ManagedGC_OS_*` forwarders are gone, and
+  no native leaf is retained.
 - Focused xUnit coverage of every piece above that is pure computation, in
   `tests/GCEnvironmentTests.cs`; of the whole virtual memory port -- flag translation,
   alignment over-allocation and trimming, failure paths, and a reserve/commit/write/reset/
@@ -285,7 +300,12 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   address-space check, the load and available-memory calculations including saturation past
   100%, null output pointers, the sticky `/proc/meminfo` failure, the sysfs cache walk, the
   affinity and arm64 CPU-count heuristics at each boundary, and `trueSize` true and false with
-  its caching -- in `tests/GCMemoryLimitsTests.cs`. All of
+  its caching -- in `tests/GCMemoryLimitsTests.cs`; and of the timer ports -- exact forwarding of
+  each minipal call once per invocation, the full `int64_t` range including the negative counts
+  that check the signed-to-unsigned reinterpretation, and on Windows the same range through the
+  `QuadPart` the two `LARGE_INTEGER` calls fill, the truncating division by
+  `TicksPerMillisecond` across its boundaries, and the three injected call failures -- in
+  `tests/GCTimerTests.cs`. All of
   them run the shipping bodies over recording substitutes for their libc and Win32 declarations.
 
 #### Remaining submodules
@@ -294,32 +314,30 @@ Each item below is a native module that `nativeaot/Runtime/gcenv.managed.cpp` cu
 to. The managed declaration already exists and does not change when the implementation lands;
 only the body and its shim do. They are listed in the order they become blocking.
 
-1. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
-   `GetLowPrecisionTimeStamp`.
-2. **cgroup and `/proc` file parsing** -- the six `ManagedGC_CGroup_*` / `ManagedGC_Unix_*`
+1. **cgroup and `/proc` file parsing** -- the six `ManagedGC_CGroup_*` / `ManagedGC_Unix_*`
    leaves the memory limit port left behind: the `CGroup` class of `gc/unix/cgroup.cpp` and the
    `static` `/sys` and `/proc` readers of `gc/unix/gcenv.unix.cpp`. They need a
    `read`/`open`-based parser that allocates nothing, so they wait for the GC to have memory of
-   its own (submodule 5 below and stage 7).
-3. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
+   its own (submodule 4 below and stage 7).
+2. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
    `GetCurrentProcessorNumber`, `CanGetCurrentProcessorNumber`, `GetCurrentProcessId`,
    `GetCurrentThreadIdForLogging`. The last of these is what the debug-only lock-ownership
    bookkeeping of `CrstStatic` records, which is why those wrapper tests only run in a build
    with asserts disabled.
-4. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
+3. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
    `SetCurrentThreadIdealAffinity`, `GetCurrentThreadIdealProc`, `SetGCThreadsAffinitySet`,
    `CanEnableGCNumaAware`, `GetNumaInfo`, `CanEnableGCCPUGroups`, `GetProcessorForHeap`,
    `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp`, the
    `ManagedGC_NUMA_BindMemoryPolicy` shim that `VirtualCommit` still calls and the
    `ManagedGC_Unix_GetProcessAffinitySet` shim that the cache sizing heuristic still calls.
    Blocks server GC in stage 10.
-5. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
+4. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
    stand in for the `new (nothrow)` allocations of the environment layer: the `uintptr_t[]` of
    `AffinitySet`, the `GCEvent::Impl` of the event ports, the `minipal_mutex` that the C++
    `CLRCriticalSection` embeds by value, and the `SYSTEM_LOGICAL_PROCESSOR_INFORMATION[]` of the
    Windows `GetLPI`. They can only go away once the GC has memory of its own to take those from,
    which is stage 7.
-6. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
+5. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
    `PalInit`, so the managed GC never calls these; they land last, together with moving that call
    out of `PalInit`.
 

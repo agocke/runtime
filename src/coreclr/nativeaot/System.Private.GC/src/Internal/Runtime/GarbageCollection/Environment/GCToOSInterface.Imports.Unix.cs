@@ -101,6 +101,34 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern nint sysconf(int name);
 
+        /// <summary>
+        /// The high resolution monotonic tick count of <c>src/native/minipal/time.h</c>, which
+        /// the C++ <c>QueryPerformanceCounter</c> is one call to. It is
+        /// <c>clock_gettime_nsec_np(CLOCK_UPTIME_RAW)</c> on Apple and
+        /// <c>clock_gettime(CLOCK_MONOTONIC)</c> elsewhere.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "minipal_hires_ticks")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern long minipal_hires_ticks();
+
+        /// <summary>
+        /// The tick frequency in Hz of <c>src/native/minipal/time.h</c>, which the C++
+        /// <c>QueryPerformanceFrequency</c> is one call to. On Unix it is the constant
+        /// <c>tccSecondsToNanoSeconds</c>, because both clocks above count nanoseconds.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "minipal_hires_tick_frequency")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern long minipal_hires_tick_frequency();
+
+        /// <summary>
+        /// The low precision monotonic millisecond count of <c>src/native/minipal/time.h</c>,
+        /// which the C++ <c>GetLowPrecisionTimeStamp</c> is one call to. It reads
+        /// <c>CLOCK_MONOTONIC_COARSE</c> where the platform has it.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "minipal_lowres_ticks")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern long minipal_lowres_ticks();
+
 #if TARGET_APPLE || TARGET_FREEBSD
         /// <summary><c>sysctl</c> of <c>&lt;sys/sysctl.h&gt;</c>.</summary>
         [RuntimeImport(RuntimeLibrary, "sysctl")]

@@ -1330,6 +1330,10 @@ void GCToOSInterface::GetMemoryStatus(uint64_t restricted_limit, uint32_t* memor
 }
 #endif // FEATURE_MANAGED_GC
 
+// QueryPerformanceCounter, QueryPerformanceFrequency and GetLowPrecisionTimeStamp are
+// translated into System.Private.GC's GCToOSInterface.Timers.Unix.cs, which calls the same
+// three minipal entry points directly.
+#ifndef FEATURE_MANAGED_GC
 // Get a high precision performance counter
 // Return:
 //  The counter value
@@ -1354,6 +1358,7 @@ uint64_t GCToOSInterface::GetLowPrecisionTimeStamp()
 {
     return (uint64_t)minipal_lowres_ticks();
 }
+#endif // FEATURE_MANAGED_GC
 
 // Gets the total number of processors on the machine, not taking
 // into account current process affinity.

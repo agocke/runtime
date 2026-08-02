@@ -12,9 +12,10 @@
 //     gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp, and so are Sleep and
 //     YieldThread, in GCToOSInterface.Thread.Unix.cs and GCToOSInterface.Thread.Windows.cs,
 //     and the memory limit and cache sizing methods, in GCToOSInterface.MemoryLimits.Unix.cs
-//     and GCToOSInterface.MemoryLimits.Windows.cs. Their declarations stay here as comments
-//     pointing at the platform file, so that this file still reads in gcenv.os.h declaration
-//     order.
+//     and GCToOSInterface.MemoryLimits.Windows.cs, and the timers, in
+//     GCToOSInterface.Timers.Unix.cs and GCToOSInterface.Timers.Windows.cs. Their declarations
+//     stay here as comments pointing at the platform file, so that this file still reads in
+//     gcenv.os.h declaration order.
 //   * The remaining bodies are still forwarders. Each one is a [RuntimeImport] call to a
 //     one-line shim in nativeaot/Runtime/gcenv.managed.cpp, which calls the C++
 //     GCToOSInterface. A runtime import is a direct call to a linked symbol with no marshalling
@@ -22,7 +23,7 @@
 //     requires; a [DllImport] would not be usable here.
 //
 // They are forwarders because the implementations are the platform code -- NUMA, Windows CPU
-// groups, pthread and Win32 affinity, the high-resolution clock -- and porting it is a separate
+// groups, pthread and Win32 affinity, processor counts -- and porting it is a separate
 // piece of work per platform. Deletion point: plan step 3
 // of ROADMAP.md; a forwarder and its shim disappear together when the managed implementation of
 // that method lands.
@@ -184,14 +185,9 @@ namespace Internal.Runtime.GarbageCollection
         // Time
         //
 
-        /// <summary>Get a high precision performance counter.</summary>
-        public static long QueryPerformanceCounter() => ManagedGC_OS_QueryPerformanceCounter();
-
-        /// <summary>Get the frequency of the high precision performance counter.</summary>
-        public static long QueryPerformanceFrequency() => ManagedGC_OS_QueryPerformanceFrequency();
-
-        /// <summary>Get a time stamp with a low precision, in milliseconds.</summary>
-        public static ulong GetLowPrecisionTimeStamp() => ManagedGC_OS_GetLowPrecisionTimeStamp();
+        // QueryPerformanceCounter, QueryPerformanceFrequency and GetLowPrecisionTimeStamp are
+        // translated per platform in GCToOSInterface.Timers.Unix.cs and
+        // GCToOSInterface.Timers.Windows.cs.
 
         /// <summary>
         /// Gets the total number of processors on the machine, not taking into account the
@@ -294,18 +290,6 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_DebugBreak")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_OS_DebugBreak();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_QueryPerformanceCounter")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern long ManagedGC_OS_QueryPerformanceCounter();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_QueryPerformanceFrequency")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern long ManagedGC_OS_QueryPerformanceFrequency();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetLowPrecisionTimeStamp")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern ulong ManagedGC_OS_GetLowPrecisionTimeStamp();
 
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetTotalProcessorCount")]
         [MethodImpl(MethodImplOptions.InternalCall)]

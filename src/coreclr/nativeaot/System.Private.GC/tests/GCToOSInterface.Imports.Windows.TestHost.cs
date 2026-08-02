@@ -6,7 +6,8 @@
 // The shipping declarations are [RuntimeImport]s, which only resolve inside a NativeAOT image,
 // so this file declares the same private methods as ordinary P/Invokes. That makes the ported
 // bodies above them -- the flag combinations, the NUMA alternatives, the large page rounding,
-// the failure paths, the sleep and the yield -- runnable in a normal test process against the
+// the failure paths, the sleep, the yield and the timers -- runnable in a normal test process
+// against the
 // real kernel, and it
 // records the arguments of every call so that the flag translation can be asserted directly
 // rather than inferred.
@@ -455,4 +456,106 @@ internal static unsafe partial class GCToOSInterface
         LiveAllocations--;
         NativeMemory.Free(ptr);
     }
+
+    //
+    // The three <windows.h> timer substitutes. Each one defaults to the real kernel call, as
+    // the virtual memory substitutes do, and can be made to fail so that the failure path of
+    // the port -- the assert, and the value the failed call left behind -- can be driven.
+    //
+
+    internal static bool QueryPerformanceCounterFails;
+    internal static bool QueryPerformanceFrequencyFails;
+    internal static bool QueryUnbiasedInterruptTimeFails;
+
+    internal static bool PerformanceCounterInject;
+    internal static long PerformanceCounterValue;
+
+    internal static bool PerformanceFrequencyInject;
+    internal static long PerformanceFrequencyValue;
+
+    internal static bool UnbiasedInterruptTimeInject;
+    internal static ulong UnbiasedInterruptTimeValue;
+
+    internal static int QueryPerformanceCounterCalls;
+    internal static int QueryPerformanceFrequencyCalls;
+    internal static int QueryUnbiasedInterruptTimeCalls;
+
+    /// <summary>Forgets every timer recording and clears every injection.</summary>
+    internal static void ResetTimerRecording()
+    {
+        QueryPerformanceCounterFails = false;
+        QueryPerformanceFrequencyFails = false;
+        QueryUnbiasedInterruptTimeFails = false;
+        PerformanceCounterInject = false;
+        PerformanceCounterValue = 0;
+        PerformanceFrequencyInject = false;
+        PerformanceFrequencyValue = 0;
+        UnbiasedInterruptTimeInject = false;
+        UnbiasedInterruptTimeValue = 0;
+        QueryPerformanceCounterCalls = 0;
+        QueryPerformanceFrequencyCalls = 0;
+        QueryUnbiasedInterruptTimeCalls = 0;
+    }
+
+    private static int Win32QueryPerformanceCounter(long* lpPerformanceCount)
+    {
+        QueryPerformanceCounterCalls++;
+        if (QueryPerformanceCounterFails)
+        {
+            // A failed call writes nothing, which is what leaves the C++ LARGE_INTEGER and the
+            // managed long holding whatever the stack had.
+            return 0;
+        }
+
+        if (PerformanceCounterInject)
+        {
+            *lpPerformanceCount = PerformanceCounterValue;
+            return 1;
+        }
+
+        return sys_QueryPerformanceCounter(lpPerformanceCount);
+    }
+
+    private static int Win32QueryPerformanceFrequency(long* lpFrequency)
+    {
+        QueryPerformanceFrequencyCalls++;
+        if (QueryPerformanceFrequencyFails)
+        {
+            return 0;
+        }
+
+        if (PerformanceFrequencyInject)
+        {
+            *lpFrequency = PerformanceFrequencyValue;
+            return 1;
+        }
+
+        return sys_QueryPerformanceFrequency(lpFrequency);
+    }
+
+    private static int QueryUnbiasedInterruptTime(ulong* UnbiasedTime)
+    {
+        QueryUnbiasedInterruptTimeCalls++;
+        if (QueryUnbiasedInterruptTimeFails)
+        {
+            return 0;
+        }
+
+        if (UnbiasedInterruptTimeInject)
+        {
+            *UnbiasedTime = UnbiasedInterruptTimeValue;
+            return 1;
+        }
+
+        return sys_QueryUnbiasedInterruptTime(UnbiasedTime);
+    }
+
+    [DllImport("kernel32", EntryPoint = "QueryPerformanceCounter")]
+    private static extern int sys_QueryPerformanceCounter(long* lpPerformanceCount);
+
+    [DllImport("kernel32", EntryPoint = "QueryPerformanceFrequency")]
+    private static extern int sys_QueryPerformanceFrequency(long* lpFrequency);
+
+    [DllImport("kernel32", EntryPoint = "QueryUnbiasedInterruptTime")]
+    private static extern int sys_QueryUnbiasedInterruptTime(ulong* UnbiasedTime);
 }

@@ -71,7 +71,9 @@ Ported so far:
 | `Environment/GCToOSInterface.Thread.Windows.cs` | `gc/windows/gcenv.windows.cpp` (sleep and yield) |
 | `Environment/GCToOSInterface.MemoryLimits.Unix.cs` | `gc/unix/gcenv.unix.cpp` (memory limits and cache sizing), `gc/unix/cgroup.cpp` |
 | `Environment/GCToOSInterface.MemoryLimits.Windows.cs` | `gc/windows/gcenv.windows.cpp` (memory limits and cache sizing) |
-| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` / `<unistd.h>` / `<sys/sysctl.h>` / `<sys/sysinfo.h>` entry points the above call |
+| `Environment/GCToOSInterface.Timers.Unix.cs` | `gc/unix/gcenv.unix.cpp` (timers) |
+| `Environment/GCToOSInterface.Timers.Windows.cs` | `gc/windows/gcenv.windows.cpp` (timers) |
+| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` / `<unistd.h>` / `<sys/sysctl.h>` / `<sys/sysinfo.h>` / `minipal/time.h` entry points the above call |
 | `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` and `<psapi.h>` entry points the above call |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
@@ -185,6 +187,25 @@ the real headers by `gcenv.managed.cpp` -- including `#error`s on the presence o
 `_SC_AVPHYS_PAGES` and the `_SC_LEVEL*` family, so a C library that grows or loses one breaks
 the build rather than silently changing the answer.
 
+The three timers follow, and they are the smallest submodule so far. On Unix
+`QueryPerformanceCounter`, `QueryPerformanceFrequency` and `GetLowPrecisionTimeStamp` are one
+call each into `src/native/minipal/time.h`, which is a static library already on every NativeAOT
+link line, so the port imports `minipal_hires_ticks`, `minipal_hires_tick_frequency` and
+`minipal_lowres_ticks` directly and retains no shim at all. Translating `time.c` itself was
+rejected: it selects between `clock_gettime_nsec_np`, `CLOCK_MONOTONIC_COARSE` and
+`CLOCK_MONOTONIC` on configure-time probes that have no managed spelling, and forking that
+selection would be a behavior change rather than a translation. On Windows the C++ calls Win32
+directly, so the port does too -- `QueryPerformanceCounter`, `QueryPerformanceFrequency` and
+`QueryUnbiasedInterruptTime`, each asserting on a zero return and then returning the value the
+failed call left behind rather than a sentinel of its own, and the last of them divided by the
+same `TicksPerMillisecond` of 10000. The output local is declared uninitialized, as the C++
+declares it, so nothing in the port forces a value onto that unreachable path; because the
+assembly does not set `SkipLocalsInit`, the runtime zeroes it anyway, which is the one residual
+difference from the C++, where the value would be whatever the stack held. `LARGE_INTEGER` is spelled `long` because it is an eight-byte
+union whose `QuadPart` -- the only member the C++ reads -- necessarily begins at offset zero;
+`gcenv.managed.cpp` asserts that size, that member's size, and the existence and return width of
+all six entry points.
+
 Four things that read or write a file cannot be translated without allocating, so they stay
 native for now, as the narrowest possible leaves: `ManagedGC_CGroup_GetPhysicalMemoryLimit` and
 `ManagedGC_Unix_GetPhysicalMemoryUsed` wrap the `CGroup` class of `gc/unix/cgroup.cpp`, which is
@@ -198,8 +219,9 @@ retains nothing.
 The managed runtime archive no longer compiles the Unix `events.cpp`; on Windows,
 `FEATURE_MANAGED_GC` excludes the `GCEvent::Impl` section of `gcenv.windows.cpp`, and on both
 platforms it excludes the `Sleep` and `YieldThread` section of `gcenv.unix.cpp` and
-`gcenv.windows.cpp`, and the memory limit and cache sizing sections of `gcenv.unix.cpp`,
-`gcenv.windows.cpp` and `gc/unix/cgroup.cpp`. Those three files remain in the archive only for
+`gcenv.windows.cpp`, the memory limit and cache sizing sections of `gcenv.unix.cpp`,
+`gcenv.windows.cpp` and `gc/unix/cgroup.cpp`, and the timer section of `gcenv.unix.cpp` and
+`gcenv.windows.cpp`. Those three files remain in the archive only for
 the `GCToOSInterface` services that have not been translated yet, and for the six leaf helpers
 above; the workstation and server GC archives still compile every one of those bodies
 unchanged.
@@ -217,8 +239,8 @@ existing C++ `GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.
 Those shims are the whole retained-native surface of this layer:
 
 * one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- processor
-  number and affinity, thread priority and ids, the performance counter, processor counts, NUMA
-  and CPU groups, and the platform-specific affinity range entry parser;
+  number and affinity, thread priority and ids, processor counts, NUMA and CPU groups, and the
+  platform-specific affinity range entry parser;
 * the six Unix leaves the memory limit port still needs -- `ManagedGC_CGroup_*` and
   `ManagedGC_Unix_*` -- which are described above and are deleted with the cgroup and affinity
   submodules;
@@ -314,6 +336,16 @@ on Windows `SleepEx` is checked to receive the interval unchanged with `bAlertab
 not to be called at all for zero. Everything except one deliberately coarse lower bound per
 platform is driven by injection rather than by the clock, so no test waits on real time to
 decide.
+
+`GCTimerTests` covers the three timer methods. On Unix each one is a single call, so what the
+tests pin is that it is that call, made once per invocation and cached nowhere, and that the
+value returns unchanged for the whole `int64_t` range -- including the negative counts that check
+the signed-to-unsigned reinterpretation of `GetLowPrecisionTimeStamp`, which a conversion rather
+than a cast would clamp. On Windows the same range is checked through the `QuadPart` the two
+`LARGE_INTEGER` calls fill, the truncating division by `TicksPerMillisecond` is checked across
+its boundaries up to `ulong.MaxValue`, and the three failure paths, where the C++ asserts
+and then returns whatever the failed call left behind, are compiled only into a build with
+asserts disabled, as the event and lock failure tests are.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:

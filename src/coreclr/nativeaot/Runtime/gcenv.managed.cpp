@@ -11,10 +11,10 @@
 // gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
 //
 // This file also carries the static_asserts that check the <sys/mman.h>, <sys/resource.h>,
-// <pthread.h>, <time.h>, <errno.h>, <unistd.h>, <sys/sysctl.h>, <sys/sysinfo.h>, <windows.h>
-// and <psapi.h> constants and layouts that those managed ports hardcode against the real
-// headers of the platform being built, in the same spirit as AsmOffsets.h. The C# #if structure
-// and the one below must stay in the same shape.
+// <pthread.h>, <time.h>, <errno.h>, <unistd.h>, <sys/sysctl.h>, <sys/sysinfo.h>,
+// <minipal/time.h>, <windows.h> and <psapi.h> constants, layouts and entry points that those
+// managed ports hardcode against the real headers of the platform being built, in the same
+// spirit as AsmOffsets.h. The C# #if structure and the one below must stay in the same shape.
 //
 // The managed side calls these with [RuntimeImport], which is a direct call to a linked symbol
 // with no marshalling, no argument copying and no GC mode transition. That is what code running
@@ -394,6 +394,23 @@ static_assert(sizeof(struct sysinfo) <= offsetof(struct sysinfo, mem_unit) + siz
 #endif
 
 //
+// The three src/native/minipal/time.h entry points that the timer port of
+// GCToOSInterface.Timers.Unix.cs calls. The C++ QueryPerformanceCounter,
+// QueryPerformanceFrequency and GetLowPrecisionTimeStamp are one call each to exactly these,
+// so the managed port calls them rather than re-deriving the per-platform clock selection of
+// time.c, whose configure checks (HAVE_CLOCK_GETTIME_NSEC_NP, HAVE_CLOCK_MONOTONIC_COARSE) the
+// C# cannot see. As with nanosleep above, a function name has no value to compare, so each is
+// named in an unevaluated sizeof that checks it is declared, takes no arguments and returns the
+// int64_t the managed declaration expects.
+//
+
+#include <minipal/time.h>
+
+static_assert(sizeof(minipal_hires_ticks()) == sizeof(int64_t), "minipal_hires_ticks does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(minipal_hires_tick_frequency()) == sizeof(int64_t), "minipal_hires_tick_frequency does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(minipal_lowres_ticks()) == sizeof(int64_t), "minipal_lowres_ticks does not match GCToOSInterface.Imports.Unix.cs.");
+
+//
 // The second remaining piece: the NUMA half of VirtualCommitInner. It is the body of the
 // `#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)` block of that function, verbatim,
 // because it reads the NUMA state that only gc/unix/numasupport.cpp has -- which belongs to the
@@ -522,6 +539,20 @@ static_assert(sizeof(::GetLogicalProcessorInformation((PSYSTEM_LOGICAL_PROCESSOR
 #endif
 static_assert(sizeof(::K32GetProcessMemoryInfo(nullptr, (PPROCESS_MEMORY_COUNTERS)nullptr, 0)) == sizeof(int32_t), "K32GetProcessMemoryInfo does not match GCToOSInterface.Imports.Windows.cs.");
 
+//
+// The <windows.h> pieces that the timer port of GCToOSInterface.Timers.Windows.cs names. The
+// LARGE_INTEGER that the first two fill is spelled as its QuadPart there, which is exact
+// because a union member always begins at the start of the union; what has to hold is that the
+// union is no wider than that field, and that the field is the int64_t the C# declares. The
+// three entry points are checked the way the Unix libc ones are, in an unevaluated sizeof.
+//
+static_assert(sizeof(LARGE_INTEGER) == sizeof(int64_t), "LARGE_INTEGER does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(((LARGE_INTEGER*)nullptr)->QuadPart) == sizeof(int64_t), "LARGE_INTEGER::QuadPart does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(ULONGLONG) == sizeof(uint64_t), "ULONGLONG does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::QueryPerformanceCounter((LARGE_INTEGER*)nullptr)) == sizeof(int32_t), "QueryPerformanceCounter does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::QueryPerformanceFrequency((LARGE_INTEGER*)nullptr)) == sizeof(int32_t), "QueryPerformanceFrequency does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::QueryUnbiasedInterruptTime((PULONGLONG)nullptr)) == sizeof(int32_t), "QueryUnbiasedInterruptTime does not match GCToOSInterface.Imports.Windows.cs.");
+
 // The event and lock ports of GCEvent.Windows.cs, GCEnvSync.Windows.cs and SyncTypes.Windows.cs
 // hardcode one <windows.h> value and one type. The CRITICAL_SECTION is an opaque blob there, so
 // only its size and alignment matter; the managed one is deliberately larger than any platform
@@ -597,21 +628,6 @@ extern "C" const void* ManagedGC_OS_SetGCThreadsAffinitySet(uintptr_t configAffi
 extern "C" void ManagedGC_OS_DebugBreak()
 {
     GCToOSInterface::DebugBreak();
-}
-
-extern "C" int64_t ManagedGC_OS_QueryPerformanceCounter()
-{
-    return GCToOSInterface::QueryPerformanceCounter();
-}
-
-extern "C" int64_t ManagedGC_OS_QueryPerformanceFrequency()
-{
-    return GCToOSInterface::QueryPerformanceFrequency();
-}
-
-extern "C" uint64_t ManagedGC_OS_GetLowPrecisionTimeStamp()
-{
-    return GCToOSInterface::GetLowPrecisionTimeStamp();
 }
 
 extern "C" uint32_t ManagedGC_OS_GetTotalProcessorCount()
