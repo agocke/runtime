@@ -1,10 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// The Win32 entry points that the Windows virtual memory port of GCToOSInterface calls,
-// declared as <windows.h> declares them, except that every BOOL is spelled as int: a Win32 BOOL
-// is four bytes wide and a managed bool is one, and there is no marshalling here to convert
-// between them.
+// The Win32 entry points that the Windows virtual memory and write watch ports of
+// GCToOSInterface call, declared as <windows.h> declares them, except that every BOOL is
+// spelled as int: a Win32 BOOL is four bytes wide and a managed bool is one, and there is no
+// marshalling here to convert between them.
 //
 // They are [RuntimeImport]s rather than [DllImport]s: a runtime import is a direct call to a
 // linked symbol with no marshalling, no argument copying, no lazy binding step and no GC mode
@@ -43,6 +43,22 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "GetLargePageMinimum")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern nuint GetLargePageMinimum();
+
+        // ResetWriteWatch and GetWriteWatch return a UINT that is zero on success, not a BOOL.
+        // Their managed names are prefixed because GCToOSInterface has methods of its own with
+        // the Win32 names; [RuntimeImport] names the symbol, so the two need not agree.
+
+        [RuntimeImport(RuntimeLibrary, "ResetWriteWatch")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint Win32ResetWriteWatch(void* lpBaseAddress, nuint dwRegionSize);
+
+        [RuntimeImport(RuntimeLibrary, "GetWriteWatch")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint Win32GetWriteWatch(uint dwFlags, void* lpBaseAddress, nuint dwRegionSize, void** lpAddresses, nuint* lpdwCount, uint* lpdwGranularity);
+
+        [RuntimeImport(RuntimeLibrary, "GetSystemInfo")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void GetSystemInfo(SYSTEM_INFO* lpSystemInfo);
 
         [RuntimeImport(RuntimeLibrary, "GlobalMemoryStatusEx")]
         [MethodImpl(MethodImplOptions.InternalCall)]

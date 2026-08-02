@@ -52,6 +52,22 @@ internal static unsafe partial class GCToOSInterface
 
     internal static int VirtualUnlockCount;
 
+    internal struct WriteWatchCall
+    {
+        public uint dwFlags;
+        public void* lpBaseAddress;
+        public nuint dwRegionSize;
+        public nuint count;
+        public uint granularity;
+        public uint result;
+    }
+
+    internal static WriteWatchCall LastResetWriteWatch;
+    internal static int ResetWriteWatchCount;
+
+    internal static WriteWatchCall LastGetWriteWatch;
+    internal static int GetWriteWatchCount;
+
     /// <summary>Forgets every recorded call. Each test starts by calling this.</summary>
     internal static void ResetRecording()
     {
@@ -60,6 +76,10 @@ internal static unsafe partial class GCToOSInterface
         LastVirtualFree = default;
         VirtualFreeCount = 0;
         VirtualUnlockCount = 0;
+        LastResetWriteWatch = default;
+        ResetWriteWatchCount = 0;
+        LastGetWriteWatch = default;
+        GetWriteWatchCount = 0;
     }
 
     private static void* VirtualAlloc(void* lpAddress, nuint dwSize, uint flAllocationType, uint flProtect)
@@ -115,6 +135,35 @@ internal static unsafe partial class GCToOSInterface
         return sys_VirtualUnlock(lpAddress, dwSize);
     }
 
+    private static uint Win32ResetWriteWatch(void* lpBaseAddress, nuint dwRegionSize)
+    {
+        uint result = sys_ResetWriteWatch(lpBaseAddress, dwRegionSize);
+        LastResetWriteWatch = new WriteWatchCall
+        {
+            lpBaseAddress = lpBaseAddress,
+            dwRegionSize = dwRegionSize,
+            result = result,
+        };
+        ResetWriteWatchCount++;
+        return result;
+    }
+
+    private static uint Win32GetWriteWatch(uint dwFlags, void* lpBaseAddress, nuint dwRegionSize, void** lpAddresses, nuint* lpdwCount, uint* lpdwGranularity)
+    {
+        uint result = sys_GetWriteWatch(dwFlags, lpBaseAddress, dwRegionSize, lpAddresses, lpdwCount, lpdwGranularity);
+        LastGetWriteWatch = new WriteWatchCall
+        {
+            dwFlags = dwFlags,
+            lpBaseAddress = lpBaseAddress,
+            dwRegionSize = dwRegionSize,
+            count = result == 0 ? *lpdwCount : 0,
+            granularity = result == 0 ? *lpdwGranularity : 0,
+            result = result,
+        };
+        GetWriteWatchCount++;
+        return result;
+    }
+
     [DllImport("kernel32", EntryPoint = "VirtualAlloc", SetLastError = true)]
     private static extern void* sys_VirtualAlloc(void* lpAddress, nuint dwSize, uint flAllocationType, uint flProtect);
 
@@ -129,6 +178,15 @@ internal static unsafe partial class GCToOSInterface
 
     [DllImport("kernel32", EntryPoint = "GetLargePageMinimum")]
     private static extern nuint GetLargePageMinimum();
+
+    [DllImport("kernel32", EntryPoint = "ResetWriteWatch")]
+    private static extern uint sys_ResetWriteWatch(void* lpBaseAddress, nuint dwRegionSize);
+
+    [DllImport("kernel32", EntryPoint = "GetWriteWatch")]
+    private static extern uint sys_GetWriteWatch(uint dwFlags, void* lpBaseAddress, nuint dwRegionSize, void** lpAddresses, nuint* lpdwCount, uint* lpdwGranularity);
+
+    [DllImport("kernel32", EntryPoint = "GetSystemInfo")]
+    private static extern void GetSystemInfo(SYSTEM_INFO* lpSystemInfo);
 
     [DllImport("kernel32", EntryPoint = "GlobalMemoryStatusEx", SetLastError = true)]
     private static extern int GlobalMemoryStatusEx(MEMORYSTATUSEX* lpBuffer);

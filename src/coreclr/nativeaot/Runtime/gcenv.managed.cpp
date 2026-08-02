@@ -4,15 +4,15 @@
 // Native side of the managed GC's environment layer.
 //
 // System.Private.GC translates gcenv.os.h, gcenv.base.h, gcenv.interlocked.h and volatile.h to
-// C#. Everything in those headers that is pure computation is translated outright, as is the
-// whole of virtual memory management; everything else that reaches the operating system is, for
-// now, forwarded here and implemented by the existing C++ GCToOSInterface in
-// gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
+// C#. Everything in those headers that is pure computation is translated outright, as are the
+// whole of virtual memory management and write watching; everything else that reaches the
+// operating system is, for now, forwarded here and implemented by the existing C++
+// GCToOSInterface in gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
 //
 // This file also carries the static_asserts that check the <sys/mman.h>, <sys/resource.h> and
-// <windows.h> constants that the managed virtual memory port hardcodes against the real headers
-// of the platform being built, in the same spirit as AsmOffsets.h. The C# #if structure and the
-// one below must stay in the same shape.
+// <windows.h> constants and layouts that the managed virtual memory and write watch ports
+// hardcode against the real headers of the platform being built, in the same spirit as
+// AsmOffsets.h. The C# #if structure and the one below must stay in the same shape.
 //
 // The managed side calls these with [RuntimeImport], which is a direct call to a linked symbol
 // with no marshalling, no argument copying and no GC mode transition. That is what code running
@@ -40,10 +40,10 @@
 static_assert(sizeof(GCEvent) == sizeof(void*), "The managed GCEvent mirrors the C++ one as a single pointer.");
 
 //
-// Virtual memory management is ported: GCToOSInterface.VirtualMemory.Unix.cs and
-// GCToOSInterface.VirtualMemory.Windows.cs of System.Private.GC call mmap/munmap/mprotect/
-// madvise/getrlimit and VirtualAlloc/VirtualFree/VirtualAllocExNuma directly. Two pieces remain
-// here.
+// Virtual memory management and write watching are ported: GCToOSInterface.VirtualMemory.*.cs
+// and GCToOSInterface.WriteWatch.*.cs of System.Private.GC call mmap/munmap/mprotect/madvise/
+// getrlimit and VirtualAlloc/VirtualFree/VirtualAllocExNuma/GetWriteWatch/ResetWriteWatch
+// directly. Two pieces remain here.
 //
 // The first is this check of the platform constants those files hardcode. A managed source file
 // cannot include a C header, so the values are written out per platform and asserted here
@@ -172,6 +172,13 @@ static_assert(sizeof(MEMORYSTATUSEX) == 64, "MEMORYSTATUSEX does not match GCToO
 static_assert(offsetof(MEMORYSTATUSEX, ullTotalPhys) == 8, "MEMORYSTATUSEX does not match GCToOSInterface.VirtualMemory.Windows.cs.");
 static_assert(offsetof(MEMORYSTATUSEX, ullAvailVirtual) == 48, "MEMORYSTATUSEX does not match GCToOSInterface.VirtualMemory.Windows.cs.");
 
+// The write watch port hardcodes the reset flag and reads dwAllocationGranularity out of a
+// SYSTEM_INFO it declares itself.
+static_assert(WRITE_WATCH_FLAG_RESET == 1, "WRITE_WATCH_FLAG_RESET does not match GCToOSInterface.WriteWatch.Windows.cs.");
+static_assert(sizeof(SYSTEM_INFO) == (sizeof(void*) == 8 ? 48 : 36), "SYSTEM_INFO does not match GCToOSInterface.WriteWatch.Windows.cs.");
+static_assert(offsetof(SYSTEM_INFO, dwPageSize) == 4, "SYSTEM_INFO does not match GCToOSInterface.WriteWatch.Windows.cs.");
+static_assert(offsetof(SYSTEM_INFO, dwAllocationGranularity) == (sizeof(void*) == 8 ? 40 : 28), "SYSTEM_INFO does not match GCToOSInterface.WriteWatch.Windows.cs.");
+
 // The managed GetPageSize returns 4096, which is what minipal_getpagesize is on Windows: an
 // inline function with no symbol to call and no way to static_assert its result.
 
@@ -192,21 +199,6 @@ extern "C" UInt32_BOOL ManagedGC_OS_Initialize()
 extern "C" void ManagedGC_OS_Shutdown()
 {
     GCToOSInterface::Shutdown();
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_SupportsWriteWatch()
-{
-    return GCToOSInterface::SupportsWriteWatch() ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" void ManagedGC_OS_ResetWriteWatch(void* address, size_t size)
-{
-    GCToOSInterface::ResetWriteWatch(address, size);
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_GetWriteWatch(UInt32_BOOL resetState, void* address, size_t size, void** pageAddresses, uintptr_t* pageAddressesCount)
-{
-    return GCToOSInterface::GetWriteWatch(resetState != UInt32_FALSE, address, size, pageAddresses, pageAddressesCount) ? UInt32_TRUE : UInt32_FALSE;
 }
 
 extern "C" void ManagedGC_OS_Sleep(uint32_t sleepMSec)

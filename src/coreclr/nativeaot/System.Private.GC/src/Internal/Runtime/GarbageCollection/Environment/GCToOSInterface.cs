@@ -6,10 +6,12 @@
 //
 // The class is split by what the code actually does:
 //
-//   * The virtual memory methods are translated, in GCToOSInterface.VirtualMemory.Unix.cs and
-//     GCToOSInterface.VirtualMemory.Windows.cs, from gc/unix/gcenv.unix.cpp and
-//     gc/windows/gcenv.windows.cpp. Their declarations stay here as comments pointing at the
-//     platform file, so that this file still reads in gcenv.os.h declaration order.
+//   * The virtual memory and write watch methods are translated, in
+//     GCToOSInterface.VirtualMemory.Unix.cs, GCToOSInterface.VirtualMemory.Windows.cs,
+//     GCToOSInterface.WriteWatch.Unix.cs and GCToOSInterface.WriteWatch.Windows.cs, from
+//     gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp. Their declarations stay here as
+//     comments pointing at the platform file, so that this file still reads in gcenv.os.h
+//     declaration order.
 //   * The remaining bodies are still forwarders. Each one is a [RuntimeImport] call to a
 //     one-line shim in nativeaot/Runtime/gcenv.managed.cpp, which calls the C++
 //     GCToOSInterface. A runtime import is a direct call to a linked symbol with no marshalling
@@ -90,20 +92,10 @@ namespace Internal.Runtime.GarbageCollection
         //
 
         //
-        // Write watching
+        // Write watching -- SupportsWriteWatch, ResetWriteWatch and GetWriteWatch are translated
+        // per platform in GCToOSInterface.WriteWatch.Unix.cs and
+        // GCToOSInterface.WriteWatch.Windows.cs.
         //
-
-        /// <summary>Check if the OS supports write watching.</summary>
-        public static bool SupportsWriteWatch() => ManagedGC_OS_SupportsWriteWatch() != 0;
-
-        /// <summary>Reset the write tracking state for the specified virtual memory range.</summary>
-        public static void ResetWriteWatch(void* address, nuint size) => ManagedGC_OS_ResetWriteWatch(address, size);
-
-        /// <summary>
-        /// Retrieve addresses of the pages that are written to in a region of virtual memory.
-        /// </summary>
-        public static bool GetWriteWatch(bool resetState, void* address, nuint size, void** pageAddresses, nuint* pageAddressesCount) =>
-            ManagedGC_OS_GetWriteWatch(resetState ? 1 : 0, address, size, pageAddresses, pageAddressesCount) != 0;
 
         //
         // Thread and process
@@ -299,18 +291,6 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_Shutdown")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_OS_Shutdown();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_SupportsWriteWatch")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_SupportsWriteWatch();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_ResetWriteWatch")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void ManagedGC_OS_ResetWriteWatch(void* address, nuint size);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetWriteWatch")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_GetWriteWatch(int resetState, void* address, nuint size, void** pageAddresses, nuint* pageAddressesCount);
 
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_Sleep")]
         [MethodImpl(MethodImplOptions.InternalCall)]

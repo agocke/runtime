@@ -57,8 +57,10 @@ Ported so far:
 | `Environment/GCToOSInterface.cs` | `env/gcenv.os.h` (`GCToOSInterface`) |
 | `Environment/GCToOSInterface.VirtualMemory.Unix.cs` | `gc/unix/gcenv.unix.cpp` (virtual memory), `env/gcenv.unix.inl` |
 | `Environment/GCToOSInterface.VirtualMemory.Windows.cs` | `gc/windows/gcenv.windows.cpp` (virtual memory), `env/gcenv.windows.inl` |
-| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` entry points the above calls |
-| `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` entry points the above calls |
+| `Environment/GCToOSInterface.WriteWatch.Unix.cs` | `gc/unix/gcenv.unix.cpp` (write watch) |
+| `Environment/GCToOSInterface.WriteWatch.Windows.cs` | `gc/windows/gcenv.windows.cpp` (write watch) |
+| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` entry points the above call |
+| `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` entry points the above call |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
@@ -104,15 +106,26 @@ libc and Win32 entry points themselves. Two details do not come from a C header:
   `GCToOSInterface::Initialize` reads -- and returns Windows' fixed 4 KB constant otherwise,
   which is what the C++ `minipal_getpagesize` is there.
 
+Write watching is translated too. On Windows, `SupportsWriteWatch` is the same feature probe the
+C++ performs -- a `MEM_WRITE_WATCH` reservation of one allocation granularity, released again --
+and `ResetWriteWatch` and `GetWriteWatch` call the Win32 functions of those names through
+`[RuntimeImport]`, keeping the `WRITE_WATCH_FLAG_RESET` flag, the "zero means success" error
+code rather than a `BOOL`, the in/out `ULONG_PTR` count and the assert that the granularity the
+OS reports back is the page size. The allocation granularity comes from `GetSystemInfo` at the
+point of use rather than from the cached `g_SystemInfo` that only the C++ `Initialize` fills; it
+is the same machine constant. On Unix there is no write watch, so `SupportsWriteWatch` is a
+constant `false` that reserves nothing and the other two only assert, exactly as the C++ does --
+the collector uses software write watch there instead.
+
 Everything else that reaches the operating system is declared with the C++ signature and
 forwarded, for now, to a one-line shim in `nativeaot/Runtime/gcenv.managed.cpp` that calls the
 existing C++ `GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.windows.cpp`.
 Those shims are the whole retained-native surface of this layer:
 
-* one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- write watch, sleep and
-  yield, processor number and affinity, thread priority and ids, cache and memory limits, the
-  performance counter, processor counts, NUMA and CPU groups, and the platform-specific affinity
-  range entry parser;
+* one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- sleep and yield, processor
+  number and affinity, thread priority and ids, cache and memory limits, the performance
+  counter, processor counts, NUMA and CPU groups, and the platform-specific affinity range entry
+  parser;
 * `ManagedGC_NUMA_BindMemoryPolicy`, which is the `mbind` half of `VirtualCommitInner`
   verbatim. It reads `g_numaAvailable` and `g_highestNumaNode` and calls `BindMemoryPolicy`,
   all of which belong to `gc/unix/numasupport.cpp`, so it is deleted with the NUMA submodule
@@ -163,16 +176,19 @@ tested independently of the NativeAOT runtime integration smoke test and indepen
 paths the bootstrap heap happens to exercise. `GCInterfaceLayoutTests` covers the layout table as
 described under [layout verification](#layout-verification); the rest is behavior.
 
-`GCVirtualMemoryTests` runs the virtual memory port itself. The shipping bodies are the code
-under test; only the libc/Win32 declarations underneath them are substituted, by
-`tests/GCToOSInterface.Imports.*.TestHost.cs`, which declares the same private methods as
-ordinary P/Invokes -- something the GC itself must never do -- forwards each call to the real
-kernel and records its arguments. The tests therefore check the flag translation, the alignment
-over-allocation and trimming, and the failure paths exactly, and they also run the sequence the
-collector performs: reserve, commit, write, reset, decommit, re-commit and release, on raw
-pages, without the managed heap. The expected flag values are written out in the test rather
-than read from the constants of the port, so a wrong constant fails a test instead of being
-confirmed by it.
+`GCVirtualMemoryTests` and `GCWriteWatchTests` run the virtual memory and write watch ports
+themselves. The shipping bodies are the code under test; only the libc/Win32 declarations
+underneath them are substituted, by `tests/GCToOSInterface.Imports.*.TestHost.cs`, which declares
+the same private methods as ordinary P/Invokes -- something the GC itself must never do --
+forwards each call to the real kernel and records its arguments. The tests therefore check the
+flag translation, the alignment over-allocation and trimming, and the failure paths exactly, and
+they also run the sequences the collector performs: reserve, commit, write, reset, decommit,
+re-commit and release, on raw pages, without the managed heap; and, on Windows, reserve with
+write watching, dirty individual pages and read exactly those pages back, with and without the
+reset flag. On Unix the write watch tests pin the platform behavior that makes the collector use
+software write watch: an unsupported answer that reserves nothing. The expected flag values are
+written out in the test rather than read from the constants of the port, so a wrong constant
+fails a test instead of being confirmed by it.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:

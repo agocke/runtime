@@ -122,8 +122,8 @@ in `gcevents.h`; that arrives with the rest of the event plumbing in stage 4.
 
 ### 3. `gcenv` and platform abstraction layer
 
-**Status: In progress -- the interface is complete, virtual memory is translated, the rest of
-the platform implementations are not**
+**Status: In progress -- the interface is complete, virtual memory and write watch are
+translated, the rest of the platform implementations are not**
 
 Translate:
 
@@ -173,15 +173,32 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   otherwise, which is what the C++ `minipal_getpagesize` is there. The `<sys/mman.h>`,
   `<sys/resource.h>` and `<windows.h>` constants are written out per platform in C# and
   asserted against the real headers, for the platform being built, by
-  `nativeaot/Runtime/gcenv.managed.cpp`. One shim remains and belongs to submodule 7 below
+  `nativeaot/Runtime/gcenv.managed.cpp`. One shim remains and belongs to submodule 6 below
   rather than to this one: `ManagedGC_NUMA_BindMemoryPolicy` is the `mbind` half of
   `VirtualCommitInner` verbatim, which needs `g_numaAvailable`, `g_highestNumaNode` and
   `BindMemoryPolicy` of `gc/unix/numasupport.cpp`.
+- Write watch: `SupportsWriteWatch`, `ResetWriteWatch` and `GetWriteWatch`, from
+  `gc/unix/gcenv.unix.cpp` and `gc/windows/gcenv.windows.cpp`. Windows calls
+  `GetSystemInfo`/`GetWriteWatch`/`ResetWriteWatch` directly, as `[RuntimeImport]`s, and keeps
+  the C++ shape: feature detection is the same `MEM_WRITE_WATCH` probe reservation of one
+  allocation granularity, released again; `GetWriteWatch` passes the same
+  `WRITE_WATCH_FLAG_RESET`, treats a zero return as success -- it is an error code, not a
+  `BOOL` -- and asserts the reported granularity against `OS_PAGE_SIZE`; the in/out count is
+  `ULONG_PTR`, which is `nuint`, so it needs no conversion. `g_SystemInfo.dwAllocationGranularity`
+  is read from `GetSystemInfo` at the point of use rather than from a cached global, because the
+  managed `Initialize` that fills the C++ one is submodule 7 below; it is the same machine
+  constant either way. Unix keeps its exact behavior: a constant `false` that reserves nothing,
+  and two methods that only assert. `WRITE_WATCH_FLAG_RESET` and the `SYSTEM_INFO` layout are
+  asserted against `<windows.h>` by `nativeaot/Runtime/gcenv.managed.cpp` like the virtual
+  memory constants.
 - Focused xUnit coverage of every piece above that is pure computation, in
-  `tests/GCEnvironmentTests.cs`, and of the whole virtual memory port -- flag translation,
+  `tests/GCEnvironmentTests.cs`; of the whole virtual memory port -- flag translation,
   alignment over-allocation and trimming, failure paths, and a reserve/commit/write/reset/
-  decommit/release exercise on raw pages -- in `tests/GCVirtualMemoryTests.cs`, which runs the
-  shipping bodies over recording substitutes for their libc and Win32 declarations.
+  decommit/release exercise on raw pages -- in `tests/GCVirtualMemoryTests.cs`; and of the write
+  watch port -- the probe and its release, the reset flag, the reported pages and count, the
+  granularity, the insufficient-buffer and unwatched-range failures, and the Unix
+  reserve-nothing `false` -- in `tests/GCWriteWatchTests.cs`. All three run the shipping bodies
+  over recording substitutes for their libc and Win32 declarations.
 
 #### Remaining submodules
 
@@ -189,30 +206,28 @@ Each item below is a native module that `nativeaot/Runtime/gcenv.managed.cpp` cu
 to. The managed declaration already exists and does not change when the implementation lands;
 only the body and its shim do. They are listed in the order they become blocking.
 
-1. **Write watch** -- `SupportsWriteWatch`, `ResetWriteWatch`, `GetWriteWatch`. Windows only;
-   Unix returns false. Blocks the concurrent parts of stage 10.
-2. **Events and locks** -- the `GCEvent::Impl` of `gc/unix/events.cpp` and its Win32 counterpart,
+1. **Events and locks** -- the `GCEvent::Impl` of `gc/unix/events.cpp` and its Win32 counterpart,
    and the `minipal_mutex` behind `CLRCriticalSection`. A managed implementation needs a futex or
    equivalent that is safe to call with the world suspended. Blocks stages 9 and 10.
-3. **Sleep and yield** -- `Sleep`, `YieldThread`.
-4. **Memory limits** -- `GetPhysicalMemoryLimit`, `GetMemoryStatus`, `GetCacheSizePerLogicalCpu`.
+2. **Sleep and yield** -- `Sleep`, `YieldThread`.
+3. **Memory limits** -- `GetPhysicalMemoryLimit`, `GetMemoryStatus`, `GetCacheSizePerLogicalCpu`.
    These read cgroup v1/v2 files (`gc/unix/cgroup.cpp`), `sysconf`, `sysctl` and Windows job
    objects. Blocks the hard-limit and dynamic tuning parts of stage 10.
-5. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
+4. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
    `GetLowPrecisionTimeStamp`.
-6. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
+5. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
    `GetCurrentProcessorNumber`, `CanGetCurrentProcessorNumber`, `GetCurrentProcessId`,
    `GetCurrentThreadIdForLogging`.
-7. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
+6. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
    `SetCurrentThreadIdealAffinity`, `GetCurrentThreadIdealProc`, `SetGCThreadsAffinitySet`,
    `CanEnableGCNumaAware`, `GetNumaInfo`, `CanEnableGCCPUGroups`, `GetProcessorForHeap`,
    `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp` and the
    `ManagedGC_NUMA_BindMemoryPolicy` shim that `VirtualCommit` still calls. Blocks server GC in
    stage 10.
-8. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
+7. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
    `PalInit`, so the managed GC never calls these; they land last, together with moving that call
    out of `PalInit`.
-9. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
+8. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
    stand in for the `new (nothrow) uintptr_t[]` and `delete[]` of `AffinitySet`. They can only go
    away once the GC has memory of its own to take that bitset from, which is stage 7.
 
