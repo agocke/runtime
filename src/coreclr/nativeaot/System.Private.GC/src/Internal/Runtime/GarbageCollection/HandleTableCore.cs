@@ -181,6 +181,116 @@ namespace Internal.Runtime.GarbageCollection
             return uBlock;
         }
 
+        public static void SegmentRemoveFreeBlocks(TableSegment* pSegment, uint uType, bool* pfScavengeLater)
+        {
+            uint uPrev = pSegment->Header.rgTail[uType];
+
+            if (uPrev == HandleTableConstants.BLOCK_INVALID)
+            {
+                return;
+            }
+
+            bool fCleanupUserData = false;
+            uint uStart = pSegment->Header.rgAllocation[uPrev];
+            uint uBlock = uStart;
+            uint uRemoved = 0;
+            uint uFirstFreed = HandleTableConstants.BLOCK_INVALID;
+            uint uLastFreed = HandleTableConstants.BLOCK_INVALID;
+
+            for (;;)
+            {
+                uint uNext = pSegment->Header.rgAllocation[uBlock];
+
+                Debug.Assert(HandleTableConstants.HANDLE_MASKS_PER_BLOCK == 2);
+                if (*((ulong*)(pSegment->Header.rgFreeMask + (uBlock * HandleTableConstants.HANDLE_MASKS_PER_BLOCK))) == ulong.MaxValue)
+                {
+                    if (BlockIsLocked(pSegment, uBlock))
+                    {
+                        if (pfScavengeLater != null)
+                        {
+                            *pfScavengeLater = true;
+                        }
+                    }
+                    else
+                    {
+                        uint uData = pSegment->Header.rgUserData[uBlock];
+                        if (uData != HandleTableConstants.BLOCK_INVALID)
+                        {
+                            BlockUnlock(pSegment, uData);
+                            pSegment->Header.rgUserData[uBlock] = HandleTableConstants.BLOCK_INVALID;
+                            fCleanupUserData = true;
+                        }
+
+                        pSegment->Header.rgBlockType[uBlock] = HandleTableConstants.TYPE_INVALID;
+
+                        if (uFirstFreed == HandleTableConstants.BLOCK_INVALID)
+                        {
+                            uFirstFreed = uBlock;
+                        }
+                        else
+                        {
+                            pSegment->Header.rgAllocation[uLastFreed] = (byte)uBlock;
+                        }
+
+                        uLastFreed = uBlock;
+
+                        if (uPrev != uBlock)
+                        {
+                            pSegment->Header.rgAllocation[uPrev] = (byte)uNext;
+
+                            if (pSegment->Header.rgTail[uType] == uBlock)
+                            {
+                                pSegment->Header.rgTail[uType] = (byte)uPrev;
+                            }
+
+                            if (pSegment->Header.rgHint[uType] == uBlock)
+                            {
+                                pSegment->Header.rgHint[uType] = (byte)uNext;
+                            }
+
+                            uBlock = uPrev;
+                        }
+                        else
+                        {
+                            Debug.Assert(uNext == uStart);
+
+                            pSegment->Header.rgAllocation[uBlock] = HandleTableConstants.BLOCK_INVALID;
+                            pSegment->Header.rgTail[uType] = HandleTableConstants.BLOCK_INVALID;
+                            pSegment->Header.rgHint[uType] = HandleTableConstants.BLOCK_INVALID;
+                        }
+
+                        uRemoved++;
+                    }
+                }
+
+                if (uNext == uStart)
+                {
+                    break;
+                }
+
+                if (uStart == uLastFreed)
+                {
+                    uStart = uNext;
+                }
+
+                uPrev = uBlock;
+                uBlock = uNext;
+            }
+
+            if (uRemoved != 0)
+            {
+                pSegment->Header.rgAllocation[uLastFreed] = pSegment->Header.bFreeList;
+                pSegment->Header.bFreeList = (byte)uFirstFreed;
+                pSegment->Header.rgFreeCount[uType] -= uRemoved * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+                pSegment->Header.fResortChains = true;
+
+                if (fCleanupUserData)
+                {
+                    SegmentRemoveFreeBlocks(pSegment, HandleTableConstants.HNDTYPE_INTERNAL_DATABLOCK, null);
+                }
+            }
+        }
+
         public static uint BlockAllocHandlesInMask(
             TableSegment* pSegment,
             uint uBlock,

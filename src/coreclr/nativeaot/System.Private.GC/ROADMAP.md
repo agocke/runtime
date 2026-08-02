@@ -618,10 +618,14 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   `BlockAllocHandlesInMask`, `BlockAllocHandlesInitial`, `BlockAllocHandles`, and
   `SegmentAllocHandlesFromTypeChain`. The native low-bit lookup table is represented by the
   allocation-free `uint.TrailingZeroCount` intrinsic.
+- Empty-block removal through `SegmentRemoveFreeBlocks`, including locked-block deferral,
+  order-preserving free-list insertion, hint/tail updates, free-count repair, and recursive
+  reclamation of parallel user-data blocks.
 
 #### Remaining
 
-Complete new-block handle allocation, freeing, and free-chain scavenging next. The public
+Complete new-block handle allocation and handle freeing next, then chain resorting and page
+trimming. The public
 block-insertion wrapper arrives with the full `HandleTable.rgTypeFlags` layout because it
 allocates parallel user-data blocks based on those flags. Per-type caches, table entrypoints, and
 manager/store glue follow. The current flat `ManagedGCHandleManager` remains the runtime

@@ -225,6 +225,137 @@ public sealed unsafe class HandleTableCoreTests
         }
     }
 
+    [Fact]
+    public void SegmentRemoveFreeBlocksReturnsEmptyBlocksToTheFreeList()
+    {
+        const uint Type = 5;
+
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            Assert.Equal(0u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            Assert.Equal(1u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+
+            HandleTableCore.SegmentRemoveFreeBlocks(segment, Type, null);
+
+            Assert.Equal((byte)0, segment->Header.bFreeList);
+            Assert.Equal((byte)1, segment->Header.rgAllocation[0]);
+            Assert.Equal((byte)2, segment->Header.rgAllocation[1]);
+            Assert.Equal(HandleTableConstants.TYPE_INVALID, segment->Header.rgBlockType[0]);
+            Assert.Equal(HandleTableConstants.TYPE_INVALID, segment->Header.rgBlockType[1]);
+            Assert.Equal(HandleTableConstants.BLOCK_INVALID, segment->Header.rgTail[Type]);
+            Assert.Equal(HandleTableConstants.BLOCK_INVALID, segment->Header.rgHint[Type]);
+            Assert.Equal(0u, segment->Header.rgFreeCount[Type]);
+            Assert.True(segment->Header.fResortChains);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
+    [Fact]
+    public void SegmentRemoveFreeBlocksDefersLockedBlocks()
+    {
+        const uint Type = 6;
+
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            Assert.Equal(0u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            HandleTableCore.BlockLock(segment, 0);
+            bool scavengeLater = false;
+
+            HandleTableCore.SegmentRemoveFreeBlocks(segment, Type, &scavengeLater);
+
+            Assert.True(scavengeLater);
+            Assert.Equal((byte)1, segment->Header.bFreeList);
+            Assert.Equal((byte)Type, segment->Header.rgBlockType[0]);
+            Assert.Equal((byte)0, segment->Header.rgTail[Type]);
+            Assert.Equal((byte)0, segment->Header.rgHint[Type]);
+            Assert.Equal((uint)HandleTableConstants.HANDLE_HANDLES_PER_BLOCK, segment->Header.rgFreeCount[Type]);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
+    [Fact]
+    public void SegmentRemoveFreeBlocksReclaimsParallelUserDataBlock()
+    {
+        const uint Type = 7;
+        const uint DataType = HandleTableConstants.HNDTYPE_INTERNAL_DATABLOCK;
+
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            Assert.Equal(0u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            Assert.Equal(1u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, DataType, false));
+            segment->Header.rgUserData[0] = 1;
+            HandleTableCore.BlockLock(segment, 1);
+
+            HandleTableCore.SegmentRemoveFreeBlocks(segment, Type, null);
+
+            Assert.Equal(HandleTableConstants.BLOCK_INVALID, segment->Header.rgUserData[0]);
+            Assert.False(HandleTableCore.BlockIsLocked(segment, 1));
+            Assert.Equal(HandleTableConstants.TYPE_INVALID, segment->Header.rgBlockType[0]);
+            Assert.Equal(HandleTableConstants.TYPE_INVALID, segment->Header.rgBlockType[1]);
+            Assert.Equal((byte)1, segment->Header.bFreeList);
+            Assert.Equal((byte)0, segment->Header.rgAllocation[1]);
+            Assert.Equal((byte)2, segment->Header.rgAllocation[0]);
+            Assert.Equal(0u, segment->Header.rgFreeCount[Type]);
+            Assert.Equal(0u, segment->Header.rgFreeCount[DataType]);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
+    [Fact]
+    public void SegmentRemoveFreeBlocksPreservesSurvivingChainAndFreedOrder()
+    {
+        const uint Type = 8;
+
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            Assert.Equal(0u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            Assert.Equal(1u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            Assert.Equal(2u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+
+            OBJECTHANDLE handle;
+            Assert.Equal(1u, HandleTableCore.BlockAllocHandlesInitial(segment, Type, 1, &handle, 1));
+            segment->Header.rgFreeCount[Type]--;
+
+            HandleTableCore.SegmentRemoveFreeBlocks(segment, Type, null);
+
+            Assert.Equal((byte)1, segment->Header.rgTail[Type]);
+            Assert.Equal((byte)1, segment->Header.rgHint[Type]);
+            Assert.Equal((byte)1, segment->Header.rgAllocation[1]);
+            Assert.Equal((byte)0, segment->Header.bFreeList);
+            Assert.Equal((byte)2, segment->Header.rgAllocation[0]);
+            Assert.Equal((byte)3, segment->Header.rgAllocation[2]);
+            Assert.Equal(HandleTableConstants.TYPE_INVALID, segment->Header.rgBlockType[0]);
+            Assert.Equal((byte)Type, segment->Header.rgBlockType[1]);
+            Assert.Equal(HandleTableConstants.TYPE_INVALID, segment->Header.rgBlockType[2]);
+            Assert.Equal(63u, segment->Header.rgFreeCount[Type]);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
     [Theory]
     [InlineData(0, 1, 0xFFFFFFFEu)]
     [InlineData(0, 31, 0x80000000u)]
