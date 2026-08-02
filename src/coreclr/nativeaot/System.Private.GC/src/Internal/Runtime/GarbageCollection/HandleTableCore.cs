@@ -5,6 +5,7 @@
 // src/coreclr/gc/handletablecore.cpp and HndIsNullOrDestroyedHandle of
 // src/coreclr/gc/handletable.h.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -96,6 +97,18 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             return 0;
+        }
+
+        public static void ZeroHandles(OBJECTHANDLE* pHandleBase, uint uCount)
+        {
+            OBJECTHANDLE* pLastHandle = pHandleBase + uCount;
+
+            while (pHandleBase < pLastHandle)
+            {
+                OBJECTHANDLE handle = *pHandleBase;
+                pHandleBase++;
+                *(nuint*)handle.Value = 0;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1265,6 +1278,73 @@ namespace Internal.Runtime.GarbageCollection
                 pHandleBase += uFreed;
             }
             while (uCount != 0);
+        }
+
+        public static void TableFreeBulkUnpreparedHandlesWorker(
+            HandleTable* pTable,
+            uint uType,
+            OBJECTHANDLE* pHandles,
+            uint uCount,
+            OBJECTHANDLE* pScratchBuffer)
+        {
+            nuint byteCount = uCount * (nuint)sizeof(OBJECTHANDLE);
+            Buffer.MemoryCopy(pHandles, pScratchBuffer, byteCount, byteCount);
+
+            QuickSort(
+                (nuint*)pScratchBuffer,
+                0,
+                (int)uCount - 1,
+                &CompareHandlesByFreeOrder);
+
+            ZeroHandles(pScratchBuffer, uCount);
+            TableFreeBulkPreparedHandles(pTable, uType, pScratchBuffer, uCount);
+        }
+
+        public static void TableFreeBulkUnpreparedHandles(
+            HandleTable* pTable,
+            uint uType,
+            OBJECTHANDLE* pHandles,
+            uint uCount)
+        {
+            OBJECTHANDLE* rgStackHandles = stackalloc OBJECTHANDLE[HandleTableConstants.HANDLE_HANDLES_PER_BLOCK];
+            OBJECTHANDLE* pScratchBuffer = rgStackHandles;
+            OBJECTHANDLE* pLargeScratchBuffer = null;
+            uint uFreeGranularity = HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+
+            if (uCount > uFreeGranularity)
+            {
+                pLargeScratchBuffer = (OBJECTHANDLE*)SyncImports.ManagedGC_AllocZeroed(
+                    uCount * (nuint)sizeof(OBJECTHANDLE));
+
+                if (pLargeScratchBuffer != null)
+                {
+                    pScratchBuffer = pLargeScratchBuffer;
+                    uFreeGranularity = uCount;
+                }
+            }
+
+            while (uCount != 0)
+            {
+                if (uFreeGranularity > uCount)
+                {
+                    uFreeGranularity = uCount;
+                }
+
+                TableFreeBulkUnpreparedHandlesWorker(
+                    pTable,
+                    uType,
+                    pHandles,
+                    uFreeGranularity,
+                    pScratchBuffer);
+
+                uCount -= uFreeGranularity;
+                pHandles += uFreeGranularity;
+            }
+
+            if (pLargeScratchBuffer != null)
+            {
+                SyncImports.ManagedGC_Free(pLargeScratchBuffer);
+            }
         }
     }
 }

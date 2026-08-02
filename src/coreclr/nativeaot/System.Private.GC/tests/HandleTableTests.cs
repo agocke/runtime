@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
 
+[Collection(SyncImportsCollection.Name)]
 public sealed unsafe class HandleTableTests
 {
     [Fact]
@@ -171,6 +172,78 @@ public sealed unsafe class HandleTableTests
         }
         finally
         {
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Fact]
+    public void TypedAndUnknownTypeDestructionReturnHandlesToCache()
+    {
+        uint* typeFlags = stackalloc uint[2];
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, 2);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE first = HandleTableCache.TableAllocSingleHandleFromCache(table, 0);
+            OBJECTHANDLE second = HandleTableCache.TableAllocSingleHandleFromCache(table, 1);
+            *(nuint*)first.Value = 0x1234;
+            *(nuint*)second.Value = 0x5678;
+
+            HandleTableManager.HndDestroyHandle(table, 0, first);
+            HandleTableManager.HndDestroyHandleOfUnknownType(table, second);
+
+            Assert.Equal(0u, HandleTableManager.HndCountHandles(table));
+            Assert.Equal((nuint)first.Value, (nuint)((OBJECTHANDLE*)table->rgQuickCache)[0].Value);
+            Assert.Equal((nuint)second.Value, (nuint)((OBJECTHANDLE*)table->rgQuickCache)[1].Value);
+        }
+        finally
+        {
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UnpreparedBulkFreeSortsClearsAndFreesMoreThanOneBlock(bool failLargeScratchAllocation)
+    {
+        const uint Count = 130;
+
+        uint* typeFlags = stackalloc uint[1];
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, 1);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE* handles = stackalloc OBJECTHANDLE[(int)Count];
+            Assert.Equal(Count, HandleTableCore.TableAllocBulkHandles(table, 0, handles, Count));
+
+            for (int i = 0; i < Count; i++)
+            {
+                *(nuint*)handles[i].Value = (nuint)(i + 1);
+            }
+
+            for (int i = 0; i < Count / 2; i++)
+            {
+                OBJECTHANDLE temporary = handles[i];
+                handles[i] = handles[Count - i - 1];
+                handles[Count - i - 1] = temporary;
+            }
+
+            SyncImports.FailNextAlloc = failLargeScratchAllocation;
+            HandleTableCore.TableFreeBulkUnpreparedHandles(table, 0, handles, Count);
+
+            Assert.False(SyncImports.FailNextAlloc);
+            Assert.Equal(0u, table->dwCount);
+            for (int i = 0; i < Count; i++)
+            {
+                Assert.Equal((nuint)0, *(nuint*)handles[i].Value);
+            }
+        }
+        finally
+        {
+            SyncImports.FailNextAlloc = false;
             HandleTableManager.HndDestroyHandleTable(table);
         }
     }

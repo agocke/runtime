@@ -645,6 +645,10 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   `HandleFetchHandleTable`, `TableContainHandle`, `HandleValidateAndFetchUserDataPointer`,
   `HndSetHandleExtraInfo`, `HndCompareExchangeHandleExtraInfo`, `HndGetHandleExtraInfo`,
   `HndGetHandleTable`, and cache-aware `HndCountHandles`.
+- Single-handle destruction with known or discovered type, plus `ZeroHandles`,
+  `TableFreeBulkUnpreparedHandlesWorker`, and `TableFreeBulkUnpreparedHandles`. The native
+  optional large sorting buffer is unmanaged memory; allocation failure falls back to the same
+  block-sized stack chunks as C++.
 
 #### Remaining
 

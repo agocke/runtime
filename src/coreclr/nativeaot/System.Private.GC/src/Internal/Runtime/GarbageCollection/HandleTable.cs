@@ -99,6 +99,22 @@ namespace Internal.Runtime.GarbageCollection
             return pTable->uTableIndex;
         }
 
+        public static void HndDestroyHandle(HandleTable* pTable, uint uType, OBJECTHANDLE handle)
+        {
+            Debug.Assert(!handle.IsNull);
+            Debug.Assert(uType < pTable->uTypeCount);
+            Debug.Assert(HandleTableCore.HandleFetchType(handle) == uType);
+
+            HandleTableCache.TableFreeSingleHandleToCache(pTable, uType, handle);
+        }
+
+        public static void HndDestroyHandleOfUnknownType(HandleTable* pTable, OBJECTHANDLE handle)
+        {
+            Debug.Assert(!handle.IsNull);
+
+            HndDestroyHandle(pTable, HandleTableCore.HandleFetchType(handle), handle);
+        }
+
         public static void HndSetHandleExtraInfo(OBJECTHANDLE handle, uint uType, nuint lExtraInfo)
         {
             nuint* pUserData = HandleTableCore.HandleValidateAndFetchUserDataPointer(handle, uType);
