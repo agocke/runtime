@@ -113,11 +113,13 @@ them, maps handle addresses back to their segment headers, maintains the native 
 lock counts, moves blocks from the segment free list into circular per-type chains, and allocates
 handle slots from their free masks and existing type chains. It also removes empty unlocked
 blocks from those chains, preserving free-list order and recursively reclaiming parallel user-data
-blocks. The shared
+blocks. It now also frees sorted handle batches across masks and blocks, clears per-handle
+parallel user data, updates free counts without crediting duplicate frees, and returns newly
+empty blocks to the segment free list. The shared
 `GCInterfaceOffsets.h` table pins their 32- and 64-bit native offsets, sizes, and alignments, and
 the managed startup verifier checks the C# layouts against the generated values. The flat
 `ManagedGCHandleManager` still supplies the running bootstrap heap until new-block allocation,
-handle freeing, chain resorting and trimming, caches, and the manager glue are ported over this
+chain resorting and trimming, caches, and the manager glue are ported over this
 schema.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.

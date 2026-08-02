@@ -2,7 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Ported from the segment lifecycle and handle-to-segment helpers of
-// src/coreclr/gc/handletablecore.cpp.
+// src/coreclr/gc/handletablecore.cpp and HndIsNullOrDestroyedHandle of
+// src/coreclr/gc/handletable.h.
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -19,6 +20,18 @@ namespace Internal.Runtime.GarbageCollection
             Debug.Assert(pSegment != null);
 
             return pSegment;
+        }
+
+        private static bool HndIsNullOrDestroyedHandle(nuint value)
+        {
+#if DEBUG
+            if (value == 0x7)
+            {
+                return true;
+            }
+#endif
+
+            return value == 0;
         }
 
         public static bool SegmentInitialize(TableSegment* pSegment, HandleTable* pTable)
@@ -291,6 +304,23 @@ namespace Internal.Runtime.GarbageCollection
             }
         }
 
+        public static nuint* BlockFetchUserDataPointer(_TableSegmentHeader* pSegment, uint uBlock, bool fAssertOnError)
+        {
+            nuint* pUserData = null;
+            uint blockIndex = pSegment->rgUserData[uBlock];
+
+            if (blockIndex != HandleTableConstants.BLOCK_INVALID)
+            {
+                pUserData = (nuint*)&((TableSegment*)pSegment)->rgValue[blockIndex * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK];
+            }
+            else if (fAssertOnError)
+            {
+                Debug.Assert(false);
+            }
+
+            return pUserData;
+        }
+
         public static uint BlockAllocHandlesInMask(
             TableSegment* pSegment,
             uint uBlock,
@@ -482,6 +512,187 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             return uCount;
+        }
+
+        public static uint BlockFreeHandlesInMask(
+            TableSegment* pSegment,
+            uint uBlock,
+            uint uMask,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount,
+            nuint* pUserData,
+            uint* puActualFreed,
+            bool* pfAllMasksFree)
+        {
+            uint uRemain = uCount;
+
+            if (pUserData != null)
+            {
+                pUserData += uMask * HandleTableConstants.HANDLE_HANDLES_PER_MASK;
+            }
+
+            uMask += uBlock * HandleTableConstants.HANDLE_MASKS_PER_BLOCK;
+
+            nuint firstHandle = (nuint)(void*)&pSegment->rgValue[uMask * HandleTableConstants.HANDLE_HANDLES_PER_MASK];
+            nuint lastHandle = firstHandle + (HandleTableConstants.HANDLE_HANDLES_PER_MASK * HandleTableConstants.HANDLE_SIZE);
+            uint dwFreeMask = pSegment->Header.rgFreeMask[uMask];
+            uint uBogus = 0;
+
+            do
+            {
+                OBJECTHANDLE handle = *pHandleBase;
+                nuint handleValue = (nuint)handle.Value;
+
+                if (handleValue < firstHandle || handleValue >= lastHandle)
+                {
+                    break;
+                }
+
+                Debug.Assert(HndIsNullOrDestroyedHandle(*(nuint*)handle.Value));
+
+                uint uHandle = (uint)((handleValue - firstHandle) / HandleTableConstants.HANDLE_SIZE);
+
+                if (pUserData != null)
+                {
+                    pUserData[uHandle] = 0;
+                }
+
+                uint dwFreeBit = 1u << (int)uHandle;
+
+                if ((dwFreeMask & dwFreeBit) != 0)
+                {
+                    uBogus++;
+                    Debug.Assert(false);
+                }
+
+                dwFreeMask |= dwFreeBit;
+                uRemain--;
+                pHandleBase++;
+            }
+            while (uRemain != 0);
+
+            pSegment->Header.rgFreeMask[uMask] = dwFreeMask;
+
+            if (dwFreeMask != HandleTableConstants.MASK_EMPTY)
+            {
+                *pfAllMasksFree = false;
+            }
+
+            uint uFreed = uCount - uRemain;
+            *puActualFreed += uFreed - uBogus;
+
+            return uFreed;
+        }
+
+        public static uint BlockFreeHandles(
+            TableSegment* pSegment,
+            uint uBlock,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount,
+            uint* puActualFreed,
+            bool* pfScanForFreeBlocks)
+        {
+            uint uRemain = uCount;
+            nuint* pBlockUserData = BlockFetchUserDataPointer(&pSegment->Header, uBlock, false);
+            nuint firstHandle = (nuint)(void*)&pSegment->rgValue[uBlock * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK];
+            nuint lastHandle = firstHandle + (HandleTableConstants.HANDLE_HANDLES_PER_BLOCK * HandleTableConstants.HANDLE_SIZE);
+            bool fAllMasksWeTouchedAreFree = true;
+
+            do
+            {
+                OBJECTHANDLE handle = *pHandleBase;
+                nuint handleValue = (nuint)handle.Value;
+
+                if (handleValue < firstHandle || handleValue >= lastHandle)
+                {
+                    break;
+                }
+
+                uint uMask = (uint)((handleValue - firstHandle) /
+                    (HandleTableConstants.HANDLE_SIZE * HandleTableConstants.HANDLE_HANDLES_PER_MASK));
+
+                uint uFreed = BlockFreeHandlesInMask(
+                    pSegment,
+                    uBlock,
+                    uMask,
+                    pHandleBase,
+                    uRemain,
+                    pBlockUserData,
+                    puActualFreed,
+                    &fAllMasksWeTouchedAreFree);
+
+                uRemain -= uFreed;
+                pHandleBase += uFreed;
+            }
+            while (uRemain != 0);
+
+            if (fAllMasksWeTouchedAreFree)
+            {
+                if (!BlockIsLocked(pSegment, uBlock))
+                {
+                    *pfScanForFreeBlocks = true;
+                }
+            }
+
+            return uCount - uRemain;
+        }
+
+        public static uint SegmentFreeHandles(
+            TableSegment* pSegment,
+            uint uType,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            uint uRemain = uCount;
+            nuint firstHandle = (nuint)(void*)&pSegment->rgValue[0];
+            nuint lastHandle = firstHandle + (HandleTableConstants.HANDLE_HANDLES_PER_SEGMENT * HandleTableConstants.HANDLE_SIZE);
+            bool fScanForFreeBlocks = false;
+            uint uActualFreed = 0;
+
+            do
+            {
+                OBJECTHANDLE handle = *pHandleBase;
+                nuint handleValue = (nuint)handle.Value;
+
+                if (handleValue < firstHandle || handleValue >= lastHandle)
+                {
+                    break;
+                }
+
+                uint uBlock = (uint)((handleValue - firstHandle) /
+                    (HandleTableConstants.HANDLE_SIZE * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK));
+
+                Debug.Assert(pSegment->Header.rgBlockType[uBlock] == uType);
+
+                uint uFreed = BlockFreeHandles(
+                    pSegment,
+                    uBlock,
+                    pHandleBase,
+                    uRemain,
+                    &uActualFreed,
+                    &fScanForFreeBlocks);
+
+                uRemain -= uFreed;
+                pHandleBase += uFreed;
+            }
+            while (uRemain != 0);
+
+            uint uFreedTotal = uCount - uRemain;
+            pSegment->Header.rgFreeCount[uType] += uActualFreed;
+
+            if (fScanForFreeBlocks)
+            {
+                bool fNeedsScavenging = false;
+                SegmentRemoveFreeBlocks(pSegment, uType, &fNeedsScavenging);
+
+                if (fNeedsScavenging)
+                {
+                    pSegment->Header.fResortChains = true;
+                    pSegment->Header.fNeedsScavenging = true;
+                }
+            }
+
+            return uFreedTotal;
         }
     }
 }
