@@ -174,10 +174,10 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   otherwise, which is what the C++ `minipal_getpagesize` is there. The `<sys/mman.h>`,
   `<sys/resource.h>` and `<windows.h>` constants are written out per platform in C# and
   asserted against the real headers, for the platform being built, by
-  `nativeaot/Runtime/gcenv.managed.cpp`. One shim remains and belongs to submodule 2 below
-  rather than to this one: `ManagedGC_NUMA_BindMemoryPolicy` is the `mbind` half of
-  `VirtualCommitInner` verbatim, which needs `g_numaAvailable`, `g_highestNumaNode` and
-  `BindMemoryPolicy` of `gc/unix/numasupport.cpp`.
+  `nativeaot/Runtime/gcenv.managed.cpp`. The old broad `ManagedGC_NUMA_BindMemoryPolicy`
+  forwarder is gone; the Unix NUMA bind path now calls narrow state shims directly
+  (`ManagedGC_Unix_GetNumaAvailable`, `ManagedGC_Unix_GetHighestNumaNode`,
+  `ManagedGC_Unix_BindMemoryPolicy`).
 - Write watch: `SupportsWriteWatch`, `ResetWriteWatch` and `GetWriteWatch`, from
   `gc/unix/gcenv.unix.cpp` and `gc/windows/gcenv.windows.cpp`. Windows calls
   `GetSystemInfo`/`GetWriteWatch`/`ResetWriteWatch` directly, as `[RuntimeImport]`s, and keeps
@@ -187,7 +187,7 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   `BOOL` -- and asserts the reported granularity against `OS_PAGE_SIZE`; the in/out count is
   `ULONG_PTR`, which is `nuint`, so it needs no conversion. `g_SystemInfo.dwAllocationGranularity`
   is read from `GetSystemInfo` at the point of use rather than from a cached global, because the
-  managed `Initialize` that fills the C++ one is submodule 4 below; it is the same machine
+  managed `Initialize` that fills the C++ one is submodule 3 below; it is the same machine
   constant either way. Unix keeps its exact behavior: a constant `false` that reserves nothing,
   and two methods that only assert. `WRITE_WATCH_FLAG_RESET` and the `SYSTEM_INFO` layout are
   asserted against `<windows.h>` by `nativeaot/Runtime/gcenv.managed.cpp` like the virtual
@@ -211,7 +211,7 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   with no marshalling and no GC mode transition, exactly as the native GC does while the world is
   suspended. The C++ heap-allocates the Impl with `new (nothrow)`, and the C++ lock embeds its
   `minipal_mutex` by value; the managed versions take both from `ManagedGC_AllocZeroed`, which is
-  submodule 3 below, because the managed GC has no allocator of its own yet. The pthread and
+  submodule 2 below, because the managed GC has no allocator of its own yet. The pthread and
   `CRITICAL_SECTION` types are opaque blobs sized above every platform, `struct timespec` is
   written out in the two variants that exist -- two native words, or the 64-bit `time_t` musl
   uses -- and the constants (`PTHREAD_MUTEX_RECURSIVE`, `CLOCK_MONOTONIC`, `CLOCK_UPTIME_RAW`,
@@ -262,7 +262,7 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   anonymous-namespace `CGroup` of `cgroup.cpp`, and `ManagedGC_Unix_ReadMemoryValueFromFile`,
   `ManagedGC_Unix_ReadMemAvailable`, `ManagedGC_Unix_GetCurrentVirtualMemorySize` and
   `ManagedGC_Unix_GetProcessAffinitySet` over the `static` `/sys` and `/proc` readers and the
-  affinity set of `gcenv.unix.cpp`. They are deleted with submodules 1 and 2 below; Windows
+  affinity set of `gcenv.unix.cpp`. They are deleted with submodules 1 and 3 below; Windows
   retains nothing.
 - Timers: `QueryPerformanceCounter`, `QueryPerformanceFrequency` and `GetLowPrecisionTimeStamp`,
   from `gc/unix/gcenv.unix.cpp` and `gc/windows/gcenv.windows.cpp`. On Unix each one is a single
@@ -293,14 +293,15 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   accessors: `ManagedGC_Unix_GetTotalCpuCount` and the existing
   `ManagedGC_Unix_GetProcessAffinitySet` on Unix, and `ManagedGC_Windows_GetTotalCpuCount` (a
   `uint32_t*`, because the C++ body caches into `g_totalCpuCount` on first call),
-  `ManagedGC_Windows_GetCpuGroupProcessorCount`, `ManagedGC_Windows_GetSystemInfoProcessorCount`
-  and `ManagedGC_Windows_GetProcessAffinitySet` on Windows; they are deleted with submodules 2
-  and 4 below. `ManagedGC_Unix_GetCurrentThreadId` is retained for a different reason:
+  `ManagedGC_Windows_GetSystemInfoProcessorCount`, `ManagedGC_Windows_GetProcessAffinitySet`,
+  `ManagedGC_Windows_GetCanEnableGCCPUGroups`, `ManagedGC_Windows_GetCpuGroupCount`,
+  `ManagedGC_Windows_GetCpuGroupActiveProcessorCount` and `ManagedGC_Windows_GetCpuGroupBegin`
+  on Windows. `ManagedGC_Unix_GetCurrentThreadId` is retained for a different reason:
   `minipal_get_current_thread_id` is a `static inline` over a `_Thread_local` cache rather than a
   linkable symbol, so it goes away when minipal exports a real entry point or when
-  System.Private.GC has thread local storage of its own. All six `ManagedGC_OS_*` forwarders are
-  gone; `FEATURE_MANAGED_GC` excludes only the four identity bodies, because `PalUnix.cpp` /
-  `PalMinWin.cpp` and `gcconfig.cpp` in the same archive still call the two count methods.
+  System.Private.GC has thread local storage of its own. All processor/affinity/NUMA/CPU-group
+  `ManagedGC_OS_*` forwarders are gone; only `ManagedGC_OS_Initialize`,
+  `ManagedGC_OS_Shutdown` and `ManagedGC_OS_DebugBreak` remain.
 - Focused xUnit coverage of every piece above that is pure computation, in
   `tests/GCEnvironmentTests.cs`; of the whole virtual memory port -- flag translation,
   alignment over-allocation and trimming, failure paths, and a reserve/commit/write/reset/
@@ -327,12 +328,13 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   that check the signed-to-unsigned reinterpretation, and on Windows the same range through the
   `QuadPart` the two `LARGE_INTEGER` calls fill, the truncating division by
   `TicksPerMillisecond` across its boundaries, and the three injected call failures -- in
-  `tests/GCTimerTests.cs`; and of the processor count and identity ports -- the single call per
-  identity method, the widening of a `-1` pid and of a thread id with the top bit set, both
-  `HAVE_SCHED_GETCPU` arms, the `GroupProcNo` packing over the corners of both fields, the
-  affinity set's capacity rather than its population, and the Windows `g_totalCpuCount` caching,
-  CPU-group branch and zero retry -- in `tests/GCProcessorTests.cs`. All of
-  them run the shipping bodies over recording substitutes for their libc and Win32 declarations.
+  `tests/GCTimerTests.cs`; and of the processor/affinity/NUMA/CPU-group ports -- identity
+  widening, both `HAVE_SCHED_GETCPU` arms, Windows `GroupProcNo` packing, `GetTotalProcessorCount`
+  caching and source selection, `SetThreadAffinity` and ideal-processor branches, thread-priority
+  boosting, `SetGCThreadsAffinitySet` set/mask behavior, NUMA and CPU-group info aggregation,
+  heap-to-processor mapping with node fallback rules, and affinitize-range entry parsing -- in
+  `tests/GCProcessorTests.cs`. All of them run the shipping bodies over recording substitutes for
+  their libc and Win32 declarations.
 
 #### Remaining submodules
 
@@ -340,31 +342,44 @@ Each item below is a native module that `nativeaot/Runtime/gcenv.managed.cpp` cu
 to. The managed declaration already exists and does not change when the implementation lands;
 only the body and its shim do. They are listed in the order they become blocking.
 
+The affinity/NUMA/CPU-group submodule is complete: `SetThreadAffinity`,
+`BoostThreadPriority`, `SetCurrentThreadIdealAffinity`, `GetCurrentThreadIdealProc`,
+`SetGCThreadsAffinitySet`, `CanEnableGCNumaAware`, `GetNumaInfo`, `CanEnableGCCPUGroups`,
+`GetProcessorForHeap`, `GetCPUGroupInfo` and `ParseGCHeapAffinitizeRangesEntry` are translated
+for Unix and Windows, and `ManagedGC_NUMA_BindMemoryPolicy` plus
+`ManagedGC_Windows_GetCpuGroupProcessorCount` are removed. `ManagedGC_OS_Initialize`,
+`ManagedGC_OS_Shutdown` and `ManagedGC_OS_DebugBreak` are the only broad forwarders left in
+`gcenv.managed.cpp`. `FEATURE_MANAGED_GC` excludes every one of those C++ bodies -- and the
+anonymous-namespace `GetGroupForProcessor` of `gcenv.windows.cpp`, whose only caller went with
+them -- except `CanEnableGCCPUGroups` and `ParseGCHeapAffinitizeRangesEntry`, which
+`gc/gcconfig.cpp` and `nativeaot/Runtime/windows/PalMinWin.cpp` in the same archive still call.
+The Unix NUMA state is reached through `ManagedGC_Unix_GetNumaAvailable`,
+`ManagedGC_Unix_GetHighestNumaNode`, `ManagedGC_Unix_GetNumaNodeNumByCpu` and
+`ManagedGC_Unix_BindMemoryPolicy`, the last two because `numasupport.h` declares its functions
+with C++ linkage; `ManagedGC_Unix_GetConfiguredCpuCount` is the cpu-set size `SetThreadAffinity`
+allocates from.
+
 1. **cgroup and `/proc` file parsing** -- the six `ManagedGC_CGroup_*` / `ManagedGC_Unix_*`
    leaves the memory limit port left behind: the `CGroup` class of `gc/unix/cgroup.cpp` and the
    `static` `/sys` and `/proc` readers of `gc/unix/gcenv.unix.cpp`. They need a
    `read`/`open`-based parser that allocates nothing, so they wait for the GC to have memory of
-   its own (submodule 3 below and stage 7).
-2. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
-   `SetCurrentThreadIdealAffinity`, `GetCurrentThreadIdealProc`, `SetGCThreadsAffinitySet`,
-   `CanEnableGCNumaAware`, `GetNumaInfo`, `CanEnableGCCPUGroups`, `GetProcessorForHeap`,
-   `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp`, the
-   `ManagedGC_NUMA_BindMemoryPolicy` shim that `VirtualCommit` still calls, the
-   `ManagedGC_Unix_GetProcessAffinitySet` and `ManagedGC_Windows_GetProcessAffinitySet` shims
-   that the cache sizing heuristic and `GetMaxProcessorCount` still call, and the
-   `ManagedGC_Windows_GetCpuGroupProcessorCount` shim that `GetTotalProcessorCount` still calls.
-   Blocks server GC in stage 10.
-3. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
+   its own (submodule 2 below and stage 7).
+2. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
    stand in for the `new (nothrow)` allocations of the environment layer: the `uintptr_t[]` of
    `AffinitySet`, the `GCEvent::Impl` of the event ports, the `minipal_mutex` that the C++
    `CLRCriticalSection` embeds by value, and the `SYSTEM_LOGICAL_PROCESSOR_INFORMATION[]` of the
    Windows `GetLPI`. They can only go away once the GC has memory of its own to take those from,
    which is stage 7.
-4. **Initialization** -- `Initialize` and `Shutdown`, plus the `ManagedGC_Unix_GetTotalCpuCount`,
-   `ManagedGC_Windows_GetTotalCpuCount` and `ManagedGC_Windows_GetSystemInfoProcessorCount`
-   shims over the state the C++ `Initialize` fills. NativeAOT calls the C++ ones from
-   `PalInit`, so the managed GC never calls these; they land last, together with moving that call
-   out of `PalInit`.
+3. **Initialization** -- `Initialize` and `Shutdown`, plus the shims over state the C++
+   `Initialize` fills (`ManagedGC_Unix_GetTotalCpuCount`, `ManagedGC_Unix_GetConfiguredCpuCount`,
+   `ManagedGC_Unix_GetProcessAffinitySet`, `ManagedGC_Unix_GetNumaAvailable`,
+   `ManagedGC_Unix_GetHighestNumaNode`, `ManagedGC_Windows_GetTotalCpuCount`,
+   `ManagedGC_Windows_GetSystemInfoProcessorCount`, `ManagedGC_Windows_GetProcessAffinitySet`,
+   `ManagedGC_Windows_GetCanEnableGCNumaAware`, `ManagedGC_Windows_GetNumaNodeCount`,
+   `ManagedGC_Windows_GetCanEnableGCCPUGroups`, `ManagedGC_Windows_GetCpuGroupCount`,
+   `ManagedGC_Windows_GetCpuGroupActiveProcessorCount`, `ManagedGC_Windows_GetCpuGroupBegin`).
+   NativeAOT calls the C++ ones from `PalInit`, so the managed GC never calls these; they land
+   last, together with moving that call out of `PalInit`.
 
 `env/gcenv.object.h` is **not** part of this stage after all. NativeAOT overrides it: its own
 `nativeaot/Runtime/gcenv.h` supplies `MethodTable`, `Object`, `ObjHeader` and `ArrayBase` from

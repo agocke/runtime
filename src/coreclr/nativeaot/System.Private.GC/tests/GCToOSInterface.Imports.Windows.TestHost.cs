@@ -20,6 +20,7 @@
 // it is a plain mmap flag.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Xunit;
@@ -559,10 +560,10 @@ internal static unsafe partial class GCToOSInterface
     private static extern int sys_QueryUnbiasedInterruptTime(ulong* UnbiasedTime);
 
     //
-    // The processor count and identity port. The three Win32 entry points are real calls that a
-    // test can also take over; the four ManagedGC_Windows_ shims and the one remaining
-    // forwarder stand in for state that only gc/windows/gcenv.windows.cpp has, so each of them
-    // is injection only and starts from the value a fresh process would see.
+    // The processor, affinity, NUMA and CPU-group ports. The Win32 entry points are real calls
+    // that a test can also take over; the ManagedGC_Windows_ shims stand in for state that only
+    // gc/windows/gcenv.windows.cpp has, so each of them is injection only and starts from the
+    // value a fresh process would see.
     //
 
     internal static bool CurrentThreadIdInject;
@@ -593,14 +594,60 @@ internal static unsafe partial class GCToOSInterface
 
     internal static int TotalCpuCountCalls;
 
-    internal static uint CpuGroupProcessorCountValue;
-    internal static int CpuGroupProcessorCountCalls;
-
     internal static uint SystemInfoProcessorCountValue;
     internal static int SystemInfoProcessorCountCalls;
 
+    internal static int CanEnableGCNumaAwareValue;
+    internal static int CanEnableGCNumaAwareCalls;
+
+    internal static uint NumaNodeCountValue;
+    internal static int NumaNodeCountCalls;
+
     internal static int CanEnableGCCPUGroupsValue;
     internal static int CanEnableGCCPUGroupsCalls;
+
+    internal static ushort CpuGroupCountValue;
+    internal static int CpuGroupCountCalls;
+    internal static readonly ushort[] CpuGroupActiveProcessorCountValues = new ushort[64];
+    internal static readonly ushort[] CpuGroupBeginValues = new ushort[64];
+    internal static int CpuGroupActiveProcessorCountCalls;
+    internal static int CpuGroupBeginCalls;
+
+    internal static bool GetThreadIdealProcessorExInject;
+    internal static int GetThreadIdealProcessorExResult;
+    internal static ushort GetThreadIdealProcessorExGroup;
+    internal static byte GetThreadIdealProcessorExNumber;
+    internal static int GetThreadIdealProcessorExCalls;
+
+    internal static bool SetThreadIdealProcessorExInject;
+    internal static int SetThreadIdealProcessorExResult;
+    internal static int SetThreadIdealProcessorExCalls;
+    internal static PROCESSOR_NUMBER LastSetThreadIdealProcessorEx;
+
+    internal static bool SetThreadGroupAffinityInject;
+    internal static int SetThreadGroupAffinityResult;
+    internal static int SetThreadGroupAffinityCalls;
+    internal static GROUP_AFFINITY LastSetThreadGroupAffinity;
+
+    internal static bool SetThreadAffinityMaskInject;
+    internal static nuint SetThreadAffinityMaskResult;
+    internal static int SetThreadAffinityMaskCalls;
+    internal static nuint LastSetThreadAffinityMask;
+
+    internal static bool SetThreadPriorityInject;
+    internal static int SetThreadPriorityResult;
+    internal static int SetThreadPriorityCalls;
+    internal static int LastSetThreadPriority;
+
+    internal static readonly Dictionary<ushort, nuint> NumaNodeMasks = new Dictionary<ushort, nuint>();
+    internal static bool GetNumaNodeProcessorMaskExInject;
+    internal static int GetNumaNodeProcessorMaskExResult;
+    internal static int GetNumaNodeProcessorMaskExCalls;
+
+    internal static bool GetNumaProcessorNodeExInject;
+    internal static int GetNumaProcessorNodeExResult;
+    internal static ushort GetNumaProcessorNodeExNode;
+    internal static int GetNumaProcessorNodeExCalls;
 
     /// <summary>
     /// The bitset behind the affinity set <c>ManagedGC_Windows_GetProcessAffinitySet</c> hands
@@ -619,6 +666,20 @@ internal static unsafe partial class GCToOSInterface
         AffinitySet* set = (AffinitySet*)NativeMemory.AllocZeroed((nuint)sizeof(AffinitySet));
         set->InitializeWithStorage(s_processAffinityBitset, ProcessAffinitySetEntries);
         return set;
+    }
+
+    /// <summary>
+    /// Makes the process affinity set contain exactly processors
+    /// <c>[0, cpuCount)</c>.
+    /// </summary>
+    internal static void SetProcessAffinityCpuCount(nuint cpuCount)
+    {
+        NativeMemory.Clear(s_processAffinityBitset, ProcessAffinitySetEntries * (nuint)sizeof(nuint));
+        s_processAffinitySet->InitializeWithStorage(s_processAffinityBitset, ProcessAffinitySetEntries);
+        for (nuint i = 0; i < cpuCount; i++)
+        {
+            s_processAffinitySet->Add(i);
+        }
     }
 
     /// <summary>
@@ -653,12 +714,49 @@ internal static unsafe partial class GCToOSInterface
         CurrentProcessorNumberCalls = 0;
         TotalCpuCountValue = 0;
         TotalCpuCountCalls = 0;
-        CpuGroupProcessorCountValue = 0;
-        CpuGroupProcessorCountCalls = 0;
         SystemInfoProcessorCountValue = 0;
         SystemInfoProcessorCountCalls = 0;
+        CanEnableGCNumaAwareValue = 0;
+        CanEnableGCNumaAwareCalls = 0;
+        NumaNodeCountValue = 0;
+        NumaNodeCountCalls = 0;
         CanEnableGCCPUGroupsValue = 0;
         CanEnableGCCPUGroupsCalls = 0;
+        CpuGroupCountValue = 0;
+        CpuGroupCountCalls = 0;
+        Array.Clear(CpuGroupActiveProcessorCountValues);
+        Array.Clear(CpuGroupBeginValues);
+        CpuGroupActiveProcessorCountCalls = 0;
+        CpuGroupBeginCalls = 0;
+        GetThreadIdealProcessorExInject = false;
+        GetThreadIdealProcessorExResult = 0;
+        GetThreadIdealProcessorExGroup = 0;
+        GetThreadIdealProcessorExNumber = 0;
+        GetThreadIdealProcessorExCalls = 0;
+        SetThreadIdealProcessorExInject = false;
+        SetThreadIdealProcessorExResult = 0;
+        SetThreadIdealProcessorExCalls = 0;
+        LastSetThreadIdealProcessorEx = default;
+        SetThreadGroupAffinityInject = false;
+        SetThreadGroupAffinityResult = 0;
+        SetThreadGroupAffinityCalls = 0;
+        LastSetThreadGroupAffinity = default;
+        SetThreadAffinityMaskInject = false;
+        SetThreadAffinityMaskResult = 0;
+        SetThreadAffinityMaskCalls = 0;
+        LastSetThreadAffinityMask = 0;
+        SetThreadPriorityInject = false;
+        SetThreadPriorityResult = 0;
+        SetThreadPriorityCalls = 0;
+        LastSetThreadPriority = 0;
+        NumaNodeMasks.Clear();
+        GetNumaNodeProcessorMaskExInject = false;
+        GetNumaNodeProcessorMaskExResult = 0;
+        GetNumaNodeProcessorMaskExCalls = 0;
+        GetNumaProcessorNodeExInject = false;
+        GetNumaProcessorNodeExResult = 0;
+        GetNumaProcessorNodeExNode = 0;
+        GetNumaProcessorNodeExCalls = 0;
         SetProcessAffinityMaxCpuCount(ProcessAffinitySetEntries * (nuint)sizeof(nuint) * 8);
     }
 
@@ -694,12 +792,6 @@ internal static unsafe partial class GCToOSInterface
         return s_totalCpuCount;
     }
 
-    private static uint ManagedGC_Windows_GetCpuGroupProcessorCount()
-    {
-        CpuGroupProcessorCountCalls++;
-        return CpuGroupProcessorCountValue;
-    }
-
     private static uint ManagedGC_Windows_GetSystemInfoProcessorCount()
     {
         SystemInfoProcessorCountCalls++;
@@ -708,10 +800,154 @@ internal static unsafe partial class GCToOSInterface
 
     private static AffinitySet* ManagedGC_Windows_GetProcessAffinitySet() => s_processAffinitySet;
 
-    private static int ManagedGC_OS_CanEnableGCCPUGroups()
+    private static int ManagedGC_Windows_GetCanEnableGCNumaAware()
+    {
+        CanEnableGCNumaAwareCalls++;
+        return CanEnableGCNumaAwareValue;
+    }
+
+    private static uint ManagedGC_Windows_GetNumaNodeCount()
+    {
+        NumaNodeCountCalls++;
+        return NumaNodeCountValue;
+    }
+
+    private static int ManagedGC_Windows_GetCanEnableGCCPUGroups()
     {
         CanEnableGCCPUGroupsCalls++;
         return CanEnableGCCPUGroupsValue;
+    }
+
+    private static ushort ManagedGC_Windows_GetCpuGroupCount()
+    {
+        CpuGroupCountCalls++;
+        return CpuGroupCountValue;
+    }
+
+    private static ushort ManagedGC_Windows_GetCpuGroupActiveProcessorCount(ushort groupNumber)
+    {
+        CpuGroupActiveProcessorCountCalls++;
+        return CpuGroupActiveProcessorCountValues[groupNumber];
+    }
+
+    private static ushort ManagedGC_Windows_GetCpuGroupBegin(ushort groupNumber)
+    {
+        CpuGroupBeginCalls++;
+        return CpuGroupBeginValues[groupNumber];
+    }
+
+    private static void* GetCurrentThread()
+    {
+        return sys_GetCurrentThread();
+    }
+
+    private static int SetThreadIdealProcessorEx(void* hThread, PROCESSOR_NUMBER* lpIdealProcessor, PROCESSOR_NUMBER* lpPreviousIdealProcessor)
+    {
+        SetThreadIdealProcessorExCalls++;
+        LastSetThreadIdealProcessorEx = *lpIdealProcessor;
+        if (!SetThreadIdealProcessorExInject)
+        {
+            return sys_SetThreadIdealProcessorEx(hThread, lpIdealProcessor, lpPreviousIdealProcessor);
+        }
+
+        if ((SetThreadIdealProcessorExResult != 0) && (lpPreviousIdealProcessor != null))
+        {
+            lpPreviousIdealProcessor->Group = 0;
+            lpPreviousIdealProcessor->Number = 0;
+            lpPreviousIdealProcessor->Reserved = 0;
+        }
+
+        return SetThreadIdealProcessorExResult;
+    }
+
+    private static int GetThreadIdealProcessorEx(void* hThread, PROCESSOR_NUMBER* lpIdealProcessor)
+    {
+        GetThreadIdealProcessorExCalls++;
+        if (!GetThreadIdealProcessorExInject)
+        {
+            return sys_GetThreadIdealProcessorEx(hThread, lpIdealProcessor);
+        }
+
+        if (GetThreadIdealProcessorExResult != 0)
+        {
+            lpIdealProcessor->Group = GetThreadIdealProcessorExGroup;
+            lpIdealProcessor->Number = GetThreadIdealProcessorExNumber;
+            lpIdealProcessor->Reserved = 0;
+        }
+
+        return GetThreadIdealProcessorExResult;
+    }
+
+    private static int SetThreadGroupAffinity(void* hThread, GROUP_AFFINITY* GroupAffinity, GROUP_AFFINITY* PreviousGroupAffinity)
+    {
+        SetThreadGroupAffinityCalls++;
+        LastSetThreadGroupAffinity = *GroupAffinity;
+        if (!SetThreadGroupAffinityInject)
+        {
+            return sys_SetThreadGroupAffinity(hThread, GroupAffinity, PreviousGroupAffinity);
+        }
+
+        return SetThreadGroupAffinityResult;
+    }
+
+    private static nuint SetThreadAffinityMask(void* hThread, nuint dwThreadAffinityMask)
+    {
+        SetThreadAffinityMaskCalls++;
+        LastSetThreadAffinityMask = dwThreadAffinityMask;
+        if (!SetThreadAffinityMaskInject)
+        {
+            return sys_SetThreadAffinityMask(hThread, dwThreadAffinityMask);
+        }
+
+        return SetThreadAffinityMaskResult;
+    }
+
+    private static int SetThreadPriority(void* hThread, int nPriority)
+    {
+        SetThreadPriorityCalls++;
+        LastSetThreadPriority = nPriority;
+        if (!SetThreadPriorityInject)
+        {
+            return sys_SetThreadPriority(hThread, nPriority);
+        }
+
+        return SetThreadPriorityResult;
+    }
+
+    private static int GetNumaNodeProcessorMaskEx(ushort Node, GROUP_AFFINITY* ProcessorMask)
+    {
+        GetNumaNodeProcessorMaskExCalls++;
+        if (!GetNumaNodeProcessorMaskExInject)
+        {
+            return sys_GetNumaNodeProcessorMaskEx(Node, ProcessorMask);
+        }
+
+        if (GetNumaNodeProcessorMaskExResult != 0)
+        {
+            ProcessorMask->Mask = NumaNodeMasks.TryGetValue(Node, out nuint mask) ? mask : 0;
+            ProcessorMask->Group = 0;
+            ProcessorMask->Reserved[0] = 0;
+            ProcessorMask->Reserved[1] = 0;
+            ProcessorMask->Reserved[2] = 0;
+        }
+
+        return GetNumaNodeProcessorMaskExResult;
+    }
+
+    private static int GetNumaProcessorNodeEx(PROCESSOR_NUMBER* Processor, ushort* NodeNumber)
+    {
+        GetNumaProcessorNodeExCalls++;
+        if (!GetNumaProcessorNodeExInject)
+        {
+            return sys_GetNumaProcessorNodeEx(Processor, NodeNumber);
+        }
+
+        if (GetNumaProcessorNodeExResult != 0)
+        {
+            *NodeNumber = GetNumaProcessorNodeExNode;
+        }
+
+        return GetNumaProcessorNodeExResult;
     }
 
     [DllImport("kernel32", EntryPoint = "GetCurrentThreadId")]
@@ -722,4 +958,28 @@ internal static unsafe partial class GCToOSInterface
 
     [DllImport("kernel32", EntryPoint = "GetCurrentProcessorNumberEx")]
     private static extern void sys_GetCurrentProcessorNumberEx(PROCESSOR_NUMBER* ProcNumber);
+
+    [DllImport("kernel32", EntryPoint = "GetCurrentThread")]
+    private static extern void* sys_GetCurrentThread();
+
+    [DllImport("kernel32", EntryPoint = "SetThreadIdealProcessorEx")]
+    private static extern int sys_SetThreadIdealProcessorEx(void* hThread, PROCESSOR_NUMBER* lpIdealProcessor, PROCESSOR_NUMBER* lpPreviousIdealProcessor);
+
+    [DllImport("kernel32", EntryPoint = "GetThreadIdealProcessorEx")]
+    private static extern int sys_GetThreadIdealProcessorEx(void* hThread, PROCESSOR_NUMBER* lpIdealProcessor);
+
+    [DllImport("kernel32", EntryPoint = "SetThreadGroupAffinity")]
+    private static extern int sys_SetThreadGroupAffinity(void* hThread, GROUP_AFFINITY* GroupAffinity, GROUP_AFFINITY* PreviousGroupAffinity);
+
+    [DllImport("kernel32", EntryPoint = "SetThreadAffinityMask")]
+    private static extern nuint sys_SetThreadAffinityMask(void* hThread, nuint dwThreadAffinityMask);
+
+    [DllImport("kernel32", EntryPoint = "SetThreadPriority")]
+    private static extern int sys_SetThreadPriority(void* hThread, int nPriority);
+
+    [DllImport("kernel32", EntryPoint = "GetNumaNodeProcessorMaskEx")]
+    private static extern int sys_GetNumaNodeProcessorMaskEx(ushort Node, GROUP_AFFINITY* ProcessorMask);
+
+    [DllImport("kernel32", EntryPoint = "GetNumaProcessorNodeEx")]
+    private static extern int sys_GetNumaProcessorNodeEx(PROCESSOR_NUMBER* Processor, ushort* NodeNumber);
 }

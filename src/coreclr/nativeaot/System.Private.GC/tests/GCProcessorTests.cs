@@ -1,23 +1,18 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Behavior tests for the processor count and identity port of GCToOSInterface -- the translation
-// of GetCurrentThreadIdForLogging, GetCurrentProcessId, GetCurrentProcessorNumber,
-// CanGetCurrentProcessorNumber, GetTotalProcessorCount and GetMaxProcessorCount of
-// gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
+// Behavior tests for the processor, affinity, NUMA and CPU-group ports of GCToOSInterface -- the
+// translation of the corresponding methods of gc/unix/gcenv.unix.cpp and
+// gc/windows/gcenv.windows.cpp.
 //
 // The ported bodies are the code under test. Only what is underneath them is substituted: on
-// Unix sched_getcpu and getpid, plus the two shims that report the state GCToOSInterface::Initialize
-// still owns; on Windows GetCurrentThreadId, GetCurrentProcessId and GetCurrentProcessorNumberEx,
-// plus the four shims and the CanEnableGCCPUGroups forwarder that stand for the CPU group state.
+// Unix sched_getcpu / sched_setaffinity / getpid plus narrow shims over native-owned state; on
+// Windows the Win32 calls plus narrow shims over Initialize-owned CPU-group and NUMA state.
 //
-// The three things worth pinning are the ones the C++ makes exact. First, forwarding: each of
-// these bodies is one call, and what a test can check is that it is that call, once, and that
-// the value survives the widening or the signed-to-unsigned cast unchanged. Second, the
-// HAVE_SCHED_GETCPU branch: which of the two Unix bodies is compiled is a platform decision, and
-// the assert path of each can only run where asserts are compiled out. Third, the Windows
-// GetTotalProcessorCount cache and its two sources, which is the only one of the six with a
-// branch in it, and the (group << 6) | procIndex packing of GroupProcNo.
+// The things worth pinning are the ones the C++ makes exact: forwarding and widening behavior
+// of the identity calls, the compile-time HAVE_SCHED_GETCPU branch, the Windows
+// (group << 6) | procIndex packing, the GetTotalProcessorCount cache/source selection, and the
+// affinity/NUMA/CPU-group branches of the translated methods.
 //
 // The expected constants are written out here rather than read from the port, so that a wrong
 // constant fails a test instead of being confirmed by it.
@@ -241,6 +236,246 @@ public sealed unsafe class GCProcessorTests
         Assert.Equal(1, GCToOSInterface.TotalCpuCountCalls);
     }
 
+    [Theory]
+    [InlineData((ushort)0, (ushort)0)]
+    [InlineData((ushort)1, (ushort)2)]
+    [InlineData(ushort.MaxValue, 0)]
+    public void SetCurrentThreadIdealAffinityIsANoOpThatSucceedsOnUnix(ushort srcProcNo, ushort dstProcNo)
+    {
+        Assert.True(GCToOSInterface.SetCurrentThreadIdealAffinity(srcProcNo, dstProcNo));
+    }
+
+    [Fact]
+    public void GetCurrentThreadIdealProcIsUnsupportedOnUnix()
+    {
+        ushort procNo = 1234;
+
+        Assert.False(GCToOSInterface.GetCurrentThreadIdealProc(&procNo));
+        Assert.Equal((ushort)1234, procNo);
+    }
+
+#if !TARGET_APPLE && !TARGET_OPENBSD
+    [Theory]
+    [InlineData((ushort)0, 0u, true)]
+    [InlineData((ushort)5, 0u, true)]
+    [InlineData((ushort)5, -1, false)]
+    public void SetThreadAffinityUsesSchedSetaffinityWithAOneBitMask(ushort procNo, int schedResult, bool expected)
+    {
+        GCToOSInterface.ConfiguredCpuCountValue = 64;
+        GCToOSInterface.SchedSetAffinityInject = true;
+        GCToOSInterface.SchedSetAffinityResult = schedResult;
+
+        Assert.Equal(expected, GCToOSInterface.SetThreadAffinity(procNo));
+        Assert.Equal(1, GCToOSInterface.SchedSetAffinityCalls);
+#if !TARGET_FREEBSD
+        // sched_setaffinity is called with pid 0, which is the calling thread.
+        Assert.Equal(0, GCToOSInterface.LastSchedSetAffinityPid);
+#else
+        // The fallback arm affinitizes pthread_self() instead.
+        Assert.Equal(1, GCToOSInterface.PthreadSelfCalls);
+        Assert.NotEqual((nuint)0, GCToOSInterface.LastSchedSetAffinityThread);
+#endif
+        Assert.Equal(0, GCToOSInterface.TotalCpuCountCalls);
+
+        nuint bitsPerWord = (nuint)sizeof(nuint) * 8;
+        nuint expectedCpuSetSize = ((nuint)64 + bitsPerWord - 1) / bitsPerWord * (nuint)sizeof(nuint);
+        Assert.Equal(expectedCpuSetSize, GCToOSInterface.LastSchedSetAffinityCpuSetSize);
+
+        nuint expectedWord = procNo / bitsPerWord;
+        nuint expectedBit = (nuint)(procNo & (ushort)(bitsPerWord - 1));
+        for (nuint i = 0; i < (nuint)GCToOSInterface.LastSchedSetAffinityMask.Length; i++)
+        {
+            nuint expectedMask = i == expectedWord ? (nuint)1 << (int)expectedBit : 0;
+            Assert.Equal(expectedMask, GCToOSInterface.LastSchedSetAffinityMask[i]);
+        }
+    }
+
+    [Fact]
+    public void SetThreadAffinityIgnoresAProcessorPastTheEndOfTheSet()
+    {
+        // CPU_SET_S is bounds checked, so a processor number the configured count does not
+        // cover leaves the set empty rather than writing past it.
+        GCToOSInterface.ConfiguredCpuCountValue = 1;
+        GCToOSInterface.SchedSetAffinityInject = true;
+        GCToOSInterface.SchedSetAffinityResult = 0;
+
+        nuint bitsPerWord = (nuint)sizeof(nuint) * 8;
+        Assert.True(GCToOSInterface.SetThreadAffinity((ushort)bitsPerWord));
+        Assert.Equal(1, GCToOSInterface.SchedSetAffinityCalls);
+        Assert.Equal((nuint)sizeof(nuint), GCToOSInterface.LastSchedSetAffinityCpuSetSize);
+
+        for (nuint i = 0; i < (nuint)GCToOSInterface.LastSchedSetAffinityMask.Length; i++)
+        {
+            Assert.Equal((nuint)0, GCToOSInterface.LastSchedSetAffinityMask[i]);
+        }
+    }
+#endif
+
+    [Fact]
+    public void BoostThreadPriorityReturnsFalseOnUnix()
+    {
+        Assert.False(GCToOSInterface.BoostThreadPriority());
+    }
+
+    [Fact]
+    public void SetGCThreadsAffinitySetUsesTheConfiguredSetOnUnix()
+    {
+        GCToOSInterface.TotalCpuCountValue = 8;
+        GCToOSInterface.SetProcessAffinityCpuCount(8);
+
+        nuint* configBits = stackalloc nuint[1];
+        AffinitySet configured = default;
+        InitializeAffinitySet(&configured, configBits, 1, 1, 3, 5);
+
+        AffinitySet* result = GCToOSInterface.SetGCThreadsAffinitySet(0b11111111, &configured);
+
+        for (nuint i = 0; i < 8; i++)
+        {
+            bool shouldContain = (i == 1) || (i == 3) || (i == 5);
+            Assert.Equal(shouldContain, result->Contains(i));
+        }
+    }
+
+    [Fact]
+    public void SetGCThreadsAffinitySetIgnoresMaskWhenConfiguredSetIsEmptyOnUnix()
+    {
+        GCToOSInterface.TotalCpuCountValue = 8;
+        GCToOSInterface.SetProcessAffinityCpuCount(8);
+
+        nuint* configBits = stackalloc nuint[1];
+        AffinitySet configured = default;
+        InitializeAffinitySet(&configured, configBits, 1);
+
+        AffinitySet* result = GCToOSInterface.SetGCThreadsAffinitySet(0b00101101, &configured);
+        for (nuint i = 0; i < 8; i++)
+        {
+            Assert.True(result->Contains(i));
+        }
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(-1, true)]
+    public void CanEnableGCNumaAwareReflectsTheNativeStateOnUnix(int value, bool expected)
+    {
+        GCToOSInterface.NumaAvailableValue = value;
+
+        Assert.Equal(expected, GCToOSInterface.CanEnableGCNumaAware());
+        Assert.Equal(1, GCToOSInterface.NumaAvailableCalls);
+    }
+
+    [Fact]
+    public void GetNumaInfoReturnsFalseOnUnix()
+    {
+        ushort totalNodes = 123;
+        uint maxProcsPerNode = 456;
+
+        Assert.False(GCToOSInterface.GetNumaInfo(&totalNodes, &maxProcsPerNode));
+        Assert.Equal((ushort)123, totalNodes);
+        Assert.Equal(456u, maxProcsPerNode);
+    }
+
+    [Fact]
+    public void CanEnableGCCPUGroupsIsAlwaysFalseOnUnix()
+    {
+        Assert.False(GCToOSInterface.CanEnableGCCPUGroups());
+    }
+
+    [Fact]
+    public void GetCPUGroupInfoReturnsFalseOnUnix()
+    {
+        ushort totalGroups = 12;
+        uint maxProcsPerGroup = 34;
+
+        Assert.False(GCToOSInterface.GetCPUGroupInfo(&totalGroups, &maxProcsPerGroup));
+        Assert.Equal((ushort)12, totalGroups);
+        Assert.Equal(34u, maxProcsPerGroup);
+    }
+
+    [Fact]
+    public void GetProcessorForHeapReturnsFalseWhenHeapNumberIsOutOfRangeOnUnix()
+    {
+        GCToOSInterface.SetProcessAffinityCpuCount(3);
+
+        ushort procNo = 0;
+        ushort nodeNo = 0;
+
+        Assert.False(GCToOSInterface.GetProcessorForHeap(3, &procNo, &nodeNo));
+    }
+
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD && !TARGET_ANDROID
+    [Fact]
+    public void GetProcessorForHeapUsesNumaLookupWhenNumaIsAvailableOnUnix()
+    {
+        GCToOSInterface.TotalCpuCountValue = 5;
+        GCToOSInterface.SetProcessAffinityCpuCount(5);
+
+        nuint* configBits = stackalloc nuint[1];
+        AffinitySet configured = default;
+        InitializeAffinitySet(&configured, configBits, 1, 1, 3, 4);
+        GCToOSInterface.SetGCThreadsAffinitySet(0, &configured);
+
+        GCToOSInterface.NumaAvailableValue = 1;
+        GCToOSInterface.NumaNodeByCpuInject = true;
+        GCToOSInterface.NumaNodeByCpuValues[3] = 2;
+
+        ushort procNo = 0;
+        ushort nodeNo = 0;
+        Assert.True(GCToOSInterface.GetProcessorForHeap(1, &procNo, &nodeNo));
+        Assert.Equal((ushort)3, procNo);
+        Assert.Equal((ushort)2, nodeNo);
+        Assert.Equal(1, GCToOSInterface.NumaNodeByCpuCalls);
+    }
+
+    [Fact]
+    public void GetProcessorForHeapReturnsUndefinedNodeWhenNumaLookupFailsOnUnix()
+    {
+        GCToOSInterface.TotalCpuCountValue = 4;
+        GCToOSInterface.SetProcessAffinityCpuCount(4);
+        GCToOSInterface.NumaAvailableValue = 1;
+        GCToOSInterface.NumaNodeByCpuInject = true;
+        GCToOSInterface.NumaNodeByCpuDefaultValue = -1;
+
+        ushort procNo = 0;
+        ushort nodeNo = 0;
+        Assert.True(GCToOSInterface.GetProcessorForHeap(2, &procNo, &nodeNo));
+        Assert.Equal((ushort)2, procNo);
+        Assert.Equal(GCToOSInterface.NUMA_NODE_UNDEFINED, nodeNo);
+    }
+#endif
+
+    [Fact]
+    public void GetProcessorForHeapReturnsUndefinedNodeWhenNumaIsDisabledOnUnix()
+    {
+        GCToOSInterface.TotalCpuCountValue = 4;
+        GCToOSInterface.SetProcessAffinityCpuCount(4);
+        GCToOSInterface.NumaAvailableValue = 0;
+
+        ushort procNo = 0;
+        ushort nodeNo = 0;
+        Assert.True(GCToOSInterface.GetProcessorForHeap(2, &procNo, &nodeNo));
+        Assert.Equal((ushort)2, procNo);
+        Assert.Equal(GCToOSInterface.NUMA_NODE_UNDEFINED, nodeNo);
+    }
+
+    [Theory]
+    [InlineData("5", true, 5ul, 5ul, 1)]
+    [InlineData("5-7", true, 5ul, 7ul, 3)]
+    [InlineData("x", false, 0ul, 0ul, 0)]
+    public void ParseGCHeapAffinitizeRangesEntryMatchesParseIndexOrRangeOnUnix(string text, bool expectedParsed, ulong expectedStart, ulong expectedEnd, int expectedConsumed)
+    {
+        bool parsed = ParseRangeEntry(text, out nuint start, out nuint end, out int consumed);
+
+        Assert.Equal(expectedParsed, parsed);
+        if (parsed)
+        {
+            Assert.Equal((nuint)expectedStart, start);
+            Assert.Equal((nuint)expectedEnd, end);
+            Assert.Equal(expectedConsumed, consumed);
+        }
+    }
+
 #else // TARGET_WINDOWS
 
     [Fact]
@@ -336,26 +571,34 @@ public sealed unsafe class GCProcessorTests
     public void TotalProcessorCountReturnsTheCacheWhenItIsSet(uint cached)
     {
         GCToOSInterface.TotalCpuCountValue = cached;
-        GCToOSInterface.CpuGroupProcessorCountValue = 99;
+        GCToOSInterface.CpuGroupCountValue = 3;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[0] = 10;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[1] = 11;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[2] = 12;
         GCToOSInterface.SystemInfoProcessorCountValue = 98;
 
         Assert.Equal(cached, GCToOSInterface.GetTotalProcessorCount());
 
         // The C++ returns before it asks anything else.
         Assert.Equal(0, GCToOSInterface.CanEnableGCCPUGroupsCalls);
-        Assert.Equal(0, GCToOSInterface.CpuGroupProcessorCountCalls);
+        Assert.Equal(0, GCToOSInterface.CpuGroupCountCalls);
+        Assert.Equal(0, GCToOSInterface.CpuGroupActiveProcessorCountCalls);
         Assert.Equal(0, GCToOSInterface.SystemInfoProcessorCountCalls);
     }
 
     [Fact]
-    public void TotalProcessorCountUsesTheCpuGroupCountWhenGroupsAreEnabled()
+    public void TotalProcessorCountUsesTheCpuGroupCountsWhenGroupsAreEnabled()
     {
         GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
-        GCToOSInterface.CpuGroupProcessorCountValue = 40;
+        GCToOSInterface.CpuGroupCountValue = 3;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[0] = 16;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[1] = 12;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[2] = 12;
         GCToOSInterface.SystemInfoProcessorCountValue = 12;
 
         Assert.Equal(40u, GCToOSInterface.GetTotalProcessorCount());
-        Assert.Equal(1, GCToOSInterface.CpuGroupProcessorCountCalls);
+        Assert.Equal(1, GCToOSInterface.CpuGroupCountCalls);
+        Assert.Equal(3, GCToOSInterface.CpuGroupActiveProcessorCountCalls);
         Assert.Equal(0, GCToOSInterface.SystemInfoProcessorCountCalls);
 
         // The value is written back into the g_totalCpuCount the C++ body shares.
@@ -366,11 +609,15 @@ public sealed unsafe class GCProcessorTests
     public void TotalProcessorCountUsesTheSystemInfoCountWhenGroupsAreDisabled()
     {
         GCToOSInterface.CanEnableGCCPUGroupsValue = 0;
-        GCToOSInterface.CpuGroupProcessorCountValue = 40;
+        GCToOSInterface.CpuGroupCountValue = 3;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[0] = 16;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[1] = 12;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[2] = 12;
         GCToOSInterface.SystemInfoProcessorCountValue = 12;
 
         Assert.Equal(12u, GCToOSInterface.GetTotalProcessorCount());
-        Assert.Equal(0, GCToOSInterface.CpuGroupProcessorCountCalls);
+        Assert.Equal(0, GCToOSInterface.CpuGroupCountCalls);
+        Assert.Equal(0, GCToOSInterface.CpuGroupActiveProcessorCountCalls);
         Assert.Equal(1, GCToOSInterface.SystemInfoProcessorCountCalls);
         Assert.Equal(12u, GCToOSInterface.TotalCpuCountValue);
     }
@@ -400,7 +647,352 @@ public sealed unsafe class GCProcessorTests
         Assert.Equal(0u, GCToOSInterface.GetTotalProcessorCount());
         Assert.Equal(0u, GCToOSInterface.GetTotalProcessorCount());
 
+        Assert.Equal(2, GCToOSInterface.CanEnableGCCPUGroupsCalls);
         Assert.Equal(2, GCToOSInterface.SystemInfoProcessorCountCalls);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(-1, true)]
+    public void CanEnableGCNumaAwareReflectsTheNativeStateOnWindows(int value, bool expected)
+    {
+        GCToOSInterface.CanEnableGCNumaAwareValue = value;
+
+        Assert.Equal(expected, GCToOSInterface.CanEnableGCNumaAware());
+        Assert.Equal(1, GCToOSInterface.CanEnableGCNumaAwareCalls);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(-1, true)]
+    public void CanEnableGCCPUGroupsReflectsTheNativeStateOnWindows(int value, bool expected)
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = value;
+
+        Assert.Equal(expected, GCToOSInterface.CanEnableGCCPUGroups());
+        Assert.Equal(1, GCToOSInterface.CanEnableGCCPUGroupsCalls);
+    }
+
+    [Fact]
+    public void GetNumaInfoReturnsFalseWhenNumaIsDisabledOnWindows()
+    {
+        GCToOSInterface.CanEnableGCNumaAwareValue = 0;
+
+        ushort totalNodes = 33;
+        uint maxProcsPerNode = 44;
+        Assert.False(GCToOSInterface.GetNumaInfo(&totalNodes, &maxProcsPerNode));
+        Assert.Equal((ushort)33, totalNodes);
+        Assert.Equal(44u, maxProcsPerNode);
+    }
+
+    [Fact]
+    public void GetNumaInfoReturnsTheLargestNodeMaskPopulationOnWindows()
+    {
+        GCToOSInterface.CanEnableGCNumaAwareValue = 1;
+        GCToOSInterface.NumaNodeCountValue = 3;
+        GCToOSInterface.GetNumaNodeProcessorMaskExInject = true;
+        GCToOSInterface.GetNumaNodeProcessorMaskExResult = 1;
+        GCToOSInterface.NumaNodeMasks[0] = 0b11;
+        GCToOSInterface.NumaNodeMasks[1] = 0b100000;
+        GCToOSInterface.NumaNodeMasks[2] = 0b1111;
+
+        ushort totalNodes = 0;
+        uint maxProcsPerNode = 0;
+        Assert.True(GCToOSInterface.GetNumaInfo(&totalNodes, &maxProcsPerNode));
+        Assert.Equal((ushort)3, totalNodes);
+        Assert.Equal(4u, maxProcsPerNode);
+        Assert.Equal(3, GCToOSInterface.GetNumaNodeProcessorMaskExCalls);
+    }
+
+    [Fact]
+    public void GetCPUGroupInfoReturnsFalseWhenCpuGroupsAreDisabledOnWindows()
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 0;
+
+        ushort totalGroups = 33;
+        uint maxProcsPerGroup = 44;
+        Assert.False(GCToOSInterface.GetCPUGroupInfo(&totalGroups, &maxProcsPerGroup));
+        Assert.Equal((ushort)33, totalGroups);
+        Assert.Equal(44u, maxProcsPerGroup);
+    }
+
+    [Fact]
+    public void GetCPUGroupInfoReturnsTheLargestActiveGroupCountOnWindows()
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.CpuGroupCountValue = 3;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[0] = 8;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[1] = 16;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[2] = 4;
+
+        ushort totalGroups = 0;
+        uint maxProcsPerGroup = 0;
+        Assert.True(GCToOSInterface.GetCPUGroupInfo(&totalGroups, &maxProcsPerGroup));
+        Assert.Equal((ushort)3, totalGroups);
+        Assert.Equal(16u, maxProcsPerGroup);
+        Assert.Equal(1, GCToOSInterface.CpuGroupCountCalls);
+        Assert.Equal(3, GCToOSInterface.CpuGroupActiveProcessorCountCalls);
+    }
+
+    [Fact]
+    public void SetCurrentThreadIdealAffinityOnWindowsSkipsCrossGroupMoves()
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.SetThreadIdealProcessorExInject = true;
+        GCToOSInterface.SetThreadIdealProcessorExResult = 1;
+
+        Assert.True(GCToOSInterface.SetCurrentThreadIdealAffinity((ushort)((1 << 6) | 2), (ushort)((2 << 6) | 3)));
+        Assert.Equal(0, GCToOSInterface.SetThreadIdealProcessorExCalls);
+    }
+
+    [Fact]
+    public void SetCurrentThreadIdealAffinityOnWindowsSetsTheDestinationWithinAGroup()
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.SetThreadIdealProcessorExInject = true;
+        GCToOSInterface.SetThreadIdealProcessorExResult = 1;
+
+        Assert.True(GCToOSInterface.SetCurrentThreadIdealAffinity((ushort)((2 << 6) | 1), (ushort)((2 << 6) | 5)));
+        Assert.Equal(1, GCToOSInterface.SetThreadIdealProcessorExCalls);
+        Assert.Equal((ushort)2, GCToOSInterface.LastSetThreadIdealProcessorEx.Group);
+        Assert.Equal((byte)5, GCToOSInterface.LastSetThreadIdealProcessorEx.Number);
+    }
+
+    [Fact]
+    public void SetCurrentThreadIdealAffinityOnWindowsUsesCurrentGroupWhenGroupsAreDisabled()
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 0;
+        GCToOSInterface.GetThreadIdealProcessorExInject = true;
+        GCToOSInterface.GetThreadIdealProcessorExResult = 1;
+        GCToOSInterface.GetThreadIdealProcessorExGroup = 3;
+        GCToOSInterface.GetThreadIdealProcessorExNumber = 7;
+        GCToOSInterface.SetThreadIdealProcessorExInject = true;
+        GCToOSInterface.SetThreadIdealProcessorExResult = 1;
+
+        Assert.True(GCToOSInterface.SetCurrentThreadIdealAffinity(0, 5));
+        Assert.Equal(1, GCToOSInterface.GetThreadIdealProcessorExCalls);
+        Assert.Equal(1, GCToOSInterface.SetThreadIdealProcessorExCalls);
+        Assert.Equal((ushort)3, GCToOSInterface.LastSetThreadIdealProcessorEx.Group);
+        Assert.Equal((byte)5, GCToOSInterface.LastSetThreadIdealProcessorEx.Number);
+    }
+
+    [Fact]
+    public void SetCurrentThreadIdealAffinityOnWindowsReturnsTrueIfCurrentIdealProcessorCannotBeRead()
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 0;
+        GCToOSInterface.GetThreadIdealProcessorExInject = true;
+        GCToOSInterface.GetThreadIdealProcessorExResult = 0;
+
+        Assert.True(GCToOSInterface.SetCurrentThreadIdealAffinity(0, 5));
+        Assert.Equal(1, GCToOSInterface.GetThreadIdealProcessorExCalls);
+        Assert.Equal(0, GCToOSInterface.SetThreadIdealProcessorExCalls);
+    }
+
+    [Fact]
+    public void GetCurrentThreadIdealProcOnWindowsReturnsThePackedGroupAndProcessor()
+    {
+        GCToOSInterface.GetThreadIdealProcessorExInject = true;
+        GCToOSInterface.GetThreadIdealProcessorExResult = 1;
+        GCToOSInterface.GetThreadIdealProcessorExGroup = 4;
+        GCToOSInterface.GetThreadIdealProcessorExNumber = 9;
+
+        ushort procNo = 0;
+        Assert.True(GCToOSInterface.GetCurrentThreadIdealProc(&procNo));
+        Assert.Equal((ushort)((4 << 6) | 9), procNo);
+    }
+
+    [Fact]
+    public void GetCurrentThreadIdealProcOnWindowsReturnsFalseOnFailure()
+    {
+        GCToOSInterface.GetThreadIdealProcessorExInject = true;
+        GCToOSInterface.GetThreadIdealProcessorExResult = 0;
+
+        ushort procNo = 123;
+        Assert.False(GCToOSInterface.GetCurrentThreadIdealProc(&procNo));
+        Assert.Equal((ushort)123, procNo);
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(0, false)]
+    public void SetThreadAffinityOnWindowsUsesSetThreadGroupAffinityWhenCpuGroupsAreEnabled(int nativeResult, bool expected)
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.SetThreadGroupAffinityInject = true;
+        GCToOSInterface.SetThreadGroupAffinityResult = nativeResult;
+
+        Assert.Equal(expected, GCToOSInterface.SetThreadAffinity((ushort)((2 << 6) | 9)));
+        Assert.Equal(1, GCToOSInterface.SetThreadGroupAffinityCalls);
+        Assert.Equal(0, GCToOSInterface.SetThreadAffinityMaskCalls);
+        Assert.Equal((ushort)2, GCToOSInterface.LastSetThreadGroupAffinity.Group);
+        Assert.Equal((nuint)1 << 9, GCToOSInterface.LastSetThreadGroupAffinity.Mask);
+    }
+
+    [Theory]
+    [InlineData(1u, true)]
+    [InlineData(0u, false)]
+    public void SetThreadAffinityOnWindowsUsesSetThreadAffinityMaskWhenCpuGroupsAreDisabled(nuint nativeResult, bool expected)
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 0;
+        GCToOSInterface.SetThreadAffinityMaskInject = true;
+        GCToOSInterface.SetThreadAffinityMaskResult = nativeResult;
+
+        Assert.Equal(expected, GCToOSInterface.SetThreadAffinity(11));
+        Assert.Equal(0, GCToOSInterface.SetThreadGroupAffinityCalls);
+        Assert.Equal(1, GCToOSInterface.SetThreadAffinityMaskCalls);
+        Assert.Equal((nuint)1 << 11, GCToOSInterface.LastSetThreadAffinityMask);
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(0, false)]
+    public void BoostThreadPriorityOnWindowsUsesThreadPriorityHighest(int nativeResult, bool expected)
+    {
+        GCToOSInterface.SetThreadPriorityInject = true;
+        GCToOSInterface.SetThreadPriorityResult = nativeResult;
+
+        Assert.Equal(expected, GCToOSInterface.BoostThreadPriority());
+        Assert.Equal(1, GCToOSInterface.SetThreadPriorityCalls);
+        Assert.Equal(2, GCToOSInterface.LastSetThreadPriority);
+    }
+
+    [Fact]
+    public void SetGCThreadsAffinitySetOnWindowsUsesConfiguredSetWhenCpuGroupsAreEnabled()
+    {
+        GCToOSInterface.TotalCpuCountValue = 8;
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.SetProcessAffinityCpuCount(8);
+
+        nuint* configBits = stackalloc nuint[1];
+        AffinitySet configured = default;
+        InitializeAffinitySet(&configured, configBits, 1, 1, 3, 5);
+
+        AffinitySet* result = GCToOSInterface.SetGCThreadsAffinitySet(0b11111111, &configured);
+        for (nuint i = 0; i < 8; i++)
+        {
+            bool shouldContain = (i == 1) || (i == 3) || (i == 5);
+            Assert.Equal(shouldContain, result->Contains(i));
+        }
+    }
+
+    [Fact]
+    public void SetGCThreadsAffinitySetOnWindowsUsesMaskWhenCpuGroupsAreDisabled()
+    {
+        GCToOSInterface.TotalCpuCountValue = 8;
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 0;
+        GCToOSInterface.SetProcessAffinityCpuCount(8);
+
+        nuint* configBits = stackalloc nuint[1];
+        AffinitySet configured = default;
+        InitializeAffinitySet(&configured, configBits, 1);
+
+        const nuint Mask = 0b0010_1101;
+        AffinitySet* result = GCToOSInterface.SetGCThreadsAffinitySet(Mask, &configured);
+        for (nuint i = 0; i < 8; i++)
+        {
+            bool shouldContain = (Mask & ((nuint)1 << (int)i)) != 0;
+            Assert.Equal(shouldContain, result->Contains(i));
+        }
+    }
+
+    [Fact]
+    public void GetProcessorForHeapOnWindowsReturnsPackedProcessorAndNumaNode()
+    {
+        GCToOSInterface.TotalCpuCountValue = 6;
+        GCToOSInterface.SetProcessAffinityCpuCount(6);
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.CpuGroupCountValue = 3;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[0] = 2;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[1] = 2;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[2] = 2;
+        GCToOSInterface.CpuGroupBeginValues[0] = 0;
+        GCToOSInterface.CpuGroupBeginValues[1] = 2;
+        GCToOSInterface.CpuGroupBeginValues[2] = 4;
+        GCToOSInterface.CanEnableGCNumaAwareValue = 1;
+        GCToOSInterface.GetNumaProcessorNodeExInject = true;
+        GCToOSInterface.GetNumaProcessorNodeExResult = 1;
+        GCToOSInterface.GetNumaProcessorNodeExNode = 9;
+
+        ushort procNo = 0;
+        ushort nodeNo = 0;
+        Assert.True(GCToOSInterface.GetProcessorForHeap(3, &procNo, &nodeNo));
+        Assert.Equal((ushort)((1 << 6) | 1), procNo);
+        Assert.Equal((ushort)9, nodeNo);
+        Assert.Equal(1, GCToOSInterface.GetNumaProcessorNodeExCalls);
+    }
+
+    [Fact]
+    public void GetProcessorForHeapOnWindowsUsesCpuGroupAsNodeWhenNumaIsDisabled()
+    {
+        GCToOSInterface.TotalCpuCountValue = 6;
+        GCToOSInterface.SetProcessAffinityCpuCount(6);
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.CpuGroupCountValue = 3;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[0] = 2;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[1] = 2;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[2] = 2;
+        GCToOSInterface.CpuGroupBeginValues[0] = 0;
+        GCToOSInterface.CpuGroupBeginValues[1] = 2;
+        GCToOSInterface.CpuGroupBeginValues[2] = 4;
+        GCToOSInterface.CanEnableGCNumaAwareValue = 0;
+
+        ushort procNo = 0;
+        ushort nodeNo = 0;
+        Assert.True(GCToOSInterface.GetProcessorForHeap(4, &procNo, &nodeNo));
+        Assert.Equal((ushort)((2 << 6) | 0), procNo);
+        Assert.Equal((ushort)2, nodeNo);
+    }
+
+    [Fact]
+    public void GetProcessorForHeapOnWindowsReturnsFalseWhenHeapIsOutOfRange()
+    {
+        GCToOSInterface.TotalCpuCountValue = 2;
+        GCToOSInterface.SetProcessAffinityCpuCount(2);
+
+        ushort procNo = 0;
+        ushort nodeNo = 0;
+        Assert.False(GCToOSInterface.GetProcessorForHeap(2, &procNo, &nodeNo));
+    }
+
+    [Fact]
+    public void ParseGCHeapAffinitizeRangesEntryOnWindowsParsesGroupRelativeRanges()
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.CpuGroupCountValue = 2;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[0] = 4;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[1] = 3;
+        GCToOSInterface.CpuGroupBeginValues[0] = 0;
+        GCToOSInterface.CpuGroupBeginValues[1] = 4;
+
+        Assert.True(ParseRangeEntry("0:1-3", out nuint start0, out nuint end0, out int consumed0));
+        Assert.Equal((nuint)1, start0);
+        Assert.Equal((nuint)3, end0);
+        Assert.Equal(5, consumed0);
+
+        Assert.True(ParseRangeEntry("1:2", out nuint start1, out nuint end1, out int consumed1));
+        Assert.Equal((nuint)6, start1);
+        Assert.Equal((nuint)6, end1);
+        Assert.Equal(3, consumed1);
+    }
+
+    [Theory]
+    [InlineData("2:0")]
+    [InlineData("1:3")]
+    [InlineData("0-0:2")]
+    [InlineData("0-1:2")]
+    [InlineData("x")]
+    public void ParseGCHeapAffinitizeRangesEntryOnWindowsRejectsInvalidEntries(string text)
+    {
+        GCToOSInterface.CanEnableGCCPUGroupsValue = 1;
+        GCToOSInterface.CpuGroupCountValue = 2;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[0] = 4;
+        GCToOSInterface.CpuGroupActiveProcessorCountValues[1] = 3;
+        GCToOSInterface.CpuGroupBeginValues[0] = 0;
+        GCToOSInterface.CpuGroupBeginValues[1] = 4;
+
+        Assert.False(ParseRangeEntry(text, out _, out _, out _));
     }
 
 #endif // TARGET_WINDOWS
@@ -417,5 +1009,38 @@ public sealed unsafe class GCProcessorTests
         GCToOSInterface.SetProcessAffinityMaxCpuCount(maxCpuCount);
 
         Assert.Equal((uint)maxCpuCount, GCToOSInterface.GetMaxProcessorCount());
+    }
+
+    private static void InitializeAffinitySet(AffinitySet* set, nuint* storage, nuint storageEntries, params nuint[] cpus)
+    {
+        NativeMemory.Clear(storage, storageEntries * (nuint)sizeof(nuint));
+        set->InitializeWithStorage(storage, storageEntries);
+        for (int i = 0; i < cpus.Length; i++)
+        {
+            set->Add(cpus[i]);
+        }
+    }
+
+    private static bool ParseRangeEntry(string text, out nuint start, out nuint end, out int consumed)
+    {
+        Span<byte> buffer = stackalloc byte[text.Length + 1];
+        for (int i = 0; i < text.Length; i++)
+        {
+            buffer[i] = (byte)text[i];
+        }
+
+        buffer[text.Length] = 0;
+
+        fixed (byte* first = buffer)
+        {
+            byte* cursor = first;
+            nuint parsedStart = 0;
+            nuint parsedEnd = 0;
+            bool parsed = GCToOSInterface.ParseGCHeapAffinitizeRangesEntry(&cursor, &parsedStart, &parsedEnd);
+            consumed = (int)(cursor - first);
+            start = parsedStart;
+            end = parsedEnd;
+            return parsed;
+        }
     }
 }

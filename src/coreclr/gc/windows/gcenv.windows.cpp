@@ -476,6 +476,13 @@ Exit:
 }
 #endif // FEATURE_MANAGED_GC
 
+// GetGroupForProcessor is translated into System.Private.GC's
+// GCToOSInterface.Processors.Windows.cs, which walks the same CPU group table through
+// ManagedGC_Windows_GetCpuGroupCount and ManagedGC_Windows_GetCpuGroupActiveProcessorCount. It
+// is in this anonymous namespace and its only caller is GetProcessorForHeap below, so leaving it
+// in place under FEATURE_MANAGED_GC would be an unused function rather than dead code the linker
+// drops.
+#ifndef FEATURE_MANAGED_GC
 // Get the CPU group for the specified processor
 void GetGroupForProcessor(uint16_t processor_number, uint16_t* group_number, uint16_t* group_processor_number)
 {
@@ -501,6 +508,7 @@ void GetGroupForProcessor(uint16_t processor_number, uint16_t* group_number, uin
     *group_processor_number = 0;
 #endif
 }
+#endif // FEATURE_MANAGED_GC
 
 } // anonymous namespace
 
@@ -580,6 +588,11 @@ uint32_t GCToOSInterface::GetCurrentProcessId()
 }
 #endif // FEATURE_MANAGED_GC
 
+// SetCurrentThreadIdealAffinity and GetCurrentThreadIdealProc are translated into
+// System.Private.GC's GCToOSInterface.Processors.Windows.cs, which calls the same
+// GetCurrentThread / SetThreadIdealProcessorEx / GetThreadIdealProcessorEx entry points directly
+// and packs the result with the translated GroupProcNo.
+#ifndef FEATURE_MANAGED_GC
 // Set ideal processor for the current thread
 // Parameters:
 //  srcProcNo - processor number the thread currently runs on
@@ -638,6 +651,7 @@ bool GCToOSInterface::GetCurrentThreadIdealProc(uint16_t* procNo)
 
     return success;
 }
+#endif // FEATURE_MANAGED_GC
 
 // GetCurrentProcessorNumber and CanGetCurrentProcessorNumber are translated into
 // System.Private.GC's GCToOSInterface.Processors.Windows.cs, which makes the same
@@ -887,6 +901,13 @@ size_t GCToOSInterface::GetCacheSizePerLogicalCpu(bool trueSize)
 }
 #endif // FEATURE_MANAGED_GC
 
+// SetThreadAffinity, BoostThreadPriority and SetGCThreadsAffinitySet are translated into
+// System.Private.GC's GCToOSInterface.Processors.Windows.cs, which calls the same
+// SetThreadGroupAffinity / SetThreadAffinityMask / SetThreadPriority entry points directly and
+// reaches the initialization-owned state the last of them updates through
+// ManagedGC_Windows_GetProcessAffinitySet, ManagedGC_Windows_GetTotalCpuCount and
+// ManagedGC_Windows_GetCanEnableGCCPUGroups.
+#ifndef FEATURE_MANAGED_GC
 // Sets the calling thread's affinity to only run on the processor specified
 // Parameters:
 //  procNo - The requested processor for the calling thread.
@@ -963,6 +984,7 @@ const AffinitySet* GCToOSInterface::SetGCThreadsAffinitySet(uintptr_t configAffi
 
     return &g_processAffinitySet;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Return the maximum address of the of the virtual address space of this process.
 // Return:
@@ -1180,20 +1202,18 @@ uint32_t GCToOSInterface::GetMaxProcessorCount()
 // The state that GCToOSInterface.Processors.Windows.cs reads. Each of these is a variable that
 // GCToOSInterface::Initialize -- which is still the C++ one, reached through
 // ManagedGC_OS_Initialize -- computes, and every one of them is file static or namespace static
-// here, so the managed side cannot name it any other way. Deletion point: the initialization and
-// CPU group submodules of System.Private.GC/ROADMAP.md plan step 3, which give System.Private.GC
-// the state itself.
+// here, so the managed side cannot name it any other way. Deletion point: the initialization
+// submodule of System.Private.GC/ROADMAP.md plan step 3, which gives System.Private.GC the state
+// itself.
+//
+// bool is reported as int32_t because the width of the register a C++ bool return occupies is
+// unspecified, while the managed declaration has to name a concrete type.
 
 // The address rather than the value, because both GetTotalProcessorCount bodies write this
 // cache and the C++ one stays compiled for the callers named above.
 extern "C" uint32_t* ManagedGC_Windows_GetTotalCpuCount()
 {
     return &g_totalCpuCount;
-}
-
-extern "C" uint32_t ManagedGC_Windows_GetCpuGroupProcessorCount()
-{
-    return g_nProcessors;
 }
 
 extern "C" uint32_t ManagedGC_Windows_GetSystemInfoProcessorCount()
@@ -1206,8 +1226,52 @@ extern "C" AffinitySet* ManagedGC_Windows_GetProcessAffinitySet()
 {
     return &g_processAffinitySet;
 }
+
+// g_fEnableGCNumaAware and g_nNodes, which InitNumaNodeInfo fills.
+extern "C" int32_t ManagedGC_Windows_GetCanEnableGCNumaAware()
+{
+    return g_fEnableGCNumaAware ? 1 : 0;
+}
+
+extern "C" uint32_t ManagedGC_Windows_GetNumaNodeCount()
+{
+    return g_nNodes;
+}
+
+// g_fEnableGCCPUGroups and the g_CPUGroupInfoArray that InitCPUGroupInfo fills. The group count
+// is reported as uint16_t because every one of its users -- the loops of GetTotalProcessorCount,
+// GetCPUGroupInfo and GetGroupForProcessor, and the range check of
+// ParseGCHeapAffinitizeRangesEntry -- is a WORD in the C++, and GetCPUGroupInfo hands the same
+// narrowing of g_nGroups to its caller. The per-group members are WORDs already.
+extern "C" int32_t ManagedGC_Windows_GetCanEnableGCCPUGroups()
+{
+    return g_fEnableGCCPUGroups ? 1 : 0;
+}
+
+extern "C" uint16_t ManagedGC_Windows_GetCpuGroupCount()
+{
+    return (uint16_t)g_nGroups;
+}
+
+extern "C" uint16_t ManagedGC_Windows_GetCpuGroupActiveProcessorCount(uint16_t groupNumber)
+{
+    return g_CPUGroupInfoArray[groupNumber].nr_active;
+}
+
+extern "C" uint16_t ManagedGC_Windows_GetCpuGroupBegin(uint16_t groupNumber)
+{
+    return g_CPUGroupInfoArray[groupNumber].begin;
+}
 #endif // FEATURE_MANAGED_GC
 
+// CanEnableGCNumaAware, GetNumaInfo, GetCPUGroupInfo and GetProcessorForHeap are translated into
+// System.Private.GC's GCToOSInterface.Processors.Windows.cs, which reads the same state through
+// the ManagedGC_Windows_ shims above and calls GetNumaNodeProcessorMaskEx and
+// GetNumaProcessorNodeEx directly. CanEnableGCCPUGroups and ParseGCHeapAffinitizeRangesEntry are
+// translated too, but both bodies stay compiled under FEATURE_MANAGED_GC because the rest of the
+// runtime in the same archive still calls them: nativeaot/Runtime/windows/PalMinWin.cpp calls
+// CanEnableGCCPUGroups and gc/gcconfig.cpp calls both.
+#ifndef FEATURE_MANAGED_GC
 bool GCToOSInterface::CanEnableGCNumaAware()
 {
     return g_fEnableGCNumaAware;
@@ -1241,12 +1305,14 @@ bool GCToOSInterface::GetNumaInfo(uint16_t* total_nodes, uint32_t* max_procs_per
 
     return false;
 }
+#endif // FEATURE_MANAGED_GC
 
 bool GCToOSInterface::CanEnableGCCPUGroups()
 {
     return g_fEnableGCCPUGroups;
 }
 
+#ifndef FEATURE_MANAGED_GC
 bool GCToOSInterface::GetCPUGroupInfo(uint16_t* total_groups, uint32_t* max_procs_per_group)
 {
     if (g_fEnableGCCPUGroups)
@@ -1340,6 +1406,7 @@ bool GCToOSInterface::GetProcessorForHeap(uint16_t heap_number, uint16_t* proc_n
 
     return success;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Parse the confing string describing affinitization ranges and update the passed in affinitySet accordingly
 // Parameters:

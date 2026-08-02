@@ -19,10 +19,9 @@
 // breaks the build rather than the process. The #if structure and the static_asserts must be
 // kept in the same shape.
 //
-// One piece of VirtualCommitInner is not translated: the mbind() of the requested NUMA node.
-// It needs g_numaAvailable, g_highestNumaNode and BindMemoryPolicy from gc/unix/numasupport.cpp,
-// which is the NUMA submodule of plan step 3 in ROADMAP.md. Until that lands it stays behind the
-// single ManagedGC_NUMA_BindMemoryPolicy shim, which is exactly the body of that #if block.
+// VirtualCommitInner includes the mbind() NUMA hint from gc/unix/numasupport.cpp as well. The
+// state it reads is still owned by native Initialize, so the managed body reaches that state
+// through narrow shims declared in GCToOSInterface.Imports.Unix.cs.
 
 using System.Diagnostics;
 
@@ -269,14 +268,11 @@ namespace Internal.Runtime.GarbageCollection
             }
 #endif
 
-            // The rest of the C++ body -- the node mask and the mbind() that places the range on
-            // the requested NUMA node -- is the one part of this file that is still native. It
-            // reads the NUMA state that only gc/unix/numasupport.cpp has, and it is deleted with
-            // the NUMA submodule of plan step 3 in ROADMAP.md. If the mbind fails, we still
-            // return the allocated memory since the node is just a hint.
+            // If the mbind fails, we still return the allocated memory since the node is just a
+            // hint.
             if (success && node != NUMA_NODE_UNDEFINED)
             {
-                ManagedGC_NUMA_BindMemoryPolicy(address, size, node);
+                BindMemoryPolicyForNuma(address, size, node);
             }
 
             return success;

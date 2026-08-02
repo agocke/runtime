@@ -347,6 +347,7 @@ public sealed unsafe class GCVirtualMemoryTests
         }
     }
 
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD && !TARGET_ANDROID
     [Fact]
     public void CommitBindsTheRangeWhenANodeIsRequested()
     {
@@ -356,6 +357,8 @@ public sealed unsafe class GCVirtualMemoryTests
 
         try
         {
+            GCToOSInterface.NumaAvailableValue = 1;
+            GCToOSInterface.HighestNumaNodeValue = 3;
             GCToOSInterface.ResetRecording();
             Assert.True(GCToOSInterface.VirtualCommit(region, pageSize, 1));
 
@@ -374,6 +377,7 @@ public sealed unsafe class GCVirtualMemoryTests
             GCToOSInterface.VirtualRelease(region, pageSize);
         }
     }
+#endif
 
     [Fact]
     public void DecommitReplacesTheRangeWithAFreshInaccessibleMapping()

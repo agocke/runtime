@@ -21,6 +21,7 @@
     <DefineConstants Condition="'$(TargetsOpenBSD)' == 'true'">TARGET_OPENBSD;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsLinuxMusl)' == 'true'">TARGET_LINUX_MUSL;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true' or '$(TargetsLinuxBionic)' == 'true'">TARGET_BIONIC;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(TargetsAndroid)' == 'true'">TARGET_ANDROID;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

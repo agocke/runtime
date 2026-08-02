@@ -6,8 +6,9 @@
 // System.Private.GC translates gcenv.os.h, gcenv.base.h, gcenv.interlocked.h and volatile.h to
 // C#. Everything in those headers that is pure computation is translated outright, as are the
 // whole of virtual memory management and write watching, the GCEvent condition variable /
-// Win32 event, and the CLRCriticalSection mutex; everything else that reaches the operating
-// system is, for now, forwarded here and implemented by the existing C++ GCToOSInterface in
+// Win32 event, the CLRCriticalSection mutex, and the thread, processor, affinity, NUMA and CPU
+// group methods; what is left -- initialization, shutdown and the debug break -- is, for now,
+// forwarded here and implemented by the existing C++ GCToOSInterface in
 // gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
 //
 // This file also carries the static_asserts that check the <sys/mman.h>, <sys/resource.h>,
@@ -21,24 +22,29 @@
 // with the world suspended requires, and it is why these cannot be [DllImport]s.
 //
 // Each forwarder is deliberately a single expression with no logic of its own, so that the
-// managed declaration and the C++ declaration can be diffed against each other. They exist
-// because porting NUMA, CPU groups and pthread affinity to C# is a separate,
-// platform-by-platform piece of work. Deletion point: plan step 3 of
-// System.Private.GC/ROADMAP.md, one platform module at a time; a forwarder disappears when the
-// managed GCToOSInterface implements that method itself.
+// managed declaration and the C++ declaration can be diffed against each other. The three that
+// remain exist because NativeAOT still initializes the C++ GCToOSInterface from PalInit, before
+// any managed code runs. Deletion point: the initialization submodule of plan step 3 of
+// System.Private.GC/ROADMAP.md, together with moving that call out of PalInit.
 //
-// A few narrow leaves of the memory limit and processor count ports are not here:
+// The narrow leaves of the memory limit, processor count, affinity and NUMA ports are not here:
 // ManagedGC_CGroup_GetPhysicalMemoryLimit and ManagedGC_Unix_GetPhysicalMemoryUsed are in
 // gc/unix/cgroup.cpp; ManagedGC_Unix_ReadMemoryValueFromFile, ManagedGC_Unix_ReadMemAvailable,
 // ManagedGC_Unix_GetCurrentVirtualMemorySize, ManagedGC_Unix_GetProcessAffinitySet,
-// ManagedGC_Unix_GetTotalCpuCount and ManagedGC_Unix_GetCurrentThreadId are in
-// gc/unix/gcenv.unix.cpp; and ManagedGC_Windows_GetTotalCpuCount,
-// ManagedGC_Windows_GetCpuGroupProcessorCount, ManagedGC_Windows_GetSystemInfoProcessorCount and
-// ManagedGC_Windows_GetProcessAffinitySet are in gc/windows/gcenv.windows.cpp. Each of them
+// ManagedGC_Unix_GetTotalCpuCount, ManagedGC_Unix_GetConfiguredCpuCount,
+// ManagedGC_Unix_GetCurrentThreadId, ManagedGC_Unix_GetNumaAvailable,
+// ManagedGC_Unix_GetHighestNumaNode, ManagedGC_Unix_GetNumaNodeNumByCpu and
+// ManagedGC_Unix_BindMemoryPolicy are in gc/unix/gcenv.unix.cpp; and
+// ManagedGC_Windows_GetTotalCpuCount, ManagedGC_Windows_GetSystemInfoProcessorCount,
+// ManagedGC_Windows_GetProcessAffinitySet, ManagedGC_Windows_GetCanEnableGCNumaAware,
+// ManagedGC_Windows_GetNumaNodeCount, ManagedGC_Windows_GetCanEnableGCCPUGroups,
+// ManagedGC_Windows_GetCpuGroupCount, ManagedGC_Windows_GetCpuGroupActiveProcessorCount and
+// ManagedGC_Windows_GetCpuGroupBegin are in gc/windows/gcenv.windows.cpp. Each of them
 // wraps something with internal linkage in its own translation unit -- the CGroup class is in an
-// anonymous namespace, the file parsers are static and the CPU group and affinity state is file
-// or namespace static -- or, in the case of minipal_get_current_thread_id, something that is not
-// a linkable symbol at all, so they have to sit next to what they wrap. They are guarded by
+// anonymous namespace, the file parsers are static and the CPU group, NUMA and affinity state is
+// file or namespace static -- or, in the case of minipal_get_current_thread_id and of the
+// C++-mangled numasupport.cpp entry points, something that is not a linkable symbol the managed
+// side can name at all, so they have to sit next to what they wrap. They are guarded by
 // FEATURE_MANAGED_GC there, so a default build does not carry them either.
 //
 // This file is only compiled into the managedgc-enabled archive, so a default (C++ GC) build
@@ -77,8 +83,6 @@ static_assert(sizeof(GCEvent) == sizeof(void*), "The managed GCEvent mirrors the
 
 #if defined(TARGET_APPLE)
 #include <mach/vm_statistics.h>
-#elif defined(TARGET_LINUX) && !defined(TARGET_ANDROID)
-#include <alloca.h>
 #endif
 
 static_assert(PROT_NONE == 0x0, "PROT_NONE does not match GCToOSInterface.VirtualMemory.Unix.cs.");
@@ -445,46 +449,108 @@ static_assert(sizeof(sched_getcpu()) == sizeof(int32_t), "sched_getcpu does not 
 static_assert(sizeof(getpid()) == sizeof(int32_t), "getpid does not match GCToOSInterface.Imports.Unix.cs.");
 
 //
-// The second remaining piece: the NUMA half of VirtualCommitInner. It is the body of the
-// `#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)` block of that function, verbatim,
-// because it reads the NUMA state that only gc/unix/numasupport.cpp has -- which belongs to the
-// NUMA submodule of plan step 3 in System.Private.GC/ROADMAP.md, and takes this shim with it.
-// The managed caller has already checked that the commit succeeded and that a node was
-// requested.
+// The affinity port of GCToOSInterface.Processors.Unix.cs. The C++ SetThreadAffinity has a two
+// level #if that neither arm of the C# can see: the outer one compiles the body at all where
+// HAVE_SCHED_SETAFFINITY or HAVE_PTHREAD_SETAFFINITY_NP holds, and the inner one picks
+// sched_setaffinity(0, ...) where the first holds and pthread_setaffinity_np(pthread_self(), ...)
+// where only the second does. Both are configure checks of gc/unix/configure.cmake, so the C#
+// spells them as platform lists -- the outer as "not Apple and not OpenBSD", the inner as "not
+// FreeBSD" -- and both arms are checked here so that a target whose configure result differs
+// breaks the build instead of silently losing thread affinitization. The #if shape here and the
+// one in the C# must stay the same.
+//
+// The C++ sizes its set with CPU_ALLOC_SIZE and fills it with CPU_ZERO_S / CPU_SET_S, all of
+// which are macros. The managed body writes the same bytes out of the same arithmetic -- one
+// uintptr_t-sized word per 8 * sizeof(uintptr_t) processors, rounded up, with the single bit of
+// the requested processor set in a buffer that ManagedGC_AllocZeroed has already zeroed -- so
+// what has to hold is that the C library's macro produces that same size. Three counts pin the
+// whole formula: one processor takes exactly one word (so the mask element is pointer-sized), a
+// full word of processors still takes one, and one more takes two.
+//
+// cpu_set_t and pthread_setaffinity_np come from the same two headers gcenv.unix.cpp takes them
+// from, selected by the same two configure checks.
 //
 
-#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)
-extern "C" int g_highestNumaNode;
-extern "C" bool g_numaAvailable;
-long BindMemoryPolicy(void* start, unsigned long len, const unsigned long* nodemask, unsigned long maxnode);
+#if HAVE_PTHREAD_NP_H
+#include <pthread_np.h>
 #endif
 
-extern "C" void ManagedGC_NUMA_BindMemoryPolicy(void* address, size_t size, uint16_t node)
-{
-#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)
-    if (g_numaAvailable)
-    {
-        if ((int)node <= g_highestNumaNode)
-        {
-            int usedNodeMaskBits = g_highestNumaNode + 1;
-            int nodeMaskLength = usedNodeMaskBits + sizeof(unsigned long) - 1;
-            unsigned long* nodeMask = (unsigned long*)alloca(nodeMaskLength);
-            memset(nodeMask, 0, nodeMaskLength);
+#if HAVE_CPUSET_T
+typedef cpuset_t cpu_set_t;
+#endif
 
-            int index = node / sizeof(unsigned long);
-            nodeMask[index] = ((unsigned long)1) << (node & (sizeof(unsigned long) - 1));
+#if defined(TARGET_APPLE) || defined(TARGET_OPENBSD)
 
-            int st = BindMemoryPolicy(address, size, nodeMask, usedNodeMaskBits);
-            assert(st == 0);
-            // If the mbind fails, we still return the allocated memory since the node is just a hint
-        }
-    }
+static_assert(HAVE_SCHED_SETAFFINITY == 0, "HAVE_SCHED_SETAFFINITY does not match GCToOSInterface.Processors.Unix.cs.");
+static_assert(HAVE_PTHREAD_SETAFFINITY_NP == 0, "HAVE_PTHREAD_SETAFFINITY_NP does not match GCToOSInterface.Processors.Unix.cs.");
+
 #else
-    UNREFERENCED_PARAMETER(address);
-    UNREFERENCED_PARAMETER(size);
-    UNREFERENCED_PARAMETER(node);
-#endif // TARGET_LINUX && !TARGET_ANDROID
-}
+
+static_assert(CPU_ALLOC_SIZE(1) == sizeof(uintptr_t), "CPU_ALLOC_SIZE does not match GCToOSInterface.Processors.Unix.cs.");
+static_assert(CPU_ALLOC_SIZE(8 * sizeof(uintptr_t)) == sizeof(uintptr_t), "CPU_ALLOC_SIZE does not match GCToOSInterface.Processors.Unix.cs.");
+static_assert(CPU_ALLOC_SIZE(8 * sizeof(uintptr_t) + 1) == 2 * sizeof(uintptr_t), "CPU_ALLOC_SIZE does not match GCToOSInterface.Processors.Unix.cs.");
+
+#if defined(TARGET_FREEBSD)
+
+static_assert(HAVE_SCHED_SETAFFINITY == 0, "HAVE_SCHED_SETAFFINITY does not match GCToOSInterface.Processors.Unix.cs.");
+static_assert(HAVE_PTHREAD_SETAFFINITY_NP == 1, "HAVE_PTHREAD_SETAFFINITY_NP does not match GCToOSInterface.Processors.Unix.cs.");
+// pthread_t is opaque and only handed straight back to pthread_setaffinity_np, so the managed
+// declaration spells it as the pointer-sized value it is here.
+static_assert(sizeof(pthread_t) == sizeof(uintptr_t), "pthread_t does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(pthread_self()) == sizeof(uintptr_t), "pthread_self does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(pthread_setaffinity_np(pthread_self(), (size_t)0, (const cpu_set_t*)nullptr)) == sizeof(int32_t),
+    "pthread_setaffinity_np does not match GCToOSInterface.Imports.Unix.cs.");
+
+#else
+
+static_assert(HAVE_SCHED_SETAFFINITY == 1, "HAVE_SCHED_SETAFFINITY does not match GCToOSInterface.Processors.Unix.cs.");
+static_assert(sizeof(sched_setaffinity(0, (size_t)0, (const cpu_set_t*)nullptr)) == sizeof(int32_t),
+    "sched_setaffinity does not match GCToOSInterface.Imports.Unix.cs.");
+
+#endif
+
+#endif
+
+//
+// The NUMA port of GCToOSInterface.Processors.Unix.cs and of the mbind half of
+// VirtualCommitInner in GCToOSInterface.VirtualMemory.Unix.cs. The C++ compiles both of those
+// blocks under `#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)`. TARGET_LINUX is not a
+// define System.Private.GC.csproj has, so the C# spells the same set the way it spells
+// HAVE_SCHED_GETCPU -- every Unix that is not Apple, FreeBSD or OpenBSD -- and excludes Android
+// explicitly. The two selections must name the same platforms, so each arm below checks that the
+// other spelling agrees; a target that gains or loses one breaks this build rather than silently
+// taking a branch the C++ would not have taken. This is TARGET_ANDROID rather than the
+// __BIONIC__ used for the errno accessor above, because the C++ block is keyed on the operating
+// system and the linux-bionic RID is Linux there while still using bionic.
+//
+
+#if !defined(TARGET_APPLE) && !defined(TARGET_FREEBSD) && !defined(TARGET_OPENBSD) && !defined(TARGET_ANDROID)
+#if !defined(TARGET_LINUX) || defined(TARGET_ANDROID)
+#error "The NUMA platform selection of GCToOSInterface.Processors.Unix.cs does not match gc/unix/gcenv.unix.cpp."
+#endif
+#else
+#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)
+#error "The NUMA platform selection of GCToOSInterface.Processors.Unix.cs does not match gc/unix/gcenv.unix.cpp."
+#endif
+#endif
+
+// The two entry points of gc/unix/numasupport.cpp behind the ManagedGC_Unix_GetNumaNodeNumByCpu
+// and ManagedGC_Unix_BindMemoryPolicy shims of gc/unix/gcenv.unix.cpp. numasupport.h declares
+// them with C++ linkage, so the managed side cannot name their mangled symbols and reaches them
+// through those two shims instead; the shims repeat these signatures, so this is where the
+// widths the managed declarations name are pinned. `long` and `unsigned long` are what
+// numasupport.h uses, and on Unix -- LP64 everywhere except a 32 bit ILP32 target, never the
+// LLP64 that Windows uses -- both are exactly the width of a pointer, which is what the managed
+// `nint` and `nuint` are. The nodemask element type follows from the same equality, which is why
+// the managed body indexes it with nuint.
+int GetNumaNodeNumByCpu(int cpu);
+long BindMemoryPolicy(void* start, unsigned long len, const unsigned long* nodemask, unsigned long maxnode);
+
+static_assert(sizeof(long) == sizeof(intptr_t), "BindMemoryPolicy does not return the nint of GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(unsigned long) == sizeof(uintptr_t), "BindMemoryPolicy does not take the nuint of GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(GetNumaNodeNumByCpu(0)) == sizeof(int32_t), "GetNumaNodeNumByCpu does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(BindMemoryPolicy(nullptr, 0, (const unsigned long*)nullptr, 0)) == sizeof(intptr_t),
+    "BindMemoryPolicy does not match GCToOSInterface.Imports.Unix.cs.");
 
 #else // TARGET_UNIX
 
@@ -613,10 +679,42 @@ static_assert(sizeof(::GetCurrentThreadId()) == sizeof(uint32_t), "GetCurrentThr
 static_assert(sizeof(::GetCurrentProcessId()) == sizeof(uint32_t), "GetCurrentProcessId does not match GCToOSInterface.Imports.Windows.cs.");
 static_assert(sizeof((::GetCurrentProcessorNumberEx((PPROCESSOR_NUMBER)nullptr), 0)) == sizeof(int32_t), "GetCurrentProcessorNumberEx does not match GCToOSInterface.Imports.Windows.cs.");
 
+//
+// The <windows.h> pieces that the affinity, NUMA and CPU group port of
+// GCToOSInterface.Processors.Windows.cs names on top of those. GROUP_AFFINITY is the one
+// structure of this slice that the managed code writes into rather than passes through, so its
+// layout is pinned exactly, including the three reserved words that SetThreadGroupAffinity
+// requires to be zero. THREAD_PRIORITY_HIGHEST is the only constant. The entry points are
+// checked the way the others are, in an unevaluated sizeof: <windows.h> has to declare each one,
+// accept the arguments the managed declaration passes and return what it expects. GetCurrentThread
+// returns a pseudo handle, which is a HANDLE and therefore the managed void*.
+//
+static_assert(THREAD_PRIORITY_HIGHEST == 2, "THREAD_PRIORITY_HIGHEST does not match GCToOSInterface.Processors.Windows.cs.");
+
+static_assert(sizeof(GROUP_AFFINITY) == (sizeof(void*) == 8 ? 16 : 12), "GROUP_AFFINITY does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(alignof(GROUP_AFFINITY) == sizeof(void*), "GROUP_AFFINITY does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(offsetof(GROUP_AFFINITY, Mask) == 0, "GROUP_AFFINITY does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(offsetof(GROUP_AFFINITY, Group) == sizeof(void*), "GROUP_AFFINITY does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(offsetof(GROUP_AFFINITY, Reserved) == sizeof(void*) + 2, "GROUP_AFFINITY does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(sizeof(((GROUP_AFFINITY*)nullptr)->Mask) == sizeof(uintptr_t), "GROUP_AFFINITY does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(sizeof(((GROUP_AFFINITY*)nullptr)->Group) == sizeof(uint16_t), "GROUP_AFFINITY does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(sizeof(((GROUP_AFFINITY*)nullptr)->Reserved) == 3 * sizeof(uint16_t), "GROUP_AFFINITY does not match GCToOSInterface.Processors.Windows.cs.");
+
+static_assert(sizeof(::GetCurrentThread()) == sizeof(void*), "GetCurrentThread does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::SetThreadIdealProcessorEx(nullptr, (PPROCESSOR_NUMBER)nullptr, (PPROCESSOR_NUMBER)nullptr)) == sizeof(int32_t), "SetThreadIdealProcessorEx does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::GetThreadIdealProcessorEx(nullptr, (PPROCESSOR_NUMBER)nullptr)) == sizeof(int32_t), "GetThreadIdealProcessorEx does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::SetThreadGroupAffinity(nullptr, (const GROUP_AFFINITY*)nullptr, (PGROUP_AFFINITY)nullptr)) == sizeof(int32_t), "SetThreadGroupAffinity does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::SetThreadAffinityMask(nullptr, (DWORD_PTR)0)) == sizeof(uintptr_t), "SetThreadAffinityMask does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::SetThreadPriority(nullptr, 0)) == sizeof(int32_t), "SetThreadPriority does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::GetNumaNodeProcessorMaskEx((USHORT)0, (PGROUP_AFFINITY)nullptr)) == sizeof(int32_t), "GetNumaNodeProcessorMaskEx does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::GetNumaProcessorNodeEx((PPROCESSOR_NUMBER)nullptr, (PUSHORT)nullptr)) == sizeof(int32_t), "GetNumaProcessorNodeEx does not match GCToOSInterface.Imports.Windows.cs.");
+
 #endif // TARGET_UNIX
 
 //
-// GCToOSInterface. One forwarder per method of gcenv.os.h, in declaration order.
+// GCToOSInterface. One forwarder per method of gcenv.os.h that is not translated yet, in
+// declaration order. Only three are left: Initialize and Shutdown, which NativeAOT calls from
+// PalInit before any managed code runs and the managed GC therefore never calls, and DebugBreak.
 //
 // bool is returned as UInt32_BOOL because the width of the register a C++ bool return occupies
 // is unspecified, while the managed declaration has to name a concrete type.
@@ -632,67 +730,9 @@ extern "C" void ManagedGC_OS_Shutdown()
     GCToOSInterface::Shutdown();
 }
 
-extern "C" UInt32_BOOL ManagedGC_OS_SetCurrentThreadIdealAffinity(uint16_t srcProcNo, uint16_t dstProcNo)
-{
-    return GCToOSInterface::SetCurrentThreadIdealAffinity(srcProcNo, dstProcNo) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_GetCurrentThreadIdealProc(uint16_t* procNo)
-{
-    return GCToOSInterface::GetCurrentThreadIdealProc(procNo) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_SetThreadAffinity(uint16_t procNo)
-{
-    return GCToOSInterface::SetThreadAffinity(procNo) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_BoostThreadPriority()
-{
-    return GCToOSInterface::BoostThreadPriority() ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" const void* ManagedGC_OS_SetGCThreadsAffinitySet(uintptr_t configAffinityMask, const void* configAffinitySet)
-{
-    return GCToOSInterface::SetGCThreadsAffinitySet(configAffinityMask, (const AffinitySet*)configAffinitySet);
-}
-
 extern "C" void ManagedGC_OS_DebugBreak()
 {
     GCToOSInterface::DebugBreak();
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_CanEnableGCNumaAware()
-{
-    return GCToOSInterface::CanEnableGCNumaAware() ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_GetNumaInfo(uint16_t* total_nodes, uint32_t* max_procs_per_node)
-{
-    return GCToOSInterface::GetNumaInfo(total_nodes, max_procs_per_node) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_CanEnableGCCPUGroups()
-{
-    return GCToOSInterface::CanEnableGCCPUGroups() ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_GetProcessorForHeap(uint16_t heap_number, uint16_t* proc_no, uint16_t* node_no)
-{
-    return GCToOSInterface::GetProcessorForHeap(heap_number, proc_no, node_no) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_GetCPUGroupInfo(uint16_t* total_groups, uint32_t* max_procs_per_group)
-{
-    return GCToOSInterface::GetCPUGroupInfo(total_groups, max_procs_per_group) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-// The Unix implementation is ParseIndexOrRange, which System.Private.GC translates directly.
-// The Windows one prefixes each entry with a CPU group and validates it against the group
-// table that only gcenv.windows.cpp has, so both go through here until that table is ported.
-extern "C" UInt32_BOOL ManagedGC_OS_ParseGCHeapAffinitizeRangesEntry(const char** config_string, size_t* start_index, size_t* end_index)
-{
-    return GCToOSInterface::ParseGCHeapAffinitizeRangesEntry(config_string, start_index, end_index) ? UInt32_TRUE : UInt32_FALSE;
 }
 
 //

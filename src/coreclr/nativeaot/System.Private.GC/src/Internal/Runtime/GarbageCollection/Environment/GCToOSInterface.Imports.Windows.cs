@@ -175,6 +175,56 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void GetCurrentProcessorNumberEx(PROCESSOR_NUMBER* ProcNumber);
 
+        //
+        // The affinity, ideal-processor, priority and NUMA entry points of <windows.h> that
+        // GCToOSInterface.Processors.Windows.cs calls, declared exactly as <windows.h> declares
+        // them. A HANDLE is a void*, a BOOL is an int, and a DWORD_PTR is a nuint;
+        // gcenv.managed.cpp checks each declaration against the real header.
+        //
+
+        /// <summary><c>GetCurrentThread</c> of <c>&lt;windows.h&gt;</c>, which returns the
+        /// current thread's pseudo handle.</summary>
+        [RuntimeImport(RuntimeLibrary, "GetCurrentThread")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void* GetCurrentThread();
+
+        /// <summary><c>SetThreadIdealProcessorEx</c> of <c>&lt;windows.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "SetThreadIdealProcessorEx")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetThreadIdealProcessorEx(void* hThread, PROCESSOR_NUMBER* lpIdealProcessor, PROCESSOR_NUMBER* lpPreviousIdealProcessor);
+
+        /// <summary><c>GetThreadIdealProcessorEx</c> of <c>&lt;windows.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "GetThreadIdealProcessorEx")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetThreadIdealProcessorEx(void* hThread, PROCESSOR_NUMBER* lpIdealProcessor);
+
+        /// <summary><c>SetThreadGroupAffinity</c> of <c>&lt;windows.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "SetThreadGroupAffinity")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetThreadGroupAffinity(void* hThread, GROUP_AFFINITY* GroupAffinity, GROUP_AFFINITY* PreviousGroupAffinity);
+
+        /// <summary><c>SetThreadAffinityMask</c> of <c>&lt;windows.h&gt;</c>, whose
+        /// <c>DWORD_PTR</c> return is the previous mask and zero on failure.</summary>
+        [RuntimeImport(RuntimeLibrary, "SetThreadAffinityMask")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern nuint SetThreadAffinityMask(void* hThread, nuint dwThreadAffinityMask);
+
+        /// <summary><c>SetThreadPriority</c> of <c>&lt;windows.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "SetThreadPriority")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetThreadPriority(void* hThread, int nPriority);
+
+        /// <summary><c>GetNumaNodeProcessorMaskEx</c> of <c>&lt;windows.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "GetNumaNodeProcessorMaskEx")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetNumaNodeProcessorMaskEx(ushort Node, GROUP_AFFINITY* ProcessorMask);
+
+        /// <summary><c>GetNumaProcessorNodeEx</c> of <c>&lt;windows.h&gt;</c>, which writes the
+        /// node number straight into the <c>node_no</c> the GC passed in.</summary>
+        [RuntimeImport(RuntimeLibrary, "GetNumaProcessorNodeEx")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetNumaProcessorNodeEx(PROCESSOR_NUMBER* Processor, ushort* NodeNumber);
+
         /// <summary>
         /// The address of <c>g_totalCpuCount</c> of <c>gc/windows/gcenv.windows.cpp</c>. The
         /// address rather than the value, because the C++ body of
@@ -185,14 +235,6 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetTotalCpuCount")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern uint* ManagedGC_Windows_GetTotalCpuCount();
-
-        /// <summary>
-        /// The value of <c>g_nProcessors</c> of <c>gc/windows/gcenv.windows.cpp</c>, the CPU
-        /// group processor count that <c>GCToOSInterface::Initialize</c> computes.
-        /// </summary>
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetCpuGroupProcessorCount")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern uint ManagedGC_Windows_GetCpuGroupProcessorCount();
 
         /// <summary>
         /// The value of <c>g_SystemInfo.dwNumberOfProcessors</c> of
@@ -213,15 +255,54 @@ namespace Internal.Runtime.GarbageCollection
         private static extern AffinitySet* ManagedGC_Windows_GetProcessAffinitySet();
 
         /// <summary>
-        /// The <c>ManagedGC_OS_CanEnableGCCPUGroups</c> forwarder of
-        /// <c>nativeaot/Runtime/gcenv.managed.cpp</c>. It is declared here rather than beside
-        /// the other forwarders in GCToOSInterface.cs because a ported body calls it -- the
-        /// Windows GetTotalProcessorCount -- and everything a ported body calls has to be
-        /// substitutable by the test host. Deletion point: the CPU group submodule of plan step
-        /// 3 in System.Private.GC/ROADMAP.md.
+        /// The value of <c>g_fEnableGCNumaAware</c> of <c>gc/windows/gcenv.windows.cpp</c>,
+        /// which <c>InitNumaNodeInfo</c> sets.
         /// </summary>
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_CanEnableGCCPUGroups")]
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetCanEnableGCNumaAware")]
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_CanEnableGCCPUGroups();
+        private static extern int ManagedGC_Windows_GetCanEnableGCNumaAware();
+
+        /// <summary>
+        /// The value of <c>g_nNodes</c> of <c>gc/windows/gcenv.windows.cpp</c>, the NUMA node
+        /// count the same <c>InitNumaNodeInfo</c> computes.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetNumaNodeCount")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint ManagedGC_Windows_GetNumaNodeCount();
+
+        /// <summary>
+        /// The value of <c>g_fEnableGCCPUGroups</c> of <c>gc/windows/gcenv.windows.cpp</c>,
+        /// which <c>InitCPUGroupInfo</c> sets.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetCanEnableGCCPUGroups")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_Windows_GetCanEnableGCCPUGroups();
+
+        /// <summary>
+        /// The value of <c>g_nGroups</c> of <c>gc/windows/gcenv.windows.cpp</c>. It is a
+        /// <c>DWORD</c> there and a <c>ushort</c> here, which is the narrowing the C++
+        /// <c>GetCPUGroupInfo</c> hands to its own caller and the width every loop over the
+        /// group table uses.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetCpuGroupCount")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern ushort ManagedGC_Windows_GetCpuGroupCount();
+
+        /// <summary>
+        /// <c>g_CPUGroupInfoArray[groupNumber].nr_active</c> of
+        /// <c>gc/windows/gcenv.windows.cpp</c>, the number of active processors in one CPU
+        /// group.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetCpuGroupActiveProcessorCount")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern ushort ManagedGC_Windows_GetCpuGroupActiveProcessorCount(ushort groupNumber);
+
+        /// <summary>
+        /// <c>g_CPUGroupInfoArray[groupNumber].begin</c> of <c>gc/windows/gcenv.windows.cpp</c>,
+        /// the first global processor index of one CPU group.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetCpuGroupBegin")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern ushort ManagedGC_Windows_GetCpuGroupBegin(ushort groupNumber);
     }
 }

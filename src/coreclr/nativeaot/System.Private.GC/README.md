@@ -73,8 +73,8 @@ Ported so far:
 | `Environment/GCToOSInterface.MemoryLimits.Windows.cs` | `gc/windows/gcenv.windows.cpp` (memory limits and cache sizing) |
 | `Environment/GCToOSInterface.Timers.Unix.cs` | `gc/unix/gcenv.unix.cpp` (timers) |
 | `Environment/GCToOSInterface.Timers.Windows.cs` | `gc/windows/gcenv.windows.cpp` (timers) |
-| `Environment/GCToOSInterface.Processors.Unix.cs` | `gc/unix/gcenv.unix.cpp` (processor counts and identity) |
-| `Environment/GCToOSInterface.Processors.Windows.cs` | `gc/windows/gcenv.windows.cpp` (processor counts and identity, `GroupProcNo`) |
+| `Environment/GCToOSInterface.Processors.Unix.cs` | `gc/unix/gcenv.unix.cpp` (processor counts and identity, affinity, NUMA) |
+| `Environment/GCToOSInterface.Processors.Windows.cs` | `gc/windows/gcenv.windows.cpp` (processor counts and identity, affinity, NUMA, CPU groups, `GroupProcNo`) |
 | `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` / `<unistd.h>` / `<sys/sysctl.h>` / `<sys/sysinfo.h>` / `minipal/time.h` entry points the above call |
 | `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` and `<psapi.h>` entry points the above call |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
@@ -235,35 +235,69 @@ owns yet: `Initialize` is still native, and recomputing the numbers here would g
 different lifetime than the C++ gives them. The port therefore reaches the existing state through
 the narrowest possible accessors -- `ManagedGC_Unix_GetTotalCpuCount` and
 `ManagedGC_Unix_GetProcessAffinitySet` on Unix, and `ManagedGC_Windows_GetTotalCpuCount`,
-`ManagedGC_Windows_GetCpuGroupProcessorCount`, `ManagedGC_Windows_GetSystemInfoProcessorCount`
-and `ManagedGC_Windows_GetProcessAffinitySet` on Windows. The Windows total is a `uint32_t*`
-rather than a value because the C++ body caches into `g_totalCpuCount` on first call and the port
-must perform that same write; the other three are values because the C++ only reads them. All of
-them are deleted with the initialization, affinity and CPU-group submodules. These two C++
+`ManagedGC_Windows_GetSystemInfoProcessorCount`, `ManagedGC_Windows_GetProcessAffinitySet`,
+`ManagedGC_Windows_GetCanEnableGCCPUGroups`, `ManagedGC_Windows_GetCpuGroupCount`,
+`ManagedGC_Windows_GetCpuGroupActiveProcessorCount` and `ManagedGC_Windows_GetCpuGroupBegin` on
+Windows. The Windows total is a `uint32_t*` rather than a value because the C++ body caches into
+`g_totalCpuCount` on first call and the port must perform that same write; the others are values
+because the C++ only reads them. These two C++
 bodies are also the first the port replaces that must stay compiled: `PalUnix.cpp` and
 `PalMinWin.cpp` call `GetTotalProcessorCount` and `gcconfig.cpp` calls `GetMaxProcessorCount`,
-and all three are in the managed runtime archive, so only the four identity methods are excluded
-by `FEATURE_MANAGED_GC`.
+and all three are in the managed runtime archive. `CanEnableGCCPUGroups` and
+`ParseGCHeapAffinitizeRangesEntry` are translated and still compiled for the same reason --
+`gcconfig.cpp` calls both and `PalMinWin.cpp` calls the first -- so those four are the only
+translated methods of this layer that `FEATURE_MANAGED_GC` leaves in place.
+
+The affinity, NUMA and CPU-group methods follow, and they are translated the same way. On Unix
+`SetCurrentThreadIdealAffinity` and `GetCurrentThreadIdealProc` keep the C++ no-op and `false`,
+`SetThreadAffinity` builds the same cpu set the C++ builds with
+`CPU_ALLOC_SIZE` / `CPU_ZERO_S` / `CPU_SET_S` -- one pointer-sized word per `8 * sizeof(nuint)`
+processors, rounded up, taken from `ManagedGC_AllocZeroed`, with the same bounds check
+`CPU_SET_S` performs -- and passes it to `sched_setaffinity(0, ...)`, or to
+`pthread_setaffinity_np(pthread_self(), ...)` on the one platform where only that configure check
+holds, which is the same two-level `#if` the C++ has. `BoostThreadPriority` is the
+`[LOCALGC TODO]` `false`, `SetGCThreadsAffinitySet` filters the process affinity set in place,
+and `GetProcessorForHeap` and the `mbind` half of `VirtualCommitInner` reach the NUMA state
+through `ManagedGC_Unix_GetNumaAvailable`, `ManagedGC_Unix_GetHighestNumaNode`,
+`ManagedGC_Unix_GetNumaNodeNumByCpu` and `ManagedGC_Unix_BindMemoryPolicy`. The last two exist
+because `numasupport.h` declares its functions with C++ linkage, so the managed side cannot name
+their mangled symbols. `HAVE_SCHED_SETAFFINITY` is spelled as the same platform list as
+`HAVE_SCHED_GETCPU`, `HAVE_PTHREAD_SETAFFINITY_NP` as that list plus FreeBSD, and both are
+`static_assert`ed on every arm; the `TARGET_LINUX && !TARGET_ANDROID` of the two
+NUMA blocks is the `HAVE_SCHED_GETCPU` list minus Android, and `gcenv.managed.cpp` `#error`s if
+the two selections ever name different platforms. The node mask arithmetic of the C++ -- which counts `sizeof`
+rather than bits -- is translated as written rather than corrected, as everything else here is.
+
+On Windows the same methods are the Win32 calls the C++ makes: `SetThreadIdealProcessorEx` and
+`GetThreadIdealProcessorEx` over `PROCESSOR_NUMBER`, `SetThreadGroupAffinity` over
+`GROUP_AFFINITY` or `SetThreadAffinityMask` when CPU groups are off, `SetThreadPriority` with
+`THREAD_PRIORITY_HIGHEST`, and `GetNumaNodeProcessorMaskEx` / `GetNumaProcessorNodeEx` for the
+node information, each of them declared as `<windows.h>` declares it and checked against it by
+`gcenv.managed.cpp`, together with the `GROUP_AFFINITY` layout the managed code writes into.
+`ParseGCHeapAffinitizeRangesEntry` translates the C++ `strtoul` into an allocation-free
+`StrToUInt` with the same saturation and end-pointer behavior, and validates the group against
+the same table.
 
 Four things that read or write a file cannot be translated without allocating, so they stay
 native for now, as the narrowest possible leaves: `ManagedGC_CGroup_GetPhysicalMemoryLimit` and
 `ManagedGC_Unix_GetPhysicalMemoryUsed` wrap the `CGroup` class of `gc/unix/cgroup.cpp`, which is
 in an anonymous namespace, and `ManagedGC_Unix_ReadMemoryValueFromFile`,
 `ManagedGC_Unix_ReadMemAvailable` and `ManagedGC_Unix_GetCurrentVirtualMemorySize` wrap the
-`static` `/sys` and `/proc` readers of `gcenv.unix.cpp`. `ManagedGC_Unix_GetProcessAffinitySet`
-hands back the `g_processAffinitySet` that `GCToOSInterface::Initialize` fills, which the
-affinity submodule owns. All six are deleted with the cgroup and affinity submodules; Windows
-retains nothing.
+`static` `/sys` and `/proc` readers of `gcenv.unix.cpp`. They are deleted with the cgroup parsing
+submodule; Windows retains none of them.
 
 The managed runtime archive no longer compiles the Unix `events.cpp`; on Windows,
 `FEATURE_MANAGED_GC` excludes the `GCEvent::Impl` section of `gcenv.windows.cpp`, and on both
 platforms it excludes the `Sleep` and `YieldThread` section of `gcenv.unix.cpp` and
 `gcenv.windows.cpp`, the memory limit and cache sizing sections of `gcenv.unix.cpp`,
 `gcenv.windows.cpp` and `gc/unix/cgroup.cpp`, the timer section of `gcenv.unix.cpp` and
-`gcenv.windows.cpp`, and the four processor identity methods of `gcenv.unix.cpp` and
-`gcenv.windows.cpp`. Those three files remain in the archive only for
-the `GCToOSInterface` services that have not been translated yet, and for the six leaf helpers
-above; the workstation and server GC archives still compile every one of those bodies
+`gcenv.windows.cpp`, the four processor identity methods of `gcenv.unix.cpp` and
+`gcenv.windows.cpp`, and the affinity, ideal-processor, NUMA and heap-to-processor methods of
+both -- including the anonymous-namespace `GetGroupForProcessor` of `gcenv.windows.cpp`, whose
+only caller went with them. Those three files remain in the archive only for
+the `GCToOSInterface` services that have not been translated yet, for the four methods the rest
+of the archive still calls, and for the leaf helpers and state accessors above; the workstation
+and server GC archives still compile every one of those bodies
 unchanged.
 
 Two C++ shapes are preserved rather than corrected, because this is a translation: `CloseEvent`
@@ -273,24 +307,25 @@ releases the operating system object but neither frees the Impl nor clears the p
 `CreateEvent` returns `NULL`, which the C++ `IsValid()` does not recognize as a failure because
 it compares against `INVALID_HANDLE_VALUE`.
 
-Everything else that reaches the operating system is declared with the C++ signature and
-forwarded, for now, to a one-line shim in `nativeaot/Runtime/gcenv.managed.cpp` that calls the
-existing C++ `GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.windows.cpp`.
-Those shims are the whole retained-native surface of this layer:
+The retained-native surface is now narrow and state-oriented:
 
-* one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- initialization and shutdown,
-  thread affinity and priority, the ideal-processor pair, NUMA and CPU groups, the mapping of a
-  heap to a processor, the platform-specific affinity range entry parser, and the debug break;
-* the six Unix leaves the memory limit port still needs -- `ManagedGC_CGroup_*` and
-  `ManagedGC_Unix_*` -- which are described above and are deleted with the cgroup and affinity
-  submodules;
-* the state accessors the processor count port needs -- `ManagedGC_Unix_GetCurrentThreadId`,
-  `ManagedGC_Unix_GetTotalCpuCount` and the four `ManagedGC_Windows_*` above -- which are deleted
-  with the initialization, affinity and CPU-group submodules;
-* `ManagedGC_NUMA_BindMemoryPolicy`, which is the `mbind` half of `VirtualCommitInner`
-  verbatim. It reads `g_numaAvailable` and `g_highestNumaNode` and calls `BindMemoryPolicy`,
-  all of which belong to `gc/unix/numasupport.cpp`, so it is deleted with the NUMA submodule
-  rather than with virtual memory;
+* the three `ManagedGC_OS_*` forwarders that still exist by design: `Initialize`, `Shutdown` and
+  `DebugBreak`;
+* the Unix cgroup and `/proc` parsing leaves (`ManagedGC_CGroup_*`,
+  `ManagedGC_Unix_ReadMemoryValueFromFile`, `ManagedGC_Unix_ReadMemAvailable`,
+  `ManagedGC_Unix_GetCurrentVirtualMemorySize`), which remain because they still own
+  allocation-heavy parsing code;
+* the initialization-owned Unix state accessors used by the translated affinity/NUMA/count paths:
+  `ManagedGC_Unix_GetCurrentThreadId`, `ManagedGC_Unix_GetTotalCpuCount`,
+  `ManagedGC_Unix_GetConfiguredCpuCount`, `ManagedGC_Unix_GetProcessAffinitySet`,
+  `ManagedGC_Unix_GetNumaAvailable`, `ManagedGC_Unix_GetHighestNumaNode`,
+  `ManagedGC_Unix_GetNumaNodeNumByCpu` and `ManagedGC_Unix_BindMemoryPolicy`;
+* the initialization-owned Windows state accessors used by the translated affinity/NUMA/CPU-group
+  paths: `ManagedGC_Windows_GetTotalCpuCount`, `ManagedGC_Windows_GetSystemInfoProcessorCount`,
+  `ManagedGC_Windows_GetProcessAffinitySet`, `ManagedGC_Windows_GetCanEnableGCNumaAware`,
+  `ManagedGC_Windows_GetNumaNodeCount`, `ManagedGC_Windows_GetCanEnableGCCPUGroups`,
+  `ManagedGC_Windows_GetCpuGroupCount`, `ManagedGC_Windows_GetCpuGroupActiveProcessorCount` and
+  `ManagedGC_Windows_GetCpuGroupBegin`;
 * `ManagedGC_AllocZeroed` / `ManagedGC_Free`, which stand in for the `new (nothrow)`
   allocations of the environment layer -- the `uintptr_t[]` of `AffinitySet::Initialize`, the
   `GCEvent::Impl` of the event ports, the `minipal_mutex` that the C++ `CLRCriticalSection`
@@ -390,20 +425,14 @@ its boundaries up to `ulong.MaxValue`, and the three failure paths, where the C+
 and then returns whatever the failed call left behind, are compiled only into a build with
 asserts disabled, as the event and lock failure tests are.
 
-`GCProcessorTests` covers the processor counts and identity. The identity methods are one call
-each, so what the tests pin is that it is that call, made once, with the result widened rather
-than converted -- a `getpid` of -1 must come back as `uint.MaxValue` and a thread id with the top
-bit set must survive -- and, where the machine can answer, that the uninjected value is the one
-the host reports. `CanGetCurrentProcessorNumber` and the `sched_getcpu` arm of
-`GetCurrentProcessorNumber` are compiled per platform, so the Unix half of the file has one
-section for each answer of `HAVE_SCHED_GETCPU` and the arm that asserts is, like the timer
-failures, compiled only into a build with asserts disabled. The Windows `GroupProcNo` packing is
-checked over the corners of both fields, up to the `(0x3ff, 0x3f)` that fills the `uint16_t`. The
-counts are checked against the state the shims stand in for: that `GetMaxProcessorCount` is the
-capacity of the affinity set rather than its population, and on Windows that
-`GetTotalProcessorCount` caches into `g_totalCpuCount` on first call, short-circuits on every
-later call, picks the CPU group total or the `SYSTEM_INFO` total according to
-`CanEnableGCCPUGroups`, and keeps asking while the answer is zero.
+`GCProcessorTests` covers processor counts, identity, affinity, NUMA and CPU groups. It checks
+the one-call forwarding/widening behavior of identity methods, both `HAVE_SCHED_GETCPU` arms,
+and the Windows `GroupProcNo` packing corners; it checks `GetTotalProcessorCount` caching and
+source selection and `GetMaxProcessorCount` capacity semantics; and it drives the translated
+affinity/NUMA/CPU-group bodies through recording substitutes: thread affinity masks and group
+affinity, ideal-processor set/get paths, thread-priority boosting, process-affinity-set
+filtering by set and by mask, NUMA/node and CPU-group info aggregation, heap-to-processor mapping
+including node fallback rules, and parsing of affinitize-range entries.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:

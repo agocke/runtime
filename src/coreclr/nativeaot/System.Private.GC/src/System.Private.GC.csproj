@@ -27,6 +27,12 @@
          where glibc and musl call it __errno_location. The native check in gcenv.managed.cpp is
          keyed on the corresponding native platform defines. -->
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true' or '$(TargetsLinuxBionic)' == 'true'">TARGET_BIONIC;$(DefineConstants)</DefineConstants>
+    <!-- The NUMA arms of the processor and virtual memory ports are keyed on the operating
+         system rather than on the C library: the C++ compiles them under
+         `TARGET_LINUX && !TARGET_ANDROID`, which includes the linux-bionic RID because the
+         native build labels it Linux. gcenv.managed.cpp checks the two selections against each
+         other. -->
+    <DefineConstants Condition="'$(TargetsAndroid)' == 'true'">TARGET_ANDROID;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
     <!-- The generated GCInterfaceOffsets.cs is only available when the native runtime is built

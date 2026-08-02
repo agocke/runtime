@@ -68,6 +68,40 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "sched_getcpu")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int sched_getcpu();
+
+        /// <summary>
+        /// <c>sched_setaffinity</c> of <c>&lt;sched.h&gt;</c>, declared on exactly the platforms
+        /// where the HAVE_SCHED_SETAFFINITY configure check of <c>gc/unix/configure.cmake</c>
+        /// holds, which is the same list HAVE_SCHED_GETCPU holds on. The <c>cpu_set_t*</c> of the
+        /// C declaration is a <c>nuint*</c> here because the set is an array of pointer-sized
+        /// words that the caller builds itself, out of the same arithmetic <c>CPU_ALLOC_SIZE</c>
+        /// and <c>CPU_SET_S</c> perform; gcenv.managed.cpp checks both the configure result and
+        /// that arithmetic.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "sched_setaffinity")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int sched_setaffinity(int pid, nuint cpusetsize, nuint* mask);
+#endif
+
+#if TARGET_FREEBSD
+        /// <summary>
+        /// <c>pthread_self</c> of <c>&lt;pthread.h&gt;</c>. Its <c>pthread_t</c> is opaque and
+        /// only handed straight back, so it is spelled as the pointer-sized value it is on the
+        /// one platform that selects this arm.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "pthread_self")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern nuint pthread_self();
+
+        /// <summary>
+        /// <c>pthread_setaffinity_np</c> of <c>&lt;pthread_np.h&gt;</c>, the fallback the C++
+        /// <c>SetThreadAffinity</c> takes where HAVE_SCHED_SETAFFINITY does not hold but
+        /// HAVE_PTHREAD_SETAFFINITY_NP does. The set is the same <c>cpu_set_t</c> buffer
+        /// <c>sched_setaffinity</c> takes.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "pthread_setaffinity_np")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int pthread_setaffinity_np(nuint thread, nuint cpusetsize, nuint* cpuset);
 #endif
 
         /// <summary>
@@ -171,19 +205,26 @@ namespace Internal.Runtime.GarbageCollection
         private static extern int sysinfo(SysInfo* info);
 #endif
 
-        /// <summary>
-        /// The NUMA half of <c>VirtualCommitInner</c>: places the range on the requested node
-        /// with <c>mbind</c> when the process has NUMA support.
-        /// </summary>
-        /// <remarks>
-        /// The only part of the virtual memory submodule that is still native. It depends on
-        /// <c>g_numaAvailable</c>, <c>g_highestNumaNode</c> and <c>BindMemoryPolicy</c> of
-        /// <c>gc/unix/numasupport.cpp</c>, and is deleted together with the NUMA submodule of
-        /// plan step 3 in ROADMAP.md.
-        /// </remarks>
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_NUMA_BindMemoryPolicy")]
+        //
+        // The two entry points of gc/unix/numasupport.cpp that the NUMA paths call.
+        // numasupport.h declares them with C++ linkage, so their symbols are mangled and cannot
+        // be named from here; each one is reached through the unmangled alias of the same
+        // signature in gcenv.unix.cpp. The C++ `long` and `unsigned long` are `nint` and `nuint`
+        // because both are pointer-sized on every Unix -- LP64, or ILP32 on a 32 bit target --
+        // which gcenv.managed.cpp asserts. Deletion point: the initialization submodule of plan
+        // step 3 in System.Private.GC/ROADMAP.md, which translates numasupport.cpp.
+        //
+
+        /// <summary><c>GetNumaNodeNumByCpu</c> of <c>gc/unix/numasupport.cpp</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetNumaNodeNumByCpu")]
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void ManagedGC_NUMA_BindMemoryPolicy(void* address, nuint size, ushort node);
+        private static extern int GetNumaNodeNumByCpu(int cpu);
+
+        /// <summary><c>BindMemoryPolicy</c> of <c>gc/unix/numasupport.cpp</c>, which is one
+        /// <c>mbind</c> syscall.</summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_BindMemoryPolicy")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern nint BindMemoryPolicy(void* start, nuint len, nuint* nodemask, nuint maxnode);
 
         //
         // The six pieces of the memory limit port that are still native, each one shim named
@@ -243,6 +284,16 @@ namespace Internal.Runtime.GarbageCollection
         private static extern AffinitySet* ManagedGC_Unix_GetProcessAffinitySet();
 
         /// <summary>
+        /// The value of <c>g_configuredCpuCount</c> of <c>gc/unix/gcenv.unix.cpp</c>, which
+        /// <c>GCToOSInterface::Initialize</c> computes with
+        /// <c>sysconf(_SC_NPROCESSORS_CONF)</c>. It is the count <c>SetThreadAffinity</c> sizes
+        /// its cpu set from.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetConfiguredCpuCount")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint ManagedGC_Unix_GetConfiguredCpuCount();
+
+        /// <summary>
         /// The value of <c>g_totalCpuCount</c> of <c>gc/unix/gcenv.unix.cpp</c>, which
         /// <c>GCToOSInterface::Initialize</c> computes with
         /// <c>sysconf(_SC_NPROCESSORS_ONLN)</c>. Only the value crosses, because the Unix C++
@@ -262,15 +313,33 @@ namespace Internal.Runtime.GarbageCollection
         private static extern nuint ManagedGC_Unix_GetCurrentThreadId();
 
         /// <summary>
-        /// The <c>ManagedGC_OS_CanEnableGCCPUGroups</c> forwarder of
-        /// <c>nativeaot/Runtime/gcenv.managed.cpp</c>. It is declared here rather than beside
-        /// the other forwarders in GCToOSInterface.cs because a ported body calls it -- the
-        /// Windows GetTotalProcessorCount -- and everything a ported body calls has to be
-        /// substitutable by the test host. Deletion point: the CPU group submodule of plan step
-        /// 3 in System.Private.GC/ROADMAP.md.
+        /// The value of <c>g_numaAvailable</c> of <c>gc/unix/numasupport.cpp</c>, which
+        /// <c>NUMASupportInitialize</c> sets. It is a variable rather than a function, and
+        /// [RuntimeImport] can only name a function, so the value crosses through an accessor.
         /// </summary>
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_CanEnableGCCPUGroups")]
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetNumaAvailable")]
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_CanEnableGCCPUGroups();
+        private static extern int ManagedGC_Unix_GetNumaAvailable();
+
+        /// <summary>
+        /// The value of <c>g_highestNumaNode</c> of <c>gc/unix/numasupport.cpp</c>, set by the
+        /// same <c>NUMASupportInitialize</c> and reached the same way.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetHighestNumaNode")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_Unix_GetHighestNumaNode();
+
+        /// <summary>
+        /// The <c>new (nothrow)</c> of the environment layer. <c>SetThreadAffinity</c> uses it
+        /// for the cpu set that the C++ takes from <c>CPU_ALLOC</c>.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_AllocZeroed")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void* ManagedGC_AllocZeroed(nuint size);
+
+        /// <summary>The <c>CPU_FREE</c> half of the same pair.</summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Free")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void ManagedGC_Free(void* memory);
     }
 }

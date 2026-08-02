@@ -463,9 +463,10 @@ internal static unsafe partial class GCToOSInterface
     private static AffinitySet* ManagedGC_Unix_GetProcessAffinitySet() => s_processAffinitySet;
 
     //
-    // The processor count and identity port. sched_getcpu and getpid are real calls that a test
-    // can also take over; the other three stand in for state that only the C++ has, so each of
-    // them is injection only and starts from a value a fresh process would plausibly see.
+    // The processor, affinity and NUMA ports. sched_getcpu, sched_setaffinity and getpid are
+    // real calls that a test can also take over; the ManagedGC_Unix_ helpers stand in for state
+    // that only the C++ has, so each of them is injection only and starts from a value a fresh
+    // process would plausibly see.
     //
 
     internal static bool SchedGetCpuInject;
@@ -481,6 +482,31 @@ internal static unsafe partial class GCToOSInterface
 
     internal static uint TotalCpuCountValue;
     internal static int TotalCpuCountCalls;
+
+    internal static uint ConfiguredCpuCountValue;
+    internal static int ConfiguredCpuCountCalls;
+
+    internal static int NumaAvailableValue;
+    internal static int NumaAvailableCalls;
+
+    internal static int HighestNumaNodeValue;
+    internal static int HighestNumaNodeCalls;
+
+    internal static bool NumaNodeByCpuInject;
+    internal static int NumaNodeByCpuDefaultValue = -1;
+    internal static readonly Dictionary<int, int> NumaNodeByCpuValues = new Dictionary<int, int>();
+    internal static int NumaNodeByCpuCalls;
+
+    internal static bool SchedSetAffinityInject;
+    internal static int SchedSetAffinityResult;
+    internal static int SchedSetAffinityCalls;
+    internal static int LastSchedSetAffinityPid;
+    internal static nuint LastSchedSetAffinityThread;
+    internal static int PthreadSelfCalls;
+    internal static nuint LastSchedSetAffinityCpuSetSize;
+    internal static readonly nuint[] LastSchedSetAffinityMask = new nuint[16];
+
+    internal static nint BindMemoryPolicyResult;
 
     /// <summary>
     /// Makes the process affinity set report exactly <paramref name="maxCpuCount"/> as its
@@ -512,8 +538,25 @@ internal static unsafe partial class GCToOSInterface
         CurrentThreadIdCalls = 0;
         TotalCpuCountValue = 0;
         TotalCpuCountCalls = 0;
-        CanEnableGCCPUGroupsValue = 0;
-        CanEnableGCCPUGroupsCalls = 0;
+        ConfiguredCpuCountValue = 0;
+        ConfiguredCpuCountCalls = 0;
+        NumaAvailableValue = 0;
+        NumaAvailableCalls = 0;
+        HighestNumaNodeValue = 0;
+        HighestNumaNodeCalls = 0;
+        NumaNodeByCpuInject = false;
+        NumaNodeByCpuDefaultValue = -1;
+        NumaNodeByCpuValues.Clear();
+        NumaNodeByCpuCalls = 0;
+        SchedSetAffinityInject = false;
+        SchedSetAffinityResult = 0;
+        SchedSetAffinityCalls = 0;
+        LastSchedSetAffinityPid = 0;
+        LastSchedSetAffinityThread = 0;
+        PthreadSelfCalls = 0;
+        LastSchedSetAffinityCpuSetSize = 0;
+        Array.Clear(LastSchedSetAffinityMask);
+        BindMemoryPolicyResult = 0;
         SetProcessAffinityMaxCpuCount(ProcessAffinitySetEntries * (nuint)sizeof(nuint) * 8);
     }
 
@@ -524,8 +567,70 @@ internal static unsafe partial class GCToOSInterface
         return SchedGetCpuInject ? SchedGetCpuValue : sys_sched_getcpu();
     }
 
+    private static int sched_setaffinity(int pid, nuint cpusetsize, nuint* mask)
+    {
+        SchedSetAffinityCalls++;
+        LastSchedSetAffinityPid = pid;
+        LastSchedSetAffinityCpuSetSize = cpusetsize;
+        Array.Clear(LastSchedSetAffinityMask);
+        nuint wordCount = cpusetsize / (nuint)sizeof(nuint);
+        nuint copyCount = wordCount < (nuint)LastSchedSetAffinityMask.Length ? wordCount : (nuint)LastSchedSetAffinityMask.Length;
+        for (nuint i = 0; i < copyCount; i++)
+        {
+            LastSchedSetAffinityMask[i] = mask[i];
+        }
+
+        if (SchedSetAffinityInject)
+        {
+            return SchedSetAffinityResult;
+        }
+
+        return sys_sched_setaffinity(pid, cpusetsize, mask);
+    }
+
     [DllImport("libc", EntryPoint = "sched_getcpu")]
     private static extern int sys_sched_getcpu();
+
+    [DllImport("libc", EntryPoint = "sched_setaffinity")]
+    private static extern int sys_sched_setaffinity(int pid, nuint cpusetsize, nuint* mask);
+#endif
+
+#if TARGET_FREEBSD
+    // The HAVE_PTHREAD_SETAFFINITY_NP arm of SetThreadAffinity. It records the same three
+    // things the sched_setaffinity substitute does, so the one test that covers the call is the
+    // same test on either arm; the thread handle is recorded rather than the pid.
+    private static nuint pthread_self()
+    {
+        PthreadSelfCalls++;
+        return sys_pthread_self();
+    }
+
+    private static int pthread_setaffinity_np(nuint thread, nuint cpusetsize, nuint* cpuset)
+    {
+        SchedSetAffinityCalls++;
+        LastSchedSetAffinityThread = thread;
+        LastSchedSetAffinityCpuSetSize = cpusetsize;
+        Array.Clear(LastSchedSetAffinityMask);
+        nuint wordCount = cpusetsize / (nuint)sizeof(nuint);
+        nuint copyCount = wordCount < (nuint)LastSchedSetAffinityMask.Length ? wordCount : (nuint)LastSchedSetAffinityMask.Length;
+        for (nuint i = 0; i < copyCount; i++)
+        {
+            LastSchedSetAffinityMask[i] = cpuset[i];
+        }
+
+        if (SchedSetAffinityInject)
+        {
+            return SchedSetAffinityResult;
+        }
+
+        return sys_pthread_setaffinity_np(thread, cpusetsize, cpuset);
+    }
+
+    [DllImport("libc", EntryPoint = "pthread_self")]
+    private static extern nuint sys_pthread_self();
+
+    [DllImport("libc", EntryPoint = "pthread_setaffinity_np")]
+    private static extern int sys_pthread_setaffinity_np(nuint thread, nuint cpusetsize, nuint* cpuset);
 #endif
 
     private static int getpid()
@@ -549,19 +654,62 @@ internal static unsafe partial class GCToOSInterface
         return TotalCpuCountValue;
     }
 
-    //
-    // The one remaining forwarder a ported body calls. Nothing on Unix reads it, but the
-    // shipping GCToOSInterface.CanEnableGCCPUGroups names it on both platforms, so the
-    // substitute has to exist here too.
-    //
-
-    internal static int CanEnableGCCPUGroupsValue;
-    internal static int CanEnableGCCPUGroupsCalls;
-
-    private static int ManagedGC_OS_CanEnableGCCPUGroups()
+    private static uint ManagedGC_Unix_GetConfiguredCpuCount()
     {
-        CanEnableGCCPUGroupsCalls++;
-        return CanEnableGCCPUGroupsValue;
+        ConfiguredCpuCountCalls++;
+        return ConfiguredCpuCountValue;
+    }
+
+    private static int ManagedGC_Unix_GetNumaAvailable()
+    {
+        NumaAvailableCalls++;
+        return NumaAvailableValue;
+    }
+
+    private static int ManagedGC_Unix_GetHighestNumaNode()
+    {
+        HighestNumaNodeCalls++;
+        return HighestNumaNodeValue;
+    }
+
+    private static int GetNumaNodeNumByCpu(int cpu)
+    {
+        NumaNodeByCpuCalls++;
+        if (!NumaNodeByCpuInject)
+        {
+            return NumaNodeByCpuDefaultValue;
+        }
+
+        return NumaNodeByCpuValues.TryGetValue(cpu, out int node) ? node : NumaNodeByCpuDefaultValue;
+    }
+
+    private static nint BindMemoryPolicy(void* start, nuint len, nuint* nodemask, nuint maxnode)
+    {
+        int node = -1;
+        for (nuint i = 0; i < maxnode; i++)
+        {
+            nuint index = i / (nuint)sizeof(nuint);
+            nuint bit = i & ((nuint)sizeof(nuint) - 1);
+            if ((nodemask[index] & ((nuint)1 << (int)bit)) != 0)
+            {
+                node = (int)i;
+                break;
+            }
+        }
+
+        LastBindMemoryPolicy = new RangeCall { addr = start, length = len, arg = node };
+        BindMemoryPolicyCount++;
+        return BindMemoryPolicyResult;
+    }
+
+    private static void* ManagedGC_AllocZeroed(nuint size)
+    {
+        return NativeMemory.AllocZeroed(size);
+    }
+
+    private static void ManagedGC_Free(void* memory)
+    {
+        NativeMemory.Free(memory);
     }
 
 #if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
@@ -647,16 +795,6 @@ internal static unsafe partial class GCToOSInterface
     }
 
     private static uint minipal_getpagesize() => (uint)Environment.SystemPageSize;
-
-    private static void ManagedGC_NUMA_BindMemoryPolicy(void* address, nuint size, ushort node)
-    {
-        // The real shim binds the range to the node with mbind(). Recording the call is all the
-        // tests can check without a NUMA machine, and it is what the managed side is
-        // responsible for: calling it exactly when the commit succeeded and a node was asked
-        // for.
-        LastBindMemoryPolicy = new RangeCall { addr = address, length = size, arg = node };
-        BindMemoryPolicyCount++;
-    }
 
     [DllImport("libc", EntryPoint = "mmap", SetLastError = true)]
     private static extern void* sys_mmap(void* addr, nuint length, int prot, int flags, int fd, nint offset);

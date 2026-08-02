@@ -308,6 +308,9 @@ extern "C" size_t ManagedGC_Unix_GetCurrentThreadId()
 }
 #endif // FEATURE_MANAGED_GC
 
+// SetCurrentThreadIdealAffinity is translated into System.Private.GC's
+// GCToOSInterface.Processors.Unix.cs, which keeps the same no-op that succeeds.
+#ifndef FEATURE_MANAGED_GC
 // Set ideal processor for the current thread
 // Parameters:
 //  srcProcNo - processor number the thread currently runs on
@@ -319,6 +322,7 @@ bool GCToOSInterface::SetCurrentThreadIdealAffinity(uint16_t srcProcNo, uint16_t
     // There is no way to set a thread ideal processor on Unix, so do nothing.
     return true;
 }
+#endif // FEATURE_MANAGED_GC
 
 // GetCurrentProcessorNumber and CanGetCurrentProcessorNumber are translated into
 // System.Private.GC's GCToOSInterface.Processors.Unix.cs, which selects the same
@@ -911,8 +915,8 @@ extern "C" int32_t ManagedGC_Unix_ReadMemAvailable(uint64_t* memAvailable)
 
 // The address of the process affinity set that GCToOSInterface::Initialize fills in. Only the
 // address crosses: the counting the cache size heuristic and GetMaxProcessorCount do is the
-// translated AffinitySet of System.Private.GC. Deletion point: the affinity submodule of plan
-// step 3.
+// translated AffinitySet of System.Private.GC. Deletion point: the initialization submodule of
+// plan step 3.
 extern "C" AffinitySet* ManagedGC_Unix_GetProcessAffinitySet()
 {
     return &g_processAffinitySet;
@@ -924,6 +928,50 @@ extern "C" AffinitySet* ManagedGC_Unix_GetProcessAffinitySet()
 extern "C" uint32_t ManagedGC_Unix_GetTotalCpuCount()
 {
     return g_totalCpuCount;
+}
+
+// The configured CPU count that the same Initialize computes with
+// sysconf(_SC_NPROCESSORS_CONF). It is the CPU_ALLOC size that the translated SetThreadAffinity
+// of GCToOSInterface.Processors.Unix.cs allocates its cpu_set_t from. Deletion point: the
+// initialization submodule of plan step 3.
+extern "C" uint32_t ManagedGC_Unix_GetConfiguredCpuCount()
+{
+    return g_configuredCpuCount;
+}
+
+// The two NUMA globals of gc/unix/numasupport.cpp that NUMASupportInitialize fills, read by the
+// translated CanEnableGCNumaAware and by the mbind half of VirtualCommitInner. They are
+// variables rather than functions, and [RuntimeImport] can only name a function, so the value of
+// each one crosses through an accessor. bool is reported as int32_t because the width of the
+// register a C++ bool return occupies is unspecified, while the managed declaration has to name
+// a concrete type. Deletion point: the initialization submodule of plan step 3, which gives
+// System.Private.GC the NUMA discovery itself.
+extern "C" int32_t ManagedGC_Unix_GetNumaAvailable()
+{
+    return g_numaAvailable ? 1 : 0;
+}
+
+extern "C" int32_t ManagedGC_Unix_GetHighestNumaNode()
+{
+    return g_highestNumaNode;
+}
+
+// The two entry points of gc/unix/numasupport.cpp that the translated GetProcessorForHeap and
+// VirtualCommitInner call. numasupport.h declares them with C++ linkage, so their symbols are
+// mangled and the managed side cannot name them; these two are the unmangled aliases, with the
+// same signatures. `long` and `unsigned long` are the types numasupport.h names -- on every Unix
+// target they are pointer-sized (LP64) or int-sized on a 32 bit target (ILP32), which is exactly
+// what the managed `nint`/`nuint` of the declaration are, and gcenv.managed.cpp asserts that
+// correspondence. Deletion point: the initialization submodule of plan step 3, which translates
+// numasupport.cpp.
+extern "C" int ManagedGC_Unix_GetNumaNodeNumByCpu(int cpu)
+{
+    return GetNumaNodeNumByCpu(cpu);
+}
+
+extern "C" long ManagedGC_Unix_BindMemoryPolicy(void* start, unsigned long len, const unsigned long* nodemask, unsigned long maxnode)
+{
+    return BindMemoryPolicy(start, len, nodemask, maxnode);
 }
 #endif // FEATURE_MANAGED_GC
 
@@ -954,6 +1002,12 @@ size_t GCToOSInterface::GetCacheSizePerLogicalCpu(bool trueSize)
 }
 #endif // FEATURE_MANAGED_GC
 
+// SetThreadAffinity, BoostThreadPriority and SetGCThreadsAffinitySet are translated into
+// System.Private.GC's GCToOSInterface.Processors.Unix.cs, which calls sched_setaffinity
+// directly and reaches the two pieces of initialization-owned state they read -- the configured
+// CPU count and the process affinity set -- through ManagedGC_Unix_GetConfiguredCpuCount,
+// ManagedGC_Unix_GetTotalCpuCount and ManagedGC_Unix_GetProcessAffinitySet above.
+#ifndef FEATURE_MANAGED_GC
 // Sets the calling thread's affinity to only run on the processor specified
 // Parameters:
 //  procNo - The requested processor for the calling thread.
@@ -1032,6 +1086,7 @@ const AffinitySet* GCToOSInterface::SetGCThreadsAffinitySet(uintptr_t configAffi
 
     return &g_processAffinitySet;
 }
+#endif // FEATURE_MANAGED_GC
 
 #if HAVE_PROCFS_STATM
 // Return the size of the user-mode portion of the virtual address space of this process.
@@ -1413,16 +1468,25 @@ uint32_t GCToOSInterface::GetMaxProcessorCount()
     return (uint32_t)g_processAffinitySet.MaxCpuCount();
 }
 
+// CanEnableGCNumaAware and GetProcessorForHeap are translated into System.Private.GC's
+// GCToOSInterface.Processors.Unix.cs, which reads the same NUMA state through
+// ManagedGC_Unix_GetNumaAvailable and ManagedGC_Unix_GetNumaNodeNumByCpu. CanEnableGCCPUGroups
+// and ParseGCHeapAffinitizeRangesEntry are translated too, but both bodies stay compiled under
+// FEATURE_MANAGED_GC because the rest of the runtime in the same archive still calls them:
+// gc/gcconfig.cpp calls both from ParseGCHeapAffinitizeRanges.
+#ifndef FEATURE_MANAGED_GC
 bool GCToOSInterface::CanEnableGCNumaAware()
 {
     return g_numaAvailable;
 }
+#endif // FEATURE_MANAGED_GC
 
 bool GCToOSInterface::CanEnableGCCPUGroups()
 {
     return false;
 }
 
+#ifndef FEATURE_MANAGED_GC
 // Get processor number and optionally its NUMA node number for the specified heap number
 // Parameters:
 //  heap_number - heap number to get the result for
@@ -1465,6 +1529,7 @@ bool GCToOSInterface::GetProcessorForHeap(uint16_t heap_number, uint16_t* proc_n
 
     return success;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Parse the confing string describing affinitization ranges and update the passed in affinitySet accordingly
 // Parameters:
