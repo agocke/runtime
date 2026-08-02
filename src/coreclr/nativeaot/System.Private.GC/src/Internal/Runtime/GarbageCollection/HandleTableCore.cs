@@ -288,6 +288,31 @@ namespace Internal.Runtime.GarbageCollection
             return (pTable->rgTypeFlags[uType] & HandleTableConstants.HNDF_EXTRAINFO) != 0;
         }
 
+        public static nuint* HandleValidateAndFetchUserDataPointer(OBJECTHANDLE handle, uint uTypeExpected)
+        {
+            _TableSegmentHeader* pSegment = HandleFetchSegmentPointer(handle);
+            nuint offset = (nuint)handle.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK;
+
+            Debug.Assert(offset >= HandleTableConstants.HANDLE_HEADER_SIZE);
+
+            uint uHandle = (uint)((offset - HandleTableConstants.HANDLE_HEADER_SIZE) / HandleTableConstants.HANDLE_SIZE);
+            uint uBlock = uHandle / HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+            nuint* pUserData = BlockFetchUserDataPointer(pSegment, uBlock, true);
+
+            if (pUserData != null)
+            {
+                pUserData += uHandle - (uBlock * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK);
+
+                if (pSegment->rgBlockType[uBlock] != uTypeExpected)
+                {
+                    Debug.Assert(false);
+                    pUserData = null;
+                }
+            }
+
+            return pUserData;
+        }
+
         public static nuint* HandleQuickFetchUserDataPointer(OBJECTHANDLE handle)
         {
             _TableSegmentHeader* pSegment = HandleFetchSegmentPointer(handle);
@@ -315,6 +340,49 @@ namespace Internal.Runtime.GarbageCollection
             {
                 *pUserData = lUserData;
             }
+        }
+
+        public static uint HandleFetchType(OBJECTHANDLE handle)
+        {
+            _TableSegmentHeader* pSegment = HandleFetchSegmentPointer(handle);
+            nuint offset = (nuint)handle.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK;
+
+            Debug.Assert(offset >= HandleTableConstants.HANDLE_HEADER_SIZE);
+
+            uint uHandle = (uint)((offset - HandleTableConstants.HANDLE_HEADER_SIZE) / HandleTableConstants.HANDLE_SIZE);
+            uint uBlock = uHandle / HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+
+            return pSegment->rgBlockType[uBlock];
+        }
+
+        public static HandleTable* HandleFetchHandleTable(OBJECTHANDLE handle)
+        {
+            _TableSegmentHeader* pSegment = HandleFetchSegmentPointer(handle);
+
+            return pSegment->pHandleTable;
+        }
+
+        public static bool TableContainHandle(HandleTable* pTable, OBJECTHANDLE handle)
+        {
+            Debug.Assert(!handle.IsNull);
+
+            TableSegment* pSegment = (TableSegment*)HandleFetchSegmentPointer(handle);
+
+            using (new HandleTableCrstHolder(&pTable->Lock))
+            {
+                TableSegment* pWorkerSegment = pTable->pSegmentList;
+                while (pWorkerSegment != null)
+                {
+                    if (pWorkerSegment == pSegment)
+                    {
+                        return true;
+                    }
+
+                    pWorkerSegment = pWorkerSegment->Header.pNextSegment;
+                }
+            }
+
+            return false;
         }
 
         public static uint SegmentInsertBlockFromFreeList(TableSegment* pSegment, uint uType, bool fUpdateHint)

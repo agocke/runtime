@@ -113,6 +113,69 @@ public sealed unsafe class HandleTableTests
     }
 
     [Fact]
+    public void HandleMetadataAndContainmentFollowOwningSegment()
+    {
+        const uint Type = 0;
+
+        uint* typeFlags = stackalloc uint[1];
+        typeFlags[Type] = HandleTableConstants.HNDF_EXTRAINFO;
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, 1);
+        HandleTable* otherTable = HandleTableManager.HndCreateHandleTable(typeFlags, 1);
+        Assert.True(table != null);
+        Assert.True(otherTable != null);
+
+        try
+        {
+            OBJECTHANDLE handle;
+            Assert.Equal(1u, HandleTableCore.TableAllocBulkHandles(table, Type, &handle, 1));
+
+            Assert.Equal(Type, HandleTableCore.HandleFetchType(handle));
+            Assert.True(HandleTableManager.HndGetHandleTable(handle) == table);
+            Assert.True(HandleTableCore.TableContainHandle(table, handle));
+            Assert.False(HandleTableCore.TableContainHandle(otherTable, handle));
+
+            HandleTableManager.HndSetHandleExtraInfo(handle, Type, 0x1234);
+            Assert.Equal((nuint)0x1234, HandleTableManager.HndGetHandleExtraInfo(handle));
+            Assert.Equal(
+                (nuint)0x1234,
+                HandleTableManager.HndCompareExchangeHandleExtraInfo(handle, Type, 0x1234, 0x5678));
+            Assert.Equal((nuint)0x5678, HandleTableManager.HndGetHandleExtraInfo(handle));
+            Assert.Equal(
+                (nuint)0x5678,
+                HandleTableManager.HndCompareExchangeHandleExtraInfo(handle, Type, 0x1234, 0x9ABC));
+            Assert.Equal((nuint)0x5678, HandleTableManager.HndGetHandleExtraInfo(handle));
+        }
+        finally
+        {
+            HandleTableManager.HndDestroyHandleTable(otherTable);
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Fact]
+    public void HandleCountExcludesReserveFreeAndQuickCaches()
+    {
+        uint* typeFlags = stackalloc uint[1];
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, 1);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE handle = HandleTableCache.TableAllocSingleHandleFromCache(table, 0);
+
+            Assert.Equal(1u, HandleTableManager.HndCountHandles(table));
+
+            HandleTableCache.TableFreeSingleHandleToCache(table, 0, handle);
+
+            Assert.Equal(0u, HandleTableManager.HndCountHandles(table));
+        }
+        finally
+        {
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Fact]
     public void TableSegmentHeaderMatchesThePackedNativeFieldOrder()
     {
         int offset = 0;

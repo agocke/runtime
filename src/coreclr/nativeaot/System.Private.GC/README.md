@@ -129,9 +129,11 @@ headers, and the managed startup verifier checks the C# definitions against the 
 trailing main caches, and destroys the complete segment list. `HandleTableCache.cs` translates
 the reserve bank, free bank, quick-cache, cache-miss, and full/quick rebalance paths. Its
 low-water path is backed by the translated bulk table allocation entrypoint, and its high-water
-path uses the native free-order comparison and prepared bulk free path. The flat
-`ManagedGCHandleManager` still supplies the running bootstrap heap until the remaining table
-entrypoints and manager glue are ported over this schema.
+path uses the native free-order comparison and prepared bulk free path. Handle type and owning
+table lookup, table containment, extra-info get/set/compare-exchange, and cache-aware handle
+counting are also translated. The flat `ManagedGCHandleManager` still supplies the running
+bootstrap heap until object-publishing creation, the remaining table entrypoints, and manager
+glue are ported over this schema.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event
