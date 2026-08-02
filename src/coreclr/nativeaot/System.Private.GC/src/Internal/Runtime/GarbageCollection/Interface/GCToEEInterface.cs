@@ -27,7 +27,8 @@ namespace Internal.Runtime.GarbageCollection
 
         public static void RestartEE(byte bFinishedGC) => Vtable->RestartEE(g_theGCToCLR, bFinishedGC);
 
-        public static void GcScanRoots(delegate* unmanaged<byte**, ScanContext*, uint, void> fn, int condemned, int max_gen, ScanContext* sc) => Vtable->GcScanRoots(g_theGCToCLR, fn, condemned, max_gen, sc);
+        public static void GcScanRoots(delegate*<byte**, ScanContext*, uint, void> fn, int condemned, int max_gen, ScanContext* sc) =>
+            Vtable->GcScanRoots(g_theGCToCLR, (delegate* unmanaged<byte**, ScanContext*, uint, void>)fn, condemned, max_gen, sc);
 
         public static void GcStartWork(int condemned, int max_gen) => Vtable->GcStartWork(g_theGCToCLR, condemned, max_gen);
 

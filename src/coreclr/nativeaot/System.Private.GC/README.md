@@ -80,6 +80,7 @@ Ported so far:
 | `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` / `<unistd.h>` / `<sys/sysctl.h>` / `<sys/sysinfo.h>` / `minipal/time.h` entry points the above call |
 | `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` and `<psapi.h>` entry points the above call |
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
+| `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
@@ -442,8 +443,13 @@ methods without a reverse P/Invoke frame, so the transition frame in effect whil
 belongs to the EE -- `RhEnumerateConfigurationValues` is an ordinary P/Invoke away from
 `GC.GetConfigurationVariables` -- and a P/Invoke inside the slot would clear it on return, leaving
 the thread reporting cooperative mode with a native frame in the middle of a stack that no code
-manager can walk. Every future body that calls a callback parameter, starting with the collector's
-`GcScanRoots`, has to do the same.
+manager can walk. Every future body that invokes a callback parameter directly has to do the
+same. A callback that the GC passes back to the EE follows the complementary rule:
+`GCScan.GcScanRoots` keeps its promote function as a managed function pointer, and
+`GCToEEInterface.GcScanRoots` representation-casts it to the native `promote_func*` only at the
+vtable boundary. That keeps ILC from adding the reverse-P/Invoke prologue that
+`[UnmanagedCallersOnly]` would require, because the cooperative-mode EE cannot enter such a
+callback safely.
 
 The two other consumers the C++ has are not reachable yet, and are left alone rather than half
 wired: `GCHeap::RefreshMemoryLimit` calls `RefreshHeapHardLimitSettings` from inside

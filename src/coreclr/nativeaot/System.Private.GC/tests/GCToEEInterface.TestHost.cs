@@ -86,6 +86,16 @@ internal static unsafe class GCToEEInterface
     /// </summary>
     internal static WriteBarrierParameters LastStompWriteBarrier { get; private set; }
 
+    internal static int GcScanRootsCallCount { get; private set; }
+
+    internal static nuint LastGcScanRootsCallback { get; private set; }
+
+    internal static int LastGcScanRootsCondemned { get; private set; }
+
+    internal static int LastGcScanRootsMaxGeneration { get; private set; }
+
+    internal static ScanContext* LastGcScanRootsContext { get; private set; }
+
     internal static void Reset()
     {
         LastInitializedGCToCLR = null;
@@ -99,6 +109,11 @@ internal static unsafe class GCToEEInterface
         WriteWithoutProviding = null;
         StompWriteBarrierCallCount = 0;
         LastStompWriteBarrier = default;
+        GcScanRootsCallCount = 0;
+        LastGcScanRootsCallback = 0;
+        LastGcScanRootsCondemned = 0;
+        LastGcScanRootsMaxGeneration = 0;
+        LastGcScanRootsContext = null;
 
         foreach (IntPtr outstanding in OutstandingStrings)
         {
@@ -124,6 +139,19 @@ internal static unsafe class GCToEEInterface
     {
         StompWriteBarrierCallCount++;
         LastStompWriteBarrier = *args;
+    }
+
+    public static void GcScanRoots(
+        delegate*<byte**, ScanContext*, uint, void> fn,
+        int condemned,
+        int max_gen,
+        ScanContext* sc)
+    {
+        GcScanRootsCallCount++;
+        LastGcScanRootsCallback = (nuint)fn;
+        LastGcScanRootsCondemned = condemned;
+        LastGcScanRootsMaxGeneration = max_gen;
+        LastGcScanRootsContext = sc;
     }
 
     internal static void SetPrivateValue(string privateKey, ulong value) => s_privateValues[privateKey] = value;

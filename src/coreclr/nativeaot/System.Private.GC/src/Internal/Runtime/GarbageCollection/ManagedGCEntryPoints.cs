@@ -88,6 +88,7 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             GCToEEInterface.Initialize(clrToGC);
+            GCScan.Initialize();
 
             if (!GCInterfaceLayout.Verify())
             {

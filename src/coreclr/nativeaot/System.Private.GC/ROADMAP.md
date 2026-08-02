@@ -442,8 +442,9 @@ software write watch, and event plumbing no longer depend on placeholder impleme
   parameter, and it calls it through a `delegate* unmanaged[SuppressGCTransition]` view of the
   pointer, because the EE reaches these methods without a reverse P/Invoke frame: a transition
   inside one of them would clear the EE's own transition frame on return and leave the thread
-  reporting cooperative mode with an unwalkable stack. Every later body that calls a callback
-  parameter -- `GcScanRoots` first -- has to do the same. `FEATURE_MANAGED_GC` excludes
+  reporting cooperative mode with an unwalkable stack. Every later body that invokes a callback
+  parameter directly has to do the same; callbacks passed back to the EE stay managed pointers
+  until their vtable boundary, as `GcScanRoots` does below. `FEATURE_MANAGED_GC` excludes
   `EnumerateConfigurationValues`, `RefreshHeapHardLimitSettings`, `ParseIndexOrRange` and
   `ParseGCHeapAffinitizeRanges` from the C++ `gcconfig.cpp`, which leaves the
   `GCToOSInterface::ParseGCHeapAffinitizeRangesEntry` of both platforms, the Unix
@@ -535,6 +536,15 @@ software write watch, and event plumbing no longer depend on placeholder impleme
   bit-scan position of a table word mapped to its own page, and with the process-wide barrier
   called only when the runtime is not already suspended and only as many times as the C++
   comments say it must be.
+- The dependency-closed parts of `gcscan.cpp`, as `GCScan.cs`:
+  `GetGcRuntimeStructuresValid`, `GcRuntimeStructuresValid`, and the one-line `GcScanRoots`
+  forwarder. The validity counter starts at one, as the C++ global does; a managed-only
+  `Initialize` method writes that value during `ManagedGC_Initialize` rather than introducing a
+  static constructor. The promote callback remains a managed function pointer inside the
+  collector and is representation-cast to the native typedef only inside
+  `GCToEEInterface.GcScanRoots`, so ILC does not add a reverse-P/Invoke prologue to callbacks
+  invoked by the cooperative-mode EE. Direct tests cover nested invalid regions and verify
+  every root-scan argument passed to that wrapper.
 
 #### Remaining
 
@@ -542,7 +552,8 @@ For `gcload.cpp`, what remains native is outside the managed-GC runtime surface:
 still used by CoreCLR and by NativeAOT's workstation/server GC archives, which still need the
 native workstation/server heap construction and DAC population paths. `Runtime.ManagedGC` omits
 `gcload.cpp` and links `clrgc.managed.cpp` instead, so these native paths are not reachable when
-`IlcManagedGC=true`. The rest of `gccommon.cpp`, `gcscan.cpp`, `gcevent_serializers.h` and
+`IlcManagedGC=true`. The rest of `gccommon.cpp` and `gcscan.cpp`, plus
+`gcevent_serializers.h` and
 `gcevents.h` are not started. `softwarewritewatch.h`/`.cpp` are translated in full except for the
 declared-but-undefined `GetTableStartByteOffset`; nothing in `Runtime.ManagedGC` calls
 `SoftwareWriteWatch` yet, since its only caller in the C++ is `card_table.cpp`, which arrives with
