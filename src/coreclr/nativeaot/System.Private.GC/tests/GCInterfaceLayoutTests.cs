@@ -374,9 +374,40 @@ public sealed class GCInterfaceLayoutTests
         // The table carries the value for both pointer sizes; the tests run in this process.
         int column = IntPtr.Size == 8 ? 1 : 0;
         List<Entry> entries = new();
+        bool inDebugConditional = false;
+        bool includeDebugBranch = false;
 
         while (reader.ReadLine() is string line)
         {
+            if (line == "#if defined(_DEBUG) || defined(DEBUG)")
+            {
+                inDebugConditional = true;
+#if DEBUG
+                includeDebugBranch = true;
+#else
+                includeDebugBranch = false;
+#endif
+                continue;
+            }
+
+            if (inDebugConditional && line == "#else")
+            {
+                includeDebugBranch = !includeDebugBranch;
+                continue;
+            }
+
+            if (inDebugConditional && line == "#endif")
+            {
+                inDebugConditional = false;
+                includeDebugBranch = false;
+                continue;
+            }
+
+            if (inDebugConditional && !includeDebugBranch)
+            {
+                continue;
+            }
+
             if (!line.StartsWith("GC_", StringComparison.Ordinal))
             {
                 continue;

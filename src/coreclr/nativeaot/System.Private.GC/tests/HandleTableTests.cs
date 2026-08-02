@@ -57,10 +57,59 @@ public sealed unsafe class HandleTableTests
     [Fact]
     public void HandleTableTypeFlagsStayAtTheNativePrefix()
     {
-        AssertOffset<HandleTable>(nameof(HandleTable.rgTypeFlags), 0);
-        Assert.Equal(
-            HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES * sizeof(uint),
-            sizeof(HandleTable));
+        AssertOffset<HandleTable>(nameof(HandleTable.rgTypeFlags), GCInterfaceOffsets.OFFSETOF__HandleTable__rgTypeFlags);
+        AssertOffset<HandleTable>(nameof(HandleTable.pSegmentList), GCInterfaceOffsets.OFFSETOF__HandleTable__pSegmentList);
+        AssertOffset<HandleTable>(nameof(HandleTable.Lock), GCInterfaceOffsets.OFFSETOF__HandleTable__Lock);
+        AssertOffset<HandleTable>(nameof(HandleTable.uTypeCount), GCInterfaceOffsets.OFFSETOF__HandleTable__uTypeCount);
+        AssertOffset<HandleTable>(nameof(HandleTable.dwCount), GCInterfaceOffsets.OFFSETOF__HandleTable__dwCount);
+        AssertOffset<HandleTable>(nameof(HandleTable.pAsyncScanInfo), GCInterfaceOffsets.OFFSETOF__HandleTable__pAsyncScanInfo);
+        AssertOffset<HandleTable>(nameof(HandleTable.uTableIndex), GCInterfaceOffsets.OFFSETOF__HandleTable__uTableIndex);
+        AssertOffset<HandleTable>(nameof(HandleTable.rgQuickCache), GCInterfaceOffsets.OFFSETOF__HandleTable__rgQuickCache);
+#if DEBUG
+        AssertOffset<HandleTable>(nameof(HandleTable._DEBUG_iMaxGen), GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_iMaxGen);
+        AssertOffset<HandleTable>(nameof(HandleTable._DEBUG_TotalBlocksScanned), GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_TotalBlocksScanned);
+        AssertOffset<HandleTable>(nameof(HandleTable._DEBUG_TotalBlocksScannedNonTrivially), GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_TotalBlocksScannedNonTrivially);
+        AssertOffset<HandleTable>(nameof(HandleTable._DEBUG_TotalHandleSlotsScanned), GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_TotalHandleSlotsScanned);
+        AssertOffset<HandleTable>(nameof(HandleTable._DEBUG_TotalHandlesActuallyScanned), GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_TotalHandlesActuallyScanned);
+#endif
+        Assert.Equal(GCInterfaceOffsets.SIZEOF__HandleTable, sizeof(HandleTable));
+    }
+
+    [Fact]
+    public void HandleTableLifecycleInitializesSegmentsFlagsAndCaches()
+    {
+        const uint TypeCount = 12;
+
+        uint* typeFlags = stackalloc uint[(int)TypeCount];
+        typeFlags[4] = HandleTableConstants.HNDF_EXTRAINFO;
+        typeFlags[6] = HandleTableConstants.HNDF_EXTRAINFO;
+
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, TypeCount);
+        Assert.True(table != null);
+
+        try
+        {
+            Assert.Equal(TypeCount, table->uTypeCount);
+            Assert.Equal(uint.MaxValue, table->uTableIndex);
+            Assert.Equal(HandleTableConstants.HNDF_EXTRAINFO, table->rgTypeFlags[4]);
+            Assert.Equal(HandleTableConstants.HNDF_EXTRAINFO, table->rgTypeFlags[6]);
+            Assert.Equal(HandleTableConstants.HNDF_NORMAL, table->rgTypeFlags[12]);
+            Assert.True(table->pSegmentList != null);
+            Assert.True(table->pSegmentList->Header.pHandleTable == table);
+
+            HandleTypeCache* mainCache = HandleTableManager.GetMainCache(table);
+            for (uint type = 0; type < TypeCount; type++)
+            {
+                Assert.Equal(HandleTableConstants.HANDLES_PER_CACHE_BANK, mainCache[type].lFreeIndex);
+            }
+
+            HandleTableManager.HndSetHandleTableIndex(table, 17);
+            Assert.Equal(17u, HandleTableManager.HndGetHandleTableIndex(table));
+        }
+        finally
+        {
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
     }
 
     [Fact]

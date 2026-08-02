@@ -632,11 +632,14 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   `SegmentInsertBlockFromFreeList`, including capacity preflight, parallel internal data-block
   allocation, linkage and locking, and commit-failure cleanup. `SegmentAllocHandlesFromFreeList`
   and `SegmentAllocHandles` extend allocation from existing chains into newly committed blocks.
+- The fixed `HandleTable` header and the lifecycle subset of `handletable.cpp`:
+  `HndCreateHandleTable`, `HndDestroyHandleTable`, `HndSetHandleTableIndex`, and
+  `HndGetHandleTableIndex`. Creation initializes the first segment, table lock, type flags, and
+  trailing per-type main caches without managed allocation.
 
 #### Remaining
 
-Complete the remainder of the fixed `HandleTable` header with the table allocator and locking,
-then port per-type caches, table entrypoints, and manager/store glue. The current flat
+Port per-type cache operations, table allocation/free entrypoints, and manager/store glue. The current flat
 `ManagedGCHandleManager` remains the runtime
 implementation until those pieces can replace it as one coherent allocation path.
 `TableContainHandle` remains with the table entrypoints because its exact translation takes the

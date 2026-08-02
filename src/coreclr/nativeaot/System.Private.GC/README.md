@@ -41,6 +41,7 @@ Ported so far:
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
+| `HandleTable.cs` | `handletable.cpp` (table lifecycle subset) |
 | `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `IntroSort.cs` | `introsort.h` |
@@ -107,7 +108,8 @@ DAC reject this collector as unsupported until those structures are available.
 The first real handle-table slices establish the schema and segment lifecycle:
 `HandleTableConstants.cs` translates the size, mask, block, clump, and cache arithmetic of
 `handletableconstants.h`; `HandleTableStructs.cs` translates the byte-packed
-`_TableSegmentHeader`, the 64-KiB `TableSegment`, and `HandleTypeCache`; and
+`_TableSegmentHeader`, the 64-KiB `TableSegment`, the fixed `HandleTable` header, and
+`HandleTypeCache`; and
 `HandleTableCore.cs` reserves aligned segments, commits and initializes their headers, releases
 them, maps handle addresses back to their segment headers, maintains the native byte-sized block
 lock counts, moves blocks from the segment free list into circular per-type chains, and allocates
@@ -119,10 +121,12 @@ empty blocks to the segment free list. Chain resorting rebuilds all type chains 
 in address order, completes deferred scavenging, and tracks the trailing empty range so whole
 unused pages can be decommitted. The public block-insertion path consults the native
 `HandleTable.rgTypeFlags` prefix and allocates, links, and locks parallel user-data blocks for
-types marked `HNDF_EXTRAINFO`. The shared
-`GCInterfaceOffsets.h` table pins their 32- and 64-bit native offsets, sizes, and alignments, and
-the managed startup verifier checks the C# layouts against the generated values. The flat
-`ManagedGCHandleManager` still supplies the running bootstrap heap until caches, table
+types marked `HNDF_EXTRAINFO`. The shared `GCInterfaceOffsets.h` table pins the segment and cache
+layouts plus the load-bearing `HandleTable.rgTypeFlags` prefix and flag values against the native
+headers, and the managed startup verifier checks the C# definitions against the generated values.
+`HandleTable.cs` now allocates and initializes a table, its first segment, lock, type flags, and
+trailing main caches, and destroys the complete segment list. The flat `ManagedGCHandleManager`
+still supplies the running bootstrap heap until cache operations, the remaining table
 entrypoints, and the manager glue are ported over this
 schema.
 

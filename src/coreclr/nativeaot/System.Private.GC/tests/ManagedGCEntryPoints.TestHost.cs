@@ -20,6 +20,55 @@ internal static class GCInterfaceOffsets
     // SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift of gcinterface.h, read directly by
     // SoftwareWriteWatch rather than being restated as a private constant of its own.
     public const int SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift = 0xc;
+
+    public const int OFFSETOF__HandleTable__rgTypeFlags = 0;
+#if TARGET_64BIT
+    public const int OFFSETOF__HandleTable__pSegmentList = 0x38;
+    public const int OFFSETOF__HandleTable__Lock = 0x40;
+#if DEBUG
+    public const int OFFSETOF__HandleTable__uTypeCount = 0x78;
+    public const int OFFSETOF__HandleTable__dwCount = 0x7c;
+    public const int OFFSETOF__HandleTable__pAsyncScanInfo = 0x80;
+    public const int OFFSETOF__HandleTable__uTableIndex = 0x88;
+    public const int OFFSETOF__HandleTable__rgQuickCache = 0x90;
+    public const int OFFSETOF__HandleTable___DEBUG_iMaxGen = 0xf8;
+    public const int OFFSETOF__HandleTable___DEBUG_TotalBlocksScanned = 0x100;
+    public const int OFFSETOF__HandleTable___DEBUG_TotalBlocksScannedNonTrivially = 0x128;
+    public const int OFFSETOF__HandleTable___DEBUG_TotalHandleSlotsScanned = 0x150;
+    public const int OFFSETOF__HandleTable___DEBUG_TotalHandlesActuallyScanned = 0x178;
+    public const int SIZEOF__HandleTable = 0x1a0;
+#else
+    public const int OFFSETOF__HandleTable__uTypeCount = 0x68;
+    public const int OFFSETOF__HandleTable__dwCount = 0x6c;
+    public const int OFFSETOF__HandleTable__pAsyncScanInfo = 0x70;
+    public const int OFFSETOF__HandleTable__uTableIndex = 0x78;
+    public const int OFFSETOF__HandleTable__rgQuickCache = 0x80;
+    public const int SIZEOF__HandleTable = 0xe8;
+#endif
+#else
+    public const int OFFSETOF__HandleTable__pSegmentList = 0x34;
+    public const int OFFSETOF__HandleTable__Lock = 0x38;
+#if DEBUG
+    public const int OFFSETOF__HandleTable__uTypeCount = 0x58;
+    public const int OFFSETOF__HandleTable__dwCount = 0x5c;
+    public const int OFFSETOF__HandleTable__pAsyncScanInfo = 0x60;
+    public const int OFFSETOF__HandleTable__uTableIndex = 0x64;
+    public const int OFFSETOF__HandleTable__rgQuickCache = 0x68;
+    public const int OFFSETOF__HandleTable___DEBUG_iMaxGen = 0x9c;
+    public const int OFFSETOF__HandleTable___DEBUG_TotalBlocksScanned = 0xa0;
+    public const int OFFSETOF__HandleTable___DEBUG_TotalBlocksScannedNonTrivially = 0xc8;
+    public const int OFFSETOF__HandleTable___DEBUG_TotalHandleSlotsScanned = 0xf0;
+    public const int OFFSETOF__HandleTable___DEBUG_TotalHandlesActuallyScanned = 0x118;
+    public const int SIZEOF__HandleTable = 0x140;
+#else
+    public const int OFFSETOF__HandleTable__uTypeCount = 0x50;
+    public const int OFFSETOF__HandleTable__dwCount = 0x54;
+    public const int OFFSETOF__HandleTable__pAsyncScanInfo = 0x58;
+    public const int OFFSETOF__HandleTable__uTableIndex = 0x5c;
+    public const int OFFSETOF__HandleTable__rgQuickCache = 0x60;
+    public const int SIZEOF__HandleTable = 0x94;
+#endif
+#endif
 }
 
 internal static class GCInterfaceLayout

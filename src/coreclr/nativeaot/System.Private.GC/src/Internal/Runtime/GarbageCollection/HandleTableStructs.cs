@@ -7,14 +7,61 @@ using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection
 {
-    /// <summary>
-    /// Prefix of the handle table needed by the segment allocator. The remaining fixed header and
-    /// trailing per-type caches arrive with the table allocator.
-    /// </summary>
+    internal struct AsyncScanInfo
+    {
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct HandleTableCrstStatic
+    {
+        private CrstStatic _lock;
+#if TARGET_64BIT
+#if DEBUG
+        private fixed byte _padding[40];
+#else
+        private fixed byte _padding[32];
+#endif
+#else
+        private fixed byte _padding[20];
+#endif
+
+        public bool InitNoThrow(int eType, int eFlags = CrstFlags.CRST_DEFAULT) =>
+            _lock.InitNoThrow(eType, eFlags);
+
+        public void Destroy() => _lock.Destroy();
+
+        public void Enter() => _lock.Enter();
+
+        public void Leave() => _lock.Leave();
+
+#if DEBUG
+        public readonly bool OwnedByCurrentThread() => _lock.OwnedByCurrentThread();
+#endif
+    }
+
+    /// <summary>Fixed header of a handle table, followed in memory by its per-type caches.</summary>
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct HandleTable
     {
         public fixed uint rgTypeFlags[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+        public TableSegment* pSegmentList;
+        public HandleTableCrstStatic Lock;
+        public uint uTypeCount;
+        public uint dwCount;
+        public AsyncScanInfo* pAsyncScanInfo;
+        public uint uTableIndex;
+#if TARGET_64BIT
+        public fixed ulong rgQuickCache[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+#else
+        public fixed uint rgQuickCache[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+#endif
+#if DEBUG
+        public int _DEBUG_iMaxGen;
+        public fixed long _DEBUG_TotalBlocksScanned[HandleTableConstants.MAXSTATGEN];
+        public fixed long _DEBUG_TotalBlocksScannedNonTrivially[HandleTableConstants.MAXSTATGEN];
+        public fixed long _DEBUG_TotalHandleSlotsScanned[HandleTableConstants.MAXSTATGEN];
+        public fixed long _DEBUG_TotalHandlesActuallyScanned[HandleTableConstants.MAXSTATGEN];
+#endif
     }
 
     /// <summary>Header data at the start of every handle-table segment.</summary>

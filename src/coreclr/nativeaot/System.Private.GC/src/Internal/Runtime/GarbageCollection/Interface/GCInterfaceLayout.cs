@@ -204,7 +204,23 @@ namespace Internal.Runtime.GarbageCollection
         {
             byte storage = 0;
             HandleTable* table = (HandleTable*)&storage;
-            if (OffsetOf(table, &table->rgTypeFlags[0]) != GCInterfaceOffsets.OFFSETOF__HandleTable__rgTypeFlags
+            if (sizeof(HandleTable) != GCInterfaceOffsets.SIZEOF__HandleTable
+                || AlignOf<HandleTable>() != GCInterfaceOffsets.ALIGNOF__HandleTable
+                || OffsetOf(table, &table->rgTypeFlags[0]) != GCInterfaceOffsets.OFFSETOF__HandleTable__rgTypeFlags
+                || OffsetOf(table, &table->pSegmentList) != GCInterfaceOffsets.OFFSETOF__HandleTable__pSegmentList
+                || OffsetOf(table, &table->Lock) != GCInterfaceOffsets.OFFSETOF__HandleTable__Lock
+                || OffsetOf(table, &table->uTypeCount) != GCInterfaceOffsets.OFFSETOF__HandleTable__uTypeCount
+                || OffsetOf(table, &table->dwCount) != GCInterfaceOffsets.OFFSETOF__HandleTable__dwCount
+                || OffsetOf(table, &table->pAsyncScanInfo) != GCInterfaceOffsets.OFFSETOF__HandleTable__pAsyncScanInfo
+                || OffsetOf(table, &table->uTableIndex) != GCInterfaceOffsets.OFFSETOF__HandleTable__uTableIndex
+                || OffsetOf(table, &table->rgQuickCache[0]) != GCInterfaceOffsets.OFFSETOF__HandleTable__rgQuickCache
+#if DEBUG
+                || OffsetOf(table, &table->_DEBUG_iMaxGen) != GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_iMaxGen
+                || OffsetOf(table, &table->_DEBUG_TotalBlocksScanned[0]) != GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_TotalBlocksScanned
+                || OffsetOf(table, &table->_DEBUG_TotalBlocksScannedNonTrivially[0]) != GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_TotalBlocksScannedNonTrivially
+                || OffsetOf(table, &table->_DEBUG_TotalHandleSlotsScanned[0]) != GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_TotalHandleSlotsScanned
+                || OffsetOf(table, &table->_DEBUG_TotalHandlesActuallyScanned[0]) != GCInterfaceOffsets.OFFSETOF__HandleTable___DEBUG_TotalHandlesActuallyScanned
+#endif
                 || HandleTableConstants.HNDF_NORMAL != GCInterfaceOffsets.HNDF_NORMAL
                 || HandleTableConstants.HNDF_EXTRAINFO != GCInterfaceOffsets.HNDF_EXTRAINFO)
             {
