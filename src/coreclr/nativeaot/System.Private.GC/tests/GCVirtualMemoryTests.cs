@@ -20,6 +20,7 @@ using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
 
+[Collection(SyncImportsCollection.Name)]
 public sealed unsafe class GCVirtualMemoryTests
 {
     private static nuint PageSize => GCToOSInterface.GetPageSize();

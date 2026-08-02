@@ -249,6 +249,11 @@ void GetProcessMemoryLoad(LPMEMORYSTATUSEX pMSEX)
     assert(fRet);
 }
 
+// GetRestrictedPhysicalMemoryLimit, GetLPI and GetLogicalProcessorCacheSizeFromOS are
+// translated into System.Private.GC's GCToOSInterface.MemoryLimits.Windows.cs, which calls the
+// same Win32 entry points directly. The first two are static, so leaving them in place under
+// FEATURE_MANAGED_GC would be an unused function rather than dead code the linker drops.
+#ifndef FEATURE_MANAGED_GC
 static size_t GetRestrictedPhysicalMemoryLimit()
 {
     LIMITED_METHOD_CONTRACT;
@@ -469,6 +474,7 @@ Exit:
 
     return cache_size;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Get the CPU group for the specified processor
 void GetGroupForProcessor(uint16_t processor_number, uint16_t* group_number, uint16_t* group_processor_number)
@@ -844,6 +850,7 @@ bool GCToOSInterface::GetWriteWatch(bool resetState, void* address, size_t size,
     return success;
 }
 
+#ifndef FEATURE_MANAGED_GC
 // Get size of the largest cache on the processor die
 // Parameters:
 //  trueSize - true to return true cache size, false to return scaled up size based on
@@ -869,6 +876,7 @@ size_t GCToOSInterface::GetCacheSizePerLogicalCpu(bool trueSize)
     // printf("GetCacheSizePerLogicalCpu returns %zu, adjusted size %zu\n", maxSize, maxTrueSize);
     return trueSize ? maxTrueSize : maxSize;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Sets the calling thread's affinity to only run on the processor specified
 // Parameters:
@@ -967,6 +975,9 @@ size_t GCToOSInterface::GetVirtualMemoryLimit()
     return (size_t)memStatus.ullAvailVirtual;
 }
 
+// GetPhysicalMemoryLimit and GetMemoryStatus are translated into System.Private.GC's
+// GCToOSInterface.MemoryLimits.Windows.cs.
+#ifndef FEATURE_MANAGED_GC
 // Get the physical memory that this process can use.
 // Return:
 //  non zero if it has succeeded, 0 if it has failed
@@ -1067,6 +1078,7 @@ void GCToOSInterface::GetMemoryStatus(uint64_t restricted_limit, uint32_t* memor
             *available_page_file = ms.ullAvailPageFile;
     }
 }
+#endif // FEATURE_MANAGED_GC
 
 // Get a high precision performance counter
 // Return:

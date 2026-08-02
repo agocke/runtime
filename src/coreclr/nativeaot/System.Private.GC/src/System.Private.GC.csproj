@@ -66,6 +66,8 @@
     <!-- Sleep and yield, from the "thread and process" section of the same two gcenv files. -->
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Thread.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Thread.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.MemoryLimits.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.MemoryLimits.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <!-- The event and lock implementations, likewise one per gcenv platform file:
          gc/unix/events.cpp and the GCEvent half of gc/windows/gcenv.windows.cpp, plus the two
          halves of src/native/minipal/mutex.c that CLRCriticalSection forwards to. The pthread

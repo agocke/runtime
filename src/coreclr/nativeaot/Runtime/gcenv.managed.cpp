@@ -11,9 +11,10 @@
 // gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
 //
 // This file also carries the static_asserts that check the <sys/mman.h>, <sys/resource.h>,
-// <pthread.h>, <time.h>, <errno.h> and <windows.h> constants and layouts that those managed
-// ports hardcode against the real headers of the platform being built, in the same spirit as
-// AsmOffsets.h. The C# #if structure and the one below must stay in the same shape.
+// <pthread.h>, <time.h>, <errno.h>, <unistd.h>, <sys/sysctl.h>, <sys/sysinfo.h>, <windows.h>
+// and <psapi.h> constants and layouts that those managed ports hardcode against the real
+// headers of the platform being built, in the same spirit as AsmOffsets.h. The C# #if structure
+// and the one below must stay in the same shape.
 //
 // The managed side calls these with [RuntimeImport], which is a direct call to a linked symbol
 // with no marshalling, no argument copying and no GC mode transition. That is what code running
@@ -21,10 +22,19 @@
 //
 // Each forwarder is deliberately a single expression with no logic of its own, so that the
 // managed declaration and the C++ declaration can be diffed against each other. They exist
-// because porting cgroups, NUMA, CPU groups and pthread affinity to C# is a separate,
+// because porting NUMA, CPU groups and pthread affinity to C# is a separate,
 // platform-by-platform piece of work. Deletion point: plan step 3 of
 // System.Private.GC/ROADMAP.md, one platform module at a time; a forwarder disappears when the
 // managed GCToOSInterface implements that method itself.
+//
+// A few narrow leaves of the memory limit port are not here: ManagedGC_CGroup_GetPhysicalMemoryLimit
+// and ManagedGC_Unix_GetPhysicalMemoryUsed are in gc/unix/cgroup.cpp, and
+// ManagedGC_Unix_ReadMemoryValueFromFile, ManagedGC_Unix_ReadMemAvailable,
+// ManagedGC_Unix_GetCurrentVirtualMemorySize and ManagedGC_Unix_GetProcessAffinitySet are in
+// gc/unix/gcenv.unix.cpp. Each of them wraps something with internal linkage in its own
+// translation unit -- the CGroup class is in an anonymous namespace and the file parsers are
+// static -- so they have to sit next to what they wrap. They are guarded by FEATURE_MANAGED_GC
+// there, so a default build does not carry them either.
 //
 // This file is only compiled into the managedgc-enabled archive, so a default (C++ GC) build
 // does not carry any of it.
@@ -233,6 +243,157 @@ static_assert(sizeof(*__errno_location()) == sizeof(int), "The errno accessor do
 #endif
 
 //
+// The <unistd.h>, <sys/sysctl.h> and <sys/sysinfo.h> values that the memory limit and cache
+// sizing port of GCToOSInterface.MemoryLimits.Unix.cs hardcodes.
+//
+// The sysconf names are per C library rather than per operating system, so the branches below
+// are the ones the C# selects between. Where the C++ compiles a block only if the platform
+// defines a name -- the sysconf cache sizes, _SC_AVPHYS_PAGES behind the SYSCONF_PAGES macro --
+// the C# has already decided which platforms those are, so the check here is that the name is
+// there where the C# expects it and absent where the C# leaves the block out. That is the
+// fail-closed half: a platform that grows one of these breaks this build instead of silently
+// taking a path the C++ would not have taken.
+//
+
+#include <unistd.h>
+
+#if defined(TARGET_APPLE) || defined(TARGET_FREEBSD)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+
+#if defined(TARGET_FREEBSD)
+#include <vm/vm_param.h>
+#endif
+
+#if !defined(TARGET_APPLE) && !defined(TARGET_FREEBSD) && !defined(TARGET_OPENBSD)
+#include <sys/sysinfo.h>
+#endif
+
+static_assert(sizeof(sysconf(0)) == sizeof(intptr_t), "sysconf does not match GCToOSInterface.Imports.Unix.cs.");
+
+#if defined(TARGET_APPLE)
+
+static_assert(_SC_PAGE_SIZE == 29, "_SC_PAGE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_PHYS_PAGES == 200, "_SC_PHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+// The C++ leaves SYSCONF_PAGES undefined on Apple and takes the kern.memorystatus_level path
+// instead, which is what the C# does; there is no _SC_AVPHYS_PAGES here to fall back to.
+#ifdef _SC_AVPHYS_PAGES
+#error "Apple now defines _SC_AVPHYS_PAGES; GCToOSInterface.MemoryLimits.Unix.cs has no SYSCONF_PAGES for it."
+#endif
+
+static_assert(CTL_MAXNAME == 12, "CTL_MAXNAME does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(CTL_VM == 2, "CTL_VM does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(VM_SWAPUSAGE == 5, "VM_SWAPUSAGE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+static_assert(sizeof(struct xsw_usage) == 32, "struct xsw_usage does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xsw_usage, xsu_total) == 0, "struct xsw_usage does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xsw_usage, xsu_avail) == 8, "struct xsw_usage does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xsw_usage, xsu_used) == 16, "struct xsw_usage does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xsw_usage, xsu_pagesize) == 24, "struct xsw_usage does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xsw_usage, xsu_encrypted) == 28, "struct xsw_usage does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+#elif defined(TARGET_FREEBSD)
+
+static_assert(_SC_PAGE_SIZE == 47, "_SC_PAGE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_PHYS_PAGES == 121, "_SC_PHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+// FreeBSD has no _SC_AVPHYS_PAGES, so the SYSCONF_PAGES of the C++ is _SC_PHYS_PAGES, which is
+// what the C# selects.
+#ifdef _SC_AVPHYS_PAGES
+#error "FreeBSD now defines _SC_AVPHYS_PAGES; GCToOSInterface.MemoryLimits.Unix.cs points SYSCONF_PAGES at _SC_PHYS_PAGES."
+#endif
+
+static_assert(XSWDEV_VERSION == 2, "XSWDEV_VERSION does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(sizeof(struct xswdev) == 32, "struct xswdev does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xswdev, xsw_version) == 0, "struct xswdev does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xswdev, xsw_dev) == 8, "struct xswdev does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xswdev, xsw_flags) == 16, "struct xswdev does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xswdev, xsw_nblks) == 20, "struct xswdev does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct xswdev, xsw_used) == 24, "struct xswdev does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+#elif defined(TARGET_OPENBSD)
+
+static_assert(_SC_PAGE_SIZE == 28, "_SC_PAGE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_PHYS_PAGES == 500, "_SC_PHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_AVPHYS_PAGES == 501, "_SC_AVPHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+#elif defined(__BIONIC__)
+
+static_assert(_SC_PAGE_SIZE == 0x27, "_SC_PAGE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_PHYS_PAGES == 0x62, "_SC_PHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_AVPHYS_PAGES == 0x63, "_SC_AVPHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_LEVEL1_DCACHE_SIZE == 0x92, "_SC_LEVEL1_DCACHE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_LEVEL2_CACHE_SIZE == 0x95, "_SC_LEVEL2_CACHE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_LEVEL3_CACHE_SIZE == 0x98, "_SC_LEVEL3_CACHE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_LEVEL4_CACHE_SIZE == 0x9b, "_SC_LEVEL4_CACHE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+#elif defined(TARGET_LINUX_MUSL)
+
+static_assert(_SC_PAGE_SIZE == 30, "_SC_PAGE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_PHYS_PAGES == 85, "_SC_PHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_AVPHYS_PAGES == 86, "_SC_AVPHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+// musl defines none of the four sysconf cache names, so the C++ compiles the body of
+// GetLogicalProcessorCacheSizeFromSysConf away there and the C# leaves it out.
+#if defined(_SC_LEVEL1_DCACHE_SIZE) || defined(_SC_LEVEL2_CACHE_SIZE) || defined(_SC_LEVEL3_CACHE_SIZE) || defined(_SC_LEVEL4_CACHE_SIZE)
+#error "musl now defines a _SC_LEVEL*_CACHE_SIZE; GetLogicalProcessorCacheSizeFromSysConf of GCToOSInterface.MemoryLimits.Unix.cs is empty there."
+#endif
+
+#else // glibc and any other C library that exports the glibc names.
+
+static_assert(_SC_PAGE_SIZE == 30, "_SC_PAGE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_PHYS_PAGES == 85, "_SC_PHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_AVPHYS_PAGES == 86, "_SC_AVPHYS_PAGES does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_LEVEL1_DCACHE_SIZE == 188, "_SC_LEVEL1_DCACHE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_LEVEL2_CACHE_SIZE == 191, "_SC_LEVEL2_CACHE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_LEVEL3_CACHE_SIZE == 194, "_SC_LEVEL3_CACHE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(_SC_LEVEL4_CACHE_SIZE == 197, "_SC_LEVEL4_CACHE_SIZE does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+
+#endif
+
+#if defined(TARGET_APPLE) || defined(TARGET_FREEBSD)
+
+// The three <sys/sysctl.h> entry points of GetAvailablePhysicalMemory, GetAvailablePageFile and
+// GetLogicalProcessorCacheSizeFromOS. As with nanosleep above, a function name has no value to
+// compare, so each is named in an unevaluated sizeof that checks the platform declares it, takes
+// the arguments the managed declaration passes and returns what it expects.
+static_assert(sizeof(sysctl((int*)nullptr, 0, nullptr, (size_t*)nullptr, nullptr, 0)) == sizeof(int),
+    "sysctl does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(sysctlbyname((const char*)nullptr, nullptr, (size_t*)nullptr, nullptr, 0)) == sizeof(int),
+    "sysctlbyname does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(sysctlnametomib((const char*)nullptr, (int*)nullptr, (size_t*)nullptr)) == sizeof(int),
+    "sysctlnametomib does not match GCToOSInterface.Imports.Unix.cs.");
+
+// The four sysconf cache names are a glibc extension; neither BSD has them, so the C++ compiles
+// the body of GetLogicalProcessorCacheSizeFromSysConf away and the C# leaves it out.
+#if defined(_SC_LEVEL1_DCACHE_SIZE) || defined(_SC_LEVEL2_CACHE_SIZE) || defined(_SC_LEVEL3_CACHE_SIZE) || defined(_SC_LEVEL4_CACHE_SIZE)
+#error "This platform now defines a _SC_LEVEL*_CACHE_SIZE; GetLogicalProcessorCacheSizeFromSysConf of GCToOSInterface.MemoryLimits.Unix.cs is empty there."
+#endif
+
+#elif defined(TARGET_OPENBSD)
+
+#if defined(_SC_LEVEL1_DCACHE_SIZE) || defined(_SC_LEVEL2_CACHE_SIZE) || defined(_SC_LEVEL3_CACHE_SIZE) || defined(_SC_LEVEL4_CACHE_SIZE)
+#error "This platform now defines a _SC_LEVEL*_CACHE_SIZE; GetLogicalProcessorCacheSizeFromSysConf of GCToOSInterface.MemoryLimits.Unix.cs is empty there."
+#endif
+
+#else // Linux and Android.
+
+// struct sysinfo of <sys/sysinfo.h>, which GetAvailablePageFile fills in. Only freeswap and
+// mem_unit are read, so those two offsets are pinned exactly; the rest of the managed structure
+// exists so that the kernel has somewhere to write, and only has to be at least as large as the
+// platform's. The C++ reads mem_unit only where HAVE_SYSINFO_WITH_MEM_UNIT holds, which is a
+// configure check the C# cannot see; naming the field here is the same test.
+static_assert(sizeof(sysinfo((struct sysinfo*)nullptr)) == sizeof(int), "sysinfo does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(((struct sysinfo*)nullptr)->mem_unit) == sizeof(uint32_t), "struct sysinfo does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct sysinfo, freeswap) == (sizeof(void*) == 8 ? 72 : 36), "struct sysinfo does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(offsetof(struct sysinfo, mem_unit) == (sizeof(void*) == 8 ? 104 : 52), "struct sysinfo does not match GCToOSInterface.MemoryLimits.Unix.cs.");
+static_assert(sizeof(struct sysinfo) <= offsetof(struct sysinfo, mem_unit) + sizeof(uint32_t) + 256, "struct sysinfo does not fit the one of GCToOSInterface.MemoryLimits.Unix.cs.");
+
+#endif
+
+//
 // The second remaining piece: the NUMA half of VirtualCommitInner. It is the body of the
 // `#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)` block of that function, verbatim,
 // because it reads the NUMA state that only gc/unix/numasupport.cpp has -- which belongs to the
@@ -313,6 +474,54 @@ static_assert(FALSE == 0, "The bAlertable argument of GCToOSInterface.Thread.Win
 static_assert(sizeof(SleepEx(0, FALSE)) == sizeof(uint32_t), "SleepEx does not match GCToOSInterface.Imports.Windows.cs.");
 static_assert(sizeof(SwitchToThread()) == sizeof(int32_t), "SwitchToThread does not match GCToOSInterface.Imports.Windows.cs.");
 
+//
+// The <windows.h> and <psapi.h> values that the memory limit and cache sizing port of
+// GCToOSInterface.MemoryLimits.Windows.cs hardcodes.
+//
+
+#include <psapi.h>
+
+static_assert(JobObjectExtendedLimitInformation == 9, "JobObjectExtendedLimitInformation does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(JOB_OBJECT_LIMIT_WORKINGSET == 0x00000001, "JOB_OBJECT_LIMIT_WORKINGSET does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(JOB_OBJECT_LIMIT_PROCESS_MEMORY == 0x00000100, "JOB_OBJECT_LIMIT_PROCESS_MEMORY does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(JOB_OBJECT_LIMIT_JOB_MEMORY == 0x00000200, "JOB_OBJECT_LIMIT_JOB_MEMORY does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(RelationCache == 2, "RelationCache does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(ERROR_INSUFFICIENT_BUFFER == 122, "ERROR_INSUFFICIENT_BUFFER does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+
+static_assert(sizeof(JOBOBJECT_BASIC_LIMIT_INFORMATION) == (sizeof(void*) == 8 ? 64 : 48), "JOBOBJECT_BASIC_LIMIT_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(offsetof(JOBOBJECT_BASIC_LIMIT_INFORMATION, LimitFlags) == 16, "JOBOBJECT_BASIC_LIMIT_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(sizeof(IO_COUNTERS) == 48, "IO_COUNTERS does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(sizeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION) == (sizeof(void*) == 8 ? 144 : 112), "JOBOBJECT_EXTENDED_LIMIT_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(offsetof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION, IoInfo) == (sizeof(void*) == 8 ? 64 : 48), "JOBOBJECT_EXTENDED_LIMIT_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(offsetof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION, ProcessMemoryLimit) == (sizeof(void*) == 8 ? 112 : 96), "JOBOBJECT_EXTENDED_LIMIT_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(offsetof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobMemoryLimit) == (sizeof(void*) == 8 ? 120 : 100), "JOBOBJECT_EXTENDED_LIMIT_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+
+static_assert(sizeof(PROCESS_MEMORY_COUNTERS) == (sizeof(void*) == 8 ? 72 : 40), "PROCESS_MEMORY_COUNTERS does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(offsetof(PROCESS_MEMORY_COUNTERS, WorkingSetSize) == (sizeof(void*) == 8 ? 16 : 12), "PROCESS_MEMORY_COUNTERS does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+
+static_assert(sizeof(CACHE_DESCRIPTOR) == 12, "CACHE_DESCRIPTOR does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(offsetof(CACHE_DESCRIPTOR, Size) == 4, "CACHE_DESCRIPTOR does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION) == (sizeof(void*) == 8 ? 32 : 24), "SYSTEM_LOGICAL_PROCESSOR_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(offsetof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION, Relationship) == sizeof(void*), "SYSTEM_LOGICAL_PROCESSOR_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+static_assert(offsetof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION, Cache) == (sizeof(void*) == 8 ? 16 : 8), "SYSTEM_LOGICAL_PROCESSOR_INFORMATION does not match GCToOSInterface.MemoryLimits.Windows.cs.");
+
+// The four entry points, checked the same way the Unix libc ones are: named in an unevaluated
+// sizeof, which fails to compile unless <windows.h> or <psapi.h> declares it with the signature
+// the managed declaration passes and returns what the managed declaration expects.
+static_assert(sizeof(::IsProcessInJob(nullptr, nullptr, (PBOOL)nullptr)) == sizeof(int32_t), "IsProcessInJob does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::QueryInformationJobObject(nullptr, JobObjectExtendedLimitInformation, nullptr, 0, (LPDWORD)nullptr)) == sizeof(int32_t), "QueryInformationJobObject does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::GetLogicalProcessorInformation((PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)nullptr, (PDWORD)nullptr)) == sizeof(int32_t), "GetLogicalProcessorInformation does not match GCToOSInterface.Imports.Windows.cs.");
+
+// The managed declaration names K32GetProcessMemoryInfo rather than GetProcessMemoryInfo: that
+// is the entry point kernel32 exports and the one every psapi.h since PSAPI_VERSION 2 redirects
+// the documented name to, and kernel32.lib is on the default NativeAOT link line where
+// psapi.lib is not. A psapi.h that stopped redirecting would leave the managed GC naming a
+// symbol that is only in psapi.dll, so check the redirect rather than assume it.
+#ifndef GetProcessMemoryInfo
+#error "psapi.h no longer redirects GetProcessMemoryInfo to K32GetProcessMemoryInfo, which is the symbol GCToOSInterface.Imports.Windows.cs names."
+#endif
+static_assert(sizeof(::K32GetProcessMemoryInfo(nullptr, (PPROCESS_MEMORY_COUNTERS)nullptr, 0)) == sizeof(int32_t), "K32GetProcessMemoryInfo does not match GCToOSInterface.Imports.Windows.cs.");
+
 // The event and lock ports of GCEvent.Windows.cs, GCEnvSync.Windows.cs and SyncTypes.Windows.cs
 // hardcode one <windows.h> value and one type. The CRITICAL_SECTION is an opaque blob there, so
 // only its size and alignment matter; the managed one is deliberately larger than any platform
@@ -370,11 +579,6 @@ extern "C" uint32_t ManagedGC_OS_GetCurrentProcessId()
     return GCToOSInterface::GetCurrentProcessId();
 }
 
-extern "C" size_t ManagedGC_OS_GetCacheSizePerLogicalCpu(UInt32_BOOL trueSize)
-{
-    return GCToOSInterface::GetCacheSizePerLogicalCpu(trueSize != UInt32_FALSE);
-}
-
 extern "C" UInt32_BOOL ManagedGC_OS_SetThreadAffinity(uint16_t procNo)
 {
     return GCToOSInterface::SetThreadAffinity(procNo) ? UInt32_TRUE : UInt32_FALSE;
@@ -388,18 +592,6 @@ extern "C" UInt32_BOOL ManagedGC_OS_BoostThreadPriority()
 extern "C" const void* ManagedGC_OS_SetGCThreadsAffinitySet(uintptr_t configAffinityMask, const void* configAffinitySet)
 {
     return GCToOSInterface::SetGCThreadsAffinitySet(configAffinityMask, (const AffinitySet*)configAffinitySet);
-}
-
-// is_restricted is a `bool*` in C++ and a `byte*` on the managed side; both are one byte, and
-// the null the C++ default argument supplies is passed explicitly by the managed declaration.
-extern "C" uint64_t ManagedGC_OS_GetPhysicalMemoryLimit(bool* is_restricted)
-{
-    return GCToOSInterface::GetPhysicalMemoryLimit(is_restricted);
-}
-
-extern "C" void ManagedGC_OS_GetMemoryStatus(uint64_t restricted_limit, uint32_t* memory_load, uint64_t* available_physical, uint64_t* available_page_file)
-{
-    GCToOSInterface::GetMemoryStatus(restricted_limit, memory_load, available_physical, available_page_file);
 }
 
 extern "C" void ManagedGC_OS_DebugBreak()

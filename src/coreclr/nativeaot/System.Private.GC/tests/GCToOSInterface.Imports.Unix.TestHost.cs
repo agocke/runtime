@@ -13,11 +13,18 @@
 // made to report EINTR with an interval left over, which is the only way to drive the retry loop
 // of GCToOSInterface::Sleep without waiting for a signal that may never arrive.
 //
+// The memory limit substitutes are injection-only by nature: a cgroup limit, a /proc/meminfo row
+// or a sysfs cache size cannot be arranged on the machine running the tests, and asserting
+// against whatever the host happens to report would test nothing. Each of them therefore hands
+// back a value the test sets, and every substitute here still defaults to the real call so that
+// a test that does not inject sees the machine.
+//
 // A [DllImport] is exactly what the GC must not use; it is fine here because this file is never
 // compiled into the GC. The methods it replaces are the boundary of the port: everything the
 // tests exercise above them is the shipping code.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -197,7 +204,195 @@ internal static unsafe partial class GCToOSInterface
         return result;
     }
 
-    private static int getrlimit(int resource, Rlimit* rlim) => sys_getrlimit(resource, rlim);
+    private static int getrlimit(int resource, Rlimit* rlim)
+    {
+        GetrlimitCalls++;
+        if (GetrlimitInject)
+        {
+            *rlim = GetrlimitValue;
+            return GetrlimitResult;
+        }
+
+        return sys_getrlimit(resource, rlim);
+    }
+
+    //
+    // Memory limits and cache sizing. Everything below is injected rather than measured.
+    //
+
+    /// <summary>What <c>sysconf</c> reports, by name. A name that is not in the table falls
+    /// through to the real libc.</summary>
+    internal static readonly Dictionary<int, nint> SysconfValues = new Dictionary<int, nint>();
+
+    /// <summary>Every <c>sysconf</c> name asked for, in order.</summary>
+    internal static readonly List<int> SysconfCalls = new List<int>();
+
+    /// <summary>When true, <see cref="getrlimit"/> reports the two fields below.</summary>
+    internal static bool GetrlimitInject;
+    internal static Rlimit GetrlimitValue;
+    internal static int GetrlimitResult;
+    internal static int GetrlimitCalls;
+
+    /// <summary>What <c>ManagedGC_CGroup_GetPhysicalMemoryLimit</c> reports.</summary>
+    internal static int CGroupPhysicalMemoryLimitResult;
+    internal static ulong CGroupPhysicalMemoryLimitValue;
+    internal static int CGroupPhysicalMemoryLimitCalls;
+
+    /// <summary>What <c>ManagedGC_Unix_GetPhysicalMemoryUsed</c> reports.</summary>
+    internal static int PhysicalMemoryUsedResult;
+    internal static nuint PhysicalMemoryUsedValue;
+    internal static int PhysicalMemoryUsedCalls;
+
+    /// <summary>What <c>ManagedGC_Unix_ReadMemAvailable</c> reports.</summary>
+    internal static int ReadMemAvailableResult;
+    internal static ulong ReadMemAvailableValue;
+    internal static int ReadMemAvailableCalls;
+
+    /// <summary>
+    /// The files <c>ManagedGC_Unix_ReadMemoryValueFromFile</c> can read, by path. A path that is
+    /// not in the table is reported as unreadable, which is what the C++ does for a file that
+    /// does not exist.
+    /// </summary>
+    internal static readonly Dictionary<string, ulong> MemoryValueFiles = new Dictionary<string, ulong>();
+
+    /// <summary>Every path <c>ManagedGC_Unix_ReadMemoryValueFromFile</c> was asked for, in order.</summary>
+    internal static readonly List<string> MemoryValueFileCalls = new List<string>();
+
+    /// <summary>What <c>ManagedGC_Unix_GetCurrentVirtualMemorySize</c> reports. The default is
+    /// the <c>(size_t)-1</c> the C++ reports where /proc/self/statm cannot be read.</summary>
+    internal static nuint CurrentVirtualMemorySize = nuint.MaxValue;
+    internal static int CurrentVirtualMemorySizeCalls;
+
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
+    /// <summary>What <c>sysinfo</c> reports. Only the platforms that have it declare these.</summary>
+    internal static int SysinfoResult;
+    internal static SysInfo SysinfoValue;
+    internal static int SysinfoCalls;
+#endif
+
+    /// <summary>
+    /// The bitset behind the affinity set <c>ManagedGC_Unix_GetProcessAffinitySet</c> hands
+    /// back, and the set itself. Both are native memory so that the pointer the shipping code
+    /// reads through stays put.
+    /// </summary>
+    private const nuint ProcessAffinitySetEntries = 16;
+
+    private static readonly nuint* s_processAffinityBitset =
+        (nuint*)NativeMemory.AllocZeroed(ProcessAffinitySetEntries, (nuint)sizeof(nuint));
+
+    private static readonly AffinitySet* s_processAffinitySet = CreateProcessAffinitySet();
+
+    private static AffinitySet* CreateProcessAffinitySet()
+    {
+        AffinitySet* set = (AffinitySet*)NativeMemory.AllocZeroed((nuint)sizeof(AffinitySet));
+        set->InitializeWithStorage(s_processAffinityBitset, ProcessAffinitySetEntries);
+        return set;
+    }
+
+    /// <summary>Makes the process affinity set report exactly <paramref name="cpuCount"/> CPUs.</summary>
+    internal static void SetProcessAffinityCpuCount(nuint cpuCount)
+    {
+        NativeMemory.Clear(s_processAffinityBitset, ProcessAffinitySetEntries * (nuint)sizeof(nuint));
+        for (nuint i = 0; i < cpuCount; i++)
+        {
+            s_processAffinitySet->Add(i);
+        }
+    }
+
+    /// <summary>Forgets every memory limit recording and clears every injection.</summary>
+    internal static void ResetMemoryLimitsRecording()
+    {
+        SysconfValues.Clear();
+        SysconfCalls.Clear();
+        GetrlimitInject = false;
+        GetrlimitValue = default;
+        GetrlimitResult = 0;
+        GetrlimitCalls = 0;
+        CGroupPhysicalMemoryLimitResult = 0;
+        CGroupPhysicalMemoryLimitValue = 0;
+        CGroupPhysicalMemoryLimitCalls = 0;
+        PhysicalMemoryUsedResult = 0;
+        PhysicalMemoryUsedValue = 0;
+        PhysicalMemoryUsedCalls = 0;
+        ReadMemAvailableResult = 0;
+        ReadMemAvailableValue = 0;
+        ReadMemAvailableCalls = 0;
+        MemoryValueFiles.Clear();
+        MemoryValueFileCalls.Clear();
+        CurrentVirtualMemorySize = nuint.MaxValue;
+        CurrentVirtualMemorySizeCalls = 0;
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
+        SysinfoResult = 0;
+        SysinfoValue = default;
+        SysinfoCalls = 0;
+#endif
+        SetProcessAffinityCpuCount(0);
+
+        // The two caches and the sticky /proc/meminfo flag of the shipping code are
+        // function-local statics in C++ and fields here, so each test starts from the value
+        // they have in a fresh process.
+        s_maxSize = 0;
+        s_maxTrueSize = 0;
+        s_tryReadMemInfoFailed = false;
+        g_RestrictedPhysicalMemoryLimit = 0;
+    }
+
+    private static nint sysconf(int name)
+    {
+        SysconfCalls.Add(name);
+        return SysconfValues.TryGetValue(name, out nint value) ? value : sys_sysconf(name);
+    }
+
+    private static int ManagedGC_CGroup_GetPhysicalMemoryLimit(ulong* val)
+    {
+        CGroupPhysicalMemoryLimitCalls++;
+        *val = CGroupPhysicalMemoryLimitValue;
+        return CGroupPhysicalMemoryLimitResult;
+    }
+
+    private static int ManagedGC_Unix_GetPhysicalMemoryUsed(nuint* val)
+    {
+        PhysicalMemoryUsedCalls++;
+        *val = PhysicalMemoryUsedValue;
+        return PhysicalMemoryUsedResult;
+    }
+
+    private static int ManagedGC_Unix_ReadMemoryValueFromFile(byte* filename, ulong* val)
+    {
+        string path = Marshal.PtrToStringUTF8((IntPtr)filename);
+        MemoryValueFileCalls.Add(path);
+        if (MemoryValueFiles.TryGetValue(path, out ulong value))
+        {
+            *val = value;
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private static int ManagedGC_Unix_ReadMemAvailable(ulong* memAvailable)
+    {
+        ReadMemAvailableCalls++;
+        *memAvailable = ReadMemAvailableValue;
+        return ReadMemAvailableResult;
+    }
+
+    private static nuint ManagedGC_Unix_GetCurrentVirtualMemorySize()
+    {
+        CurrentVirtualMemorySizeCalls++;
+        return CurrentVirtualMemorySize;
+    }
+
+    private static AffinitySet* ManagedGC_Unix_GetProcessAffinitySet() => s_processAffinitySet;
+
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
+    private static int sysinfo(SysInfo* info)
+    {
+        SysinfoCalls++;
+        *info = SysinfoValue;
+        return SysinfoResult;
+    }
+#endif
 
     //
     // errno. The shipping code reads the thread's errno through the accessor its C library
@@ -304,4 +499,21 @@ internal static unsafe partial class GCToOSInterface
 
     [DllImport("libc", EntryPoint = "sched_yield", SetLastError = true)]
     private static extern int sys_sched_yield();
+
+    [DllImport("libc", EntryPoint = "sysconf", SetLastError = true)]
+    private static extern nint sys_sysconf(int name);
+
+#if TARGET_APPLE || TARGET_FREEBSD
+    // The BSD sysctl family is not injected: nothing above it can be driven from a test process
+    // anyway, and it is only declared here so that the port compiles for those targets.
+
+    [DllImport("libc", EntryPoint = "sysctl", SetLastError = true)]
+    private static extern int sysctl(int* name, uint namelen, void* oldp, nuint* oldlenp, void* newp, nuint newlen);
+
+    [DllImport("libc", EntryPoint = "sysctlbyname", SetLastError = true)]
+    private static extern int sysctlbyname(byte* name, void* oldp, nuint* oldlenp, void* newp, nuint newlen);
+
+    [DllImport("libc", EntryPoint = "sysctlnametomib", SetLastError = true)]
+    private static extern int sysctlnametomib(byte* name, int* mibp, nuint* sizep);
+#endif
 }

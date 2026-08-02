@@ -109,10 +109,22 @@ public sealed class GCInterfaceLayoutTests
              .Where(name => !FindType(name).IsEnum)
              .Select(name => new object[] { name });
 
+    /// <summary>
+    /// Enums that live in the GC namespace but are not part of the GC/EE interface: they are
+    /// declared by gc/gcconfig.h, which is internal to the GC, so GCInterfaceOffsets.h has
+    /// nothing to say about them and neither does the vtable/offset contract.
+    /// </summary>
+    private static readonly HashSet<string> s_enumsOutsideTheGCEEBoundary = new(StringComparer.Ordinal)
+    {
+        "HeapVerifyFlags",
+        "WriteBarrierFlavor",
+    };
+
     public static IEnumerable<object[]> TranslatedEnums() =>
         typeof(GCInterfaceLayoutTests).Assembly
             .GetTypes()
             .Where(type => type.IsEnum && type.Namespace == typeof(HandleType).Namespace)
+            .Where(type => !s_enumsOutsideTheGCEEBoundary.Contains(type.Name))
             .Select(type => new object[] { type.Name });
 
     public static IEnumerable<object[]> Vtables() =>

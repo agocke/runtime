@@ -118,7 +118,9 @@ uint32_t g_configuredCpuCount = 0;
 size_t GetRestrictedPhysicalMemoryLimit();
 bool GetPhysicalMemoryUsed(size_t* val);
 
+#ifndef FEATURE_MANAGED_GC
 static size_t g_RestrictedPhysicalMemoryLimit = 0;
+#endif
 
 uint32_t g_pageSizeUnixInl = 0;
 
@@ -656,6 +658,13 @@ done:
     return result;
 }
 
+// The four helpers below and GCToOSInterface::GetCacheSizePerLogicalCpu are translated into
+// System.Private.GC's GCToOSInterface.MemoryLimits.Unix.cs, which calls sysconf directly and
+// reaches the two pieces it cannot translate -- the /sys file parser and the process affinity
+// set -- through ManagedGC_Unix_ReadMemoryValueFromFile and ManagedGC_Unix_GetProcessAffinitySet
+// below. They are static, so leaving them in place under FEATURE_MANAGED_GC would be an unused
+// function rather than dead code the linker drops.
+#ifndef FEATURE_MANAGED_GC
 static void GetLogicalProcessorCacheSizeFromSysConf(size_t* cacheLevel, size_t* cacheSize)
 {
     assert (cacheLevel != nullptr);
@@ -806,6 +815,7 @@ static size_t GetLogicalProcessorCacheSizeFromOS()
 
     return cacheSize;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Get memory size multiplier based on the passed in units (k = kilo, m = mega, g = giga)
 static uint64_t GetMemorySizeMultiplier(char units)
@@ -859,6 +869,35 @@ static bool ReadMemAvailable(uint64_t* memAvailable)
 }
 #endif // !defined(__APPLE__) && !defined(__HAIKU__)
 
+#ifdef FEATURE_MANAGED_GC
+// The /proc/meminfo and /sys parsers that GCToOSInterface.MemoryLimits.Unix.cs still reaches
+// into. Both use getline and sscanf, which allocate, so they cannot be translated until the GC
+// has an allocator of its own. Deletion point: the file parsing submodule of plan step 3 in
+// System.Private.GC/ROADMAP.md.
+// bool is reported as int32_t because the width of the register a C++ bool return occupies is
+// unspecified, while the managed declaration has to name a concrete type.
+extern "C" int32_t ManagedGC_Unix_ReadMemoryValueFromFile(const char* filename, uint64_t* val)
+{
+    return ReadMemoryValueFromFile(filename, val) ? 1 : 0;
+}
+
+#if !defined(__APPLE__) && !defined(__HAIKU__)
+extern "C" int32_t ManagedGC_Unix_ReadMemAvailable(uint64_t* memAvailable)
+{
+    return ReadMemAvailable(memAvailable) ? 1 : 0;
+}
+#endif // !defined(__APPLE__) && !defined(__HAIKU__)
+
+// The address of the process affinity set that GCToOSInterface::Initialize fills in. Only the
+// address crosses: the counting the cache size heuristic does is the translated AffinitySet of
+// System.Private.GC. Deletion point: the affinity submodule of plan step 3.
+extern "C" AffinitySet* ManagedGC_Unix_GetProcessAffinitySet()
+{
+    return &g_processAffinitySet;
+}
+#endif // FEATURE_MANAGED_GC
+
+#ifndef FEATURE_MANAGED_GC
 // Get size of the largest cache on the processor die
 // Parameters:
 //  trueSize - true to return true cache size, false to return scaled up size based on
@@ -883,6 +922,7 @@ size_t GCToOSInterface::GetCacheSizePerLogicalCpu(bool trueSize)
     // printf("GetCacheSizePerLogicalCpu returns %zu, adjusted size %zu\n", maxSize, maxTrueSize);
     return trueSize ? maxTrueSize : maxSize;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Sets the calling thread's affinity to only run on the processor specified
 // Parameters:
@@ -1004,6 +1044,22 @@ static size_t GetCurrentVirtualMemorySize()
 }
 #endif // HAVE_PROCFS_STATM
 
+#ifdef FEATURE_MANAGED_GC
+// The /proc/self/statm parser that GCToOSInterface.MemoryLimits.Unix.cs still reaches into; it
+// uses getline and strtok_r, which allocate. Where HAVE_PROCFS_STATM does not hold the C++ has
+// no such function and skips the block that calls it; this reports the (size_t)-1 that stands
+// for "not known" there instead, which sends the managed caller down the same path. Deletion
+// point: the file parsing submodule of plan step 3 in System.Private.GC/ROADMAP.md.
+extern "C" size_t ManagedGC_Unix_GetCurrentVirtualMemorySize()
+{
+#if HAVE_PROCFS_STATM
+    return GetCurrentVirtualMemorySize();
+#else
+    return (size_t)-1;
+#endif
+}
+#endif // FEATURE_MANAGED_GC
+
 // Return the size of the available user-mode portion of the virtual address space of this process.
 // Return:
 //  non zero if it has succeeded, GetVirtualMemoryMaxAddress() if not available
@@ -1044,6 +1100,9 @@ size_t GCToOSInterface::GetVirtualMemoryMaxAddress()
 #endif
 }
 
+// GetPhysicalMemoryLimit, GetAvailablePhysicalMemory, GetAvailablePageFile and GetMemoryStatus
+// are translated into System.Private.GC's GCToOSInterface.MemoryLimits.Unix.cs.
+#ifndef FEATURE_MANAGED_GC
 // Get the physical memory that this process can use.
 // Return:
 //  non zero if it has succeeded, 0 if it has failed
@@ -1269,6 +1328,7 @@ void GCToOSInterface::GetMemoryStatus(uint64_t restricted_limit, uint32_t* memor
     if (available_page_file != nullptr)
         *available_page_file = GetAvailablePageFile();
 }
+#endif // FEATURE_MANAGED_GC
 
 // Get a high precision performance counter
 // Return:

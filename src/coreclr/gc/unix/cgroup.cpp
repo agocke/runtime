@@ -563,6 +563,10 @@ void CleanupCGroup()
     CGroup::Cleanup();
 }
 
+// GetRestrictedPhysicalMemoryLimit is translated into System.Private.GC's
+// GCToOSInterface.MemoryLimits.Unix.cs, which reaches the cgroup reader below through
+// ManagedGC_CGroup_GetPhysicalMemoryLimit.
+#ifndef FEATURE_MANAGED_GC
 size_t GetRestrictedPhysicalMemoryLimit()
 {
     uint64_t physical_memory_limit = 0;
@@ -611,6 +615,7 @@ size_t GetRestrictedPhysicalMemoryLimit()
         return (size_t)physical_memory_limit;
     }
 }
+#endif // FEATURE_MANAGED_GC
 
 bool GetPhysicalMemoryUsed(size_t* val)
 {
@@ -652,6 +657,26 @@ bool GetPhysicalMemoryUsed(size_t* val)
     return result;
 }
 
+#ifdef FEATURE_MANAGED_GC
+// The two cgroup readers that GCToOSInterface.MemoryLimits.Unix.cs still reaches into. Both
+// parse files with getline, sscanf and strtok_r, which allocate, so they cannot be translated
+// until the GC has an allocator of its own. CGroup is in an anonymous namespace, so the first
+// of the two has to live here rather than in nativeaot/Runtime/gcenv.managed.cpp. Deletion
+// point: the file parsing submodule of plan step 3 in System.Private.GC/ROADMAP.md.
+//
+// bool is reported as int32_t because the width of the register a C++ bool return occupies is
+// unspecified, while the managed declaration has to name a concrete type.
+extern "C" int32_t ManagedGC_CGroup_GetPhysicalMemoryLimit(uint64_t* val)
+{
+    return CGroup::GetPhysicalMemoryLimit(val) ? 1 : 0;
+}
+
+extern "C" int32_t ManagedGC_Unix_GetPhysicalMemoryUsed(size_t* val)
+{
+    return GetPhysicalMemoryUsed(val) ? 1 : 0;
+}
+#endif // FEATURE_MANAGED_GC
+
 #else // !TARGET_LINUX
 
 void InitializeCGroup()
@@ -662,10 +687,12 @@ void CleanupCGroup()
 {
 }
 
+#ifndef FEATURE_MANAGED_GC
 size_t GetRestrictedPhysicalMemoryLimit()
 {
     return 0;
 }
+#endif // FEATURE_MANAGED_GC
 
 bool GetPhysicalMemoryUsed(size_t* val)
 {

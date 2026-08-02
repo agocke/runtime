@@ -27,8 +27,8 @@ using Xunit;
 namespace Internal.Runtime.GarbageCollection;
 
 /// <summary>
-/// The event and lock tests share the recorded call counts of the substituted imports, so they
-/// must not run at the same time.
+/// Every test class that injects into or records the substituted imports shares that state
+/// process-wide, so none of them may run at the same time as another.
 /// </summary>
 [CollectionDefinition(SyncImportsCollection.Name, DisableParallelization = true)]
 public sealed class SyncImportsCollection

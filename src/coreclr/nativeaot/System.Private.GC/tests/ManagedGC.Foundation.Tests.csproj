@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <Compile Include="GCEnvironmentTests.cs" />
+    <Compile Include="GCMemoryLimitsTests.cs" />
     <Compile Include="GCVirtualMemoryTests.cs" />
     <Compile Include="GCWriteWatchTests.cs" />
     <Compile Include="GCEventTests.cs" />
@@ -57,6 +58,8 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.WriteWatch.Windows.cs" Link="Environment/GCToOSInterface.WriteWatch.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.Thread.Unix.cs" Link="Environment/GCToOSInterface.Thread.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.Thread.Windows.cs" Link="Environment/GCToOSInterface.Thread.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.MemoryLimits.Unix.cs" Link="Environment/GCToOSInterface.MemoryLimits.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.MemoryLimits.Windows.cs" Link="Environment/GCToOSInterface.MemoryLimits.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="GCToOSInterface.Imports.Unix.TestHost.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="GCToOSInterface.Imports.Windows.TestHost.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <!-- The event and lock ports are real code rather than forwarders too, so the shipping
@@ -78,6 +81,11 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceEnums.cs" Link="Interface/GCInterfaceEnums.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceStructs.cs" Link="Interface/GCInterfaceStructs.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceVtables.cs" Link="Interface/GCInterfaceVtables.cs" />
+    <!-- GCConfig is here because the cache sizing port of GCToOSInterface reads one config
+         value out of it. Its backing fields are only ever written by GCConfig.Initialize,
+         which the tests do not run, so every value the tests see is the documented default. -->
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCToEEInterface.cs" Link="Interface/GCToEEInterface.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCConfig.cs" Link="GCConfig.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -10,18 +10,20 @@
 //     GCToOSInterface.VirtualMemory.Unix.cs, GCToOSInterface.VirtualMemory.Windows.cs,
 //     GCToOSInterface.WriteWatch.Unix.cs and GCToOSInterface.WriteWatch.Windows.cs, from
 //     gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp, and so are Sleep and
-//     YieldThread, in GCToOSInterface.Thread.Unix.cs and GCToOSInterface.Thread.Windows.cs.
-//     Their declarations stay here as comments pointing at the platform file, so that this file
-//     still reads in gcenv.os.h declaration order.
+//     YieldThread, in GCToOSInterface.Thread.Unix.cs and GCToOSInterface.Thread.Windows.cs,
+//     and the memory limit and cache sizing methods, in GCToOSInterface.MemoryLimits.Unix.cs
+//     and GCToOSInterface.MemoryLimits.Windows.cs. Their declarations stay here as comments
+//     pointing at the platform file, so that this file still reads in gcenv.os.h declaration
+//     order.
 //   * The remaining bodies are still forwarders. Each one is a [RuntimeImport] call to a
 //     one-line shim in nativeaot/Runtime/gcenv.managed.cpp, which calls the C++
 //     GCToOSInterface. A runtime import is a direct call to a linked symbol with no marshalling
 //     and no GC mode transition, which is what code that runs with the world suspended
 //     requires; a [DllImport] would not be usable here.
 //
-// They are forwarders because the implementations are the platform code -- cgroup and
-// job-object limits, NUMA, Windows CPU groups, pthread and Win32 affinity, the high-resolution
-// clock -- and porting it is a separate piece of work per platform. Deletion point: plan step 3
+// They are forwarders because the implementations are the platform code -- NUMA, Windows CPU
+// groups, pthread and Win32 affinity, the high-resolution clock -- and porting it is a separate
+// piece of work per platform. Deletion point: plan step 3
 // of ROADMAP.md; a forwarder and its shim disappear together when the managed implementation of
 // that method lands.
 //
@@ -130,13 +132,8 @@ namespace Internal.Runtime.GarbageCollection
         // Processor topology
         //
 
-        /// <summary>Get the size of the on-die cache per logical processor.</summary>
-        /// <param name="trueSize">
-        /// true to return the true cache size, false to return a size scaled up based on the
-        /// processor architecture
-        /// </param>
-        public static nuint GetCacheSizePerLogicalCpu(bool trueSize = true) =>
-            ManagedGC_OS_GetCacheSizePerLogicalCpu(trueSize ? 1 : 0);
+        // GetCacheSizePerLogicalCpu is translated per platform in
+        // GCToOSInterface.MemoryLimits.Unix.cs and GCToOSInterface.MemoryLimits.Windows.cs.
 
         /// <summary>
         /// Sets the calling thread's affinity to only run on the processor specified.
@@ -169,33 +166,8 @@ namespace Internal.Runtime.GarbageCollection
         // GetVirtualMemoryLimit and GetVirtualMemoryMaxAddress are translated per platform in
         // GCToOSInterface.VirtualMemory.Unix.cs and GCToOSInterface.VirtualMemory.Windows.cs.
 
-        /// <summary>
-        /// Get the physical memory that this process can use. If a process runs with a restricted
-        /// memory limit, it returns the limit. If there's no limit specified, it returns the
-        /// amount of actual physical memory.
-        /// </summary>
-        /// <param name="is_restricted">
-        /// If not null, set to a non-zero value when running restricted. This is the C++
-        /// <c>bool*</c>, which is one byte wide.
-        /// </param>
-        public static ulong GetPhysicalMemoryLimit(byte* is_restricted = null) =>
-            ManagedGC_OS_GetPhysicalMemoryLimit(is_restricted);
-
-        /// <summary>Get memory status. Any parameter can be null.</summary>
-        /// <param name="restricted_limit">
-        /// The amount of physical memory in bytes that the current process is being restricted
-        /// to. If non-zero, it is used to calculate <paramref name="memory_load"/> and
-        /// <paramref name="available_physical"/>. If zero, they are calculated based on all
-        /// available memory.
-        /// </param>
-        /// <param name="memory_load">
-        /// A number between 0 and 100 that specifies the approximate percentage of physical
-        /// memory that is in use.
-        /// </param>
-        /// <param name="available_physical">The amount of physical memory currently available, in bytes.</param>
-        /// <param name="available_page_file">The maximum amount of memory the current process can commit, in bytes.</param>
-        public static void GetMemoryStatus(ulong restricted_limit, uint* memory_load, ulong* available_physical, ulong* available_page_file) =>
-            ManagedGC_OS_GetMemoryStatus(restricted_limit, memory_load, available_physical, available_page_file);
+        // GetPhysicalMemoryLimit and GetMemoryStatus are translated per platform in
+        // GCToOSInterface.MemoryLimits.Unix.cs and GCToOSInterface.MemoryLimits.Windows.cs.
 
         // GetPageSize is translated per platform in GCToOSInterface.VirtualMemory.Unix.cs and
         // GCToOSInterface.VirtualMemory.Windows.cs, next to the OS_PAGE_SIZE macro of
@@ -307,10 +279,6 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern uint ManagedGC_OS_GetCurrentProcessId();
 
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetCacheSizePerLogicalCpu")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern nuint ManagedGC_OS_GetCacheSizePerLogicalCpu(int trueSize);
-
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_SetThreadAffinity")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int ManagedGC_OS_SetThreadAffinity(ushort procNo);
@@ -322,14 +290,6 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_SetGCThreadsAffinitySet")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void* ManagedGC_OS_SetGCThreadsAffinitySet(nuint configAffinityMask, void* configAffinitySet);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetPhysicalMemoryLimit")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern ulong ManagedGC_OS_GetPhysicalMemoryLimit(byte* is_restricted);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetMemoryStatus")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void ManagedGC_OS_GetMemoryStatus(ulong restricted_limit, uint* memory_load, ulong* available_physical, ulong* available_page_file);
 
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_DebugBreak")]
         [MethodImpl(MethodImplOptions.InternalCall)]

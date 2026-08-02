@@ -1,9 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// The libc entry points that the Unix virtual memory and thread ports of GCToOSInterface call,
-// declared exactly as <sys/mman.h>, <sys/resource.h>, <time.h>, <sched.h> and <errno.h> declare
-// them.
+// The libc entry points that the Unix virtual memory, thread and memory limit ports of
+// GCToOSInterface call, declared exactly as <sys/mman.h>, <sys/resource.h>, <time.h>, <sched.h>,
+// <errno.h>, <unistd.h>, <sys/sysctl.h> and <sys/sysinfo.h> declare them, plus the handful of
+// shims that stand in for the pieces of gc/unix/gcenv.unix.cpp and gc/unix/cgroup.cpp that are
+// not translated yet.
 //
 // They are [RuntimeImport]s rather than [DllImport]s: a runtime import is a direct call to a
 // linked symbol with no marshalling, no argument copying, no lazy binding step and no GC mode
@@ -92,6 +94,36 @@ namespace Internal.Runtime.GarbageCollection
         private static extern uint minipal_getpagesize();
 
         /// <summary>
+        /// <c>sysconf</c> of <c>&lt;unistd.h&gt;</c>. Its <c>long</c> return is a native word on
+        /// every supported platform, and -1 means "no limit" or "not known".
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "sysconf")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern nint sysconf(int name);
+
+#if TARGET_APPLE || TARGET_FREEBSD
+        /// <summary><c>sysctl</c> of <c>&lt;sys/sysctl.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "sysctl")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int sysctl(int* name, uint namelen, void* oldp, nuint* oldlenp, void* newp, nuint newlen);
+
+        /// <summary><c>sysctlbyname</c> of <c>&lt;sys/sysctl.h&gt;</c>. HAVE_SYSCTLBYNAME.</summary>
+        [RuntimeImport(RuntimeLibrary, "sysctlbyname")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int sysctlbyname(byte* name, void* oldp, nuint* oldlenp, void* newp, nuint newlen);
+
+        /// <summary><c>sysctlnametomib</c> of <c>&lt;sys/sysctl.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "sysctlnametomib")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int sysctlnametomib(byte* name, int* mibp, nuint* sizep);
+#elif !TARGET_OPENBSD
+        /// <summary><c>sysinfo</c> of <c>&lt;sys/sysinfo.h&gt;</c>. HAVE_SYSINFO.</summary>
+        [RuntimeImport(RuntimeLibrary, "sysinfo")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int sysinfo(SysInfo* info);
+#endif
+
+        /// <summary>
         /// The NUMA half of <c>VirtualCommitInner</c>: places the range on the requested node
         /// with <c>mbind</c> when the process has NUMA support.
         /// </summary>
@@ -104,5 +136,63 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_NUMA_BindMemoryPolicy")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_NUMA_BindMemoryPolicy(void* address, nuint size, ushort node);
+
+        //
+        // The six pieces of the memory limit port that are still native, each one shim named
+        // after the C++ function it is. They are the file parsers -- getline, sscanf and
+        // strtok_r all allocate, and the managed GC has no allocator -- plus the address of the
+        // process affinity set that GCToOSInterface::Initialize fills in. See
+        // GCToOSInterface.MemoryLimits.Unix.cs for what each of them stands for and where it is
+        // deleted.
+        //
+
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
+        /// <summary><c>CGroup::GetPhysicalMemoryLimit</c> of <c>gc/unix/cgroup.cpp</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_CGroup_GetPhysicalMemoryLimit")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_CGroup_GetPhysicalMemoryLimit(ulong* val);
+
+        /// <summary><c>GetPhysicalMemoryUsed</c> of <c>gc/unix/cgroup.cpp</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetPhysicalMemoryUsed")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_Unix_GetPhysicalMemoryUsed(nuint* val);
+#endif
+
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD && !TARGET_ARM && !TARGET_X86
+        /// <summary><c>ReadMemoryValueFromFile</c> of <c>gc/unix/gcenv.unix.cpp</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_ReadMemoryValueFromFile")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_Unix_ReadMemoryValueFromFile(byte* filename, ulong* val);
+#endif
+
+#if !TARGET_APPLE && !TARGET_FREEBSD
+        /// <summary><c>ReadMemAvailable</c> of <c>gc/unix/gcenv.unix.cpp</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_ReadMemAvailable")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_Unix_ReadMemAvailable(ulong* memAvailable);
+#endif
+
+#if !TARGET_OPENBSD
+        /// <summary>
+        /// <c>GetCurrentVirtualMemorySize</c> of <c>gc/unix/gcenv.unix.cpp</c>. Where
+        /// HAVE_PROCFS_STATM does not hold the C++ has no such function and skips the whole
+        /// block; the shim reports the <c>(size_t)-1</c> that stands for "not known" there, so
+        /// the managed caller takes the same path.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetCurrentVirtualMemorySize")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern nuint ManagedGC_Unix_GetCurrentVirtualMemorySize();
+#endif
+
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
+        /// <summary>
+        /// The address of <c>g_processAffinitySet</c> of <c>gc/unix/gcenv.unix.cpp</c>. Only
+        /// the address crosses: the counting the cache size heuristic does is the ported
+        /// <see cref="AffinitySet.Count"/>.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetProcessAffinitySet")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern AffinitySet* ManagedGC_Unix_GetProcessAffinitySet();
+#endif
     }
 }

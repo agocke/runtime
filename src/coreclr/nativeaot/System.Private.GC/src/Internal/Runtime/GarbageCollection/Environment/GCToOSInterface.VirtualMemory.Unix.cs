@@ -111,7 +111,11 @@ namespace Internal.Runtime.GarbageCollection
         /// <c>getrlimit</c> entry point sees it. The type name of the C++ is not available:
         /// C# reserves all-lowercase type names.
         /// </summary>
-        private struct Rlimit
+        /// <remarks>
+        /// Internal rather than private only so that the test host can declare a substitute
+        /// <c>getrlimit</c> that hands one back.
+        /// </remarks>
+        internal struct Rlimit
         {
 #if TARGET_APPLE || TARGET_FREEBSD || TARGET_OPENBSD
             // rlim_t is 64 bits wide on the BSDs regardless of pointer size, and RLIM_INFINITY

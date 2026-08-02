@@ -69,8 +69,10 @@ Ported so far:
 | `Environment/GCToOSInterface.WriteWatch.Windows.cs` | `gc/windows/gcenv.windows.cpp` (write watch) |
 | `Environment/GCToOSInterface.Thread.Unix.cs` | `gc/unix/gcenv.unix.cpp` (sleep and yield) |
 | `Environment/GCToOSInterface.Thread.Windows.cs` | `gc/windows/gcenv.windows.cpp` (sleep and yield) |
-| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` entry points the above call |
-| `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` entry points the above call |
+| `Environment/GCToOSInterface.MemoryLimits.Unix.cs` | `gc/unix/gcenv.unix.cpp` (memory limits and cache sizing), `gc/unix/cgroup.cpp` |
+| `Environment/GCToOSInterface.MemoryLimits.Windows.cs` | `gc/windows/gcenv.windows.cpp` (memory limits and cache sizing) |
+| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` / `<unistd.h>` / `<sys/sysctl.h>` / `<sys/sysinfo.h>` entry points the above call |
+| `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` and `<psapi.h>` entry points the above call |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
@@ -162,12 +164,45 @@ shape of `nanosleep` and `sched_yield`; the bionic case is keyed on a `TARGET_BI
 covers both the `android` and the `linux-bionic` runtime identifiers, because the native build
 labels the latter Linux.
 
+The memory limits and the cache sizing are translated as well. `GetPhysicalMemoryLimit`,
+`GetMemoryStatus` and `GetCacheSizePerLogicalCpu` are the statements of `gc/unix/gcenv.unix.cpp`
+and `gc/windows/gcenv.windows.cpp`, together with the helpers under them:
+`GetRestrictedPhysicalMemoryLimit`, `GetPhysicalMemoryUsed`, `GetAvailablePhysicalMemory`,
+`GetAvailablePageFile` and the four `GetLogicalProcessorCacheSizeFrom*` functions on Unix, and
+`GetRestrictedPhysicalMemoryLimit`, `GetLPI` and `GetLogicalProcessorCacheSizeFromOS` on Windows.
+They call `sysconf`, `getrlimit`, `sysinfo`, `sysctl`/`sysctlbyname`/`sysctlnametomib`,
+`GlobalMemoryStatusEx`, `IsProcessInJob`, `QueryInformationJobObject`,
+`GetLogicalProcessorInformation` and `K32GetProcessMemoryInfo` through `[RuntimeImport]`
+declarations of the entry points themselves. Every sentinel and every saturation of the C++
+survives: the `0x7FFFFFFF00000000` above which a cgroup v1 limit means "unrestricted", the
+`SIZE_T_MAX` clamp of a limit that does not fit a `size_t`, the sticky flag that stops rereading
+`/proc/meminfo` once it has failed once, the all-`float` load percentage that can exceed 100 when
+a process is over its limit, and the Windows quirk of reading `ullAvailPhys` into `total_physical`
+while interrogating a job object. The `_SC_*` names, the `struct sysinfo` and `struct xsw_usage`
+and `struct xswdev` layouts, the `CTL_VM`/`VM_SWAPUSAGE` numbers, and the Win32 job object,
+psapi and logical-processor layouts are written out per platform in the C# and asserted against
+the real headers by `gcenv.managed.cpp` -- including `#error`s on the presence or absence of
+`_SC_AVPHYS_PAGES` and the `_SC_LEVEL*` family, so a C library that grows or loses one breaks
+the build rather than silently changing the answer.
+
+Four things that read or write a file cannot be translated without allocating, so they stay
+native for now, as the narrowest possible leaves: `ManagedGC_CGroup_GetPhysicalMemoryLimit` and
+`ManagedGC_Unix_GetPhysicalMemoryUsed` wrap the `CGroup` class of `gc/unix/cgroup.cpp`, which is
+in an anonymous namespace, and `ManagedGC_Unix_ReadMemoryValueFromFile`,
+`ManagedGC_Unix_ReadMemAvailable` and `ManagedGC_Unix_GetCurrentVirtualMemorySize` wrap the
+`static` `/sys` and `/proc` readers of `gcenv.unix.cpp`. `ManagedGC_Unix_GetProcessAffinitySet`
+hands back the `g_processAffinitySet` that `GCToOSInterface::Initialize` fills, which the
+affinity submodule owns. All six are deleted with the cgroup and affinity submodules; Windows
+retains nothing.
+
 The managed runtime archive no longer compiles the Unix `events.cpp`; on Windows,
 `FEATURE_MANAGED_GC` excludes the `GCEvent::Impl` section of `gcenv.windows.cpp`, and on both
 platforms it excludes the `Sleep` and `YieldThread` section of `gcenv.unix.cpp` and
-`gcenv.windows.cpp`. Those two files remain in the archive only for the `GCToOSInterface`
-services that have not been translated yet; the workstation and server GC archives still compile
-every one of those bodies unchanged.
+`gcenv.windows.cpp`, and the memory limit and cache sizing sections of `gcenv.unix.cpp`,
+`gcenv.windows.cpp` and `gc/unix/cgroup.cpp`. Those three files remain in the archive only for
+the `GCToOSInterface` services that have not been translated yet, and for the six leaf helpers
+above; the workstation and server GC archives still compile every one of those bodies
+unchanged.
 
 Two C++ shapes are preserved rather than corrected, because this is a translation: `CloseEvent`
 releases the operating system object but neither frees the Impl nor clears the pimpl pointer, so
@@ -182,17 +217,20 @@ existing C++ `GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.
 Those shims are the whole retained-native surface of this layer:
 
 * one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- processor
-  number and affinity, thread priority and ids, cache and memory limits, the performance
-  counter, processor counts, NUMA and CPU groups, and the platform-specific affinity range entry
-  parser;
+  number and affinity, thread priority and ids, the performance counter, processor counts, NUMA
+  and CPU groups, and the platform-specific affinity range entry parser;
+* the six Unix leaves the memory limit port still needs -- `ManagedGC_CGroup_*` and
+  `ManagedGC_Unix_*` -- which are described above and are deleted with the cgroup and affinity
+  submodules;
 * `ManagedGC_NUMA_BindMemoryPolicy`, which is the `mbind` half of `VirtualCommitInner`
   verbatim. It reads `g_numaAvailable` and `g_highestNumaNode` and calls `BindMemoryPolicy`,
   all of which belong to `gc/unix/numasupport.cpp`, so it is deleted with the NUMA submodule
   rather than with virtual memory;
 * `ManagedGC_AllocZeroed` / `ManagedGC_Free`, which stand in for the `new (nothrow)`
   allocations of the environment layer -- the `uintptr_t[]` of `AffinitySet::Initialize`, the
-  `GCEvent::Impl` of the event ports, and the `minipal_mutex` that the C++ `CLRCriticalSection`
-  embeds by value -- and which are the only heap allocation the managed GC performs.
+  `GCEvent::Impl` of the event ports, the `minipal_mutex` that the C++ `CLRCriticalSection`
+  embeds by value, and the `SYSTEM_LOGICAL_PROCESSOR_INFORMATION[]` of the Windows `GetLPI` --
+  and which are the only heap allocation the managed GC performs.
 
 Each of them is deleted when the platform code behind it is ported; that is the remainder of
 plan step 3 in [ROADMAP.md](ROADMAP.md), which lists the modules by name. The calls are

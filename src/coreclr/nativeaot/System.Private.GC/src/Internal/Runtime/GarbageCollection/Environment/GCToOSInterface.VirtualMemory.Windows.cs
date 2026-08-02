@@ -64,7 +64,11 @@ namespace Internal.Runtime.GarbageCollection
         }
 
         /// <summary><c>MEMORYSTATUSEX</c> of <c>&lt;windows.h&gt;</c>.</summary>
-        private struct MEMORYSTATUSEX
+        /// <remarks>
+        /// Internal rather than private only so that the test host can declare a substitute
+        /// <c>GlobalMemoryStatusEx</c> that fills one in.
+        /// </remarks>
+        internal struct MEMORYSTATUSEX
         {
             public uint dwLength;
             public uint dwMemoryLoad;

@@ -23,6 +23,7 @@ using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
 
+[Collection(SyncImportsCollection.Name)]
 public sealed unsafe class GCWriteWatchTests
 {
 #if TARGET_WINDOWS

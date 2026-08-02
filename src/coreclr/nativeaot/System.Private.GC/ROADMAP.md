@@ -40,8 +40,8 @@ The following prerequisites are already working:
   server collector, native handle table, GC loader, bridge, scanner, or software write watch.
   Native runtime and `gcenv` support remains temporarily; the environment services the managed
   layer has not taken over itself are reached through the documented `ManagedGC_*` forwarders of
-  `nativeaot/Runtime/gcenv.managed.cpp`. Virtual memory, write watch, events and locks are no
-  longer among them.
+  `nativeaot/Runtime/gcenv.managed.cpp`. Virtual memory, write watch, events, locks, sleep and
+  yield, and the memory limits and cache sizing are no longer among them.
 - The current heap is a fixed-size, non-collecting bump allocator with a flat handle table.
 - Write-barrier globals and frozen segments are initialized sufficiently for application
   startup.
@@ -239,6 +239,31 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   `gcenv.windows.cpp`, so
   `Runtime.ManagedGC` no longer compiles either; the workstation and server archives are
   unchanged.
+- Memory limits and cache sizing: `GCToOSInterface::GetPhysicalMemoryLimit`, `GetMemoryStatus`
+  and `GetCacheSizePerLogicalCpu`, from `gc/unix/gcenv.unix.cpp` and
+  `gc/windows/gcenv.windows.cpp`, together with the helpers under them --
+  `GetRestrictedPhysicalMemoryLimit`, `GetPhysicalMemoryUsed`, `GetAvailablePhysicalMemory`,
+  `GetAvailablePageFile` and the four `GetLogicalProcessorCacheSizeFrom*` functions on Unix, and
+  `GetRestrictedPhysicalMemoryLimit`, `GetLPI` and `GetLogicalProcessorCacheSizeFromOS` on
+  Windows. `sysconf`, `getrlimit`, `sysinfo`, `sysctl`, `sysctlbyname`, `sysctlnametomib`,
+  `GlobalMemoryStatusEx`, `IsProcessInJob`, `QueryInformationJobObject`,
+  `GetLogicalProcessorInformation` and `K32GetProcessMemoryInfo` are `[RuntimeImport]`s of those
+  entry points. Every sentinel survives: the `0x7FFFFFFF00000000` above which a cgroup v1 limit
+  means "unrestricted", the `SIZE_T_MAX` clamp, the sticky `/proc/meminfo` failure flag, the
+  all-`float` load percentage that exceeds 100 over a limit, and the Windows `ullAvailPhys` read
+  into `total_physical`. The `_SC_*` names, `struct sysinfo`, `struct xsw_usage`, `struct
+  xswdev`, `CTL_VM`/`VM_SWAPUSAGE`, and the Win32 job object, psapi and logical-processor
+  layouts are hardcoded per platform and asserted -- with `#error`s on the presence or absence
+  of `_SC_AVPHYS_PAGES` and the `_SC_LEVEL*` family -- in `nativeaot/Runtime/gcenv.managed.cpp`.
+  `FEATURE_MANAGED_GC` excludes the corresponding sections of `gcenv.unix.cpp`,
+  `gcenv.windows.cpp` and `gc/unix/cgroup.cpp`, and the three `ManagedGC_OS_*` forwarders are
+  gone. Six narrow Unix leaves stay native because they parse files:
+  `ManagedGC_CGroup_GetPhysicalMemoryLimit` and `ManagedGC_Unix_GetPhysicalMemoryUsed` over the
+  anonymous-namespace `CGroup` of `cgroup.cpp`, and `ManagedGC_Unix_ReadMemoryValueFromFile`,
+  `ManagedGC_Unix_ReadMemAvailable`, `ManagedGC_Unix_GetCurrentVirtualMemorySize` and
+  `ManagedGC_Unix_GetProcessAffinitySet` over the `static` `/sys` and `/proc` readers and the
+  affinity set of `gcenv.unix.cpp`. They are deleted with submodules 3 and 4 below; Windows
+  retains nothing.
 - Focused xUnit coverage of every piece above that is pure computation, in
   `tests/GCEnvironmentTests.cs`; of the whole virtual memory port -- flag translation,
   alignment over-allocation and trimming, failure paths, and a reserve/commit/write/reset/
@@ -254,7 +279,13 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   the sleep and yield ports -- the zero-interval early return, the second/nanosecond split up to
   `uint.MaxValue`, the `EINTR` retry driven by the remaining interval the previous call reported,
   the absence of a retry for any other `errno`, the ignored `switchCount`, and the Windows
-  interval and `bAlertable` forwarding -- in `tests/GCSleepYieldTests.cs`. All of
+  interval and `bAlertable` forwarding -- in `tests/GCSleepYieldTests.cs`; and of the memory
+  limit and cache sizing ports -- restricted and unrestricted limits, the cgroup sentinel and
+  read failure, the rlimit and real-memory clamps, the job object limit combinations and the
+  address-space check, the load and available-memory calculations including saturation past
+  100%, null output pointers, the sticky `/proc/meminfo` failure, the sysfs cache walk, the
+  affinity and arm64 CPU-count heuristics at each boundary, and `trueSize` true and false with
+  its caching -- in `tests/GCMemoryLimitsTests.cs`. All of
   them run the shipping bodies over recording substitutes for their libc and Win32 declarations.
 
 #### Remaining submodules
@@ -263,11 +294,13 @@ Each item below is a native module that `nativeaot/Runtime/gcenv.managed.cpp` cu
 to. The managed declaration already exists and does not change when the implementation lands;
 only the body and its shim do. They are listed in the order they become blocking.
 
-1. **Memory limits** -- `GetPhysicalMemoryLimit`, `GetMemoryStatus`, `GetCacheSizePerLogicalCpu`.
-   These read cgroup v1/v2 files (`gc/unix/cgroup.cpp`), `sysconf`, `sysctl` and Windows job
-   objects. Blocks the hard-limit and dynamic tuning parts of stage 10.
-2. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
+1. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
    `GetLowPrecisionTimeStamp`.
+2. **cgroup and `/proc` file parsing** -- the six `ManagedGC_CGroup_*` / `ManagedGC_Unix_*`
+   leaves the memory limit port left behind: the `CGroup` class of `gc/unix/cgroup.cpp` and the
+   `static` `/sys` and `/proc` readers of `gc/unix/gcenv.unix.cpp`. They need a
+   `read`/`open`-based parser that allocates nothing, so they wait for the GC to have memory of
+   its own (submodule 5 below and stage 7).
 3. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
    `GetCurrentProcessorNumber`, `CanGetCurrentProcessorNumber`, `GetCurrentProcessId`,
    `GetCurrentThreadIdForLogging`. The last of these is what the debug-only lock-ownership
@@ -276,14 +309,16 @@ only the body and its shim do. They are listed in the order they become blocking
 4. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
    `SetCurrentThreadIdealAffinity`, `GetCurrentThreadIdealProc`, `SetGCThreadsAffinitySet`,
    `CanEnableGCNumaAware`, `GetNumaInfo`, `CanEnableGCCPUGroups`, `GetProcessorForHeap`,
-   `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp` and the
-   `ManagedGC_NUMA_BindMemoryPolicy` shim that `VirtualCommit` still calls. Blocks server GC in
-   stage 10.
+   `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp`, the
+   `ManagedGC_NUMA_BindMemoryPolicy` shim that `VirtualCommit` still calls and the
+   `ManagedGC_Unix_GetProcessAffinitySet` shim that the cache sizing heuristic still calls.
+   Blocks server GC in stage 10.
 5. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
    stand in for the `new (nothrow)` allocations of the environment layer: the `uintptr_t[]` of
-   `AffinitySet`, the `GCEvent::Impl` of the event ports, and the `minipal_mutex` that the C++
-   `CLRCriticalSection` embeds by value. They can only go away once the GC has memory of its own
-   to take those from, which is stage 7.
+   `AffinitySet`, the `GCEvent::Impl` of the event ports, the `minipal_mutex` that the C++
+   `CLRCriticalSection` embeds by value, and the `SYSTEM_LOGICAL_PROCESSOR_INFORMATION[]` of the
+   Windows `GetLPI`. They can only go away once the GC has memory of its own to take those from,
+   which is stage 7.
 6. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
    `PalInit`, so the managed GC never calls these; they land last, together with moving that call
    out of `PalInit`.

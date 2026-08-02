@@ -1,10 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// The Win32 entry points that the Windows virtual memory, write watch and thread ports of
-// GCToOSInterface call, declared as <windows.h> declares them, except that every BOOL is
-// spelled as int: a Win32 BOOL is four bytes wide and a managed bool is one, and there is no
-// marshalling here to convert between them.
+// The Win32 entry points that the Windows virtual memory, write watch, thread and memory limit
+// ports of GCToOSInterface call, declared as <windows.h> and <psapi.h> declare them, except that
+// every BOOL is spelled as int: a Win32 BOOL is four bytes wide and a managed bool is one, and
+// there is no marshalling here to convert between them.
 //
 // They are [RuntimeImport]s rather than [DllImport]s: a runtime import is a direct call to a
 // linked symbol with no marshalling, no argument copying, no lazy binding step and no GC mode
@@ -101,5 +101,41 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "SwitchToThread")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SwitchToThread();
+
+        [RuntimeImport(RuntimeLibrary, "IsProcessInJob")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int IsProcessInJob(void* ProcessHandle, void* JobHandle, int* Result);
+
+        [RuntimeImport(RuntimeLibrary, "QueryInformationJobObject")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int QueryInformationJobObject(void* hJob, int JobObjectInformationClass, void* lpJobObjectInformation, uint cbJobObjectInformationLength, uint* lpReturnLength);
+
+        [RuntimeImport(RuntimeLibrary, "GetLogicalProcessorInformation")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetLogicalProcessorInformation(SYSTEM_LOGICAL_PROCESSOR_INFORMATION* Buffer, uint* ReturnedLength);
+
+        /// <summary>
+        /// <c>GetProcessMemoryInfo</c> of <c>&lt;psapi.h&gt;</c>. The C++ calls it under that
+        /// name, which every psapi.h since PSAPI_VERSION 2 defines to be this symbol; the
+        /// forwarding entry point is the one kernel32 exports, and kernel32.lib is on the
+        /// default NativeAOT link line where psapi.lib is not. gcenv.managed.cpp checks that
+        /// the header still redirects the one name to the other.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "K32GetProcessMemoryInfo")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetProcessMemoryInfo(void* Process, PROCESS_MEMORY_COUNTERS* ppsmemCounters, uint cb);
+
+        /// <summary>
+        /// Stands in for the <c>new (nothrow) SYSTEM_LOGICAL_PROCESSOR_INFORMATION[]</c> of
+        /// <c>GetLPI</c>. See <c>nativeaot/Runtime/gcenv.managed.cpp</c>.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_AllocZeroed")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void* ManagedGC_AllocZeroed(nuint size);
+
+        /// <summary>Stands in for <c>delete[]</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Free")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void ManagedGC_Free(void* memory);
     }
 }
