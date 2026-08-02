@@ -222,12 +222,11 @@ public sealed unsafe class GCCriticalSectionTests
         }
     }
 
-#if !DEBUG
     // CrstStatic records the owning thread in a debug build, through
-    // GCToOSInterface.GetCurrentThreadIdForLogging, which is still one of the [RuntimeImport]
-    // forwarders of plan step 3 -- and a [RuntimeImport] resolves only inside a NativeAOT image.
-    // The wrapper tests therefore run in a build where that code is compiled out, exactly as the
-    // C++ lock-level bookkeeping is.
+    // GCToOSInterface.GetCurrentThreadIdForLogging. That used to be a [RuntimeImport] forwarder,
+    // which resolves only inside a NativeAOT image, so these tests ran only where the debug
+    // bookkeeping was compiled out; the processor identity port made it an ordinary managed body
+    // over a substitutable import, so they now run in both configurations.
 
     /// <summary>
     /// <c>CrstHolder</c> is the C++ destructor turned into a <c>using</c>: it enters on
@@ -309,7 +308,6 @@ public sealed unsafe class GCCriticalSectionTests
             NativeMemory.Free(crst);
         }
     }
-#endif // !DEBUG
 
 #if !TARGET_WINDOWS
     // PTHREAD_MUTEX_RECURSIVE of <pthread.h>.
@@ -429,7 +427,6 @@ public sealed unsafe class GCCriticalSectionTests
         });
     }
 
-#if !DEBUG
     private bool TryEnterFromAnotherThread(CrstStatic* crst)
     {
         nint lockAddress = (nint)crst;
@@ -440,7 +437,6 @@ public sealed unsafe class GCCriticalSectionTests
             section->Leave();
         });
     }
-#endif
 
     private bool Probe(Action enterAndLeave)
     {

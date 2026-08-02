@@ -73,6 +73,8 @@ Ported so far:
 | `Environment/GCToOSInterface.MemoryLimits.Windows.cs` | `gc/windows/gcenv.windows.cpp` (memory limits and cache sizing) |
 | `Environment/GCToOSInterface.Timers.Unix.cs` | `gc/unix/gcenv.unix.cpp` (timers) |
 | `Environment/GCToOSInterface.Timers.Windows.cs` | `gc/windows/gcenv.windows.cpp` (timers) |
+| `Environment/GCToOSInterface.Processors.Unix.cs` | `gc/unix/gcenv.unix.cpp` (processor counts and identity) |
+| `Environment/GCToOSInterface.Processors.Windows.cs` | `gc/windows/gcenv.windows.cpp` (processor counts and identity, `GroupProcNo`) |
 | `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` / `<unistd.h>` / `<sys/sysctl.h>` / `<sys/sysinfo.h>` / `minipal/time.h` entry points the above call |
 | `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` and `<psapi.h>` entry points the above call |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
@@ -206,6 +208,43 @@ union whose `QuadPart` -- the only member the C++ reads -- necessarily begins at
 `gcenv.managed.cpp` asserts that size, that member's size, and the existence and return width of
 all six entry points.
 
+The processor counts and identity come next, and they are the first submodule whose C++ reads
+state that `GCToOSInterface::Initialize` computes, so it is the first to keep explicit state
+shims rather than recompute anything. On Unix `GetCurrentProcessId` is `getpid`, and
+`GetCurrentProcessorNumber` and `CanGetCurrentProcessorNumber` are the two arms of
+`HAVE_SCHED_GETCPU`: the configure probe of `gc/unix/configure.cmake` runs on every NativeAOT
+Unix target and answers yes on Linux with glibc, musl and bionic and no on Apple, FreeBSD and
+OpenBSD, so the port spells it `#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD` and
+`gcenv.managed.cpp` `static_assert`s the value of `HAVE_SCHED_GETCPU` from the generated
+`config.gc.h` against that same shape on both arms. Where the probe says no, the port keeps the
+C++ `assert(false); return 0;` and reports `false`, so a platform that gains `sched_getcpu`
+without gaining the `#if` fails closed exactly as the C++ does.
+`GetCurrentThreadIdForLogging` is the one Unix method that cannot call its C++ target: unlike the
+minipal timer entry points, `minipal_get_current_thread_id` is a `static inline` over a
+`_Thread_local` cache in `src/native/minipal/thread.h` and therefore has no symbol to import, so
+it keeps the leaf `ManagedGC_Unix_GetCurrentThreadId`.
+
+On Windows all three identity methods are direct Win32 calls, `CanGetCurrentProcessorNumber` is
+the C++ `return true`, and `GetCurrentProcessorNumber` translates the `GroupProcNo` packing --
+`(group << 6) | procIndex`, with the two `assert`s on the group and index widths -- alongside the
+`PROCESSOR_NUMBER` layout, all of which `gcenv.managed.cpp` checks against `<windows.h>`.
+
+`GetTotalProcessorCount` and `GetMaxProcessorCount` read `g_totalCpuCount` and
+`g_processAffinitySet`, and on Windows also the CPU group state, none of which the managed side
+owns yet: `Initialize` is still native, and recomputing the numbers here would give them a
+different lifetime than the C++ gives them. The port therefore reaches the existing state through
+the narrowest possible accessors -- `ManagedGC_Unix_GetTotalCpuCount` and
+`ManagedGC_Unix_GetProcessAffinitySet` on Unix, and `ManagedGC_Windows_GetTotalCpuCount`,
+`ManagedGC_Windows_GetCpuGroupProcessorCount`, `ManagedGC_Windows_GetSystemInfoProcessorCount`
+and `ManagedGC_Windows_GetProcessAffinitySet` on Windows. The Windows total is a `uint32_t*`
+rather than a value because the C++ body caches into `g_totalCpuCount` on first call and the port
+must perform that same write; the other three are values because the C++ only reads them. All of
+them are deleted with the initialization, affinity and CPU-group submodules. These two C++
+bodies are also the first the port replaces that must stay compiled: `PalUnix.cpp` and
+`PalMinWin.cpp` call `GetTotalProcessorCount` and `gcconfig.cpp` calls `GetMaxProcessorCount`,
+and all three are in the managed runtime archive, so only the four identity methods are excluded
+by `FEATURE_MANAGED_GC`.
+
 Four things that read or write a file cannot be translated without allocating, so they stay
 native for now, as the narrowest possible leaves: `ManagedGC_CGroup_GetPhysicalMemoryLimit` and
 `ManagedGC_Unix_GetPhysicalMemoryUsed` wrap the `CGroup` class of `gc/unix/cgroup.cpp`, which is
@@ -220,7 +259,8 @@ The managed runtime archive no longer compiles the Unix `events.cpp`; on Windows
 `FEATURE_MANAGED_GC` excludes the `GCEvent::Impl` section of `gcenv.windows.cpp`, and on both
 platforms it excludes the `Sleep` and `YieldThread` section of `gcenv.unix.cpp` and
 `gcenv.windows.cpp`, the memory limit and cache sizing sections of `gcenv.unix.cpp`,
-`gcenv.windows.cpp` and `gc/unix/cgroup.cpp`, and the timer section of `gcenv.unix.cpp` and
+`gcenv.windows.cpp` and `gc/unix/cgroup.cpp`, the timer section of `gcenv.unix.cpp` and
+`gcenv.windows.cpp`, and the four processor identity methods of `gcenv.unix.cpp` and
 `gcenv.windows.cpp`. Those three files remain in the archive only for
 the `GCToOSInterface` services that have not been translated yet, and for the six leaf helpers
 above; the workstation and server GC archives still compile every one of those bodies
@@ -238,12 +278,15 @@ forwarded, for now, to a one-line shim in `nativeaot/Runtime/gcenv.managed.cpp` 
 existing C++ `GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.windows.cpp`.
 Those shims are the whole retained-native surface of this layer:
 
-* one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- processor
-  number and affinity, thread priority and ids, processor counts, NUMA and CPU groups, and the
-  platform-specific affinity range entry parser;
+* one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- initialization and shutdown,
+  thread affinity and priority, the ideal-processor pair, NUMA and CPU groups, the mapping of a
+  heap to a processor, the platform-specific affinity range entry parser, and the debug break;
 * the six Unix leaves the memory limit port still needs -- `ManagedGC_CGroup_*` and
   `ManagedGC_Unix_*` -- which are described above and are deleted with the cgroup and affinity
   submodules;
+* the state accessors the processor count port needs -- `ManagedGC_Unix_GetCurrentThreadId`,
+  `ManagedGC_Unix_GetTotalCpuCount` and the four `ManagedGC_Windows_*` above -- which are deleted
+  with the initialization, affinity and CPU-group submodules;
 * `ManagedGC_NUMA_BindMemoryPolicy`, which is the `mbind` half of `VirtualCommitInner`
   verbatim. It reads `g_numaAvailable` and `g_highestNumaNode` and calls `BindMemoryPolicy`,
   all of which belong to `gc/unix/numasupport.cpp`, so it is deleted with the NUMA submodule
@@ -346,6 +389,21 @@ than a cast would clamp. On Windows the same range is checked through the `QuadP
 its boundaries up to `ulong.MaxValue`, and the three failure paths, where the C++ asserts
 and then returns whatever the failed call left behind, are compiled only into a build with
 asserts disabled, as the event and lock failure tests are.
+
+`GCProcessorTests` covers the processor counts and identity. The identity methods are one call
+each, so what the tests pin is that it is that call, made once, with the result widened rather
+than converted -- a `getpid` of -1 must come back as `uint.MaxValue` and a thread id with the top
+bit set must survive -- and, where the machine can answer, that the uninjected value is the one
+the host reports. `CanGetCurrentProcessorNumber` and the `sched_getcpu` arm of
+`GetCurrentProcessorNumber` are compiled per platform, so the Unix half of the file has one
+section for each answer of `HAVE_SCHED_GETCPU` and the arm that asserts is, like the timer
+failures, compiled only into a build with asserts disabled. The Windows `GroupProcNo` packing is
+checked over the corners of both fields, up to the `(0x3ff, 0x3f)` that fills the `uint16_t`. The
+counts are checked against the state the shims stand in for: that `GetMaxProcessorCount` is the
+capacity of the affinity set rather than its population, and on Windows that
+`GetTotalProcessorCount` caches into `g_totalCpuCount` on first call, short-circuits on every
+later call, picks the CPU group total or the `SYSTEM_INFO` total according to
+`CanEnableGCCPUGroups`, and keeps asking while the answer is zero.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:

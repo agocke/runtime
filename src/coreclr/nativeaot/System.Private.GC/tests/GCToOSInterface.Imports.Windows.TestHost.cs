@@ -6,11 +6,9 @@
 // The shipping declarations are [RuntimeImport]s, which only resolve inside a NativeAOT image,
 // so this file declares the same private methods as ordinary P/Invokes. That makes the ported
 // bodies above them -- the flag combinations, the NUMA alternatives, the large page rounding,
-// the failure paths, the sleep, the yield and the timers -- runnable in a normal test process
-// against the
-// real kernel, and it
-// records the arguments of every call so that the flag translation can be asserted directly
-// rather than inferred.
+// the failure paths, the sleep, the yield, the timers and the processor counts -- runnable in a
+// normal test process against the real kernel, and it records the arguments of every call so
+// that the flag translation can be asserted directly rather than inferred.
 //
 // A [DllImport] is exactly what the GC must not use; it is fine here because this file is never
 // compiled into the GC. The methods it replaces are the boundary of the port: everything the
@@ -22,6 +20,7 @@
 // it is a plain mmap flag.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Xunit;
 
@@ -558,4 +557,169 @@ internal static unsafe partial class GCToOSInterface
 
     [DllImport("kernel32", EntryPoint = "QueryUnbiasedInterruptTime")]
     private static extern int sys_QueryUnbiasedInterruptTime(ulong* UnbiasedTime);
+
+    //
+    // The processor count and identity port. The three Win32 entry points are real calls that a
+    // test can also take over; the four ManagedGC_Windows_ shims and the one remaining
+    // forwarder stand in for state that only gc/windows/gcenv.windows.cpp has, so each of them
+    // is injection only and starts from the value a fresh process would see.
+    //
+
+    internal static bool CurrentThreadIdInject;
+    internal static uint CurrentThreadIdValue;
+    internal static int CurrentThreadIdCalls;
+
+    internal static bool CurrentProcessIdInject;
+    internal static uint CurrentProcessIdValue;
+    internal static int CurrentProcessIdCalls;
+
+    internal static bool CurrentProcessorNumberInject;
+    internal static ushort CurrentProcessorNumberGroup;
+    internal static byte CurrentProcessorNumberNumber;
+    internal static int CurrentProcessorNumberCalls;
+
+    /// <summary>
+    /// The storage behind <c>g_totalCpuCount</c>. It is native memory so that the pointer the
+    /// shipping code writes through stays put, exactly as the C++ global does.
+    /// </summary>
+    private static readonly uint* s_totalCpuCount = (uint*)NativeMemory.AllocZeroed((nuint)sizeof(uint));
+
+    /// <summary>The value of <c>g_totalCpuCount</c> that a test sets or reads back.</summary>
+    internal static uint TotalCpuCountValue
+    {
+        get => *s_totalCpuCount;
+        set => *s_totalCpuCount = value;
+    }
+
+    internal static int TotalCpuCountCalls;
+
+    internal static uint CpuGroupProcessorCountValue;
+    internal static int CpuGroupProcessorCountCalls;
+
+    internal static uint SystemInfoProcessorCountValue;
+    internal static int SystemInfoProcessorCountCalls;
+
+    internal static int CanEnableGCCPUGroupsValue;
+    internal static int CanEnableGCCPUGroupsCalls;
+
+    /// <summary>
+    /// The bitset behind the affinity set <c>ManagedGC_Windows_GetProcessAffinitySet</c> hands
+    /// back, and the set itself. Both are native memory so that the pointer the shipping code
+    /// reads through stays put.
+    /// </summary>
+    private const nuint ProcessAffinitySetEntries = 16;
+
+    private static readonly nuint* s_processAffinityBitset =
+        (nuint*)NativeMemory.AllocZeroed(ProcessAffinitySetEntries, (nuint)sizeof(nuint));
+
+    private static readonly AffinitySet* s_processAffinitySet = CreateProcessAffinitySet();
+
+    private static AffinitySet* CreateProcessAffinitySet()
+    {
+        AffinitySet* set = (AffinitySet*)NativeMemory.AllocZeroed((nuint)sizeof(AffinitySet));
+        set->InitializeWithStorage(s_processAffinityBitset, ProcessAffinitySetEntries);
+        return set;
+    }
+
+    /// <summary>
+    /// Makes the process affinity set report exactly <paramref name="maxCpuCount"/> as its
+    /// capacity, which is what <c>GetMaxProcessorCount</c> returns. It has to be a multiple of
+    /// the bitset entry width, because the capacity of an AffinitySet is a whole number of
+    /// entries; the tests pass such values.
+    /// </summary>
+    internal static void SetProcessAffinityMaxCpuCount(nuint maxCpuCount)
+    {
+        nuint bitsPerEntry = (nuint)sizeof(nuint) * 8;
+        nuint entries = maxCpuCount / bitsPerEntry;
+        Debug.Assert(maxCpuCount % bitsPerEntry == 0);
+        Debug.Assert(entries <= ProcessAffinitySetEntries);
+
+        NativeMemory.Clear(s_processAffinityBitset, ProcessAffinitySetEntries * (nuint)sizeof(nuint));
+        s_processAffinitySet->InitializeWithStorage(s_processAffinityBitset, entries);
+    }
+
+    /// <summary>Forgets every processor recording and clears every injection.</summary>
+    internal static void ResetProcessorRecording()
+    {
+        CurrentThreadIdInject = false;
+        CurrentThreadIdValue = 0;
+        CurrentThreadIdCalls = 0;
+        CurrentProcessIdInject = false;
+        CurrentProcessIdValue = 0;
+        CurrentProcessIdCalls = 0;
+        CurrentProcessorNumberInject = false;
+        CurrentProcessorNumberGroup = 0;
+        CurrentProcessorNumberNumber = 0;
+        CurrentProcessorNumberCalls = 0;
+        TotalCpuCountValue = 0;
+        TotalCpuCountCalls = 0;
+        CpuGroupProcessorCountValue = 0;
+        CpuGroupProcessorCountCalls = 0;
+        SystemInfoProcessorCountValue = 0;
+        SystemInfoProcessorCountCalls = 0;
+        CanEnableGCCPUGroupsValue = 0;
+        CanEnableGCCPUGroupsCalls = 0;
+        SetProcessAffinityMaxCpuCount(ProcessAffinitySetEntries * (nuint)sizeof(nuint) * 8);
+    }
+
+    private static uint GetCurrentThreadId()
+    {
+        CurrentThreadIdCalls++;
+        return CurrentThreadIdInject ? CurrentThreadIdValue : sys_GetCurrentThreadId();
+    }
+
+    private static uint Win32GetCurrentProcessId()
+    {
+        CurrentProcessIdCalls++;
+        return CurrentProcessIdInject ? CurrentProcessIdValue : sys_GetCurrentProcessId();
+    }
+
+    private static void GetCurrentProcessorNumberEx(PROCESSOR_NUMBER* ProcNumber)
+    {
+        CurrentProcessorNumberCalls++;
+        if (!CurrentProcessorNumberInject)
+        {
+            sys_GetCurrentProcessorNumberEx(ProcNumber);
+            return;
+        }
+
+        ProcNumber->Group = CurrentProcessorNumberGroup;
+        ProcNumber->Number = CurrentProcessorNumberNumber;
+        ProcNumber->Reserved = 0;
+    }
+
+    private static uint* ManagedGC_Windows_GetTotalCpuCount()
+    {
+        TotalCpuCountCalls++;
+        return s_totalCpuCount;
+    }
+
+    private static uint ManagedGC_Windows_GetCpuGroupProcessorCount()
+    {
+        CpuGroupProcessorCountCalls++;
+        return CpuGroupProcessorCountValue;
+    }
+
+    private static uint ManagedGC_Windows_GetSystemInfoProcessorCount()
+    {
+        SystemInfoProcessorCountCalls++;
+        return SystemInfoProcessorCountValue;
+    }
+
+    private static AffinitySet* ManagedGC_Windows_GetProcessAffinitySet() => s_processAffinitySet;
+
+    private static int ManagedGC_OS_CanEnableGCCPUGroups()
+    {
+        CanEnableGCCPUGroupsCalls++;
+        return CanEnableGCCPUGroupsValue;
+    }
+
+    [DllImport("kernel32", EntryPoint = "GetCurrentThreadId")]
+    private static extern uint sys_GetCurrentThreadId();
+
+    [DllImport("kernel32", EntryPoint = "GetCurrentProcessId")]
+    private static extern uint sys_GetCurrentProcessId();
+
+    [DllImport("kernel32", EntryPoint = "GetCurrentProcessorNumberEx")]
+    private static extern void sys_GetCurrentProcessorNumberEx(PROCESSOR_NUMBER* ProcNumber);
 }

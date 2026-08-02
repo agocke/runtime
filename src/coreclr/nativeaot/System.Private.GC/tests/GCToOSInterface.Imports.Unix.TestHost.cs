@@ -25,6 +25,11 @@
 // nanosecond frequency -- unless a test injects, which is what makes the exact forwarding and
 // the millisecond scaling of the port assertable.
 //
+// The processor substitutes split the same way: sched_getcpu and getpid are real calls a test can
+// take over, while the ManagedGC_Unix_ shims stand in for state that only gc/unix/gcenv.unix.cpp
+// has -- the current thread id, g_totalCpuCount and g_processAffinitySet -- so those are
+// injection only.
+//
 // A [DllImport] is exactly what the GC must not use; it is fine here because this file is never
 // compiled into the GC. The methods it replaces are the boundary of the port: everything the
 // tests exercise above them is the shipping code.
@@ -300,6 +305,7 @@ internal static unsafe partial class GCToOSInterface
     internal static void SetProcessAffinityCpuCount(nuint cpuCount)
     {
         NativeMemory.Clear(s_processAffinityBitset, ProcessAffinitySetEntries * (nuint)sizeof(nuint));
+        s_processAffinitySet->InitializeWithStorage(s_processAffinityBitset, ProcessAffinitySetEntries);
         for (nuint i = 0; i < cpuCount; i++)
         {
             s_processAffinitySet->Add(i);
@@ -455,6 +461,108 @@ internal static unsafe partial class GCToOSInterface
     }
 
     private static AffinitySet* ManagedGC_Unix_GetProcessAffinitySet() => s_processAffinitySet;
+
+    //
+    // The processor count and identity port. sched_getcpu and getpid are real calls that a test
+    // can also take over; the other three stand in for state that only the C++ has, so each of
+    // them is injection only and starts from a value a fresh process would plausibly see.
+    //
+
+    internal static bool SchedGetCpuInject;
+    internal static int SchedGetCpuValue;
+    internal static int SchedGetCpuCalls;
+
+    internal static bool GetPidInject;
+    internal static int GetPidValue;
+    internal static int GetPidCalls;
+
+    internal static nuint CurrentThreadIdValue;
+    internal static int CurrentThreadIdCalls;
+
+    internal static uint TotalCpuCountValue;
+    internal static int TotalCpuCountCalls;
+
+    /// <summary>
+    /// Makes the process affinity set report exactly <paramref name="maxCpuCount"/> as its
+    /// capacity, which is what <c>GetMaxProcessorCount</c> returns. It has to be a multiple of
+    /// the bitset entry width, because the capacity of an AffinitySet is a whole number of
+    /// entries; the tests pass such values.
+    /// </summary>
+    internal static void SetProcessAffinityMaxCpuCount(nuint maxCpuCount)
+    {
+        nuint bitsPerEntry = (nuint)sizeof(nuint) * 8;
+        nuint entries = maxCpuCount / bitsPerEntry;
+        Debug.Assert(maxCpuCount % bitsPerEntry == 0);
+        Debug.Assert(entries <= ProcessAffinitySetEntries);
+
+        NativeMemory.Clear(s_processAffinityBitset, ProcessAffinitySetEntries * (nuint)sizeof(nuint));
+        s_processAffinitySet->InitializeWithStorage(s_processAffinityBitset, entries);
+    }
+
+    /// <summary>Forgets every processor recording and clears every injection.</summary>
+    internal static void ResetProcessorRecording()
+    {
+        SchedGetCpuInject = false;
+        SchedGetCpuValue = 0;
+        SchedGetCpuCalls = 0;
+        GetPidInject = false;
+        GetPidValue = 0;
+        GetPidCalls = 0;
+        CurrentThreadIdValue = 0;
+        CurrentThreadIdCalls = 0;
+        TotalCpuCountValue = 0;
+        TotalCpuCountCalls = 0;
+        CanEnableGCCPUGroupsValue = 0;
+        CanEnableGCCPUGroupsCalls = 0;
+        SetProcessAffinityMaxCpuCount(ProcessAffinitySetEntries * (nuint)sizeof(nuint) * 8);
+    }
+
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
+    private static int sched_getcpu()
+    {
+        SchedGetCpuCalls++;
+        return SchedGetCpuInject ? SchedGetCpuValue : sys_sched_getcpu();
+    }
+
+    [DllImport("libc", EntryPoint = "sched_getcpu")]
+    private static extern int sys_sched_getcpu();
+#endif
+
+    private static int getpid()
+    {
+        GetPidCalls++;
+        return GetPidInject ? GetPidValue : sys_getpid();
+    }
+
+    [DllImport("libc", EntryPoint = "getpid")]
+    private static extern int sys_getpid();
+
+    private static nuint ManagedGC_Unix_GetCurrentThreadId()
+    {
+        CurrentThreadIdCalls++;
+        return CurrentThreadIdValue;
+    }
+
+    private static uint ManagedGC_Unix_GetTotalCpuCount()
+    {
+        TotalCpuCountCalls++;
+        return TotalCpuCountValue;
+    }
+
+    //
+    // The one remaining forwarder a ported body calls. Nothing on Unix reads it, but the
+    // shipping GCToOSInterface.CanEnableGCCPUGroups names it on both platforms, so the
+    // substitute has to exist here too.
+    //
+
+    internal static int CanEnableGCCPUGroupsValue;
+    internal static int CanEnableGCCPUGroupsCalls;
+
+    private static int ManagedGC_OS_CanEnableGCCPUGroups()
+    {
+        CanEnableGCCPUGroupsCalls++;
+        return CanEnableGCCPUGroupsValue;
+    }
 
 #if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
     private static int sysinfo(SysInfo* info)

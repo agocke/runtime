@@ -58,6 +58,26 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int sched_yield();
 
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
+        /// <summary>
+        /// <c>sched_getcpu</c> of <c>&lt;sched.h&gt;</c>, declared on exactly the platforms
+        /// where the HAVE_SCHED_GETCPU configure check of <c>gc/unix/configure.cmake</c> holds.
+        /// See GCToOSInterface.Processors.Unix.cs for how that list is arrived at and where it
+        /// is checked against the native build.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "sched_getcpu")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int sched_getcpu();
+#endif
+
+        /// <summary>
+        /// <c>getpid</c> of <c>&lt;unistd.h&gt;</c>. Its <c>pid_t</c> return is a 32 bit signed
+        /// integer on every supported platform, which is what gcenv.managed.cpp checks.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "getpid")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int getpid();
+
         /// <summary>
         /// The accessor that returns the address of the calling thread's <c>errno</c>. The
         /// <c>&lt;errno.h&gt;</c> <c>errno</c> macro is a dereference of exactly this call on
@@ -212,15 +232,45 @@ namespace Internal.Runtime.GarbageCollection
         private static extern nuint ManagedGC_Unix_GetCurrentVirtualMemorySize();
 #endif
 
-#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
         /// <summary>
         /// The address of <c>g_processAffinitySet</c> of <c>gc/unix/gcenv.unix.cpp</c>. Only
-        /// the address crosses: the counting the cache size heuristic does is the ported
-        /// <see cref="AffinitySet.Count"/>.
+        /// the address crosses: the counting the cache size heuristic and GetMaxProcessorCount
+        /// do is the ported <see cref="AffinitySet.Count"/> and
+        /// <see cref="AffinitySet.MaxCpuCount"/>.
         /// </summary>
         [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetProcessAffinitySet")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern AffinitySet* ManagedGC_Unix_GetProcessAffinitySet();
-#endif
+
+        /// <summary>
+        /// The value of <c>g_totalCpuCount</c> of <c>gc/unix/gcenv.unix.cpp</c>, which
+        /// <c>GCToOSInterface::Initialize</c> computes with
+        /// <c>sysconf(_SC_NPROCESSORS_ONLN)</c>. Only the value crosses, because the Unix C++
+        /// only ever reads it.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetTotalCpuCount")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint ManagedGC_Unix_GetTotalCpuCount();
+
+        /// <summary>
+        /// <c>minipal_get_current_thread_id</c> of <c>src/native/minipal/thread.h</c>, which is
+        /// a static inline function over a thread local cache rather than a linkable symbol, so
+        /// there is nothing to import directly.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Unix_GetCurrentThreadId")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern nuint ManagedGC_Unix_GetCurrentThreadId();
+
+        /// <summary>
+        /// The <c>ManagedGC_OS_CanEnableGCCPUGroups</c> forwarder of
+        /// <c>nativeaot/Runtime/gcenv.managed.cpp</c>. It is declared here rather than beside
+        /// the other forwarders in GCToOSInterface.cs because a ported body calls it -- the
+        /// Windows GetTotalProcessorCount -- and everything a ported body calls has to be
+        /// substitutable by the test host. Deletion point: the CPU group submodule of plan step
+        /// 3 in System.Private.GC/ROADMAP.md.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_CanEnableGCCPUGroups")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_OS_CanEnableGCCPUGroups();
     }
 }

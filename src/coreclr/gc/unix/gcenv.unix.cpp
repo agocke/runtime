@@ -277,6 +277,10 @@ void GCToOSInterface::Shutdown()
     CleanupCGroup();
 }
 
+// GetCurrentThreadIdForLogging and GetCurrentProcessId are translated into System.Private.GC's
+// GCToOSInterface.Processors.Unix.cs, which calls getpid directly and reaches
+// minipal_get_current_thread_id through the ManagedGC_Unix_GetCurrentThreadId shim below.
+#ifndef FEATURE_MANAGED_GC
 // Get numeric id of the current thread if possible on the
 // current platform. It is intended for logging purposes only.
 // Return:
@@ -291,6 +295,18 @@ uint32_t GCToOSInterface::GetCurrentProcessId()
 {
     return getpid();
 }
+#endif // FEATURE_MANAGED_GC
+
+#ifdef FEATURE_MANAGED_GC
+// minipal_get_current_thread_id is a static inline function over a _Thread_local cache in
+// src/native/minipal/thread.h rather than a linkable symbol, so GCToOSInterface.Processors.Unix.cs
+// has nothing to import directly and calls this instead. Deletion point: when minipal exports a
+// non-inline entry point, or when System.Private.GC has thread local storage of its own.
+extern "C" size_t ManagedGC_Unix_GetCurrentThreadId()
+{
+    return minipal_get_current_thread_id();
+}
+#endif // FEATURE_MANAGED_GC
 
 // Set ideal processor for the current thread
 // Parameters:
@@ -304,6 +320,10 @@ bool GCToOSInterface::SetCurrentThreadIdealAffinity(uint16_t srcProcNo, uint16_t
     return true;
 }
 
+// GetCurrentProcessorNumber and CanGetCurrentProcessorNumber are translated into
+// System.Private.GC's GCToOSInterface.Processors.Unix.cs, which selects the same
+// HAVE_SCHED_GETCPU branch through the platform list that gcenv.managed.cpp checks.
+#ifndef FEATURE_MANAGED_GC
 // Get the number of the current processor
 uint32_t GCToOSInterface::GetCurrentProcessorNumber()
 {
@@ -322,6 +342,7 @@ bool GCToOSInterface::CanGetCurrentProcessorNumber()
 {
     return HAVE_SCHED_GETCPU;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Break into a debugger. Uses a compiler intrinsic if one is available,
 // otherwise raises a SIGTRAP.
@@ -889,11 +910,20 @@ extern "C" int32_t ManagedGC_Unix_ReadMemAvailable(uint64_t* memAvailable)
 #endif // !defined(__APPLE__) && !defined(__HAIKU__)
 
 // The address of the process affinity set that GCToOSInterface::Initialize fills in. Only the
-// address crosses: the counting the cache size heuristic does is the translated AffinitySet of
-// System.Private.GC. Deletion point: the affinity submodule of plan step 3.
+// address crosses: the counting the cache size heuristic and GetMaxProcessorCount do is the
+// translated AffinitySet of System.Private.GC. Deletion point: the affinity submodule of plan
+// step 3.
 extern "C" AffinitySet* ManagedGC_Unix_GetProcessAffinitySet()
 {
     return &g_processAffinitySet;
+}
+
+// The total CPU count that the same Initialize computes with sysconf(_SC_NPROCESSORS_ONLN).
+// Only the value crosses, because GetTotalProcessorCount only reads it on this platform.
+// Deletion point: the initialization submodule of plan step 3.
+extern "C" uint32_t ManagedGC_Unix_GetTotalCpuCount()
+{
+    return g_totalCpuCount;
 }
 #endif // FEATURE_MANAGED_GC
 
@@ -1359,6 +1389,13 @@ uint64_t GCToOSInterface::GetLowPrecisionTimeStamp()
     return (uint64_t)minipal_lowres_ticks();
 }
 #endif // FEATURE_MANAGED_GC
+
+// GetTotalProcessorCount and GetMaxProcessorCount are translated into System.Private.GC's
+// GCToOSInterface.Processors.Unix.cs, which reads the same two variables through
+// ManagedGC_Unix_GetTotalCpuCount and ManagedGC_Unix_GetProcessAffinitySet. Both bodies stay
+// compiled under FEATURE_MANAGED_GC because the rest of the runtime in the same archive still
+// calls them: nativeaot/Runtime/unix/PalUnix.cpp calls GetTotalProcessorCount and gc/gcconfig.cpp
+// calls GetMaxProcessorCount.
 
 // Gets the total number of processors on the machine, not taking
 // into account current process affinity.

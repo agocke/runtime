@@ -71,6 +71,9 @@
     <!-- The "time" section of the same two gcenv files. -->
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Timers.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Timers.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <!-- The processor counts and the thread and process identity of the same two gcenv files. -->
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Processors.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Processors.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <!-- The event and lock implementations, likewise one per gcenv platform file:
          gc/unix/events.cpp and the GCEvent half of gc/windows/gcenv.windows.cpp, plus the two
          halves of src/native/minipal/mutex.c that CLRCriticalSection forwards to. The pthread

@@ -11,10 +11,10 @@
 // gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
 //
 // This file also carries the static_asserts that check the <sys/mman.h>, <sys/resource.h>,
-// <pthread.h>, <time.h>, <errno.h>, <unistd.h>, <sys/sysctl.h>, <sys/sysinfo.h>,
-// <minipal/time.h>, <windows.h> and <psapi.h> constants, layouts and entry points that those
-// managed ports hardcode against the real headers of the platform being built, in the same
-// spirit as AsmOffsets.h. The C# #if structure and the one below must stay in the same shape.
+// <pthread.h>, <time.h>, <errno.h>, <unistd.h>, <sched.h>, <sys/sysctl.h>, <sys/sysinfo.h>,
+// <minipal/time.h>, config.gc.h, <windows.h> and <psapi.h> constants, layouts and entry points
+// that those managed ports hardcode against the real headers of the platform being built, in the
+// same spirit as AsmOffsets.h. The C# #if structure and the one below must stay in the same shape.
 //
 // The managed side calls these with [RuntimeImport], which is a direct call to a linked symbol
 // with no marshalling, no argument copying and no GC mode transition. That is what code running
@@ -27,14 +27,19 @@
 // System.Private.GC/ROADMAP.md, one platform module at a time; a forwarder disappears when the
 // managed GCToOSInterface implements that method itself.
 //
-// A few narrow leaves of the memory limit port are not here: ManagedGC_CGroup_GetPhysicalMemoryLimit
-// and ManagedGC_Unix_GetPhysicalMemoryUsed are in gc/unix/cgroup.cpp, and
-// ManagedGC_Unix_ReadMemoryValueFromFile, ManagedGC_Unix_ReadMemAvailable,
-// ManagedGC_Unix_GetCurrentVirtualMemorySize and ManagedGC_Unix_GetProcessAffinitySet are in
-// gc/unix/gcenv.unix.cpp. Each of them wraps something with internal linkage in its own
-// translation unit -- the CGroup class is in an anonymous namespace and the file parsers are
-// static -- so they have to sit next to what they wrap. They are guarded by FEATURE_MANAGED_GC
-// there, so a default build does not carry them either.
+// A few narrow leaves of the memory limit and processor count ports are not here:
+// ManagedGC_CGroup_GetPhysicalMemoryLimit and ManagedGC_Unix_GetPhysicalMemoryUsed are in
+// gc/unix/cgroup.cpp; ManagedGC_Unix_ReadMemoryValueFromFile, ManagedGC_Unix_ReadMemAvailable,
+// ManagedGC_Unix_GetCurrentVirtualMemorySize, ManagedGC_Unix_GetProcessAffinitySet,
+// ManagedGC_Unix_GetTotalCpuCount and ManagedGC_Unix_GetCurrentThreadId are in
+// gc/unix/gcenv.unix.cpp; and ManagedGC_Windows_GetTotalCpuCount,
+// ManagedGC_Windows_GetCpuGroupProcessorCount, ManagedGC_Windows_GetSystemInfoProcessorCount and
+// ManagedGC_Windows_GetProcessAffinitySet are in gc/windows/gcenv.windows.cpp. Each of them
+// wraps something with internal linkage in its own translation unit -- the CGroup class is in an
+// anonymous namespace, the file parsers are static and the CPU group and affinity state is file
+// or namespace static -- or, in the case of minipal_get_current_thread_id, something that is not
+// a linkable symbol at all, so they have to sit next to what they wrap. They are guarded by
+// FEATURE_MANAGED_GC there, so a default build does not carry them either.
 //
 // This file is only compiled into the managedgc-enabled archive, so a default (C++ GC) build
 // does not carry any of it.
@@ -411,6 +416,35 @@ static_assert(sizeof(minipal_hires_tick_frequency()) == sizeof(int64_t), "minipa
 static_assert(sizeof(minipal_lowres_ticks()) == sizeof(int64_t), "minipal_lowres_ticks does not match GCToOSInterface.Imports.Unix.cs.");
 
 //
+// The processor count and identity port of GCToOSInterface.Processors.Unix.cs. HAVE_SCHED_GETCPU
+// is a configure check -- gc/unix/configure.cmake compiles and runs a program that calls
+// sched_getcpu() -- and a managed source file cannot see it, so the C# names the platforms it
+// holds on directly: absent on Apple, FreeBSD and OpenBSD, present on glibc, musl and bionic.
+// This is where that list is checked against the real check, so that a platform whose configure
+// result differs breaks the build instead of silently taking the wrong branch. The #if shape
+// here and the one in the C# must stay the same.
+//
+
+#include "config.gc.h"
+#include <sched.h>
+#include <unistd.h>
+
+#if defined(TARGET_APPLE) || defined(TARGET_FREEBSD) || defined(TARGET_OPENBSD)
+
+static_assert(HAVE_SCHED_GETCPU == 0, "HAVE_SCHED_GETCPU does not match GCToOSInterface.Processors.Unix.cs.");
+
+#else
+
+static_assert(HAVE_SCHED_GETCPU == 1, "HAVE_SCHED_GETCPU does not match GCToOSInterface.Processors.Unix.cs.");
+static_assert(sizeof(sched_getcpu()) == sizeof(int32_t), "sched_getcpu does not match GCToOSInterface.Imports.Unix.cs.");
+
+#endif
+
+// pid_t is a 32 bit signed integer on every supported platform, which is what the managed
+// declaration names and what the C++ body's implicit conversion to uint32_t assumes.
+static_assert(sizeof(getpid()) == sizeof(int32_t), "getpid does not match GCToOSInterface.Imports.Unix.cs.");
+
+//
 // The second remaining piece: the NUMA half of VirtualCommitInner. It is the body of the
 // `#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)` block of that function, verbatim,
 // because it reads the NUMA state that only gc/unix/numasupport.cpp has -- which belongs to the
@@ -561,6 +595,24 @@ static_assert(sizeof(::QueryUnbiasedInterruptTime((PULONGLONG)nullptr)) == sizeo
 static_assert(sizeof(CRITICAL_SECTION) <= 8 * sizeof(uint64_t), "CRITICAL_SECTION does not fit the blob of SyncTypes.Windows.cs.");
 static_assert(alignof(CRITICAL_SECTION) <= alignof(uint64_t), "CRITICAL_SECTION is more strictly aligned than the blob of SyncTypes.Windows.cs.");
 
+//
+// The <windows.h> pieces that the processor count and identity port of
+// GCToOSInterface.Processors.Windows.cs names. GetCurrentProcessorNumberEx returns VOID, which
+// cannot be the operand of sizeof, so the call is wrapped in a comma expression whose type is
+// int; the call itself is still unevaluated, so what is checked is the same thing the other
+// entry points check -- that <windows.h> declares it and accepts the argument the managed
+// declaration passes.
+//
+static_assert(sizeof(PROCESSOR_NUMBER) == 4, "PROCESSOR_NUMBER does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(offsetof(PROCESSOR_NUMBER, Group) == 0, "PROCESSOR_NUMBER does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(offsetof(PROCESSOR_NUMBER, Number) == 2, "PROCESSOR_NUMBER does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(offsetof(PROCESSOR_NUMBER, Reserved) == 3, "PROCESSOR_NUMBER does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(sizeof(((PROCESSOR_NUMBER*)nullptr)->Group) == sizeof(uint16_t), "PROCESSOR_NUMBER does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(sizeof(((PROCESSOR_NUMBER*)nullptr)->Number) == sizeof(uint8_t), "PROCESSOR_NUMBER does not match GCToOSInterface.Processors.Windows.cs.");
+static_assert(sizeof(::GetCurrentThreadId()) == sizeof(uint32_t), "GetCurrentThreadId does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(::GetCurrentProcessId()) == sizeof(uint32_t), "GetCurrentProcessId does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof((::GetCurrentProcessorNumberEx((PPROCESSOR_NUMBER)nullptr), 0)) == sizeof(int32_t), "GetCurrentProcessorNumberEx does not match GCToOSInterface.Imports.Windows.cs.");
+
 #endif // TARGET_UNIX
 
 //
@@ -580,16 +632,6 @@ extern "C" void ManagedGC_OS_Shutdown()
     GCToOSInterface::Shutdown();
 }
 
-extern "C" uint32_t ManagedGC_OS_GetCurrentProcessorNumber()
-{
-    return GCToOSInterface::GetCurrentProcessorNumber();
-}
-
-extern "C" UInt32_BOOL ManagedGC_OS_CanGetCurrentProcessorNumber()
-{
-    return GCToOSInterface::CanGetCurrentProcessorNumber() ? UInt32_TRUE : UInt32_FALSE;
-}
-
 extern "C" UInt32_BOOL ManagedGC_OS_SetCurrentThreadIdealAffinity(uint16_t srcProcNo, uint16_t dstProcNo)
 {
     return GCToOSInterface::SetCurrentThreadIdealAffinity(srcProcNo, dstProcNo) ? UInt32_TRUE : UInt32_FALSE;
@@ -598,16 +640,6 @@ extern "C" UInt32_BOOL ManagedGC_OS_SetCurrentThreadIdealAffinity(uint16_t srcPr
 extern "C" UInt32_BOOL ManagedGC_OS_GetCurrentThreadIdealProc(uint16_t* procNo)
 {
     return GCToOSInterface::GetCurrentThreadIdealProc(procNo) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" uint64_t ManagedGC_OS_GetCurrentThreadIdForLogging()
-{
-    return GCToOSInterface::GetCurrentThreadIdForLogging();
-}
-
-extern "C" uint32_t ManagedGC_OS_GetCurrentProcessId()
-{
-    return GCToOSInterface::GetCurrentProcessId();
 }
 
 extern "C" UInt32_BOOL ManagedGC_OS_SetThreadAffinity(uint16_t procNo)
@@ -628,16 +660,6 @@ extern "C" const void* ManagedGC_OS_SetGCThreadsAffinitySet(uintptr_t configAffi
 extern "C" void ManagedGC_OS_DebugBreak()
 {
     GCToOSInterface::DebugBreak();
-}
-
-extern "C" uint32_t ManagedGC_OS_GetTotalProcessorCount()
-{
-    return GCToOSInterface::GetTotalProcessorCount();
-}
-
-extern "C" uint32_t ManagedGC_OS_GetMaxProcessorCount()
-{
-    return GCToOSInterface::GetMaxProcessorCount();
 }
 
 extern "C" UInt32_BOOL ManagedGC_OS_CanEnableGCNumaAware()

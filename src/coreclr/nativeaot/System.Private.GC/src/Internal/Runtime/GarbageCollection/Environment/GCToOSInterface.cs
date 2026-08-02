@@ -13,7 +13,9 @@
 //     YieldThread, in GCToOSInterface.Thread.Unix.cs and GCToOSInterface.Thread.Windows.cs,
 //     and the memory limit and cache sizing methods, in GCToOSInterface.MemoryLimits.Unix.cs
 //     and GCToOSInterface.MemoryLimits.Windows.cs, and the timers, in
-//     GCToOSInterface.Timers.Unix.cs and GCToOSInterface.Timers.Windows.cs. Their declarations
+//     GCToOSInterface.Timers.Unix.cs and GCToOSInterface.Timers.Windows.cs, and the processor
+//     counts and identity, in GCToOSInterface.Processors.Unix.cs and
+//     GCToOSInterface.Processors.Windows.cs. Their declarations
 //     stay here as comments pointing at the platform file, so that this file still reads in
 //     gcenv.os.h declaration order.
 //   * The remaining bodies are still forwarders. Each one is a [RuntimeImport] call to a
@@ -23,7 +25,7 @@
 //     requires; a [DllImport] would not be usable here.
 //
 // They are forwarders because the implementations are the platform code -- NUMA, Windows CPU
-// groups, pthread and Win32 affinity, processor counts -- and porting it is a separate
+// groups, pthread and Win32 affinity -- and porting it is a separate
 // piece of work per platform. Deletion point: plan step 3
 // of ROADMAP.md; a forwarder and its shim disappear together when the managed implementation of
 // that method lands.
@@ -103,15 +105,11 @@ namespace Internal.Runtime.GarbageCollection
 
         //
         // Thread and process. Sleep and YieldThread are translated per platform in
-        // GCToOSInterface.Thread.Unix.cs and GCToOSInterface.Thread.Windows.cs; the rest of the
-        // section is below.
+        // GCToOSInterface.Thread.Unix.cs and GCToOSInterface.Thread.Windows.cs, and
+        // GetCurrentProcessorNumber, CanGetCurrentProcessorNumber, GetCurrentThreadIdForLogging
+        // and GetCurrentProcessId in GCToOSInterface.Processors.Unix.cs and
+        // GCToOSInterface.Processors.Windows.cs; the rest of the section is below.
         //
-
-        /// <summary>Get the number of the current processor.</summary>
-        public static uint GetCurrentProcessorNumber() => ManagedGC_OS_GetCurrentProcessorNumber();
-
-        /// <summary>Check if the OS supports getting the current processor number.</summary>
-        public static bool CanGetCurrentProcessorNumber() => ManagedGC_OS_CanGetCurrentProcessorNumber() != 0;
 
         /// <summary>Set the ideal processor for the current thread.</summary>
         public static bool SetCurrentThreadIdealAffinity(ushort srcProcNo, ushort dstProcNo) =>
@@ -120,14 +118,6 @@ namespace Internal.Runtime.GarbageCollection
         /// <summary>Get the ideal processor of the current thread.</summary>
         public static bool GetCurrentThreadIdealProc(ushort* procNo) =>
             ManagedGC_OS_GetCurrentThreadIdealProc(procNo) != 0;
-
-        /// <summary>
-        /// Get the numeric id of the current thread. It is intended for logging purposes only.
-        /// </summary>
-        public static ulong GetCurrentThreadIdForLogging() => ManagedGC_OS_GetCurrentThreadIdForLogging();
-
-        /// <summary>Get the id of the current process.</summary>
-        public static uint GetCurrentProcessId() => ManagedGC_OS_GetCurrentProcessId();
 
         //
         // Processor topology
@@ -189,18 +179,10 @@ namespace Internal.Runtime.GarbageCollection
         // translated per platform in GCToOSInterface.Timers.Unix.cs and
         // GCToOSInterface.Timers.Windows.cs.
 
-        /// <summary>
-        /// Gets the total number of processors on the machine, not taking into account the
-        /// current process affinity.
-        /// </summary>
-        public static uint GetTotalProcessorCount() => ManagedGC_OS_GetTotalProcessorCount();
-
-        /// <summary>
-        /// Gets the maximum number of processors that could potentially exist on the machine
-        /// (including offlined ones). Processor indices returned by
-        /// <see cref="GetCurrentProcessorNumber"/> are guaranteed to be less than this value.
-        /// </summary>
-        public static uint GetMaxProcessorCount() => ManagedGC_OS_GetMaxProcessorCount();
+        // GetTotalProcessorCount and GetMaxProcessorCount are translated per platform in
+        // GCToOSInterface.Processors.Unix.cs and GCToOSInterface.Processors.Windows.cs, beside
+        // the rest of the processor counts. Processor indices returned by
+        // GetCurrentProcessorNumber are guaranteed to be less than GetMaxProcessorCount.
 
         /// <summary>Is NUMA support available.</summary>
         public static bool CanEnableGCNumaAware() => ManagedGC_OS_CanEnableGCNumaAware() != 0;
@@ -214,6 +196,10 @@ namespace Internal.Runtime.GarbageCollection
         /// instrumentation, but is on the interface due to LocalGC.
         /// </summary>
         public static bool CanEnableGCCPUGroups() => ManagedGC_OS_CanEnableGCCPUGroups() != 0;
+        // ManagedGC_OS_CanEnableGCCPUGroups is declared in GCToOSInterface.Imports.Unix.cs and
+        // GCToOSInterface.Imports.Windows.cs rather than with the other forwarders below,
+        // because a ported body calls it -- the Windows GetTotalProcessorCount -- and everything
+        // a ported body calls has to be substitutable by the test host.
 
         /// <summary>
         /// Get the processor number and optionally its NUMA node number for the specified heap
@@ -251,14 +237,6 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_OS_Shutdown();
 
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetCurrentProcessorNumber")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern uint ManagedGC_OS_GetCurrentProcessorNumber();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_CanGetCurrentProcessorNumber")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_CanGetCurrentProcessorNumber();
-
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_SetCurrentThreadIdealAffinity")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int ManagedGC_OS_SetCurrentThreadIdealAffinity(ushort srcProcNo, ushort dstProcNo);
@@ -266,14 +244,6 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetCurrentThreadIdealProc")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int ManagedGC_OS_GetCurrentThreadIdealProc(ushort* procNo);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetCurrentThreadIdForLogging")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern ulong ManagedGC_OS_GetCurrentThreadIdForLogging();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetCurrentProcessId")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern uint ManagedGC_OS_GetCurrentProcessId();
 
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_SetThreadAffinity")]
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -291,14 +261,6 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_OS_DebugBreak();
 
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetTotalProcessorCount")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern uint ManagedGC_OS_GetTotalProcessorCount();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetMaxProcessorCount")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern uint ManagedGC_OS_GetMaxProcessorCount();
-
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_CanEnableGCNumaAware")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int ManagedGC_OS_CanEnableGCNumaAware();
@@ -306,10 +268,6 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetNumaInfo")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int ManagedGC_OS_GetNumaInfo(ushort* total_nodes, uint* max_procs_per_node);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_CanEnableGCCPUGroups")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_CanEnableGCCPUGroups();
 
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetProcessorForHeap")]
         [MethodImpl(MethodImplOptions.InternalCall)]

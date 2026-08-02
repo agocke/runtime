@@ -36,6 +36,7 @@
     <Compile Include="GCCriticalSectionTests.cs" />
     <Compile Include="GCSleepYieldTests.cs" />
     <Compile Include="GCTimerTests.cs" />
+    <Compile Include="GCProcessorTests.cs" />
     <Compile Include="GCFoundationTests.cs" />
     <Compile Include="GCInterfaceLayoutTests.cs" />
     <!-- The environment layer. Its OS calls are [RuntimeImport] declarations, which resolve
@@ -63,6 +64,8 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.MemoryLimits.Windows.cs" Link="Environment/GCToOSInterface.MemoryLimits.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.Timers.Unix.cs" Link="Environment/GCToOSInterface.Timers.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.Timers.Windows.cs" Link="Environment/GCToOSInterface.Timers.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.Processors.Unix.cs" Link="Environment/GCToOSInterface.Processors.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.Processors.Windows.cs" Link="Environment/GCToOSInterface.Processors.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="GCToOSInterface.Imports.Unix.TestHost.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="GCToOSInterface.Imports.Windows.TestHost.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <!-- The event and lock ports are real code rather than forwarders too, so the shipping

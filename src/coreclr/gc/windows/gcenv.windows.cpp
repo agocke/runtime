@@ -561,6 +561,9 @@ void GCToOSInterface::Shutdown()
     // nothing to do.
 }
 
+// GetCurrentThreadIdForLogging and GetCurrentProcessId are translated into System.Private.GC's
+// GCToOSInterface.Processors.Windows.cs, which calls the same two Win32 entry points directly.
+#ifndef FEATURE_MANAGED_GC
 // Get numeric id of the current thread if possible on the
 // current platform. It is intended for logging purposes only.
 // Return:
@@ -575,6 +578,7 @@ uint32_t GCToOSInterface::GetCurrentProcessId()
 {
     return ::GetCurrentProcessId();
 }
+#endif // FEATURE_MANAGED_GC
 
 // Set ideal processor for the current thread
 // Parameters:
@@ -635,6 +639,10 @@ bool GCToOSInterface::GetCurrentThreadIdealProc(uint16_t* procNo)
     return success;
 }
 
+// GetCurrentProcessorNumber and CanGetCurrentProcessorNumber are translated into
+// System.Private.GC's GCToOSInterface.Processors.Windows.cs, which makes the same
+// GetCurrentProcessorNumberEx call and packs the result with the translated GroupProcNo.
+#ifndef FEATURE_MANAGED_GC
 // Get the number of the current processor
 uint32_t GCToOSInterface::GetCurrentProcessorNumber()
 {
@@ -653,6 +661,7 @@ bool GCToOSInterface::CanGetCurrentProcessorNumber()
     // on all Windows platforms we support this API exists
     return true;
 }
+#endif // FEATURE_MANAGED_GC
 
 // Break into a debugger
 void GCToOSInterface::DebugBreak()
@@ -1135,6 +1144,14 @@ uint64_t GCToOSInterface::GetLowPrecisionTimeStamp()
 }
 #endif // FEATURE_MANAGED_GC
 
+// GetTotalProcessorCount and GetMaxProcessorCount are translated into System.Private.GC's
+// GCToOSInterface.Processors.Windows.cs, which reads the same state through the four
+// ManagedGC_Windows_ shims at the end of this file. Both bodies stay compiled under
+// FEATURE_MANAGED_GC because the rest of the runtime in the same archive still calls them:
+// nativeaot/Runtime/windows/PalMinWin.cpp calls GetTotalProcessorCount and gc/gcconfig.cpp calls
+// GetMaxProcessorCount. That is why the managed body shares g_totalCpuCount by address rather
+// than caching a second copy.
+
 // Gets the total number of processors on the machine, not taking
 // into account current process affinity.
 // Return:
@@ -1158,6 +1175,38 @@ uint32_t GCToOSInterface::GetMaxProcessorCount()
 {
     return (uint32_t)g_processAffinitySet.MaxCpuCount();
 }
+
+#ifdef FEATURE_MANAGED_GC
+// The state that GCToOSInterface.Processors.Windows.cs reads. Each of these is a variable that
+// GCToOSInterface::Initialize -- which is still the C++ one, reached through
+// ManagedGC_OS_Initialize -- computes, and every one of them is file static or namespace static
+// here, so the managed side cannot name it any other way. Deletion point: the initialization and
+// CPU group submodules of System.Private.GC/ROADMAP.md plan step 3, which give System.Private.GC
+// the state itself.
+
+// The address rather than the value, because both GetTotalProcessorCount bodies write this
+// cache and the C++ one stays compiled for the callers named above.
+extern "C" uint32_t* ManagedGC_Windows_GetTotalCpuCount()
+{
+    return &g_totalCpuCount;
+}
+
+extern "C" uint32_t ManagedGC_Windows_GetCpuGroupProcessorCount()
+{
+    return g_nProcessors;
+}
+
+extern "C" uint32_t ManagedGC_Windows_GetSystemInfoProcessorCount()
+{
+    return g_SystemInfo.dwNumberOfProcessors;
+}
+
+// Only the address crosses: the counting is the translated AffinitySet of System.Private.GC.
+extern "C" AffinitySet* ManagedGC_Windows_GetProcessAffinitySet()
+{
+    return &g_processAffinitySet;
+}
+#endif // FEATURE_MANAGED_GC
 
 bool GCToOSInterface::CanEnableGCNumaAware()
 {

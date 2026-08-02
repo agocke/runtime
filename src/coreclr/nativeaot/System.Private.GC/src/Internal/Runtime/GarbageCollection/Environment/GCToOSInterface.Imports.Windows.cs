@@ -162,5 +162,66 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_Free")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_Free(void* memory);
+
+        [RuntimeImport(RuntimeLibrary, "GetCurrentThreadId")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint GetCurrentThreadId();
+
+        [RuntimeImport(RuntimeLibrary, "GetCurrentProcessId")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint Win32GetCurrentProcessId();
+
+        [RuntimeImport(RuntimeLibrary, "GetCurrentProcessorNumberEx")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void GetCurrentProcessorNumberEx(PROCESSOR_NUMBER* ProcNumber);
+
+        /// <summary>
+        /// The address of <c>g_totalCpuCount</c> of <c>gc/windows/gcenv.windows.cpp</c>. The
+        /// address rather than the value, because the C++ body of
+        /// <c>GCToOSInterface::GetTotalProcessorCount</c> stays compiled -- gc/gcconfig.cpp and
+        /// the NativeAOT PAL still call it -- so the managed body has to fill the same cache
+        /// rather than one of its own.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetTotalCpuCount")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint* ManagedGC_Windows_GetTotalCpuCount();
+
+        /// <summary>
+        /// The value of <c>g_nProcessors</c> of <c>gc/windows/gcenv.windows.cpp</c>, the CPU
+        /// group processor count that <c>GCToOSInterface::Initialize</c> computes.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetCpuGroupProcessorCount")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint ManagedGC_Windows_GetCpuGroupProcessorCount();
+
+        /// <summary>
+        /// The value of <c>g_SystemInfo.dwNumberOfProcessors</c> of
+        /// <c>gc/windows/gcenv.windows.cpp</c>, from the <c>SYSTEM_INFO</c> that the same
+        /// Initialize caches.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetSystemInfoProcessorCount")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint ManagedGC_Windows_GetSystemInfoProcessorCount();
+
+        /// <summary>
+        /// The address of <c>g_processAffinitySet</c> of <c>gc/windows/gcenv.windows.cpp</c>.
+        /// Only the address crosses: the counting is the ported
+        /// <see cref="AffinitySet.MaxCpuCount"/>.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_Windows_GetProcessAffinitySet")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern AffinitySet* ManagedGC_Windows_GetProcessAffinitySet();
+
+        /// <summary>
+        /// The <c>ManagedGC_OS_CanEnableGCCPUGroups</c> forwarder of
+        /// <c>nativeaot/Runtime/gcenv.managed.cpp</c>. It is declared here rather than beside
+        /// the other forwarders in GCToOSInterface.cs because a ported body calls it -- the
+        /// Windows GetTotalProcessorCount -- and everything a ported body calls has to be
+        /// substitutable by the test host. Deletion point: the CPU group submodule of plan step
+        /// 3 in System.Private.GC/ROADMAP.md.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_CanEnableGCCPUGroups")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_OS_CanEnableGCCPUGroups();
     }
 }
