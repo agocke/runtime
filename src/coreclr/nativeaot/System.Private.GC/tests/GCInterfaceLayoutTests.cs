@@ -45,6 +45,11 @@ public sealed class GCInterfaceLayoutTests
         // are pinned by that type's own entries.
         ["NoGCRegionCallbackFinalizerWorkItem.next"] = "inherited from FinalizerWorkItem",
         ["NoGCRegionCallbackFinalizerWorkItem.callback"] = "inherited from FinalizerWorkItem",
+        ["TableSegment.Header"] = "the native base subobject pinned by _TableSegmentHeader",
+
+        // C++ does not permit offsetof on a bitfield. The byte is pinned between pHandleTable
+        // and bFreeList by those offsets, the packed alignment, and the total header size.
+        ["_TableSegmentHeader.flags"] = "represents the native bitfield byte",
 
         // The native field is named dwEtwRootKind or _unused3 depending on whether the runtime is
         // built with GC_PROFILING or FEATURE_EVENT_TRACE, so the table cannot name it without

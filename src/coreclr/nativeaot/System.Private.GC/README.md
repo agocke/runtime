@@ -40,6 +40,8 @@ Ported so far:
 | `GCEvents.cs` | `gceventstatus.h`, expanded `gcevents.h` event helpers |
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
+| `HandleTableConstants.cs` | `handletableconstants.h` |
+| `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
 | `Interface/GCInterfaceStructs.cs` | `gcinterface.h`, `gcinterface.ee.h` (shared structs) |
@@ -95,12 +97,20 @@ for this lives in `tests/ManagedGCEntryPointsTests.cs`.
 
 `gcinterface.dac.h` is translated except for `dac_generation` and `dac_gc_heap`, which are
 generated from the `dac_generation_fields.h` / `dac_gcheap_fields.h` field lists and therefore
-name `gcpriv.h` types, and `dac_handle_table` and `dac_handle_table_segment`, whose array fields
-are sized by the constants of `handletableconstants.h`. Those arrive with the core data
-structures and with the handle table respectively. Nothing populates a `GcDacVars` yet:
+name `gcpriv.h` types. The handle-table analogues are now present with the constants and packed
+segment schema they depend on. Nothing populates a `GcDacVars` yet:
 `PopulateDacVars` publishes the addresses of the collector's data structures, which this heap
 does not have. The managed selector therefore leaves its DAC interface version zero, making a
 DAC reject this collector as unsupported until those structures are available.
+
+The first real handle-table slice establishes the schema before behavior:
+`HandleTableConstants.cs` translates the size, mask, block, clump, and cache arithmetic of
+`handletableconstants.h`; `HandleTableStructs.cs` translates the byte-packed
+`_TableSegmentHeader`, the 64-KiB `TableSegment`, and `HandleTypeCache`. The shared
+`GCInterfaceOffsets.h` table pins their 32- and 64-bit native offsets, sizes, and alignments, and
+the managed startup verifier checks the C# layouts against the generated values. The flat
+`ManagedGCHandleManager` still supplies the running bootstrap heap until segment allocation,
+block allocation, caches, and the manager glue are ported over this schema.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

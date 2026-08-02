@@ -181,14 +181,49 @@ GC_CONST(2000000, 2000000, GCEventKeyword_GCSampledObjectAllocationLow)
 GC_CONST(3f04003, 3f04003, GCEventKeyword_All)
 
 // -----------------------------------------------------------------------------------------
+// The packed handle-table segment schema and per-type cache of handletablepriv.h.
+// -----------------------------------------------------------------------------------------
+
+//        32-bit,64-bit, class, member
+GC_OFFSET(     0,     0, _TableSegmentHeader, rgGeneration)
+GC_OFFSET(   3c0,   1e0, _TableSegmentHeader, rgAllocation)
+GC_OFFSET(   4b0,   258, _TableSegmentHeader, rgFreeMask)
+GC_OFFSET(   c30,   618, _TableSegmentHeader, rgBlockType)
+GC_OFFSET(   d20,   690, _TableSegmentHeader, rgUserData)
+GC_OFFSET(   e10,   708, _TableSegmentHeader, rgLocks)
+GC_OFFSET(   f00,   780, _TableSegmentHeader, rgTail)
+GC_OFFSET(   f0d,   78d, _TableSegmentHeader, rgHint)
+GC_OFFSET(   f1a,   79a, _TableSegmentHeader, rgFreeCount)
+GC_OFFSET(   f4e,   7ce, _TableSegmentHeader, pNextSegment)
+GC_OFFSET(   f52,   7d6, _TableSegmentHeader, pHandleTable)
+GC_OFFSET(   f57,   7df, _TableSegmentHeader, bFreeList)
+GC_OFFSET(   f58,   7e0, _TableSegmentHeader, bEmptyLine)
+GC_OFFSET(   f59,   7e1, _TableSegmentHeader, bCommitLine)
+GC_OFFSET(   f5a,   7e2, _TableSegmentHeader, bDecommitLine)
+GC_OFFSET(   f5b,   7e3, _TableSegmentHeader, bSequence)
+GC_SIZEOF(   f5c,   7e4, _TableSegmentHeader)
+GC_ALIGNOF(     1,     1, _TableSegmentHeader)
+
+GC_OFFSET(   f5c,   7e4, TableSegment, rgUnused)
+GC_OFFSET(  1000,  1000, TableSegment, rgValue)
+GC_SIZEOF( 10000, 10000, TableSegment)
+GC_ALIGNOF(     1,     1, TableSegment)
+
+GC_OFFSET(     0,     0, HandleTypeCache, rgReserveBank)
+GC_OFFSET(    fc,   1f8, HandleTypeCache, lReserveIndex)
+GC_OFFSET(   100,   200, HandleTypeCache, rgFreeBank)
+GC_OFFSET(   1fc,   3f8, HandleTypeCache, lFreeIndex)
+GC_SIZEOF(   200,   400, HandleTypeCache)
+GC_ALIGNOF(     4,     8, HandleTypeCache)
+
+// -----------------------------------------------------------------------------------------
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
 // GC_Initialize, so its layout is part of the loader protocol; the types below it are the
 // analogues the DAC reads GC state through. The managed copies are in GCInterfaceDac.cs.
 //
-// dac_generation, dac_gc_heap, dac_handle_table and dac_handle_table_segment are deliberately
-// absent: the first two are generated from dac_generation_fields.h / dac_gcheap_fields.h, whose
-// field lists name gcpriv.h types that are not ported yet, and the last two are sized by the
-// handle table constants of handletableconstants.h, which arrive with the handle table.
+// dac_generation and dac_gc_heap are deliberately absent: they are generated from
+// dac_generation_fields.h / dac_gcheap_fields.h, whose field lists name gcpriv.h types that are
+// not ported yet.
 // -----------------------------------------------------------------------------------------
 
 //        32-bit,64-bit, class, member
@@ -229,6 +264,24 @@ GC_ALIGNOF(     4,     8, dac_region_free_list)
 GC_OFFSET(     0,     0, dac_finalize_queue, m_FillPointers)
 GC_SIZEOF(    18,    30, dac_finalize_queue)
 GC_ALIGNOF(     4,     8, dac_finalize_queue)
+
+GC_OFFSET(     0,     0, dac_handle_table_segment, rgGeneration)
+GC_OFFSET(   3c0,   1e0, dac_handle_table_segment, rgAllocation)
+GC_OFFSET(   4b0,   258, dac_handle_table_segment, rgFreeMask)
+GC_OFFSET(   c30,   618, dac_handle_table_segment, rgBlockType)
+GC_OFFSET(   d20,   690, dac_handle_table_segment, rgUserData)
+GC_OFFSET(   e10,   708, dac_handle_table_segment, rgLocks)
+GC_OFFSET(   f00,   780, dac_handle_table_segment, rgTail)
+GC_OFFSET(   f0d,   78d, dac_handle_table_segment, rgHint)
+GC_OFFSET(   f1a,   79a, dac_handle_table_segment, rgFreeCount)
+GC_OFFSET(   f4e,   7ce, dac_handle_table_segment, pNextSegment)
+GC_SIZEOF(   f52,   7d6, dac_handle_table_segment)
+GC_ALIGNOF(     1,     1, dac_handle_table_segment)
+
+GC_OFFSET(     0,     0, dac_handle_table, padding)
+GC_OFFSET(    34,    38, dac_handle_table, pSegmentList)
+GC_SIZEOF(    38,    40, dac_handle_table)
+GC_ALIGNOF(     4,     8, dac_handle_table)
 
 GC_OFFSET(     0,     0, dac_handle_table_bucket, pTable)
 GC_OFFSET(     4,     8, dac_handle_table_bucket, HandleTableIndex)

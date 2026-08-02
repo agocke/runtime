@@ -43,6 +43,7 @@
     <Compile Include="GCCommonTests.cs" />
     <Compile Include="GCScanTests.cs" />
     <Compile Include="GCFoundationTests.cs" />
+    <Compile Include="HandleTableTests.cs" />
     <Compile Include="ManagedGCEntryPointsTests.cs" />
     <Compile Include="GCInterfaceLayoutTests.cs" />
     <Compile Include="GCConfigTests.cs" />
@@ -97,6 +98,8 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCScan.cs" Link="GCScan.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableConstants.cs" Link="HandleTableConstants.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableStructs.cs" Link="HandleTableStructs.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCEntryPoints.cs" Link="ManagedGCEntryPoints.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/IntroSort.cs" Link="IntroSort.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceDac.cs" Link="Interface/GCInterfaceDac.cs" />

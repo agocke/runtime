@@ -9,6 +9,7 @@
 #include "common.h"
 #include "gcenv.h"
 #include "gcheaputilities.h"
+#include "handletablepriv.h"
 
 class GCInterfaceOffsets
 {

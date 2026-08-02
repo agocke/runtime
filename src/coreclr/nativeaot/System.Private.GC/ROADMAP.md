@@ -581,7 +581,7 @@ with stages 6 and 7.
 
 ### 5. Handle table
 
-**Status: Prototype only**
+**Status: In progress**
 
 Mechanically translate:
 
@@ -595,6 +595,27 @@ Mechanically translate:
 The current flat table only supports bootstrap scenarios and must be replaced rather than
 extended into an independent design. `dac_handle_table` and `dac_handle_table_segment` of
 `gcinterface.dac.h` belong here too: their array fields are sized by `handletableconstants.h`.
+
+#### Done
+
+- `handletableconstants.h`, as `HandleTableConstants.cs`, including the target-pointer-sized
+  segment arithmetic, little-endian generation mask, block/clump/mask relationships, cache
+  bank sizing, rebalance thresholds, and invalid sentinels.
+- The load-bearing segment schema from `handletablepriv.h`, as `HandleTableStructs.cs`:
+  byte-packed `_TableSegmentHeader`, the exact 64-KiB `TableSegment`, and the naturally aligned
+  `HandleTypeCache`. `dac_handle_table_segment` and `dac_handle_table` are translated alongside
+  them. Their 32- and 64-bit offsets, sizes, and alignments are pinned in
+  `GCInterfaceOffsets.h`, asserted against the native headers during the runtime build, checked
+  again by `GCInterfaceLayout` during managed collector startup, and covered directly by xUnit.
+
+#### Remaining
+
+Port segment initialization/allocation/freeing and pointer-to-segment mapping next, then the
+block allocator/free chains, per-type caches, table entrypoints, and manager/store glue. The
+current flat `ManagedGCHandleManager` remains the runtime implementation until those pieces can
+replace it as one coherent allocation path. Handle scanning, weak/dependent processing,
+write-barrier generation updates, and multi-heap table selection remain blocked on the core heap
+and collection state of stages 6-10.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.

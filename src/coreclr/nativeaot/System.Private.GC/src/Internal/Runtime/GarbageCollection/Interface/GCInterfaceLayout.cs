@@ -17,7 +17,7 @@
 // headers themselves, by tools/verify-gc-interface-vtables.py during the native build.
 //
 // The check is a runtime one because C# has no compile-time offsetof, but it is cheap, has no
-// dependencies, and is expected to be called once during GC startup in checked builds.
+// dependencies, and is called once during GC startup.
 
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -32,6 +32,7 @@ namespace Internal.Runtime.GarbageCollection
         public static bool Verify() =>
             VerifySharedStructs()
             && VerifyEnvironmentTypes()
+            && VerifyHandleTableTypes()
             && VerifyDacTypes()
             && VerifyVtables()
             && VerifyEnumSizes()
@@ -199,6 +200,55 @@ namespace Internal.Runtime.GarbageCollection
             return true;
         }
 
+        private static bool VerifyHandleTableTypes()
+        {
+            byte storage = 0;
+            _TableSegmentHeader* header = (_TableSegmentHeader*)&storage;
+            if (sizeof(_TableSegmentHeader) != GCInterfaceOffsets.SIZEOF___TableSegmentHeader
+                || AlignOf<_TableSegmentHeader>() != GCInterfaceOffsets.ALIGNOF___TableSegmentHeader
+                || OffsetOf(header, &header->rgGeneration[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgGeneration
+                || OffsetOf(header, &header->rgAllocation[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgAllocation
+                || OffsetOf(header, &header->rgFreeMask[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgFreeMask
+                || OffsetOf(header, &header->rgBlockType[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgBlockType
+                || OffsetOf(header, &header->rgUserData[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgUserData
+                || OffsetOf(header, &header->rgLocks[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgLocks
+                || OffsetOf(header, &header->rgTail[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgTail
+                || OffsetOf(header, &header->rgHint[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgHint
+                || OffsetOf(header, &header->rgFreeCount[0]) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__rgFreeCount
+                || OffsetOf(header, &header->pNextSegment) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__pNextSegment
+                || OffsetOf(header, &header->pHandleTable) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__pHandleTable
+                || OffsetOf(header, &header->bFreeList) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__bFreeList
+                || OffsetOf(header, &header->bEmptyLine) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__bEmptyLine
+                || OffsetOf(header, &header->bCommitLine) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__bCommitLine
+                || OffsetOf(header, &header->bDecommitLine) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__bDecommitLine
+                || OffsetOf(header, &header->bSequence) != GCInterfaceOffsets.OFFSETOF___TableSegmentHeader__bSequence)
+            {
+                return false;
+            }
+
+            TableSegment* segment = (TableSegment*)&storage;
+            if (sizeof(TableSegment) != GCInterfaceOffsets.SIZEOF__TableSegment
+                || AlignOf<TableSegment>() != GCInterfaceOffsets.ALIGNOF__TableSegment
+                || OffsetOf(segment, &segment->rgUnused[0]) != GCInterfaceOffsets.OFFSETOF__TableSegment__rgUnused
+                || OffsetOf(segment, &segment->rgValue[0]) != GCInterfaceOffsets.OFFSETOF__TableSegment__rgValue)
+            {
+                return false;
+            }
+
+            HandleTypeCache* cache = (HandleTypeCache*)&storage;
+            if (sizeof(HandleTypeCache) != GCInterfaceOffsets.SIZEOF__HandleTypeCache
+                || AlignOf<HandleTypeCache>() != GCInterfaceOffsets.ALIGNOF__HandleTypeCache
+                || OffsetOf(cache, &cache->rgReserveBank[0]) != GCInterfaceOffsets.OFFSETOF__HandleTypeCache__rgReserveBank
+                || OffsetOf(cache, &cache->lReserveIndex) != GCInterfaceOffsets.OFFSETOF__HandleTypeCache__lReserveIndex
+                || OffsetOf(cache, &cache->rgFreeBank[0]) != GCInterfaceOffsets.OFFSETOF__HandleTypeCache__rgFreeBank
+                || OffsetOf(cache, &cache->lFreeIndex) != GCInterfaceOffsets.OFFSETOF__HandleTypeCache__lFreeIndex)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// The types of the environment layer -- gcenv.structs.h and gcenv.os.h. They do not
         /// cross the GC/EE boundary, but they do cross the boundary between the managed GC and
@@ -302,6 +352,33 @@ namespace Internal.Runtime.GarbageCollection
                 || OffsetOf(&finalizeQueue, &finalizeQueue.m_FillPointers3) != GCInterfaceOffsets.OFFSETOF__dac_finalize_queue__m_FillPointers + (3 * sizeof(void*))
                 || OffsetOf(&finalizeQueue, &finalizeQueue.m_FillPointers4) != GCInterfaceOffsets.OFFSETOF__dac_finalize_queue__m_FillPointers + (4 * sizeof(void*))
                 || OffsetOf(&finalizeQueue, &finalizeQueue.m_FillPointers5) != GCInterfaceOffsets.OFFSETOF__dac_finalize_queue__m_FillPointers + (5 * sizeof(void*)))
+            {
+                return false;
+            }
+
+            byte handleTableStorage = 0;
+            dac_handle_table_segment* handleTableSegment = (dac_handle_table_segment*)&handleTableStorage;
+            if (sizeof(dac_handle_table_segment) != GCInterfaceOffsets.SIZEOF__dac_handle_table_segment
+                || AlignOf<dac_handle_table_segment>() != GCInterfaceOffsets.ALIGNOF__dac_handle_table_segment
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgGeneration[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgGeneration
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgAllocation[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgAllocation
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgFreeMask[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgFreeMask
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgBlockType[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgBlockType
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgUserData[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgUserData
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgLocks[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgLocks
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgTail[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgTail
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgHint[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgHint
+                || OffsetOf(handleTableSegment, &handleTableSegment->rgFreeCount[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__rgFreeCount
+                || OffsetOf(handleTableSegment, &handleTableSegment->pNextSegment) != GCInterfaceOffsets.OFFSETOF__dac_handle_table_segment__pNextSegment)
+            {
+                return false;
+            }
+
+            dac_handle_table handleTable;
+            if (sizeof(dac_handle_table) != GCInterfaceOffsets.SIZEOF__dac_handle_table
+                || AlignOf<dac_handle_table>() != GCInterfaceOffsets.ALIGNOF__dac_handle_table
+                || OffsetOf(&handleTable, &handleTable.padding[0]) != GCInterfaceOffsets.OFFSETOF__dac_handle_table__padding
+                || OffsetOf(&handleTable, &handleTable.pSegmentList) != GCInterfaceOffsets.OFFSETOF__dac_handle_table__pSegmentList)
             {
                 return false;
             }
@@ -648,11 +725,7 @@ namespace Internal.Runtime.GarbageCollection
         /// places it after a single byte.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int AlignOf<T>() where T : unmanaged
-        {
-            AlignProbe<T> probe = default;
-            return OffsetOf(&probe, &probe.Value);
-        }
+        private static int AlignOf<T>() where T : unmanaged => sizeof(AlignProbe<T>) - sizeof(T);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct AlignProbe<T> where T : unmanaged

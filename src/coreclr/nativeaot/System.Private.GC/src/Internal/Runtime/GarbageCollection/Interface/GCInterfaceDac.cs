@@ -16,13 +16,11 @@
 // interface: asserted against the C++ header by the native build and against these types by
 // GCInterfaceLayout.
 //
-// Two groups of the header's types are deliberately absent, because they cannot be translated
-// before the modules that define their shape are ported:
+// One group of the header's types is deliberately absent, because it cannot be translated
+// before the modules that define its shape are ported:
 //
 //   * dac_generation and dac_gc_heap are generated from dac_generation_fields.h and
 //     dac_gcheap_fields.h, whose field lists name gcpriv.h types.
-//   * dac_handle_table and dac_handle_table_segment are sized by the constants of
-//     handletableconstants.h, which are part of the handle table.
 //
 // Nothing populates a GcDacVars yet: PopulateDacVars publishes the addresses of the collector's
 // data structures, which do not exist in this GC. The runtime writes the DAC interface version
@@ -180,13 +178,31 @@ namespace Internal.Runtime.GarbageCollection
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct dac_handle_table
+    {
+        public fixed uint padding[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+        public dac_handle_table_segment* pSegmentList;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    internal unsafe struct dac_handle_table_segment
+    {
+        public fixed byte rgGeneration[HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT * sizeof(uint)];
+        public fixed byte rgAllocation[HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT];
+        public fixed uint rgFreeMask[HandleTableConstants.HANDLE_MASKS_PER_SEGMENT];
+        public fixed byte rgBlockType[HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT];
+        public fixed byte rgUserData[HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT];
+        public fixed byte rgLocks[HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT];
+        public fixed byte rgTail[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+        public fixed byte rgHint[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+        public fixed uint rgFreeCount[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+        public dac_handle_table_segment* pNextSegment;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct dac_handle_table_bucket
     {
-        /// <summary>
-        /// Points at the <c>dac_handle_table</c> array of the bucket. The element type is not
-        /// translated yet because its layout depends on the handle table constants.
-        /// </summary>
-        public void** pTable;
+        public dac_handle_table** pTable;
 
         public uint HandleTableIndex;
     }
