@@ -38,11 +38,13 @@
     <Compile Include="GCSleepYieldTests.cs" />
     <Compile Include="GCTimerTests.cs" />
     <Compile Include="GCProcessorTests.cs" />
+    <Compile Include="GCCommonTests.cs" />
     <Compile Include="GCFoundationTests.cs" />
     <Compile Include="ManagedGCEntryPointsTests.cs" />
     <Compile Include="GCInterfaceLayoutTests.cs" />
     <Compile Include="GCConfigTests.cs" />
     <Compile Include="ManagedGCEntryPoints.TestHost.cs" />
+    <Compile Include="GCCommon.TestHost.cs" />
     <!-- The environment layer. Its OS calls are [RuntimeImport] declarations, which resolve
          only inside a NativeAOT image; the tests here drive the parts that are pure
          computation and check the layouts of the types that cross into the native gcenv. -->
@@ -87,6 +89,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/Interlocked.cs" Link="Environment/Interlocked.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventEnums.cs" Link="GCEventEnums.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCEntryPoints.cs" Link="ManagedGCEntryPoints.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/IntroSort.cs" Link="IntroSort.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceDac.cs" Link="Interface/GCInterfaceDac.cs" />

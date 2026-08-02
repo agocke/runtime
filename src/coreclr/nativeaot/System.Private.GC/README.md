@@ -45,6 +45,7 @@ Ported so far:
 | `Interface/GCInterfaceDac.cs` | `gcinterface.dac.h` (`GcDacVars` and the DAC analogue types) |
 | `Interface/GCInterfaceLayout.cs` | layout check against `GCInterfaceOffsets.h` |
 | `Interface/GCToEEInterface.cs` | `gcenv.ee.standalone.inl` |
+| `GCCommon.cs` | dependency-closed helpers from `gccommon.cpp` |
 | `GCConfig.cs` | `gcconfig.h`, `gcconfig.cpp` |
 | `ManagedGCEntryPoints.cs` | `gcload.cpp` (`GC_VersionInfo`, `GC_Initialize`) |
 | `Environment/GCEnv.Base.cs` | `env/gcenv.base.h`, plus `ParseIndexOrRange` of `gcconfig.cpp` |
@@ -650,9 +651,9 @@ or, for an in-tree smoke test, see `src/tests/nativeaot/SmokeTests/ManagedGC`.
 
 The application then runs entirely on the C# heap: startup, module frozen object segments,
 statics, threads and every allocation. `IlcManagedGC` selects `Runtime.ManagedGC`, which excludes
-the C++ collector, native handle table, GC loader, bridge, scanner, event status, and software
-write watch. Applications that do not opt in continue to link `Runtime.WorkstationGC` or
-`Runtime.ServerGC`.
+the C++ collector, native handle table, GC loader, common helpers, bridge, scanner, event status,
+and software write watch. Applications that do not opt in continue to link
+`Runtime.WorkstationGC` or `Runtime.ServerGC`.
 
 ### How the linkage works
 
@@ -685,8 +686,9 @@ to define equivalents that the linker can resolve:
 * `Runtime.ManagedGC` contains the NativeAOT runtime support still needed by managed-GC
   applications, but omits the C++ collector object files and native modules already replaced by
   managed code. `FEATURE_MANAGED_GC` also removes the default `GC_Initialize` dependency from
-  `gcheaputilities.cpp`, and the managed runtime source list omits `gc/gcload.cpp`, preventing
-  static archive extraction from pulling the collector back in.
+  `gcheaputilities.cpp`, and the managed runtime source list omits `gc/gcload.cpp` and
+  `gc/gccommon.cpp`, preventing static archive extraction from pulling those native
+  implementations back in.
 
 `IlcManagedGC` is rejected on x86: `WindowsNodeMangler.ExternMethod` leaves runtime export names
 undecorated, while a C declaration of the same function references the cdecl-decorated

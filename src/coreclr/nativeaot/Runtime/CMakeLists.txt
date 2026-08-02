@@ -381,6 +381,7 @@ set(MANAGED_GC_RUNTIME_SOURCES ${COMMON_RUNTIME_SOURCES})
 list(REMOVE_ITEM MANAGED_GC_RUNTIME_SOURCES
     ${GC_DIR}/gceventstatus.cpp
     ${GC_DIR}/gcbridge.cpp
+    ${GC_DIR}/gccommon.cpp
     ${GC_DIR}/gcload.cpp
     ${GC_DIR}/gchandletable.cpp
     ${GC_DIR}/gcscan.cpp

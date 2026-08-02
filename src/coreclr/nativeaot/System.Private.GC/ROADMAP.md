@@ -482,6 +482,13 @@ software write watch, and event plumbing no longer depend on placeholder impleme
   GC/EE interface version as a newer DAC format. Focused tests in
   `tests/ManagedGCEntryPointsTests.cs` verify ABI/version reporting and the null-clr/layout/OOM
   failure paths directly.
+- The dependency-closed `GetHighPrecisionTimeStamp` leaf of `gccommon.cpp`, as
+  `GCCommon.GetHighPrecisionTimeStamp`. It preserves the same lazily cached
+  counter-to-microsecond multiplier and floating-point truncation. Focused tests substitute the
+  already-ported performance counter and frequency, pin the scaling at truncation boundaries,
+  and verify that the frequency is read only once. `Runtime.ManagedGC` now omits
+  `gccommon.cpp`; the globals and helpers needed by later collector modules will be translated
+  into `GCCommon.cs` as those consumers arrive.
 
 #### Remaining
 
@@ -489,8 +496,11 @@ For `gcload.cpp`, what remains native is outside the managed-GC runtime surface:
 still used by CoreCLR and by NativeAOT's workstation/server GC archives, which still need the
 native workstation/server heap construction and DAC population paths. `Runtime.ManagedGC` omits
 `gcload.cpp` and links `clrgc.managed.cpp` instead, so these native paths are not reachable when
-`IlcManagedGC=true`. `gccommon.cpp`, `gcscan.cpp`, `softwarewritewatch.cpp`,
-`gcevent_serializers.h` and `gcevents.h` are not started. `GCConfig::RefreshHeapHardLimitSettings`
+`IlcManagedGC=true`. The rest of `gccommon.cpp`, `gcscan.cpp`, `softwarewritewatch.cpp`,
+`gcevent_serializers.h` and `gcevents.h` are not started. The remaining `gccommon.cpp` state is
+either compiled out of NativeAOT or belongs to the core heap and region modules in stages 6 and
+7; `log_init_error_to_host` also needs the allocation-free native-formatting support used by its
+callers. `GCConfig::RefreshHeapHardLimitSettings`
 and `GetLOHThreshold` have no managed call site yet because the collector state their C++ callers
 -- `gc_heap::refresh_memory_limit` and `init_semi_shared` -- work on does not exist; they arrive
 with stages 6 and 7.
