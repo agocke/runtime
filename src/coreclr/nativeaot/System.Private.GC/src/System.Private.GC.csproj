@@ -50,6 +50,8 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCCommon.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCConfig.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventEnums.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCEvents.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCEventSerializer.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventStatus.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCHeapCriticalRegion.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCHeapMemory.cs" />

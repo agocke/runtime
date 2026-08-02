@@ -545,6 +545,18 @@ software write watch, and event plumbing no longer depend on placeholder impleme
   `GCToEEInterface.GcScanRoots`, so ILC does not add a reverse-P/Invoke prologue to callbacks
   invoked by the cooperative-mode EE. Direct tests cover nested invalid regions and verify
   every root-scan argument passed to that wrapper.
+- `gcevent_serializers.h`, `gcevents.h`, and the event-firing half of `gceventstatus.h`, as
+  `GCEventSerializer.cs` and `GCEvents.cs`. The primitive serializers preserve the native
+  sizes, cursor movement, little-endian integral payloads, and raw float representation.
+  Because C# has no x-macro facility, all 37 known-event and four dynamic-event enable/fire
+  pairs are written out in the order of `gcevents.h`; tests parse that native table and require
+  every expanded name to remain present. Known events dispatch through their exact
+  `IGCToCLREventSink` vtable slot. The current dynamic rows stack-serialize the generated
+  `uint16_t` version followed by every argument from their native `diagnostics.cpp` or
+  `dynamic_heap_count.cpp` call site, and pass a null-terminated native event name. The tests
+  substitute the EE boundary and verify every payload field and offset, so both suppression by
+  provider state and actual known/dynamic dispatch run directly without trying to call a managed
+  callback through a `SuppressGCTransition` unmanaged function pointer.
 
 #### Remaining
 
@@ -552,9 +564,10 @@ For `gcload.cpp`, what remains native is outside the managed-GC runtime surface:
 still used by CoreCLR and by NativeAOT's workstation/server GC archives, which still need the
 native workstation/server heap construction and DAC population paths. `Runtime.ManagedGC` omits
 `gcload.cpp` and links `clrgc.managed.cpp` instead, so these native paths are not reachable when
-`IlcManagedGC=true`. The rest of `gccommon.cpp` and `gcscan.cpp`, plus
-`gcevent_serializers.h` and
-`gcevents.h` are not started. `softwarewritewatch.h`/`.cpp` are translated in full except for the
+`IlcManagedGC=true`. The rest of `gccommon.cpp` and `gcscan.cpp` is blocked on later heap and
+handle-table stages. The disabled `TRACE_GC_EVENT_STATE` debug dump remains with diagnostics
+because it requires string-free logging; all current event serializers and expanded event
+helpers are translated. `softwarewritewatch.h`/`.cpp` are translated in full except for the
 declared-but-undefined `GetTableStartByteOffset`; nothing in `Runtime.ManagedGC` calls
 `SoftwareWriteWatch` yet, since its only caller in the C++ is `card_table.cpp`, which arrives with
 the core heap and region modules of stage 7 -- the port is ready for those call sites when they

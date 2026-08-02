@@ -54,6 +54,49 @@ internal sealed class ConfigRequest
 
 internal static unsafe class GCToEEInterface
 {
+    internal static class FiredEvent
+    {
+        public const string None = nameof(None);
+        public const string GCStart_V2 = nameof(GCStart_V2);
+        public const string GCEnd_V1 = nameof(GCEnd_V1);
+        public const string GCGenerationRange = nameof(GCGenerationRange);
+        public const string GCHeapStats_V2 = nameof(GCHeapStats_V2);
+        public const string GCCreateSegment_V1 = nameof(GCCreateSegment_V1);
+        public const string GCFreeSegment_V1 = nameof(GCFreeSegment_V1);
+        public const string GCCreateConcurrentThread_V1 = nameof(GCCreateConcurrentThread_V1);
+        public const string GCTerminateConcurrentThread_V1 = nameof(GCTerminateConcurrentThread_V1);
+        public const string GCTriggered = nameof(GCTriggered);
+        public const string GCMarkWithType = nameof(GCMarkWithType);
+        public const string GCJoin_V2 = nameof(GCJoin_V2);
+        public const string GCGlobalHeapHistory_V4 = nameof(GCGlobalHeapHistory_V4);
+        public const string GCAllocationTick_V1 = nameof(GCAllocationTick_V1);
+        public const string GCAllocationTick_V4 = nameof(GCAllocationTick_V4);
+        public const string PinObjectAtGCTime = nameof(PinObjectAtGCTime);
+        public const string PinPlugAtGCTime = nameof(PinPlugAtGCTime);
+        public const string GCPerHeapHistory_V3 = nameof(GCPerHeapHistory_V3);
+        public const string GCLOHCompact = nameof(GCLOHCompact);
+        public const string GCFitBucketInfo = nameof(GCFitBucketInfo);
+        public const string BGCBegin = nameof(BGCBegin);
+        public const string BGC1stNonConEnd = nameof(BGC1stNonConEnd);
+        public const string BGC1stConEnd = nameof(BGC1stConEnd);
+        public const string BGC1stSweepEnd = nameof(BGC1stSweepEnd);
+        public const string BGC2ndNonConBegin = nameof(BGC2ndNonConBegin);
+        public const string BGC2ndNonConEnd = nameof(BGC2ndNonConEnd);
+        public const string BGC2ndConBegin = nameof(BGC2ndConBegin);
+        public const string BGC2ndConEnd = nameof(BGC2ndConEnd);
+        public const string BGCDrainMark = nameof(BGCDrainMark);
+        public const string BGCRevisit = nameof(BGCRevisit);
+        public const string BGCOverflow_V1 = nameof(BGCOverflow_V1);
+        public const string BGCAllocWaitBegin = nameof(BGCAllocWaitBegin);
+        public const string BGCAllocWaitEnd = nameof(BGCAllocWaitEnd);
+        public const string GCFullNotify_V1 = nameof(GCFullNotify_V1);
+        public const string SetGCHandle = nameof(SetGCHandle);
+        public const string PrvSetGCHandle = nameof(PrvSetGCHandle);
+        public const string DestroyGCHandle = nameof(DestroyGCHandle);
+        public const string PrvDestroyGCHandle = nameof(PrvDestroyGCHandle);
+        public const string Dynamic = nameof(Dynamic);
+    }
+
     internal static void* LastInitializedGCToCLR { get; private set; }
 
     internal static int InitializeCallCount { get; private set; }
@@ -96,6 +139,12 @@ internal static unsafe class GCToEEInterface
 
     internal static ScanContext* LastGcScanRootsContext { get; private set; }
 
+    internal static string LastFiredEvent { get; private set; }
+
+    internal static string LastDynamicEventName { get; private set; }
+
+    internal static byte[] LastDynamicEventPayload { get; private set; }
+
     internal static void Reset()
     {
         LastInitializedGCToCLR = null;
@@ -114,6 +163,9 @@ internal static unsafe class GCToEEInterface
         LastGcScanRootsCondemned = 0;
         LastGcScanRootsMaxGeneration = 0;
         LastGcScanRootsContext = null;
+        LastFiredEvent = FiredEvent.None;
+        LastDynamicEventName = null;
+        LastDynamicEventPayload = null;
 
         foreach (IntPtr outstanding in OutstandingStrings)
         {
@@ -153,6 +205,51 @@ internal static unsafe class GCToEEInterface
         LastGcScanRootsMaxGeneration = max_gen;
         LastGcScanRootsContext = sc;
     }
+
+    public static void FireDynamicEvent(byte* name, void* payload, uint payloadSize)
+    {
+        LastFiredEvent = FiredEvent.Dynamic;
+        LastDynamicEventName = Marshal.PtrToStringUTF8((nint)name);
+        LastDynamicEventPayload = new ReadOnlySpan<byte>(payload, checked((int)payloadSize)).ToArray();
+    }
+
+    public static void FireGCStart_V2(uint count, uint depth, uint reason, uint type) => LastFiredEvent = FiredEvent.GCStart_V2;
+    public static void FireGCEnd_V1(uint count, uint depth) => LastFiredEvent = FiredEvent.GCEnd_V1;
+    public static void FireGCGenerationRange(byte generation, void* rangeStart, ulong rangeUsedLength, ulong rangeReservedLength) => LastFiredEvent = FiredEvent.GCGenerationRange;
+    public static void FireGCHeapStats_V2(ulong generationSize0, ulong totalPromotedSize0, ulong generationSize1, ulong totalPromotedSize1, ulong generationSize2, ulong totalPromotedSize2, ulong generationSize3, ulong totalPromotedSize3, ulong generationSize4, ulong totalPromotedSize4, ulong finalizationPromotedSize, ulong finalizationPromotedCount, uint pinnedObjectCount, uint sinkBlockCount, uint gcHandleCount) => LastFiredEvent = FiredEvent.GCHeapStats_V2;
+    public static void FireGCCreateSegment_V1(void* address, nuint size, uint type) => LastFiredEvent = FiredEvent.GCCreateSegment_V1;
+    public static void FireGCFreeSegment_V1(void* address) => LastFiredEvent = FiredEvent.GCFreeSegment_V1;
+    public static void FireGCCreateConcurrentThread_V1() => LastFiredEvent = FiredEvent.GCCreateConcurrentThread_V1;
+    public static void FireGCTerminateConcurrentThread_V1() => LastFiredEvent = FiredEvent.GCTerminateConcurrentThread_V1;
+    public static void FireGCTriggered(uint reason) => LastFiredEvent = FiredEvent.GCTriggered;
+    public static void FireGCMarkWithType(uint heapNum, uint type, ulong bytes) => LastFiredEvent = FiredEvent.GCMarkWithType;
+    public static void FireGCJoin_V2(uint heap, uint joinTime, uint joinType, uint joinId) => LastFiredEvent = FiredEvent.GCJoin_V2;
+    public static void FireGCGlobalHeapHistory_V4(ulong finalYoungestDesired, int numHeaps, uint condemnedGeneration, uint gen0ReductionCount, uint reason, uint globalMechanisms, uint pauseMode, uint memoryPressure, uint condemnReasons0, uint condemnReasons1, uint count, uint valuesLen, void* values) => LastFiredEvent = FiredEvent.GCGlobalHeapHistory_V4;
+    public static void FireGCAllocationTick_V1(uint allocationAmount, uint allocationKind) => LastFiredEvent = FiredEvent.GCAllocationTick_V1;
+    public static void FireGCAllocationTick_V4(ulong allocationAmount, uint allocationKind, uint heapIndex, void* objectAddress, ulong objectSize) => LastFiredEvent = FiredEvent.GCAllocationTick_V4;
+    public static void FirePinObjectAtGCTime(void* objectAddress, byte** objectHandle) => LastFiredEvent = FiredEvent.PinObjectAtGCTime;
+    public static void FirePinPlugAtGCTime(byte* plugStart, byte* plugEnd, byte* gapBeforeSize) => LastFiredEvent = FiredEvent.PinPlugAtGCTime;
+    public static void FireGCPerHeapHistory_V3(void* freeListAllocated, void* freeListRejected, void* endOfSegAllocated, void* condemnedAllocated, void* pinnedAllocated, void* pinnedAllocatedAdvance, uint runningFreeListEfficiency, uint condemnReasons0, uint condemnReasons1, uint compactMechanisms, uint expandMechanisms, uint heapIndex, void* extraGen0Commit, uint count, uint valuesLen, void* values) => LastFiredEvent = FiredEvent.GCPerHeapHistory_V3;
+    public static void FireGCLOHCompact(ushort count, uint valuesLen, void* values) => LastFiredEvent = FiredEvent.GCLOHCompact;
+    public static void FireGCFitBucketInfo(ushort kind, nuint totalSize, ushort count, uint valuesLen, void* values) => LastFiredEvent = FiredEvent.GCFitBucketInfo;
+    public static void FireBGCBegin() => LastFiredEvent = FiredEvent.BGCBegin;
+    public static void FireBGC1stNonConEnd() => LastFiredEvent = FiredEvent.BGC1stNonConEnd;
+    public static void FireBGC1stConEnd() => LastFiredEvent = FiredEvent.BGC1stConEnd;
+    public static void FireBGC1stSweepEnd(uint genNumber) => LastFiredEvent = FiredEvent.BGC1stSweepEnd;
+    public static void FireBGC2ndNonConBegin() => LastFiredEvent = FiredEvent.BGC2ndNonConBegin;
+    public static void FireBGC2ndNonConEnd() => LastFiredEvent = FiredEvent.BGC2ndNonConEnd;
+    public static void FireBGC2ndConBegin() => LastFiredEvent = FiredEvent.BGC2ndConBegin;
+    public static void FireBGC2ndConEnd() => LastFiredEvent = FiredEvent.BGC2ndConEnd;
+    public static void FireBGCDrainMark(ulong objects) => LastFiredEvent = FiredEvent.BGCDrainMark;
+    public static void FireBGCRevisit(ulong pages, ulong objects, uint isLarge) => LastFiredEvent = FiredEvent.BGCRevisit;
+    public static void FireBGCOverflow_V1(ulong min, ulong max, ulong objects, uint isLarge, uint genNumber) => LastFiredEvent = FiredEvent.BGCOverflow_V1;
+    public static void FireBGCAllocWaitBegin(uint reason) => LastFiredEvent = FiredEvent.BGCAllocWaitBegin;
+    public static void FireBGCAllocWaitEnd(uint reason) => LastFiredEvent = FiredEvent.BGCAllocWaitEnd;
+    public static void FireGCFullNotify_V1(uint genNumber, uint isAlloc) => LastFiredEvent = FiredEvent.GCFullNotify_V1;
+    public static void FireSetGCHandle(void* handleId, void* objectId, uint kind, uint generation) => LastFiredEvent = FiredEvent.SetGCHandle;
+    public static void FirePrvSetGCHandle(void* handleId, void* objectId, uint kind, uint generation) => LastFiredEvent = FiredEvent.PrvSetGCHandle;
+    public static void FireDestroyGCHandle(void* handleId) => LastFiredEvent = FiredEvent.DestroyGCHandle;
+    public static void FirePrvDestroyGCHandle(void* handleId) => LastFiredEvent = FiredEvent.PrvDestroyGCHandle;
 
     internal static void SetPrivateValue(string privateKey, ulong value) => s_privateValues[privateKey] = value;
 

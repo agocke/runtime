@@ -37,6 +37,8 @@ Ported so far:
 | C# file | Ported from |
 | --- | --- |
 | `GCEventEnums.cs` | `gcinterface.h` (event level/keyword/provider enums) |
+| `GCEvents.cs` | `gceventstatus.h`, expanded `gcevents.h` event helpers |
+| `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
@@ -100,11 +102,16 @@ structures and with the handle table respectively. Nothing populates a `GcDacVar
 does not have. The managed selector therefore leaves its DAC interface version zero, making a
 DAC reject this collector as unsupported until those structures are available.
 
-`gceventstatus.h` is ported except for two pieces that are not leaves. `DebugDumpState` is a
-`fprintf` dump behind the commented-out `TRACE_GC_EVENT_STATE`, and there is no string-free way
-to write it until the GC's tracing support is ported. `FireDynamicEvent` and the
-`KNOWN_EVENT`/`DYNAMIC_EVENT`/`EVENT_ENABLED`/`FIRE_EVENT` macros need `gcevents.h` and
-`gcevent_serializers.h`, which belong with the rest of the standalone GC event plumbing.
+`gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
+`GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event
+checks its provider state and calls the corresponding `IGCToCLREventSink` slot, while each of
+the four current dynamic events emits its null-terminated native name, the serialized
+`uint16_t` version, and the arguments from its native call site in order. The serializer
+preserves the native primitive sizes, cursor advancement, little-endian integer payloads, and
+raw `float` representation. NativeAOT's supported targets are little-endian; when a big-endian
+target exists, the three integral serializers need the native header's `BIGENDIAN` byte-swap
+branch. The only omitted body is `DebugDumpState`, an `fprintf` dump behind the disabled
+`TRACE_GC_EVENT_STATE` define; it waits for the GC's string-free tracing support.
 
 ## The environment layer
 

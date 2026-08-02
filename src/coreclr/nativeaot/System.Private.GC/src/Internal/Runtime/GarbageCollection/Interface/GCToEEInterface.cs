@@ -106,6 +106,52 @@ namespace Internal.Runtime.GarbageCollection
 
         public static void* EventSink() => Vtable->EventSink(g_theGCToCLR);
 
+        private static IGCToCLREventSinkVtable* EventSinkVtable(void* eventSink) => *(IGCToCLREventSinkVtable**)eventSink;
+
+        public static void FireDynamicEvent(byte* name, void* payload, uint payloadSize)
+        {
+            void* eventSink = EventSink();
+            EventSinkVtable(eventSink)->FireDynamicEvent(eventSink, name, payload, payloadSize);
+        }
+
+        public static void FireGCStart_V2(uint count, uint depth, uint reason, uint type) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCStart_V2(sink, count, depth, reason, type); }
+        public static void FireGCEnd_V1(uint count, uint depth) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCEnd_V1(sink, count, depth); }
+        public static void FireGCGenerationRange(byte generation, void* rangeStart, ulong rangeUsedLength, ulong rangeReservedLength) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCGenerationRange(sink, generation, rangeStart, rangeUsedLength, rangeReservedLength); }
+        public static void FireGCHeapStats_V2(ulong generationSize0, ulong totalPromotedSize0, ulong generationSize1, ulong totalPromotedSize1, ulong generationSize2, ulong totalPromotedSize2, ulong generationSize3, ulong totalPromotedSize3, ulong generationSize4, ulong totalPromotedSize4, ulong finalizationPromotedSize, ulong finalizationPromotedCount, uint pinnedObjectCount, uint sinkBlockCount, uint gcHandleCount) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCHeapStats_V2(sink, generationSize0, totalPromotedSize0, generationSize1, totalPromotedSize1, generationSize2, totalPromotedSize2, generationSize3, totalPromotedSize3, generationSize4, totalPromotedSize4, finalizationPromotedSize, finalizationPromotedCount, pinnedObjectCount, sinkBlockCount, gcHandleCount); }
+        public static void FireGCCreateSegment_V1(void* address, nuint size, uint type) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCCreateSegment_V1(sink, address, size, type); }
+        public static void FireGCFreeSegment_V1(void* address) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCFreeSegment_V1(sink, address); }
+        public static void FireGCCreateConcurrentThread_V1() { void* sink = EventSink(); EventSinkVtable(sink)->FireGCCreateConcurrentThread_V1(sink); }
+        public static void FireGCTerminateConcurrentThread_V1() { void* sink = EventSink(); EventSinkVtable(sink)->FireGCTerminateConcurrentThread_V1(sink); }
+        public static void FireGCTriggered(uint reason) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCTriggered(sink, reason); }
+        public static void FireGCMarkWithType(uint heapNum, uint type, ulong bytes) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCMarkWithType(sink, heapNum, type, bytes); }
+        public static void FireGCJoin_V2(uint heap, uint joinTime, uint joinType, uint joinId) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCJoin_V2(sink, heap, joinTime, joinType, joinId); }
+        public static void FireGCGlobalHeapHistory_V4(ulong finalYoungestDesired, int numHeaps, uint condemnedGeneration, uint gen0ReductionCount, uint reason, uint globalMechanisms, uint pauseMode, uint memoryPressure, uint condemnReasons0, uint condemnReasons1, uint count, uint valuesLen, void* values) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCGlobalHeapHistory_V4(sink, finalYoungestDesired, numHeaps, condemnedGeneration, gen0ReductionCount, reason, globalMechanisms, pauseMode, memoryPressure, condemnReasons0, condemnReasons1, count, valuesLen, values); }
+        public static void FireGCAllocationTick_V1(uint allocationAmount, uint allocationKind) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCAllocationTick_V1(sink, allocationAmount, allocationKind); }
+        public static void FireGCAllocationTick_V4(ulong allocationAmount, uint allocationKind, uint heapIndex, void* objectAddress, ulong objectSize) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCAllocationTick_V4(sink, allocationAmount, allocationKind, heapIndex, objectAddress, objectSize); }
+        public static void FirePinObjectAtGCTime(void* objectAddress, byte** objectHandle) { void* sink = EventSink(); EventSinkVtable(sink)->FirePinObjectAtGCTime(sink, objectAddress, objectHandle); }
+        public static void FirePinPlugAtGCTime(byte* plugStart, byte* plugEnd, byte* gapBeforeSize) { void* sink = EventSink(); EventSinkVtable(sink)->FirePinPlugAtGCTime(sink, plugStart, plugEnd, gapBeforeSize); }
+        public static void FireGCPerHeapHistory_V3(void* freeListAllocated, void* freeListRejected, void* endOfSegAllocated, void* condemnedAllocated, void* pinnedAllocated, void* pinnedAllocatedAdvance, uint runningFreeListEfficiency, uint condemnReasons0, uint condemnReasons1, uint compactMechanisms, uint expandMechanisms, uint heapIndex, void* extraGen0Commit, uint count, uint valuesLen, void* values) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCPerHeapHistory_V3(sink, freeListAllocated, freeListRejected, endOfSegAllocated, condemnedAllocated, pinnedAllocated, pinnedAllocatedAdvance, runningFreeListEfficiency, condemnReasons0, condemnReasons1, compactMechanisms, expandMechanisms, heapIndex, extraGen0Commit, count, valuesLen, values); }
+        public static void FireGCLOHCompact(ushort count, uint valuesLen, void* values) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCLOHCompact(sink, count, valuesLen, values); }
+        public static void FireGCFitBucketInfo(ushort kind, nuint totalSize, ushort count, uint valuesLen, void* values) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCFitBucketInfo(sink, kind, totalSize, count, valuesLen, values); }
+        public static void FireBGCBegin() { void* sink = EventSink(); EventSinkVtable(sink)->FireBGCBegin(sink); }
+        public static void FireBGC1stNonConEnd() { void* sink = EventSink(); EventSinkVtable(sink)->FireBGC1stNonConEnd(sink); }
+        public static void FireBGC1stConEnd() { void* sink = EventSink(); EventSinkVtable(sink)->FireBGC1stConEnd(sink); }
+        public static void FireBGC1stSweepEnd(uint genNumber) { void* sink = EventSink(); EventSinkVtable(sink)->FireBGC1stSweepEnd(sink, genNumber); }
+        public static void FireBGC2ndNonConBegin() { void* sink = EventSink(); EventSinkVtable(sink)->FireBGC2ndNonConBegin(sink); }
+        public static void FireBGC2ndNonConEnd() { void* sink = EventSink(); EventSinkVtable(sink)->FireBGC2ndNonConEnd(sink); }
+        public static void FireBGC2ndConBegin() { void* sink = EventSink(); EventSinkVtable(sink)->FireBGC2ndConBegin(sink); }
+        public static void FireBGC2ndConEnd() { void* sink = EventSink(); EventSinkVtable(sink)->FireBGC2ndConEnd(sink); }
+        public static void FireBGCDrainMark(ulong objects) { void* sink = EventSink(); EventSinkVtable(sink)->FireBGCDrainMark(sink, objects); }
+        public static void FireBGCRevisit(ulong pages, ulong objects, uint isLarge) { void* sink = EventSink(); EventSinkVtable(sink)->FireBGCRevisit(sink, pages, objects, isLarge); }
+        public static void FireBGCOverflow_V1(ulong min, ulong max, ulong objects, uint isLarge, uint genNumber) { void* sink = EventSink(); EventSinkVtable(sink)->FireBGCOverflow_V1(sink, min, max, objects, isLarge, genNumber); }
+        public static void FireBGCAllocWaitBegin(uint reason) { void* sink = EventSink(); EventSinkVtable(sink)->FireBGCAllocWaitBegin(sink, reason); }
+        public static void FireBGCAllocWaitEnd(uint reason) { void* sink = EventSink(); EventSinkVtable(sink)->FireBGCAllocWaitEnd(sink, reason); }
+        public static void FireGCFullNotify_V1(uint genNumber, uint isAlloc) { void* sink = EventSink(); EventSinkVtable(sink)->FireGCFullNotify_V1(sink, genNumber, isAlloc); }
+        public static void FireSetGCHandle(void* handleId, void* objectId, uint kind, uint generation) { void* sink = EventSink(); EventSinkVtable(sink)->FireSetGCHandle(sink, handleId, objectId, kind, generation); }
+        public static void FirePrvSetGCHandle(void* handleId, void* objectId, uint kind, uint generation) { void* sink = EventSink(); EventSinkVtable(sink)->FirePrvSetGCHandle(sink, handleId, objectId, kind, generation); }
+        public static void FireDestroyGCHandle(void* handleId) { void* sink = EventSink(); EventSinkVtable(sink)->FireDestroyGCHandle(sink, handleId); }
+        public static void FirePrvDestroyGCHandle(void* handleId) { void* sink = EventSink(); EventSinkVtable(sink)->FirePrvDestroyGCHandle(sink, handleId); }
+
         public static uint GetTotalNumSizedRefHandles() => Vtable->GetTotalNumSizedRefHandles(g_theGCToCLR);
 
         public static byte AnalyzeSurvivorsRequested(int condemnedGeneration) => Vtable->AnalyzeSurvivorsRequested(g_theGCToCLR, condemnedGeneration);

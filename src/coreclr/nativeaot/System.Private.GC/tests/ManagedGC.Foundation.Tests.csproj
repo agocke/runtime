@@ -35,6 +35,7 @@
     <Compile Include="GCWriteWatchTests.cs" />
     <Compile Include="SoftwareWriteWatchTests.cs" />
     <Compile Include="GCEventTests.cs" />
+    <Compile Include="GCEventPlumbingTests.cs" />
     <Compile Include="GCCriticalSectionTests.cs" />
     <Compile Include="GCSleepYieldTests.cs" />
     <Compile Include="GCTimerTests.cs" />
@@ -91,6 +92,8 @@
     <Compile Include="SyncImports.Windows.TestHost.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/Interlocked.cs" Link="Environment/Interlocked.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventEnums.cs" Link="GCEventEnums.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEvents.cs" Link="GCEvents.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventSerializer.cs" Link="GCEventSerializer.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCScan.cs" Link="GCScan.cs" />
@@ -124,5 +127,6 @@
          table, its keys, defaults and order against the source it was translated from. -->
     <EmbeddedResource Include="../../../gc/gcconfig.h" LogicalName="gcconfig.h" />
     <EmbeddedResource Include="../../../gc/gcconfig.cpp" LogicalName="gcconfig.cpp" />
+    <EmbeddedResource Include="../../../gc/gcevents.h" LogicalName="gcevents.h" />
   </ItemGroup>
 </Project>
