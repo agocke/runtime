@@ -225,6 +225,134 @@ public sealed unsafe class HandleTableCoreTests
         }
     }
 
+    [Theory]
+    [InlineData(0, 1, 0xFFFFFFFEu)]
+    [InlineData(0, 31, 0x80000000u)]
+    [InlineData(0, 32, 0u)]
+    [InlineData(2, 40, 0u)]
+    [InlineData(0, 64, 0u)]
+    public void BlockAllocHandlesInitialMarksMasksAndReturnsSequentialSlots(uint block, uint count, uint firstMask)
+    {
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            Assert.Equal(0u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, 0, false));
+
+            OBJECTHANDLE* handles = stackalloc OBJECTHANDLE[HandleTableConstants.HANDLE_HANDLES_PER_BLOCK];
+            Assert.Equal(count, HandleTableCore.BlockAllocHandlesInitial(segment, 0, block, handles, count));
+
+            uint firstMaskIndex = block * HandleTableConstants.HANDLE_MASKS_PER_BLOCK;
+            Assert.Equal(firstMask, segment->Header.rgFreeMask[firstMaskIndex]);
+
+            if (count > HandleTableConstants.HANDLE_HANDLES_PER_MASK)
+            {
+                uint secondMask = count == HandleTableConstants.HANDLE_HANDLES_PER_BLOCK
+                    ? HandleTableConstants.MASK_FULL
+                    : HandleTableConstants.MASK_EMPTY << (int)(count - HandleTableConstants.HANDLE_HANDLES_PER_MASK);
+                Assert.Equal(secondMask, segment->Header.rgFreeMask[firstMaskIndex + 1]);
+            }
+
+            for (uint i = 0; i < count; i++)
+            {
+                uint handleIndex = (block * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK) + i;
+                Assert.True(
+                    handles[i].Value == &segment->rgValue[handleIndex],
+                    $"Handle {i} did not point to its sequential slot.");
+            }
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
+    [Theory]
+    [InlineData(0x000000FFu, 0, 0x000000F8u, 0, 1, 2)]
+    [InlineData(0x0000FF00u, 32, 0x0000F800u, 40, 41, 42)]
+    public void BlockAllocHandlesInMaskPreservesUnallocatedBits(
+        uint initialMask,
+        uint displacement,
+        uint expectedMask,
+        uint firstIndex,
+        uint secondIndex,
+        uint thirdIndex)
+    {
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            uint mask = initialMask;
+            OBJECTHANDLE* handles = stackalloc OBJECTHANDLE[3];
+
+            Assert.Equal(3u, HandleTableCore.BlockAllocHandlesInMask(segment, 0, &mask, displacement, handles, 3));
+            Assert.Equal(expectedMask, mask);
+            Assert.True(handles[0].Value == &segment->rgValue[firstIndex]);
+            Assert.True(handles[1].Value == &segment->rgValue[secondIndex]);
+            Assert.True(handles[2].Value == &segment->rgValue[thirdIndex]);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
+    [Fact]
+    public void BlockAllocHandlesInMaskTakesTheLowestFreeBits()
+    {
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            uint mask = 0b1010_0100;
+            OBJECTHANDLE* handles = stackalloc OBJECTHANDLE[3];
+
+            Assert.Equal(3u, HandleTableCore.BlockAllocHandlesInMask(segment, 0, &mask, 32, handles, 3));
+            Assert.Equal(0u, mask);
+            Assert.True(handles[0].Value == &segment->rgValue[34]);
+            Assert.True(handles[1].Value == &segment->rgValue[37]);
+            Assert.True(handles[2].Value == &segment->rgValue[39]);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
+    [Fact]
+    public void SegmentAllocHandlesFromTypeChainContinuesIntoTheNextBlock()
+    {
+        const uint Type = 4;
+
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            Assert.Equal(0u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            Assert.Equal(1u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+
+            OBJECTHANDLE* initialHandles = stackalloc OBJECTHANDLE[63];
+            Assert.Equal(63u, HandleTableCore.BlockAllocHandlesInitial(segment, Type, 0, initialHandles, 63));
+            segment->Header.rgFreeCount[Type] -= 63;
+
+            OBJECTHANDLE* handles = stackalloc OBJECTHANDLE[3];
+            Assert.Equal(3u, HandleTableCore.SegmentAllocHandlesFromTypeChain(segment, Type, handles, 3));
+            Assert.True(handles[0].Value == &segment->rgValue[63]);
+            Assert.True(handles[1].Value == &segment->rgValue[64]);
+            Assert.True(handles[2].Value == &segment->rgValue[65]);
+            Assert.Equal((byte)1, segment->Header.rgHint[Type]);
+            Assert.Equal(62u, segment->Header.rgFreeCount[Type]);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
     public static IEnumerable<object[]> HandleIndices()
     {
         yield return new object[] { 0 };

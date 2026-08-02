@@ -180,5 +180,198 @@ namespace Internal.Runtime.GarbageCollection
 
             return uBlock;
         }
+
+        public static uint BlockAllocHandlesInMask(
+            TableSegment* pSegment,
+            uint uBlock,
+            uint* pdwMask,
+            uint uHandleMaskDisplacement,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            uint uRemain = uCount;
+            uint dwFree = *pdwMask;
+            uint uByteDisplacement = 0;
+
+            do
+            {
+                uint dwLowByte = dwFree & HandleTableConstants.MASK_LOBYTE;
+
+                if (dwLowByte != 0)
+                {
+                    uint dwAlloc = 0;
+
+                    do
+                    {
+                        // Allocation-free equivalent of the native c_rgLowBitIndex lookup.
+                        uint uIndex = uint.TrailingZeroCount(dwLowByte);
+
+                        dwAlloc |= 1u << (int)uIndex;
+                        dwLowByte &= ~dwAlloc;
+                        uIndex += uHandleMaskDisplacement + uByteDisplacement;
+
+                        *pHandleBase = new OBJECTHANDLE(&pSegment->rgValue[uIndex]);
+
+                        uRemain--;
+                        pHandleBase++;
+                    }
+                    while (dwLowByte != 0 && uRemain != 0);
+
+                    dwAlloc <<= (int)uByteDisplacement;
+                    *pdwMask &= ~dwAlloc;
+                }
+
+                dwFree >>= HandleTableConstants.BITS_PER_BYTE;
+                uByteDisplacement += HandleTableConstants.BITS_PER_BYTE;
+            }
+            while (uRemain != 0 && dwFree != 0);
+
+            return uCount - uRemain;
+        }
+
+        public static uint BlockAllocHandlesInitial(
+            TableSegment* pSegment,
+            uint uType,
+            uint uBlock,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            Debug.Assert(uCount != 0);
+
+            if (uCount > HandleTableConstants.HANDLE_HANDLES_PER_BLOCK)
+            {
+                Debug.Assert(false);
+                uCount = HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+            }
+
+            uint uRemain = uCount;
+            uint* pdwMask = pSegment->Header.rgFreeMask + (uBlock * HandleTableConstants.HANDLE_MASKS_PER_BLOCK);
+
+            do
+            {
+                Debug.Assert(*pdwMask == HandleTableConstants.MASK_EMPTY);
+
+                uint uAlloc = uRemain;
+                uint dwNewMask;
+                if (uAlloc >= HandleTableConstants.HANDLE_HANDLES_PER_MASK)
+                {
+                    dwNewMask = HandleTableConstants.MASK_FULL;
+                    uAlloc = HandleTableConstants.HANDLE_HANDLES_PER_MASK;
+                }
+                else
+                {
+                    dwNewMask = HandleTableConstants.MASK_EMPTY << (int)uAlloc;
+                }
+
+                *pdwMask = dwNewMask;
+                uRemain -= uAlloc;
+                pdwMask++;
+            }
+            while (uRemain != 0);
+
+            byte* pValue = (byte*)&pSegment->rgValue[uBlock * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK];
+            byte* pLast = pValue + (uCount * HandleTableConstants.HANDLE_SIZE);
+
+            do
+            {
+                *pHandleBase = new OBJECTHANDLE(pValue);
+
+                pValue += HandleTableConstants.HANDLE_SIZE;
+                pHandleBase++;
+            }
+            while (pValue < pLast);
+
+            return uCount;
+        }
+
+        public static uint BlockAllocHandles(
+            TableSegment* pSegment,
+            uint uBlock,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            uint uRemain = uCount;
+            uint* pdwMask = pSegment->Header.rgFreeMask + (uBlock * HandleTableConstants.HANDLE_MASKS_PER_BLOCK);
+            uint* pdwMaskLast = pdwMask + HandleTableConstants.HANDLE_MASKS_PER_BLOCK;
+            uint uDisplacement = uBlock * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+
+            do
+            {
+                if (*pdwMask != 0)
+                {
+                    uint uSatisfied = BlockAllocHandlesInMask(
+                        pSegment,
+                        uBlock,
+                        pdwMask,
+                        uDisplacement,
+                        pHandleBase,
+                        uRemain);
+
+                    uRemain -= uSatisfied;
+                    pHandleBase += uSatisfied;
+
+                    if (uRemain == 0)
+                    {
+                        break;
+                    }
+                }
+
+                pdwMask++;
+                uDisplacement += HandleTableConstants.HANDLE_HANDLES_PER_MASK;
+            }
+            while (pdwMask < pdwMaskLast);
+
+            return uCount - uRemain;
+        }
+
+        public static uint SegmentAllocHandlesFromTypeChain(
+            TableSegment* pSegment,
+            uint uType,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            uint uAvail = pSegment->Header.rgFreeCount[uType];
+
+            if (uAvail > uCount)
+            {
+                uAvail = uCount;
+            }
+            else
+            {
+                uCount = uAvail;
+            }
+
+            if (uAvail != 0)
+            {
+                uint uBlock = pSegment->Header.rgHint[uType];
+                uint uLast = uBlock;
+
+                for (;;)
+                {
+                    uint uSatisfied = BlockAllocHandles(pSegment, uBlock, pHandleBase, uAvail);
+
+                    if (uSatisfied == uAvail)
+                    {
+                        pSegment->Header.rgHint[uType] = (byte)uBlock;
+                        break;
+                    }
+
+                    uAvail -= uSatisfied;
+                    pHandleBase += uSatisfied;
+                    uBlock = pSegment->Header.rgAllocation[uBlock];
+
+                    if (uBlock == uLast)
+                    {
+                        Debug.Assert(false);
+                        uCount -= uAvail;
+                        break;
+                    }
+                }
+
+                pSegment->Header.rgFreeCount[uType] -= uCount;
+            }
+
+            return uCount;
+        }
     }
 }
