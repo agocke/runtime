@@ -11,6 +11,14 @@
     <DocumentationFile>$(OutputPath)$(MSBuildProjectName).xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup>
+    <!-- The Unix virtual memory port selects the <sys/mman.h> and <sys/resource.h> values of the
+         platform it is built for, exactly as gc/unix/gcenv.unix.cpp does through config.gc.h.
+         The values it picks are asserted against the real headers by
+         nativeaot/Runtime/gcenv.managed.cpp. -->
+    <DefineConstants Condition="'$(TargetsOSX)' == 'true' or '$(TargetsMacCatalyst)' == 'true' or '$(TargetsiOS)' == 'true' or '$(TargetstvOS)' == 'true'">TARGET_APPLE;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(TargetsFreeBSD)' == 'true'">TARGET_FREEBSD;$(DefineConstants)</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup>
     <!-- The generated GCInterfaceOffsets.cs is only available when the native runtime is built
          alongside the managed one, which is the case for all in-tree builds. -->
     <InPlaceRuntime>true</InPlaceRuntime>
@@ -35,6 +43,13 @@
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnvSync.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEvent.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.cs" />
+    <!-- One virtual memory implementation per gcenv platform file, as the native build picks
+         between gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp. The imports they call
+         are in a file of their own so that the tests can substitute callable declarations. -->
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Imports.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Imports.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.VirtualMemory.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.VirtualMemory.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\Interlocked.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\IntroSort.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCEntryPoints.cs" />

@@ -38,8 +38,9 @@ The following prerequisites are already working:
   initialization failures fail startup rather than selecting the C++ GC.
 - Managed-GC applications link `Runtime.ManagedGC` and do not include the C++ workstation or
   server collector, native handle table, GC loader, bridge, scanner, or software write watch.
-  Native runtime and `gcenv` support remains temporarily; the managed environment layer reaches
-  it through the documented `ManagedGC_*` forwarders of `nativeaot/Runtime/gcenv.managed.cpp`.
+  Native runtime and `gcenv` support remains temporarily; the environment services the managed
+  layer has not taken over itself are reached through the documented `ManagedGC_*` forwarders of
+  `nativeaot/Runtime/gcenv.managed.cpp`. Virtual memory is no longer among them.
 - The current heap is a fixed-size, non-collecting bump allocator with a flat handle table.
 - Write-barrier globals and frozen segments are initialized sufficiently for application
   startup.
@@ -121,7 +122,8 @@ in `gcevents.h`; that arrives with the rest of the event plumbing in stage 4.
 
 ### 3. `gcenv` and platform abstraction layer
 
-**Status: In progress -- the interface is complete, the platform implementations are not**
+**Status: In progress -- the interface is complete, virtual memory is translated, the rest of
+the platform implementations are not**
 
 Translate:
 
@@ -159,8 +161,27 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
 - Layout verification for `GCSystemInfo`, `AffinitySet` and `GCEvent`, and value verification for
   `NUMA_NODE_UNDEFINED`, `MAX_SUPPORTED_HEAPS`, `MAX_SUPPORTED_NODES`, `VirtualReserveFlags`,
   `WAIT_OBJECT_0` and `WAIT_TIMEOUT`, through `GCInterfaceOffsets.h`.
+- Virtual memory: `VirtualReserve`, `VirtualRelease`, `VirtualCommit`, `VirtualDecommit`,
+  `VirtualReset`, `VirtualReserveAndCommitLargePages`, `GetPageSize`, `GetVirtualMemoryLimit`
+  and `GetVirtualMemoryMaxAddress`, from `gc/unix/gcenv.unix.cpp`,
+  `gc/windows/gcenv.windows.cpp` and the `GetPageSize` of `env/gcenv.unix.inl` /
+  `env/gcenv.windows.inl`. The bodies call `mmap`/`munmap`/`mprotect`/`madvise`/`getrlimit` and
+  `VirtualAlloc`/`VirtualFree`/`VirtualAllocExNuma`/`VirtualUnlock`/`GetLargePageMinimum`/
+  `GlobalMemoryStatusEx` plus the large page privilege APIs directly, as `[RuntimeImport]`s of
+  the libc and Win32 entry points. `GetPageSize` calls `minipal_getpagesize` on Unix, which is
+  the same cached `sysconf` value the C++ reads, and returns the fixed 4 KB Windows page size
+  otherwise, which is what the C++ `minipal_getpagesize` is there. The `<sys/mman.h>`,
+  `<sys/resource.h>` and `<windows.h>` constants are written out per platform in C# and
+  asserted against the real headers, for the platform being built, by
+  `nativeaot/Runtime/gcenv.managed.cpp`. One shim remains and belongs to submodule 7 below
+  rather than to this one: `ManagedGC_NUMA_BindMemoryPolicy` is the `mbind` half of
+  `VirtualCommitInner` verbatim, which needs `g_numaAvailable`, `g_highestNumaNode` and
+  `BindMemoryPolicy` of `gc/unix/numasupport.cpp`.
 - Focused xUnit coverage of every piece above that is pure computation, in
-  `tests/GCEnvironmentTests.cs`.
+  `tests/GCEnvironmentTests.cs`, and of the whole virtual memory port -- flag translation,
+  alignment over-allocation and trimming, failure paths, and a reserve/commit/write/reset/
+  decommit/release exercise on raw pages -- in `tests/GCVirtualMemoryTests.cs`, which runs the
+  shipping bodies over recording substitutes for their libc and Win32 declarations.
 
 #### Remaining submodules
 
@@ -168,36 +189,32 @@ Each item below is a native module that `nativeaot/Runtime/gcenv.managed.cpp` cu
 to. The managed declaration already exists and does not change when the implementation lands;
 only the body and its shim do. They are listed in the order they become blocking.
 
-1. **Virtual memory** -- `VirtualReserve`, `VirtualRelease`, `VirtualCommit`, `VirtualDecommit`,
-   `VirtualReset`, `VirtualReserveAndCommitLargePages`, `GetPageSize`,
-   `GetVirtualMemoryLimit`, `GetVirtualMemoryMaxAddress`. `mmap`/`mprotect` in
-   `gc/unix/gcenv.unix.cpp` and `VirtualAlloc`/`VirtualFree` in `gc/windows/gcenv.windows.cpp`.
-   Blocks stage 7.
-2. **Write watch** -- `SupportsWriteWatch`, `ResetWriteWatch`, `GetWriteWatch`. Windows only;
+1. **Write watch** -- `SupportsWriteWatch`, `ResetWriteWatch`, `GetWriteWatch`. Windows only;
    Unix returns false. Blocks the concurrent parts of stage 10.
-3. **Events and locks** -- the `GCEvent::Impl` of `gc/unix/events.cpp` and its Win32 counterpart,
+2. **Events and locks** -- the `GCEvent::Impl` of `gc/unix/events.cpp` and its Win32 counterpart,
    and the `minipal_mutex` behind `CLRCriticalSection`. A managed implementation needs a futex or
    equivalent that is safe to call with the world suspended. Blocks stages 9 and 10.
-4. **Sleep and yield** -- `Sleep`, `YieldThread`.
-5. **Memory limits** -- `GetPhysicalMemoryLimit`, `GetMemoryStatus`, `GetCacheSizePerLogicalCpu`.
+3. **Sleep and yield** -- `Sleep`, `YieldThread`.
+4. **Memory limits** -- `GetPhysicalMemoryLimit`, `GetMemoryStatus`, `GetCacheSizePerLogicalCpu`.
    These read cgroup v1/v2 files (`gc/unix/cgroup.cpp`), `sysconf`, `sysctl` and Windows job
    objects. Blocks the hard-limit and dynamic tuning parts of stage 10.
-6. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
+5. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
    `GetLowPrecisionTimeStamp`.
-7. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
+6. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
    `GetCurrentProcessorNumber`, `CanGetCurrentProcessorNumber`, `GetCurrentProcessId`,
    `GetCurrentThreadIdForLogging`.
-8. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
+7. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
    `SetCurrentThreadIdealAffinity`, `GetCurrentThreadIdealProc`, `SetGCThreadsAffinitySet`,
    `CanEnableGCNumaAware`, `GetNumaInfo`, `CanEnableGCCPUGroups`, `GetProcessorForHeap`,
-   `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp`. Blocks
-   server GC in stage 10.
-9. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
+   `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp` and the
+   `ManagedGC_NUMA_BindMemoryPolicy` shim that `VirtualCommit` still calls. Blocks server GC in
+   stage 10.
+8. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
    `PalInit`, so the managed GC never calls these; they land last, together with moving that call
    out of `PalInit`.
-10. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
-    stand in for the `new (nothrow) uintptr_t[]` and `delete[]` of `AffinitySet`. They can only go
-    away once the GC has memory of its own to take that bitset from, which is stage 7.
+9. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
+   stand in for the `new (nothrow) uintptr_t[]` and `delete[]` of `AffinitySet`. They can only go
+   away once the GC has memory of its own to take that bitset from, which is stage 7.
 
 `env/gcenv.object.h` is **not** part of this stage after all. NativeAOT overrides it: its own
 `nativeaot/Runtime/gcenv.h` supplies `MethodTable`, `Object`, `ObjHeader` and `ArrayBase` from

@@ -55,6 +55,10 @@ Ported so far:
 | `Environment/GCEvent.cs` | `env/gcenv.os.h` (`GCEvent`) |
 | `Environment/GCEnvSync.cs` | `env/gcenv.os.h` (`CLRCriticalSection`), `env/gcenv.sync.h` |
 | `Environment/GCToOSInterface.cs` | `env/gcenv.os.h` (`GCToOSInterface`) |
+| `Environment/GCToOSInterface.VirtualMemory.Unix.cs` | `gc/unix/gcenv.unix.cpp` (virtual memory), `env/gcenv.unix.inl` |
+| `Environment/GCToOSInterface.VirtualMemory.Windows.cs` | `gc/windows/gcenv.windows.cpp` (virtual memory), `env/gcenv.windows.inl` |
+| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` entry points the above calls |
+| `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` entry points the above calls |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
@@ -84,15 +88,35 @@ Pure computation is translated outright and is exercised by
 `VolatileStore` family of `volatile.h`; the `AffinitySet` bitset of `gcenv.os.h`; and
 `ParseIndexOrRange` plus `ParseGCHeapAffinitizeRanges` from `gcconfig.cpp`.
 
-Everything that reaches the operating system is declared with the C++ signature and forwarded,
-for now, to a one-line shim in `nativeaot/Runtime/gcenv.managed.cpp` that calls the existing C++
-`GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.windows.cpp`. Those shims are
-the whole retained-native surface of this layer:
+Virtual memory management is translated rather than forwarded. `VirtualReserve`,
+`VirtualRelease`, `VirtualCommit`, `VirtualDecommit`, `VirtualReset`,
+`VirtualReserveAndCommitLargePages`, `GetPageSize`, `GetVirtualMemoryLimit` and
+`GetVirtualMemoryMaxAddress` are the statements of `gc/unix/gcenv.unix.cpp` and
+`gc/windows/gcenv.windows.cpp`, calling `mmap`/`munmap`/`mprotect`/`madvise`/`getrlimit` and
+`VirtualAlloc`/`VirtualFree`/`VirtualAllocExNuma` through `[RuntimeImport]` declarations of the
+libc and Win32 entry points themselves. Two details do not come from a C header:
 
-* one per `GCToOSInterface` method (`ManagedGC_OS_*`) -- virtual memory, write watch, sleep and
+* The `<sys/mman.h>`, `<sys/resource.h>` and `<windows.h>` constants are written out per
+  platform in the C# and checked against the real headers by `static_assert`s in
+  `nativeaot/Runtime/gcenv.managed.cpp`, which is compiled for the target platform. A platform
+  whose values differ from the ones the `#if` selects breaks the build rather than the process.
+* `GetPageSize` calls `minipal_getpagesize` on Unix -- the same cached `sysconf` the C++
+  `GCToOSInterface::Initialize` reads -- and returns Windows' fixed 4 KB constant otherwise,
+  which is what the C++ `minipal_getpagesize` is there.
+
+Everything else that reaches the operating system is declared with the C++ signature and
+forwarded, for now, to a one-line shim in `nativeaot/Runtime/gcenv.managed.cpp` that calls the
+existing C++ `GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.windows.cpp`.
+Those shims are the whole retained-native surface of this layer:
+
+* one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- write watch, sleep and
   yield, processor number and affinity, thread priority and ids, cache and memory limits, the
   performance counter, processor counts, NUMA and CPU groups, and the platform-specific affinity
   range entry parser;
+* `ManagedGC_NUMA_BindMemoryPolicy`, which is the `mbind` half of `VirtualCommitInner`
+  verbatim. It reads `g_numaAvailable` and `g_highestNumaNode` and calls `BindMemoryPolicy`,
+  all of which belong to `gc/unix/numasupport.cpp`, so it is deleted with the NUMA submodule
+  rather than with virtual memory;
 * one per `GCEvent` method (`ManagedGC_GCEvent_*`);
 * four for `CLRCriticalSection` (`ManagedGC_CriticalSection_*`);
 * `ManagedGC_AllocZeroed` / `ManagedGC_Free`, which stand in for the `new (nothrow) uintptr_t[]`
@@ -138,6 +162,17 @@ dependency-free leaf sources, the GC/EE interface types and the environment laye
 tested independently of the NativeAOT runtime integration smoke test and independently of which
 paths the bootstrap heap happens to exercise. `GCInterfaceLayoutTests` covers the layout table as
 described under [layout verification](#layout-verification); the rest is behavior.
+
+`GCVirtualMemoryTests` runs the virtual memory port itself. The shipping bodies are the code
+under test; only the libc/Win32 declarations underneath them are substituted, by
+`tests/GCToOSInterface.Imports.*.TestHost.cs`, which declares the same private methods as
+ordinary P/Invokes -- something the GC itself must never do -- forwards each call to the real
+kernel and records its arguments. The tests therefore check the flag translation, the alignment
+over-allocation and trimming, and the failure paths exactly, and they also run the sequence the
+collector performs: reserve, commit, write, reset, decommit, re-commit and release, on raw
+pages, without the managed heap. The expected flag values are written out in the test rather
+than read from the constants of the port, so a wrong constant fails a test instead of being
+confirmed by it.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:

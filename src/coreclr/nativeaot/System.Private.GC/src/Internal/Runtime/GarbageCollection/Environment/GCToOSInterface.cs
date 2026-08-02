@@ -4,21 +4,27 @@
 // Port of the GCToOSInterface class of gcenv.os.h: every service the GC gets from the operating
 // system, in declaration order, with the C++ names, parameter names and defaults.
 //
-// The bodies are still forwarders. Each one is a [RuntimeImport] call to a one-line shim in
-// nativeaot/Runtime/gcenv.managed.cpp, which calls the C++ GCToOSInterface of
-// gc/unix/gcenv.unix.cpp or gc/windows/gcenv.windows.cpp. A runtime import is a direct call to
-// a linked symbol with no marshalling and no GC mode transition, which is what code that runs
-// with the world suspended requires; a [DllImport] would not be usable here.
+// The class is split by what the code actually does:
 //
-// They are forwarders because the implementations are the platform code -- mmap/VirtualAlloc,
-// cgroup and job-object limits, NUMA, Windows CPU groups, pthread and Win32 affinity, the
-// high-resolution clock -- and porting it is a separate piece of work per platform. Deletion
-// point: plan step 3 of ROADMAP.md; a forwarder and its shim disappear together when the
-// managed implementation of that method lands.
+//   * The virtual memory methods are translated, in GCToOSInterface.VirtualMemory.Unix.cs and
+//     GCToOSInterface.VirtualMemory.Windows.cs, from gc/unix/gcenv.unix.cpp and
+//     gc/windows/gcenv.windows.cpp. Their declarations stay here as comments pointing at the
+//     platform file, so that this file still reads in gcenv.os.h declaration order.
+//   * The remaining bodies are still forwarders. Each one is a [RuntimeImport] call to a
+//     one-line shim in nativeaot/Runtime/gcenv.managed.cpp, which calls the C++
+//     GCToOSInterface. A runtime import is a direct call to a linked symbol with no marshalling
+//     and no GC mode transition, which is what code that runs with the world suspended
+//     requires; a [DllImport] would not be usable here.
 //
-// Two members of gcenv.os.h are ported rather than forwarded: AffinitySet, which is pure bit
-// manipulation, and ParseIndexOrRange, which is pure parsing. They live in AffinitySet.cs and
-// GCEnv.Base.cs.
+// They are forwarders because the implementations are the platform code -- cgroup and
+// job-object limits, NUMA, Windows CPU groups, pthread and Win32 affinity, the high-resolution
+// clock -- and porting it is a separate piece of work per platform. Deletion point: plan step 3
+// of ROADMAP.md; a forwarder and its shim disappear together when the managed implementation of
+// that method lands.
+//
+// Two more members of gcenv.os.h are ported rather than forwarded: AffinitySet, which is pure
+// bit manipulation, and ParseIndexOrRange, which is pure parsing. They live in AffinitySet.cs
+// and GCEnv.Base.cs.
 
 using System;
 using System.Runtime;
@@ -36,7 +42,7 @@ namespace Internal.Runtime.GarbageCollection
     /// <summary>
     /// Interface that the GC uses to invoke OS specific functionality.
     /// </summary>
-    internal static unsafe class GCToOSInterface
+    internal static unsafe partial class GCToOSInterface
     {
         private const string RuntimeLibrary = "*";
 
@@ -77,58 +83,11 @@ namespace Internal.Runtime.GarbageCollection
         public static void Shutdown() => ManagedGC_OS_Shutdown();
 
         //
-        // Virtual memory management
+        // Virtual memory management -- VirtualReserve, VirtualRelease, VirtualCommit,
+        // VirtualReserveAndCommitLargePages, VirtualDecommit and VirtualReset are translated per
+        // platform in GCToOSInterface.VirtualMemory.Unix.cs and
+        // GCToOSInterface.VirtualMemory.Windows.cs.
         //
-
-        /// <summary>
-        /// Reserve virtual memory range. Returns the starting virtual address of the reserved
-        /// range, or null on failure.
-        /// </summary>
-        /// <param name="size">size of the virtual memory range</param>
-        /// <param name="alignment">requested memory alignment</param>
-        /// <param name="flags">flags to control special settings like write watching</param>
-        /// <param name="node">the NUMA node to reserve memory on</param>
-        /// <remarks>
-        /// Previous uses of this API aligned the <paramref name="size"/> parameter to the
-        /// platform allocation granularity. This is not required by POSIX or Windows. Windows
-        /// will round the size up to the nearest page boundary. POSIX does not specify what is
-        /// done, but Linux probably also rounds up.
-        /// <para>
-        /// Windows guarantees that the returned mapping will be aligned to the allocation
-        /// granularity.
-        /// </para>
-        /// </remarks>
-        public static byte* VirtualReserve(nuint size, nuint alignment, uint flags, ushort node = NUMA_NODE_UNDEFINED) =>
-            (byte*)ManagedGC_OS_VirtualReserve(size, alignment, flags, node);
-
-        /// <summary>
-        /// Release virtual memory range previously reserved using <see cref="VirtualReserve"/>.
-        /// </summary>
-        public static bool VirtualRelease(void* address, nuint size) =>
-            ManagedGC_OS_VirtualRelease(address, size) != 0;
-
-        /// <summary>
-        /// Commit virtual memory range. It must be part of a range reserved using
-        /// <see cref="VirtualReserve"/>.
-        /// </summary>
-        public static bool VirtualCommit(void* address, nuint size, ushort node = NUMA_NODE_UNDEFINED) =>
-            ManagedGC_OS_VirtualCommit(address, size, node) != 0;
-
-        /// <summary>Reserve and commit a virtual memory range for large pages.</summary>
-        public static byte* VirtualReserveAndCommitLargePages(nuint size, ushort node = NUMA_NODE_UNDEFINED) =>
-            (byte*)ManagedGC_OS_VirtualReserveAndCommitLargePages(size, node);
-
-        /// <summary>Decommit virtual memory range.</summary>
-        public static bool VirtualDecommit(void* address, nuint size) =>
-            ManagedGC_OS_VirtualDecommit(address, size) != 0;
-
-        /// <summary>
-        /// Reset virtual memory range. Indicates that data in the memory range specified by
-        /// <paramref name="address"/> and <paramref name="size"/> is no longer of interest, but
-        /// it should not be decommitted.
-        /// </summary>
-        public static bool VirtualReset(void* address, nuint size, bool unlock) =>
-            ManagedGC_OS_VirtualReset(address, size, unlock ? 1 : 0) != 0;
 
         //
         // Write watching
@@ -224,17 +183,8 @@ namespace Internal.Runtime.GarbageCollection
         // Global memory info
         //
 
-        /// <summary>
-        /// Return the size of the user-mode portion of the virtual address space of this process,
-        /// or zero if it has failed.
-        /// </summary>
-        public static nuint GetVirtualMemoryLimit() => ManagedGC_OS_GetVirtualMemoryLimit();
-
-        /// <summary>
-        /// Return the maximum address of the virtual address space of this process, or zero if
-        /// it has failed.
-        /// </summary>
-        public static nuint GetVirtualMemoryMaxAddress() => ManagedGC_OS_GetVirtualMemoryMaxAddress();
+        // GetVirtualMemoryLimit and GetVirtualMemoryMaxAddress are translated per platform in
+        // GCToOSInterface.VirtualMemory.Unix.cs and GCToOSInterface.VirtualMemory.Windows.cs.
 
         /// <summary>
         /// Get the physical memory that this process can use. If a process runs with a restricted
@@ -264,8 +214,9 @@ namespace Internal.Runtime.GarbageCollection
         public static void GetMemoryStatus(ulong restricted_limit, uint* memory_load, ulong* available_physical, ulong* available_page_file) =>
             ManagedGC_OS_GetMemoryStatus(restricted_limit, memory_load, available_physical, available_page_file);
 
-        /// <summary>Get the size of an OS memory page.</summary>
-        public static nuint GetPageSize() => ManagedGC_OS_GetPageSize();
+        // GetPageSize is translated per platform in GCToOSInterface.VirtualMemory.Unix.cs and
+        // GCToOSInterface.VirtualMemory.Windows.cs, next to the OS_PAGE_SIZE macro of
+        // env/gcenv.unix.inl and env/gcenv.windows.inl that it backs.
 
         //
         // Misc
@@ -349,30 +300,6 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_OS_Shutdown();
 
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_VirtualReserve")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void* ManagedGC_OS_VirtualReserve(nuint size, nuint alignment, uint flags, ushort node);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_VirtualRelease")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_VirtualRelease(void* address, nuint size);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_VirtualCommit")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_VirtualCommit(void* address, nuint size, ushort node);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_VirtualReserveAndCommitLargePages")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void* ManagedGC_OS_VirtualReserveAndCommitLargePages(nuint size, ushort node);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_VirtualDecommit")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_VirtualDecommit(void* address, nuint size);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_VirtualReset")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_OS_VirtualReset(void* address, nuint size, int unlock);
-
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_SupportsWriteWatch")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int ManagedGC_OS_SupportsWriteWatch();
@@ -433,14 +360,6 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void* ManagedGC_OS_SetGCThreadsAffinitySet(nuint configAffinityMask, void* configAffinitySet);
 
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetVirtualMemoryLimit")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern nuint ManagedGC_OS_GetVirtualMemoryLimit();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetVirtualMemoryMaxAddress")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern nuint ManagedGC_OS_GetVirtualMemoryMaxAddress();
-
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetPhysicalMemoryLimit")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern ulong ManagedGC_OS_GetPhysicalMemoryLimit(byte* is_restricted);
@@ -448,10 +367,6 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetMemoryStatus")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_OS_GetMemoryStatus(ulong restricted_limit, uint* memory_load, ulong* available_physical, ulong* available_page_file);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetPageSize")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern nuint ManagedGC_OS_GetPageSize();
 
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_DebugBreak")]
         [MethodImpl(MethodImplOptions.InternalCall)]

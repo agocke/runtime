@@ -13,12 +13,20 @@
     <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Kept in step with src/System.Private.GC.csproj: the virtual memory port picks the
+         <sys/mman.h> values of the platform it is compiled for. -->
+    <DefineConstants Condition="'$(TargetsOSX)' == 'true' or '$(TargetsMacCatalyst)' == 'true' or '$(TargetsiOS)' == 'true' or '$(TargetstvOS)' == 'true'">TARGET_APPLE;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(TargetsFreeBSD)' == 'true'">TARGET_FREEBSD;$(DefineConstants)</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.DotNet.XUnitExtensions" Version="$(MicrosoftDotNetXUnitExtensionsVersion)" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="GCEnvironmentTests.cs" />
+    <Compile Include="GCVirtualMemoryTests.cs" />
     <Compile Include="GCFoundationTests.cs" />
     <Compile Include="GCInterfaceLayoutTests.cs" />
     <!-- The environment layer. Its OS calls are [RuntimeImport] declarations, which resolve
@@ -32,6 +40,13 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCEnvSync.cs" Link="Environment/GCEnvSync.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCEvent.cs" Link="Environment/GCEvent.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.cs" Link="Environment/GCToOSInterface.cs" />
+    <!-- The virtual memory port is real code rather than a forwarder, so it is compiled and run
+         here. Only the libc/Win32 declarations underneath it are substituted: the shipping ones
+         are [RuntimeImport]s that resolve only in a NativeAOT image. -->
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.VirtualMemory.Unix.cs" Link="Environment/GCToOSInterface.VirtualMemory.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.VirtualMemory.Windows.cs" Link="Environment/GCToOSInterface.VirtualMemory.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="GCToOSInterface.Imports.Unix.TestHost.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="GCToOSInterface.Imports.Windows.TestHost.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/Interlocked.cs" Link="Environment/Interlocked.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventEnums.cs" Link="GCEventEnums.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
