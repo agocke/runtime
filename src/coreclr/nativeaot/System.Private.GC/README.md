@@ -41,6 +41,7 @@ Ported so far:
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
+| `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
@@ -103,14 +104,16 @@ segment schema they depend on. Nothing populates a `GcDacVars` yet:
 does not have. The managed selector therefore leaves its DAC interface version zero, making a
 DAC reject this collector as unsupported until those structures are available.
 
-The first real handle-table slice establishes the schema before behavior:
+The first real handle-table slices establish the schema and segment lifecycle:
 `HandleTableConstants.cs` translates the size, mask, block, clump, and cache arithmetic of
 `handletableconstants.h`; `HandleTableStructs.cs` translates the byte-packed
-`_TableSegmentHeader`, the 64-KiB `TableSegment`, and `HandleTypeCache`. The shared
+`_TableSegmentHeader`, the 64-KiB `TableSegment`, and `HandleTypeCache`; and
+`HandleTableCore.cs` reserves aligned segments, commits and initializes their headers, releases
+them, and maps handle addresses back to their segment headers. The shared
 `GCInterfaceOffsets.h` table pins their 32- and 64-bit native offsets, sizes, and alignments, and
 the managed startup verifier checks the C# layouts against the generated values. The flat
-`ManagedGCHandleManager` still supplies the running bootstrap heap until segment allocation,
-block allocation, caches, and the manager glue are ported over this schema.
+`ManagedGCHandleManager` still supplies the running bootstrap heap until block allocation,
+caches, and the manager glue are ported over this schema.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

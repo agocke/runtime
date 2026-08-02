@@ -113,10 +113,10 @@ the managed types at GC startup, and against the managed types again by
 Because the table is expanded by the native build for the architecture being built, the checks
 cover every supported architecture.
 
-Two groups of `gcinterface.dac.h` types are deferred rather than missing. `dac_generation` and
+One group of `gcinterface.dac.h` types is deferred rather than missing. `dac_generation` and
 `dac_gc_heap` are generated from the `dac_generation_fields.h` / `dac_gcheap_fields.h` field
-lists, which name `gcpriv.h` types and therefore belong with stage 6. `dac_handle_table` and
-`dac_handle_table_segment` are sized by `handletableconstants.h` and belong with stage 5.
+lists, which name `gcpriv.h` types and therefore belong with stage 6. The handle-table DAC
+analogues arrived with the stage-5 constants and packed segment schema.
 `PopulateDacVars` itself belongs with stage 11: it publishes the addresses of the collector's
 data structures, none of which exist yet.
 
@@ -607,15 +607,20 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   them. Their 32- and 64-bit offsets, sizes, and alignments are pinned in
   `GCInterfaceOffsets.h`, asserted against the native headers during the runtime build, checked
   again by `GCInterfaceLayout` during managed collector startup, and covered directly by xUnit.
+- The segment lifecycle and handle-to-segment mapping from `handletablecore.cpp`, as
+  `HandleTableCore.cs`: aligned reservation, page-rounded header commit, exact sentinel and free
+  chain initialization, owning-table back pointers, release, and address masking. Direct tests
+  exercise the real managed `GCToOSInterface` virtual-memory implementation.
 
 #### Remaining
 
-Port segment initialization/allocation/freeing and pointer-to-segment mapping next, then the
-block allocator/free chains, per-type caches, table entrypoints, and manager/store glue. The
-current flat `ManagedGCHandleManager` remains the runtime implementation until those pieces can
-replace it as one coherent allocation path. Handle scanning, weak/dependent processing,
-write-barrier generation updates, and multi-heap table selection remain blocked on the core heap
-and collection state of stages 6-10.
+Port the block allocator/free chains next, then per-type caches, table entrypoints, and
+manager/store glue. The current flat `ManagedGCHandleManager` remains the runtime implementation
+until those pieces can replace it as one coherent allocation path. `TableContainHandle` remains
+with the table entrypoints because its exact translation takes the table lock and walks
+`HandleTable.pSegmentList`. Handle scanning, weak/dependent processing, write-barrier generation
+updates, and multi-heap table selection remain blocked on the core heap and collection state of
+stages 6-10.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.
