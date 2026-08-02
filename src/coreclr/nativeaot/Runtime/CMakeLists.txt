@@ -390,6 +390,7 @@ list(REMOVE_ITEM MANAGED_GC_RUNTIME_SOURCES
     ${GC_DIR}/handletablescan.cpp
     ${GC_DIR}/objecthandle.cpp
     ${GC_DIR}/softwarewritewatch.cpp
+    ${GC_DIR}/unix/events.cpp
 )
 
 convert_to_absolute_path(COMMON_RUNTIME_SOURCES ${COMMON_RUNTIME_SOURCES})

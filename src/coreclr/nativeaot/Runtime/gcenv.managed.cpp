@@ -5,13 +5,14 @@
 //
 // System.Private.GC translates gcenv.os.h, gcenv.base.h, gcenv.interlocked.h and volatile.h to
 // C#. Everything in those headers that is pure computation is translated outright, as are the
-// whole of virtual memory management and write watching; everything else that reaches the
-// operating system is, for now, forwarded here and implemented by the existing C++
-// GCToOSInterface in gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
+// whole of virtual memory management and write watching, the GCEvent condition variable /
+// Win32 event, and the CLRCriticalSection mutex; everything else that reaches the operating
+// system is, for now, forwarded here and implemented by the existing C++ GCToOSInterface in
+// gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp.
 //
-// This file also carries the static_asserts that check the <sys/mman.h>, <sys/resource.h> and
-// <windows.h> constants and layouts that the managed virtual memory and write watch ports
-// hardcode against the real headers of the platform being built, in the same spirit as
+// This file also carries the static_asserts that check the <sys/mman.h>, <sys/resource.h>,
+// <pthread.h>, <time.h>, <errno.h> and <windows.h> constants and layouts that those managed
+// ports hardcode against the real headers of the platform being built, in the same spirit as
 // AsmOffsets.h. The C# #if structure and the one below must stay in the same shape.
 //
 // The managed side calls these with [RuntimeImport], which is a direct call to a linked symbol
@@ -20,10 +21,10 @@
 //
 // Each forwarder is deliberately a single expression with no logic of its own, so that the
 // managed declaration and the C++ declaration can be diffed against each other. They exist
-// because porting cgroups, NUMA, CPU groups, pthread affinity and the condition-variable event
-// implementation to C# is a separate, platform-by-platform piece of work. Deletion point: plan
-// step 3 of System.Private.GC/ROADMAP.md, one platform module at a time; a forwarder disappears
-// when the managed GCToOSInterface implements that method itself.
+// because porting cgroups, NUMA, CPU groups and pthread affinity to C# is a separate,
+// platform-by-platform piece of work. Deletion point: plan step 3 of
+// System.Private.GC/ROADMAP.md, one platform module at a time; a forwarder disappears when the
+// managed GCToOSInterface implements that method itself.
 //
 // This file is only compiled into the managedgc-enabled archive, so a default (C++ GC) build
 // does not carry any of it.
@@ -36,7 +37,9 @@
 #include <string.h>
 
 // The managed GCEvent is a struct with a single pointer field, laid out exactly like the C++
-// one, so a managed GCEvent* is a native GCEvent*. Nothing else about GCEvent crosses over.
+// one. Nothing about GCEvent crosses between the two any more -- GCEvent.Unix.cs and
+// GCEvent.Windows.cs implement it -- but the collector's own data structures embed events, so
+// the size stays pinned here as well as in GCInterfaceOffsets.h.
 static_assert(sizeof(GCEvent) == sizeof(void*), "The managed GCEvent mirrors the C++ one as a single pointer.");
 
 //
@@ -111,6 +114,76 @@ static_assert(offsetof(struct rlimit, rlim_cur) == 0, "struct rlimit does not ma
 static_assert(offsetof(struct rlimit, rlim_max) == sizeof(rlim_t), "struct rlimit does not match GCToOSInterface.VirtualMemory.Unix.cs.");
 
 //
+// The <pthread.h>, <time.h> and <errno.h> values that the event and lock ports of
+// GCEvent.Unix.cs, GCEnvSync.Unix.cs and SyncTypes.Unix.cs hardcode.
+//
+// The pthread types are opaque blobs there, so only their size and alignment matter; the
+// managed ones are deliberately larger than any platform needs. struct timespec is not opaque --
+// the deadline arithmetic of GCEvent::Impl::Wait writes its fields -- so its layout is asserted
+// exactly, in the two variants the C# selects between.
+//
+
+#include <pthread.h>
+#include <time.h>
+
+static_assert(sizeof(pthread_mutex_t) <= 16 * sizeof(uint64_t), "pthread_mutex_t does not fit the blob of SyncTypes.Unix.cs.");
+static_assert(alignof(pthread_mutex_t) <= alignof(uint64_t), "pthread_mutex_t is more strictly aligned than the blob of SyncTypes.Unix.cs.");
+static_assert(sizeof(pthread_cond_t) <= 16 * sizeof(uint64_t), "pthread_cond_t does not fit the blob of SyncTypes.Unix.cs.");
+static_assert(alignof(pthread_cond_t) <= alignof(uint64_t), "pthread_cond_t is more strictly aligned than the blob of SyncTypes.Unix.cs.");
+static_assert(sizeof(pthread_mutexattr_t) <= 8 * sizeof(uint64_t), "pthread_mutexattr_t does not fit the blob of SyncTypes.Unix.cs.");
+static_assert(alignof(pthread_mutexattr_t) <= alignof(uint64_t), "pthread_mutexattr_t is more strictly aligned than the blob of SyncTypes.Unix.cs.");
+static_assert(sizeof(pthread_condattr_t) <= 8 * sizeof(uint64_t), "pthread_condattr_t does not fit the blob of SyncTypes.Unix.cs.");
+static_assert(alignof(pthread_condattr_t) <= alignof(uint64_t), "pthread_condattr_t is more strictly aligned than the blob of SyncTypes.Unix.cs.");
+
+#ifdef TARGET_LINUX_MUSL
+
+// musl widens time_t to 64 bits on every architecture, and pads the following long tv_nsec out
+// to the same width. The managed struct is a 64-bit tv_sec, a native-word tv_nsec and, on a
+// 32-bit architecture, an explicit padding field -- which places tv_nsec at offset 8 only on a
+// little-endian architecture, the only kind this branch is built for.
+static_assert(sizeof(time_t) == 8, "time_t does not match SyncTypes.Unix.cs.");
+static_assert(sizeof(struct timespec) == 16, "struct timespec does not match SyncTypes.Unix.cs.");
+static_assert(sizeof(((struct timespec*)nullptr)->tv_nsec) == sizeof(long), "struct timespec does not match SyncTypes.Unix.cs.");
+static_assert(offsetof(struct timespec, tv_sec) == 0, "struct timespec does not match SyncTypes.Unix.cs.");
+static_assert(offsetof(struct timespec, tv_nsec) == 8, "struct timespec does not match SyncTypes.Unix.cs.");
+static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "struct timespec does not match SyncTypes.Unix.cs.");
+
+#else
+
+static_assert(sizeof(struct timespec) == 2 * sizeof(intptr_t), "struct timespec does not match SyncTypes.Unix.cs.");
+static_assert(sizeof(time_t) == sizeof(intptr_t), "struct timespec does not match SyncTypes.Unix.cs.");
+static_assert(offsetof(struct timespec, tv_sec) == 0, "struct timespec does not match SyncTypes.Unix.cs.");
+static_assert(offsetof(struct timespec, tv_nsec) == sizeof(intptr_t), "struct timespec does not match SyncTypes.Unix.cs.");
+
+#endif // TARGET_LINUX_MUSL
+
+#if defined(TARGET_APPLE)
+
+static_assert(PTHREAD_MUTEX_RECURSIVE == 2, "PTHREAD_MUTEX_RECURSIVE does not match GCEnvSync.Unix.cs.");
+static_assert(CLOCK_UPTIME_RAW == 8, "CLOCK_UPTIME_RAW does not match GCEvent.Unix.cs.");
+static_assert(ETIMEDOUT == 60, "ETIMEDOUT does not match GCEvent.Unix.cs.");
+
+// HAVE_CLOCK_GETTIME_NSEC_NP of config.gc.h is what picks the relative timed wait of
+// GCEvent::Impl::Wait, and TARGET_APPLE stands for it in the C#. There is nothing to assert
+// about a function's existence, but a platform that had neither that function nor
+// pthread_condattr_setclock would fail to link the managed GC, which is the same outcome as the
+// #error the C++ carries for that case.
+
+#elif defined(TARGET_FREEBSD)
+
+static_assert(PTHREAD_MUTEX_RECURSIVE == 2, "PTHREAD_MUTEX_RECURSIVE does not match GCEnvSync.Unix.cs.");
+static_assert(CLOCK_MONOTONIC == 4, "CLOCK_MONOTONIC does not match GCEvent.Unix.cs.");
+static_assert(ETIMEDOUT == 60, "ETIMEDOUT does not match GCEvent.Unix.cs.");
+
+#else // Linux, Android and any other Unix that shares the glibc values.
+
+static_assert(PTHREAD_MUTEX_RECURSIVE == 1, "PTHREAD_MUTEX_RECURSIVE does not match GCEnvSync.Unix.cs.");
+static_assert(CLOCK_MONOTONIC == 1, "CLOCK_MONOTONIC does not match GCEvent.Unix.cs.");
+static_assert(ETIMEDOUT == 110, "ETIMEDOUT does not match GCEvent.Unix.cs.");
+
+#endif
+
+//
 // The second remaining piece: the NUMA half of VirtualCommitInner. It is the body of the
 // `#if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)` block of that function, verbatim,
 // because it reads the NUMA state that only gc/unix/numasupport.cpp has -- which belongs to the
@@ -181,6 +254,14 @@ static_assert(offsetof(SYSTEM_INFO, dwAllocationGranularity) == (sizeof(void*) =
 
 // The managed GetPageSize returns 4096, which is what minipal_getpagesize is on Windows: an
 // inline function with no symbol to call and no way to static_assert its result.
+
+// The event and lock ports of GCEvent.Windows.cs, GCEnvSync.Windows.cs and SyncTypes.Windows.cs
+// hardcode one <windows.h> value and one type. The CRITICAL_SECTION is an opaque blob there, so
+// only its size and alignment matter; the managed one is deliberately larger than any platform
+// needs. INVALID_HANDLE_VALUE is a pointer cast, which is not a constant expression, so it
+// cannot be asserted here the way an integer constant is.
+static_assert(sizeof(CRITICAL_SECTION) <= 8 * sizeof(uint64_t), "CRITICAL_SECTION does not fit the blob of SyncTypes.Windows.cs.");
+static_assert(alignof(CRITICAL_SECTION) <= alignof(uint64_t), "CRITICAL_SECTION is more strictly aligned than the blob of SyncTypes.Windows.cs.");
 
 #endif // TARGET_UNIX
 
@@ -337,100 +418,11 @@ extern "C" UInt32_BOOL ManagedGC_OS_ParseGCHeapAffinitizeRangesEntry(const char*
 }
 
 //
-// GCEvent. The managed struct has the same layout as the C++ class -- a single Impl pointer,
-// zero-initialized, which is what the C++ default constructor produces -- so `event` below is
-// the address of the managed instance and the member functions operate on it in place.
-//
-
-extern "C" void ManagedGC_GCEvent_CloseEvent(GCEvent* event)
-{
-    event->CloseEvent();
-}
-
-extern "C" void ManagedGC_GCEvent_Set(GCEvent* event)
-{
-    event->Set();
-}
-
-extern "C" void ManagedGC_GCEvent_Reset(GCEvent* event)
-{
-    event->Reset();
-}
-
-extern "C" uint32_t ManagedGC_GCEvent_Wait(GCEvent* event, uint32_t timeout, UInt32_BOOL alertable)
-{
-    return event->Wait(timeout, alertable != UInt32_FALSE);
-}
-
-extern "C" UInt32_BOOL ManagedGC_GCEvent_CreateManualEventNoThrow(GCEvent* event, UInt32_BOOL initialState)
-{
-    return event->CreateManualEventNoThrow(initialState != UInt32_FALSE) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_GCEvent_CreateAutoEventNoThrow(GCEvent* event, UInt32_BOOL initialState)
-{
-    return event->CreateAutoEventNoThrow(initialState != UInt32_FALSE) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_GCEvent_CreateOSManualEventNoThrow(GCEvent* event, UInt32_BOOL initialState)
-{
-    return event->CreateOSManualEventNoThrow(initialState != UInt32_FALSE) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-extern "C" UInt32_BOOL ManagedGC_GCEvent_CreateOSAutoEventNoThrow(GCEvent* event, UInt32_BOOL initialState)
-{
-    return event->CreateOSAutoEventNoThrow(initialState != UInt32_FALSE) ? UInt32_TRUE : UInt32_FALSE;
-}
-
-//
-// CLRCriticalSection.
-//
-// Unlike GCEvent this one cannot be mirrored field for field: it embeds a minipal_mutex, which
-// is a pthread_mutex_t or a CRITICAL_SECTION, whose size differs per operating system and is
-// therefore not expressible as the per-pointer-size constant that GCInterfaceOffsets.h can
-// produce. The managed struct holds a pointer to a natively allocated one instead. It goes away
-// with the rest of these forwarders, when the lock itself is ported.
-//
-
-extern "C" void* ManagedGC_CriticalSection_Create()
-{
-    CLRCriticalSection* cs = new (nothrow) CLRCriticalSection();
-    if (cs == nullptr)
-    {
-        return nullptr;
-    }
-
-    if (!cs->Initialize())
-    {
-        delete cs;
-        return nullptr;
-    }
-
-    return cs;
-}
-
-extern "C" void ManagedGC_CriticalSection_Destroy(void* cs)
-{
-    CLRCriticalSection* section = (CLRCriticalSection*)cs;
-    section->Destroy();
-    delete section;
-}
-
-extern "C" void ManagedGC_CriticalSection_Enter(void* cs)
-{
-    ((CLRCriticalSection*)cs)->Enter();
-}
-
-extern "C" void ManagedGC_CriticalSection_Leave(void* cs)
-{
-    ((CLRCriticalSection*)cs)->Leave();
-}
-
-//
-// Stands in for the `new (nothrow) uintptr_t[]` / `delete[]` pair that AffinitySet::Initialize
-// and ~AffinitySet use. The managed GC must not allocate managed memory, and it has no C
-// runtime of its own; this is the whole of its heap allocation surface, used only by
-// AffinitySet during GC initialization.
+// Stands in for the `new (nothrow)` allocations of the environment layer: the `uintptr_t[]` of
+// AffinitySet::Initialize, the GCEvent::Impl of the event ports, and the minipal_mutex that the
+// C++ CLRCriticalSection embeds by value and the managed one has to allocate. The managed GC
+// must not allocate managed memory, and it has no C runtime of its own; this is the whole of its
+// heap allocation surface.
 //
 
 extern "C" void* ManagedGC_AllocZeroed(size_t size)

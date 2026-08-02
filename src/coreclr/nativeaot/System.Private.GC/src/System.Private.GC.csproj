@@ -17,6 +17,10 @@
          nativeaot/Runtime/gcenv.managed.cpp. -->
     <DefineConstants Condition="'$(TargetsOSX)' == 'true' or '$(TargetsMacCatalyst)' == 'true' or '$(TargetsiOS)' == 'true' or '$(TargetstvOS)' == 'true'">TARGET_APPLE;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsFreeBSD)' == 'true'">TARGET_FREEBSD;$(DefineConstants)</DefineConstants>
+    <!-- The Unix event port selects the <time.h> struct timespec of the platform it is built
+         for; musl is the one C library whose time_t is wider than a pointer. The native build
+         defines the same symbol, and gcenv.managed.cpp asserts the layout the C# selects. -->
+    <DefineConstants Condition="'$(TargetsLinuxMusl)' == 'true'">TARGET_LINUX_MUSL;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
     <!-- The generated GCInterfaceOffsets.cs is only available when the native runtime is built
@@ -53,6 +57,19 @@
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.VirtualMemory.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.WriteWatch.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.WriteWatch.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <!-- The event and lock implementations, likewise one per gcenv platform file:
+         gc/unix/events.cpp and the GCEvent half of gc/windows/gcenv.windows.cpp, plus the two
+         halves of src/native/minipal/mutex.c that CLRCriticalSection forwards to. The pthread
+         and Win32 types they name are shared with the tests; the declarations of the entry
+         points they call are substituted there. -->
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\SyncTypes.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\SyncTypes.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\SyncImports.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\SyncImports.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEvent.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEvent.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnvSync.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnvSync.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\Interlocked.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\IntroSort.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCEntryPoints.cs" />

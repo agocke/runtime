@@ -4,22 +4,22 @@
 // Port of the CLRCriticalSection class of gcenv.os.h and of the CrstStatic / CrstHolder helpers
 // of gcenv.sync.h that the GC and the handle table lock with.
 //
+// This file is the header: the field and the declared surface. The bodies of the four methods
+// are the minipal_mutex functions of src/native/minipal/mutex.c that the C++ class forwards to,
+// translated per platform in GCEnvSync.Unix.cs and GCEnvSync.Windows.cs.
+//
 // One deviation from the C++ shape: CLRCriticalSection embeds a minipal_mutex by value, which is
 // a pthread_mutex_t or a CRITICAL_SECTION. Their sizes differ per operating system, and
 // GCInterfaceOffsets.h -- the mechanism this port pins native layouts with -- carries one value
 // per pointer size, not one per platform, so the managed struct cannot reserve the right number
-// of bytes inline. It holds a pointer to a natively allocated critical section instead. Nothing
-// passes a CLRCriticalSection across the boundary, so no layout depends on the difference.
-//
-// Deletion point: plan step 3 of ROADMAP.md, together with the rest of the environment
-// forwarders. When the lock itself is managed, the pointer becomes the lock's state and the
-// shims go away.
+// of bytes inline. It holds a pointer to a natively allocated one instead, taken from the same
+// nothrow native allocation shim AffinitySet uses, and Initialize and Destroy own that
+// allocation. Nothing passes a CLRCriticalSection across the boundary, so no layout depends on
+// the difference.
 //
 // CLREventStatic of gcenv.sync.h is not ported: the GC does not use it. The NativeAOT runtime
 // does, from its own C++ code, which keeps its own definition.
 
-using System.Runtime;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection
@@ -28,53 +28,25 @@ namespace Internal.Runtime.GarbageCollection
     /// Critical section used by the GC.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe struct CLRCriticalSection
+    internal unsafe partial struct CLRCriticalSection
     {
-        private const string RuntimeLibrary = "*";
-
+        /// <summary>
+        /// The <c>minipal_mutex</c> the C++ class embeds, allocated natively for the reason
+        /// given at the top of this file.
+        /// </summary>
         private void* m_cs;
 
         /// <summary>Initialize the critical section.</summary>
-        public bool Initialize()
-        {
-            m_cs = ManagedGC_CriticalSection_Create();
-            return m_cs != null;
-        }
+        public partial bool Initialize();
 
         /// <summary>Destroy the critical section.</summary>
-        public void Destroy()
-        {
-            ManagedGC_CriticalSection_Destroy(m_cs);
-            m_cs = null;
-        }
+        public partial void Destroy();
 
         /// <summary>Enter the critical section. Blocks until the section can be entered.</summary>
-        public readonly void Enter()
-        {
-            ManagedGC_CriticalSection_Enter(m_cs);
-        }
+        public readonly partial void Enter();
 
         /// <summary>Leave the critical section.</summary>
-        public readonly void Leave()
-        {
-            ManagedGC_CriticalSection_Leave(m_cs);
-        }
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_CriticalSection_Create")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void* ManagedGC_CriticalSection_Create();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_CriticalSection_Destroy")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void ManagedGC_CriticalSection_Destroy(void* cs);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_CriticalSection_Enter")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void ManagedGC_CriticalSection_Enter(void* cs);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_CriticalSection_Leave")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void ManagedGC_CriticalSection_Leave(void* cs);
+        public readonly partial void Leave();
     }
 
     /// <summary>

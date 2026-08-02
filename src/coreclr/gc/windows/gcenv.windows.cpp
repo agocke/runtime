@@ -1345,6 +1345,7 @@ static DWORD GCThreadStub(void* param)
 
 // WindowsEvent is an implementation of GCEvent that forwards
 // directly to Win32 APIs.
+#ifndef FEATURE_MANAGED_GC
 class GCEvent::Impl
 {
 private:
@@ -1483,3 +1484,4 @@ bool GCEvent::CreateOSManualEventNoThrow(bool initialState)
     m_impl = event.release();
     return true;
 }
+#endif // FEATURE_MANAGED_GC

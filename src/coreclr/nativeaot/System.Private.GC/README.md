@@ -53,7 +53,15 @@ Ported so far:
 | `Environment/GCEnvStructs.cs` | `env/gcenv.structs.h` |
 | `Environment/AffinitySet.cs` | `env/gcenv.os.h` (`AffinitySet`) |
 | `Environment/GCEvent.cs` | `env/gcenv.os.h` (`GCEvent`) |
+| `Environment/GCEvent.Unix.cs` | `gc/unix/events.cpp` |
+| `Environment/GCEvent.Windows.cs` | `gc/windows/gcenv.windows.cpp` (`GCEvent::Impl`) |
 | `Environment/GCEnvSync.cs` | `env/gcenv.os.h` (`CLRCriticalSection`), `env/gcenv.sync.h` |
+| `Environment/GCEnvSync.Unix.cs` | `src/native/minipal/mutex.c` (the pthread half) |
+| `Environment/GCEnvSync.Windows.cs` | `src/native/minipal/mutex.c` (the CRITICAL_SECTION half) |
+| `Environment/SyncTypes.Unix.cs` | the `<pthread.h>` / `<time.h>` types the two above name |
+| `Environment/SyncTypes.Windows.cs` | the `<windows.h>` type the two above name |
+| `Environment/SyncImports.Unix.cs` | the `<pthread.h>` / `<time.h>` entry points the two above call |
+| `Environment/SyncImports.Windows.cs` | the `<windows.h>` entry points the two above call |
 | `Environment/GCToOSInterface.cs` | `env/gcenv.os.h` (`GCToOSInterface`) |
 | `Environment/GCToOSInterface.VirtualMemory.Unix.cs` | `gc/unix/gcenv.unix.cpp` (virtual memory), `env/gcenv.unix.inl` |
 | `Environment/GCToOSInterface.VirtualMemory.Windows.cs` | `gc/windows/gcenv.windows.cpp` (virtual memory), `env/gcenv.windows.inl` |
@@ -117,6 +125,35 @@ is the same machine constant. On Unix there is no write watch, so `SupportsWrite
 constant `false` that reserves nothing and the other two only assert, exactly as the C++ does --
 the collector uses software write watch there instead.
 
+Events and locks are translated as well. `GCEvent` is the `GCEvent::Impl` of
+`gc/unix/events.cpp` -- a condition variable, a mutex, and the manual-reset and state flags,
+with the same predicate loop, the same monotonic deadline arithmetic, the same broadcast under
+the mutex, and the same auto-reset clear in the waiter -- or, on Windows, the `GCEvent::Impl` of
+`gc/windows/gcenv.windows.cpp`, which is a Win32 event handle and four calls. `CLRCriticalSection`
+is the `minipal_mutex` of `src/native/minipal/mutex.c`: a recursive `pthread_mutex_t`, or a
+`CRITICAL_SECTION`. All of them call `pthread_*`, `clock_gettime` and the Win32 event and
+critical section functions through `[RuntimeImport]` declarations of those entry points, so a
+wait or an `Enter` parks the calling thread in libc or the kernel without a GC mode transition,
+which is what the collector's own threads need while the world is suspended. As with virtual
+memory, the platform constants -- `PTHREAD_MUTEX_RECURSIVE`, `CLOCK_MONOTONIC`,
+`CLOCK_UPTIME_RAW`, `ETIMEDOUT` -- and the sizes of the opaque pthread and `CRITICAL_SECTION`
+blobs are written out per platform in the C# and asserted against the real headers by
+`nativeaot/Runtime/gcenv.managed.cpp`. `struct timespec` is the one type the managed code writes
+into rather than passing through, so its layout is asserted exactly, in the two variants the C#
+selects between: two native-sized words, or the 64-bit `time_t` that musl uses on every
+architecture.
+
+The managed runtime archive no longer compiles the Unix `events.cpp`; on Windows,
+`FEATURE_MANAGED_GC` excludes the `GCEvent::Impl` section of `gcenv.windows.cpp`. The latter file
+remains in the archive only for the `GCToOSInterface` services that have not been translated yet.
+
+Two C++ shapes are preserved rather than corrected, because this is a translation: `CloseEvent`
+releases the operating system object but neither frees the Impl nor clears the pimpl pointer, so
+`IsValid()` keeps reporting true afterwards -- a `GCEvent` deliberately has no destructor, see
+[dotnet/runtime#7919](https://github.com/dotnet/runtime/issues/7919) -- and on Windows a failed
+`CreateEvent` returns `NULL`, which the C++ `IsValid()` does not recognize as a failure because
+it compares against `INVALID_HANDLE_VALUE`.
+
 Everything else that reaches the operating system is declared with the C++ signature and
 forwarded, for now, to a one-line shim in `nativeaot/Runtime/gcenv.managed.cpp` that calls the
 existing C++ `GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.windows.cpp`.
@@ -130,11 +167,10 @@ Those shims are the whole retained-native surface of this layer:
   verbatim. It reads `g_numaAvailable` and `g_highestNumaNode` and calls `BindMemoryPolicy`,
   all of which belong to `gc/unix/numasupport.cpp`, so it is deleted with the NUMA submodule
   rather than with virtual memory;
-* one per `GCEvent` method (`ManagedGC_GCEvent_*`);
-* four for `CLRCriticalSection` (`ManagedGC_CriticalSection_*`);
-* `ManagedGC_AllocZeroed` / `ManagedGC_Free`, which stand in for the `new (nothrow) uintptr_t[]`
-  and `delete[]` that `AffinitySet::Initialize` and `~AffinitySet` use, and which are the only
-  heap allocation the managed GC performs.
+* `ManagedGC_AllocZeroed` / `ManagedGC_Free`, which stand in for the `new (nothrow)`
+  allocations of the environment layer -- the `uintptr_t[]` of `AffinitySet::Initialize`, the
+  `GCEvent::Impl` of the event ports, and the `minipal_mutex` that the C++ `CLRCriticalSection`
+  embeds by value -- and which are the only heap allocation the managed GC performs.
 
 Each of them is deleted when the platform code behind it is ported; that is the remainder of
 plan step 3 in [ROADMAP.md](ROADMAP.md), which lists the modules by name. The calls are
@@ -149,10 +185,11 @@ Three shapes differ from the C++ on purpose, each for a reason C# forces:
   `SetGCThreadsAffinitySet` passes one across to the platform layer and hands back the platform
   layer's own.
 * `CLRCriticalSection` holds a pointer to a natively allocated critical section instead of
-  embedding a `minipal_mutex` by value. The embedded object is a `pthread_mutex_t` or a
-  `CRITICAL_SECTION`, whose size differs per operating system, and `GCInterfaceOffsets.h` carries
-  one value per pointer size rather than one per platform. Nothing passes a `CLRCriticalSection`
-  across a boundary, so no layout depends on the difference.
+  embedding a `minipal_mutex` by value, and `Initialize` and `Destroy` own that allocation. The
+  embedded object is a `pthread_mutex_t` or a `CRITICAL_SECTION`, whose size differs per
+  operating system, and `GCInterfaceOffsets.h` carries one value per pointer size rather than one
+  per platform. Nothing passes a `CLRCriticalSection` across a boundary, so no layout depends on
+  the difference.
 * `EEThreadId` stores an OS thread id on both platforms rather than a `pthread_t` on Unix and a
   Windows thread id on Windows. It is only read by the debug-only lock-ownership assertions.
 
@@ -189,6 +226,22 @@ reset flag. On Unix the write watch tests pin the platform behavior that makes t
 software write watch: an unsupported answer that reserves nothing. The expected flag values are
 written out in the test rather than read from the constants of the port, so a wrong constant
 fails a test instead of being confirmed by it.
+
+`GCEventTests` and `GCCriticalSectionTests` do the same for the event and lock ports, over
+`tests/SyncImports.*.TestHost.cs`. Because the substitutes forward to the real pthreads or the
+real Win32 objects, the tests are behavior tests and not just call-shape tests: manual versus
+auto reset, the initial state, a timeout that actually elapses, a blocking wait released by
+another thread, a manual event releasing every waiter against an auto event releasing exactly
+one per `Set`, a two-event ping-pong of two thousand round trips that loses no signal, twenty
+thousand set/reset pairs racing three pollers, the recursive lock's nesting, and four threads
+contending for it without losing an update. The recorded calls pin the translation itself: the
+mutex attribute is `PTHREAD_MUTEX_RECURSIVE`, the condition variable is created against
+`CLOCK_MONOTONIC` and the deadline read from it, the deadline of a longer wait lands the right
+distance away -- which is what checks the nanosecond carry -- `Set` broadcasts under the mutex
+and `Reset` does not, a wait satisfied immediately never touches the condition variable, and the
+Impl comes from a single nothrow allocation. The failure paths -- the allocation, the mutex and
+the condition variable each failing to initialize -- are driven by injection, and are compiled
+only into a build with asserts disabled, because the C++ asserts on them too.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:
