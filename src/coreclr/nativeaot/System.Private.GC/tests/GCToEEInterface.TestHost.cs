@@ -181,6 +181,8 @@ internal static unsafe class GCToEEInterface
         InitializeCallCount++;
     }
 
+    public static uint GetCurrentProcessCpuCount() => (uint)Environment.ProcessorCount;
+
     /// <summary>
     /// Substitute for the indirect <c>IGCToCLR::StompWriteBarrier</c> call.
     /// <see cref="SoftwareWriteWatch.EnableForGCHeap"/> and

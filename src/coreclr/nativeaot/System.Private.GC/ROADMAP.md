@@ -636,12 +636,17 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   `HndCreateHandleTable`, `HndDestroyHandleTable`, `HndSetHandleTableIndex`, and
   `HndGetHandleTableIndex`. Creation initializes the first segment, table lock, type flags, and
   trailing per-type main caches without managed allocation.
+- `handletablecache.cpp`, as `HandleTableCache.cs`: reserve/free bank reads, writes, synchronized
+  transfers, quick and full rebalancing, cache-miss locking, quick-cache exchange, and single or
+  repeated allocation/free paths. The dependent `QuickSort`, `CompareHandlesByFreeOrder`,
+  `HandleQuickFetchUserDataPointer`, `HandleQuickSetUserData`, `TableAllocBulkHandles`, and
+  `TableFreeBulkPreparedHandles` routines are translated with it.
 
 #### Remaining
 
-Port per-type cache operations, table allocation/free entrypoints, and manager/store glue. The current flat
-`ManagedGCHandleManager` remains the runtime
-implementation until those pieces can replace it as one coherent allocation path.
+Port the remaining public table allocation/free entrypoints and manager/store glue. The current
+flat `ManagedGCHandleManager` remains the runtime implementation until those pieces can replace
+it as one coherent allocation path.
 `TableContainHandle` remains with the table entrypoints because its exact translation takes the
 table lock and walks `HandleTable.pSegmentList`. Handle scanning, weak/dependent processing,
 write-barrier generation updates, and multi-heap table selection remain blocked on the core heap

@@ -58,6 +58,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCScan.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableConstants.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTable.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\HandleTableCache.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableCore.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableStructs.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\SoftwareWriteWatch.cs" />

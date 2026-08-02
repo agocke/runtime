@@ -12,6 +12,92 @@ namespace Internal.Runtime.GarbageCollection
 {
     internal static unsafe class HandleTableCore
     {
+        public static void QuickSort(nuint* pData, int left, int right, delegate*<nuint, nuint, int> pfnCompare)
+        {
+            do
+            {
+                int i = left;
+                int j = right;
+
+                nuint x = pData[(i + j + 1) / 2];
+
+                do
+                {
+                    while (pfnCompare(pData[i], x) < 0)
+                    {
+                        i++;
+                    }
+
+                    while (pfnCompare(x, pData[j]) < 0)
+                    {
+                        j--;
+                    }
+
+                    if (i > j)
+                    {
+                        break;
+                    }
+
+                    if (i < j)
+                    {
+                        nuint t = pData[i];
+                        pData[i] = pData[j];
+                        pData[j] = t;
+                    }
+
+                    i++;
+                    j--;
+                }
+                while (i <= j);
+
+                if ((j - left) <= (right - i))
+                {
+                    if (left < j)
+                    {
+                        QuickSort(pData, left, j, pfnCompare);
+                    }
+
+                    left = i;
+                }
+                else
+                {
+                    if (i < right)
+                    {
+                        QuickSort(pData, i, right, pfnCompare);
+                    }
+
+                    right = j;
+                }
+            }
+            while (left < right);
+        }
+
+        public static int CompareHandlesByFreeOrder(nuint p, nuint q)
+        {
+            TableSegment* pSegmentP = (TableSegment*)(p & unchecked((nuint)HandleTableConstants.HANDLE_SEGMENT_ALIGN_MASK));
+            TableSegment* pSegmentQ = (TableSegment*)(q & unchecked((nuint)HandleTableConstants.HANDLE_SEGMENT_ALIGN_MASK));
+
+            if (pSegmentP == pSegmentQ)
+            {
+                return (int)((nint)q - (nint)p);
+            }
+            else if (pSegmentP != null)
+            {
+                if (pSegmentQ != null)
+                {
+                    return pSegmentQ->Header.bSequence - pSegmentP->Header.bSequence;
+                }
+
+                return 1;
+            }
+            else if (pSegmentQ != null)
+            {
+                return -1;
+            }
+
+            return 0;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static _TableSegmentHeader* HandleFetchSegmentPointer(OBJECTHANDLE handle)
         {
@@ -200,6 +286,35 @@ namespace Internal.Runtime.GarbageCollection
             Debug.Assert(uType < HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES);
 
             return (pTable->rgTypeFlags[uType] & HandleTableConstants.HNDF_EXTRAINFO) != 0;
+        }
+
+        public static nuint* HandleQuickFetchUserDataPointer(OBJECTHANDLE handle)
+        {
+            _TableSegmentHeader* pSegment = HandleFetchSegmentPointer(handle);
+            nuint offset = (nuint)handle.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK;
+
+            Debug.Assert(offset >= HandleTableConstants.HANDLE_HEADER_SIZE);
+
+            uint uHandle = (uint)((offset - HandleTableConstants.HANDLE_HEADER_SIZE) / HandleTableConstants.HANDLE_SIZE);
+            uint uBlock = uHandle / HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+            nuint* pUserData = BlockFetchUserDataPointer(pSegment, uBlock, true);
+
+            if (pUserData != null)
+            {
+                pUserData += uHandle - (uBlock * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK);
+            }
+
+            return pUserData;
+        }
+
+        public static void HandleQuickSetUserData(OBJECTHANDLE handle, nuint lUserData)
+        {
+            nuint* pUserData = HandleQuickFetchUserDataPointer(handle);
+
+            if (pUserData != null)
+            {
+                *pUserData = lUserData;
+            }
         }
 
         public static uint SegmentInsertBlockFromFreeList(TableSegment* pSegment, uint uType, bool fUpdateHint)
@@ -800,6 +915,88 @@ namespace Internal.Runtime.GarbageCollection
             return uSatisfied;
         }
 
+        public static uint TableAllocBulkHandles(
+            HandleTable* pTable,
+            uint uType,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            uint uRemain = uCount;
+            TableSegment* pSegment = pTable->pSegmentList;
+            byte bLastSequence = 0;
+            bool fNewSegment = false;
+
+            for (;;)
+            {
+                uint uSatisfied = SegmentAllocHandles(pSegment, uType, pHandleBase, uRemain);
+
+                uRemain -= uSatisfied;
+                pHandleBase += uSatisfied;
+
+                if (uRemain == 0)
+                {
+                    break;
+                }
+
+                TableSegment* pNextSegment = null;
+
+                if (!fNewSegment)
+                {
+                    pNextSegment = pSegment->Header.pNextSegment;
+                    if (pNextSegment == null)
+                    {
+                        bLastSequence = pSegment->Header.bSequence;
+                        fNewSegment = true;
+                    }
+                }
+
+                if (fNewSegment)
+                {
+                    pNextSegment = SegmentAlloc(pTable);
+                    if (pNextSegment == null)
+                    {
+                        break;
+                    }
+
+                    pNextSegment->Header.bSequence = unchecked((byte)(bLastSequence + 1));
+                    bLastSequence = pNextSegment->Header.bSequence;
+
+                    TableSegment* pWalk = pTable->pSegmentList;
+                    if ((nuint)pNextSegment < (nuint)pWalk)
+                    {
+                        pNextSegment->Header.pNextSegment = pWalk;
+                        pTable->pSegmentList = pNextSegment;
+                    }
+                    else
+                    {
+                        while (pWalk != null)
+                        {
+                            if (pWalk->Header.pNextSegment == null)
+                            {
+                                pWalk->Header.pNextSegment = pNextSegment;
+                                break;
+                            }
+                            else if ((nuint)pWalk->Header.pNextSegment > (nuint)pNextSegment)
+                            {
+                                pNextSegment->Header.pNextSegment = pWalk->Header.pNextSegment;
+                                pWalk->Header.pNextSegment = pNextSegment;
+                                break;
+                            }
+
+                            pWalk = pWalk->Header.pNextSegment;
+                        }
+                    }
+                }
+
+                pSegment = pNextSegment;
+            }
+
+            uint uAllocated = uCount - uRemain;
+            pTable->dwCount += uAllocated;
+
+            return uAllocated;
+        }
+
         public static uint BlockFreeHandlesInMask(
             TableSegment* pSegment,
             uint uBlock,
@@ -979,6 +1176,27 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             return uFreedTotal;
+        }
+
+        public static void TableFreeBulkPreparedHandles(
+            HandleTable* pTable,
+            uint uType,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            pTable->dwCount -= uCount;
+
+            do
+            {
+                TableSegment* pSegment = (TableSegment*)HandleFetchSegmentPointer(*pHandleBase);
+
+                Debug.Assert(pSegment->Header.pHandleTable == pTable);
+
+                uint uFreed = SegmentFreeHandles(pSegment, uType, pHandleBase, uCount);
+                uCount -= uFreed;
+                pHandleBase += uFreed;
+            }
+            while (uCount != 0);
         }
     }
 }

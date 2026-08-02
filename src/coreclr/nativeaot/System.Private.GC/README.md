@@ -42,6 +42,7 @@ Ported so far:
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
 | `HandleTable.cs` | `handletable.cpp` (table lifecycle subset) |
+| `HandleTableCache.cs` | `handletablecache.cpp` |
 | `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `IntroSort.cs` | `introsort.h` |
@@ -125,10 +126,12 @@ types marked `HNDF_EXTRAINFO`. The shared `GCInterfaceOffsets.h` table pins the 
 layouts plus the load-bearing `HandleTable.rgTypeFlags` prefix and flag values against the native
 headers, and the managed startup verifier checks the C# definitions against the generated values.
 `HandleTable.cs` now allocates and initializes a table, its first segment, lock, type flags, and
-trailing main caches, and destroys the complete segment list. The flat `ManagedGCHandleManager`
-still supplies the running bootstrap heap until cache operations, the remaining table
-entrypoints, and the manager glue are ported over this
-schema.
+trailing main caches, and destroys the complete segment list. `HandleTableCache.cs` translates
+the reserve bank, free bank, quick-cache, cache-miss, and full/quick rebalance paths. Its
+low-water path is backed by the translated bulk table allocation entrypoint, and its high-water
+path uses the native free-order comparison and prepared bulk free path. The flat
+`ManagedGCHandleManager` still supplies the running bootstrap heap until the remaining table
+entrypoints and manager glue are ported over this schema.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

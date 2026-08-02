@@ -39,6 +39,22 @@ namespace Internal.Runtime.GarbageCollection
 #endif
     }
 
+    internal unsafe ref struct HandleTableCrstHolder
+    {
+        private readonly HandleTableCrstStatic* _lock;
+
+        public HandleTableCrstHolder(HandleTableCrstStatic* pLock)
+        {
+            _lock = pLock;
+            _lock->Enter();
+        }
+
+        public void Dispose()
+        {
+            _lock->Leave();
+        }
+    }
+
     /// <summary>Fixed header of a handle table, followed in memory by its per-type caches.</summary>
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct HandleTable
