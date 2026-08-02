@@ -40,6 +40,7 @@
     <Compile Include="GCProcessorTests.cs" />
     <Compile Include="GCFoundationTests.cs" />
     <Compile Include="GCInterfaceLayoutTests.cs" />
+    <Compile Include="GCConfigTests.cs" />
     <!-- The environment layer. Its OS calls are [RuntimeImport] declarations, which resolve
          only inside a NativeAOT image; the tests here drive the parts that are pure
          computation and check the layouts of the types that cross into the native gcenv. -->
@@ -88,10 +89,12 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceEnums.cs" Link="Interface/GCInterfaceEnums.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceStructs.cs" Link="Interface/GCInterfaceStructs.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceVtables.cs" Link="Interface/GCInterfaceVtables.cs" />
-    <!-- GCConfig is here because the cache sizing port of GCToOSInterface reads one config
-         value out of it. Its backing fields are only ever written by GCConfig.Initialize,
-         which the tests do not run, so every value the tests see is the documented default. -->
-    <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCToEEInterface.cs" Link="Interface/GCToEEInterface.cs" />
+    <!-- GCConfig is the port of gcconfig.h / gcconfig.cpp. Its shipping body runs here over a
+         substituted GCToEEInterface: the shipping one is an indirect call through the IGCToCLR
+         vtable the EE hands the GC, which no test process has. GCMemoryLimitsTests also reads one
+         config value out of GCConfig; GCConfigTests puts every backing field back the way the
+         port declares it before each of its own tests. -->
+    <Compile Include="GCToEEInterface.TestHost.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCConfig.cs" Link="GCConfig.cs" />
   </ItemGroup>
 
@@ -99,5 +102,9 @@
     <!-- The layout table the tests check the translated types against. It is embedded rather
          than read from the source tree so that the tests do not depend on their own location. -->
     <EmbeddedResource Include="../GCInterfaceOffsets.h" LogicalName="GCInterfaceOffsets.h" />
+    <!-- The C++ configuration table, for the same reason: GCConfigTests checks the translated
+         table, its keys, defaults and order against the source it was translated from. -->
+    <EmbeddedResource Include="../../../gc/gcconfig.h" LogicalName="gcconfig.h" />
+    <EmbeddedResource Include="../../../gc/gcconfig.cpp" LogicalName="gcconfig.cpp" />
   </ItemGroup>
 </Project>

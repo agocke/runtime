@@ -240,13 +240,14 @@ the narrowest possible accessors -- `ManagedGC_Unix_GetTotalCpuCount` and
 `ManagedGC_Windows_GetCpuGroupActiveProcessorCount` and `ManagedGC_Windows_GetCpuGroupBegin` on
 Windows. The Windows total is a `uint32_t*` rather than a value because the C++ body caches into
 `g_totalCpuCount` on first call and the port must perform that same write; the others are values
-because the C++ only reads them. These two C++
-bodies are also the first the port replaces that must stay compiled: `PalUnix.cpp` and
-`PalMinWin.cpp` call `GetTotalProcessorCount` and `gcconfig.cpp` calls `GetMaxProcessorCount`,
-and all three are in the managed runtime archive. `CanEnableGCCPUGroups` and
-`ParseGCHeapAffinitizeRangesEntry` are translated and still compiled for the same reason --
-`gcconfig.cpp` calls both and `PalMinWin.cpp` calls the first -- so those four are the only
-translated methods of this layer that `FEATURE_MANAGED_GC` leaves in place.
+because the C++ only reads them. `GetTotalProcessorCount` is also the first C++ body the port
+replaces that must stay compiled: `PalUnix.cpp` and `PalMinWin.cpp` call it, and both are in the
+managed runtime archive. `CanEnableGCCPUGroups` is translated and still compiled on Windows for
+the same reason -- `PalMinWin.cpp` calls it, and so does the retained `GetTotalProcessorCount` --
+so those are the only translated methods of this layer that `FEATURE_MANAGED_GC` leaves in place.
+`GetMaxProcessorCount`, the Unix `CanEnableGCCPUGroups` and `ParseGCHeapAffinitizeRangesEntry`
+were retained for `gcconfig.cpp`'s `ParseGCHeapAffinitizeRanges`, and are excluded now that it is
+translated too.
 
 The affinity, NUMA and CPU-group methods follow, and they are translated the same way. On Unix
 `SetCurrentThreadIdealAffinity` and `GetCurrentThreadIdealProc` keep the C++ no-op and `false`,
@@ -292,12 +293,12 @@ platforms it excludes the `Sleep` and `YieldThread` section of `gcenv.unix.cpp` 
 `gcenv.windows.cpp`, the memory limit and cache sizing sections of `gcenv.unix.cpp`,
 `gcenv.windows.cpp` and `gc/unix/cgroup.cpp`, the timer section of `gcenv.unix.cpp` and
 `gcenv.windows.cpp`, the four processor identity methods of `gcenv.unix.cpp` and
-`gcenv.windows.cpp`, and the affinity, ideal-processor, NUMA and heap-to-processor methods of
-both -- including the anonymous-namespace `GetGroupForProcessor` of `gcenv.windows.cpp`, whose
-only caller went with them. Those three files remain in the archive only for
-the `GCToOSInterface` services that have not been translated yet, for the four methods the rest
-of the archive still calls, and for the leaf helpers and state accessors above; the workstation
-and server GC archives still compile every one of those bodies
+`gcenv.windows.cpp`, and the affinity, ideal-processor, NUMA, heap-to-processor and
+affinitize-range methods of both -- including the anonymous-namespace `GetGroupForProcessor` of
+`gcenv.windows.cpp`, whose only caller went with them. Those three files remain in the archive
+only for the `GCToOSInterface` services that have not been translated yet, for the two methods
+the rest of the archive still calls, and for the leaf helpers and state accessors above; the
+workstation and server GC archives still compile every one of those bodies
 unchanged.
 
 Two C++ shapes are preserved rather than corrected, because this is a translation: `CloseEvent`
@@ -364,6 +365,81 @@ NativeAOT runtime does, from its own C++.
 
 `GCToOSInterface::Initialize` and `Shutdown` are declared but never called by the managed GC:
 NativeAOT initializes the C++ `GCToOSInterface` from `PalInit`, before any managed code runs.
+
+## Configuration
+
+`GCConfig.cs` is the port of `gcconfig.h` and `gcconfig.cpp`. The C++ generates the accessors and
+the backing fields by expanding the `GC_CONFIGURATION_KEYS` table through three macros; C# has no
+such expansion, so the port writes the expansion out, one config at a time, in the table's order,
+with the same private and public keys, the same defaults and the same integer widths. All eighty
+entries are there: the seventy-five cached boolean and integer configs, each with its
+`Get{name}()`, `Get{name}(defaultValue)`, `Set{name}(value)` and its `s_{name}` / `s_{name}Provided`
+/ `s_Updated{name}` triple, and the five string configs, which the C++ deliberately does not cache
+and neither does this.
+
+A C++ `bool` becomes a `byte`, because the EE writes through the pointer the GC hands it and a
+managed `bool` has no guaranteed width; `int64_t` becomes `long`. Each key is a UTF-8 literal with
+an explicit terminator, so taking its address produces the null-terminated `const char*` the EE
+expects without allocating anything. `Initialize`, `RefreshHeapHardLimitSettings` and
+`EnumerateConfigurationValues` are the same three walks of the same table in the same order, and
+`ParseGCHeapAffinitizeRanges` -- a free function in the C++, which C# has no place for outside a
+type -- keeps every branch, including the ones that are surprising: an empty range list is
+accepted, because the C++ breaks out of the loop before it moves the pointer it then tests for
+the terminator, and a range list handed in together with a non-zero affinity mask is ignored
+rather than rejected.
+
+`GCConfigStringHolder` is translated as a `ref struct`. The C++ class frees the string in its
+destructor, deletes its copy operators and is returned by value from the string getters; a ref
+struct gives the same guarantees in C# -- `using` releases the string where the C++ scope would,
+and the holder cannot outlive the frame that produced it -- without allocating. `Dispose` skips a
+null string and clears the pointer afterwards, exactly as the destructor does, so a config the EE
+does not have is never handed to `FreeStringConfigValue` and a released holder cannot double-free.
+
+`IGCHeap::EnumerateConfigurationValues` is wired to it: `ManagedGCHeap` forwards the slot to
+`GCConfig.EnumerateConfigurationValues` as `GCHeap::EnumerateConfigurationValues` of
+`interface.cpp` does, which is what `RhEnumerateConfigurationValues` and therefore
+`GC.GetConfigurationVariables()` calls. The smoke test reads the dictionary back.
+
+This is the first `IGCHeap` body of the port that calls one of its own callback parameters, and
+it does so through a `delegate* unmanaged[SuppressGCTransition]` view of the pointer, for the same
+reason the `IGCToCLR` slots have that type: the C++ calls the EE's callback as plain native code,
+without changing GC mode. The parameter itself keeps the type the `ConfigurationValueFunc` typedef
+of `gcinterface.h` gives it, which is what the vtable and its verifier name. Doing the call with a
+transition would not merely be slower, it would be wrong: the EE reaches the managed `IGCHeap`
+methods without a reverse P/Invoke frame, so the transition frame in effect while one of them runs
+belongs to the EE -- `RhEnumerateConfigurationValues` is an ordinary P/Invoke away from
+`GC.GetConfigurationVariables` -- and a P/Invoke inside the slot would clear it on return, leaving
+the thread reporting cooperative mode with a native frame in the middle of a stack that no code
+manager can walk. Every future body that calls a callback parameter, starting with the collector's
+`GcScanRoots`, has to do the same.
+
+The two other consumers the C++ has are not reachable yet, and are left alone rather than half
+wired: `GCHeap::RefreshMemoryLimit` calls `RefreshHeapHardLimitSettings` from inside
+`gc_heap::refresh_memory_limit`, which recomputes collector state that does not exist, and
+`GetLOHThreshold` reports `gc_heap::loh_size_threshold`, which `init_semi_shared` derives from
+`GCConfig::GetLOHThreshold()`. Both arrive with the collector.
+
+`FEATURE_MANAGED_GC` now excludes `EnumerateConfigurationValues`, `RefreshHeapHardLimitSettings`,
+`ParseIndexOrRange` and `ParseGCHeapAffinitizeRanges` from the C++ `gcconfig.cpp`: nothing in the
+managed runtime archive calls them any more. The first two are reached through the `IGCHeap`
+vtable, which is the managed heap's; `ParseGCHeapAffinitizeRanges` is called only from
+`gc/interface.cpp`, which a managed-GC application does not compile; and `ParseIndexOrRange` had
+one other caller, `GCToOSInterface::ParseGCHeapAffinitizeRangesEntry`, which is excluded with it
+-- along with `GetMaxProcessorCount` and the Unix `CanEnableGCCPUGroups`, whose only remaining
+caller was `ParseGCHeapAffinitizeRanges`. What stays is the storage, the accessors and
+`GCConfig::Initialize`, because `PalInit` calls `Initialize` and the still-native
+`GCToOSInterface::Initialize` reads `GCNumaAware` and `GCCpuGroup` back out of it on Windows. That
+is the same initialization-owned state the processor and NUMA ports reach through shims, and it
+goes the same way: with plan step 3's initialization submodule in [ROADMAP.md](ROADMAP.md). The
+managed GC therefore keeps its own configuration state, initialized from `ManagedGC_Initialize`,
+independent of the native one the PAL fills for the C++ `GCToOSInterface`.
+
+`gcconfig.h`'s `HeapVerifyFlags` and `WriteBarrierFlavor` are translated as ordinary C# enums.
+They are not in `GCInterfaceOffsets.h` on purpose: nothing passes them across the GC/EE boundary,
+so they are not part of the ABI that table pins, and `GCInterfaceLayoutTests` records that
+exemption by name. The configuration table is not an ABI either -- it is a set of strings the GC
+asks the EE for -- so it is pinned the other way, by checking the translation against the C++
+source itself; see [testing](#testing-the-ported-leaves).
 
 ## Testing the ported leaves
 
@@ -433,6 +509,49 @@ affinity/NUMA/CPU-group bodies through recording substitutes: thread affinity ma
 affinity, ideal-processor set/get paths, thread-priority boosting, process-affinity-set
 filtering by set and by mask, NUMA/node and CPU-group info aggregation, heap-to-processor mapping
 including node fallback rules, and parsing of affinitize-range entries.
+
+`GCConfigTests` covers the configuration port, and it is the one place where what is substituted
+is the EE rather than libc: `tests/GCToEEInterface.TestHost.cs` stands in for the four config
+methods of `GCToEEInterface`, whose shipping versions are indirect calls through the `IGCToCLR`
+vtable the EE hands the GC and which therefore cannot run in a test process. It models what
+`nativeaot/Runtime/gcenv.ee.cpp` does -- the private key first, the public key only when the
+config has one, a boolean narrowed to the EE's `bool`, an integer that is the environment's
+`uint64` reinterpreted, and a string the EE owns until it is given back -- and records every
+request, so the tests assert the key sequence the port asks for and not only the values it caches.
+
+Half of the class is table-driven, from `gcconfig.h` and `gcconfig.cpp`, which are embedded in the
+test assembly as `GCInterfaceOffsets.h` is: each of the eighty configs has a test that it is
+translated with the right accessor and field types, and a test that its default matches the one
+the C++ declares -- including `LOHThreshold`, whose default is `LARGE_OBJECT_SIZE` and is
+therefore read out of the `GCInterfaceOffsets.h` entry the native build asserts against `gc.h`.
+Two more check that the port has not grown a config the C++ does not have and that the field
+order is the table's, and the `Initialize`, `RefreshHeapHardLimitSettings` and
+`EnumerateConfigurationValues` tests compare the whole recorded key sequence against the same
+table, so a config that is missing, out of order, or asked for with the wrong key fails on that
+entry.
+
+The other half is behavior: that an unprovided config takes the caller's default and a provided
+one does not; that `Set` moves only the value `EnumerateConfigurationValues` reports; that a
+config whose public key is `NULL` is asked for with a null pointer and never reaches the public
+settings; that every bit of an `int64` survives, including the patterns that read back negative,
+while a boolean arrives narrowed; that a value the EE writes while reporting "not provided" is
+still cached, which is what the C++ gets from handing over the address of the cached value
+itself; that `Refresh` re-reads the eight hard-limit configs without making them provided; that
+the enumeration reports the string configs by pointer, still owned by the EE while the callback
+runs, and frees each of them exactly once afterwards while never freeing one the EE did not
+provide; and that the holder frees once, tolerates a second release and never frees null. The
+enumeration callback is the address of an ordinary managed static rather than an
+`[UnmanagedCallersOnly]` method, because the port calls it without a GC transition and a reverse
+P/Invoke prologue would reject a caller that is already cooperative; the runtime compiles a static
+with a blittable signature to the platform C ABI, which is the same property that lets the native
+EE call this port's `IGCHeap` slots, so those ten tests are conditioned on the one architecture
+where the two conventions differ. The
+affinitize-range half drives `ParseGCHeapAffinitizeRanges` over the same substituted imports the
+processor tests use: the mask-only and range-only cases, the CPU-group rejection, the ranges that
+are ignored because a mask was given, the mask folding of an index past the first bitset word, the
+empty string the C++ accepts, and the malformed and out-of-range lists it rejects -- with the
+highest legal index checked so that a Debug run proves the `AffinitySet::Add` assert is not
+reachable from a well-formed list.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:

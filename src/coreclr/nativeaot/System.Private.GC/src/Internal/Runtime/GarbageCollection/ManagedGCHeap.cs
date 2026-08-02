@@ -629,9 +629,13 @@ namespace Internal.Runtime.GarbageCollection
         {
         }
 
-        private static void EnumerateConfigurationValues(void* thisPtr, void* context, delegate* unmanaged<void*, byte*, byte*, GCConfigurationType, long, void> configurationValueFunc)
-        {
-        }
+        /// <summary>
+        /// Reports every configuration value to the EE, as <c>GCHeap::EnumerateConfigurationValues</c>
+        /// of <c>interface.cpp</c> does. This is what <c>RhEnumerateConfigurationValues</c>, and
+        /// through it <c>GC.GetConfigurationVariables</c>, calls.
+        /// </summary>
+        private static void EnumerateConfigurationValues(void* thisPtr, void* context, delegate* unmanaged<void*, byte*, byte*, GCConfigurationType, long, void> configurationValueFunc) =>
+            GCConfig.EnumerateConfigurationValues(context, configurationValueFunc);
 
         // ------------------------------------------------------------------------------------
         // Full GC notifications and no-GC regions

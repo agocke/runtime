@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -54,6 +55,11 @@ internal static class ManagedGCTest
         if (!CollectionsAreCounted())
         {
             return 7;
+        }
+
+        if (!ConfigurationVariablesAreReported())
+        {
+            return 8;
         }
 
         Console.WriteLine("ManagedGC smoke test passed.");
@@ -287,6 +293,54 @@ internal static class ManagedGCTest
         int before = GC.CollectionCount(0);
         GC.Collect();
         return GC.CollectionCount(0) > before;
+    }
+
+    /// <summary>
+    /// Runs the managed GCConfig end to end: GC.GetConfigurationVariables goes through
+    /// RhEnumerateConfigurationValues into the heap's EnumerateConfigurationValues slot, which is
+    /// GCConfig.EnumerateConfigurationValues. That reports the cached configs, reads the string
+    /// configs back out of the EE and frees them again through IGCToCLR.
+    /// </summary>
+    private static bool ConfigurationVariablesAreReported()
+    {
+        IReadOnlyDictionary<string, object> configurations = GC.GetConfigurationVariables();
+
+        // Only the configs with a public name are reported: the callback in System.GC drops the
+        // ones the GC passes a null public key for.
+        string[] expectedPublic = { "ServerGC", "ConcurrentGC", "HeapCount", "LOHThreshold", "GCHeapHardLimit", "GCConserveMem", "GCName" };
+        string[] expectedPrivateOnly = { "ConservativeGC", "HeapVerifyLevel", "LogFile", "ConfigLogFile", "BGCSpinCount" };
+
+        foreach (string name in expectedPublic)
+        {
+            if (!configurations.ContainsKey(name))
+            {
+                return false;
+            }
+        }
+
+        foreach (string name in expectedPrivateOnly)
+        {
+            if (configurations.ContainsKey(name))
+            {
+                return false;
+            }
+        }
+
+        // The three kinds the enumeration reports, one of each. Their values depend on the
+        // environment the test runs in, so what is checked here is the type the GC reported.
+        if (configurations["ServerGC"] is not bool ||
+            configurations["LOHThreshold"] is not long ||
+            configurations["GCName"] is not string)
+        {
+            return false;
+        }
+
+        // Nothing configures these in the test environment, so what arrives is the default the
+        // translated table declares, carried through the enumeration unchanged -- and, for
+        // GCName, a string config read from the EE and freed again during the call.
+        return (long)configurations["LOHThreshold"] == 85000
+            && (long)configurations["GCConserveMem"] == 0
+            && (string)configurations["GCName"] == string.Empty;
     }
 
     private sealed class Node

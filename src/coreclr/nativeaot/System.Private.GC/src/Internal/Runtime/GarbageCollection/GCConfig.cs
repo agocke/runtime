@@ -8,9 +8,55 @@
 // Booleans are byte-sized, as they are in C++, because their addresses are handed to the EE.
 // Config keys are UTF-8 literals with an explicit terminator, so taking their address yields the
 // null-terminated `const char*` the EE expects without allocating.
+//
+// String configs are not cached because 1) they are rare and not on hot paths and 2) they
+// involve transfers of ownership of EE-allocated strings, which is potentially complicated. Each
+// one is read from the EE on every call and handed back in a GCConfigStringHolder, exactly as in
+// the C++.
 
 namespace Internal.Runtime.GarbageCollection
 {
+    /// <summary>
+    /// GCConfigStringHolder is a wrapper around a configuration string obtained from the EE. Such
+    /// strings must be disposed using <see cref="GCToEEInterface.FreeStringConfigValue"/>, so this
+    /// class ensures that is done correctly.
+    /// </summary>
+    /// <remarks>
+    /// The C++ class frees the string in its destructor and deletes its copy operators. A ref
+    /// struct is what that shape is in C#: <c>using</c> releases the string where the C++ scope
+    /// would, and the holder cannot escape the frame that produced it. Two differences are
+    /// unavoidable: C# cannot delete copy construction, so a copied holder must not be released
+    /// twice, and the C++ move constructor -- which exists only because the string getters return
+    /// the holder by value -- has no counterpart, a struct being copied by value already.
+    /// </remarks>
+    internal unsafe ref struct GCConfigStringHolder
+    {
+        private byte* m_str;
+
+        /// <summary>
+        /// Constructs a new GCConfigStringHolder around a string obtained from
+        /// <see cref="GCToEEInterface.GetStringConfigValue"/>.
+        /// </summary>
+        public GCConfigStringHolder(byte* str) => m_str = str;
+
+        /// <summary>
+        /// Frees a string config value by delegating to
+        /// <see cref="GCToEEInterface.FreeStringConfigValue"/>.
+        /// </summary>
+        public void Dispose()
+        {
+            if (m_str != null)
+            {
+                GCToEEInterface.FreeStringConfigValue(m_str);
+            }
+
+            m_str = null;
+        }
+
+        /// <summary>Retrieves the wrapped config string.</summary>
+        public readonly byte* Get() => m_str;
+    }
+
     /// <summary>
     /// Flags that may inhabit the number returned for the HeapVerifyLevel config option. Keep this in sync with vm/eeconfig.h if this ever changes.
     /// </summary>
@@ -386,14 +432,14 @@ namespace Internal.Runtime.GarbageCollection
         private static long s_UpdatedGCHeapAffinitizeMask = 0;
 
         /// <summary>Specifies list of processors for Server GC threads. The format is a comma separated list of processor numbers or ranges of processor numbers. On Windows, each entry is prefixed by the CPU group number. Example: Unix - 1,3,5,7-9,12, Windows - 0:1,1:7-9</summary>
-        /// <remarks>The returned string is owned by the EE and must be released with <see cref="GCToEEInterface.FreeStringConfigValue"/>.</remarks>
-        public static byte* GetGCHeapAffinitizeRanges()
+        /// <remarks>The string is owned by the EE; the holder frees it when it is disposed.</remarks>
+        public static GCConfigStringHolder GetGCHeapAffinitizeRanges()
         {
             byte* resultStr = null;
             fixed (byte* privateKey = "GCHeapAffinitizeRanges\0"u8)
             fixed (byte* publicKey = "System.GC.HeapAffinitizeRanges\0"u8)
                 GCToEEInterface.GetStringConfigValue(privateKey, publicKey, &resultStr);
-            return resultStr;
+            return new GCConfigStringHolder(resultStr);
         }
 
         /// <summary>Specifies the percent youngest gen to keep during trimming</summary>
@@ -553,23 +599,23 @@ namespace Internal.Runtime.GarbageCollection
         private static long s_UpdatedGCEnableSpecialRegions = 0;
 
         /// <summary>Specifies the name of the GC log file</summary>
-        /// <remarks>The returned string is owned by the EE and must be released with <see cref="GCToEEInterface.FreeStringConfigValue"/>.</remarks>
-        public static byte* GetLogFile()
+        /// <remarks>The string is owned by the EE; the holder frees it when it is disposed.</remarks>
+        public static GCConfigStringHolder GetLogFile()
         {
             byte* resultStr = null;
             fixed (byte* privateKey = "GCLogFile\0"u8)
                 GCToEEInterface.GetStringConfigValue(privateKey, null, &resultStr);
-            return resultStr;
+            return new GCConfigStringHolder(resultStr);
         }
 
         /// <summary>Specifies the name of the GC config log file</summary>
-        /// <remarks>The returned string is owned by the EE and must be released with <see cref="GCToEEInterface.FreeStringConfigValue"/>.</remarks>
-        public static byte* GetConfigLogFile()
+        /// <remarks>The string is owned by the EE; the holder frees it when it is disposed.</remarks>
+        public static GCConfigStringHolder GetConfigLogFile()
         {
             byte* resultStr = null;
             fixed (byte* privateKey = "GCConfigLogFile\0"u8)
                 GCToEEInterface.GetStringConfigValue(privateKey, null, &resultStr);
-            return resultStr;
+            return new GCConfigStringHolder(resultStr);
         }
 
         /// <summary>Enables FL tuning</summary>
@@ -950,25 +996,25 @@ namespace Internal.Runtime.GarbageCollection
         private static long s_UpdatedGCWriteBarrier = 0;
 
         /// <summary>Specifies the name of the standalone GC implementation.</summary>
-        /// <remarks>The returned string is owned by the EE and must be released with <see cref="GCToEEInterface.FreeStringConfigValue"/>.</remarks>
-        public static byte* GetGCName()
+        /// <remarks>The string is owned by the EE; the holder frees it when it is disposed.</remarks>
+        public static GCConfigStringHolder GetGCName()
         {
             byte* resultStr = null;
             fixed (byte* privateKey = "GCName\0"u8)
             fixed (byte* publicKey = "System.GC.Name\0"u8)
                 GCToEEInterface.GetStringConfigValue(privateKey, publicKey, &resultStr);
-            return resultStr;
+            return new GCConfigStringHolder(resultStr);
         }
 
         /// <summary>Specifies the path of the standalone GC implementation.</summary>
-        /// <remarks>The returned string is owned by the EE and must be released with <see cref="GCToEEInterface.FreeStringConfigValue"/>.</remarks>
-        public static byte* GetGCPath()
+        /// <remarks>The string is owned by the EE; the holder frees it when it is disposed.</remarks>
+        public static GCConfigStringHolder GetGCPath()
         {
             byte* resultStr = null;
             fixed (byte* privateKey = "GCPath\0"u8)
             fixed (byte* publicKey = "System.GC.Path\0"u8)
                 GCToEEInterface.GetStringConfigValue(privateKey, publicKey, &resultStr);
-            return resultStr;
+            return new GCConfigStringHolder(resultStr);
         }
 
         /// <summary>Specifies the spin count unit used by the GC.</summary>
@@ -1795,271 +1841,284 @@ namespace Internal.Runtime.GarbageCollection
         /// Reports every configuration value, with its public name and current value, to
         /// <paramref name="configurationValueFunc"/>.
         /// </summary>
+        /// <remarks>
+        /// The parameter has the type the <c>ConfigurationValueFunc</c> typedef of
+        /// <c>gcinterface.h</c> gives it, which is what the <c>IGCHeap</c> slot and its verifier
+        /// name; the calls below go through a suppressed-transition view of the same pointer.
+        /// The C++ calls the EE's callback as plain native code, without changing GC mode, and so
+        /// must this: the EE reaches the managed <c>IGCHeap</c> methods without a reverse P/Invoke
+        /// frame, so the transition frame in effect while one of them runs is the EE's own, and a
+        /// P/Invoke transition here would clear it on return -- leaving the thread reporting
+        /// cooperative mode with a native frame in the middle of a stack that cannot be walked.
+        /// </remarks>
         public static void EnumerateConfigurationValues(void* context, delegate* unmanaged<void*, byte*, byte*, GCConfigurationType, long, void> configurationValueFunc)
         {
+            delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*, GCConfigurationType, long, void> reportValue =
+                (delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*, GCConfigurationType, long, void>)configurationValueFunc;
+
             fixed (byte* configNameServerGC = "ServerGC\0"u8)
             fixed (byte* publicKeyServerGC = "System.GC.Server\0"u8)
-                configurationValueFunc(context, configNameServerGC, publicKeyServerGC, GCConfigurationType.Boolean, (long)s_UpdatedServerGC);
+                reportValue(context, configNameServerGC, publicKeyServerGC, GCConfigurationType.Boolean, (long)s_UpdatedServerGC);
 
             fixed (byte* configNameConcurrentGC = "ConcurrentGC\0"u8)
             fixed (byte* publicKeyConcurrentGC = "System.GC.Concurrent\0"u8)
-                configurationValueFunc(context, configNameConcurrentGC, publicKeyConcurrentGC, GCConfigurationType.Boolean, (long)s_UpdatedConcurrentGC);
+                reportValue(context, configNameConcurrentGC, publicKeyConcurrentGC, GCConfigurationType.Boolean, (long)s_UpdatedConcurrentGC);
 
             fixed (byte* configNameConservativeGC = "ConservativeGC\0"u8)
-                configurationValueFunc(context, configNameConservativeGC, null, GCConfigurationType.Boolean, (long)s_UpdatedConservativeGC);
+                reportValue(context, configNameConservativeGC, null, GCConfigurationType.Boolean, (long)s_UpdatedConservativeGC);
 
             fixed (byte* configNameForceCompact = "ForceCompact\0"u8)
-                configurationValueFunc(context, configNameForceCompact, null, GCConfigurationType.Boolean, (long)s_UpdatedForceCompact);
+                reportValue(context, configNameForceCompact, null, GCConfigurationType.Boolean, (long)s_UpdatedForceCompact);
 
             fixed (byte* configNameRetainVM = "RetainVM\0"u8)
             fixed (byte* publicKeyRetainVM = "System.GC.RetainVM\0"u8)
-                configurationValueFunc(context, configNameRetainVM, publicKeyRetainVM, GCConfigurationType.Boolean, (long)s_UpdatedRetainVM);
+                reportValue(context, configNameRetainVM, publicKeyRetainVM, GCConfigurationType.Boolean, (long)s_UpdatedRetainVM);
 
             fixed (byte* configNameBreakOnOOM = "BreakOnOOM\0"u8)
-                configurationValueFunc(context, configNameBreakOnOOM, null, GCConfigurationType.Boolean, (long)s_UpdatedBreakOnOOM);
+                reportValue(context, configNameBreakOnOOM, null, GCConfigurationType.Boolean, (long)s_UpdatedBreakOnOOM);
 
             fixed (byte* configNameNoAffinitize = "NoAffinitize\0"u8)
             fixed (byte* publicKeyNoAffinitize = "System.GC.NoAffinitize\0"u8)
-                configurationValueFunc(context, configNameNoAffinitize, publicKeyNoAffinitize, GCConfigurationType.Boolean, (long)s_UpdatedNoAffinitize);
+                reportValue(context, configNameNoAffinitize, publicKeyNoAffinitize, GCConfigurationType.Boolean, (long)s_UpdatedNoAffinitize);
 
             fixed (byte* configNameLogEnabled = "LogEnabled\0"u8)
-                configurationValueFunc(context, configNameLogEnabled, null, GCConfigurationType.Boolean, (long)s_UpdatedLogEnabled);
+                reportValue(context, configNameLogEnabled, null, GCConfigurationType.Boolean, (long)s_UpdatedLogEnabled);
 
             fixed (byte* configNameConfigLogEnabled = "ConfigLogEnabled\0"u8)
-                configurationValueFunc(context, configNameConfigLogEnabled, null, GCConfigurationType.Boolean, (long)s_UpdatedConfigLogEnabled);
+                reportValue(context, configNameConfigLogEnabled, null, GCConfigurationType.Boolean, (long)s_UpdatedConfigLogEnabled);
 
             fixed (byte* configNameGCNumaAware = "GCNumaAware\0"u8)
-                configurationValueFunc(context, configNameGCNumaAware, null, GCConfigurationType.Boolean, (long)s_UpdatedGCNumaAware);
+                reportValue(context, configNameGCNumaAware, null, GCConfigurationType.Boolean, (long)s_UpdatedGCNumaAware);
 
             fixed (byte* configNameGCCpuGroup = "GCCpuGroup\0"u8)
             fixed (byte* publicKeyGCCpuGroup = "System.GC.CpuGroup\0"u8)
-                configurationValueFunc(context, configNameGCCpuGroup, publicKeyGCCpuGroup, GCConfigurationType.Boolean, (long)s_UpdatedGCCpuGroup);
+                reportValue(context, configNameGCCpuGroup, publicKeyGCCpuGroup, GCConfigurationType.Boolean, (long)s_UpdatedGCCpuGroup);
 
             fixed (byte* configNameGCLargePages = "GCLargePages\0"u8)
             fixed (byte* publicKeyGCLargePages = "System.GC.LargePages\0"u8)
-                configurationValueFunc(context, configNameGCLargePages, publicKeyGCLargePages, GCConfigurationType.Int64, (long)s_UpdatedGCLargePages);
+                reportValue(context, configNameGCLargePages, publicKeyGCLargePages, GCConfigurationType.Int64, (long)s_UpdatedGCLargePages);
 
             fixed (byte* configNameHeapVerifyLevel = "HeapVerifyLevel\0"u8)
-                configurationValueFunc(context, configNameHeapVerifyLevel, null, GCConfigurationType.Int64, (long)s_UpdatedHeapVerifyLevel);
+                reportValue(context, configNameHeapVerifyLevel, null, GCConfigurationType.Int64, (long)s_UpdatedHeapVerifyLevel);
 
             fixed (byte* configNameLOHCompactionMode = "LOHCompactionMode\0"u8)
-                configurationValueFunc(context, configNameLOHCompactionMode, null, GCConfigurationType.Int64, (long)s_UpdatedLOHCompactionMode);
+                reportValue(context, configNameLOHCompactionMode, null, GCConfigurationType.Int64, (long)s_UpdatedLOHCompactionMode);
 
             fixed (byte* configNameLOHThreshold = "LOHThreshold\0"u8)
             fixed (byte* publicKeyLOHThreshold = "System.GC.LOHThreshold\0"u8)
-                configurationValueFunc(context, configNameLOHThreshold, publicKeyLOHThreshold, GCConfigurationType.Int64, (long)s_UpdatedLOHThreshold);
+                reportValue(context, configNameLOHThreshold, publicKeyLOHThreshold, GCConfigurationType.Int64, (long)s_UpdatedLOHThreshold);
 
             fixed (byte* configNameBGCSpinCount = "BGCSpinCount\0"u8)
-                configurationValueFunc(context, configNameBGCSpinCount, null, GCConfigurationType.Int64, (long)s_UpdatedBGCSpinCount);
+                reportValue(context, configNameBGCSpinCount, null, GCConfigurationType.Int64, (long)s_UpdatedBGCSpinCount);
 
             fixed (byte* configNameBGCSpin = "BGCSpin\0"u8)
-                configurationValueFunc(context, configNameBGCSpin, null, GCConfigurationType.Int64, (long)s_UpdatedBGCSpin);
+                reportValue(context, configNameBGCSpin, null, GCConfigurationType.Int64, (long)s_UpdatedBGCSpin);
 
             fixed (byte* configNameHeapCount = "HeapCount\0"u8)
             fixed (byte* publicKeyHeapCount = "System.GC.HeapCount\0"u8)
-                configurationValueFunc(context, configNameHeapCount, publicKeyHeapCount, GCConfigurationType.Int64, (long)s_UpdatedHeapCount);
+                reportValue(context, configNameHeapCount, publicKeyHeapCount, GCConfigurationType.Int64, (long)s_UpdatedHeapCount);
 
             fixed (byte* configNameMaxHeapCount = "MaxHeapCount\0"u8)
             fixed (byte* publicKeyMaxHeapCount = "System.GC.MaxHeapCount\0"u8)
-                configurationValueFunc(context, configNameMaxHeapCount, publicKeyMaxHeapCount, GCConfigurationType.Int64, (long)s_UpdatedMaxHeapCount);
+                reportValue(context, configNameMaxHeapCount, publicKeyMaxHeapCount, GCConfigurationType.Int64, (long)s_UpdatedMaxHeapCount);
 
             fixed (byte* configNameGen0Size = "Gen0Size\0"u8)
-                configurationValueFunc(context, configNameGen0Size, null, GCConfigurationType.Int64, (long)s_UpdatedGen0Size);
+                reportValue(context, configNameGen0Size, null, GCConfigurationType.Int64, (long)s_UpdatedGen0Size);
 
             fixed (byte* configNameSegmentSize = "SegmentSize\0"u8)
-                configurationValueFunc(context, configNameSegmentSize, null, GCConfigurationType.Int64, (long)s_UpdatedSegmentSize);
+                reportValue(context, configNameSegmentSize, null, GCConfigurationType.Int64, (long)s_UpdatedSegmentSize);
 
             fixed (byte* configNameLatencyMode = "LatencyMode\0"u8)
-                configurationValueFunc(context, configNameLatencyMode, null, GCConfigurationType.Int64, (long)s_UpdatedLatencyMode);
+                reportValue(context, configNameLatencyMode, null, GCConfigurationType.Int64, (long)s_UpdatedLatencyMode);
 
             fixed (byte* configNameLatencyLevel = "LatencyLevel\0"u8)
-                configurationValueFunc(context, configNameLatencyLevel, null, GCConfigurationType.Int64, (long)s_UpdatedLatencyLevel);
+                reportValue(context, configNameLatencyLevel, null, GCConfigurationType.Int64, (long)s_UpdatedLatencyLevel);
 
             fixed (byte* configNameLogFileSize = "LogFileSize\0"u8)
-                configurationValueFunc(context, configNameLogFileSize, null, GCConfigurationType.Int64, (long)s_UpdatedLogFileSize);
+                reportValue(context, configNameLogFileSize, null, GCConfigurationType.Int64, (long)s_UpdatedLogFileSize);
 
             fixed (byte* configNameCompactRatio = "CompactRatio\0"u8)
-                configurationValueFunc(context, configNameCompactRatio, null, GCConfigurationType.Int64, (long)s_UpdatedCompactRatio);
+                reportValue(context, configNameCompactRatio, null, GCConfigurationType.Int64, (long)s_UpdatedCompactRatio);
 
             fixed (byte* configNameGCHeapAffinitizeMask = "GCHeapAffinitizeMask\0"u8)
             fixed (byte* publicKeyGCHeapAffinitizeMask = "System.GC.HeapAffinitizeMask\0"u8)
-                configurationValueFunc(context, configNameGCHeapAffinitizeMask, publicKeyGCHeapAffinitizeMask, GCConfigurationType.Int64, (long)s_UpdatedGCHeapAffinitizeMask);
+                reportValue(context, configNameGCHeapAffinitizeMask, publicKeyGCHeapAffinitizeMask, GCConfigurationType.Int64, (long)s_UpdatedGCHeapAffinitizeMask);
 
             {
                 byte* resultStr = null;
                 fixed (byte* privateKey = "GCHeapAffinitizeRanges\0"u8)
                 fixed (byte* publicKey = "System.GC.HeapAffinitizeRanges\0"u8)
                     GCToEEInterface.GetStringConfigValue(privateKey, publicKey, &resultStr);
+                using GCConfigStringHolder holder = new GCConfigStringHolder(resultStr);
                 fixed (byte* configName = "GCHeapAffinitizeRanges\0"u8)
                 fixed (byte* publicKey = "System.GC.HeapAffinitizeRanges\0"u8)
-                    configurationValueFunc(context, configName, publicKey, GCConfigurationType.StringUtf8, (long)resultStr);
-                GCToEEInterface.FreeStringConfigValue(resultStr);
+                    reportValue(context, configName, publicKey, GCConfigurationType.StringUtf8, (long)resultStr);
             }
 
             fixed (byte* configNameGCTrimYoungestKeepPercent = "GCTrimYoungestKeepPercent\0"u8)
-                configurationValueFunc(context, configNameGCTrimYoungestKeepPercent, null, GCConfigurationType.Int64, (long)s_UpdatedGCTrimYoungestKeepPercent);
+                reportValue(context, configNameGCTrimYoungestKeepPercent, null, GCConfigurationType.Int64, (long)s_UpdatedGCTrimYoungestKeepPercent);
 
             fixed (byte* configNameGCHighMemPercent = "GCHighMemPercent\0"u8)
             fixed (byte* publicKeyGCHighMemPercent = "System.GC.HighMemoryPercent\0"u8)
-                configurationValueFunc(context, configNameGCHighMemPercent, publicKeyGCHighMemPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHighMemPercent);
+                reportValue(context, configNameGCHighMemPercent, publicKeyGCHighMemPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHighMemPercent);
 
             fixed (byte* configNameGCProvModeStress = "GCProvModeStress\0"u8)
-                configurationValueFunc(context, configNameGCProvModeStress, null, GCConfigurationType.Int64, (long)s_UpdatedGCProvModeStress);
+                reportValue(context, configNameGCProvModeStress, null, GCConfigurationType.Int64, (long)s_UpdatedGCProvModeStress);
 
             fixed (byte* configNameGCGen0MaxBudget = "GCGen0MaxBudget\0"u8)
             fixed (byte* publicKeyGCGen0MaxBudget = "System.GC.Gen0MaxBudget\0"u8)
-                configurationValueFunc(context, configNameGCGen0MaxBudget, publicKeyGCGen0MaxBudget, GCConfigurationType.Int64, (long)s_UpdatedGCGen0MaxBudget);
+                reportValue(context, configNameGCGen0MaxBudget, publicKeyGCGen0MaxBudget, GCConfigurationType.Int64, (long)s_UpdatedGCGen0MaxBudget);
 
             fixed (byte* configNameGCGen1MaxBudget = "GCGen1MaxBudget\0"u8)
-                configurationValueFunc(context, configNameGCGen1MaxBudget, null, GCConfigurationType.Int64, (long)s_UpdatedGCGen1MaxBudget);
+                reportValue(context, configNameGCGen1MaxBudget, null, GCConfigurationType.Int64, (long)s_UpdatedGCGen1MaxBudget);
 
             fixed (byte* configNameGCLowSkipRatio = "GCLowSkipRatio\0"u8)
-                configurationValueFunc(context, configNameGCLowSkipRatio, null, GCConfigurationType.Int64, (long)s_UpdatedGCLowSkipRatio);
+                reportValue(context, configNameGCLowSkipRatio, null, GCConfigurationType.Int64, (long)s_UpdatedGCLowSkipRatio);
 
             fixed (byte* configNameGCHeapHardLimit = "GCHeapHardLimit\0"u8)
             fixed (byte* publicKeyGCHeapHardLimit = "System.GC.HeapHardLimit\0"u8)
-                configurationValueFunc(context, configNameGCHeapHardLimit, publicKeyGCHeapHardLimit, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimit);
+                reportValue(context, configNameGCHeapHardLimit, publicKeyGCHeapHardLimit, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimit);
 
             fixed (byte* configNameGCHeapHardLimitPercent = "GCHeapHardLimitPercent\0"u8)
             fixed (byte* publicKeyGCHeapHardLimitPercent = "System.GC.HeapHardLimitPercent\0"u8)
-                configurationValueFunc(context, configNameGCHeapHardLimitPercent, publicKeyGCHeapHardLimitPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitPercent);
+                reportValue(context, configNameGCHeapHardLimitPercent, publicKeyGCHeapHardLimitPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitPercent);
 
             fixed (byte* configNameGCTotalPhysicalMemory = "GCTotalPhysicalMemory\0"u8)
-                configurationValueFunc(context, configNameGCTotalPhysicalMemory, null, GCConfigurationType.Int64, (long)s_UpdatedGCTotalPhysicalMemory);
+                reportValue(context, configNameGCTotalPhysicalMemory, null, GCConfigurationType.Int64, (long)s_UpdatedGCTotalPhysicalMemory);
 
             fixed (byte* configNameGCRegionRange = "GCRegionRange\0"u8)
             fixed (byte* publicKeyGCRegionRange = "System.GC.RegionRange\0"u8)
-                configurationValueFunc(context, configNameGCRegionRange, publicKeyGCRegionRange, GCConfigurationType.Int64, (long)s_UpdatedGCRegionRange);
+                reportValue(context, configNameGCRegionRange, publicKeyGCRegionRange, GCConfigurationType.Int64, (long)s_UpdatedGCRegionRange);
 
             fixed (byte* configNameGCRegionSize = "GCRegionSize\0"u8)
             fixed (byte* publicKeyGCRegionSize = "System.GC.RegionSize\0"u8)
-                configurationValueFunc(context, configNameGCRegionSize, publicKeyGCRegionSize, GCConfigurationType.Int64, (long)s_UpdatedGCRegionSize);
+                reportValue(context, configNameGCRegionSize, publicKeyGCRegionSize, GCConfigurationType.Int64, (long)s_UpdatedGCRegionSize);
 
             fixed (byte* configNameGCEnableSpecialRegions = "GCEnableSpecialRegions\0"u8)
-                configurationValueFunc(context, configNameGCEnableSpecialRegions, null, GCConfigurationType.Int64, (long)s_UpdatedGCEnableSpecialRegions);
+                reportValue(context, configNameGCEnableSpecialRegions, null, GCConfigurationType.Int64, (long)s_UpdatedGCEnableSpecialRegions);
 
             {
                 byte* resultStr = null;
                 fixed (byte* privateKey = "GCLogFile\0"u8)
                     GCToEEInterface.GetStringConfigValue(privateKey, null, &resultStr);
+                using GCConfigStringHolder holder = new GCConfigStringHolder(resultStr);
                 fixed (byte* configName = "LogFile\0"u8)
-                    configurationValueFunc(context, configName, null, GCConfigurationType.StringUtf8, (long)resultStr);
-                GCToEEInterface.FreeStringConfigValue(resultStr);
+                    reportValue(context, configName, null, GCConfigurationType.StringUtf8, (long)resultStr);
             }
 
             {
                 byte* resultStr = null;
                 fixed (byte* privateKey = "GCConfigLogFile\0"u8)
                     GCToEEInterface.GetStringConfigValue(privateKey, null, &resultStr);
+                using GCConfigStringHolder holder = new GCConfigStringHolder(resultStr);
                 fixed (byte* configName = "ConfigLogFile\0"u8)
-                    configurationValueFunc(context, configName, null, GCConfigurationType.StringUtf8, (long)resultStr);
-                GCToEEInterface.FreeStringConfigValue(resultStr);
+                    reportValue(context, configName, null, GCConfigurationType.StringUtf8, (long)resultStr);
             }
 
             fixed (byte* configNameBGCFLTuningEnabled = "BGCFLTuningEnabled\0"u8)
-                configurationValueFunc(context, configNameBGCFLTuningEnabled, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLTuningEnabled);
+                reportValue(context, configNameBGCFLTuningEnabled, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLTuningEnabled);
 
             fixed (byte* configNameBGCMemGoal = "BGCMemGoal\0"u8)
-                configurationValueFunc(context, configNameBGCMemGoal, null, GCConfigurationType.Int64, (long)s_UpdatedBGCMemGoal);
+                reportValue(context, configNameBGCMemGoal, null, GCConfigurationType.Int64, (long)s_UpdatedBGCMemGoal);
 
             fixed (byte* configNameBGCMemGoalSlack = "BGCMemGoalSlack\0"u8)
-                configurationValueFunc(context, configNameBGCMemGoalSlack, null, GCConfigurationType.Int64, (long)s_UpdatedBGCMemGoalSlack);
+                reportValue(context, configNameBGCMemGoalSlack, null, GCConfigurationType.Int64, (long)s_UpdatedBGCMemGoalSlack);
 
             fixed (byte* configNameBGCFLSweepGoal = "BGCFLSweepGoal\0"u8)
-                configurationValueFunc(context, configNameBGCFLSweepGoal, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLSweepGoal);
+                reportValue(context, configNameBGCFLSweepGoal, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLSweepGoal);
 
             fixed (byte* configNameBGCFLSweepGoalLOH = "BGCFLSweepGoalLOH\0"u8)
-                configurationValueFunc(context, configNameBGCFLSweepGoalLOH, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLSweepGoalLOH);
+                reportValue(context, configNameBGCFLSweepGoalLOH, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLSweepGoalLOH);
 
             fixed (byte* configNameBGCFLkp = "BGCFLkp\0"u8)
-                configurationValueFunc(context, configNameBGCFLkp, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLkp);
+                reportValue(context, configNameBGCFLkp, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLkp);
 
             fixed (byte* configNameBGCFLki = "BGCFLki\0"u8)
-                configurationValueFunc(context, configNameBGCFLki, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLki);
+                reportValue(context, configNameBGCFLki, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLki);
 
             fixed (byte* configNameBGCFLkd = "BGCFLkd\0"u8)
-                configurationValueFunc(context, configNameBGCFLkd, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLkd);
+                reportValue(context, configNameBGCFLkd, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLkd);
 
             fixed (byte* configNameBGCFLff = "BGCFLff\0"u8)
-                configurationValueFunc(context, configNameBGCFLff, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLff);
+                reportValue(context, configNameBGCFLff, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLff);
 
             fixed (byte* configNameBGCFLSmoothFactor = "BGCFLSmoothFactor\0"u8)
-                configurationValueFunc(context, configNameBGCFLSmoothFactor, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLSmoothFactor);
+                reportValue(context, configNameBGCFLSmoothFactor, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLSmoothFactor);
 
             fixed (byte* configNameBGCFLGradualD = "BGCFLGradualD\0"u8)
-                configurationValueFunc(context, configNameBGCFLGradualD, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLGradualD);
+                reportValue(context, configNameBGCFLGradualD, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLGradualD);
 
             fixed (byte* configNameBGCMLkp = "BGCMLkp\0"u8)
-                configurationValueFunc(context, configNameBGCMLkp, null, GCConfigurationType.Int64, (long)s_UpdatedBGCMLkp);
+                reportValue(context, configNameBGCMLkp, null, GCConfigurationType.Int64, (long)s_UpdatedBGCMLkp);
 
             fixed (byte* configNameBGCMLki = "BGCMLki\0"u8)
-                configurationValueFunc(context, configNameBGCMLki, null, GCConfigurationType.Int64, (long)s_UpdatedBGCMLki);
+                reportValue(context, configNameBGCMLki, null, GCConfigurationType.Int64, (long)s_UpdatedBGCMLki);
 
             fixed (byte* configNameBGCFLEnableKi = "BGCFLEnableKi\0"u8)
-                configurationValueFunc(context, configNameBGCFLEnableKi, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableKi);
+                reportValue(context, configNameBGCFLEnableKi, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableKi);
 
             fixed (byte* configNameBGCFLEnableKd = "BGCFLEnableKd\0"u8)
-                configurationValueFunc(context, configNameBGCFLEnableKd, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableKd);
+                reportValue(context, configNameBGCFLEnableKd, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableKd);
 
             fixed (byte* configNameBGCFLEnableSmooth = "BGCFLEnableSmooth\0"u8)
-                configurationValueFunc(context, configNameBGCFLEnableSmooth, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableSmooth);
+                reportValue(context, configNameBGCFLEnableSmooth, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableSmooth);
 
             fixed (byte* configNameBGCFLEnableTBH = "BGCFLEnableTBH\0"u8)
-                configurationValueFunc(context, configNameBGCFLEnableTBH, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableTBH);
+                reportValue(context, configNameBGCFLEnableTBH, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableTBH);
 
             fixed (byte* configNameBGCFLEnableFF = "BGCFLEnableFF\0"u8)
-                configurationValueFunc(context, configNameBGCFLEnableFF, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableFF);
+                reportValue(context, configNameBGCFLEnableFF, null, GCConfigurationType.Int64, (long)s_UpdatedBGCFLEnableFF);
 
             fixed (byte* configNameBGCG2RatioStep = "BGCG2RatioStep\0"u8)
-                configurationValueFunc(context, configNameBGCG2RatioStep, null, GCConfigurationType.Int64, (long)s_UpdatedBGCG2RatioStep);
+                reportValue(context, configNameBGCG2RatioStep, null, GCConfigurationType.Int64, (long)s_UpdatedBGCG2RatioStep);
 
             fixed (byte* configNameUOHWaitBGCSizeIncPercent = "UOHWaitBGCSizeIncPercent\0"u8)
             fixed (byte* publicKeyUOHWaitBGCSizeIncPercent = "System.GC.UOHWaitBGCSizeIncPercent\0"u8)
-                configurationValueFunc(context, configNameUOHWaitBGCSizeIncPercent, publicKeyUOHWaitBGCSizeIncPercent, GCConfigurationType.Int64, (long)s_UpdatedUOHWaitBGCSizeIncPercent);
+                reportValue(context, configNameUOHWaitBGCSizeIncPercent, publicKeyUOHWaitBGCSizeIncPercent, GCConfigurationType.Int64, (long)s_UpdatedUOHWaitBGCSizeIncPercent);
 
             fixed (byte* configNameGCHeapHardLimitSOH = "GCHeapHardLimitSOH\0"u8)
             fixed (byte* publicKeyGCHeapHardLimitSOH = "System.GC.HeapHardLimitSOH\0"u8)
-                configurationValueFunc(context, configNameGCHeapHardLimitSOH, publicKeyGCHeapHardLimitSOH, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitSOH);
+                reportValue(context, configNameGCHeapHardLimitSOH, publicKeyGCHeapHardLimitSOH, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitSOH);
 
             fixed (byte* configNameGCHeapHardLimitLOH = "GCHeapHardLimitLOH\0"u8)
             fixed (byte* publicKeyGCHeapHardLimitLOH = "System.GC.HeapHardLimitLOH\0"u8)
-                configurationValueFunc(context, configNameGCHeapHardLimitLOH, publicKeyGCHeapHardLimitLOH, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitLOH);
+                reportValue(context, configNameGCHeapHardLimitLOH, publicKeyGCHeapHardLimitLOH, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitLOH);
 
             fixed (byte* configNameGCHeapHardLimitPOH = "GCHeapHardLimitPOH\0"u8)
             fixed (byte* publicKeyGCHeapHardLimitPOH = "System.GC.HeapHardLimitPOH\0"u8)
-                configurationValueFunc(context, configNameGCHeapHardLimitPOH, publicKeyGCHeapHardLimitPOH, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitPOH);
+                reportValue(context, configNameGCHeapHardLimitPOH, publicKeyGCHeapHardLimitPOH, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitPOH);
 
             fixed (byte* configNameGCHeapHardLimitSOHPercent = "GCHeapHardLimitSOHPercent\0"u8)
             fixed (byte* publicKeyGCHeapHardLimitSOHPercent = "System.GC.HeapHardLimitSOHPercent\0"u8)
-                configurationValueFunc(context, configNameGCHeapHardLimitSOHPercent, publicKeyGCHeapHardLimitSOHPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitSOHPercent);
+                reportValue(context, configNameGCHeapHardLimitSOHPercent, publicKeyGCHeapHardLimitSOHPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitSOHPercent);
 
             fixed (byte* configNameGCHeapHardLimitLOHPercent = "GCHeapHardLimitLOHPercent\0"u8)
             fixed (byte* publicKeyGCHeapHardLimitLOHPercent = "System.GC.HeapHardLimitLOHPercent\0"u8)
-                configurationValueFunc(context, configNameGCHeapHardLimitLOHPercent, publicKeyGCHeapHardLimitLOHPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitLOHPercent);
+                reportValue(context, configNameGCHeapHardLimitLOHPercent, publicKeyGCHeapHardLimitLOHPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitLOHPercent);
 
             fixed (byte* configNameGCHeapHardLimitPOHPercent = "GCHeapHardLimitPOHPercent\0"u8)
             fixed (byte* publicKeyGCHeapHardLimitPOHPercent = "System.GC.HeapHardLimitPOHPercent\0"u8)
-                configurationValueFunc(context, configNameGCHeapHardLimitPOHPercent, publicKeyGCHeapHardLimitPOHPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitPOHPercent);
+                reportValue(context, configNameGCHeapHardLimitPOHPercent, publicKeyGCHeapHardLimitPOHPercent, GCConfigurationType.Int64, (long)s_UpdatedGCHeapHardLimitPOHPercent);
 
             fixed (byte* configNameGCEnabledInstructionSets = "GCEnabledInstructionSets\0"u8)
-                configurationValueFunc(context, configNameGCEnabledInstructionSets, null, GCConfigurationType.Int64, (long)s_UpdatedGCEnabledInstructionSets);
+                reportValue(context, configNameGCEnabledInstructionSets, null, GCConfigurationType.Int64, (long)s_UpdatedGCEnabledInstructionSets);
 
             fixed (byte* configNameGCConserveMem = "GCConserveMem\0"u8)
             fixed (byte* publicKeyGCConserveMem = "System.GC.ConserveMemory\0"u8)
-                configurationValueFunc(context, configNameGCConserveMem, publicKeyGCConserveMem, GCConfigurationType.Int64, (long)s_UpdatedGCConserveMem);
+                reportValue(context, configNameGCConserveMem, publicKeyGCConserveMem, GCConfigurationType.Int64, (long)s_UpdatedGCConserveMem);
 
             fixed (byte* configNameGCWriteBarrier = "GCWriteBarrier\0"u8)
-                configurationValueFunc(context, configNameGCWriteBarrier, null, GCConfigurationType.Int64, (long)s_UpdatedGCWriteBarrier);
+                reportValue(context, configNameGCWriteBarrier, null, GCConfigurationType.Int64, (long)s_UpdatedGCWriteBarrier);
 
             {
                 byte* resultStr = null;
                 fixed (byte* privateKey = "GCName\0"u8)
                 fixed (byte* publicKey = "System.GC.Name\0"u8)
                     GCToEEInterface.GetStringConfigValue(privateKey, publicKey, &resultStr);
+                using GCConfigStringHolder holder = new GCConfigStringHolder(resultStr);
                 fixed (byte* configName = "GCName\0"u8)
                 fixed (byte* publicKey = "System.GC.Name\0"u8)
-                    configurationValueFunc(context, configName, publicKey, GCConfigurationType.StringUtf8, (long)resultStr);
-                GCToEEInterface.FreeStringConfigValue(resultStr);
+                    reportValue(context, configName, publicKey, GCConfigurationType.StringUtf8, (long)resultStr);
             }
 
             {
@@ -2067,40 +2126,40 @@ namespace Internal.Runtime.GarbageCollection
                 fixed (byte* privateKey = "GCPath\0"u8)
                 fixed (byte* publicKey = "System.GC.Path\0"u8)
                     GCToEEInterface.GetStringConfigValue(privateKey, publicKey, &resultStr);
+                using GCConfigStringHolder holder = new GCConfigStringHolder(resultStr);
                 fixed (byte* configName = "GCPath\0"u8)
                 fixed (byte* publicKey = "System.GC.Path\0"u8)
-                    configurationValueFunc(context, configName, publicKey, GCConfigurationType.StringUtf8, (long)resultStr);
-                GCToEEInterface.FreeStringConfigValue(resultStr);
+                    reportValue(context, configName, publicKey, GCConfigurationType.StringUtf8, (long)resultStr);
             }
 
             fixed (byte* configNameGCSpinCountUnit = "GCSpinCountUnit\0"u8)
-                configurationValueFunc(context, configNameGCSpinCountUnit, null, GCConfigurationType.Int64, (long)s_UpdatedGCSpinCountUnit);
+                reportValue(context, configNameGCSpinCountUnit, null, GCConfigurationType.Int64, (long)s_UpdatedGCSpinCountUnit);
 
             fixed (byte* configNameGCDynamicAdaptationMode = "GCDynamicAdaptationMode\0"u8)
             fixed (byte* publicKeyGCDynamicAdaptationMode = "System.GC.DynamicAdaptationMode\0"u8)
-                configurationValueFunc(context, configNameGCDynamicAdaptationMode, publicKeyGCDynamicAdaptationMode, GCConfigurationType.Int64, (long)s_UpdatedGCDynamicAdaptationMode);
+                reportValue(context, configNameGCDynamicAdaptationMode, publicKeyGCDynamicAdaptationMode, GCConfigurationType.Int64, (long)s_UpdatedGCDynamicAdaptationMode);
 
             fixed (byte* configNameGCDTargetTCP = "GCDTargetTCP\0"u8)
             fixed (byte* publicKeyGCDTargetTCP = "System.GC.DTargetTCP\0"u8)
-                configurationValueFunc(context, configNameGCDTargetTCP, publicKeyGCDTargetTCP, GCConfigurationType.Int64, (long)s_UpdatedGCDTargetTCP);
+                reportValue(context, configNameGCDTargetTCP, publicKeyGCDTargetTCP, GCConfigurationType.Int64, (long)s_UpdatedGCDTargetTCP);
 
             fixed (byte* configNameGCDBGCRatio = "GCDBGCRatio\0"u8)
-                configurationValueFunc(context, configNameGCDBGCRatio, null, GCConfigurationType.Int64, (long)s_UpdatedGCDBGCRatio);
+                reportValue(context, configNameGCDBGCRatio, null, GCConfigurationType.Int64, (long)s_UpdatedGCDBGCRatio);
 
             fixed (byte* configNameGCDGen0GrowthPercent = "GCDGen0GrowthPercent\0"u8)
             fixed (byte* publicKeyGCDGen0GrowthPercent = "System.GC.DGen0GrowthPercent\0"u8)
-                configurationValueFunc(context, configNameGCDGen0GrowthPercent, publicKeyGCDGen0GrowthPercent, GCConfigurationType.Int64, (long)s_UpdatedGCDGen0GrowthPercent);
+                reportValue(context, configNameGCDGen0GrowthPercent, publicKeyGCDGen0GrowthPercent, GCConfigurationType.Int64, (long)s_UpdatedGCDGen0GrowthPercent);
 
             fixed (byte* configNameGCDGen0GrowthMinFactor = "GCDGen0GrowthMinFactor\0"u8)
             fixed (byte* publicKeyGCDGen0GrowthMinFactor = "System.GC.DGen0GrowthMinFactor\0"u8)
-                configurationValueFunc(context, configNameGCDGen0GrowthMinFactor, publicKeyGCDGen0GrowthMinFactor, GCConfigurationType.Int64, (long)s_UpdatedGCDGen0GrowthMinFactor);
+                reportValue(context, configNameGCDGen0GrowthMinFactor, publicKeyGCDGen0GrowthMinFactor, GCConfigurationType.Int64, (long)s_UpdatedGCDGen0GrowthMinFactor);
 
             fixed (byte* configNameGCDGen0GrowthMaxFactor = "GCDGen0GrowthMaxFactor\0"u8)
             fixed (byte* publicKeyGCDGen0GrowthMaxFactor = "System.GC.DGen0GrowthMaxFactor\0"u8)
-                configurationValueFunc(context, configNameGCDGen0GrowthMaxFactor, publicKeyGCDGen0GrowthMaxFactor, GCConfigurationType.Int64, (long)s_UpdatedGCDGen0GrowthMaxFactor);
+                reportValue(context, configNameGCDGen0GrowthMaxFactor, publicKeyGCDGen0GrowthMaxFactor, GCConfigurationType.Int64, (long)s_UpdatedGCDGen0GrowthMaxFactor);
 
             fixed (byte* configNameGCCacheSizeFromSysConf = "GCCacheSizeFromSysConf\0"u8)
-                configurationValueFunc(context, configNameGCCacheSizeFromSysConf, null, GCConfigurationType.Boolean, (long)s_UpdatedGCCacheSizeFromSysConf);
+                reportValue(context, configNameGCCacheSizeFromSysConf, null, GCConfigurationType.Boolean, (long)s_UpdatedGCCacheSizeFromSysConf);
 
         }
 

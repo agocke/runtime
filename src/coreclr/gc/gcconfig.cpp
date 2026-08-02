@@ -5,6 +5,21 @@
 #include "gcenv.h"
 #include "gc.h"
 
+// System.Private.GC translates the whole of this file into GCConfig.cs. What FEATURE_MANAGED_GC
+// leaves compiled is what the rest of Runtime.ManagedGC still calls, and no more:
+//
+//  * the accessors and the backing storage below, plus GCConfig::Initialize, because
+//    nativeaot/Runtime/unix/PalUnix.cpp and nativeaot/Runtime/windows/PalMinWin.cpp call
+//    Initialize from PalInit and the still-native GCToOSInterface::Initialize of
+//    gc/windows/gcenv.windows.cpp reads GCNumaAware and GCCpuGroup back out of it. They go with
+//    the initialization submodule of System.Private.GC/ROADMAP.md plan step 3.
+//
+// Everything else has no native caller left in that archive and is excluded:
+// EnumerateConfigurationValues and RefreshHeapHardLimitSettings are reached through the IGCHeap
+// vtable, which is the managed heap's, and ParseGCHeapAffinitizeRanges -- with the
+// ParseIndexOrRange it and GCToOSInterface::ParseGCHeapAffinitizeRangesEntry share -- is called
+// only from gc/interface.cpp, which the managed collector does not compile.
+
 #define BOOL_CONFIG(name, unused_private_key, unused_public_key, default, unused_doc) \
   bool GCConfig::Get##name() { return s_##name; }                                     \
   bool GCConfig::Get##name(bool defaultValue)                                         \
@@ -44,6 +59,7 @@ GC_CONFIGURATION_KEYS
 #undef INT_CONFIG
 #undef STRING_CONFIG
 
+#ifndef FEATURE_MANAGED_GC
 void GCConfig::EnumerateConfigurationValues(void* context, ConfigurationValueFunc configurationValueFunc)
 {
 #define INT_CONFIG(name, unused_private_key, public_key, unused_default, unused_doc) \
@@ -78,6 +94,7 @@ void GCConfig::RefreshHeapHardLimitSettings()
     GCToEEInterface::GetIntConfigValue("GCHeapHardLimitLOHPercent", "System.GC.HeapHardLimitLOHPercent", &s_GCHeapHardLimitLOHPercent); s_UpdatedGCHeapHardLimitLOHPercent = s_GCHeapHardLimitLOHPercent;
     GCToEEInterface::GetIntConfigValue("GCHeapHardLimitPOHPercent", "System.GC.HeapHardLimitPOHPercent", &s_GCHeapHardLimitPOHPercent); s_UpdatedGCHeapHardLimitPOHPercent = s_GCHeapHardLimitPOHPercent;
 }
+#endif // !FEATURE_MANAGED_GC
 
 void GCConfig::Initialize()
 {
@@ -100,6 +117,7 @@ GC_CONFIGURATION_KEYS
 
 // Parse an integer index or range of two indices separated by '-'.
 // Updates the config_string to point to the first character after the parsed part
+#ifndef FEATURE_MANAGED_GC
 bool ParseIndexOrRange(const char** config_string, size_t* start_index, size_t* end_index)
 {
     char* number_end;
@@ -201,3 +219,4 @@ bool ParseGCHeapAffinitizeRanges(const char* cpu_index_ranges, AffinitySet* conf
 
     return success;
 }
+#endif // !FEATURE_MANAGED_GC

@@ -1447,10 +1447,11 @@ uint64_t GCToOSInterface::GetLowPrecisionTimeStamp()
 
 // GetTotalProcessorCount and GetMaxProcessorCount are translated into System.Private.GC's
 // GCToOSInterface.Processors.Unix.cs, which reads the same two variables through
-// ManagedGC_Unix_GetTotalCpuCount and ManagedGC_Unix_GetProcessAffinitySet. Both bodies stay
-// compiled under FEATURE_MANAGED_GC because the rest of the runtime in the same archive still
-// calls them: nativeaot/Runtime/unix/PalUnix.cpp calls GetTotalProcessorCount and gc/gcconfig.cpp
-// calls GetMaxProcessorCount.
+// ManagedGC_Unix_GetTotalCpuCount and ManagedGC_Unix_GetProcessAffinitySet.
+// GetTotalProcessorCount stays compiled under FEATURE_MANAGED_GC because the rest of the runtime
+// in the same archive still calls it: nativeaot/Runtime/unix/PalUnix.cpp does. GetMaxProcessorCount
+// no longer has a native caller there -- the ParseGCHeapAffinitizeRanges of gc/gcconfig.cpp that
+// called it is translated too -- so it is excluded.
 
 // Gets the total number of processors on the machine, not taking
 // into account current process affinity.
@@ -1463,30 +1464,30 @@ uint32_t GCToOSInterface::GetTotalProcessorCount()
     return g_totalCpuCount;
 }
 
+#ifndef FEATURE_MANAGED_GC
 uint32_t GCToOSInterface::GetMaxProcessorCount()
 {
     return (uint32_t)g_processAffinitySet.MaxCpuCount();
 }
+#endif // FEATURE_MANAGED_GC
 
-// CanEnableGCNumaAware and GetProcessorForHeap are translated into System.Private.GC's
+// CanEnableGCNumaAware, CanEnableGCCPUGroups, GetProcessorForHeap and
+// ParseGCHeapAffinitizeRangesEntry are translated into System.Private.GC's
 // GCToOSInterface.Processors.Unix.cs, which reads the same NUMA state through
-// ManagedGC_Unix_GetNumaAvailable and ManagedGC_Unix_GetNumaNodeNumByCpu. CanEnableGCCPUGroups
-// and ParseGCHeapAffinitizeRangesEntry are translated too, but both bodies stay compiled under
-// FEATURE_MANAGED_GC because the rest of the runtime in the same archive still calls them:
-// gc/gcconfig.cpp calls both from ParseGCHeapAffinitizeRanges.
+// ManagedGC_Unix_GetNumaAvailable and ManagedGC_Unix_GetNumaNodeNumByCpu. None of them has a
+// native caller left in the managed runtime archive: the ParseGCHeapAffinitizeRanges of
+// gc/gcconfig.cpp, which called the last two, is translated as well.
 #ifndef FEATURE_MANAGED_GC
 bool GCToOSInterface::CanEnableGCNumaAware()
 {
     return g_numaAvailable;
 }
-#endif // FEATURE_MANAGED_GC
 
 bool GCToOSInterface::CanEnableGCCPUGroups()
 {
     return false;
 }
 
-#ifndef FEATURE_MANAGED_GC
 // Get processor number and optionally its NUMA node number for the specified heap number
 // Parameters:
 //  heap_number - heap number to get the result for
@@ -1529,7 +1530,6 @@ bool GCToOSInterface::GetProcessorForHeap(uint16_t heap_number, uint16_t* proc_n
 
     return success;
 }
-#endif // FEATURE_MANAGED_GC
 
 // Parse the confing string describing affinitization ranges and update the passed in affinitySet accordingly
 // Parameters:
@@ -1542,3 +1542,4 @@ bool GCToOSInterface::ParseGCHeapAffinitizeRangesEntry(const char** config_strin
 {
     return ParseIndexOrRange(config_string, start_index, end_index);
 }
+#endif // FEATURE_MANAGED_GC
