@@ -203,6 +203,14 @@ namespace Internal.Runtime.GarbageCollection
         private static bool VerifyHandleTableTypes()
         {
             byte storage = 0;
+            HandleTable* table = (HandleTable*)&storage;
+            if (OffsetOf(table, &table->rgTypeFlags[0]) != GCInterfaceOffsets.OFFSETOF__HandleTable__rgTypeFlags
+                || HandleTableConstants.HNDF_NORMAL != GCInterfaceOffsets.HNDF_NORMAL
+                || HandleTableConstants.HNDF_EXTRAINFO != GCInterfaceOffsets.HNDF_EXTRAINFO)
+            {
+                return false;
+            }
+
             _TableSegmentHeader* header = (_TableSegmentHeader*)&storage;
             if (sizeof(_TableSegmentHeader) != GCInterfaceOffsets.SIZEOF___TableSegmentHeader
                 || AlignOf<_TableSegmentHeader>() != GCInterfaceOffsets.ALIGNOF___TableSegmentHeader

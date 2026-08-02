@@ -23,6 +23,9 @@ namespace Internal.Runtime.GarbageCollection
         public const int HNDTYPE_INTERNAL_DATABLOCK = HANDLE_MAX_INTERNAL_TYPES - 1;
         public const int MAXSTATGEN = 5;
 
+        public const uint HNDF_NORMAL = 0x00;
+        public const uint HNDF_EXTRAINFO = 0x01;
+
         public const int HANDLE_SEGMENT_CONTENT_MASK = HANDLE_SEGMENT_SIZE - 1;
         public const ulong HANDLE_SEGMENT_ALIGN_MASK = ~(ulong)HANDLE_SEGMENT_CONTENT_MASK;
 

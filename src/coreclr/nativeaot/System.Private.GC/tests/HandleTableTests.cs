@@ -19,6 +19,8 @@ public sealed unsafe class HandleTableTests
         Assert.Equal(13, HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES);
         Assert.Equal(12, HandleTableConstants.HANDLE_MAX_PUBLIC_TYPES);
         Assert.Equal(12, HandleTableConstants.HNDTYPE_INTERNAL_DATABLOCK);
+        Assert.Equal(0u, HandleTableConstants.HNDF_NORMAL);
+        Assert.Equal(1u, HandleTableConstants.HNDF_EXTRAINFO);
 
         Assert.Equal(65536, HandleTableConstants.HANDLE_SEGMENT_SIZE);
         Assert.Equal(4096, HandleTableConstants.HANDLE_HEADER_SIZE);
@@ -50,6 +52,15 @@ public sealed unsafe class HandleTableTests
         expectedSegmentAlignMask -= 0xFFFF;
         nuint actualSegmentAlignMask = unchecked((nuint)HandleTableConstants.HANDLE_SEGMENT_ALIGN_MASK);
         Assert.Equal(expectedSegmentAlignMask, actualSegmentAlignMask);
+    }
+
+    [Fact]
+    public void HandleTableTypeFlagsStayAtTheNativePrefix()
+    {
+        AssertOffset<HandleTable>(nameof(HandleTable.rgTypeFlags), 0);
+        Assert.Equal(
+            HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES * sizeof(uint),
+            sizeof(HandleTable));
     }
 
     [Fact]

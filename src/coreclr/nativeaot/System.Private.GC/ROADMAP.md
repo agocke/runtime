@@ -628,13 +628,16 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   `DoesSegmentNeedsToTrimExcessPages`, and `SegmentTrimExcessPages`, including deferred
   scavenging, hint/tail repair, address-ordered type and free chains, trailing-empty-line
   tracking, and whole-page decommit.
+- The load-bearing `HandleTable.rgTypeFlags` prefix, `TypeHasUserData`, and
+  `SegmentInsertBlockFromFreeList`, including capacity preflight, parallel internal data-block
+  allocation, linkage and locking, and commit-failure cleanup. `SegmentAllocHandlesFromFreeList`
+  and `SegmentAllocHandles` extend allocation from existing chains into newly committed blocks.
 
 #### Remaining
 
-Complete new-block handle allocation next. The public
-block-insertion wrapper arrives with the full `HandleTable.rgTypeFlags` layout because it
-allocates parallel user-data blocks based on those flags. Per-type caches, table entrypoints, and
-manager/store glue follow. The current flat `ManagedGCHandleManager` remains the runtime
+Complete the remainder of the fixed `HandleTable` header with the table allocator and locking,
+then port per-type caches, table entrypoints, and manager/store glue. The current flat
+`ManagedGCHandleManager` remains the runtime
 implementation until those pieces can replace it as one coherent allocation path.
 `TableContainHandle` remains with the table entrypoints because its exact translation takes the
 table lock and walks `HandleTable.pSegmentList`. Handle scanning, weak/dependent processing,

@@ -194,6 +194,63 @@ namespace Internal.Runtime.GarbageCollection
             return uBlock;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TypeHasUserData(HandleTable* pTable, uint uType)
+        {
+            Debug.Assert(uType < HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES);
+
+            return (pTable->rgTypeFlags[uType] & HandleTableConstants.HNDF_EXTRAINFO) != 0;
+        }
+
+        public static uint SegmentInsertBlockFromFreeList(TableSegment* pSegment, uint uType, bool fUpdateHint)
+        {
+            uint uBlock;
+            uint uData = 0;
+            bool fUserData = TypeHasUserData(pSegment->Header.pHandleTable, uType);
+
+            if (fUserData)
+            {
+                uBlock = pSegment->Header.bFreeList;
+                if (uBlock == HandleTableConstants.BLOCK_INVALID
+                    || pSegment->Header.rgAllocation[uBlock] == HandleTableConstants.BLOCK_INVALID)
+                {
+                    return HandleTableConstants.BLOCK_INVALID;
+                }
+
+                uData = SegmentInsertBlockFromFreeListWorker(
+                    pSegment,
+                    HandleTableConstants.HNDTYPE_INTERNAL_DATABLOCK,
+                    false);
+            }
+
+            uBlock = SegmentInsertBlockFromFreeListWorker(pSegment, uType, fUpdateHint);
+
+            if (fUserData)
+            {
+                if (uBlock != HandleTableConstants.BLOCK_INVALID && uData != HandleTableConstants.BLOCK_INVALID)
+                {
+                    pSegment->Header.rgUserData[uBlock] = (byte)uData;
+                    BlockLock(pSegment, uData);
+                }
+                else
+                {
+                    if (uBlock != HandleTableConstants.BLOCK_INVALID)
+                    {
+                        SegmentRemoveFreeBlocks(pSegment, uType, null);
+                    }
+
+                    if (uData != HandleTableConstants.BLOCK_INVALID)
+                    {
+                        SegmentRemoveFreeBlocks(pSegment, HandleTableConstants.HNDTYPE_INTERNAL_DATABLOCK, null);
+                    }
+
+                    uBlock = HandleTableConstants.BLOCK_INVALID;
+                }
+            }
+
+            return uBlock;
+        }
+
         public static void SegmentRemoveFreeBlocks(TableSegment* pSegment, uint uType, bool* pfScavengeLater)
         {
             uint uPrev = pSegment->Header.rgTail[uType];
@@ -687,6 +744,60 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             return uCount;
+        }
+
+        public static uint SegmentAllocHandlesFromFreeList(
+            TableSegment* pSegment,
+            uint uType,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            uint uRemain = uCount;
+
+            do
+            {
+                uint uAlloc = uRemain;
+
+                if (uAlloc > HandleTableConstants.HANDLE_HANDLES_PER_BLOCK)
+                {
+                    uAlloc = HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+                }
+
+                uint uBlock = SegmentInsertBlockFromFreeList(pSegment, uType, uRemain == uCount);
+
+                if (uBlock == HandleTableConstants.BLOCK_INVALID)
+                {
+                    break;
+                }
+
+                uAlloc = BlockAllocHandlesInitial(pSegment, uType, uBlock, pHandleBase, uAlloc);
+                uRemain -= uAlloc;
+                pHandleBase += uAlloc;
+            }
+            while (uRemain != 0);
+
+            uCount -= uRemain;
+            pSegment->Header.rgFreeCount[uType] -= uCount;
+
+            return uCount;
+        }
+
+        public static uint SegmentAllocHandles(
+            TableSegment* pSegment,
+            uint uType,
+            OBJECTHANDLE* pHandleBase,
+            uint uCount)
+        {
+            uint uSatisfied = SegmentAllocHandlesFromTypeChain(pSegment, uType, pHandleBase, uCount);
+
+            if (uSatisfied < uCount)
+            {
+                uCount -= uSatisfied;
+                pHandleBase += uSatisfied;
+                uSatisfied += SegmentAllocHandlesFromFreeList(pSegment, uType, pHandleBase, uCount);
+            }
+
+            return uSatisfied;
         }
 
         public static uint BlockFreeHandlesInMask(

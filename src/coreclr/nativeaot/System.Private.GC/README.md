@@ -117,11 +117,13 @@ blocks. It now also frees sorted handle batches across masks and blocks, clears 
 parallel user data, updates free counts without crediting duplicate frees, and returns newly
 empty blocks to the segment free list. Chain resorting rebuilds all type chains and the free list
 in address order, completes deferred scavenging, and tracks the trailing empty range so whole
-unused pages can be decommitted. The shared
+unused pages can be decommitted. The public block-insertion path consults the native
+`HandleTable.rgTypeFlags` prefix and allocates, links, and locks parallel user-data blocks for
+types marked `HNDF_EXTRAINFO`. The shared
 `GCInterfaceOffsets.h` table pins their 32- and 64-bit native offsets, sizes, and alignments, and
 the managed startup verifier checks the C# layouts against the generated values. The flat
-`ManagedGCHandleManager` still supplies the running bootstrap heap until new-block allocation,
-caches, and the manager glue are ported over this
+`ManagedGCHandleManager` still supplies the running bootstrap heap until caches, table
+entrypoints, and the manager glue are ported over this
 schema.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.

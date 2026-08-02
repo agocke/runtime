@@ -8,11 +8,13 @@ using System.Runtime.InteropServices;
 namespace Internal.Runtime.GarbageCollection
 {
     /// <summary>
-    /// Forward-declaration analogue for pointers in the segment header. The fixed table header
-    /// arrives with the table allocator; no instance of this placeholder is allocated.
+    /// Prefix of the handle table needed by the segment allocator. The remaining fixed header and
+    /// trailing per-type caches arrive with the table allocator.
     /// </summary>
-    internal struct HandleTable
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct HandleTable
     {
+        public fixed uint rgTypeFlags[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
     }
 
     /// <summary>Header data at the start of every handle-table segment.</summary>

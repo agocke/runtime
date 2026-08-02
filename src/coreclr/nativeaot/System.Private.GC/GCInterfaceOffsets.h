@@ -185,6 +185,8 @@ GC_CONST(3f04003, 3f04003, GCEventKeyword_All)
 // -----------------------------------------------------------------------------------------
 
 //        32-bit,64-bit, class, member
+GC_OFFSET(     0,     0, HandleTable, rgTypeFlags)
+
 GC_OFFSET(     0,     0, _TableSegmentHeader, rgGeneration)
 GC_OFFSET(   3c0,   1e0, _TableSegmentHeader, rgAllocation)
 GC_OFFSET(   4b0,   258, _TableSegmentHeader, rgFreeMask)
@@ -215,6 +217,9 @@ GC_OFFSET(   100,   200, HandleTypeCache, rgFreeBank)
 GC_OFFSET(   1fc,   3f8, HandleTypeCache, lFreeIndex)
 GC_SIZEOF(   200,   400, HandleTypeCache)
 GC_ALIGNOF(     4,     8, HandleTypeCache)
+
+GC_CONST(       0,       0, HNDF_NORMAL)
+GC_CONST(       1,       1, HNDF_EXTRAINFO)
 
 // -----------------------------------------------------------------------------------------
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
