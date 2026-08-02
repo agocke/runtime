@@ -191,6 +191,13 @@ public sealed unsafe class GCVirtualMemoryTests
     private const int LargePagesFlag = 0;
     private const int MADV_FREE = 5;
     private static bool HasCoredumpAdvice => false;
+#elif TARGET_OPENBSD
+    private const int MAP_ANON = 0x1000;
+    private const int MAP_PRIVATE = 0x0002;
+    private const int MAP_FIXED = 0x0010;
+    private const int LargePagesFlag = 0;
+    private const int MADV_FREE = 6;
+    private static bool HasCoredumpAdvice => false;
 #else
     private const int MAP_ANON = 0x20;
     private const int MAP_PRIVATE = 0x02;

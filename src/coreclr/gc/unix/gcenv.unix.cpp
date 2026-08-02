@@ -335,6 +335,7 @@ void GCToOSInterface::DebugBreak()
 // Causes the calling thread to sleep for the specified number of milliseconds
 // Parameters:
 //  sleepMSec   - time to sleep before switching to another thread
+#ifndef FEATURE_MANAGED_GC
 void GCToOSInterface::Sleep(uint32_t sleepMSec)
 {
     if (sleepMSec == 0)
@@ -363,6 +364,7 @@ void GCToOSInterface::YieldThread(uint32_t switchCount)
     // sched_yield never fails on Linux, unclear about other OSes
     assert(ret == 0);
 }
+#endif // FEATURE_MANAGED_GC
 
 // Reserve virtual memory range.
 // Parameters:

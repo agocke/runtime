@@ -313,7 +313,7 @@ public sealed unsafe class GCCriticalSectionTests
 
 #if !TARGET_WINDOWS
     // PTHREAD_MUTEX_RECURSIVE of <pthread.h>.
-#if TARGET_APPLE || TARGET_FREEBSD
+#if TARGET_APPLE || TARGET_FREEBSD || TARGET_OPENBSD
     private const int PTHREAD_MUTEX_RECURSIVE = 2;
 #else
     private const int PTHREAD_MUTEX_RECURSIVE = 1;

@@ -71,8 +71,17 @@ namespace Internal.Runtime.GarbageCollection
         private const int MADV_FREE = 5;
 
         private const int RLIMIT_AS = 10;
+#elif TARGET_OPENBSD
+        private const int MAP_ANON = 0x1000;
+        private const int MAP_PRIVATE = 0x0002;
+        private const int MAP_FIXED = 0x0010;
+
+        // Neither HAVE_MAP_HUGETLB nor HAVE_VM_FLAGS_SUPERPAGE_SIZE_ANY holds here.
+        private const uint LargePagesFlag = 0;
+
+        private const int MADV_FREE = 6;
 #else
-        // Linux, Android and any other Unix that shares the asm-generic values.
+        // Linux and Android share the asm-generic values.
         private const int MAP_ANON = 0x20;
         private const int MAP_PRIVATE = 0x02;
         private const int MAP_FIXED = 0x10;
@@ -91,7 +100,7 @@ namespace Internal.Runtime.GarbageCollection
         /// <c>RLIM_INFINITY</c> of <c>&lt;sys/resource.h&gt;</c>. It cannot be a constant
         /// because C# has no <c>nuint</c> constants.
         /// </summary>
-#if TARGET_APPLE || TARGET_FREEBSD
+#if TARGET_APPLE || TARGET_FREEBSD || TARGET_OPENBSD
         private static ulong RLIM_INFINITY => 0x7FFFFFFFFFFFFFFF;
 #else
         private static nuint RLIM_INFINITY => nuint.MaxValue;
@@ -104,7 +113,7 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         private struct Rlimit
         {
-#if TARGET_APPLE || TARGET_FREEBSD
+#if TARGET_APPLE || TARGET_FREEBSD || TARGET_OPENBSD
             // rlim_t is 64 bits wide on the BSDs regardless of pointer size, and RLIM_INFINITY
             // is the largest positive value rather than the all-ones one.
             public ulong rlim_cur;
@@ -179,7 +188,7 @@ namespace Internal.Runtime.GarbageCollection
                 }
 
                 pRetVal = pAlignedRetVal;
-#if !TARGET_APPLE && !TARGET_FREEBSD
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
                 // Do not include reserved uncommitted memory in coredump.
                 if (!committing)
                 {
@@ -248,7 +257,7 @@ namespace Internal.Runtime.GarbageCollection
         {
             bool success = mprotect(address, size, PROT_WRITE | PROT_READ) == 0;
 
-#if !TARGET_APPLE && !TARGET_FREEBSD
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
             if (success && !newMemory)
             {
                 // Include committed memory in coredump. New memory is included by default.
@@ -319,7 +328,7 @@ namespace Internal.Runtime.GarbageCollection
             int mmapFlags = MAP_FIXED | MAP_ANON | MAP_PRIVATE;
             bool bRetVal = mmap(address, size, PROT_NONE, mmapFlags, -1, 0) != MAP_FAILED;
 
-#if !TARGET_APPLE && !TARGET_FREEBSD
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
             if (bRetVal)
             {
                 // Do not include freed memory in coredump.
@@ -343,7 +352,7 @@ namespace Internal.Runtime.GarbageCollection
         {
             int st = EINVAL;
 
-#if !TARGET_APPLE && !TARGET_FREEBSD
+#if !TARGET_APPLE && !TARGET_FREEBSD && !TARGET_OPENBSD
             // Do not include reset memory in coredump.
             st = madvise(address, size, MADV_DONTDUMP);
 #endif
@@ -372,11 +381,13 @@ namespace Internal.Runtime.GarbageCollection
         /// </returns>
         public static nuint GetVirtualMemoryLimit()
         {
+#if !TARGET_OPENBSD
             Rlimit addressSpaceLimit;
             if ((getrlimit(RLIMIT_AS, &addressSpaceLimit) == 0) && (addressSpaceLimit.rlim_cur != RLIM_INFINITY))
             {
                 return (nuint)addressSpaceLimit.rlim_cur;
             }
+#endif
 
             // No virtual memory limit
             return GetVirtualMemoryMaxAddress();

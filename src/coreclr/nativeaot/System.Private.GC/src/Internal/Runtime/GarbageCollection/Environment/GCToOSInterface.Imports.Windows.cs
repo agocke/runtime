@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// The Win32 entry points that the Windows virtual memory and write watch ports of
+// The Win32 entry points that the Windows virtual memory, write watch and thread ports of
 // GCToOSInterface call, declared as <windows.h> declares them, except that every BOOL is
 // spelled as int: a Win32 BOOL is four bytes wide and a managed bool is one, and there is no
 // marshalling here to convert between them.
@@ -87,5 +87,19 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "AdjustTokenPrivileges")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int AdjustTokenPrivileges(void* TokenHandle, int DisableAllPrivileges, TOKEN_PRIVILEGES* NewState, uint BufferLength, TOKEN_PRIVILEGES* PreviousState, uint* ReturnLength);
+
+        /// <summary>
+        /// <c>SleepEx</c> of <c>&lt;windows.h&gt;</c>. Its <c>DWORD</c> return -- zero, or
+        /// <c>WAIT_IO_COMPLETION</c> for an alertable sleep ended by an APC -- is discarded by
+        /// the caller, as it is by the C++.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "SleepEx")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern uint SleepEx(uint dwMilliseconds, int bAlertable);
+
+        /// <summary><c>SwitchToThread</c> of <c>&lt;windows.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "SwitchToThread")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SwitchToThread();
     }
 }

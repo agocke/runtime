@@ -9,9 +9,10 @@
 //   * The virtual memory and write watch methods are translated, in
 //     GCToOSInterface.VirtualMemory.Unix.cs, GCToOSInterface.VirtualMemory.Windows.cs,
 //     GCToOSInterface.WriteWatch.Unix.cs and GCToOSInterface.WriteWatch.Windows.cs, from
-//     gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp. Their declarations stay here as
-//     comments pointing at the platform file, so that this file still reads in gcenv.os.h
-//     declaration order.
+//     gc/unix/gcenv.unix.cpp and gc/windows/gcenv.windows.cpp, and so are Sleep and
+//     YieldThread, in GCToOSInterface.Thread.Unix.cs and GCToOSInterface.Thread.Windows.cs.
+//     Their declarations stay here as comments pointing at the platform file, so that this file
+//     still reads in gcenv.os.h declaration order.
 //   * The remaining bodies are still forwarders. Each one is a [RuntimeImport] call to a
 //     one-line shim in nativeaot/Runtime/gcenv.managed.cpp, which calls the C++
 //     GCToOSInterface. A runtime import is a direct call to a linked symbol with no marshalling
@@ -98,20 +99,10 @@ namespace Internal.Runtime.GarbageCollection
         //
 
         //
-        // Thread and process
+        // Thread and process. Sleep and YieldThread are translated per platform in
+        // GCToOSInterface.Thread.Unix.cs and GCToOSInterface.Thread.Windows.cs; the rest of the
+        // section is below.
         //
-
-        /// <summary>
-        /// Causes the calling thread to sleep for the specified number of milliseconds.
-        /// </summary>
-        public static void Sleep(uint sleepMSec) => ManagedGC_OS_Sleep(sleepMSec);
-
-        /// <summary>
-        /// Causes the calling thread to yield execution to another thread that is ready to run
-        /// on the current processor.
-        /// </summary>
-        /// <param name="switchCount">number of times the YieldThread was called in a loop</param>
-        public static void YieldThread(uint switchCount) => ManagedGC_OS_YieldThread(switchCount);
 
         /// <summary>Get the number of the current processor.</summary>
         public static uint GetCurrentProcessorNumber() => ManagedGC_OS_GetCurrentProcessorNumber();
@@ -291,14 +282,6 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_Shutdown")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_OS_Shutdown();
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_Sleep")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void ManagedGC_OS_Sleep(uint sleepMSec);
-
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_YieldThread")]
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void ManagedGC_OS_YieldThread(uint switchCount);
 
         [RuntimeImport(RuntimeLibrary, "ManagedGC_OS_GetCurrentProcessorNumber")]
         [MethodImpl(MethodImplOptions.InternalCall)]

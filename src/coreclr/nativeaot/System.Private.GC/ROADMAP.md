@@ -211,7 +211,7 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   with no marshalling and no GC mode transition, exactly as the native GC does while the world is
   suspended. The C++ heap-allocates the Impl with `new (nothrow)`, and the C++ lock embeds its
   `minipal_mutex` by value; the managed versions take both from `ManagedGC_AllocZeroed`, which is
-  submodule 6 below, because the managed GC has no allocator of its own yet. The pthread and
+  submodule 5 below, because the managed GC has no allocator of its own yet. The pthread and
   `CRITICAL_SECTION` types are opaque blobs sized above every platform, `struct timespec` is
   written out in the two variants that exist -- two native words, or the 64-bit `time_t` musl
   uses -- and the constants (`PTHREAD_MUTEX_RECURSIVE`, `CLOCK_MONOTONIC`, `CLOCK_UPTIME_RAW`,
@@ -219,7 +219,26 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   `nativeaot/Runtime/gcenv.managed.cpp` for the platform being built. `Runtime.ManagedGC` omits
   the Unix `events.cpp`, and `FEATURE_MANAGED_GC` excludes the Windows `GCEvent::Impl` section
   from `gcenv.windows.cpp`, so neither native event implementation is compiled for the managed
-  collector.
+  collector. OpenBSD selects its own mmap, rlimit, pthread, clock and errno values rather than
+  the Linux defaults.
+- Sleep and yield: `GCToOSInterface::Sleep` and `GCToOSInterface::YieldThread`, from
+  `gc/unix/gcenv.unix.cpp` and `gc/windows/gcenv.windows.cpp`. `Sleep` is the same early return
+  for zero, the same split of the millisecond count into `tv_sec` and `tv_nsec` using the
+  `tccSecondsToMilliSeconds` / `tccMilliSecondsToNanoSeconds` conversions of `gc/unix/globals.h`,
+  and the same `nanosleep` loop that retries with the remaining interval while the call fails
+  with `EINTR`; on Windows it is the same `sleepMSec > 0` guard around a single non-alertable
+  `SleepEx`. `YieldThread` is the same single `sched_yield` and assert, or the same single
+  `SwitchToThread` whose result is discarded, ignoring `switchCount` exactly as the C++ does.
+  `nanosleep`, `sched_yield`, `SleepEx` and `SwitchToThread` are `[RuntimeImport]`s of those
+  entry points. `errno` is the one thing that has no C# spelling: it is a macro over a C
+  thread-local reachable only through a per-C-library accessor, so the port imports that accessor
+  -- `__error` on Apple and FreeBSD, `__errno` on bionic and OpenBSD, and `__errno_location` on
+  glibc and musl -- and dereferences it, with the selection and `EINTR` asserted against the
+  native platform defines and `<errno.h>` in `nativeaot/Runtime/gcenv.managed.cpp`.
+  `FEATURE_MANAGED_GC` excludes both native bodies from `gcenv.unix.cpp` and
+  `gcenv.windows.cpp`, so
+  `Runtime.ManagedGC` no longer compiles either; the workstation and server archives are
+  unchanged.
 - Focused xUnit coverage of every piece above that is pure computation, in
   `tests/GCEnvironmentTests.cs`; of the whole virtual memory port -- flag translation,
   alignment over-allocation and trimming, failure paths, and a reserve/commit/write/reset/
@@ -231,7 +250,11 @@ semantics as C++, including suspension-safe calls made while the runtime is stop
   against all-waiters, a two-event ping-pong that loses no signal, set/reset racing pollers, the
   recursive lock's nesting, contended mutual exclusion, the `CrstHolder` scopes, the recorded
   mutex attribute and condition variable clock, and the injected allocation, mutex and condition
-  variable failures -- in `tests/GCEventTests.cs` and `tests/GCCriticalSectionTests.cs`. All of
+  variable failures -- in `tests/GCEventTests.cs` and `tests/GCCriticalSectionTests.cs`; and of
+  the sleep and yield ports -- the zero-interval early return, the second/nanosecond split up to
+  `uint.MaxValue`, the `EINTR` retry driven by the remaining interval the previous call reported,
+  the absence of a retry for any other `errno`, the ignored `switchCount`, and the Windows
+  interval and `bAlertable` forwarding -- in `tests/GCSleepYieldTests.cs`. All of
   them run the shipping bodies over recording substitutes for their libc and Win32 declarations.
 
 #### Remaining submodules
@@ -240,29 +263,28 @@ Each item below is a native module that `nativeaot/Runtime/gcenv.managed.cpp` cu
 to. The managed declaration already exists and does not change when the implementation lands;
 only the body and its shim do. They are listed in the order they become blocking.
 
-1. **Sleep and yield** -- `Sleep`, `YieldThread`.
-2. **Memory limits** -- `GetPhysicalMemoryLimit`, `GetMemoryStatus`, `GetCacheSizePerLogicalCpu`.
+1. **Memory limits** -- `GetPhysicalMemoryLimit`, `GetMemoryStatus`, `GetCacheSizePerLogicalCpu`.
    These read cgroup v1/v2 files (`gc/unix/cgroup.cpp`), `sysconf`, `sysctl` and Windows job
    objects. Blocks the hard-limit and dynamic tuning parts of stage 10.
-3. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
+2. **Timers** -- `QueryPerformanceCounter`, `QueryPerformanceFrequency`,
    `GetLowPrecisionTimeStamp`.
-4. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
+3. **Processor counts and identity** -- `GetTotalProcessorCount`, `GetMaxProcessorCount`,
    `GetCurrentProcessorNumber`, `CanGetCurrentProcessorNumber`, `GetCurrentProcessId`,
    `GetCurrentThreadIdForLogging`. The last of these is what the debug-only lock-ownership
    bookkeeping of `CrstStatic` records, which is why those wrapper tests only run in a build
    with asserts disabled.
-5. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
+4. **Affinity, NUMA and CPU groups** -- `SetThreadAffinity`, `BoostThreadPriority`,
    `SetCurrentThreadIdealAffinity`, `GetCurrentThreadIdealProc`, `SetGCThreadsAffinitySet`,
    `CanEnableGCNumaAware`, `GetNumaInfo`, `CanEnableGCCPUGroups`, `GetProcessorForHeap`,
    `GetCPUGroupInfo`, `ParseGCHeapAffinitizeRangesEntry`, plus `gc/unix/numasupport.cpp` and the
    `ManagedGC_NUMA_BindMemoryPolicy` shim that `VirtualCommit` still calls. Blocks server GC in
    stage 10.
-6. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
+5. **Heap allocation for the environment** -- `ManagedGC_AllocZeroed` and `ManagedGC_Free`, which
    stand in for the `new (nothrow)` allocations of the environment layer: the `uintptr_t[]` of
    `AffinitySet`, the `GCEvent::Impl` of the event ports, and the `minipal_mutex` that the C++
    `CLRCriticalSection` embeds by value. They can only go away once the GC has memory of its own
    to take those from, which is stage 7.
-7. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
+6. **Initialization** -- `Initialize` and `Shutdown`. NativeAOT calls the C++ ones from
    `PalInit`, so the managed GC never calls these; they land last, together with moving that call
    out of `PalInit`.
 

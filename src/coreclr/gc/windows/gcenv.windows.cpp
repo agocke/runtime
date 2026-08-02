@@ -657,6 +657,7 @@ void GCToOSInterface::DebugBreak()
 // Causes the calling thread to sleep for the specified number of milliseconds
 // Parameters:
 //  sleepMSec   - time to sleep before switching to another thread
+#ifndef FEATURE_MANAGED_GC
 void GCToOSInterface::Sleep(uint32_t sleepMSec)
 {
     // TODO(segilles) CLR implementation of __SwitchToThread spins for short sleep durations
@@ -675,6 +676,7 @@ void GCToOSInterface::YieldThread(uint32_t switchCount)
     UNREFERENCED_PARAMETER(switchCount);
     SwitchToThread();
 }
+#endif // FEATURE_MANAGED_GC
 
 // Reserve virtual memory range.
 // Parameters:

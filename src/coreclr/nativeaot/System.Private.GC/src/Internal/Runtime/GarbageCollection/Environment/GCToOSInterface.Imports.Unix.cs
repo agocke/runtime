@@ -1,8 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// The libc entry points that the Unix virtual memory port of GCToOSInterface calls, declared
-// exactly as <sys/mman.h> and <sys/resource.h> declare them.
+// The libc entry points that the Unix virtual memory and thread ports of GCToOSInterface call,
+// declared exactly as <sys/mman.h>, <sys/resource.h>, <time.h>, <sched.h> and <errno.h> declare
+// them.
 //
 // They are [RuntimeImport]s rather than [DllImport]s: a runtime import is a direct call to a
 // linked symbol with no marshalling, no argument copying, no lazy binding step and no GC mode
@@ -41,6 +42,44 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "getrlimit")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int getrlimit(int resource, Rlimit* rlim);
+
+        /// <summary>
+        /// <c>nanosleep</c> of <c>&lt;time.h&gt;</c>, which the sleep port retries with the
+        /// interval it reports back in <paramref name="rem"/>.
+        /// </summary>
+        [RuntimeImport(RuntimeLibrary, "nanosleep")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int nanosleep(timespec* req, timespec* rem);
+
+        /// <summary><c>sched_yield</c> of <c>&lt;sched.h&gt;</c>.</summary>
+        [RuntimeImport(RuntimeLibrary, "sched_yield")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int sched_yield();
+
+        /// <summary>
+        /// The accessor that returns the address of the calling thread's <c>errno</c>. The
+        /// <c>&lt;errno.h&gt;</c> <c>errno</c> macro is a dereference of exactly this call on
+        /// every platform, because <c>errno</c> is a thread-local that only the C library can
+        /// locate.
+        /// </summary>
+        /// <remarks>
+        /// The symbol differs per C library, and [RuntimeImport] names the symbol, so the
+        /// managed name and the entry point need not agree -- the glibc name is kept for all of
+        /// them, as the port keeps the C++ names elsewhere. glibc and musl export
+        /// <c>__errno_location</c>, Apple's libSystem and FreeBSD's libc export <c>__error</c>,
+        /// and bionic and OpenBSD export <c>__errno</c>. There is nothing constant to assert
+        /// about a function name; a platform whose C library has none of these fails the managed
+        /// link, which is the same outcome as the C++ failing to compile.
+        /// </remarks>
+#if TARGET_APPLE || TARGET_FREEBSD
+        [RuntimeImport(RuntimeLibrary, "__error")]
+#elif TARGET_BIONIC || TARGET_OPENBSD
+        [RuntimeImport(RuntimeLibrary, "__errno")]
+#else
+        [RuntimeImport(RuntimeLibrary, "__errno_location")]
+#endif
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int* __errno_location();
 
         /// <summary>
         /// The shared page size helper of <c>src/native/minipal/ospagesize.h</c>, which caches

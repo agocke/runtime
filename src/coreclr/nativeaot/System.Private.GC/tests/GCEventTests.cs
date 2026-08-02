@@ -528,6 +528,8 @@ public sealed unsafe class GCEventTests
     // CLOCK_MONOTONIC of <time.h>.
 #if TARGET_FREEBSD
     private const int CLOCK_MONOTONIC = 4;
+#elif TARGET_OPENBSD
+    private const int CLOCK_MONOTONIC = 3;
 #else
     private const int CLOCK_MONOTONIC = 1;
 #endif

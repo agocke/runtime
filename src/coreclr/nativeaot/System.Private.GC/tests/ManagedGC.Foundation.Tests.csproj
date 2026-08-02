@@ -18,7 +18,9 @@
          <sys/mman.h> values of the platform it is compiled for. -->
     <DefineConstants Condition="'$(TargetsOSX)' == 'true' or '$(TargetsMacCatalyst)' == 'true' or '$(TargetsiOS)' == 'true' or '$(TargetstvOS)' == 'true'">TARGET_APPLE;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsFreeBSD)' == 'true'">TARGET_FREEBSD;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(TargetsOpenBSD)' == 'true'">TARGET_OPENBSD;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsLinuxMusl)' == 'true'">TARGET_LINUX_MUSL;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(TargetsAndroid)' == 'true' or '$(TargetsLinuxBionic)' == 'true'">TARGET_BIONIC;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +33,7 @@
     <Compile Include="GCWriteWatchTests.cs" />
     <Compile Include="GCEventTests.cs" />
     <Compile Include="GCCriticalSectionTests.cs" />
+    <Compile Include="GCSleepYieldTests.cs" />
     <Compile Include="GCFoundationTests.cs" />
     <Compile Include="GCInterfaceLayoutTests.cs" />
     <!-- The environment layer. Its OS calls are [RuntimeImport] declarations, which resolve
@@ -52,6 +55,8 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.VirtualMemory.Windows.cs" Link="Environment/GCToOSInterface.VirtualMemory.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.WriteWatch.Unix.cs" Link="Environment/GCToOSInterface.WriteWatch.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.WriteWatch.Windows.cs" Link="Environment/GCToOSInterface.WriteWatch.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.Thread.Unix.cs" Link="Environment/GCToOSInterface.Thread.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCToOSInterface.Thread.Windows.cs" Link="Environment/GCToOSInterface.Thread.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="GCToOSInterface.Imports.Unix.TestHost.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="GCToOSInterface.Imports.Windows.TestHost.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <!-- The event and lock ports are real code rather than forwarders too, so the shipping

@@ -6,7 +6,8 @@
 // The shipping declarations are [RuntimeImport]s, which only resolve inside a NativeAOT image,
 // so this file declares the same private methods as ordinary P/Invokes. That makes the ported
 // bodies above them -- the flag combinations, the NUMA alternatives, the large page rounding,
-// the failure paths -- runnable in a normal test process against the real kernel, and it
+// the failure paths, the sleep and the yield -- runnable in a normal test process against the
+// real kernel, and it
 // records the arguments of every call so that the flag translation can be asserted directly
 // rather than inferred.
 //
@@ -67,6 +68,30 @@ internal static unsafe partial class GCToOSInterface
 
     internal static WriteWatchCall LastGetWriteWatch;
     internal static int GetWriteWatchCount;
+
+    //
+    // Sleep and yield. These recordings are deliberately not touched by ResetRecording, so that
+    // the sleep and yield tests cannot clobber -- or be clobbered by -- a virtual memory test
+    // that xUnit happens to run at the same time in another class.
+    //
+
+    internal struct SleepExCall
+    {
+        public uint dwMilliseconds;
+        public int bAlertable;
+    }
+
+    internal static SleepExCall LastSleepEx;
+    internal static int SleepExCount;
+    internal static int SwitchToThreadCount;
+
+    /// <summary>Forgets the sleep and yield recording.</summary>
+    internal static void ResetSleepYieldRecording()
+    {
+        LastSleepEx = default;
+        SleepExCount = 0;
+        SwitchToThreadCount = 0;
+    }
 
     /// <summary>Forgets every recorded call. Each test starts by calling this.</summary>
     internal static void ResetRecording()
@@ -164,9 +189,21 @@ internal static unsafe partial class GCToOSInterface
         return result;
     }
 
+    private static uint SleepEx(uint dwMilliseconds, int bAlertable)
+    {
+        LastSleepEx = new SleepExCall { dwMilliseconds = dwMilliseconds, bAlertable = bAlertable };
+        SleepExCount++;
+        return sys_SleepEx(dwMilliseconds, bAlertable);
+    }
+
+    private static int SwitchToThread()
+    {
+        SwitchToThreadCount++;
+        return sys_SwitchToThread();
+    }
+
     [DllImport("kernel32", EntryPoint = "VirtualAlloc", SetLastError = true)]
     private static extern void* sys_VirtualAlloc(void* lpAddress, nuint dwSize, uint flAllocationType, uint flProtect);
-
     [DllImport("kernel32", EntryPoint = "VirtualAllocExNuma", SetLastError = true)]
     private static extern void* sys_VirtualAllocExNuma(void* hProcess, void* lpAddress, nuint dwSize, uint flAllocationType, uint flProtect, uint nndPreferred);
 
@@ -208,4 +245,10 @@ internal static unsafe partial class GCToOSInterface
 
     [DllImport("advapi32", EntryPoint = "AdjustTokenPrivileges", SetLastError = true)]
     private static extern int AdjustTokenPrivileges(void* TokenHandle, int DisableAllPrivileges, TOKEN_PRIVILEGES* NewState, uint BufferLength, TOKEN_PRIVILEGES* PreviousState, uint* ReturnLength);
+
+    [DllImport("kernel32", EntryPoint = "SleepEx")]
+    private static extern uint sys_SleepEx(uint dwMilliseconds, int bAlertable);
+
+    [DllImport("kernel32", EntryPoint = "SwitchToThread")]
+    private static extern int sys_SwitchToThread();
 }

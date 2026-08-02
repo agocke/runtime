@@ -58,8 +58,11 @@ namespace Internal.Runtime.GarbageCollection
 #elif TARGET_FREEBSD
         private const int CLOCK_MONOTONIC = 4;
         private const int ETIMEDOUT = 60;
+#elif TARGET_OPENBSD
+        private const int CLOCK_MONOTONIC = 3;
+        private const int ETIMEDOUT = 60;
 #else
-        // Linux, Android and any other Unix that shares the asm-generic values.
+        // Linux and Android share the asm-generic values.
         private const int CLOCK_MONOTONIC = 1;
         private const int ETIMEDOUT = 110;
 #endif

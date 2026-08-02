@@ -17,10 +17,16 @@
          nativeaot/Runtime/gcenv.managed.cpp. -->
     <DefineConstants Condition="'$(TargetsOSX)' == 'true' or '$(TargetsMacCatalyst)' == 'true' or '$(TargetsiOS)' == 'true' or '$(TargetstvOS)' == 'true'">TARGET_APPLE;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsFreeBSD)' == 'true'">TARGET_FREEBSD;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(TargetsOpenBSD)' == 'true'">TARGET_OPENBSD;$(DefineConstants)</DefineConstants>
     <!-- The Unix event port selects the <time.h> struct timespec of the platform it is built
          for; musl is the one C library whose time_t is wider than a pointer. The native build
          defines the same symbol, and gcenv.managed.cpp asserts the layout the C# selects. -->
     <DefineConstants Condition="'$(TargetsLinuxMusl)' == 'true'">TARGET_LINUX_MUSL;$(DefineConstants)</DefineConstants>
+    <!-- The sleep port reaches errno through the accessor the C library exports, and that name
+         is per C library rather than per operating system: bionic and OpenBSD call it __errno
+         where glibc and musl call it __errno_location. The native check in gcenv.managed.cpp is
+         keyed on the corresponding native platform defines. -->
+    <DefineConstants Condition="'$(TargetsAndroid)' == 'true' or '$(TargetsLinuxBionic)' == 'true'">TARGET_BIONIC;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
     <!-- The generated GCInterfaceOffsets.cs is only available when the native runtime is built
@@ -57,6 +63,9 @@
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.VirtualMemory.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.WriteWatch.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.WriteWatch.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
+    <!-- Sleep and yield, from the "thread and process" section of the same two gcenv files. -->
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Thread.Unix.cs" Condition="'$(TargetsWindows)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCToOSInterface.Thread.Windows.cs" Condition="'$(TargetsWindows)' == 'true'" />
     <!-- The event and lock implementations, likewise one per gcenv platform file:
          gc/unix/events.cpp and the GCEvent half of gc/windows/gcenv.windows.cpp, plus the two
          halves of src/native/minipal/mutex.c that CLRCriticalSection forwards to. The pthread

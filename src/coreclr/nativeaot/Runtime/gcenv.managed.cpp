@@ -62,7 +62,7 @@ static_assert(sizeof(GCEvent) == sizeof(void*), "The managed GCEvent mirrors the
 
 #if defined(TARGET_APPLE)
 #include <mach/vm_statistics.h>
-#elif !defined(TARGET_FREEBSD)
+#elif defined(TARGET_LINUX) && !defined(TARGET_ANDROID)
 #include <alloca.h>
 #endif
 
@@ -94,7 +94,16 @@ static_assert(RLIMIT_AS == 10, "RLIMIT_AS does not match GCToOSInterface.Virtual
 static_assert(RLIM_INFINITY == (rlim_t)0x7FFFFFFFFFFFFFFF, "RLIM_INFINITY does not match GCToOSInterface.VirtualMemory.Unix.cs.");
 static_assert(sizeof(rlim_t) == sizeof(uint64_t), "struct rlimit does not match GCToOSInterface.VirtualMemory.Unix.cs.");
 
-#else // Linux, Android and any other Unix that shares the asm-generic values.
+#elif defined(TARGET_OPENBSD)
+
+static_assert(MAP_ANON == 0x1000, "MAP_ANON does not match GCToOSInterface.VirtualMemory.Unix.cs.");
+static_assert(MAP_PRIVATE == 0x0002, "MAP_PRIVATE does not match GCToOSInterface.VirtualMemory.Unix.cs.");
+static_assert(MAP_FIXED == 0x0010, "MAP_FIXED does not match GCToOSInterface.VirtualMemory.Unix.cs.");
+static_assert(MADV_FREE == 6, "MADV_FREE does not match GCToOSInterface.VirtualMemory.Unix.cs.");
+static_assert(RLIM_INFINITY == (rlim_t)0x7FFFFFFFFFFFFFFF, "RLIM_INFINITY does not match GCToOSInterface.VirtualMemory.Unix.cs.");
+static_assert(sizeof(rlim_t) == sizeof(uint64_t), "struct rlimit does not match GCToOSInterface.VirtualMemory.Unix.cs.");
+
+#else // Linux and Android.
 
 static_assert(MAP_ANON == 0x20, "MAP_ANON does not match GCToOSInterface.VirtualMemory.Unix.cs.");
 static_assert(MAP_PRIVATE == 0x02, "MAP_PRIVATE does not match GCToOSInterface.VirtualMemory.Unix.cs.");
@@ -175,12 +184,52 @@ static_assert(PTHREAD_MUTEX_RECURSIVE == 2, "PTHREAD_MUTEX_RECURSIVE does not ma
 static_assert(CLOCK_MONOTONIC == 4, "CLOCK_MONOTONIC does not match GCEvent.Unix.cs.");
 static_assert(ETIMEDOUT == 60, "ETIMEDOUT does not match GCEvent.Unix.cs.");
 
-#else // Linux, Android and any other Unix that shares the glibc values.
+#elif defined(TARGET_OPENBSD)
+
+static_assert(PTHREAD_MUTEX_RECURSIVE == 2, "PTHREAD_MUTEX_RECURSIVE does not match GCEnvSync.Unix.cs.");
+static_assert(CLOCK_MONOTONIC == 3, "CLOCK_MONOTONIC does not match GCEvent.Unix.cs.");
+static_assert(ETIMEDOUT == 60, "ETIMEDOUT does not match GCEvent.Unix.cs.");
+
+#else // Linux and Android.
 
 static_assert(PTHREAD_MUTEX_RECURSIVE == 1, "PTHREAD_MUTEX_RECURSIVE does not match GCEnvSync.Unix.cs.");
 static_assert(CLOCK_MONOTONIC == 1, "CLOCK_MONOTONIC does not match GCEvent.Unix.cs.");
 static_assert(ETIMEDOUT == 110, "ETIMEDOUT does not match GCEvent.Unix.cs.");
 
+#endif
+
+//
+// The <errno.h>, <time.h> and <sched.h> pieces that the sleep and yield port of
+// GCToOSInterface.Thread.Unix.cs names.
+//
+// EINTR is a constant, so it is compared. The three entry points are not: a function name has
+// no value to assert against. Naming each of them in an unevaluated `sizeof` expression instead
+// checks what actually matters -- that the platform being built declares it, that it accepts
+// the arguments the managed declaration passes, and that it returns what the managed
+// declaration expects -- without depending on the attributes (`__THROW`, and so `noexcept` in
+// C++17) that the C libraries differ in. A platform that has none of the three errno accessors
+// breaks this build rather than the managed link.
+//
+
+#include <sched.h>
+
+static_assert(EINTR == 4, "EINTR does not match GCToOSInterface.Thread.Unix.cs.");
+static_assert(sizeof(nanosleep((const struct timespec*)nullptr, (struct timespec*)nullptr)) == sizeof(int),
+    "nanosleep does not match GCToOSInterface.Imports.Unix.cs.");
+static_assert(sizeof(sched_yield()) == sizeof(int), "sched_yield does not match GCToOSInterface.Imports.Unix.cs.");
+
+// The `errno` macro of <errno.h> is a dereference of exactly this accessor, which is the only
+// way to reach the thread's own copy from outside the C library. Its name is the one thing
+// about errno that is per C library rather than per operating system, so the condition is
+// __BIONIC__ rather than TARGET_ANDROID: the linux-bionic RID uses bionic without being Android
+// as the native build labels it, and TARGET_BIONIC of System.Private.GC.csproj is defined for
+// both. OpenBSD uses the same accessor name and has its own target define on both sides.
+#if defined(TARGET_APPLE) || defined(TARGET_FREEBSD)
+static_assert(sizeof(*__error()) == sizeof(int), "The errno accessor does not match GCToOSInterface.Imports.Unix.cs.");
+#elif defined(__BIONIC__) || defined(TARGET_OPENBSD)
+static_assert(sizeof(*__errno()) == sizeof(int), "The errno accessor does not match GCToOSInterface.Imports.Unix.cs.");
+#else // glibc, musl and any other C library that exports the glibc name.
+static_assert(sizeof(*__errno_location()) == sizeof(int), "The errno accessor does not match GCToOSInterface.Imports.Unix.cs.");
 #endif
 
 //
@@ -255,6 +304,15 @@ static_assert(offsetof(SYSTEM_INFO, dwAllocationGranularity) == (sizeof(void*) =
 // The managed GetPageSize returns 4096, which is what minipal_getpagesize is on Windows: an
 // inline function with no symbol to call and no way to static_assert its result.
 
+// The sleep and yield port of GCToOSInterface.Thread.Windows.cs passes FALSE for bAlertable and
+// discards the return of both calls. There are no constants to check, so what is checked is the
+// same thing the Unix side checks about its libc entry points: that <windows.h> declares each
+// one, that it accepts the arguments the managed declaration passes, and that it returns what
+// the managed declaration expects.
+static_assert(FALSE == 0, "The bAlertable argument of GCToOSInterface.Thread.Windows.cs is not FALSE.");
+static_assert(sizeof(SleepEx(0, FALSE)) == sizeof(uint32_t), "SleepEx does not match GCToOSInterface.Imports.Windows.cs.");
+static_assert(sizeof(SwitchToThread()) == sizeof(int32_t), "SwitchToThread does not match GCToOSInterface.Imports.Windows.cs.");
+
 // The event and lock ports of GCEvent.Windows.cs, GCEnvSync.Windows.cs and SyncTypes.Windows.cs
 // hardcode one <windows.h> value and one type. The CRITICAL_SECTION is an opaque blob there, so
 // only its size and alignment matter; the managed one is deliberately larger than any platform
@@ -280,16 +338,6 @@ extern "C" UInt32_BOOL ManagedGC_OS_Initialize()
 extern "C" void ManagedGC_OS_Shutdown()
 {
     GCToOSInterface::Shutdown();
-}
-
-extern "C" void ManagedGC_OS_Sleep(uint32_t sleepMSec)
-{
-    GCToOSInterface::Sleep(sleepMSec);
-}
-
-extern "C" void ManagedGC_OS_YieldThread(uint32_t switchCount)
-{
-    GCToOSInterface::YieldThread(switchCount);
 }
 
 extern "C" uint32_t ManagedGC_OS_GetCurrentProcessorNumber()

@@ -31,10 +31,10 @@ namespace Internal.Runtime.GarbageCollection
 #if TARGET_APPLE
         /// <summary><c>PTHREAD_MUTEX_RECURSIVE</c> of <c>&lt;pthread.h&gt;</c>.</summary>
         private const int PTHREAD_MUTEX_RECURSIVE = 2;
-#elif TARGET_FREEBSD
+#elif TARGET_FREEBSD || TARGET_OPENBSD
         private const int PTHREAD_MUTEX_RECURSIVE = 2;
 #else
-        // Linux, Android and any other Unix that shares the glibc value.
+        // Linux and Android share the glibc value.
         private const int PTHREAD_MUTEX_RECURSIVE = 1;
 #endif
 

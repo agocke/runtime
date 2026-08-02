@@ -9,6 +9,10 @@
 // runnable in a normal test process against the real kernel, and it records the arguments of
 // every call so that the flag translation can be asserted directly rather than inferred.
 //
+// The sleep and yield substitutes go one step further and can inject a failure: nanosleep can be
+// made to report EINTR with an interval left over, which is the only way to drive the retry loop
+// of GCToOSInterface::Sleep without waiting for a signal that may never arrive.
+//
 // A [DllImport] is exactly what the GC must not use; it is fine here because this file is never
 // compiled into the GC. The methods it replaces are the boundary of the port: everything the
 // tests exercise above them is the shipping code.
@@ -62,6 +66,62 @@ internal static unsafe partial class GCToOSInterface
 
     internal static RangeCall LastBindMemoryPolicy;
     internal static int BindMemoryPolicyCount;
+
+    //
+    // Sleep and yield. These recordings are deliberately not touched by ResetRecording, so that
+    // the sleep and yield tests cannot clobber -- or be clobbered by -- a virtual memory test
+    // that xUnit happens to run at the same time in another class.
+    //
+
+    internal struct NanosleepCall
+    {
+        public timespec requested;
+        public timespec remaining;
+        public int result;
+        public int errno;
+    }
+
+    /// <summary>Every nanosleep of the current recording, in order.</summary>
+    internal static readonly NanosleepCall[] NanosleepCalls = new NanosleepCall[16];
+
+    internal static int NanosleepCount;
+    internal static int SchedYieldCount;
+
+    /// <summary>
+    /// How many of the next nanosleep calls report <c>EINTR</c> instead of sleeping, each one
+    /// handing back <see cref="NanosleepInterruptRemaining"/> as the interval that is left.
+    /// This is how the retry loop is driven without depending on a real signal arriving.
+    /// </summary>
+    internal static int NanosleepInterrupts;
+
+    /// <summary>What an injected interruption reports in the <c>rem</c> argument.</summary>
+    internal static timespec NanosleepInterruptRemaining;
+
+    /// <summary>
+    /// When non-zero, nanosleep fails with this errno instead of sleeping, and does not report
+    /// a remaining interval. Injected after <see cref="NanosleepInterrupts"/> is exhausted.
+    /// </summary>
+    internal static int NanosleepFailErrno;
+
+    /// <summary>
+    /// When true, nanosleep succeeds without entering the kernel once
+    /// <see cref="NanosleepInterrupts"/> is exhausted. A test that asserts an exact call count
+    /// cannot then be lengthened by a real signal arriving during the terminal sleep.
+    /// </summary>
+    internal static bool NanosleepSucceedsWithoutSleeping;
+
+    /// <summary>Forgets the sleep and yield recording and clears every injection.</summary>
+    internal static void ResetSleepYieldRecording()
+    {
+        Array.Clear(NanosleepCalls);
+        NanosleepCount = 0;
+        SchedYieldCount = 0;
+        NanosleepInterrupts = 0;
+        NanosleepInterruptRemaining = default;
+        NanosleepFailErrno = 0;
+        NanosleepSucceedsWithoutSleeping = false;
+        *s_errno = 0;
+    }
 
     /// <summary>Forgets every recorded call. Each test starts by calling this.</summary>
     internal static void ResetRecording()
@@ -139,6 +199,79 @@ internal static unsafe partial class GCToOSInterface
 
     private static int getrlimit(int resource, Rlimit* rlim) => sys_getrlimit(resource, rlim);
 
+    //
+    // errno. The shipping code reads the thread's errno through the accessor its C library
+    // exports; here it reads one process-wide slot instead, which the substitutes below fill --
+    // either with an injected value, or with the errno of the real call, which the P/Invoke
+    // stub captured into GetLastPInvokeError before returning. One slot is enough because a
+    // test drives the sleep port from its own thread only.
+    //
+    private static readonly int* s_errno = (int*)NativeMemory.AllocZeroed(sizeof(int));
+
+    private static int* __errno_location() => s_errno;
+
+    private static int nanosleep(timespec* req, timespec* rem)
+    {
+        timespec reported = default;
+        int result;
+
+        if (NanosleepInterrupts > 0)
+        {
+            // An interrupted nanosleep writes what is left of the interval and fails with
+            // EINTR. Nothing is actually slept, so the retry loop is exercised without the test
+            // waiting for anything.
+            NanosleepInterrupts--;
+            reported = NanosleepInterruptRemaining;
+            *rem = reported;
+
+            // EINTR of <errno.h>, written out rather than read from the constant of the port so
+            // that a wrong constant there fails the retry test instead of being confirmed by it.
+            *s_errno = 4;
+            result = -1;
+        }
+        else if (NanosleepFailErrno != 0)
+        {
+            *s_errno = NanosleepFailErrno;
+            result = -1;
+        }
+        else if (NanosleepSucceedsWithoutSleeping)
+        {
+            result = 0;
+        }
+        else
+        {
+            result = sys_nanosleep(req, rem);
+            if (result == -1)
+            {
+                // A real failure -- a signal that the test process took while sleeping, most
+                // likely. Publish its errno where the port expects to read it, and record the
+                // interval the kernel says is left, which the port will sleep next.
+                *s_errno = Marshal.GetLastPInvokeError();
+                reported = *rem;
+            }
+        }
+
+        if (NanosleepCount < NanosleepCalls.Length)
+        {
+            NanosleepCalls[NanosleepCount] = new NanosleepCall
+            {
+                requested = *req,
+                remaining = reported,
+                result = result,
+                errno = *s_errno,
+            };
+        }
+
+        NanosleepCount++;
+        return result;
+    }
+
+    private static int sched_yield()
+    {
+        SchedYieldCount++;
+        return sys_sched_yield();
+    }
+
     private static uint minipal_getpagesize() => (uint)Environment.SystemPageSize;
 
     private static void ManagedGC_NUMA_BindMemoryPolicy(void* address, nuint size, ushort node)
@@ -165,4 +298,10 @@ internal static unsafe partial class GCToOSInterface
 
     [DllImport("libc", EntryPoint = "getrlimit", SetLastError = true)]
     private static extern int sys_getrlimit(int resource, Rlimit* rlim);
+
+    [DllImport("libc", EntryPoint = "nanosleep", SetLastError = true)]
+    private static extern int sys_nanosleep(timespec* req, timespec* rem);
+
+    [DllImport("libc", EntryPoint = "sched_yield", SetLastError = true)]
+    private static extern int sys_sched_yield();
 }

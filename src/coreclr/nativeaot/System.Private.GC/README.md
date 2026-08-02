@@ -67,7 +67,9 @@ Ported so far:
 | `Environment/GCToOSInterface.VirtualMemory.Windows.cs` | `gc/windows/gcenv.windows.cpp` (virtual memory), `env/gcenv.windows.inl` |
 | `Environment/GCToOSInterface.WriteWatch.Unix.cs` | `gc/unix/gcenv.unix.cpp` (write watch) |
 | `Environment/GCToOSInterface.WriteWatch.Windows.cs` | `gc/windows/gcenv.windows.cpp` (write watch) |
-| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` entry points the above call |
+| `Environment/GCToOSInterface.Thread.Unix.cs` | `gc/unix/gcenv.unix.cpp` (sleep and yield) |
+| `Environment/GCToOSInterface.Thread.Windows.cs` | `gc/windows/gcenv.windows.cpp` (sleep and yield) |
+| `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` entry points the above call |
 | `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` entry points the above call |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
@@ -141,11 +143,31 @@ blobs are written out per platform in the C# and asserted against the real heade
 `nativeaot/Runtime/gcenv.managed.cpp`. `struct timespec` is the one type the managed code writes
 into rather than passing through, so its layout is asserted exactly, in the two variants the C#
 selects between: two native-sized words, or the 64-bit `time_t` that musl uses on every
-architecture.
+architecture. OpenBSD has explicit branches for its BSD mmap, rlimit, pthread, clock and errno
+values rather than falling through to the Linux constants.
+
+Sleeping and yielding are translated too, and they are the first two of the "thread and process"
+methods to be. `Sleep` returns immediately for zero, splits the millisecond count into the
+`struct timespec` the C++ builds, and retries `nanosleep` with the remaining interval the kernel
+hands back for as long as the call fails with `EINTR` -- the loop that keeps a signal from
+shortening the collector's backoff. `YieldThread` calls `sched_yield` once and asserts, ignoring
+`switchCount` exactly as the C++ does; on Windows the two are `SleepEx(sleepMSec, FALSE)` guarded
+by the same `sleepMSec > 0` test and a single `SwitchToThread()` whose result the C++ discards.
+The one thing C# cannot spell is `errno`: it is a macro over a C thread-local reachable only
+through a per-C-library accessor function, so the port declares that accessor as an import
+and dereferences what it returns, selecting `__error` on Apple and FreeBSD, `__errno` on bionic
+and OpenBSD, and `__errno_location` on glibc and musl. Which one is selected is asserted against
+the native platform defines in `gcenv.managed.cpp`, together with `EINTR` and the existence and
+shape of `nanosleep` and `sched_yield`; the bionic case is keyed on a `TARGET_BIONIC` define that
+covers both the `android` and the `linux-bionic` runtime identifiers, because the native build
+labels the latter Linux.
 
 The managed runtime archive no longer compiles the Unix `events.cpp`; on Windows,
-`FEATURE_MANAGED_GC` excludes the `GCEvent::Impl` section of `gcenv.windows.cpp`. The latter file
-remains in the archive only for the `GCToOSInterface` services that have not been translated yet.
+`FEATURE_MANAGED_GC` excludes the `GCEvent::Impl` section of `gcenv.windows.cpp`, and on both
+platforms it excludes the `Sleep` and `YieldThread` section of `gcenv.unix.cpp` and
+`gcenv.windows.cpp`. Those two files remain in the archive only for the `GCToOSInterface`
+services that have not been translated yet; the workstation and server GC archives still compile
+every one of those bodies unchanged.
 
 Two C++ shapes are preserved rather than corrected, because this is a translation: `CloseEvent`
 releases the operating system object but neither frees the Impl nor clears the pimpl pointer, so
@@ -159,7 +181,7 @@ forwarded, for now, to a one-line shim in `nativeaot/Runtime/gcenv.managed.cpp` 
 existing C++ `GCToOSInterface` in `gc/unix/gcenv.unix.cpp` or `gc/windows/gcenv.windows.cpp`.
 Those shims are the whole retained-native surface of this layer:
 
-* one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- sleep and yield, processor
+* one per remaining `GCToOSInterface` method (`ManagedGC_OS_*`) -- processor
   number and affinity, thread priority and ids, cache and memory limits, the performance
   counter, processor counts, NUMA and CPU groups, and the platform-specific affinity range entry
   parser;
@@ -242,6 +264,18 @@ and `Reset` does not, a wait satisfied immediately never touches the condition v
 Impl comes from a single nothrow allocation. The failure paths -- the allocation, the mutex and
 the condition variable each failing to initialize -- are driven by injection, and are compiled
 only into a build with asserts disabled, because the C++ asserts on them too.
+
+`GCSleepYieldTests` runs the sleep and yield ports over the same substituted imports. The
+millisecond split is checked against the `timespec` the port actually wrote for a table of
+intervals up to `uint.MaxValue`, which is what pins the second/nanosecond arithmetic; the `EINTR`
+loop is checked by injecting interruptions and asserting that each retry passes the *remaining*
+interval the previous call reported, so a port that retried with the original request would fail;
+and a failure with any other `errno` is checked not to retry at all. `YieldThread` is checked to
+call `sched_yield` -- or `SwitchToThread` -- exactly once per call whatever `switchCount` is, and
+on Windows `SleepEx` is checked to receive the interval unchanged with `bAlertable` false, and
+not to be called at all for zero. Everything except one deliberately coarse lower bound per
+platform is driven by injection rather than by the clock, so no test waits on real time to
+decide.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:
