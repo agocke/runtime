@@ -470,14 +470,30 @@ software write watch, and event plumbing no longer depend on placeholder impleme
   it without a transition and a reverse P/Invoke prologue rejects an already-cooperative caller;
   those ten tests are conditioned on the one architecture where the managed and native calling
   conventions differ.
+- The NativeAOT-relevant surface of `gcload.cpp`, as
+  `ManagedGCEntryPoints.ManagedGC_VersionInfo` and
+  `ManagedGCEntryPoints.ManagedGC_Initialize`. The C# bodies now keep the C++ ordering and
+  failure semantics that are reachable in `Runtime.ManagedGC`: clear output pointers first,
+  record the incoming `IGCToCLR` pointer before further setup, run interface-layout verification,
+  initialize managed `GCConfig`, create the handle manager before the heap, return
+  `E_OUTOFMEMORY` on a null creation result, and leave the zero-versioned `GcDacVars` untouched
+  because the translated heap still has no DAC-published internal structures. The zero DAC
+  interface version makes a DAC reject the collector as unsupported rather than interpreting the
+  GC/EE interface version as a newer DAC format. Focused tests in
+  `tests/ManagedGCEntryPointsTests.cs` verify ABI/version reporting and the null-clr/layout/OOM
+  failure paths directly.
 
 #### Remaining
 
-`gcload.cpp` is translated only as far as `GC_VersionInfo` and `GC_Initialize`; `gccommon.cpp`,
-`gcscan.cpp`, `softwarewritewatch.cpp`, `gcevent_serializers.h` and `gcevents.h` are not started.
-`GCConfig::RefreshHeapHardLimitSettings` and `GetLOHThreshold` have no managed call site yet
-because the collector state their C++ callers -- `gc_heap::refresh_memory_limit` and
-`init_semi_shared` -- work on does not exist; they arrive with stages 6 and 7.
+For `gcload.cpp`, what remains native is outside the managed-GC runtime surface: the C++ file is
+still used by CoreCLR and by NativeAOT's workstation/server GC archives, which still need the
+native workstation/server heap construction and DAC population paths. `Runtime.ManagedGC` omits
+`gcload.cpp` and links `clrgc.managed.cpp` instead, so these native paths are not reachable when
+`IlcManagedGC=true`. `gccommon.cpp`, `gcscan.cpp`, `softwarewritewatch.cpp`,
+`gcevent_serializers.h` and `gcevents.h` are not started. `GCConfig::RefreshHeapHardLimitSettings`
+and `GetLOHThreshold` have no managed call site yet because the collector state their C++ callers
+-- `gc_heap::refresh_memory_limit` and `init_semi_shared` -- work on does not exist; they arrive
+with stages 6 and 7.
 
 ### 5. Handle table
 

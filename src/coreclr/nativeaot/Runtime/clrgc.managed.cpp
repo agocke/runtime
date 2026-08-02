@@ -123,8 +123,9 @@ HRESULT InitializeGCSelector()
         return E_FAIL;
     }
 
-    g_gc_dac_vars.major_version_number = GC_INTERFACE_MAJOR_VERSION;
-    g_gc_dac_vars.minor_version_number = GC_INTERFACE_MINOR_VERSION;
+    // This collector does not publish DAC state yet. Leave the zero-initialized DAC interface
+    // version in place so a DAC rejects it as unsupported instead of treating the GC/EE
+    // interface version as a newer DAC format and dereferencing null table pointers.
 
     IGCHeap* heap = nullptr;
     IGCHandleManager* manager = nullptr;

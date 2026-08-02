@@ -28,6 +28,7 @@ namespace Internal.Runtime.GarbageCollection
     {
         private const int S_OK = 0;
         private const int E_FAIL = unchecked((int)0x80004005);
+        private const int E_OUTOFMEMORY = unchecked((int)0x8007000E);
 
         /// <summary>
         /// Reports the GC/EE interface version this GC was built against, and records the
@@ -50,7 +51,7 @@ namespace Internal.Runtime.GarbageCollection
 
             // A utf8 literal is image data rather than a heap object, so the pointer stays
             // valid after the fixed block ends.
-            fixed (byte* name = "Managed GC\0"u8)
+            fixed (byte* name = "CoreCLR GC\0"u8)
             {
                 info->Name = name;
             }
@@ -73,6 +74,9 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeExport("ManagedGC_Initialize")]
         internal static int ManagedGC_Initialize(void* clrToGC, void** gcHeap, void** gcHandleManager, GcDacVars* gcDacVars)
         {
+            void* heap;
+            void* handleManager;
+
             *gcHeap = null;
             *gcHandleManager = null;
 
@@ -96,13 +100,24 @@ namespace Internal.Runtime.GarbageCollection
 
             // The EE calls Initialize() on both of these before it uses them, so all that
             // happens here is that the vtables are built; neither touches memory yet.
-            *gcHeap = ManagedGCHeap.Create();
-            *gcHandleManager = ManagedGCHandleManager.Create();
+            handleManager = ManagedGCHandleManager.Create();
+            if (handleManager == null)
+            {
+                return E_OUTOFMEMORY;
+            }
 
-            // gcDacVars is left as the runtime handed it over. The C++ GC fills it in from
-            // PopulateDacVars with the addresses of the collector's data structures, none of
-            // which exist here; leaving the DAC interface version at the one the runtime wrote
-            // in is what tells a DAC that this GC has no state it knows how to read.
+            heap = ManagedGCHeap.Create();
+            if (heap == null)
+            {
+                return E_OUTOFMEMORY;
+            }
+
+            *gcHandleManager = handleManager;
+            *gcHeap = heap;
+
+            // gcDacVars is left as the runtime handed it over. The managed selector leaves the
+            // DAC interface version zero until PopulateDacVars and the collector structures it
+            // publishes are translated, so a DAC rejects this collector as unsupported.
             return S_OK;
         }
     }

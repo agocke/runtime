@@ -81,13 +81,20 @@ Ported so far:
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
 
+For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed
+entry points preserve the loader protocol order for output clearing, incoming `IGCToCLR`
+recording, interface-layout verification, managed `GCConfig` initialization, and
+handle-manager/heap creation with OOM returns. The direct ABI/version and failure-path coverage
+for this lives in `tests/ManagedGCEntryPointsTests.cs`.
+
 `gcinterface.dac.h` is translated except for `dac_generation` and `dac_gc_heap`, which are
 generated from the `dac_generation_fields.h` / `dac_gcheap_fields.h` field lists and therefore
 name `gcpriv.h` types, and `dac_handle_table` and `dac_handle_table_segment`, whose array fields
 are sized by the constants of `handletableconstants.h`. Those arrive with the core data
 structures and with the handle table respectively. Nothing populates a `GcDacVars` yet:
 `PopulateDacVars` publishes the addresses of the collector's data structures, which this heap
-does not have.
+does not have. The managed selector therefore leaves its DAC interface version zero, making a
+DAC reject this collector as unsupported until those structures are available.
 
 `gceventstatus.h` is ported except for two pieces that are not leaves. `DebugDumpState` is a
 `fprintf` dump behind the commented-out `TRACE_GC_EVENT_STATE`, and there is no string-free way
@@ -678,7 +685,8 @@ to define equivalents that the linker can resolve:
 * `Runtime.ManagedGC` contains the NativeAOT runtime support still needed by managed-GC
   applications, but omits the C++ collector object files and native modules already replaced by
   managed code. `FEATURE_MANAGED_GC` also removes the default `GC_Initialize` dependency from
-  `gcheaputilities.cpp`, preventing static archive extraction from pulling the collector back in.
+  `gcheaputilities.cpp`, and the managed runtime source list omits `gc/gcload.cpp`, preventing
+  static archive extraction from pulling the collector back in.
 
 `IlcManagedGC` is rejected on x86: `WindowsNodeMangler.ExternMethod` leaves runtime export names
 undecorated, while a C declaration of the same function references the cdecl-decorated

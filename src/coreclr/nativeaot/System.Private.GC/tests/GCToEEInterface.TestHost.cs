@@ -54,6 +54,10 @@ internal sealed class ConfigRequest
 
 internal static unsafe class GCToEEInterface
 {
+    internal static void* LastInitializedGCToCLR { get; private set; }
+
+    internal static int InitializeCallCount { get; private set; }
+
     /// <summary>Values reachable through the private key, i.e. the DOTNET_ settings.</summary>
     private static readonly Dictionary<string, ulong> s_privateValues = new(StringComparer.Ordinal);
 
@@ -74,6 +78,8 @@ internal static unsafe class GCToEEInterface
 
     internal static void Reset()
     {
+        LastInitializedGCToCLR = null;
+        InitializeCallCount = 0;
         s_privateValues.Clear();
         s_publicValues.Clear();
         s_privateStrings.Clear();
@@ -88,6 +94,12 @@ internal static unsafe class GCToEEInterface
         }
 
         OutstandingStrings.Clear();
+    }
+
+    public static void Initialize(void* theGCToCLR)
+    {
+        LastInitializedGCToCLR = theGCToCLR;
+        InitializeCallCount++;
     }
 
     internal static void SetPrivateValue(string privateKey, ulong value) => s_privateValues[privateKey] = value;
