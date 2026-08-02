@@ -35,6 +35,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHeap.cs" />
     <Compile Include="System\Runtime\RuntimeExportAttribute.cs" />
     <Compile Include="System\Runtime\RuntimeImportAttribute.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCInterfaceDac.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCInterfaceEnums.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCInterfaceLayout.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCInterfaceStructs.cs" />

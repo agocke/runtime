@@ -44,8 +44,8 @@ The following prerequisites are already working:
   startup.
 - `GC.Collect` exercises a real `SuspendEE` / `RestartEE` cycle but does not scan or reclaim.
 - Managed GC mutations use suspension-safe critical regions.
-- GC/EE structure layouts and all five vtable slot lists are verified against the native
-  headers.
+- GC/EE structure layouts, enum values and sizes, and all six vtable slot lists -- with their
+  signatures and calling conventions -- are verified against the native headers.
 
 These items validate integration but do not mark the corresponding collector modules complete.
 
@@ -79,7 +79,7 @@ collector modules that contain those call sites.
 
 ### 2. GC/EE interface surface
 
-**Status: In progress**
+**Status: Complete, except for the DAC types that depend on later stages**
 
 Translate:
 
@@ -88,14 +88,35 @@ Translate:
 - `gcinterface.dac.h`
 - `IGCHeap`, `IGCHandleStore`, `IGCHandleManager`, `IGCToCLR`,
   `IGCHeapInternal`, and `IGCToCLREventSink`
-- Shared structures such as `gc_alloc_context`, `segment_info`,
-  `WriteBarrierParameters`, and `GCEventFireInfo`
+- Shared structures such as `gc_alloc_context`, `segment_info`, `WriteBarrierParameters`,
+  `ScanContext`, `EtwGCSettingsInfo`, `MarkCrossReferencesArgs`, `VersionInfo`, and `GcDacVars`
 
 The managed representation uses function-pointer vtables. Native EE callbacks preserve the
 cooperative-mode behavior of direct C++ calls.
 
 **Complete when:** all interface methods, signatures, slot order, structure sizes, and field
 offsets are automatically checked against the native headers on every supported architecture.
+
+All six interfaces are translated, and the object the GC hands to the EE is an
+`IGCHeapInternal`, matching `GCHeap`. Every slot of every interface is checked against the
+native headers at build time by `tools/verify-gc-interface-vtables.py` -- count, order, name,
+signature, and calling convention -- and every translated structure, enum and constant is pinned
+by `GCInterfaceOffsets.h`, which is asserted against the C++ headers by the native build, against
+the managed types at GC startup, and against the managed types again by
+`tests/GCInterfaceLayoutTests.cs`, which also fails if the table has stopped being complete.
+Because the table is expanded by the native build for the architecture being built, the checks
+cover every supported architecture.
+
+Two groups of `gcinterface.dac.h` types are deferred rather than missing. `dac_generation` and
+`dac_gc_heap` are generated from the `dac_generation_fields.h` / `dac_gcheap_fields.h` field
+lists, which name `gcpriv.h` types and therefore belong with stage 6. `dac_handle_table` and
+`dac_handle_table_segment` are sized by `handletableconstants.h` and belong with stage 5.
+`PopulateDacVars` itself belongs with stage 11: it publishes the addresses of the collector's
+data structures, none of which exist yet.
+
+`IGCToCLREventSink` is translated as a vtable, but the GC has no call site for it yet. The C++
+GC reaches it through the `FIRE_EVENT` macro of `gceventstatus.h`, which expands the event list
+in `gcevents.h`; that arrives with the rest of the event plumbing in stage 4.
 
 ### 3. `gcenv` and platform abstraction layer
 
@@ -129,6 +150,9 @@ Translate:
 - `softwarewritewatch.cpp`
 - `gcevent_serializers.h` and `gcevents.h`
 
+This stage also brings the first call sites for the `IGCToCLREventSink` vtable translated in
+stage 2, through the `FIRE_EVENT` and `KNOWN_EVENT` macros of `gceventstatus.h`.
+
 **Complete when:** configuration, initialization, common helpers, root-scanning infrastructure,
 software write watch, and event plumbing no longer depend on placeholder implementations.
 
@@ -146,7 +170,8 @@ Mechanically translate:
 - `gchandletable.cpp`
 
 The current flat table only supports bootstrap scenarios and must be replaced rather than
-extended into an independent design.
+extended into an independent design. `dac_handle_table` and `dac_handle_table_segment` of
+`gcinterface.dac.h` belong here too: their array fields are sized by `handletableconstants.h`.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.
@@ -166,6 +191,10 @@ Translate the schema from `gcpriv.h` and related headers:
 - Card and brick tables
 - `gcrecord.h`
 - `gcdesc.h`
+
+This stage also completes the `gcinterface.dac.h` translation started in stage 2: `dac_generation`
+and `dac_gc_heap` are generated from the field lists of `dac_generation_fields.h` and
+`dac_gcheap_fields.h`, so they can only be translated once the types those lists name exist.
 
 **Complete when:** the managed types preserve the required native layouts and remain compatible
 with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.h`, and
@@ -251,7 +280,8 @@ Translate and integrate:
 - `gcee.cpp`
 - `interface.cpp`
 - `gcbridge.cpp`
-- DAC/cDAC data descriptors
+- DAC/cDAC data descriptors, including `PopulateDacVars`, which fills in the `GcDacVars`
+  translated in stage 2
 - GC events
 - GCStress
 - Heap verification

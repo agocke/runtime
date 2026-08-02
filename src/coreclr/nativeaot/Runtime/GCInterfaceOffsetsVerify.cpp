@@ -23,8 +23,17 @@ class GCInterfaceOffsets
 #define PLAT_GC_SIZEOF(size, cls) \
     static_assert(sizeof(cls) == 0x##size, "Bad GC interface size for '" #cls "'.");
 
+// alignof is what determines the trailing padding a type carries and how an array of it is
+// laid out, neither of which the offsets above can express on their own.
+#define PLAT_GC_ALIGNOF(align, cls) \
+    static_assert(alignof(cls) == 0x##align, "Bad GC interface alignment for '" #cls "'.");
+
 #define PLAT_GC_CONST(constant, expr) \
     static_assert((expr) == 0x##constant, "Bad GC interface constant for '" #expr "'.");
+
+// For a C++ expression that is not spelled the same way in C#, such as a scoped enumerator.
+#define PLAT_GC_VALUE(constant, name, expr) \
+    static_assert((int)(expr) == 0x##constant, "Bad GC interface constant for '" #expr "'.");
 
 #include "../System.Private.GC/GCInterfaceOffsets.h"
 

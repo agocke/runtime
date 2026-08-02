@@ -3,7 +3,9 @@
 
 #define PLAT_GC_OFFSET(offset, cls, member) internal const int OFFSETOF__##cls##__##member = 0x##offset;
 #define PLAT_GC_SIZEOF(offset, cls) internal const int SIZEOF__##cls = 0x##offset;
+#define PLAT_GC_ALIGNOF(align, cls) internal const int ALIGNOF__##cls = 0x##align;
 #define PLAT_GC_CONST(constant, expr) internal const int expr = 0x##constant;
+#define PLAT_GC_VALUE(constant, name, expr) internal const int name = 0x##constant;
 
 namespace Internal.Runtime.GarbageCollection
 {

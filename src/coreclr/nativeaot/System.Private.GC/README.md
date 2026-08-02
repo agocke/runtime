@@ -41,7 +41,8 @@ Ported so far:
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
 | `Interface/GCInterfaceStructs.cs` | `gcinterface.h`, `gcinterface.ee.h` (shared structs) |
-| `Interface/GCInterfaceVtables.cs` | `gcinterface.h`, `gcinterface.ee.h` (abstract classes) |
+| `Interface/GCInterfaceVtables.cs` | `gcinterface.h`, `gcinterface.ee.h`, `gc.h` (abstract classes) |
+| `Interface/GCInterfaceDac.cs` | `gcinterface.dac.h` (`GcDacVars` and the DAC analogue types) |
 | `Interface/GCInterfaceLayout.cs` | layout check against `GCInterfaceOffsets.h` |
 | `Interface/GCToEEInterface.cs` | `gcenv.ee.standalone.inl` |
 | `GCConfig.cs` | `gcconfig.h`, `gcconfig.cpp` |
@@ -54,6 +55,14 @@ Ported so far:
 `ParseGCHeapAffinitizeRanges` is not ported yet: it needs the affinity half of
 `GCToOSInterface`, which only the real collector will use.
 
+`gcinterface.dac.h` is translated except for `dac_generation` and `dac_gc_heap`, which are
+generated from the `dac_generation_fields.h` / `dac_gcheap_fields.h` field lists and therefore
+name `gcpriv.h` types, and `dac_handle_table` and `dac_handle_table_segment`, whose array fields
+are sized by the constants of `handletableconstants.h`. Those arrive with the core data
+structures and with the handle table respectively. Nothing populates a `GcDacVars` yet:
+`PopulateDacVars` publishes the addresses of the collector's data structures, which this heap
+does not have.
+
 `gceventstatus.h` is ported except for two pieces that are not leaves. `DebugDumpState` is a
 `fprintf` dump behind the commented-out `TRACE_GC_EVENT_STATE`, and there is no string-free way
 to write it until the GC's tracing support is ported. `FireDynamicEvent` and the
@@ -63,9 +72,10 @@ to write it until the GC's tracing support is ported. `FireDynamicEvent` and the
 ## Testing the ported leaves
 
 `tests/ManagedGC.Foundation.Tests.csproj` is a regular xUnit project that compiles the
-dependency-free leaf sources directly. Their behavior is tested independently of the NativeAOT
-runtime integration smoke test and independently of which paths the bootstrap heap happens to
-exercise.
+dependency-free leaf sources and the GC/EE interface types directly. Their behavior and layout is
+tested independently of the NativeAOT runtime integration smoke test and independently of which
+paths the bootstrap heap happens to exercise. `GCInterfaceLayoutTests` covers the layout table as
+described under [layout verification](#layout-verification); the rest is behavior.
 
 `IntroSort` always finishes with `insertionsort` over the whole range, so its output is in order
 whatever `introsort_loop` did. The test therefore asserts on the properties that are not free:
@@ -96,6 +106,11 @@ temporarily while the corresponding environment modules are ported.
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real
 collector is a crash with a stack trace rather than silent corruption.
+
+The object handed to the EE is an `IGCHeapInternal`, as `GCHeap` is in the C++ GC: its vtable is
+the `IGCHeap` slots followed by the four slots `gc.h` adds. The EE only reads the `IGCHeap`
+prefix; the extra slots exist so that the layout the GC publishes is the one the collector
+modules will expect when they start calling them.
 
 Two pieces are real rather than stubbed, because startup does not work without them:
 
@@ -200,25 +215,49 @@ the heap to honor them; the bump allocator only aligns to pointer size.
 ## Layout verification
 
 Types that cross the GC/EE boundary must be laid out exactly like their C++ counterparts.
-`GCInterfaceOffsets.h` is the single source of truth for those layouts, and it is consumed twice:
+`GCInterfaceOffsets.h` is the single source of truth for those layouts, and it is consumed three
+times:
 
 * `nativeaot/Runtime/GCInterfaceOffsetsVerify.cpp` expands it into `static_assert`s against
   `gcinterface.h`/`gcinterface.ee.h`, so the native build breaks if the C++ layout drifts.
 * `src/GCInterfaceOffsets.cspp` is preprocessed by the native build into `GCInterfaceOffsets.cs`,
-  a set of C# constants that `GCInterfaceLayout.Verify()` checks the managed structs against.
+  a set of C# constants that `GCInterfaceLayout.Verify()` checks the managed structs against
+  during GC startup.
+* `tests/GCInterfaceLayoutTests.cs` embeds the table and checks the same entries against the
+  translated types with plain reflection, so a mistake is reported per entry by `dotnet test`
+  without building or booting a runtime.
 
 This mirrors the existing `AsmOffsets.h`/`AsmOffsets.cspp` mechanism used by
-`System.Private.CoreLib`.
+`System.Private.CoreLib`, with three additions:
 
-The same table also pins the `GCEventProvider`, `GCEventLevel` and `GCEventKeyword` enumerators.
-Those are values rather than offsets, but they are equally part of the ABI -- the EE passes them
-to `IGCHeap::ControlEvents` and the GC passes them back through `IGCToCLR::UpdateGCEventStatus` --
-and the keyword bits come from the ETW manifest.
+* `GC_ALIGNOF` pins a type's alignment. Offsets pin the internal padding of a type; the size and
+  the alignment together pin its trailing padding and how an array or an embedded instance of it
+  is placed.
+* `GC_SIZEOF` is also applied to every enum that crosses the boundary, since an enum whose
+  underlying type changed would silently change every signature and structure it appears in.
+* `GC_CONST` pins enumerator values and macros whose name is a valid identifier in both
+  languages, and `GC_VALUE` does the same for a C++ expression that is not -- the enumerators of
+  a scoped enum, for instance. Enumerators are values rather than offsets, but they are equally
+  part of the ABI: they cross the boundary as arguments and return values, several are duplicated
+  in `System.GC`, the event keyword bits come from the ETW manifest, and the handle types are
+  depended upon by the cDAC contracts.
 
-Vtable order is verified separately because C++ does not provide a portable `offsetof` equivalent
-for virtual slots. `tools/verify-gc-interface-vtables.py` parses the virtual methods from
-`gcinterface.h` and `gcinterface.ee.h`, parses the function-pointer fields and `SlotCount` values
-from `GCInterfaceVtables.cs`, and compares all five interfaces by name and declaration order. The
-NativeAOT runtime build runs this check before producing `Runtime.WorkstationGC` or
-`Runtime.ServerGC`, or `Runtime.ManagedGC`, so adding, removing, or reordering a native slot
-without the matching managed change fails the build.
+The layout tests additionally check that the table is *complete*: an unlisted field or enumerator
+is not a build break anywhere else, it is simply unverified. The handful of deliberate omissions
+are listed in the test with the reason for each.
+
+Vtable order and signatures are verified separately because C++ does not provide a portable
+`offsetof` equivalent for virtual slots. `tools/verify-gc-interface-vtables.py` parses the virtual
+methods from `gcinterface.h`, `gcinterface.ee.h` and `gc.h`, parses the function-pointer fields
+and `SlotCount` values from `GCInterfaceVtables.cs`, and compares all six interfaces on:
+
+* slot count, and for `IGCHeapInternal` that the base `IGCHeap` slots come first;
+* slot name and declaration order;
+* the full signature, after mapping each C++ type to the C# type the port uses for it, including
+  the callback typedefs the script reads out of the same headers;
+* the calling convention, which differs by call direction -- see the comment at the top of
+  `GCInterfaceVtables.cs`.
+
+The NativeAOT runtime build runs this check before producing `Runtime.WorkstationGC`,
+`Runtime.ServerGC` or `Runtime.ManagedGC`, so adding, removing, reordering or re-typing a native
+slot without the matching managed change fails the build.

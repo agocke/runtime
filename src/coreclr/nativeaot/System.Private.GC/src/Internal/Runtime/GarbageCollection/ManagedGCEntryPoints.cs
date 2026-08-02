@@ -29,10 +29,6 @@ namespace Internal.Runtime.GarbageCollection
         private const int S_OK = 0;
         private const int E_FAIL = unchecked((int)0x80004005);
 
-        // Must match GC_INTERFACE_MAJOR_VERSION / GC_INTERFACE_MINOR_VERSION in gcinterface.h.
-        private const uint GC_INTERFACE_MAJOR_VERSION = 5;
-        private const uint GC_INTERFACE_MINOR_VERSION = 8;
-
         /// <summary>
         /// Reports the GC/EE interface version this GC was built against, and records the
         /// version the runtime reports it supports. Port of <c>GC_VersionInfo</c>.
@@ -46,8 +42,10 @@ namespace Internal.Runtime.GarbageCollection
             // GC is always loaded through the standalone-shaped protocol.
             s_runtimeSupportedVersion = *info;
 
-            info->MajorVersion = GC_INTERFACE_MAJOR_VERSION;
-            info->MinorVersion = GC_INTERFACE_MINOR_VERSION;
+            // Taken from the generated layout table rather than restated here, so that the
+            // reported version is the one gcinterface.h declares.
+            info->MajorVersion = (uint)GCInterfaceOffsets.GC_INTERFACE_MAJOR_VERSION;
+            info->MinorVersion = (uint)GCInterfaceOffsets.GC_INTERFACE_MINOR_VERSION;
             info->BuildVersion = 0;
 
             // A utf8 literal is image data rather than a heap object, so the pointer stays
@@ -73,7 +71,7 @@ namespace Internal.Runtime.GarbageCollection
         /// initialization failures fail runtime startup rather than selecting the C++ GC.
         /// </remarks>
         [RuntimeExport("ManagedGC_Initialize")]
-        internal static int ManagedGC_Initialize(void* clrToGC, void** gcHeap, void** gcHandleManager, void* gcDacVars)
+        internal static int ManagedGC_Initialize(void* clrToGC, void** gcHeap, void** gcHandleManager, GcDacVars* gcDacVars)
         {
             *gcHeap = null;
             *gcHandleManager = null;
@@ -101,8 +99,10 @@ namespace Internal.Runtime.GarbageCollection
             *gcHeap = ManagedGCHeap.Create();
             *gcHandleManager = ManagedGCHandleManager.Create();
 
-            // gcDacVars is left zeroed. It exists for the DAC to find the GC's data structures
-            // by offset, and this heap has none of the structures it describes.
+            // gcDacVars is left as the runtime handed it over. The C++ GC fills it in from
+            // PopulateDacVars with the addresses of the collector's data structures, none of
+            // which exist here; leaving the DAC interface version at the one the runtime wrote
+            // in is what tells a DAC that this GC has no state it knows how to read.
             return S_OK;
         }
     }

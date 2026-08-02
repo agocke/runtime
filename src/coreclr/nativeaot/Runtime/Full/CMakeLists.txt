@@ -19,6 +19,7 @@ add_custom_command(
   COMMAND ${Python_EXECUTABLE} "${GC_INTERFACE_VTABLE_VERIFY_SCRIPT}"
           --gcinterface "${GC_INTERFACE_DIR}/gcinterface.h"
           --gcinterface-ee "${GC_INTERFACE_DIR}/gcinterface.ee.h"
+          --gc "${GC_INTERFACE_DIR}/gc.h"
           --managed "${GC_INTERFACE_VTABLES_CS}"
   COMMAND ${CMAKE_COMMAND} -E touch "${GC_INTERFACE_VTABLE_VERIFY_STAMP}"
   DEPENDS
@@ -26,7 +27,8 @@ add_custom_command(
     "${GC_INTERFACE_VTABLES_CS}"
     "${GC_INTERFACE_DIR}/gcinterface.h"
     "${GC_INTERFACE_DIR}/gcinterface.ee.h"
-  COMMENT "Verifying managed GC vtable slot order"
+    "${GC_INTERFACE_DIR}/gc.h"
+  COMMENT "Verifying managed GC vtable slots, signatures and calling conventions"
   VERBATIM
 )
 

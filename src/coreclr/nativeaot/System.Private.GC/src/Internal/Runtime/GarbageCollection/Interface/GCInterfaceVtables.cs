@@ -178,6 +178,28 @@ namespace Internal.Runtime.GarbageCollection
     }
 
     /// <summary>
+    /// Virtual method table of gc.h `IGCHeapInternal`, which derives from `IGCHeap` and adds the
+    /// slots the GC uses internally. The object the GC hands to the EE is one of these; the EE
+    /// only ever looks at the `IGCHeap` prefix.
+    /// </summary>
+    internal unsafe struct IGCHeapInternalVtable
+    {
+        /// <summary>Number of virtual slots this vtable describes.</summary>
+        public const int SlotCount = IGCHeapVtable.SlotCount + 4;
+
+        /// <summary>
+        /// The inherited `IGCHeap` slots. Single inheritance from a class with no data members
+        /// puts them first, before anything the derived class declares.
+        /// </summary>
+        public IGCHeapVtable IGCHeap;
+
+        public delegate*<void*, int> GetNumberOfHeaps;
+        public delegate*<void*, int> GetHomeHeapNumber;
+        public delegate*<void*, int, nuint> GetPromotedBytes;
+        public delegate*<void*, byte*, byte, byte> IsPromoted2;
+    }
+
+    /// <summary>
     /// Virtual method table of gcinterface.ee.h `IGCToCLR`, in declaration order (52 slots).
     /// </summary>
     internal unsafe struct IGCToCLRVtable

@@ -50,7 +50,7 @@ namespace Internal.Runtime.GarbageCollection
         /// <summary>Frozen segments the EE can register. One per module, plus the frozen object heap.</summary>
         private const int MaxFrozenSegments = 64;
 
-        private static IGCHeapVtable s_vtable;
+        private static IGCHeapInternalVtable s_vtable;
         private static nint s_vtablePtr;
 
         private static long s_totalAllocatedBytes;
@@ -74,7 +74,9 @@ namespace Internal.Runtime.GarbageCollection
         }
 
         /// <summary>
-        /// Builds the vtable and returns the <c>IGCHeap*</c> to hand to the EE.
+        /// Builds the vtable and returns the <c>IGCHeap*</c> to hand to the EE. The object is an
+        /// <c>IGCHeapInternal</c>, as <c>GCHeap</c> is in the C++ GC; the EE only reads the
+        /// <c>IGCHeap</c> prefix of the vtable.
         /// </summary>
         public static void* Create()
         {
@@ -83,92 +85,97 @@ namespace Internal.Runtime.GarbageCollection
             // do not match, which is harmless because the target never returns; the
             // architectures this GC supports all clean up arguments in the caller.
             void** slots = (void**)Unsafe.AsPointer(ref s_vtable);
-            for (int i = 0; i < IGCHeapVtable.SlotCount; i++)
+            for (int i = 0; i < IGCHeapInternalVtable.SlotCount; i++)
             {
                 slots[i] = (void*)(delegate*<void>)&Unsupported;
             }
 
-            s_vtable.IsValidSegmentSize = &IsValidSegmentSize;
-            s_vtable.IsValidGen0MaxSize = &IsValidGen0MaxSize;
-            s_vtable.GetValidSegmentSize = &GetValidSegmentSize;
-            s_vtable.SetReservedVMLimit = &SetReservedVMLimit;
-            s_vtable.WaitUntilConcurrentGCComplete = &WaitUntilConcurrentGCComplete;
-            s_vtable.IsConcurrentGCInProgress = &IsConcurrentGCInProgress;
-            s_vtable.TemporaryEnableConcurrentGC = &TemporaryEnableConcurrentGC;
-            s_vtable.TemporaryDisableConcurrentGC = &TemporaryDisableConcurrentGC;
-            s_vtable.IsConcurrentGCEnabled = &IsConcurrentGCEnabled;
-            s_vtable.WaitUntilConcurrentGCCompleteAsync = &WaitUntilConcurrentGCCompleteAsync;
-            s_vtable.GetNumberOfFinalizable = &GetNumberOfFinalizable;
-            s_vtable.GetNextFinalizable = &GetNextFinalizable;
-            s_vtable.GetMemoryInfo = &GetMemoryInfo;
-            s_vtable.GetMemoryLoad = &GetMemoryLoad;
-            s_vtable.GetGcLatencyMode = &GetGcLatencyMode;
-            s_vtable.SetGcLatencyMode = &SetGcLatencyMode;
-            s_vtable.GetLOHCompactionMode = &GetLOHCompactionMode;
-            s_vtable.SetLOHCompactionMode = &SetLOHCompactionMode;
-            s_vtable.RegisterForFullGCNotification = &RegisterForFullGCNotification;
-            s_vtable.CancelFullGCNotification = &CancelFullGCNotification;
-            s_vtable.WaitForFullGCApproach = &WaitForFullGCApproach;
-            s_vtable.WaitForFullGCComplete = &WaitForFullGCComplete;
-            s_vtable.WhichGeneration = &WhichGeneration;
-            s_vtable.CollectionCount = &CollectionCount;
-            s_vtable.StartNoGCRegion = &StartNoGCRegion;
-            s_vtable.EndNoGCRegion = &EndNoGCRegion;
-            s_vtable.GetTotalBytesInUse = &GetTotalBytesInUse;
-            s_vtable.GetTotalAllocatedBytes = &GetTotalAllocatedBytes;
-            s_vtable.GarbageCollect = &GarbageCollect;
-            s_vtable.GetMaxGeneration = &GetMaxGeneration;
-            s_vtable.SetFinalizationRun = &SetFinalizationRun;
-            s_vtable.RegisterForFinalization = &RegisterForFinalization;
-            s_vtable.GetLastGCPercentTimeInGC = &GetLastGCPercentTimeInGC;
-            s_vtable.GetLastGCGenerationSize = &GetLastGCGenerationSize;
-            s_vtable.Initialize = &Initialize;
-            s_vtable.IsPromoted = &IsPromoted;
-            s_vtable.IsHeapPointer = &IsHeapPointer;
-            s_vtable.GetCondemnedGeneration = &GetCondemnedGeneration;
-            s_vtable.IsGCInProgressHelper = &IsGCInProgressHelper;
-            s_vtable.GetGcCount = &GetGcCount;
-            s_vtable.IsThreadUsingAllocationContextHeap = &IsThreadUsingAllocationContextHeap;
-            s_vtable.IsEphemeral = &IsEphemeral;
-            s_vtable.WaitUntilGCComplete = &WaitUntilGCComplete;
-            s_vtable.FixAllocContext = &FixAllocContext;
-            s_vtable.GetCurrentObjSize = &GetCurrentObjSize;
-            s_vtable.SetGCInProgress = &SetGCInProgress;
-            s_vtable.RuntimeStructuresValid = &RuntimeStructuresValid;
-            s_vtable.SetSuspensionPending = &SetSuspensionPending;
-            s_vtable.SetYieldProcessorScalingFactor = &SetYieldProcessorScalingFactor;
-            s_vtable.Shutdown = &Shutdown;
-            s_vtable.GetLastGCStartTime = &GetLastGCStartTime;
-            s_vtable.GetLastGCDuration = &GetLastGCDuration;
-            s_vtable.GetNow = &GetNow;
-            s_vtable.Alloc = &Alloc;
-            s_vtable.PublishObject = &PublishObject;
-            s_vtable.SetWaitForGCEvent = &SetWaitForGCEvent;
-            s_vtable.ResetWaitForGCEvent = &ResetWaitForGCEvent;
-            s_vtable.IsLargeObject = &IsLargeObject;
-            s_vtable.ValidateObjectMember = &ValidateObjectMember;
-            s_vtable.DiagScanFinalizeQueue = &DiagScanFinalizeQueue;
-            s_vtable.DiagScanHandles = &DiagScanHandles;
-            s_vtable.DiagScanDependentHandles = &DiagScanDependentHandles;
-            s_vtable.DiagDescrGenerations = &DiagDescrGenerations;
-            s_vtable.DiagTraceGCSegments = &DiagTraceGCSegments;
-            s_vtable.DiagGetGCSettings = &DiagGetGCSettings;
-            s_vtable.StressHeap = &StressHeap;
-            s_vtable.RegisterFrozenSegment = &RegisterFrozenSegment;
-            s_vtable.UnregisterFrozenSegment = &UnregisterFrozenSegment;
-            s_vtable.IsInFrozenSegment = &IsInFrozenSegment;
-            s_vtable.ControlEvents = &ControlEvents;
-            s_vtable.ControlPrivateEvents = &ControlPrivateEvents;
-            s_vtable.GetGenerationWithRange = &GetGenerationWithRange;
-            s_vtable.GetTotalPauseDuration = &GetTotalPauseDuration;
-            s_vtable.EnumerateConfigurationValues = &EnumerateConfigurationValues;
-            s_vtable.UpdateFrozenSegment = &UpdateFrozenSegment;
-            s_vtable.RefreshMemoryLimit = &RefreshMemoryLimit;
-            s_vtable.EnableNoGCRegionCallback = &EnableNoGCRegionCallback;
-            s_vtable.GetExtraWorkForFinalization = &GetExtraWorkForFinalization;
-            s_vtable.GetGenerationBudget = &GetGenerationBudget;
-            s_vtable.GetLOHThreshold = &GetLOHThreshold;
-            s_vtable.NullBridgeObjectsWeakRefs = &NullBridgeObjectsWeakRefs;
+            s_vtable.IGCHeap.IsValidSegmentSize = &IsValidSegmentSize;
+            s_vtable.IGCHeap.IsValidGen0MaxSize = &IsValidGen0MaxSize;
+            s_vtable.IGCHeap.GetValidSegmentSize = &GetValidSegmentSize;
+            s_vtable.IGCHeap.SetReservedVMLimit = &SetReservedVMLimit;
+            s_vtable.IGCHeap.WaitUntilConcurrentGCComplete = &WaitUntilConcurrentGCComplete;
+            s_vtable.IGCHeap.IsConcurrentGCInProgress = &IsConcurrentGCInProgress;
+            s_vtable.IGCHeap.TemporaryEnableConcurrentGC = &TemporaryEnableConcurrentGC;
+            s_vtable.IGCHeap.TemporaryDisableConcurrentGC = &TemporaryDisableConcurrentGC;
+            s_vtable.IGCHeap.IsConcurrentGCEnabled = &IsConcurrentGCEnabled;
+            s_vtable.IGCHeap.WaitUntilConcurrentGCCompleteAsync = &WaitUntilConcurrentGCCompleteAsync;
+            s_vtable.IGCHeap.GetNumberOfFinalizable = &GetNumberOfFinalizable;
+            s_vtable.IGCHeap.GetNextFinalizable = &GetNextFinalizable;
+            s_vtable.IGCHeap.GetMemoryInfo = &GetMemoryInfo;
+            s_vtable.IGCHeap.GetMemoryLoad = &GetMemoryLoad;
+            s_vtable.IGCHeap.GetGcLatencyMode = &GetGcLatencyMode;
+            s_vtable.IGCHeap.SetGcLatencyMode = &SetGcLatencyMode;
+            s_vtable.IGCHeap.GetLOHCompactionMode = &GetLOHCompactionMode;
+            s_vtable.IGCHeap.SetLOHCompactionMode = &SetLOHCompactionMode;
+            s_vtable.IGCHeap.RegisterForFullGCNotification = &RegisterForFullGCNotification;
+            s_vtable.IGCHeap.CancelFullGCNotification = &CancelFullGCNotification;
+            s_vtable.IGCHeap.WaitForFullGCApproach = &WaitForFullGCApproach;
+            s_vtable.IGCHeap.WaitForFullGCComplete = &WaitForFullGCComplete;
+            s_vtable.IGCHeap.WhichGeneration = &WhichGeneration;
+            s_vtable.IGCHeap.CollectionCount = &CollectionCount;
+            s_vtable.IGCHeap.StartNoGCRegion = &StartNoGCRegion;
+            s_vtable.IGCHeap.EndNoGCRegion = &EndNoGCRegion;
+            s_vtable.IGCHeap.GetTotalBytesInUse = &GetTotalBytesInUse;
+            s_vtable.IGCHeap.GetTotalAllocatedBytes = &GetTotalAllocatedBytes;
+            s_vtable.IGCHeap.GarbageCollect = &GarbageCollect;
+            s_vtable.IGCHeap.GetMaxGeneration = &GetMaxGeneration;
+            s_vtable.IGCHeap.SetFinalizationRun = &SetFinalizationRun;
+            s_vtable.IGCHeap.RegisterForFinalization = &RegisterForFinalization;
+            s_vtable.IGCHeap.GetLastGCPercentTimeInGC = &GetLastGCPercentTimeInGC;
+            s_vtable.IGCHeap.GetLastGCGenerationSize = &GetLastGCGenerationSize;
+            s_vtable.IGCHeap.Initialize = &Initialize;
+            s_vtable.IGCHeap.IsPromoted = &IsPromoted;
+            s_vtable.IGCHeap.IsHeapPointer = &IsHeapPointer;
+            s_vtable.IGCHeap.GetCondemnedGeneration = &GetCondemnedGeneration;
+            s_vtable.IGCHeap.IsGCInProgressHelper = &IsGCInProgressHelper;
+            s_vtable.IGCHeap.GetGcCount = &GetGcCount;
+            s_vtable.IGCHeap.IsThreadUsingAllocationContextHeap = &IsThreadUsingAllocationContextHeap;
+            s_vtable.IGCHeap.IsEphemeral = &IsEphemeral;
+            s_vtable.IGCHeap.WaitUntilGCComplete = &WaitUntilGCComplete;
+            s_vtable.IGCHeap.FixAllocContext = &FixAllocContext;
+            s_vtable.IGCHeap.GetCurrentObjSize = &GetCurrentObjSize;
+            s_vtable.IGCHeap.SetGCInProgress = &SetGCInProgress;
+            s_vtable.IGCHeap.RuntimeStructuresValid = &RuntimeStructuresValid;
+            s_vtable.IGCHeap.SetSuspensionPending = &SetSuspensionPending;
+            s_vtable.IGCHeap.SetYieldProcessorScalingFactor = &SetYieldProcessorScalingFactor;
+            s_vtable.IGCHeap.Shutdown = &Shutdown;
+            s_vtable.IGCHeap.GetLastGCStartTime = &GetLastGCStartTime;
+            s_vtable.IGCHeap.GetLastGCDuration = &GetLastGCDuration;
+            s_vtable.IGCHeap.GetNow = &GetNow;
+            s_vtable.IGCHeap.Alloc = &Alloc;
+            s_vtable.IGCHeap.PublishObject = &PublishObject;
+            s_vtable.IGCHeap.SetWaitForGCEvent = &SetWaitForGCEvent;
+            s_vtable.IGCHeap.ResetWaitForGCEvent = &ResetWaitForGCEvent;
+            s_vtable.IGCHeap.IsLargeObject = &IsLargeObject;
+            s_vtable.IGCHeap.ValidateObjectMember = &ValidateObjectMember;
+            s_vtable.IGCHeap.DiagScanFinalizeQueue = &DiagScanFinalizeQueue;
+            s_vtable.IGCHeap.DiagScanHandles = &DiagScanHandles;
+            s_vtable.IGCHeap.DiagScanDependentHandles = &DiagScanDependentHandles;
+            s_vtable.IGCHeap.DiagDescrGenerations = &DiagDescrGenerations;
+            s_vtable.IGCHeap.DiagTraceGCSegments = &DiagTraceGCSegments;
+            s_vtable.IGCHeap.DiagGetGCSettings = &DiagGetGCSettings;
+            s_vtable.IGCHeap.StressHeap = &StressHeap;
+            s_vtable.IGCHeap.RegisterFrozenSegment = &RegisterFrozenSegment;
+            s_vtable.IGCHeap.UnregisterFrozenSegment = &UnregisterFrozenSegment;
+            s_vtable.IGCHeap.IsInFrozenSegment = &IsInFrozenSegment;
+            s_vtable.IGCHeap.ControlEvents = &ControlEvents;
+            s_vtable.IGCHeap.ControlPrivateEvents = &ControlPrivateEvents;
+            s_vtable.IGCHeap.GetGenerationWithRange = &GetGenerationWithRange;
+            s_vtable.IGCHeap.GetTotalPauseDuration = &GetTotalPauseDuration;
+            s_vtable.IGCHeap.EnumerateConfigurationValues = &EnumerateConfigurationValues;
+            s_vtable.IGCHeap.UpdateFrozenSegment = &UpdateFrozenSegment;
+            s_vtable.IGCHeap.RefreshMemoryLimit = &RefreshMemoryLimit;
+            s_vtable.IGCHeap.EnableNoGCRegionCallback = &EnableNoGCRegionCallback;
+            s_vtable.IGCHeap.GetExtraWorkForFinalization = &GetExtraWorkForFinalization;
+            s_vtable.IGCHeap.GetGenerationBudget = &GetGenerationBudget;
+            s_vtable.IGCHeap.GetLOHThreshold = &GetLOHThreshold;
+            s_vtable.IGCHeap.NullBridgeObjectsWeakRefs = &NullBridgeObjectsWeakRefs;
+
+            s_vtable.GetNumberOfHeaps = &GetNumberOfHeaps;
+            s_vtable.GetHomeHeapNumber = &GetHomeHeapNumber;
+            s_vtable.GetPromotedBytes = &GetPromotedBytes;
+            s_vtable.IsPromoted2 = &IsPromoted2;
 
             s_vtablePtr = (nint)Unsafe.AsPointer(ref s_vtable);
             return Unsafe.AsPointer(ref s_vtablePtr);
@@ -293,6 +300,17 @@ namespace Internal.Runtime.GarbageCollection
 
         private static byte IsThreadUsingAllocationContextHeap(void* thisPtr, gc_alloc_context* acontext, int thread_number) => 1;
 
+        /// <summary>
+        /// The <c>IGCHeapInternal</c> heap-count slots. This is a single-heap workstation-shaped
+        /// heap, so there is one heap and every thread's home heap is heap 0.
+        /// </summary>
+        private static int GetNumberOfHeaps(void* thisPtr) => 1;
+
+        private static int GetHomeHeapNumber(void* thisPtr) => 0;
+
+        /// <summary>Nothing is ever marked, so nothing has ever been promoted by a collection.</summary>
+        private static nuint GetPromotedBytes(void* thisPtr, int heap_index) => 0;
+
         private static nuint GetCurrentObjSize(void* thisPtr) => 0;
 
         // ------------------------------------------------------------------------------------
@@ -408,6 +426,13 @@ namespace Internal.Runtime.GarbageCollection
         // ------------------------------------------------------------------------------------
 
         private static byte IsPromoted(void* thisPtr, byte* obj) => 1;
+
+        /// <summary>
+        /// The <c>IGCHeapInternal</c> form of <see cref="IsPromoted"/>, used by the bridge code.
+        /// Nothing is ever collected, so everything is promoted, and there is no next header to
+        /// verify.
+        /// </summary>
+        private static byte IsPromoted2(void* thisPtr, byte* obj, byte bVerifyNextHeader) => 1;
 
         private static byte IsHeapPointer(void* thisPtr, void* obj, byte small_heap_only) =>
             GCHeapMemory.Contains(obj) || FindFrozenSegment((byte*)obj) != null ? (byte)1 : (byte)0;
