@@ -5,8 +5,16 @@
 
 namespace Internal.Runtime.GarbageCollection;
 
-internal static partial class GCCommon
+internal static unsafe partial class GCCommon
 {
+    // The heap's bounds. gccommon.cpp declares both and zero-initializes them; the C# default
+    // for a static byte* field is already null, so there is nothing to write out here. Whatever
+    // creates the heap -- currently GCHeapMemory.Initialize -- publishes both, and
+    // SoftwareWriteWatch.GetHeapStartAddress/GetHeapEndAddress read them back, exactly as
+    // softwarewritewatch.h does.
+    internal static byte* g_gc_lowest_address;
+    internal static byte* g_gc_highest_address;
+
     private static double g_QPFus;
 
     public static ulong GetHighPrecisionTimeStamp()

@@ -49,22 +49,27 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         private const int LogCardBundleSize = 21;
 
-        private static byte* s_heapStart;
-        private static byte* s_heapEnd;
-
         // Bump pointer, as nint so that Interlocked can operate on it.
         private static nint s_allocPtr;
 
-        /// <summary>Low bound of the heap; equals <c>g_lowest_address</c> once published.</summary>
-        public static byte* HeapStart => s_heapStart;
+        /// <summary>
+        /// Low bound of the heap. Backed by <see cref="GCCommon.g_gc_lowest_address"/>, the same
+        /// global <c>gccommon.cpp</c> declares and <c>SoftwareWriteWatch::GetHeapStartAddress</c>
+        /// reads, so this is the one place the bound is set.
+        /// </summary>
+        public static byte* HeapStart => GCCommon.g_gc_lowest_address;
 
-        /// <summary>High bound of the heap; equals <c>g_highest_address</c> once published.</summary>
-        public static byte* HeapEnd => s_heapEnd;
+        /// <summary>
+        /// High bound of the heap. Backed by <see cref="GCCommon.g_gc_highest_address"/>, the
+        /// same global <c>gccommon.cpp</c> declares and
+        /// <c>SoftwareWriteWatch::GetHeapEndAddress</c> reads.
+        /// </summary>
+        public static byte* HeapEnd => GCCommon.g_gc_highest_address;
 
         /// <summary>Bytes handed out so far. Never decreases, because nothing is ever freed.</summary>
-        public static nuint BytesInUse => (nuint)(Volatile.Read(ref s_allocPtr) - (nint)s_heapStart);
+        public static nuint BytesInUse => (nuint)(Volatile.Read(ref s_allocPtr) - (nint)GCCommon.g_gc_lowest_address);
 
-        public static bool Contains(void* address) => address >= s_heapStart && address < s_heapEnd;
+        public static bool Contains(void* address) => address >= GCCommon.g_gc_lowest_address && address < GCCommon.g_gc_highest_address;
 
         /// <summary>
         /// Reserves and commits the heap, builds the card tables, and publishes both to the EE's
@@ -78,8 +83,8 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
-            s_heapStart = heap;
-            s_heapEnd = heap + HeapSize;
+            GCCommon.g_gc_lowest_address = heap;
+            GCCommon.g_gc_highest_address = heap + HeapSize;
             s_allocPtr = (nint)heap;
 
             // The write barriers index the card tables by the absolute address of the location
@@ -98,14 +103,14 @@ namespace Internal.Runtime.GarbageCollection
             args.is_runtime_suspended = 1;
             args.card_table = (uint*)(cardTable - (nint)((nuint)heap >> LogCardSize));
             args.card_bundle_table = (uint*)(cardBundleTable - (nint)((nuint)heap >> LogCardBundleSize));
-            args.lowest_address = s_heapStart;
-            args.highest_address = s_heapEnd;
+            args.lowest_address = GCCommon.g_gc_lowest_address;
+            args.highest_address = GCCommon.g_gc_highest_address;
 
             // Everything this heap allocates is ephemeral as far as the barrier is concerned.
             // Nothing reads the cards back yet, but marking them keeps the barrier on the same
             // path it takes with the C++ GC instead of on an untested one.
-            args.ephemeral_low = s_heapStart;
-            args.ephemeral_high = s_heapEnd;
+            args.ephemeral_low = GCCommon.g_gc_lowest_address;
+            args.ephemeral_high = GCCommon.g_gc_highest_address;
 
             GCToEEInterface.StompWriteBarrier(&args);
             return true;
@@ -132,7 +137,7 @@ namespace Internal.Runtime.GarbageCollection
         /// </remarks>
         public static byte* Allocate(nuint size)
         {
-            nint end = (nint)s_heapEnd;
+            nint end = (nint)GCCommon.g_gc_highest_address;
             nint current = Volatile.Read(ref s_allocPtr);
             while (true)
             {

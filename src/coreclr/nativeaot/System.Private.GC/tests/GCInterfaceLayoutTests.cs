@@ -77,13 +77,17 @@ public sealed class GCInterfaceLayoutTests
     {
         "LARGE_OBJECT_SIZE",
         "min_obj_size",
-        "SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift",
         "EE_INTERFACE_MAJOR_VERSION",
 
         // ManagedGCEntryPoints reports these straight out of the generated table rather than
         // restating them, so there is no second managed copy to compare against.
         "GC_INTERFACE_MAJOR_VERSION",
         "GC_INTERFACE_MINOR_VERSION",
+
+        // SoftwareWriteWatch reads this constant straight out of the generated table too, as
+        // GCInterfaceOffsets.SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift, rather than
+        // restating it as a private constant of its own, so there is likewise no second copy.
+        "SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift",
     };
 
     public static IEnumerable<object[]> OffsetEntries() =>

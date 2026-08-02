@@ -76,6 +76,16 @@ internal static unsafe class GCToEEInterface
     /// <summary>Every pointer passed to <see cref="FreeStringConfigValue"/>, including null.</summary>
     internal static List<IntPtr> FreedStrings { get; } = new();
 
+    /// <summary>How many times the port called <see cref="StompWriteBarrier"/>.</summary>
+    internal static int StompWriteBarrierCallCount { get; private set; }
+
+    /// <summary>
+    /// The <see cref="WriteBarrierParameters"/> the most recent <see cref="StompWriteBarrier"/>
+    /// call passed, copied out of the pointer -- which the caller may free or overwrite on
+    /// return -- so tests can inspect it afterwards.
+    /// </summary>
+    internal static WriteBarrierParameters LastStompWriteBarrier { get; private set; }
+
     internal static void Reset()
     {
         LastInitializedGCToCLR = null;
@@ -87,6 +97,8 @@ internal static unsafe class GCToEEInterface
         Requests.Clear();
         FreedStrings.Clear();
         WriteWithoutProviding = null;
+        StompWriteBarrierCallCount = 0;
+        LastStompWriteBarrier = default;
 
         foreach (IntPtr outstanding in OutstandingStrings)
         {
@@ -100,6 +112,18 @@ internal static unsafe class GCToEEInterface
     {
         LastInitializedGCToCLR = theGCToCLR;
         InitializeCallCount++;
+    }
+
+    /// <summary>
+    /// Substitute for the indirect <c>IGCToCLR::StompWriteBarrier</c> call.
+    /// <see cref="SoftwareWriteWatch.EnableForGCHeap"/> and
+    /// <see cref="SoftwareWriteWatch.DisableForGCHeap"/> are the only callers this file's tests
+    /// exercise, so recording the arguments is enough; no real write barrier is bashed.
+    /// </summary>
+    public static void StompWriteBarrier(WriteBarrierParameters* args)
+    {
+        StompWriteBarrierCallCount++;
+        LastStompWriteBarrier = *args;
     }
 
     internal static void SetPrivateValue(string privateKey, ulong value) => s_privateValues[privateKey] = value;

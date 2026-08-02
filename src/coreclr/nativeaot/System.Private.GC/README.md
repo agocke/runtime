@@ -49,6 +49,7 @@ Ported so far:
 | `GCConfig.cs` | `gcconfig.h`, `gcconfig.cpp` |
 | `ManagedGCEntryPoints.cs` | `gcload.cpp` (`GC_VersionInfo`, `GC_Initialize`) |
 | `Environment/GCEnv.Base.cs` | `env/gcenv.base.h`, plus `ParseIndexOrRange` of `gcconfig.cpp` |
+| `Environment/GCEnv.MemoryBarrierProcessWide.cs` | `src/native/minipal/memorybarrierprocesswide.h` |
 | `Environment/GCEnv.Volatile.cs` | `env/volatile.h` (the free functions) |
 | `Environment/Interlocked.cs` | `env/gcenv.interlocked.h`, `env/gcenv.interlocked.inl` |
 | `Environment/GCEnvStructs.cs` | `env/gcenv.structs.h` |
@@ -78,6 +79,7 @@ Ported so far:
 | `Environment/GCToOSInterface.Processors.Windows.cs` | `gc/windows/gcenv.windows.cpp` (processor counts and identity, affinity, NUMA, CPU groups, `GroupProcNo`) |
 | `Environment/GCToOSInterface.Imports.Unix.cs` | the `<sys/mman.h>` / `<sys/resource.h>` / `<time.h>` / `<sched.h>` / `<unistd.h>` / `<sys/sysctl.h>` / `<sys/sysinfo.h>` / `minipal/time.h` entry points the above call |
 | `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` and `<psapi.h>` entry points the above call |
+| `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
@@ -140,6 +142,28 @@ point of use rather than from the cached `g_SystemInfo` that only the C++ `Initi
 is the same machine constant. On Unix there is no write watch, so `SupportsWriteWatch` is a
 constant `false` that reserves nothing and the other two only assert, exactly as the C++ does --
 the collector uses software write watch there instead.
+
+`SoftwareWriteWatch.cs` is that software write watch: the port of `softwarewritewatch.h` and
+`softwarewritewatch.cpp`, which is a byte-per-page dirty table over the heap rather than an
+operating system feature, so it works everywhere `GCToOSInterface`'s write watch does not. The
+table pointer is translated -- biased by the table byte index of the heap's low bound -- so that
+every lookup indexes it directly by an absolute address instead of subtracting the heap start
+first, exactly as `TranslateTableToExcludeHeapStartAddress` does; `SetResizedUntranslatedTable`
+copies the old table's bytes into the new one at the same bias before the caller moves the
+published heap bounds. `EnableForGCHeap` and `DisableForGCHeap` are `WriteBarrierOp.
+SwitchToWriteWatch`/`SwitchToNonWriteWatch` calls through `GCToEEInterface.StompWriteBarrier`,
+the same vtable call `GCHeapMemory.Initialize` uses to publish the card tables.
+`GetDirty`/`GetDirtyFromBlock` scan the table a machine word at a time and bit-scan each nonzero
+word to find which of its bytes are set, issuing `GCEnv.MemoryBarrierProcessWide` -- a
+`[RuntimeImport]` over `minipal_memory_barrier_process_wide`, next to the rest of the
+environment's process-wide primitives -- before reading dirty state on an unsuspended runtime and
+again after clearing it, exactly where the C++ comments say a cross-thread barrier is needed.
+`GetTableStartByteOffset` is declared by the header but has no definition or caller anywhere in
+`src/coreclr`, so it has no C# counterpart; inventing a body would not be a translation of
+anything. The heap bounds `GetHeapStartAddress`/`GetHeapEndAddress` read are
+`GCCommon.g_gc_lowest_address`/`g_gc_highest_address`, the same globals `gccommon.cpp` declares;
+`GCHeapMemory.Initialize` is what publishes them today, and `HeapStart`/`HeapEnd` simply read them
+back, so there is one authoritative place the heap's bounds are set.
 
 Events and locks are translated as well. `GCEvent` is the `GCEvent::Impl` of
 `gc/unix/events.cpp` -- a condition variable, a mutex, and the manual-reset and state flags,
@@ -470,6 +494,23 @@ reset flag. On Unix the write watch tests pin the platform behavior that makes t
 software write watch: an unsupported answer that reserves nothing. The expected flag values are
 written out in the test rather than read from the constants of the port, so a wrong constant
 fails a test instead of being confirmed by it.
+
+`SoftwareWriteWatchTests` runs the software write watch port itself, over a synthetic heap of
+unmanaged memory and a table sized by the port's own `GetTableByteSize`: `SoftwareWriteWatch`
+never dereferences a heap address, only shifts it into a table index, so a heap-shaped range of
+addresses is all a test needs. It substitutes `GCToEEInterface.StompWriteBarrier` -- there is no
+NativeAOT write barrier to bash in a test process -- and `GCEnv.MemoryBarrierProcessWide`, which
+in the shipping build is a real cross-thread barrier and here only counts its calls, over
+`tests/GCEnv.MemoryBarrierProcessWide.TestHost.cs`. The tests cover table sizing and alignment,
+the translated table pointer against the raw bytes of the buffer it is translated from,
+`SetResizedUntranslatedTable` preserving dirty bits at their same absolute addresses across a
+resize, `StaticClose`, the exact `WriteBarrierOp`, table pointer and suspended flag
+`Enable`/`DisableForGCHeap` stomp, page-boundary-exact `ClearDirty`/`SetDirty`/`SetDirtyRegion`,
+and `GetDirty` across a single table block, across several, over an arbitrary subrange, at the
+edge of the caller's output capacity, with dirty state retained versus cleared, with every
+bit-scan position of a table word mapped to its own page, and with the process-wide barrier
+called only when the runtime is not already suspended and only as many times as the C++ comments
+say it must be.
 
 `GCEventTests` and `GCCriticalSectionTests` do the same for the event and lock ports, over
 `tests/SyncImports.*.TestHost.cs`. Because the substitutes forward to the real pthreads or the

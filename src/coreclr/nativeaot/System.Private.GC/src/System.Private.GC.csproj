@@ -53,8 +53,10 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventStatus.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCHeapCriticalRegion.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCHeapMemory.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\SoftwareWriteWatch.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\AffinitySet.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnv.Base.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnv.MemoryBarrierProcessWide.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnv.Volatile.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnvStructs.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnvSync.cs" />

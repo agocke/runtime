@@ -33,6 +33,7 @@
     <Compile Include="GCMemoryLimitsTests.cs" />
     <Compile Include="GCVirtualMemoryTests.cs" />
     <Compile Include="GCWriteWatchTests.cs" />
+    <Compile Include="SoftwareWriteWatchTests.cs" />
     <Compile Include="GCEventTests.cs" />
     <Compile Include="GCCriticalSectionTests.cs" />
     <Compile Include="GCSleepYieldTests.cs" />
@@ -52,6 +53,7 @@
     <Compile Include="../src/System/Runtime/RuntimeImportAttribute.cs" Link="System/Runtime/RuntimeImportAttribute.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/AffinitySet.cs" Link="Environment/AffinitySet.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCEnv.Base.cs" Link="Environment/GCEnv.Base.cs" />
+    <Compile Include="GCEnv.MemoryBarrierProcessWide.TestHost.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCEnv.Volatile.cs" Link="Environment/GCEnv.Volatile.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCEnvStructs.cs" Link="Environment/GCEnvStructs.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Environment/GCEnvSync.cs" Link="Environment/GCEnvSync.cs" />
@@ -103,6 +105,13 @@
          port declares it before each of its own tests. -->
     <Compile Include="GCToEEInterface.TestHost.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCConfig.cs" Link="GCConfig.cs" />
+    <!-- SoftwareWriteWatch is the port of softwarewritewatch.h / softwarewritewatch.cpp. Its
+         shipping body runs here over the substituted GCToEEInterface.StompWriteBarrier above and
+         the process-wide barrier recorded by GCEnv.MemoryBarrierProcessWide.TestHost.cs; the
+         SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift constant it reads comes from the
+         GCInterfaceOffsets test stub in ManagedGCEntryPoints.TestHost.cs, the same stand-in for
+         the generated table that GC_INTERFACE_MAJOR_VERSION/MINOR_VERSION already use there. -->
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/SoftwareWriteWatch.cs" Link="SoftwareWriteWatch.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,6 +3,12 @@
 
 // Test-host substitutes for the pieces ManagedGCEntryPoints depends on, so its gcload.cpp
 // translation can be tested directly without pulling in the full heap implementation.
+//
+// GCInterfaceOffsets is also the stand-in SoftwareWriteWatch reads its
+// SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift constant from: the test project does not
+// compile the real generated table (see src/System.Private.GC.csproj's InPlaceRuntime item
+// group), so this hand-maintained subset of it is the same substitution point
+// GC_INTERFACE_MAJOR_VERSION/MINOR_VERSION already use.
 
 namespace Internal.Runtime.GarbageCollection;
 
@@ -10,6 +16,10 @@ internal static class GCInterfaceOffsets
 {
     public const int GC_INTERFACE_MAJOR_VERSION = 5;
     public const int GC_INTERFACE_MINOR_VERSION = 8;
+
+    // SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift of gcinterface.h, read directly by
+    // SoftwareWriteWatch rather than being restated as a private constant of its own.
+    public const int SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift = 0xc;
 }
 
 internal static class GCInterfaceLayout

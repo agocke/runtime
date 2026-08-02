@@ -489,6 +489,52 @@ software write watch, and event plumbing no longer depend on placeholder impleme
   and verify that the frequency is read only once. `Runtime.ManagedGC` now omits
   `gccommon.cpp`; the globals and helpers needed by later collector modules will be translated
   into `GCCommon.cs` as those consumers arrive.
+- `g_gc_lowest_address` and `g_gc_highest_address` of `gccommon.cpp`, as the same-named fields
+  of `GCCommon.cs`, in the order they appear there. `GCHeapMemory.Initialize` is what publishes
+  them today -- it already computed the same bounds for the card tables -- and its
+  `HeapStart`/`HeapEnd` properties now read them back rather than a private field of their own,
+  so there is one authoritative place the heap's bounds are set. The rest of `gccommon.cpp`'s
+  globals arrive with the collector modules that use them, as before.
+- `softwarewritewatch.h` and `softwarewritewatch.cpp`, in full, as `SoftwareWriteWatch.cs`: an
+  `internal static unsafe class` with the same `g_gc_sw_ww_table`/`g_gc_sw_ww_enabled_for_gc_heap`
+  globals, the same `AddressToTableByteIndexShift` -- read straight out of the generated
+  `GCInterfaceOffsets.SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift` rather than restated --
+  and the same `WRITE_WATCH_UNIT_SIZE`. Every method the header inlines and every one the source
+  file defines out of line is translated in the header's declaration order: table creation and
+  resizing (`GetUntranslatedTable(End)`, `(Initialize/Set)UntranslatedTable`,
+  `SetResizedUntranslatedTable`, `TranslateTableToExcludeHeapStartAddress`), the
+  enable/disable pair (`EnableForGCHeap`/`DisableForGCHeap`, each one `StompWriteBarrier` call
+  with `WriteBarrierOp.SwitchTo(Non)WriteWatch`, the table pointer and the suspended flag),
+  `StaticClose`, the page/table-index arithmetic (`GetTableByteIndex`, `GetPageAddress`,
+  `GetTableByteSize`, `TranslateToTableRegion`), and the dirty-state operations
+  (`ClearDirty`/`SetDirty`/`SetDirtyRegion`, `GetDirtyFromBlock`/`GetDirty`, with their exact
+  bit-scan-to-page-address arithmetic and the `GCEnv.MemoryBarrierProcessWide` calls the C++
+  comments require before and after a dirty scan on an unsuspended runtime).
+  `GetTableStartByteOffset` is declared by the header but has no definition or caller anywhere
+  in `src/coreclr`, so it has no C# counterpart; a comment at its would-be call site in
+  `GetTableByteSize`'s neighborhood records why. `memcpy` and `memset` become
+  `Buffer.MemoryCopy` and a small chunked wrapper over `Unsafe.InitBlockUnaligned`, both
+  allocation-free CoreLib primitives rather than `NativeMemory`, which owns memory instead of
+  merely operating on caller-supplied pointers. The heap bounds `GetHeapStartAddress`/
+  `GetHeapEndAddress` read are the two new `GCCommon` globals above.
+  `GCEnv.MemoryBarrierProcessWide`, next to the rest of the environment's process-wide
+  primitives, is a `[RuntimeImport]` over `minipal_memory_barrier_process_wide`, the same
+  process-wide barrier the C++ calls directly rather than through `GCToOSInterface`. Focused
+  xUnit coverage in `tests/SoftwareWriteWatchTests.cs` compiles the shipping body directly over
+  a synthetic heap of unmanaged memory -- `SoftwareWriteWatch` never dereferences a heap
+  address, only shifts it into a table index, so a heap-shaped range of addresses is all a test
+  needs -- and a table sized by the port's own `GetTableByteSize`, over a substituted
+  `GCToEEInterface.StompWriteBarrier` and a call-counting
+  `tests/GCEnv.MemoryBarrierProcessWide.TestHost.cs`. It covers table sizing and alignment, the
+  translated table pointer against the raw bytes of the buffer it is translated from,
+  `SetResizedUntranslatedTable` preserving dirty bits at their same absolute addresses across a
+  resize, `StaticClose`, the exact `WriteBarrierOp`/table pointer/suspended flag of
+  `Enable`/`DisableForGCHeap`, page-boundary-exact `ClearDirty`/`SetDirty`/`SetDirtyRegion`, and
+  `GetDirty` across a single table block, across several, over an arbitrary subrange, at the
+  edge of the caller's output capacity, with dirty state retained versus cleared, with every
+  bit-scan position of a table word mapped to its own page, and with the process-wide barrier
+  called only when the runtime is not already suspended and only as many times as the C++
+  comments say it must be.
 
 #### Remaining
 
@@ -496,8 +542,12 @@ For `gcload.cpp`, what remains native is outside the managed-GC runtime surface:
 still used by CoreCLR and by NativeAOT's workstation/server GC archives, which still need the
 native workstation/server heap construction and DAC population paths. `Runtime.ManagedGC` omits
 `gcload.cpp` and links `clrgc.managed.cpp` instead, so these native paths are not reachable when
-`IlcManagedGC=true`. The rest of `gccommon.cpp`, `gcscan.cpp`, `softwarewritewatch.cpp`,
-`gcevent_serializers.h` and `gcevents.h` are not started. The remaining `gccommon.cpp` state is
+`IlcManagedGC=true`. The rest of `gccommon.cpp`, `gcscan.cpp`, `gcevent_serializers.h` and
+`gcevents.h` are not started. `softwarewritewatch.h`/`.cpp` are translated in full except for the
+declared-but-undefined `GetTableStartByteOffset`; nothing in `Runtime.ManagedGC` calls
+`SoftwareWriteWatch` yet, since its only caller in the C++ is `card_table.cpp`, which arrives with
+the core heap and region modules of stage 7 -- the port is ready for those call sites when they
+land. The remaining `gccommon.cpp` state is
 either compiled out of NativeAOT or belongs to the core heap and region modules in stages 6 and
 7; `log_init_error_to_host` also needs the allocation-free native-formatting support used by its
 callers. `GCConfig::RefreshHeapHardLimitSettings`
