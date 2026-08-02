@@ -304,6 +304,181 @@ namespace Internal.Runtime.GarbageCollection
             }
         }
 
+        public static void SegmentResortChains(TableSegment* pSegment)
+        {
+            pSegment->Header.fResortChains = false;
+            bool fScavengingOccurred = false;
+            uint uType;
+
+            if (pSegment->Header.fNeedsScavenging)
+            {
+                pSegment->Header.fNeedsScavenging = false;
+                fScavengingOccurred = true;
+                bool fCleanupUserData = false;
+                uint uLast = pSegment->Header.bEmptyLine;
+
+                for (uint uBlock = 0; uBlock < uLast; uBlock++)
+                {
+                    uType = pSegment->Header.rgBlockType[uBlock];
+
+                    if (uType < HandleTableConstants.HANDLE_MAX_PUBLIC_TYPES)
+                    {
+                        Debug.Assert(HandleTableConstants.HANDLE_MASKS_PER_BLOCK == 2);
+                        if (*((ulong*)(pSegment->Header.rgFreeMask + (uBlock * HandleTableConstants.HANDLE_MASKS_PER_BLOCK))) == ulong.MaxValue)
+                        {
+                            if (!BlockIsLocked(pSegment, uBlock))
+                            {
+                                uint uData = pSegment->Header.rgUserData[uBlock];
+                                if (uData != HandleTableConstants.BLOCK_INVALID)
+                                {
+                                    BlockUnlock(pSegment, uData);
+                                    pSegment->Header.rgUserData[uBlock] = HandleTableConstants.BLOCK_INVALID;
+                                    fCleanupUserData = true;
+                                }
+
+                                pSegment->Header.rgBlockType[uBlock] = HandleTableConstants.TYPE_INVALID;
+                                pSegment->Header.rgFreeCount[uType] -= HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+                            }
+                        }
+                    }
+                }
+
+                if (fCleanupUserData)
+                {
+                    SegmentRemoveFreeBlocks(pSegment, HandleTableConstants.HNDTYPE_INTERNAL_DATABLOCK, null);
+                }
+            }
+
+            byte* rgChainCurr = stackalloc byte[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+            byte* rgChainHigh = stackalloc byte[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES];
+            byte bChainFree = HandleTableConstants.BLOCK_INVALID;
+            uint uEmptyLine = HandleTableConstants.BLOCK_INVALID;
+            bool fContiguousWithFreeList = true;
+
+            for (uType = 0; uType < HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES; uType++)
+            {
+                rgChainHigh[uType] = rgChainCurr[uType] = HandleTableConstants.BLOCK_INVALID;
+            }
+
+            byte uBlockIndex = HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT;
+            while (uBlockIndex > 0)
+            {
+                uBlockIndex--;
+                uType = pSegment->Header.rgBlockType[uBlockIndex];
+
+                if (uType != HandleTableConstants.TYPE_INVALID)
+                {
+                    fContiguousWithFreeList = false;
+                    Debug.Assert(uType < HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES);
+
+                    if (rgChainHigh[uType] == HandleTableConstants.BLOCK_INVALID)
+                    {
+                        rgChainHigh[uType] = uBlockIndex;
+                    }
+
+                    pSegment->Header.rgAllocation[uBlockIndex] = rgChainCurr[uType];
+                    rgChainCurr[uType] = uBlockIndex;
+                }
+                else
+                {
+                    if (fContiguousWithFreeList)
+                    {
+                        uEmptyLine = uBlockIndex;
+                    }
+
+                    pSegment->Header.rgAllocation[uBlockIndex] = bChainFree;
+                    bChainFree = uBlockIndex;
+                }
+            }
+
+            for (uType = 0; uType < HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES; uType++)
+            {
+                byte bBlock = rgChainCurr[uType];
+
+                if (bBlock != HandleTableConstants.BLOCK_INVALID)
+                {
+                    uint uTail = rgChainHigh[uType];
+                    pSegment->Header.rgTail[uType] = (byte)uTail;
+                    pSegment->Header.rgAllocation[uTail] = bBlock;
+
+                    if (pSegment->Header.rgBlockType[pSegment->Header.rgHint[uType]] != uType)
+                    {
+                        pSegment->Header.rgHint[uType] = bBlock;
+                    }
+                }
+                else if (pSegment->Header.rgTail[uType] != HandleTableConstants.BLOCK_INVALID)
+                {
+                    Debug.Assert(fScavengingOccurred);
+                    pSegment->Header.rgTail[uType] = HandleTableConstants.BLOCK_INVALID;
+                    pSegment->Header.rgHint[uType] = HandleTableConstants.BLOCK_INVALID;
+                }
+            }
+
+            pSegment->Header.bFreeList = bChainFree;
+
+            if (uEmptyLine > HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT)
+            {
+                uEmptyLine = HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT;
+            }
+
+            pSegment->Header.bEmptyLine = (byte)uEmptyLine;
+        }
+
+        public static bool DoesSegmentNeedsToTrimExcessPages(TableSegment* pSegment)
+        {
+            uint uEmptyLine = pSegment->Header.bEmptyLine;
+            uint uDecommitLine = pSegment->Header.bDecommitLine;
+
+            if (uEmptyLine < uDecommitLine)
+            {
+                nuint dwPageRound = GCToOSInterface.GetPageSize() - 1;
+                nuint dwPageMask = ~dwPageRound;
+                nuint dwLo = (nuint)(void*)&pSegment->rgValue[uEmptyLine * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK];
+                dwLo = (dwLo + dwPageRound) & dwPageMask;
+                nuint dwHi = (nuint)(void*)&pSegment->rgValue[pSegment->Header.bCommitLine * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK];
+
+                if (dwHi > dwLo)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static void SegmentTrimExcessPages(TableSegment* pSegment)
+        {
+            uint uEmptyLine = pSegment->Header.bEmptyLine;
+            uint uDecommitLine = pSegment->Header.bDecommitLine;
+
+            if (uEmptyLine < uDecommitLine)
+            {
+                nuint pageSize = GCToOSInterface.GetPageSize();
+                nuint dwPageRound = pageSize - 1;
+                nuint dwPageMask = ~dwPageRound;
+                nuint rgValue = (nuint)(void*)&pSegment->rgValue[0];
+                nuint dwLo = rgValue + ((nuint)uEmptyLine * HandleTableConstants.HANDLE_BYTES_PER_BLOCK);
+                dwLo = (dwLo + dwPageRound) & dwPageMask;
+                nuint dwHi = rgValue + ((nuint)pSegment->Header.bCommitLine * HandleTableConstants.HANDLE_BYTES_PER_BLOCK);
+
+                if (dwHi > dwLo)
+                {
+                    GCToOSInterface.VirtualDecommit((void*)dwLo, dwHi - dwLo);
+                    pSegment->Header.bCommitLine = (byte)((dwLo - rgValue) / HandleTableConstants.HANDLE_BYTES_PER_BLOCK);
+
+                    nuint dwDecommitAddr = dwLo - pageSize;
+                    uDecommitLine = 0;
+
+                    if (dwDecommitAddr > rgValue)
+                    {
+                        uDecommitLine = (uint)((dwDecommitAddr - rgValue) / HandleTableConstants.HANDLE_BYTES_PER_BLOCK);
+                    }
+
+                    pSegment->Header.bDecommitLine = (byte)uDecommitLine;
+                }
+            }
+        }
+
         public static nuint* BlockFetchUserDataPointer(_TableSegmentHeader* pSegment, uint uBlock, bool fAssertOnError)
         {
             nuint* pUserData = null;

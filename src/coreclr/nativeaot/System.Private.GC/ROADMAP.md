@@ -624,10 +624,14 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
 - Handle freeing through `BlockFetchUserDataPointer`, `BlockFreeHandlesInMask`,
   `BlockFreeHandles`, and `SegmentFreeHandles`, including sorted-prefix processing across masks
   and blocks, duplicate-free accounting, parallel user-data clearing, and empty-block removal.
+- Chain rebuilding and page trimming through `SegmentResortChains`,
+  `DoesSegmentNeedsToTrimExcessPages`, and `SegmentTrimExcessPages`, including deferred
+  scavenging, hint/tail repair, address-ordered type and free chains, trailing-empty-line
+  tracking, and whole-page decommit.
 
 #### Remaining
 
-Complete new-block handle allocation next, then chain resorting and page trimming. The public
+Complete new-block handle allocation next. The public
 block-insertion wrapper arrives with the full `HandleTable.rgTypeFlags` layout because it
 allocates parallel user-data blocks based on those flags. Per-type caches, table entrypoints, and
 manager/store glue follow. The current flat `ManagedGCHandleManager` remains the runtime
