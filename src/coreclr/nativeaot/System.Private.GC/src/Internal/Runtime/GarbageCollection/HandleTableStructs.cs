@@ -37,6 +37,18 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         public byte flags;
 
+        public bool fResortChains
+        {
+            readonly get => (flags & 0x01) != 0;
+            set => flags = value ? (byte)(flags | 0x01) : (byte)(flags & ~0x01);
+        }
+
+        public bool fNeedsScavenging
+        {
+            readonly get => (flags & 0x02) != 0;
+            set => flags = value ? (byte)(flags | 0x02) : (byte)(flags & ~0x02);
+        }
+
         public byte bFreeList;
         public byte bEmptyLine;
         public byte bCommitLine;

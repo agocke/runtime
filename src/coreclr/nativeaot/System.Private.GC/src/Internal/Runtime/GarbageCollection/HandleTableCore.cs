@@ -96,5 +96,89 @@ namespace Internal.Runtime.GarbageCollection
 
             return pSegment;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool BlockIsLocked(TableSegment* pSegment, uint uBlock)
+        {
+            Debug.Assert(uBlock < HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT);
+
+            return pSegment->Header.rgLocks[uBlock] != 0;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void BlockLock(TableSegment* pSegment, uint uBlock)
+        {
+            byte bLocks = pSegment->Header.rgLocks[uBlock];
+
+            Debug.Assert(bLocks < byte.MaxValue);
+
+            pSegment->Header.rgLocks[uBlock] = (byte)(bLocks + 1);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void BlockUnlock(TableSegment* pSegment, uint uBlock)
+        {
+            byte bLocks = pSegment->Header.rgLocks[uBlock];
+
+            Debug.Assert(bLocks > 0);
+
+            pSegment->Header.rgLocks[uBlock] = (byte)(bLocks - 1);
+        }
+
+        public static uint SegmentInsertBlockFromFreeListWorker(TableSegment* pSegment, uint uType, bool fUpdateHint)
+        {
+            byte uBlock = pSegment->Header.bFreeList;
+
+            if (uBlock != HandleTableConstants.BLOCK_INVALID)
+            {
+                if (uBlock >= pSegment->Header.bEmptyLine)
+                {
+                    uint uCommitLine = pSegment->Header.bCommitLine;
+
+                    if (uBlock >= uCommitLine)
+                    {
+                        void* pvCommit = &pSegment->rgValue[uCommitLine * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK];
+                        nuint dwCommit = GCToOSInterface.GetPageSize();
+
+                        if (!GCToOSInterface.VirtualCommit(pvCommit, dwCommit))
+                        {
+                            return HandleTableConstants.BLOCK_INVALID;
+                        }
+
+                        pSegment->Header.bDecommitLine = (byte)uCommitLine;
+                        pSegment->Header.bCommitLine = (byte)(uCommitLine + (dwCommit / HandleTableConstants.HANDLE_BYTES_PER_BLOCK));
+                    }
+
+                    pSegment->Header.bEmptyLine = (byte)(uBlock + 1);
+                }
+
+                pSegment->Header.bFreeList = pSegment->Header.rgAllocation[uBlock];
+
+                uint uOldTail = pSegment->Header.rgTail[uType];
+                if (uOldTail == HandleTableConstants.BLOCK_INVALID)
+                {
+                    pSegment->Header.rgAllocation[uBlock] = uBlock;
+                    fUpdateHint = true;
+                }
+                else
+                {
+                    pSegment->Header.rgAllocation[uBlock] = pSegment->Header.rgAllocation[uOldTail];
+                    pSegment->Header.rgAllocation[uOldTail] = uBlock;
+                    pSegment->Header.fResortChains = true;
+                }
+
+                pSegment->Header.rgBlockType[uBlock] = (byte)uType;
+                pSegment->Header.rgTail[uType] = uBlock;
+
+                if (fUpdateHint)
+                {
+                    pSegment->Header.rgHint[uType] = uBlock;
+                }
+
+                pSegment->Header.rgFreeCount[uType] += HandleTableConstants.HANDLE_HANDLES_PER_BLOCK;
+            }
+
+            return uBlock;
+        }
     }
 }

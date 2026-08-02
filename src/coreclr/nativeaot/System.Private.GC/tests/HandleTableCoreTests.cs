@@ -119,6 +119,112 @@ public sealed unsafe class HandleTableCoreTests
         Assert.Equal(expectedCommitLine, HandleTableCore.GetInitialCommitLine(commitSize));
     }
 
+    [Fact]
+    public void BlockLockHelpersMaintainTheNativeByteCount()
+    {
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            Assert.False(HandleTableCore.BlockIsLocked(segment, 0));
+
+            HandleTableCore.BlockLock(segment, 0);
+            HandleTableCore.BlockLock(segment, 0);
+            Assert.True(HandleTableCore.BlockIsLocked(segment, 0));
+            Assert.Equal((byte)2, segment->Header.rgLocks[0]);
+
+            HandleTableCore.BlockUnlock(segment, 0);
+            HandleTableCore.BlockUnlock(segment, 0);
+            Assert.False(HandleTableCore.BlockIsLocked(segment, 0));
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
+    [Fact]
+    public void SegmentInsertBlockFromFreeListWorkerCommitsAndLinksBlocks()
+    {
+        const uint Type = 2;
+
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            byte initialCommitLine = segment->Header.bCommitLine;
+            nuint blocksPerPage = GCToOSInterface.GetPageSize() / HandleTableConstants.HANDLE_BYTES_PER_BLOCK;
+            byte expectedCommitLine = initialCommitLine == 0
+                ? (byte)blocksPerPage
+                : initialCommitLine;
+
+            Assert.Equal(0u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            Assert.Equal((byte)1, segment->Header.bFreeList);
+            Assert.Equal((byte)1, segment->Header.bEmptyLine);
+            Assert.Equal((byte)0, segment->Header.bDecommitLine);
+            Assert.Equal(expectedCommitLine, segment->Header.bCommitLine);
+            Assert.Equal((byte)0, segment->Header.rgAllocation[0]);
+            Assert.Equal((byte)0, segment->Header.rgTail[Type]);
+            Assert.Equal((byte)0, segment->Header.rgHint[Type]);
+            Assert.Equal((byte)Type, segment->Header.rgBlockType[0]);
+            Assert.Equal((uint)HandleTableConstants.HANDLE_HANDLES_PER_BLOCK, segment->Header.rgFreeCount[Type]);
+            Assert.False(segment->Header.fResortChains);
+
+            Assert.Equal(1u, HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            Assert.Equal((byte)2, segment->Header.bFreeList);
+            Assert.Equal((byte)2, segment->Header.bEmptyLine);
+            Assert.Equal((byte)0, segment->Header.rgAllocation[1]);
+            Assert.Equal((byte)1, segment->Header.rgAllocation[0]);
+            Assert.Equal((byte)1, segment->Header.rgTail[Type]);
+            Assert.Equal((byte)0, segment->Header.rgHint[Type]);
+            Assert.Equal((byte)Type, segment->Header.rgBlockType[1]);
+            Assert.Equal((uint)(2 * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK), segment->Header.rgFreeCount[Type]);
+            Assert.True(segment->Header.fResortChains);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
+    [Fact]
+    public void SegmentInsertBlockFromFreeListWorkerCommitsTheNextPage()
+    {
+        const uint Type = 3;
+
+        TableSegment* segment = HandleTableCore.SegmentAlloc(null);
+        Assert.True(segment != null);
+
+        try
+        {
+            byte initialCommitLine = segment->Header.bCommitLine;
+            nuint blocksPerPage = GCToOSInterface.GetPageSize() / HandleTableConstants.HANDLE_BYTES_PER_BLOCK;
+
+            if (initialCommitLine == HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT)
+            {
+                Assert.Equal((nuint)HandleTableConstants.HANDLE_SEGMENT_SIZE, GCToOSInterface.GetPageSize());
+                return;
+            }
+
+            segment->Header.bFreeList = initialCommitLine;
+            segment->Header.bEmptyLine = initialCommitLine;
+            segment->Header.rgAllocation[initialCommitLine] = HandleTableConstants.BLOCK_INVALID;
+
+            Assert.Equal(
+                (uint)initialCommitLine,
+                HandleTableCore.SegmentInsertBlockFromFreeListWorker(segment, Type, false));
+            Assert.Equal(initialCommitLine, segment->Header.bDecommitLine);
+            Assert.Equal((byte)(initialCommitLine + blocksPerPage), segment->Header.bCommitLine);
+            Assert.Equal((byte)(initialCommitLine + 1), segment->Header.bEmptyLine);
+        }
+        finally
+        {
+            HandleTableCore.SegmentFree(segment);
+        }
+    }
+
     public static IEnumerable<object[]> HandleIndices()
     {
         yield return new object[] { 0 };

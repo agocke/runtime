@@ -611,13 +611,18 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   `HandleTableCore.cs`: aligned reservation, page-rounded header commit, exact sentinel and free
   chain initialization, owning-table back pointers, release, and address masking. Direct tests
   exercise the real managed `GCToOSInterface` virtual-memory implementation.
+- The dependency-free start of the block allocator: byte-sized block lock helpers and
+  `SegmentInsertBlockFromFreeListWorker`, including page commitment, free-list removal, circular
+  per-type chain insertion, type/hint/tail bookkeeping, and free counts.
 
 #### Remaining
 
-Port the block allocator/free chains next, then per-type caches, table entrypoints, and
-manager/store glue. The current flat `ManagedGCHandleManager` remains the runtime implementation
-until those pieces can replace it as one coherent allocation path. `TableContainHandle` remains
-with the table entrypoints because its exact translation takes the table lock and walks
+Complete handle-slot allocation and free-chain scavenging next. The public block-insertion
+wrapper then arrives with the full `HandleTable.rgTypeFlags` layout because it allocates parallel
+user-data blocks based on those flags. Per-type caches, table entrypoints, and manager/store glue
+follow. The current flat `ManagedGCHandleManager` remains the runtime implementation until those
+pieces can replace it as one coherent allocation path. `TableContainHandle` remains with the
+table entrypoints because its exact translation takes the table lock and walks
 `HandleTable.pSegmentList`. Handle scanning, weak/dependent processing, write-barrier generation
 updates, and multi-heap table selection remain blocked on the core heap and collection state of
 stages 6-10.

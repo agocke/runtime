@@ -109,7 +109,8 @@ The first real handle-table slices establish the schema and segment lifecycle:
 `handletableconstants.h`; `HandleTableStructs.cs` translates the byte-packed
 `_TableSegmentHeader`, the 64-KiB `TableSegment`, and `HandleTypeCache`; and
 `HandleTableCore.cs` reserves aligned segments, commits and initializes their headers, releases
-them, and maps handle addresses back to their segment headers. The shared
+them, maps handle addresses back to their segment headers, maintains the native byte-sized block
+lock counts, and moves blocks from the segment free list into circular per-type chains. The shared
 `GCInterfaceOffsets.h` table pins their 32- and 64-bit native offsets, sizes, and alignments, and
 the managed startup verifier checks the C# layouts against the generated values. The flat
 `ManagedGCHandleManager` still supplies the running bootstrap heap until block allocation,
