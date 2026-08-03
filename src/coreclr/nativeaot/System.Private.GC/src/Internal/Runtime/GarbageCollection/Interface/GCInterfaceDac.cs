@@ -16,12 +16,6 @@
 // interface: asserted against the C++ header by the native build and against these types by
 // GCInterfaceLayout.
 //
-// One group of the header's types is deliberately absent, because it cannot be translated
-// before the modules that define its shape are ported:
-//
-//   * dac_generation and dac_gc_heap are generated from dac_generation_fields.h and
-//     dac_gcheap_fields.h, whose field lists name gcpriv.h types.
-//
 // Nothing populates a GcDacVars yet: PopulateDacVars publishes the addresses of the collector's
 // data structures, which do not exist in this GC. The runtime writes the DAC interface version
 // it supports into the struct before calling GC_Initialize, and leaving it as it arrived is
@@ -135,11 +129,7 @@ namespace Internal.Runtime.GarbageCollection
         public dac_heap_segment* next;
         public byte* background_allocated;
 
-        /// <summary>
-        /// The <c>dac_gc_heap</c> this segment belongs to. It is a pointer rather than the
-        /// translated type because dac_gc_heap is generated from the gcpriv.h field list.
-        /// </summary>
-        public void* heap;
+        public dac_gc_heap* heap;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -152,6 +142,14 @@ namespace Internal.Runtime.GarbageCollection
         public nuint num_free_regions_removed;
         public dac_heap_segment* head_free_region;
         public dac_heap_segment* tail_free_region;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct dac_generation
+    {
+        public gc_alloc_context allocation_context;
+        public dac_heap_segment* start_segment;
+        public byte* allocation_start;
     }
 
     /// <summary>
@@ -240,6 +238,42 @@ namespace Internal.Runtime.GarbageCollection
     internal struct unused_generation
     {
         public byte unused;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct dac_gc_heap
+    {
+        public byte* alloc_allocated;
+        public dac_heap_segment* ephemeral_heap_segment;
+        public dac_finalize_queue* finalize_queue;
+        public oom_history oom_info;
+#if TARGET_64BIT
+        public fixed ulong interesting_data_per_heap[GCInterfaceDacConstants.NUM_GC_DATA_POINTS];
+        public fixed ulong compact_reasons_per_heap[GCInterfaceDacConstants.MAX_COMPACT_REASONS_COUNT];
+        public fixed ulong expand_mechanisms_per_heap[GCInterfaceDacConstants.MAX_EXPAND_MECHANISMS_COUNT];
+        public fixed ulong interesting_mechanism_bits_per_heap[GCInterfaceDacConstants.MAX_GC_MECHANISM_BITS_COUNT];
+#else
+        public fixed uint interesting_data_per_heap[GCInterfaceDacConstants.NUM_GC_DATA_POINTS];
+        public fixed uint compact_reasons_per_heap[GCInterfaceDacConstants.MAX_COMPACT_REASONS_COUNT];
+        public fixed uint expand_mechanisms_per_heap[GCInterfaceDacConstants.MAX_EXPAND_MECHANISMS_COUNT];
+        public fixed uint interesting_mechanism_bits_per_heap[GCInterfaceDacConstants.MAX_GC_MECHANISM_BITS_COUNT];
+#endif
+        public byte* internal_root_array;
+        public nuint internal_root_array_index;
+        public int heap_analyze_success;
+        public uint* card_table;
+        public uint* mark_array;
+        public byte* next_sweep_obj;
+        public byte* background_saved_lowest_address;
+        public byte* background_saved_highest_address;
+        public dac_heap_segment* saved_sweep_ephemeral_seg;
+        public byte* saved_sweep_ephemeral_start;
+        public void* generation_table;
+        public dac_heap_segment* freeable_soh_segment;
+        public dac_heap_segment* freeable_uoh_segment;
+        public dac_region_free_list free_regions0;
+        public dac_region_free_list free_regions1;
+        public dac_region_free_list free_regions2;
     }
 
     /// <summary>

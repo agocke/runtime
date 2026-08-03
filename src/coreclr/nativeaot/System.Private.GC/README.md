@@ -100,10 +100,12 @@ recording, interface-layout verification, managed `GCConfig` initialization, and
 handle-manager/heap creation with OOM returns. The direct ABI/version and failure-path coverage
 for this lives in `tests/ManagedGCEntryPointsTests.cs`.
 
-`gcinterface.dac.h` is translated except for `dac_generation` and `dac_gc_heap`, which are
-generated from the `dac_generation_fields.h` / `dac_gcheap_fields.h` field lists and therefore
-name `gcpriv.h` types. The handle-table analogues are now present with the constants and packed
-segment schema they depend on. Nothing populates a `GcDacVars` yet:
+`gcinterface.dac.h` is translated, including the `dac_generation` and `dac_gc_heap` views
+generated from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Pointer-sized arrays use
+conditional primitive fixed buffers because C# fixed buffers do not accept `nuint`; arrays of
+translated structures are represented by contiguous numbered fields. The handle-table analogues
+are present with the constants and packed segment schema they depend on. Nothing populates a
+`GcDacVars` yet:
 `PopulateDacVars` publishes the addresses of the collector's data structures, which this heap
 does not have. The managed selector therefore leaves its DAC interface version zero, making a
 DAC reject this collector as unsupported until those structures are available.

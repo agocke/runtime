@@ -365,6 +365,16 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            dac_generation generation;
+            if (sizeof(dac_generation) != GCInterfaceOffsets.SIZEOF__dac_generation
+                || AlignOf<dac_generation>() != GCInterfaceOffsets.ALIGNOF__dac_generation
+                || OffsetOf(&generation, &generation.allocation_context) != GCInterfaceOffsets.OFFSETOF__dac_generation__allocation_context
+                || OffsetOf(&generation, &generation.start_segment) != GCInterfaceOffsets.OFFSETOF__dac_generation__start_segment
+                || OffsetOf(&generation, &generation.allocation_start) != GCInterfaceOffsets.OFFSETOF__dac_generation__allocation_start)
+            {
+                return false;
+            }
+
             // The native m_FillPointers is one array, so what has to hold is that the run of
             // fields standing in for it starts where the array does and is contiguous.
             dac_finalize_queue finalizeQueue;
@@ -444,6 +454,37 @@ namespace Internal.Runtime.GarbageCollection
                 || sizeof(unused_generation) != GCInterfaceOffsets.SIZEOF__unused_generation
                 || AlignOf<unused_generation>() != GCInterfaceOffsets.ALIGNOF__unused_generation
                 || OffsetOf(&unusedGeneration, &unusedGeneration.unused) != GCInterfaceOffsets.OFFSETOF__unused_generation__unused)
+            {
+                return false;
+            }
+
+            dac_gc_heap heap;
+            if (sizeof(dac_gc_heap) != GCInterfaceOffsets.SIZEOF__dac_gc_heap
+                || AlignOf<dac_gc_heap>() != GCInterfaceOffsets.ALIGNOF__dac_gc_heap
+                || OffsetOf(&heap, &heap.alloc_allocated) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__alloc_allocated
+                || OffsetOf(&heap, &heap.ephemeral_heap_segment) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__ephemeral_heap_segment
+                || OffsetOf(&heap, &heap.finalize_queue) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__finalize_queue
+                || OffsetOf(&heap, &heap.oom_info) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__oom_info
+                || OffsetOf(&heap, &heap.interesting_data_per_heap[0]) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__interesting_data_per_heap
+                || OffsetOf(&heap, &heap.compact_reasons_per_heap[0]) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__compact_reasons_per_heap
+                || OffsetOf(&heap, &heap.expand_mechanisms_per_heap[0]) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__expand_mechanisms_per_heap
+                || OffsetOf(&heap, &heap.interesting_mechanism_bits_per_heap[0]) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__interesting_mechanism_bits_per_heap
+                || OffsetOf(&heap, &heap.internal_root_array) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__internal_root_array
+                || OffsetOf(&heap, &heap.internal_root_array_index) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__internal_root_array_index
+                || OffsetOf(&heap, &heap.heap_analyze_success) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__heap_analyze_success
+                || OffsetOf(&heap, &heap.card_table) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__card_table
+                || OffsetOf(&heap, &heap.mark_array) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__mark_array
+                || OffsetOf(&heap, &heap.next_sweep_obj) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__next_sweep_obj
+                || OffsetOf(&heap, &heap.background_saved_lowest_address) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__background_saved_lowest_address
+                || OffsetOf(&heap, &heap.background_saved_highest_address) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__background_saved_highest_address
+                || OffsetOf(&heap, &heap.saved_sweep_ephemeral_seg) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__saved_sweep_ephemeral_seg
+                || OffsetOf(&heap, &heap.saved_sweep_ephemeral_start) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__saved_sweep_ephemeral_start
+                || OffsetOf(&heap, &heap.generation_table) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__generation_table
+                || OffsetOf(&heap, &heap.freeable_soh_segment) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__freeable_soh_segment
+                || OffsetOf(&heap, &heap.freeable_uoh_segment) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__freeable_uoh_segment
+                || OffsetOf(&heap, &heap.free_regions0) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__free_regions
+                || OffsetOf(&heap, &heap.free_regions1) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__free_regions + sizeof(dac_region_free_list)
+                || OffsetOf(&heap, &heap.free_regions2) != GCInterfaceOffsets.OFFSETOF__dac_gc_heap__free_regions + (2 * sizeof(dac_region_free_list)))
             {
                 return false;
             }

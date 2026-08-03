@@ -702,10 +702,12 @@ Translate the schema from `gcpriv.h` and related headers:
   `maxgen_size_increase`. The translation preserves the native enum values, OR-based bit packing,
   pointer-sized fields, and layout. Native static assertions verify the public record layouts,
   while direct tests verify the private tuning record.
+- The remaining `gcinterface.dac.h` schema: `dac_generation` and `dac_gc_heap`, generated
+  mechanically from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Their complete layouts
+  are verified against the native classes and by the managed startup verifier.
 
-This stage also completes the `gcinterface.dac.h` translation started in stage 2: `dac_generation`
-and `dac_gc_heap` are generated from the field lists of `dac_generation_fields.h` and
-`dac_gcheap_fields.h`, so they can only be translated once the types those lists name exist.
+This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
+still waits for the corresponding collector structures.
 
 **Complete when:** the managed types preserve the required native layouts and remain compatible
 with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.h`, and

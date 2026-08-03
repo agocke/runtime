@@ -310,10 +310,6 @@ GC_ALIGNOF(      4,       8, maxgen_size_increase)
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
 // GC_Initialize, so its layout is part of the loader protocol; the types below it are the
 // analogues the DAC reads GC state through. The managed copies are in GCInterfaceDac.cs.
-//
-// dac_generation and dac_gc_heap are deliberately absent: they are generated from
-// dac_generation_fields.h / dac_gcheap_fields.h, whose field lists name gcpriv.h types that are
-// not ported yet.
 // -----------------------------------------------------------------------------------------
 
 //        32-bit,64-bit, class, member
@@ -350,6 +346,12 @@ GC_OFFSET(    14,    28, dac_region_free_list, head_free_region)
 GC_OFFSET(    18,    30, dac_region_free_list, tail_free_region)
 GC_SIZEOF(    1c,    38, dac_region_free_list)
 GC_ALIGNOF(     4,     8, dac_region_free_list)
+
+GC_OFFSET(     0,     0, dac_generation, allocation_context)
+GC_OFFSET(    28,    38, dac_generation, start_segment)
+GC_OFFSET(    2c,    40, dac_generation, allocation_start)
+GC_SIZEOF(    30,    48, dac_generation)
+GC_ALIGNOF(     8,     8, dac_generation)
 
 GC_OFFSET(     0,     0, dac_finalize_queue, m_FillPointers)
 GC_SIZEOF(    18,    30, dac_finalize_queue)
@@ -397,6 +399,31 @@ GC_ALIGNOF(     1,     1, unused_gc_heap)
 GC_OFFSET(     0,     0, unused_generation, unused)
 GC_SIZEOF(     1,     1, unused_generation)
 GC_ALIGNOF(     1,     1, unused_generation)
+
+GC_OFFSET(       0,       0, dac_gc_heap, alloc_allocated)
+GC_OFFSET(       4,       8, dac_gc_heap, ephemeral_heap_segment)
+GC_OFFSET(       8,      10, dac_gc_heap, finalize_queue)
+GC_OFFSET(       c,      18, dac_gc_heap, oom_info)
+GC_OFFSET(      30,      60, dac_gc_heap, interesting_data_per_heap)
+GC_OFFSET(      54,      a8, dac_gc_heap, compact_reasons_per_heap)
+GC_OFFSET(      80,     100, dac_gc_heap, expand_mechanisms_per_heap)
+GC_OFFSET(      98,     130, dac_gc_heap, interesting_mechanism_bits_per_heap)
+GC_OFFSET(      a0,     140, dac_gc_heap, internal_root_array)
+GC_OFFSET(      a4,     148, dac_gc_heap, internal_root_array_index)
+GC_OFFSET(      a8,     150, dac_gc_heap, heap_analyze_success)
+GC_OFFSET(      ac,     158, dac_gc_heap, card_table)
+GC_OFFSET(      b0,     160, dac_gc_heap, mark_array)
+GC_OFFSET(      b4,     168, dac_gc_heap, next_sweep_obj)
+GC_OFFSET(      b8,     170, dac_gc_heap, background_saved_lowest_address)
+GC_OFFSET(      bc,     178, dac_gc_heap, background_saved_highest_address)
+GC_OFFSET(      c0,     180, dac_gc_heap, saved_sweep_ephemeral_seg)
+GC_OFFSET(      c4,     188, dac_gc_heap, saved_sweep_ephemeral_start)
+GC_OFFSET(      c8,     190, dac_gc_heap, generation_table)
+GC_OFFSET(      cc,     198, dac_gc_heap, freeable_soh_segment)
+GC_OFFSET(      d0,     1a0, dac_gc_heap, freeable_uoh_segment)
+GC_OFFSET(      d4,     1a8, dac_gc_heap, free_regions)
+GC_SIZEOF(     128,     250, dac_gc_heap)
+GC_ALIGNOF(      4,       8, dac_gc_heap)
 
 GC_OFFSET(     0,     0, GcDacVars, major_version_number)
 GC_OFFSET(     1,     1, GcDacVars, minor_version_number)
