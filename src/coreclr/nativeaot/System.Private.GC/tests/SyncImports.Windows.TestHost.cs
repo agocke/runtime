@@ -58,6 +58,9 @@ internal static unsafe partial class SyncImports
     /// <summary>When true, <c>ManagedGC_AllocZeroed</c> returns null once.</summary>
     internal static bool FailNextAlloc;
 
+    /// <summary>When positive, fail that numbered subsequent allocation.</summary>
+    internal static int FailAllocOnCall;
+
     /// <summary>Forgets every recorded call. Each test starts by calling this.</summary>
     internal static void ResetRecording()
     {
@@ -77,6 +80,7 @@ internal static unsafe partial class SyncImports
         LastAllocSize = 0;
         FailNextCreateEvent = false;
         FailNextAlloc = false;
+        FailAllocOnCall = 0;
     }
 
     public static void* CreateEventW(void* lpEventAttributes, int bManualReset, int bInitialState, char* lpName)
@@ -154,6 +158,11 @@ internal static unsafe partial class SyncImports
         if (FailNextAlloc)
         {
             FailNextAlloc = false;
+            return null;
+        }
+
+        if (FailAllocOnCall > 0 && --FailAllocOnCall == 0)
+        {
             return null;
         }
 

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -215,6 +216,21 @@ internal static class ManagedGCTest
             }
 
             handle.Free();
+        }
+
+        ConditionalWeakTable<object, object> dependentHandles = new ConditionalWeakTable<object, object>();
+        object primary = new object();
+        object secondary = new Node { Value = 44 };
+        dependentHandles.Add(primary, secondary);
+        if (!dependentHandles.TryGetValue(primary, out object actualSecondary)
+            || !ReferenceEquals(actualSecondary, secondary))
+        {
+            return false;
+        }
+
+        if (!dependentHandles.Remove(primary) || dependentHandles.TryGetValue(primary, out _))
+        {
+            return false;
         }
 
         return true;

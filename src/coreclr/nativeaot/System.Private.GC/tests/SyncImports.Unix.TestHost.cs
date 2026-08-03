@@ -68,6 +68,9 @@ internal static unsafe partial class SyncImports
     /// <summary>When true, <c>ManagedGC_AllocZeroed</c> returns null once.</summary>
     internal static bool FailNextAlloc;
 
+    /// <summary>When positive, fail that numbered subsequent allocation.</summary>
+    internal static int FailAllocOnCall;
+
     /// <summary>Forgets every recorded call. Each test starts by calling this.</summary>
     internal static void ResetRecording()
     {
@@ -90,6 +93,7 @@ internal static unsafe partial class SyncImports
         FailNextMutexInit = 0;
         FailNextCondInit = 0;
         FailNextAlloc = false;
+        FailAllocOnCall = 0;
     }
 
     public static int pthread_mutex_init(pthread_mutex_t* mutex, pthread_mutexattr_t* attr)
@@ -224,6 +228,11 @@ internal static unsafe partial class SyncImports
         if (FailNextAlloc)
         {
             FailNextAlloc = false;
+            return null;
+        }
+
+        if (FailAllocOnCall > 0 && --FailAllocOnCall == 0)
+        {
             return null;
         }
 

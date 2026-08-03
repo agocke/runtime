@@ -44,6 +44,7 @@ Ported so far:
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
 | `HandleTableCache.cs` | `handletablecache.cpp` |
 | `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
+| `ObjectHandle.cs` | `objecthandle.h`, `objecthandle.cpp` (map, bucket, initialization, and dependent-handle subset) |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
@@ -90,7 +91,7 @@ Ported so far:
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
-| `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (flat-table subset) |
+| `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
 For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed
 entry points preserve the loader protocol order for output clearing, incoming `IGCToCLR`
@@ -134,10 +135,15 @@ table lookup, table containment, extra-info get/set/compare-exchange, and cache-
 counting are also translated. Typed and unknown-type single destruction use the cache, while
 unprepared bulk free copies, sorts, clears, and frees handles in native-sized chunks with an
 unmanaged large scratch buffer when available. `GetConvertedGeneration`,
-`HndWriteBarrierWorker`, `HndAssignHandle`, and `HndCreateHandle` now publish object references
-with the same clump-age barrier and extra-info-before-referent ordering as the C++ table. The
-flat `ManagedGCHandleManager` still supplies the running bootstrap heap until the remaining table
-entrypoints and manager glue are ported over this schema.
+`HndWriteBarrierWorker`, `HndAssignHandle`, `HndAssignHandleGC`,
+`HndInterlockedCompareExchangeHandle`, `HndFirstAssignHandle`, and `HndCreateHandle` publish
+object references with the same clump-age barriers, conditional event logging, and
+extra-info-before-referent ordering as the C++ table. `ManagedGCHandleManager` now uses this
+translated table for the running NativeAOT heap rather than maintaining a separate flat slot
+allocator. The current bootstrap uses one global table; per-heap table selection remains tied to
+the later multi-heap collector work. The native `HandleTableMap`/`HandleTableBucket` shapes and
+their initialization, removal, destruction, and allocation-failure cleanup are translated
+directly; the one-heap collector makes the current bucket contain one table.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

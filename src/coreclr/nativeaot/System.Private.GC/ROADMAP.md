@@ -42,7 +42,8 @@ The following prerequisites are already working:
   layer has not taken over itself are reached through the documented `ManagedGC_*` forwarders of
   `nativeaot/Runtime/gcenv.managed.cpp`. Virtual memory, write watch, events, locks, sleep and
   yield, and the memory limits and cache sizing are no longer among them.
-- The current heap is a fixed-size, non-collecting bump allocator with a flat handle table.
+- The current heap is a fixed-size, non-collecting bump allocator with one translated handle
+  table.
 - The managed GC reads its own configuration: `GCConfig` is translated in full, initialized from
   `ManagedGC_Initialize`, and reported to `GC.GetConfigurationVariables()` through the heap's
   `EnumerateConfigurationValues` slot.
@@ -592,9 +593,10 @@ Mechanically translate:
 - `objecthandle.cpp`
 - `gchandletable.cpp`
 
-The current flat table only supports bootstrap scenarios and must be replaced rather than
-extended into an independent design. `dac_handle_table` and `dac_handle_table_segment` of
-`gcinterface.dac.h` belong here too: their array fields are sized by `handletableconstants.h`.
+The original flat bootstrap table has been replaced by the translated table. The current runtime
+uses one global table until the multi-heap collector state exists. `dac_handle_table` and
+`dac_handle_table_segment` of `gcinterface.dac.h` belong here too: their array fields are sized
+by `handletableconstants.h`.
 
 #### Done
 
@@ -654,13 +656,23 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   volatile clump-age accesses, conservative age-zero race resolution, special treatment for
   dependent/async-pinned handles, set-handle event publication (including the async-pinned
   walk), and extra-info initialization before referent publication.
+- The remaining inline assignment operations: `HndAssignHandleGC`,
+  `HndInterlockedCompareExchangeHandle`, and `HndFirstAssignHandle`, including their differing
+  barrier and event ordering.
+- The runtime `ManagedGCHandleManager` now creates and owns one translated handle table, and its
+  manager/store vtables route creation, destruction, assignment, metadata, containment, and
+  dependent-handle operations through the translated entrypoints. The NativeAOT smoke test also
+  exercises dependent handles through `ConditionalWeakTable`.
+- The dependency-closed `objecthandle.h`/`objecthandle.cpp` infrastructure: exact
+  `HandleTableMap` and `HandleTableBucket` layouts, the public-type flag table, `Ref_Initialize`,
+  `Ref_Shutdown`, bucket removal/destruction, containment, and current home-heap/slot selection.
+  Allocation failures at each unmanaged allocation boundary are covered directly.
 
 #### Remaining
 
-Port the remaining public assignment/allocation/free entrypoints and manager/store glue. The
-current flat `ManagedGCHandleManager` remains the runtime implementation until those pieces can
-replace it as one coherent allocation path. Handle scanning, weak/dependent processing, and
-multi-heap table selection remain blocked on the core heap and collection state of stages 6-10.
+Port the remaining public bulk allocation/free and variable-handle entrypoints. Handle scanning,
+weak/dependent processing during collection, ref-counted tracing, and multi-heap table selection
+remain blocked on the core heap and collection state of stages 6-10.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.

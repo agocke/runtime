@@ -188,6 +188,85 @@ namespace Internal.Runtime.GarbageCollection
             GCEnv.VolatileStore((nuint*)handle.Value, (nuint)obj);
         }
 
+        public static void HndAssignHandleGC(OBJECTHANDLE handle, byte* obj)
+        {
+            Debug.Assert(!handle.IsNull);
+
+            if (obj != null)
+            {
+                HndWriteBarrierWorker(handle, obj);
+            }
+
+            GCEnv.VolatileStore((nuint*)handle.Value, (nuint)obj);
+        }
+
+        public static byte* HndInterlockedCompareExchangeHandle(
+            OBJECTHANDLE handle,
+            byte* obj,
+            byte* oldObj)
+        {
+            Debug.Assert(!handle.IsNull);
+
+            if (obj != null)
+            {
+                HndWriteBarrierWorker(handle, obj);
+            }
+
+            byte* result = (byte*)Interlocked.CompareExchangePointer(
+                (void**)handle.Value,
+                obj,
+                oldObj);
+
+            if (result == oldObj)
+            {
+                HndLogSetEvent(handle, obj);
+            }
+
+            return result;
+        }
+
+        public static byte HndFirstAssignHandle(OBJECTHANDLE handle, byte* obj)
+        {
+            Debug.Assert(!handle.IsNull);
+
+            byte success = Interlocked.CompareExchangePointer(
+                (void**)handle.Value,
+                obj,
+                null) == null ? (byte)1 : (byte)0;
+
+            if (success != 0)
+            {
+                if (obj != null)
+                {
+                    HndWriteBarrierWorker(handle, obj);
+                }
+
+                HndLogSetEvent(handle, obj);
+            }
+
+            return success;
+        }
+
+        public static void SetDependentHandleSecondary(OBJECTHANDLE handle, byte* obj)
+        {
+            Debug.Assert(!handle.IsNull);
+
+            if (obj != null)
+            {
+                HndWriteBarrierWorker(handle, obj);
+            }
+
+            HndSetHandleExtraInfo(
+                handle,
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                (nuint)obj);
+        }
+
+        public static byte* GetDependentHandleSecondary(OBJECTHANDLE handle)
+        {
+            return (byte*)HndGetHandleExtraInfo(handle);
+        }
+
         public static OBJECTHANDLE HndCreateHandle(HandleTable* pTable, uint uType, byte* obj, nuint lExtraInfo)
         {
             Debug.Assert(uType < pTable->uTypeCount);
@@ -219,6 +298,9 @@ namespace Internal.Runtime.GarbageCollection
 
         public static void HndDestroyHandle(HandleTable* pTable, uint uType, OBJECTHANDLE handle)
         {
+            GCEvents.GCEventFireDestroyGCHandle(handle.Value);
+            GCEvents.GCEventFirePrvDestroyGCHandle(handle.Value);
+
             Debug.Assert(!handle.IsNull);
             Debug.Assert(uType < pTable->uTypeCount);
             Debug.Assert(HandleTableCore.HandleFetchType(handle) == uType);

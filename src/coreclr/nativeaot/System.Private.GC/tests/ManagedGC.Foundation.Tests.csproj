@@ -105,6 +105,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableCache.cs" Link="HandleTableCache.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableCore.cs" Link="HandleTableCore.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableStructs.cs" Link="HandleTableStructs.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/ObjectHandle.cs" Link="ObjectHandle.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCEntryPoints.cs" Link="ManagedGCEntryPoints.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/IntroSort.cs" Link="IntroSort.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceDac.cs" Link="Interface/GCInterfaceDac.cs" />
