@@ -8,6 +8,33 @@ using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection
 {
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    internal static class gc_rand
+#pragma warning restore CS8981
+    {
+        public const uint MAX_YP_SPIN_COUNT_UNIT = 32768;
+        public const uint MIN_SOH_CROSS_GEN_REFS = 400;
+        public const uint MIN_LOH_CROSS_GEN_REFS = 800;
+#if TARGET_64BIT
+        public const uint MARK_STACK_INITIAL_LENGTH = 1024;
+#else
+        public const uint MARK_STACK_INITIAL_LENGTH = 128;
+#endif
+
+        public static ulong x;
+
+        public static ulong get_rand()
+        {
+            x = unchecked((314159269 * x + 278281) & 0x7FFFFFFF);
+            return x;
+        }
+
+        public static ulong get_rand(ulong r)
+        {
+            return unchecked(get_rand() * r) >> 31;
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct static_data
     {

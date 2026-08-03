@@ -7,6 +7,43 @@ namespace Internal.Runtime.GarbageCollection;
 
 public sealed unsafe class GCPrivTests
 {
+    [Fact]
+    public void GcRandPreservesNativeSequence()
+    {
+        gc_rand.x = 0;
+
+        Assert.Equal(278281UL, gc_rand.get_rand());
+        Assert.Equal(496504790UL, gc_rand.get_rand());
+        Assert.Equal(462394359UL, gc_rand.get_rand());
+        Assert.Equal(1153920316UL, gc_rand.get_rand());
+        Assert.Equal(402843317UL, gc_rand.get_rand());
+    }
+
+    [Fact]
+    public void GcRandBoundedScalingPreservesNativeSequence()
+    {
+        gc_rand.x = 0;
+
+        Assert.Equal(0UL, gc_rand.get_rand(10));
+        Assert.Equal(2UL, gc_rand.get_rand(10));
+        Assert.Equal(2UL, gc_rand.get_rand(10));
+        Assert.Equal(5UL, gc_rand.get_rand(10));
+        Assert.Equal(1UL, gc_rand.get_rand(10));
+    }
+
+    [Fact]
+    public void GcRandConstantsMatchNativeValues()
+    {
+        Assert.Equal(32768u, gc_rand.MAX_YP_SPIN_COUNT_UNIT);
+        Assert.Equal(400u, gc_rand.MIN_SOH_CROSS_GEN_REFS);
+        Assert.Equal(800u, gc_rand.MIN_LOH_CROSS_GEN_REFS);
+#if TARGET_64BIT
+        Assert.Equal(1024u, gc_rand.MARK_STACK_INITIAL_LENGTH);
+#else
+        Assert.Equal(128u, gc_rand.MARK_STACK_INITIAL_LENGTH);
+#endif
+    }
+
 #if !TARGET_WASM
     [Fact]
     public void EventBucketSetReplacesAllFields()

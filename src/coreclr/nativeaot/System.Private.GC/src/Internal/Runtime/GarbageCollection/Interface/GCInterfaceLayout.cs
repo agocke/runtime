@@ -390,6 +390,10 @@ namespace Internal.Runtime.GarbageCollection
                 || card_table_info.SH_TH_CARD_BUNDLE != (uint)GCInterfaceOffsets.SH_TH_CARD_BUNDLE
                 || card_table_info.MH_TH_CARD_BUNDLE != (uint)GCInterfaceOffsets.MH_TH_CARD_BUNDLE
                 || card_table_info.DECOMMIT_TIME_STEP_MILLISECONDS != (uint)GCInterfaceOffsets.DECOMMIT_TIME_STEP_MILLISECONDS
+                || gc_rand.MAX_YP_SPIN_COUNT_UNIT != (uint)GCInterfaceOffsets.MAX_YP_SPIN_COUNT_UNIT
+                || gc_rand.MIN_SOH_CROSS_GEN_REFS != (uint)GCInterfaceOffsets.MIN_SOH_CROSS_GEN_REFS
+                || gc_rand.MIN_LOH_CROSS_GEN_REFS != (uint)GCInterfaceOffsets.MIN_LOH_CROSS_GEN_REFS
+                || gc_rand.MARK_STACK_INITIAL_LENGTH != (uint)GCInterfaceOffsets.MARK_STACK_INITIAL_LENGTH
 #if TARGET_64BIT
                 || card_table_info.MAX_ALLOWED_MEM_LOAD != (uint)GCInterfaceOffsets.MAX_ALLOWED_MEM_LOAD
                 || card_table_info.MIN_YOUNGEST_GEN_DESIRED != (nuint)GCInterfaceOffsets.MIN_YOUNGEST_GEN_DESIRED

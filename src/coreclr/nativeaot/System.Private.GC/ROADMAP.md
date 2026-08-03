@@ -697,6 +697,9 @@ Translate the schema from `gcpriv.h` and related headers:
 
 #### Completed
 
+- The dependency-free `gc_rand` leaf from `gcinternal.h`, including its exact linear
+  congruential sequence, bounded scaling, and adjacent spin/cross-generation/mark-stack
+  constants pinned against native builds.
 - The dependency-free prefix of `gcrecord.h`: `gc_condemn_reason_gen`,
   `gc_condemn_reason_condition`, `gen_to_condemn_tuning`, `gc_generation_data`, and
   `maxgen_size_increase`. The translation preserves the native enum values, OR-based bit packing,

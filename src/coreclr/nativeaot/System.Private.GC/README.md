@@ -174,6 +174,8 @@ compaction, latency and tuning, object-heap identity, memory state, allocation s
 multi-segment-lock entry. The first plan/relocation records are present too: `plug`, `pair`,
 `plug_and_pair`, `plug_and_reloc`, the overlaid `plug_and_gap`, `gap_reloc_pair`,
 the forced-alignment `aligned_plug_and_gap`, `loh_obj_and_pad`, and `loh_padding_obj`.
+It also carries the native test-only `gc_rand` linear congruential generator and its adjacent
+spin, cross-generation-reference, and target-width mark-stack constants.
 The dependency-free portion of `mark` from `gcinternal.h` is translated too: its complete
 short-plug schema, native `BOOL` bit predicates, pointer accessors, and allocation-free
 gap/relocation-pair swaps are present. `SHORT_PLUGS` is unconditional, while
