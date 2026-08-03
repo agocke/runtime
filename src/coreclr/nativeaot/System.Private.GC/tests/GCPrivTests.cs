@@ -324,6 +324,82 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(bit, card_table_info.card_bundle_bit((nuint)cardBundle));
     }
 
+    [Theory]
+    [InlineData(0U, 0U, 0U)]
+    [InlineData(1U, 32U, 0U)]
+    [InlineData(31U, 32U, 0U)]
+    [InlineData(32U, 32U, 1U)]
+    [InlineData(33U, 64U, 1U)]
+    [InlineData(63U, 64U, 1U)]
+    [InlineData(64U, 64U, 2U)]
+    public void CardTableInfoCardBundleConversionsPreserveNativeArithmetic(
+        uint cardWord,
+        uint alignedCardWord,
+        uint cardBundle)
+    {
+        Assert.Equal((nuint)alignedCardWord, card_table_info.align_cardw_on_bundle(cardWord));
+        Assert.Equal((nuint)cardBundle, card_table_info.cardw_card_bundle(cardWord));
+        Assert.Equal((nuint)(cardBundle * 32), card_table_info.card_bundle_cardw(cardBundle));
+    }
+
+    [Fact]
+    public void CardTableInfoTranslatedBundleTablePreservesNativeSkew()
+    {
+        const nuint BundleTable = 0x100000;
+        nuint heapBytesForBundleWord =
+            card_table_info.card_size
+            * card_table_info.card_word_width
+            * card_table_info.card_bundle_size
+            * card_table_info.card_bundle_word_width;
+
+        Assert.Equal(
+            BundleTable,
+            (nuint)card_table_info.translate_card_bundle_table((uint*)BundleTable, (byte*)0));
+        Assert.Equal(
+            BundleTable - sizeof(uint),
+            (nuint)card_table_info.translate_card_bundle_table(
+                (uint*)BundleTable,
+                (byte*)heapBytesForBundleWord));
+        Assert.Equal(
+            BundleTable - (3 * sizeof(uint)),
+            (nuint)card_table_info.translate_card_bundle_table(
+                (uint*)BundleTable,
+                (byte*)((3 * heapBytesForBundleWord) + (heapBytesForBundleWord - 1))));
+    }
+
+    [Theory]
+    [InlineData(0x1000UL, 0x1000UL, 0UL)]
+    [InlineData(0x1000UL, 0x2000UL, 2UL)]
+    [InlineData(0x1000UL, 0x5000UL, 8UL)]
+    public void CardTableInfoBrickTableSizePreservesNativeArithmetic(ulong from, ulong end, ulong size)
+    {
+#if TARGET_64BIT
+        Assert.Equal((nuint)size, card_table_info.size_brick_of((byte*)from, (byte*)end));
+#else
+        Assert.Equal((nuint)(size * 2), card_table_info.size_brick_of((byte*)from, (byte*)end));
+#endif
+    }
+
+    [Theory]
+#if TARGET_64BIT
+    [InlineData(0x1000UL, 0x1100UL, 1UL, 4UL)]
+    [InlineData(0x1000UL, 0x2000UL, 1UL, 4UL)]
+    [InlineData(0x1000UL, 0x2001UL, 2UL, 8UL)]
+#else
+    [InlineData(0x1000UL, 0x1080UL, 1UL, 4UL)]
+    [InlineData(0x1000UL, 0x2000UL, 1UL, 4UL)]
+    [InlineData(0x1000UL, 0x2001UL, 2UL, 8UL)]
+#endif
+    public void CardTableInfoCardTableSizeCoversHalfOpenRange(
+        ulong from,
+        ulong end,
+        ulong count,
+        ulong size)
+    {
+        Assert.Equal((nuint)count, card_table_info.count_card_of((byte*)from, (byte*)end));
+        Assert.Equal((nuint)size, card_table_info.size_card_of((byte*)from, (byte*)end));
+    }
+
     [Fact]
     public void CardTableInfoAlignmentHelpersPreserveNativeArithmetic()
     {

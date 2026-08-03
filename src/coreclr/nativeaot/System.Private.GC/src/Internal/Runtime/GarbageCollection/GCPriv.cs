@@ -1107,9 +1107,36 @@ namespace Internal.Runtime.GarbageCollection
             return (uint)(cardb % card_bundle_word_width);
         }
 
+        public static nuint align_cardw_on_bundle(nuint cardw)
+        {
+            return unchecked((cardw + card_bundle_size - 1) & ~(card_bundle_size - 1));
+        }
+
+        public static nuint cardw_card_bundle(nuint cardw)
+        {
+            return cardw / card_bundle_size;
+        }
+
+        public static nuint card_bundle_cardw(nuint cardb)
+        {
+            return cardb * card_bundle_size;
+        }
+
+        public static uint* translate_card_bundle_table(uint* cb, byte* lowest_address)
+        {
+            const nuint HeapBytesForBundleWord =
+                card_size * card_word_width * card_bundle_size * card_bundle_word_width;
+            return (uint*)unchecked((nuint)cb - (((nuint)lowest_address / HeapBytesForBundleWord) * sizeof(uint)));
+        }
+
         public static byte* align_lower_brick(byte* add)
         {
             return (byte*)((nuint)add & ~(brick_size - 1));
+        }
+
+        public static nuint size_brick_of(byte* from, byte* end)
+        {
+            return ((nuint)(end - from) / brick_size) * sizeof(short);
         }
 
         public static byte* align_on_card(byte* add)
@@ -1126,6 +1153,16 @@ namespace Internal.Runtime.GarbageCollection
         public static byte* align_lower_card(byte* add)
         {
             return (byte*)((nuint)add & ~(card_size - 1));
+        }
+
+        public static nuint count_card_of(byte* from, byte* end)
+        {
+            return card_word(gcard_of(end - 1)) - card_word(gcard_of(from)) + 1;
+        }
+
+        public static nuint size_card_of(byte* from, byte* end)
+        {
+            return count_card_of(from, end) * sizeof(uint);
         }
     }
 

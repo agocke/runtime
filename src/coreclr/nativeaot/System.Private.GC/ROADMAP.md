@@ -744,6 +744,9 @@ Translate the schema from `gcpriv.h` and related headers:
   `GC_PAGE_SIZE`, card-word and card-bundle-word widths, target-width card size, card-bundle
   size, card-bundle thresholds, decommit cadence, and the 64-bit memory-load/young-generation
   constants are covered by direct layout and boundary tests.
+- The adjacent `gc.cpp` card-table sizing helpers: card words align to and convert through
+  card bundles, translated bundle-table pointers retain their zero-based indexing skew, and
+  card/brick table sizes cover the same half-open address ranges as native.
 - The adjacent segment-range traversal helpers from `gcinternal.h`: read-only segments outside
   the current heap range are skipped, address membership retains native half-open bounds, and
   generation iteration starts/stops at the region or segment collector's native indices.

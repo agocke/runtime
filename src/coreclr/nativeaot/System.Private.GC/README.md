@@ -186,6 +186,8 @@ The native-width `gib`, brick/card alignment, card-word/bit, card-bundle-word/bi
 pointer-to-card arithmetic preserve unsigned wrapping and division. `GC_PAGE_SIZE`, card-word
 and card-bundle-word widths, target-width card size, and card-bundle size join the card-bundle
 thresholds, decommit, and 64-bit tuning constants pinned with the layout.
+Card-bundle/card-word conversion, translated bundle-table skewing, and card/brick table sizing
+also preserve the native unsigned address arithmetic and half-open range coverage.
 The adjacent heap-segment iteration helpers skip read-only segments outside the heap's current
 address range, preserve half-open segment address tests, and select the native generation
 iteration bounds for region and non-region collectors.
