@@ -404,6 +404,17 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             static_data staticData;
+            bk bucket;
+            if (sizeof(bk) != GCInterfaceOffsets.SIZEOF__bk
+                || AlignOf<bk>() != GCInterfaceOffsets.ALIGNOF__bk
+                || OffsetOf(&bucket, &bucket.add) != GCInterfaceOffsets.OFFSETOF__bk__add
+                || OffsetOf(&bucket, &bucket.val) != GCInterfaceOffsets.OFFSETOF__bk__val
+                || sizeof(sorted_table) != GCInterfaceOffsets.SIZEOF__sorted_table
+                || AlignOf<sorted_table>() != GCInterfaceOffsets.ALIGNOF__sorted_table)
+            {
+                return false;
+            }
+
             if (sizeof(static_data) != GCInterfaceOffsets.SIZEOF__static_data
                 || AlignOf<static_data>() != GCInterfaceOffsets.ALIGNOF__static_data
                 || OffsetOf(&staticData, &staticData.min_size) != GCInterfaceOffsets.OFFSETOF__static_data__min_size

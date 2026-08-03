@@ -78,6 +78,10 @@ public sealed class GCInterfaceLayoutTests
         ["allocator.first_bucket"] = "private in the C++ class",
         ["allocator.buckets"] = "private in the C++ class",
         ["allocator.gen_number"] = "private in the C++ class",
+        ["sorted_table.size"] = "private in the C++ class",
+        ["sorted_table.count"] = "private in the C++ class",
+        ["sorted_table.slots"] = "private in the C++ class",
+        ["sorted_table.old_slots"] = "private in the C++ class",
 
         // C# has no declaration-level alignment attribute. This unmanaged overlay exists only
         // on 32-bit targets to reproduce DECLSPEC_ALIGN(8); the native fields remain separately

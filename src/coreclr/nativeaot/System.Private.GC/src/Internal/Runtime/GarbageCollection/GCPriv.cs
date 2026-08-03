@@ -35,6 +35,51 @@ namespace Internal.Runtime.GarbageCollection
         }
     }
 
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct bk
+#pragma warning restore CS8981
+    {
+        public byte* add;
+        public nuint val;
+    }
+
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct sorted_table
+#pragma warning restore CS8981
+    {
+        private nint size;
+        private nint count;
+        private bk* slots;
+        private bk* old_slots;
+
+        public static bk* buckets(sorted_table* table)
+        {
+            return table->slots + 1;
+        }
+
+        public static ref byte* last_slot(bk* array)
+        {
+            return ref array[0].add;
+        }
+
+        public static void initialize(sorted_table* table, nint initialSize, bk* initialSlots)
+        {
+            table->size = initialSize;
+            table->slots = initialSlots;
+            table->old_slots = null;
+            last_slot(initialSlots) = null;
+            clear(table);
+        }
+
+        public static void clear(sorted_table* table)
+        {
+            table->count = 1;
+            buckets(table)[0].add = (byte*)nuint.MaxValue;
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct static_data
     {

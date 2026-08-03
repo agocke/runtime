@@ -464,6 +464,13 @@ GC_CONST(      55,      55, MAX_ALLOWED_MEM_LOAD)
 GC_CONST( 1000000, 1000000, MIN_YOUNGEST_GEN_DESIRED)
 #endif
 
+GC_OFFSET(       0,       0, bk, add)
+GC_OFFSET(       4,       8, bk, val)
+GC_SIZEOF(       8,      10, bk)
+GC_ALIGNOF(      4,       8, bk)
+GC_SIZEOF(      10,      20, sorted_table)
+GC_ALIGNOF(      4,       8, sorted_table)
+
 GC_OFFSET(       0,       0, static_data, min_size)
 GC_OFFSET(       4,       8, static_data, max_size)
 GC_OFFSET(       8,      10, static_data, fragmentation_limit)

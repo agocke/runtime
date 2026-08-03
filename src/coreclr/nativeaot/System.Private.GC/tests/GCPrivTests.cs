@@ -44,6 +44,32 @@ public sealed unsafe class GCPrivTests
 #endif
     }
 
+    [Fact]
+    public void SortedTableStoragePreservesNativeSentinelLayout()
+    {
+        sorted_table table = default;
+        bk* slots = stackalloc bk[4];
+
+        sorted_table.initialize(&table, 3, slots);
+
+        Assert.Equal((nuint)(slots + 1), (nuint)sorted_table.buckets(&table));
+        Assert.Equal((nuint)0, (nuint)sorted_table.last_slot(slots));
+        Assert.Equal(nuint.MaxValue, (nuint)sorted_table.buckets(&table)[0].add);
+    }
+
+    [Fact]
+    public void SortedTableSchemaMatchesNativeLayout()
+    {
+        bk bucket = default;
+
+        Assert.Equal((nuint)0, OffsetOf(&bucket.add, &bucket));
+        Assert.Equal((nuint)sizeof(nuint), OffsetOf(&bucket.val, &bucket));
+        Assert.Equal(2 * sizeof(nuint), sizeof(bk));
+        Assert.Equal(4 * sizeof(nuint), sizeof(sorted_table));
+    }
+
+    private static nuint OffsetOf(void* field, bk* bucket) => (nuint)((byte*)field - (byte*)bucket);
+
 #if !TARGET_WASM
     [Fact]
     public void EventBucketSetReplacesAllFields()
