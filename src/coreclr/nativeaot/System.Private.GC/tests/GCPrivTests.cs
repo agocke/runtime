@@ -310,6 +310,44 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)card, card_table_info.gcard_of((byte*)(nuint)objectAddress));
     }
 
+    [Theory]
+    [InlineData(0U, 0U, 0U)]
+    [InlineData(31U, 0U, 31U)]
+    [InlineData(32U, 1U, 0U)]
+    [InlineData(33U, 1U, 1U)]
+    [InlineData(63U, 1U, 31U)]
+    [InlineData(64U, 2U, 0U)]
+    [InlineData(uint.MaxValue, 134217727U, 31U)]
+    public void CardTableInfoCardBundleWordAndBitPreserveNativeArithmetic(uint cardBundle, uint word, uint bit)
+    {
+        Assert.Equal((nuint)word, card_table_info.card_bundle_word((nuint)cardBundle));
+        Assert.Equal(bit, card_table_info.card_bundle_bit((nuint)cardBundle));
+    }
+
+    [Fact]
+    public void CardTableInfoAlignmentHelpersPreserveNativeArithmetic()
+    {
+        nuint brick = card_table_info.brick_size;
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_lower_brick((byte*)0));
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_lower_brick((byte*)(brick - 1)));
+        Assert.Equal(brick, (nuint)card_table_info.align_lower_brick((byte*)brick));
+        Assert.Equal(nuint.MaxValue & ~(brick - 1), (nuint)card_table_info.align_lower_brick((byte*)nuint.MaxValue));
+
+        nuint card = card_table_info.card_size;
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_on_card((byte*)0));
+        Assert.Equal(card, (nuint)card_table_info.align_on_card((byte*)1));
+        Assert.Equal(card, (nuint)card_table_info.align_on_card((byte*)card));
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_on_card((byte*)(nuint.MaxValue - (card - 2))));
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_lower_card((byte*)(card - 1)));
+        Assert.Equal(card, (nuint)card_table_info.align_lower_card((byte*)card));
+
+        nuint cardWord = card * card_table_info.card_word_width;
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_on_card_word((byte*)0));
+        Assert.Equal(cardWord, (nuint)card_table_info.align_on_card_word((byte*)1));
+        Assert.Equal(cardWord, (nuint)card_table_info.align_on_card_word((byte*)cardWord));
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_on_card_word((byte*)(nuint.MaxValue - (cardWord - 2))));
+    }
+
     [Fact]
     public void CardTableInfoConstantsMatchNativeValues()
     {
@@ -327,6 +365,8 @@ public sealed unsafe class GCPrivTests
 #else
         Assert.Equal((nuint)128, card_table_info.card_size);
 #endif
+        Assert.Equal((nuint)32, card_table_info.card_bundle_word_width);
+        Assert.Equal((nuint)32, card_table_info.card_bundle_size);
         Assert.Equal(40u * 1024 * 1024, card_table_info.SH_TH_CARD_BUNDLE);
         Assert.Equal(180u * 1024 * 1024, card_table_info.MH_TH_CARD_BUNDLE);
         Assert.Equal(100u, card_table_info.DECOMMIT_TIME_STEP_MILLISECONDS);

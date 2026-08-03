@@ -380,6 +380,8 @@ namespace Internal.Runtime.GarbageCollection
                 || card_table_info.GC_PAGE_SIZE != (nuint)GCInterfaceOffsets.GC_PAGE_SIZE
                 || card_table_info.card_word_width != (nuint)GCInterfaceOffsets.card_word_width
                 || card_table_info.card_size != (nuint)GCInterfaceOffsets.card_size
+                || card_table_info.card_bundle_word_width != (nuint)GCInterfaceOffsets.card_bundle_word_width
+                || card_table_info.card_bundle_size != (nuint)GCInterfaceOffsets.card_bundle_size
                 || card_table_info.SH_TH_CARD_BUNDLE != (uint)GCInterfaceOffsets.SH_TH_CARD_BUNDLE
                 || card_table_info.MH_TH_CARD_BUNDLE != (uint)GCInterfaceOffsets.MH_TH_CARD_BUNDLE
                 || card_table_info.DECOMMIT_TIME_STEP_MILLISECONDS != (uint)GCInterfaceOffsets.DECOMMIT_TIME_STEP_MILLISECONDS

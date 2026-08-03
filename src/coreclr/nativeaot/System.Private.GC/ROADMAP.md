@@ -739,10 +739,11 @@ Translate the schema from `gcpriv.h` and related headers:
 - The adjacent `card_table_info` schema and dependency-free helpers from `gcinternal.h`. The
   DAC prefix remains binary compatible with `dac_card_table_info`; the card-bundle pointer is
   unconditional because `gcpriv.h` always defines `CARD_BUNDLE`, while `mark_array` remains
-  conditional on non-WASM `BACKGROUND_GC`. `gib`, brick size/alignment, card-word/bit, and
-  pointer-to-card arithmetic preserve native unsigned behavior; `GC_PAGE_SIZE`, card-word width,
-  target-width card size, card-bundle thresholds, decommit cadence, and the 64-bit
-  memory-load/young-generation constants are covered by direct layout and boundary tests.
+  conditional on non-WASM `BACKGROUND_GC`. `gib`, brick/card alignment, card-word/bit,
+  card-bundle-word/bit, and pointer-to-card arithmetic preserve native unsigned behavior;
+  `GC_PAGE_SIZE`, card-word and card-bundle-word widths, target-width card size, card-bundle
+  size, card-bundle thresholds, decommit cadence, and the 64-bit memory-load/young-generation
+  constants are covered by direct layout and boundary tests.
 - The dependency-free `alloc_list` core, including the 64-bit `DOUBLY_LINKED_FL` prefix and
   pointer-based ref accessors for the native reference-return API. The shared native size table
   covers both the `TARGET_WASM` exclusion of that prefix and the diagnostic-only

@@ -182,9 +182,10 @@ is deferred until the compaction settings and diagnostics slices are available.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.
-The native-width `gib`, brick-alignment, card-word/bit, and pointer-to-card arithmetic preserve
-unsigned wrapping and division. `GC_PAGE_SIZE`, card-word width, and target-width card size join
-the card-bundle, decommit, and 64-bit tuning constants pinned with the layout.
+The native-width `gib`, brick/card alignment, card-word/bit, card-bundle-word/bit, and
+pointer-to-card arithmetic preserve unsigned wrapping and division. `GC_PAGE_SIZE`, card-word
+and card-bundle-word widths, target-width card size, and card-bundle size join the card-bundle
+thresholds, decommit, and 64-bit tuning constants pinned with the layout.
 The first allocator record, `alloc_list`, carries the 64-bit doubly-linked free-list prefix,
 the common head/tail/damage state, and pointer-based ref accessors that preserve the native
 reference-return behavior without introducing managed references. Its layout follows the

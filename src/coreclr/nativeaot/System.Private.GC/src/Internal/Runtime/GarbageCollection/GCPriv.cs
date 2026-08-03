@@ -1017,6 +1017,8 @@ namespace Internal.Runtime.GarbageCollection
 #else
         public const nuint card_size = GC_PAGE_SIZE / card_word_width;
 #endif
+        public const nuint card_bundle_word_width = 32;
+        public const nuint card_bundle_size = GC_PAGE_SIZE / (sizeof(uint) * card_bundle_word_width);
         public const uint SH_TH_CARD_BUNDLE = 40 * 1024 * 1024;
         public const uint MH_TH_CARD_BUNDLE = 180 * 1024 * 1024;
         public const uint DECOMMIT_TIME_STEP_MILLISECONDS = 100;
@@ -1048,6 +1050,37 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint gcard_of(byte* @object)
         {
             return (nuint)@object / card_size;
+        }
+
+        public static nuint card_bundle_word(nuint cardb)
+        {
+            return cardb / card_bundle_word_width;
+        }
+
+        public static uint card_bundle_bit(nuint cardb)
+        {
+            return (uint)(cardb % card_bundle_word_width);
+        }
+
+        public static byte* align_lower_brick(byte* add)
+        {
+            return (byte*)((nuint)add & ~(brick_size - 1));
+        }
+
+        public static byte* align_on_card(byte* add)
+        {
+            return (byte*)unchecked(((nuint)add + card_size - 1) & ~(card_size - 1));
+        }
+
+        public static byte* align_on_card_word(byte* add)
+        {
+            const nuint CardWordSize = card_size * card_word_width;
+            return (byte*)unchecked(((nuint)add + CardWordSize - 1) & ~(CardWordSize - 1));
+        }
+
+        public static byte* align_lower_card(byte* add)
+        {
+            return (byte*)((nuint)add & ~(card_size - 1));
         }
     }
 
