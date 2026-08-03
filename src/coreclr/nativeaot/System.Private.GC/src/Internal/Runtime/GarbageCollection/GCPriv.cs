@@ -62,6 +62,31 @@ namespace Internal.Runtime.GarbageCollection
         public int gen_number;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct alloc_list
+    {
+#if TARGET_64BIT && !TARGET_WASM
+        private byte* added_head;
+        private byte* added_tail;
+#endif
+
+        private byte* head;
+        private byte* tail;
+        private nuint damage_count;
+
+#if TARGET_64BIT && !TARGET_WASM
+        public static ref byte* added_alloc_list_head(alloc_list* list) => ref list->added_head;
+
+        public static ref byte* added_alloc_list_tail(alloc_list* list) => ref list->added_tail;
+#endif
+
+        public static ref byte* alloc_list_head(alloc_list* list) => ref list->head;
+
+        public static ref byte* alloc_list_tail(alloc_list* list) => ref list->tail;
+
+        public static ref nuint alloc_list_damage_count(alloc_list* list) => ref list->damage_count;
+    }
+
     internal enum alloc_wait_reason
     {
         awr_ignored = -1,

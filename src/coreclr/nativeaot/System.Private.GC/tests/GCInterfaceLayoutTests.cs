@@ -63,6 +63,13 @@ public sealed class GCInterfaceLayoutTests
         ["AffinitySet.m_bitset"] = "private in the C++ class",
         ["AffinitySet.m_bitsetDataSize"] = "private in the C++ class",
         ["GCEvent.m_impl"] = "private in the C++ class",
+        ["alloc_list.head"] = "private in the C++ class",
+        ["alloc_list.tail"] = "private in the C++ class",
+        ["alloc_list.damage_count"] = "private in the C++ class",
+#if TARGET_64BIT && !TARGET_WASM
+        ["alloc_list.added_head"] = "private in the C++ class",
+        ["alloc_list.added_tail"] = "private in the C++ class",
+#endif
 
         // C# has no declaration-level alignment attribute. This unmanaged overlay exists only
         // on 32-bit targets to reproduce DECLSPEC_ALIGN(8); the native fields remain separately
@@ -379,41 +386,51 @@ public sealed class GCInterfaceLayoutTests
         // The table carries the value for both pointer sizes; the tests run in this process.
         int column = IntPtr.Size == 8 ? 1 : 0;
         List<Entry> entries = new();
-        bool inDebugConditional = false;
-        bool includeDebugBranch = false;
+        Stack<(bool ParentIncluded, bool Condition)> conditionals = new();
+        bool includeLine = true;
 
         while (reader.ReadLine() is string line)
         {
-            if (line == "#if defined(_DEBUG) || defined(DEBUG)")
+            if (line.StartsWith("#if", StringComparison.Ordinal))
             {
-                inDebugConditional = true;
+                bool condition = line switch
+                {
+                    "#ifdef HOST_64BIT" => IntPtr.Size == 8,
+                    "#if defined(_DEBUG) || defined(DEBUG)" =>
 #if DEBUG
-                includeDebugBranch = true;
+                        true,
 #else
-                includeDebugBranch = false;
+                        false,
 #endif
+                    "#if defined(FL_VERIFICATION)" => false,
+                    "#if defined(TARGET_WASM)" =>
+#if TARGET_WASM
+                        true,
+#else
+                        false,
+#endif
+                    _ => throw new InvalidDataException($"Unknown conditional in the offsets table: '{line}'."),
+                };
+                conditionals.Push((includeLine, condition));
+                includeLine &= condition;
                 continue;
             }
 
-            if (inDebugConditional && line == "#else")
+            if (line == "#else")
             {
-                includeDebugBranch = !includeDebugBranch;
+                (bool parentIncluded, bool condition) = conditionals.Pop();
+                conditionals.Push((parentIncluded, !condition));
+                includeLine = parentIncluded && !condition;
                 continue;
             }
 
-            if (inDebugConditional && line == "#endif")
+            if (line == "#endif")
             {
-                inDebugConditional = false;
-                includeDebugBranch = false;
+                includeLine = conditionals.Pop().ParentIncluded;
                 continue;
             }
 
-            if (inDebugConditional && !includeDebugBranch)
-            {
-                continue;
-            }
-
-            if (!line.StartsWith("GC_", StringComparison.Ordinal))
+            if (!includeLine || !line.StartsWith("GC_", StringComparison.Ordinal))
             {
                 continue;
             }

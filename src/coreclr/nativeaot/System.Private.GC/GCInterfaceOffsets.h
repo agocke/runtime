@@ -443,6 +443,23 @@ GC_OFFSET(       8,      10, etw_opt_info, gen_number)
 GC_SIZEOF(       c,      18, etw_opt_info)
 GC_ALIGNOF(      4,       8, etw_opt_info)
 
+// alloc_list keeps all of its fields private. The managed tests pin their declaration order;
+// these entries pin the complete size under the collector's active feature conditionals.
+#if defined(FL_VERIFICATION)
+#if defined(TARGET_WASM)
+GC_SIZEOF(      10,      20, alloc_list)
+#else
+GC_SIZEOF(      10,      30, alloc_list)
+#endif
+#else
+#if defined(TARGET_WASM)
+GC_SIZEOF(       c,      18, alloc_list)
+#else
+GC_SIZEOF(       c,      28, alloc_list)
+#endif
+#endif
+GC_ALIGNOF(      4,       8, alloc_list)
+
 GC_CONST( ffffffff, ffffffff, awr_ignored)
 GC_CONST(         0,         0, awr_low_memory)
 GC_CONST(         1,         1, awr_low_ephemeral)

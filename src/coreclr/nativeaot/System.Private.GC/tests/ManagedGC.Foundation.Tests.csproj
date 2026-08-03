@@ -39,6 +39,7 @@
     <Compile Include="GCCriticalSectionTests.cs" />
     <Compile Include="GCSleepYieldTests.cs" />
     <Compile Include="GCTimerTests.cs" />
+    <Compile Include="GCPrivTests.cs" />
     <Compile Include="GCProcessorTests.cs" />
     <Compile Include="GCRecordTests.cs" />
     <Compile Include="GCCommonTests.cs" />

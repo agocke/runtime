@@ -403,6 +403,12 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            if (sizeof(alloc_list) != GCInterfaceOffsets.SIZEOF__alloc_list
+                || AlignOf<alloc_list>() != GCInterfaceOffsets.ALIGNOF__alloc_list)
+            {
+                return false;
+            }
+
             alloc_thread_wait_data waitData;
             if (sizeof(alloc_thread_wait_data) != GCInterfaceOffsets.SIZEOF__alloc_thread_wait_data
                 || AlignOf<alloc_thread_wait_data>() != GCInterfaceOffsets.ALIGNOF__alloc_thread_wait_data

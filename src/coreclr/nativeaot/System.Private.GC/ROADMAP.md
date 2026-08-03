@@ -729,6 +729,10 @@ Translate the schema from `gcpriv.h` and related headers:
   `plug_and_reloc`, `plug_and_gap`, `gap_reloc_pair`, `aligned_plug_and_gap`,
   `loh_obj_and_pad`, and `loh_padding_obj`. Their pointer, union, forced-alignment, and padding
   layouts are pinned independently of the later collection-phase algorithms.
+- The dependency-free `alloc_list` core, including the 64-bit `DOUBLY_LINKED_FL` prefix and
+  pointer-based ref accessors for the native reference-return API. The shared native size table
+  covers both the `TARGET_WASM` exclusion of that prefix and the diagnostic-only
+  `FL_VERIFICATION` field; the shipping managed type omits that unused diagnostic field.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.
