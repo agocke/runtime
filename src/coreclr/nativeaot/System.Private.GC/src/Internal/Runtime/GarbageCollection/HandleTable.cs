@@ -404,5 +404,58 @@ namespace Internal.Runtime.GarbageCollection
 
             return uCount - uCacheCount;
         }
+
+        public static void HndNotifyGcCycleComplete(HandleTable* pTable, uint condemned, uint maxgen)
+        {
+            _ = pTable;
+            _ = condemned;
+            _ = maxgen;
+        }
+
+        public static uint HndCountAllHandles(bool fUseLocks)
+        {
+            uint uCount = 0;
+            int offset = 0;
+            int nSlots = ObjectHandle.getNumberOfSlots();
+            HandleTableMap* walk = (HandleTableMap*)Unsafe.AsPointer(ref ObjectHandle.g_HandleTableMap);
+
+            while (walk != null)
+            {
+                int nextOffset = (int)walk->dwMaxIndex;
+                int max = nextOffset - offset;
+                HandleTableBucket** pBucket = walk->pBuckets;
+                HandleTableBucket** pLastBucket = pBucket + max;
+
+                for (; pBucket != pLastBucket; pBucket++)
+                {
+                    if (*pBucket != null)
+                    {
+                        HandleTable** pTable = (*pBucket)->pTable;
+                        HandleTable** pLastTable = pTable + nSlots;
+
+                        if (fUseLocks)
+                        {
+                            for (; pTable != pLastTable; pTable++)
+                            {
+                                using HandleTableCrstHolder holder = new HandleTableCrstHolder(&(*pTable)->Lock);
+                                uCount += HndCountHandles(*pTable);
+                            }
+                        }
+                        else
+                        {
+                            for (; pTable != pLastTable; pTable++)
+                            {
+                                uCount += HndCountHandles(*pTable);
+                            }
+                        }
+                    }
+                }
+
+                offset = nextOffset;
+                walk = walk->pNext;
+            }
+
+            return uCount;
+        }
     }
 }

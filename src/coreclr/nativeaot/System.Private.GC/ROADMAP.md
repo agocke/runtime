@@ -667,12 +667,14 @@ by `handletableconstants.h`.
   `HandleTableMap` and `HandleTableBucket` layouts, the public-type flag table, `Ref_Initialize`,
   `Ref_Shutdown`, bucket removal/destruction, containment, and current home-heap/slot selection.
   Allocation failures at each unmanaged allocation boundary are covered directly.
+- `HndCountAllHandles`, the retail `HndNotifyGcCycleComplete` shape, and the variable-handle
+  type constants plus get/update/compare-exchange helpers.
 
 #### Remaining
 
-Port the remaining public bulk allocation/free and variable-handle entrypoints. Handle scanning,
-weak/dependent processing during collection, ref-counted tracing, and multi-heap table selection
-remain blocked on the core heap and collection state of stages 6-10.
+Handle scanning, weak/dependent processing during collection, ref-counted tracing, debug scan
+statistics, and multi-heap table selection remain blocked on the core heap and collection state
+of stages 6-10.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.

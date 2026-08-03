@@ -28,6 +28,11 @@ namespace Internal.Runtime.GarbageCollection
     {
         private const uint TypeCount = 12;
 
+        public const uint VHT_WEAK_SHORT = 0x00000100;
+        public const uint VHT_WEAK_LONG = 0x00000200;
+        public const uint VHT_STRONG = 0x00000400;
+        public const uint VHT_PINNED = 0x00000800;
+
         public static HandleTableMap g_HandleTableMap;
         public static HandleTableBucket g_GlobalHandleTableBucket;
 
@@ -165,6 +170,44 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             return false;
+        }
+
+        public static uint GetVariableHandleType(OBJECTHANDLE handle)
+        {
+            return (uint)HandleTableManager.HndGetHandleExtraInfo(handle);
+        }
+
+        public static void UpdateVariableHandleType(OBJECTHANDLE handle, uint type)
+        {
+            if (!IsValidVariableHandleType(type))
+            {
+                Debug.Assert(false);
+                return;
+            }
+
+            HandleTableManager.HndSetHandleExtraInfo(
+                handle,
+                (uint)HandleType.HNDTYPE_VARIABLE,
+                type);
+        }
+
+        public static uint CompareExchangeVariableHandleType(
+            OBJECTHANDLE handle,
+            uint oldType,
+            uint newType)
+        {
+            Debug.Assert(IsValidVariableHandleType(oldType) && IsValidVariableHandleType(newType));
+
+            return (uint)HandleTableManager.HndCompareExchangeHandleExtraInfo(
+                handle,
+                (uint)HandleType.HNDTYPE_VARIABLE,
+                oldType,
+                newType);
+        }
+
+        private static bool IsValidVariableHandleType(uint type)
+        {
+            return type is VHT_WEAK_SHORT or VHT_WEAK_LONG or VHT_STRONG or VHT_PINNED;
         }
 
         private static void DestroyBucketTables(HandleTableBucket* pBucket, int slots)

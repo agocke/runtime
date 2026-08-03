@@ -184,6 +184,79 @@ public sealed unsafe class HandleTableTests
     }
 
     [Fact]
+    public void CountAllHandlesWalksTheHandleTableMap()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+
+        try
+        {
+            OBJECTHANDLE first = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x1234,
+                0);
+            OBJECTHANDLE second = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_PINNED,
+                (byte*)0x5678,
+                0);
+
+            Assert.Equal(2u, HandleTableManager.HndCountAllHandles(fUseLocks: false));
+            Assert.Equal(2u, HandleTableManager.HndCountAllHandles(fUseLocks: true));
+
+            HandleTableManager.HndDestroyHandleOfUnknownType(bucket->pTable[0], first);
+            HandleTableManager.HndDestroyHandleOfUnknownType(bucket->pTable[0], second);
+            Assert.Equal(0u, HandleTableManager.HndCountAllHandles(fUseLocks: true));
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Theory]
+    [InlineData(ObjectHandle.VHT_WEAK_SHORT)]
+    [InlineData(ObjectHandle.VHT_WEAK_LONG)]
+    [InlineData(ObjectHandle.VHT_STRONG)]
+    [InlineData(ObjectHandle.VHT_PINNED)]
+    public void VariableHandleTypeHelpersUseExtraInfo(uint type)
+    {
+        const uint VariableType = (uint)HandleType.HNDTYPE_VARIABLE;
+        uint* typeFlags = stackalloc uint[(int)VariableType + 1];
+        typeFlags[VariableType] = HandleTableConstants.HNDF_EXTRAINFO;
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, VariableType + 1);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE handle = HandleTableManager.HndCreateHandle(
+                table,
+                VariableType,
+                (byte*)0x1234,
+                ObjectHandle.VHT_WEAK_SHORT);
+            Assert.Equal(ObjectHandle.VHT_WEAK_SHORT, ObjectHandle.GetVariableHandleType(handle));
+
+            ObjectHandle.UpdateVariableHandleType(handle, type);
+            Assert.Equal(type, ObjectHandle.GetVariableHandleType(handle));
+
+            Assert.Equal(
+                type,
+                ObjectHandle.CompareExchangeVariableHandleType(
+                    handle,
+                    type,
+                    ObjectHandle.VHT_STRONG));
+            Assert.Equal(ObjectHandle.VHT_STRONG, ObjectHandle.GetVariableHandleType(handle));
+        }
+        finally
+        {
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Fact]
     public void HandleMetadataAndContainmentFollowOwningSegment()
     {
         const uint Type = 0;

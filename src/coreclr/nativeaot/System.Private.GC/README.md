@@ -144,6 +144,9 @@ allocator. The current bootstrap uses one global table; per-heap table selection
 the later multi-heap collector work. The native `HandleTableMap`/`HandleTableBucket` shapes and
 their initialization, removal, destruction, and allocation-failure cleanup are translated
 directly; the one-heap collector makes the current bucket contain one table.
+All-table handle counting and the variable-handle type helpers also operate over this translated
+map and extra-info storage. `HndNotifyGcCycleComplete` currently has its retail no-op behavior;
+the checked-build scan-statistics logging arrives with handle scanning.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event
