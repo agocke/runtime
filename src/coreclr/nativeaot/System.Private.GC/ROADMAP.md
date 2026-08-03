@@ -715,6 +715,9 @@ Translate the schema from `gcpriv.h` and related headers:
 - The dependency-free `gcdesc.h` records and descriptor arithmetic: `val_serie_item`,
   `CGCDescSeries`, and `CGCDesc` size, initialization, and backward series lookup. The
   MethodTable-dependent pointer-counting helper remains tied to object scanning.
+- The first dependency-free `gcpriv.h` records: `static_data`,
+  `recorded_generation_info`, and `etw_opt_info`. These establish the pointer-sized schema used
+  by dynamic tuning, recorded GC information, and allocation diagnostics.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.

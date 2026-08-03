@@ -41,6 +41,7 @@ Ported so far:
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `GCDesc.cs` | dependency-free types and descriptor arithmetic from `gcdesc.h` |
+| `GCPriv.cs` | dependency-free leaf records from `gcpriv.h` |
 | `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `gc_reason` from `gc.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
@@ -160,6 +161,12 @@ from `gc.h`. The shared offsets table verifies the public record layouts and eve
 against the real WKS and SVR headers; direct tests cover the private tuning record's size, native
 OR-based bit packing, most-significant-bit mechanism encoding, and mechanism flags. The
 string-based diagnostic `print` bodies remain with the later tracing work.
+
+`GCPriv.cs` starts the main collector schema with the dependency-free `static_data`,
+`recorded_generation_info`, and `etw_opt_info` records. These retain the native pointer-sized
+fields and names so the later dynamic-tuning, diagnostics, and generation ports can embed them
+without an adapter. Their complete layouts are checked against both workstation and server GC
+headers and again by the managed startup verifier and foundation tests.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`

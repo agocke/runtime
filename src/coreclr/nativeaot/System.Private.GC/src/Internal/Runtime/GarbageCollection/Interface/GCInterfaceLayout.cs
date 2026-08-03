@@ -35,6 +35,7 @@ namespace Internal.Runtime.GarbageCollection
             && VerifyHandleTableTypes()
             && VerifyGCDescTypes()
             && VerifyGCRecordTypes()
+            && VerifyGCPrivTypes()
             && VerifyDacTypes()
             && VerifyVtables()
             && VerifyEnumSizes()
@@ -331,6 +332,47 @@ namespace Internal.Runtime.GarbageCollection
                 || OffsetOf(&globalHistory, &globalHistory.mem_pressure) != GCInterfaceOffsets.OFFSETOF__gc_history_global__mem_pressure
                 || OffsetOf(&globalHistory, &globalHistory.global_mechanisms_p) != GCInterfaceOffsets.OFFSETOF__gc_history_global__global_mechanisms_p
                 || OffsetOf(&globalHistory, &globalHistory.gen_to_condemn_reasons) != GCInterfaceOffsets.OFFSETOF__gc_history_global__gen_to_condemn_reasons)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool VerifyGCPrivTypes()
+        {
+            static_data staticData;
+            if (sizeof(static_data) != GCInterfaceOffsets.SIZEOF__static_data
+                || AlignOf<static_data>() != GCInterfaceOffsets.ALIGNOF__static_data
+                || OffsetOf(&staticData, &staticData.min_size) != GCInterfaceOffsets.OFFSETOF__static_data__min_size
+                || OffsetOf(&staticData, &staticData.max_size) != GCInterfaceOffsets.OFFSETOF__static_data__max_size
+                || OffsetOf(&staticData, &staticData.fragmentation_limit) != GCInterfaceOffsets.OFFSETOF__static_data__fragmentation_limit
+                || OffsetOf(&staticData, &staticData.fragmentation_burden_limit) != GCInterfaceOffsets.OFFSETOF__static_data__fragmentation_burden_limit
+                || OffsetOf(&staticData, &staticData.limit) != GCInterfaceOffsets.OFFSETOF__static_data__limit
+                || OffsetOf(&staticData, &staticData.max_limit) != GCInterfaceOffsets.OFFSETOF__static_data__max_limit
+                || OffsetOf(&staticData, &staticData.time_clock) != GCInterfaceOffsets.OFFSETOF__static_data__time_clock
+                || OffsetOf(&staticData, &staticData.gc_clock) != GCInterfaceOffsets.OFFSETOF__static_data__gc_clock)
+            {
+                return false;
+            }
+
+            recorded_generation_info generationInfo;
+            if (sizeof(recorded_generation_info) != GCInterfaceOffsets.SIZEOF__recorded_generation_info
+                || AlignOf<recorded_generation_info>() != GCInterfaceOffsets.ALIGNOF__recorded_generation_info
+                || OffsetOf(&generationInfo, &generationInfo.size_before) != GCInterfaceOffsets.OFFSETOF__recorded_generation_info__size_before
+                || OffsetOf(&generationInfo, &generationInfo.fragmentation_before) != GCInterfaceOffsets.OFFSETOF__recorded_generation_info__fragmentation_before
+                || OffsetOf(&generationInfo, &generationInfo.size_after) != GCInterfaceOffsets.OFFSETOF__recorded_generation_info__size_after
+                || OffsetOf(&generationInfo, &generationInfo.fragmentation_after) != GCInterfaceOffsets.OFFSETOF__recorded_generation_info__fragmentation_after)
+            {
+                return false;
+            }
+
+            etw_opt_info optInfo;
+            if (sizeof(etw_opt_info) != GCInterfaceOffsets.SIZEOF__etw_opt_info
+                || AlignOf<etw_opt_info>() != GCInterfaceOffsets.ALIGNOF__etw_opt_info
+                || OffsetOf(&optInfo, &optInfo.desired_allocation) != GCInterfaceOffsets.OFFSETOF__etw_opt_info__desired_allocation
+                || OffsetOf(&optInfo, &optInfo.new_allocation) != GCInterfaceOffsets.OFFSETOF__etw_opt_info__new_allocation
+                || OffsetOf(&optInfo, &optInfo.gen_number) != GCInterfaceOffsets.OFFSETOF__etw_opt_info__gen_number)
             {
                 return false;
             }

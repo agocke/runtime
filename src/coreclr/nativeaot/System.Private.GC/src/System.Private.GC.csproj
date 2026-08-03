@@ -56,6 +56,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventStatus.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCHeapCriticalRegion.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCHeapMemory.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCPriv.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCRecord.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCScan.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableConstants.cs" />

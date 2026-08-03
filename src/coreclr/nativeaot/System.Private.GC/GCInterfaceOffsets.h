@@ -398,6 +398,35 @@ GC_SIZEOF(      28,      30, gc_history_global)
 GC_ALIGNOF(      4,       8, gc_history_global)
 
 // -----------------------------------------------------------------------------------------
+// Dependency-free leaf records from gcpriv.h. These do not yet make the collector functional,
+// but pin the schema used by dynamic tuning, diagnostics, and the later generation structures.
+// -----------------------------------------------------------------------------------------
+
+GC_OFFSET(       0,       0, static_data, min_size)
+GC_OFFSET(       4,       8, static_data, max_size)
+GC_OFFSET(       8,      10, static_data, fragmentation_limit)
+GC_OFFSET(       c,      18, static_data, fragmentation_burden_limit)
+GC_OFFSET(      10,      1c, static_data, limit)
+GC_OFFSET(      14,      20, static_data, max_limit)
+GC_OFFSET(      18,      28, static_data, time_clock)
+GC_OFFSET(      20,      30, static_data, gc_clock)
+GC_SIZEOF(      28,      38, static_data)
+GC_ALIGNOF(      8,       8, static_data)
+
+GC_OFFSET(       0,       0, recorded_generation_info, size_before)
+GC_OFFSET(       4,       8, recorded_generation_info, fragmentation_before)
+GC_OFFSET(       8,      10, recorded_generation_info, size_after)
+GC_OFFSET(       c,      18, recorded_generation_info, fragmentation_after)
+GC_SIZEOF(      10,      20, recorded_generation_info)
+GC_ALIGNOF(      4,       8, recorded_generation_info)
+
+GC_OFFSET(       0,       0, etw_opt_info, desired_allocation)
+GC_OFFSET(       4,       8, etw_opt_info, new_allocation)
+GC_OFFSET(       8,      10, etw_opt_info, gen_number)
+GC_SIZEOF(       c,      18, etw_opt_info)
+GC_ALIGNOF(      4,       8, etw_opt_info)
+
+// -----------------------------------------------------------------------------------------
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
 // GC_Initialize, so its layout is part of the loader protocol; the types below it are the
 // analogues the DAC reads GC state through. The managed copies are in GCInterfaceDac.cs.

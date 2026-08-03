@@ -102,6 +102,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCDesc.cs" Link="GCDesc.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCPriv.cs" Link="GCPriv.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCRecord.cs" Link="GCRecord.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCScan.cs" Link="GCScan.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableConstants.cs" Link="HandleTableConstants.cs" />
