@@ -736,6 +736,12 @@ Translate the schema from `gcpriv.h` and related headers:
   remains gated as it is in `gcpriv.h` (disabled when `FEATURE_NATIVEAOT` is defined).
   `recover_plug_info` remains deferred until `gc_heap::settings.compaction` and the
   allocation-free diagnostics path are translated.
+- The adjacent `card_table_info` schema and dependency-free helpers from `gcinternal.h`. The
+  DAC prefix remains binary compatible with `dac_card_table_info`; the card-bundle pointer is
+  unconditional because `gcpriv.h` always defines `CARD_BUNDLE`, while `mark_array` remains
+  conditional on non-WASM `BACKGROUND_GC`. `gib`, brick size/alignment, card-bundle thresholds,
+  decommit cadence, and the 64-bit memory-load/young-generation constants preserve native
+  unsigned arithmetic and are covered by direct layout and boundary tests.
 - The dependency-free `alloc_list` core, including the 64-bit `DOUBLY_LINKED_FL` prefix and
   pointer-based ref accessors for the native reference-return API. The shared native size table
   covers both the `TARGET_WASM` exclusion of that prefix and the diagnostic-only

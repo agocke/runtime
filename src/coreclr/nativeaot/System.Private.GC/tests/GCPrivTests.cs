@@ -222,6 +222,81 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(right, actual.m_pair.right);
     }
 
+    [Fact]
+    public void CardTableInfoDefaultStateIsZeroed()
+    {
+        card_table_info info = default;
+        card_table_info* p = &info;
+
+        Assert.Equal(0u, p->recount);
+        Assert.Equal((nuint)0, p->size);
+        Assert.Equal((nuint)0, (nuint)p->next_card_table);
+        Assert.Equal((nuint)0, (nuint)p->lowest_address);
+        Assert.Equal((nuint)0, (nuint)p->highest_address);
+        Assert.Equal((nuint)0, (nuint)p->brick_table);
+        Assert.Equal((nuint)0, (nuint)p->card_bundle_table);
+#if BACKGROUND_GC
+        Assert.Equal((nuint)0, (nuint)p->mark_array);
+#endif
+    }
+
+    [Fact]
+    public void CardTableInfoFieldsFollowNativeOrderAndDacPrefix()
+    {
+        card_table_info info = default;
+        card_table_info* p = &info;
+        dac_card_table_info dac = default;
+        nuint previous = 0;
+
+        Assert.Equal((nuint)0, OffsetOf(&p->recount, p));
+        Assert.Equal(OffsetOf(&dac.recount, &dac), OffsetOf(&p->recount, p));
+        previous = Ascending(OffsetOf(&p->size, p), previous);
+        Assert.Equal(OffsetOf(&dac.size, &dac), OffsetOf(&p->size, p));
+        previous = Ascending(OffsetOf(&p->next_card_table, p), previous);
+        Assert.Equal(OffsetOf(&dac.next_card_table, &dac), OffsetOf(&p->next_card_table, p));
+        previous = Ascending(OffsetOf(&p->lowest_address, p), previous);
+        previous = Ascending(OffsetOf(&p->highest_address, p), previous);
+        previous = Ascending(OffsetOf(&p->brick_table, p), previous);
+        previous = Ascending(OffsetOf(&p->card_bundle_table, p), previous);
+#if BACKGROUND_GC
+        _ = Ascending(OffsetOf(&p->mark_array, p), previous);
+#endif
+    }
+
+    [Fact]
+    public void CardTableInfoPureHelpersPreserveNativeArithmetic()
+    {
+        Assert.Equal((nuint)0, card_table_info.gib(0));
+        Assert.Equal((nuint)0, card_table_info.gib(((nuint)1 << 30) - 1));
+        Assert.Equal((nuint)1, card_table_info.gib((nuint)1 << 30));
+        Assert.Equal((nuint)3, card_table_info.gib(((nuint)3 << 30) + ((nuint)1 << 29)));
+
+        nuint brick = card_table_info.brick_size;
+        Assert.Equal(brick, (nuint)card_table_info.align_on_brick((byte*)1));
+        Assert.Equal(brick, (nuint)card_table_info.align_on_brick((byte*)(brick - 1)));
+        Assert.Equal(brick, (nuint)card_table_info.align_on_brick((byte*)brick));
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_on_brick((byte*)(nuint.MaxValue - (brick - 2))));
+    }
+
+    [Fact]
+    public void CardTableInfoConstantsMatchNativeValues()
+    {
+#if TARGET_64BIT
+        Assert.Equal((nuint)4096, card_table_info.brick_size);
+        Assert.Equal(85u, card_table_info.MAX_ALLOWED_MEM_LOAD);
+        Assert.Equal((nuint)(16 * 1024 * 1024), card_table_info.MIN_YOUNGEST_GEN_DESIRED);
+#else
+        Assert.Equal((nuint)2048, card_table_info.brick_size);
+#endif
+        Assert.Equal(40u * 1024 * 1024, card_table_info.SH_TH_CARD_BUNDLE);
+        Assert.Equal(180u * 1024 * 1024, card_table_info.MH_TH_CARD_BUNDLE);
+        Assert.Equal(100u, card_table_info.DECOMMIT_TIME_STEP_MILLISECONDS);
+    }
+
+    private static nuint OffsetOf(void* field, card_table_info* info) => (nuint)((byte*)field - (byte*)info);
+
+    private static nuint OffsetOf(void* field, dac_card_table_info* info) => (nuint)((byte*)field - (byte*)info);
+
     [Theory]
     [InlineData(1u, 1)]
     [InlineData(2u, 0)]

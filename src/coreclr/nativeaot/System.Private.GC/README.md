@@ -179,6 +179,11 @@ short-plug schema, native `BOOL` bit predicates, pointer accessors, and allocati
 gap/relocation-pair swaps are present. `SHORT_PLUGS` is unconditional, while
 `COLLECTIBLE_CLASS` remains gated as it is natively (disabled for NativeAOT). `recover_plug_info`
 is deferred until the compaction settings and diagnostics slices are available.
+The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
+DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
+unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.
+The native-width `gib` and brick-alignment arithmetic preserve unsigned wrapping, and the card
+bundle, decommit, and 64-bit tuning constants are pinned with the layout.
 The first allocator record, `alloc_list`, carries the 64-bit doubly-linked free-list prefix,
 the common head/tail/damage state, and pointer-based ref accessors that preserve the native
 reference-return behavior without introducing managed references. Its layout follows the

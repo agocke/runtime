@@ -425,6 +425,31 @@ GC_SIZEOF(      4c,      90, mark)
 #endif
 GC_ALIGNOF(      4,       8, mark)
 
+// The first three fields are the DAC-visible dac_card_table_info prefix. CARD_BUNDLE is
+// unconditional in gcpriv.h, while BACKGROUND_GC is present on every non-WASM full runtime.
+GC_OFFSET(       0,       0, card_table_info, recount)
+GC_OFFSET(       4,       8, card_table_info, size)
+GC_OFFSET(       8,      10, card_table_info, next_card_table)
+GC_OFFSET(       c,      18, card_table_info, lowest_address)
+GC_OFFSET(      10,      20, card_table_info, highest_address)
+GC_OFFSET(      14,      28, card_table_info, brick_table)
+GC_OFFSET(      18,      30, card_table_info, card_bundle_table)
+#ifdef BACKGROUND_GC
+GC_OFFSET(      1c,      38, card_table_info, mark_array)
+GC_SIZEOF(      20,      40, card_table_info)
+#else
+GC_SIZEOF(      1c,      38, card_table_info)
+#endif
+GC_ALIGNOF(      4,       8, card_table_info)
+GC_CONST(     800,    1000, brick_size)
+GC_CONST( 2800000, 2800000, SH_TH_CARD_BUNDLE)
+GC_CONST( b400000, b400000, MH_TH_CARD_BUNDLE)
+GC_CONST(      64,      64, DECOMMIT_TIME_STEP_MILLISECONDS)
+#ifdef HOST_64BIT
+GC_CONST(      55,      55, MAX_ALLOWED_MEM_LOAD)
+GC_CONST( 1000000, 1000000, MIN_YOUNGEST_GEN_DESIRED)
+#endif
+
 GC_OFFSET(       0,       0, static_data, min_size)
 GC_OFFSET(       4,       8, static_data, max_size)
 GC_OFFSET(       8,      10, static_data, fragmentation_limit)

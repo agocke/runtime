@@ -985,6 +985,50 @@ namespace Internal.Runtime.GarbageCollection
         }
     }
 
+    // Ported from the card-table schema and dependency-free helpers in gcinternal.h. The first
+    // three fields are the dac_card_table_info prefix, and card_bundle_table is unconditional
+    // because gcpriv.h defines CARD_BUNDLE for every collector build. BACKGROUND_GC is absent
+    // only for WASM, so mark_array follows the managed build symbol used by gcpriv.h.
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct card_table_info
+#pragma warning restore CS8981
+    {
+        public uint recount;
+        public nuint size;
+        public uint* next_card_table;
+        public byte* lowest_address;
+        public byte* highest_address;
+        public short* brick_table;
+        public uint* card_bundle_table;
+#if BACKGROUND_GC
+        public uint* mark_array;
+#endif
+
+#if TARGET_64BIT
+        public const nuint brick_size = 4096;
+#else
+        public const nuint brick_size = 2048;
+#endif
+        public const uint SH_TH_CARD_BUNDLE = 40 * 1024 * 1024;
+        public const uint MH_TH_CARD_BUNDLE = 180 * 1024 * 1024;
+        public const uint DECOMMIT_TIME_STEP_MILLISECONDS = 100;
+#if TARGET_64BIT
+        public const uint MAX_ALLOWED_MEM_LOAD = 85;
+        public const nuint MIN_YOUNGEST_GEN_DESIRED = 16 * 1024 * 1024;
+#endif
+
+        public static nuint gib(nuint num)
+        {
+            return num / 1024 / 1024 / 1024;
+        }
+
+        public static byte* align_on_brick(byte* add)
+        {
+            return (byte*)unchecked(((nuint)add + brick_size - 1) & ~(brick_size - 1));
+        }
+    }
+
     internal enum interesting_data_point
     {
         idp_pre_short = 0,

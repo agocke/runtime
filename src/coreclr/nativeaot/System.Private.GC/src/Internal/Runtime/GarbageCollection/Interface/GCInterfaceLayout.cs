@@ -363,6 +363,32 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            card_table_info cardTableInfo;
+            if (sizeof(card_table_info) != GCInterfaceOffsets.SIZEOF__card_table_info
+                || AlignOf<card_table_info>() != GCInterfaceOffsets.ALIGNOF__card_table_info
+                || OffsetOf(&cardTableInfo, &cardTableInfo.recount) != GCInterfaceOffsets.OFFSETOF__card_table_info__recount
+                || OffsetOf(&cardTableInfo, &cardTableInfo.size) != GCInterfaceOffsets.OFFSETOF__card_table_info__size
+                || OffsetOf(&cardTableInfo, &cardTableInfo.next_card_table) != GCInterfaceOffsets.OFFSETOF__card_table_info__next_card_table
+                || OffsetOf(&cardTableInfo, &cardTableInfo.lowest_address) != GCInterfaceOffsets.OFFSETOF__card_table_info__lowest_address
+                || OffsetOf(&cardTableInfo, &cardTableInfo.highest_address) != GCInterfaceOffsets.OFFSETOF__card_table_info__highest_address
+                || OffsetOf(&cardTableInfo, &cardTableInfo.brick_table) != GCInterfaceOffsets.OFFSETOF__card_table_info__brick_table
+                || OffsetOf(&cardTableInfo, &cardTableInfo.card_bundle_table) != GCInterfaceOffsets.OFFSETOF__card_table_info__card_bundle_table
+#if BACKGROUND_GC
+                || OffsetOf(&cardTableInfo, &cardTableInfo.mark_array) != GCInterfaceOffsets.OFFSETOF__card_table_info__mark_array
+#endif
+                || card_table_info.brick_size != (nuint)GCInterfaceOffsets.brick_size
+                || card_table_info.SH_TH_CARD_BUNDLE != (uint)GCInterfaceOffsets.SH_TH_CARD_BUNDLE
+                || card_table_info.MH_TH_CARD_BUNDLE != (uint)GCInterfaceOffsets.MH_TH_CARD_BUNDLE
+                || card_table_info.DECOMMIT_TIME_STEP_MILLISECONDS != (uint)GCInterfaceOffsets.DECOMMIT_TIME_STEP_MILLISECONDS
+#if TARGET_64BIT
+                || card_table_info.MAX_ALLOWED_MEM_LOAD != (uint)GCInterfaceOffsets.MAX_ALLOWED_MEM_LOAD
+                || card_table_info.MIN_YOUNGEST_GEN_DESIRED != (nuint)GCInterfaceOffsets.MIN_YOUNGEST_GEN_DESIRED
+#endif
+                )
+            {
+                return false;
+            }
+
             static_data staticData;
             if (sizeof(static_data) != GCInterfaceOffsets.SIZEOF__static_data
                 || AlignOf<static_data>() != GCInterfaceOffsets.ALIGNOF__static_data
