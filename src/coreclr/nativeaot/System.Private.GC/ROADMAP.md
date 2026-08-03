@@ -747,6 +747,9 @@ Translate the schema from `gcpriv.h` and related headers:
 - The adjacent `gc.cpp` card-table sizing helpers: card words align to and convert through
   card bundles, translated bundle-table pointers retain their zero-based indexing skew, and
   card/brick table sizes cover the same half-open address ranges as native.
+- The `card_table_info` pointer accessors from `gcinternal.h` and `translate_card_table` from
+  `gc.cpp`: ref-return writes alias the metadata record immediately preceding the card words,
+  including conditional background state, and translated tables preserve zero-based indexing.
 - The adjacent segment-range traversal helpers from `gcinternal.h`: read-only segments outside
   the current heap range are skipped, address membership retains native half-open bounds, and
   generation iteration starts/stops at the region or segment collector's native indices.

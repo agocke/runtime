@@ -188,6 +188,9 @@ and card-bundle-word widths, target-width card size, and card-bundle size join t
 thresholds, decommit, and 64-bit tuning constants pinned with the layout.
 Card-bundle/card-word conversion, translated bundle-table skewing, and card/brick table sizing
 also preserve the native unsigned address arithmetic and half-open range coverage.
+The card-table pointer accessors alias the `card_table_info` record immediately before the card
+words, including its DAC-visible prefix and optional background mark array, and translated card
+tables retain native zero-based word indexing.
 The adjacent heap-segment iteration helpers skip read-only segments outside the heap's current
 address range, preserve half-open segment address tests, and select the native generation
 iteration bounds for region and non-region collectors.

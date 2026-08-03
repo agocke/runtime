@@ -401,6 +401,50 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void CardTableInfoMetadataAccessorsAliasPrecedingRecord()
+    {
+        card_table_info info = default;
+        uint* cardTable = (uint*)((byte*)&info + sizeof(card_table_info));
+
+        card_table_info.card_table_refcount(cardTable) = 7;
+        card_table_info.card_table_size(cardTable) = 0x1234;
+        card_table_info.card_table_next(cardTable) = (uint*)0x2000;
+        card_table_info.card_table_lowest_address(cardTable) = (byte*)0x3000;
+        card_table_info.card_table_highest_address(cardTable) = (byte*)0x4000;
+        card_table_info.card_table_brick_table(cardTable) = (short*)0x5000;
+        card_table_info.card_table_card_bundle_table(cardTable) = (uint*)0x6000;
+#if BACKGROUND_GC
+        card_table_info.card_table_mark_array(cardTable) = (uint*)0x7000;
+#endif
+
+        Assert.Equal(7u, info.recount);
+        Assert.Equal((nuint)0x1234, info.size);
+        Assert.Equal((nuint)0x2000, (nuint)info.next_card_table);
+        Assert.Equal((nuint)0x3000, (nuint)info.lowest_address);
+        Assert.Equal((nuint)0x4000, (nuint)info.highest_address);
+        Assert.Equal((nuint)0x5000, (nuint)info.brick_table);
+        Assert.Equal((nuint)0x6000, (nuint)info.card_bundle_table);
+#if BACKGROUND_GC
+        Assert.Equal((nuint)0x7000, (nuint)info.mark_array);
+#endif
+    }
+
+    [Fact]
+    public void CardTableInfoTranslatedCardTablePreservesNativeSkew()
+    {
+        card_table_info info = default;
+        uint* cardTable = (uint*)((byte*)&info + sizeof(card_table_info));
+
+        info.lowest_address = (byte*)0;
+        Assert.Equal((nuint)cardTable, (nuint)card_table_info.translate_card_table(cardTable));
+
+        info.lowest_address = (byte*)(card_table_info.card_size * card_table_info.card_word_width);
+        Assert.Equal(
+            (nuint)cardTable - sizeof(uint),
+            (nuint)card_table_info.translate_card_table(cardTable));
+    }
+
+    [Fact]
     public void CardTableInfoAlignmentHelpersPreserveNativeArithmetic()
     {
         nuint brick = card_table_info.brick_size;

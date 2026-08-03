@@ -1164,6 +1164,55 @@ namespace Internal.Runtime.GarbageCollection
         {
             return count_card_of(from, end) * sizeof(uint);
         }
+
+        public static ref uint card_table_refcount(uint* c_table)
+        {
+            return ref *(uint*)((byte*)c_table - sizeof(card_table_info));
+        }
+
+        public static ref nuint card_table_size(uint* c_table)
+        {
+            return ref ((card_table_info*)((byte*)c_table - sizeof(card_table_info)))->size;
+        }
+
+        public static ref uint* card_table_next(uint* c_table)
+        {
+            return ref ((card_table_info*)((byte*)c_table - sizeof(card_table_info)))->next_card_table;
+        }
+
+        public static ref byte* card_table_lowest_address(uint* c_table)
+        {
+            return ref ((card_table_info*)((byte*)c_table - sizeof(card_table_info)))->lowest_address;
+        }
+
+        public static ref byte* card_table_highest_address(uint* c_table)
+        {
+            return ref ((card_table_info*)((byte*)c_table - sizeof(card_table_info)))->highest_address;
+        }
+
+        public static ref short* card_table_brick_table(uint* c_table)
+        {
+            return ref ((card_table_info*)((byte*)c_table - sizeof(card_table_info)))->brick_table;
+        }
+
+        public static ref uint* card_table_card_bundle_table(uint* c_table)
+        {
+            return ref ((card_table_info*)((byte*)c_table - sizeof(card_table_info)))->card_bundle_table;
+        }
+
+#if BACKGROUND_GC
+        public static ref uint* card_table_mark_array(uint* c_table)
+        {
+            return ref ((card_table_info*)((byte*)c_table - sizeof(card_table_info)))->mark_array;
+        }
+#endif
+
+        public static uint* translate_card_table(uint* ct)
+        {
+            return (uint*)unchecked(
+                (nuint)ct
+                - (card_word(gcard_of(card_table_lowest_address(ct))) * sizeof(uint)));
+        }
     }
 
     internal enum interesting_data_point
