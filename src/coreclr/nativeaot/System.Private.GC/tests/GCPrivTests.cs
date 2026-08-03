@@ -278,6 +278,38 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)0, (nuint)card_table_info.align_on_brick((byte*)(nuint.MaxValue - (brick - 2))));
     }
 
+    [Theory]
+    [InlineData(0U, 0U, 0U)]
+    [InlineData(31U, 0U, 31U)]
+    [InlineData(32U, 1U, 0U)]
+    [InlineData(33U, 1U, 1U)]
+    [InlineData(63U, 1U, 31U)]
+    [InlineData(64U, 2U, 0U)]
+    [InlineData(uint.MaxValue, 134217727U, 31U)]
+    public void CardTableInfoCardWordAndBitPreserveNativeArithmetic(uint card, uint word, uint bit)
+    {
+        Assert.Equal((nuint)word, card_table_info.card_word((nuint)card));
+        Assert.Equal(bit, card_table_info.card_bit((nuint)card));
+    }
+
+    [Theory]
+    [InlineData(0UL, 0UL)]
+#if TARGET_64BIT
+    [InlineData(0xFFUL, 0UL)]
+    [InlineData(0x100UL, 1UL)]
+    [InlineData(0x101UL, 1UL)]
+    [InlineData(0x12345678UL, 0x123456UL)]
+#else
+    [InlineData(0x7FUL, 0UL)]
+    [InlineData(0x80UL, 1UL)]
+    [InlineData(0x81UL, 1UL)]
+    [InlineData(0x12345678UL, 0x2468ACUL)]
+#endif
+    public void CardTableInfoGcardOfPreservesPointerToNuintDivision(ulong objectAddress, ulong card)
+    {
+        Assert.Equal((nuint)card, card_table_info.gcard_of((byte*)(nuint)objectAddress));
+    }
+
     [Fact]
     public void CardTableInfoConstantsMatchNativeValues()
     {
@@ -287,6 +319,13 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)(16 * 1024 * 1024), card_table_info.MIN_YOUNGEST_GEN_DESIRED);
 #else
         Assert.Equal((nuint)2048, card_table_info.brick_size);
+#endif
+        Assert.Equal((nuint)4096, card_table_info.GC_PAGE_SIZE);
+        Assert.Equal((nuint)32, card_table_info.card_word_width);
+#if TARGET_64BIT
+        Assert.Equal((nuint)256, card_table_info.card_size);
+#else
+        Assert.Equal((nuint)128, card_table_info.card_size);
 #endif
         Assert.Equal(40u * 1024 * 1024, card_table_info.SH_TH_CARD_BUNDLE);
         Assert.Equal(180u * 1024 * 1024, card_table_info.MH_TH_CARD_BUNDLE);

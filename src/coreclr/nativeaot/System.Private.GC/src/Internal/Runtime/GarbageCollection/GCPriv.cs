@@ -1010,6 +1010,13 @@ namespace Internal.Runtime.GarbageCollection
 #else
         public const nuint brick_size = 2048;
 #endif
+        public const nuint GC_PAGE_SIZE = 0x1000;
+        public const nuint card_word_width = 32;
+#if TARGET_64BIT
+        public const nuint card_size = 2 * GC_PAGE_SIZE / card_word_width;
+#else
+        public const nuint card_size = GC_PAGE_SIZE / card_word_width;
+#endif
         public const uint SH_TH_CARD_BUNDLE = 40 * 1024 * 1024;
         public const uint MH_TH_CARD_BUNDLE = 180 * 1024 * 1024;
         public const uint DECOMMIT_TIME_STEP_MILLISECONDS = 100;
@@ -1026,6 +1033,21 @@ namespace Internal.Runtime.GarbageCollection
         public static byte* align_on_brick(byte* add)
         {
             return (byte*)unchecked(((nuint)add + brick_size - 1) & ~(brick_size - 1));
+        }
+
+        public static nuint card_word(nuint card)
+        {
+            return card / card_word_width;
+        }
+
+        public static uint card_bit(nuint card)
+        {
+            return (uint)(card % card_word_width);
+        }
+
+        public static nuint gcard_of(byte* @object)
+        {
+            return (nuint)@object / card_size;
         }
     }
 
