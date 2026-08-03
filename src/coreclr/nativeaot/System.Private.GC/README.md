@@ -163,10 +163,12 @@ OR-based bit packing, most-significant-bit mechanism encoding, and mechanism fla
 string-based diagnostic `print` bodies remain with the later tracing work.
 
 `GCPriv.cs` starts the main collector schema with the dependency-free `static_data`,
-`recorded_generation_info`, and `etw_opt_info` records. These retain the native pointer-sized
-fields and names so the later dynamic-tuning, diagnostics, and generation ports can embed them
-without an adapter. Their complete layouts are checked against both workstation and server GC
-headers and again by the managed startup verifier and foundation tests.
+`recorded_generation_info`, `last_recorded_gc_info`, `etw_opt_info`, and allocation-wait records
+and enums. These retain the native pointer-sized fields and names so the later dynamic-tuning,
+diagnostics, and generation ports can embed them without an adapter. Native arrays are contiguous
+numbered fields, and the C++ `bool` snapshot flags are bytes so their one-byte ABI is explicit.
+Their complete layouts and enum values are checked against both workstation and server GC headers
+and again by the managed startup verifier and foundation tests.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`

@@ -718,6 +718,9 @@ Translate the schema from `gcpriv.h` and related headers:
 - The first dependency-free `gcpriv.h` records: `static_data`,
   `recorded_generation_info`, and `etw_opt_info`. These establish the pointer-sized schema used
   by dynamic tuning, recorded GC information, and allocation diagnostics.
+- The adjacent recorded-GC and allocation-wait schema: `last_recorded_gc_info`,
+  `alloc_wait_reason`, `alloc_thread_wait_data`, and `msl_take_state`, including the contiguous
+  five-generation snapshot and one-byte native boolean fields.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.

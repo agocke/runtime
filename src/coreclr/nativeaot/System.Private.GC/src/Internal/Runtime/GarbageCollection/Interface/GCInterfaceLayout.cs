@@ -367,6 +367,32 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            last_recorded_gc_info recordedInfo;
+            if (sizeof(last_recorded_gc_info) != GCInterfaceOffsets.SIZEOF__last_recorded_gc_info
+                || AlignOf<last_recorded_gc_info>() != GCInterfaceOffsets.ALIGNOF__last_recorded_gc_info
+                || OffsetOf(&recordedInfo, &recordedInfo.index) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__index
+                || OffsetOf(&recordedInfo, &recordedInfo.total_committed) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__total_committed
+                || OffsetOf(&recordedInfo, &recordedInfo.promoted) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__promoted
+                || OffsetOf(&recordedInfo, &recordedInfo.pinned_objects) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__pinned_objects
+                || OffsetOf(&recordedInfo, &recordedInfo.finalize_promoted_objects) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__finalize_promoted_objects
+                || OffsetOf(&recordedInfo, &recordedInfo.pause_durations0) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__pause_durations
+                || OffsetOf(&recordedInfo, &recordedInfo.pause_durations1) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__pause_durations + sizeof(nuint)
+                || OffsetOf(&recordedInfo, &recordedInfo.pause_percentage) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__pause_percentage
+                || OffsetOf(&recordedInfo, &recordedInfo.gen_info0) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__gen_info
+                || OffsetOf(&recordedInfo, &recordedInfo.gen_info1) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__gen_info + sizeof(recorded_generation_info)
+                || OffsetOf(&recordedInfo, &recordedInfo.gen_info2) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__gen_info + (2 * sizeof(recorded_generation_info))
+                || OffsetOf(&recordedInfo, &recordedInfo.gen_info3) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__gen_info + (3 * sizeof(recorded_generation_info))
+                || OffsetOf(&recordedInfo, &recordedInfo.gen_info4) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__gen_info + (4 * sizeof(recorded_generation_info))
+                || OffsetOf(&recordedInfo, &recordedInfo.heap_size) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__heap_size
+                || OffsetOf(&recordedInfo, &recordedInfo.fragmentation) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__fragmentation
+                || OffsetOf(&recordedInfo, &recordedInfo.memory_load) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__memory_load
+                || OffsetOf(&recordedInfo, &recordedInfo.condemned_generation) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__condemned_generation
+                || OffsetOf(&recordedInfo, &recordedInfo.compaction) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__compaction
+                || OffsetOf(&recordedInfo, &recordedInfo.concurrent) != GCInterfaceOffsets.OFFSETOF__last_recorded_gc_info__concurrent)
+            {
+                return false;
+            }
+
             etw_opt_info optInfo;
             if (sizeof(etw_opt_info) != GCInterfaceOffsets.SIZEOF__etw_opt_info
                 || AlignOf<etw_opt_info>() != GCInterfaceOffsets.ALIGNOF__etw_opt_info
@@ -377,7 +403,10 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
-            return true;
+            alloc_thread_wait_data waitData;
+            return sizeof(alloc_thread_wait_data) == GCInterfaceOffsets.SIZEOF__alloc_thread_wait_data
+                && AlignOf<alloc_thread_wait_data>() == GCInterfaceOffsets.ALIGNOF__alloc_thread_wait_data
+                && OffsetOf(&waitData, &waitData.awr) == GCInterfaceOffsets.OFFSETOF__alloc_thread_wait_data__awr;
         }
 
         /// <summary>
@@ -746,7 +775,39 @@ namespace Internal.Runtime.GarbageCollection
             && VerifyAllocationEnums()
             && VerifyEventEnums()
             && VerifyDacEnums()
-            && VerifyGCRecordEnums();
+            && VerifyGCRecordEnums()
+            && VerifyGCPrivEnums();
+
+        private static bool VerifyGCPrivEnums() =>
+            (int)alloc_wait_reason.awr_ignored == GCInterfaceOffsets.awr_ignored
+            && (int)alloc_wait_reason.awr_low_memory == GCInterfaceOffsets.awr_low_memory
+            && (int)alloc_wait_reason.awr_low_ephemeral == GCInterfaceOffsets.awr_low_ephemeral
+            && (int)alloc_wait_reason.awr_gen0_alloc == GCInterfaceOffsets.awr_gen0_alloc
+            && (int)alloc_wait_reason.awr_loh_alloc == GCInterfaceOffsets.awr_loh_alloc
+            && (int)alloc_wait_reason.awr_alloc_loh_low_mem == GCInterfaceOffsets.awr_alloc_loh_low_mem
+            && (int)alloc_wait_reason.awr_loh_oos == GCInterfaceOffsets.awr_loh_oos
+            && (int)alloc_wait_reason.awr_gen0_oos_bgc == GCInterfaceOffsets.awr_gen0_oos_bgc
+            && (int)alloc_wait_reason.awr_loh_oos_bgc == GCInterfaceOffsets.awr_loh_oos_bgc
+            && (int)alloc_wait_reason.awr_fgc_wait_for_bgc == GCInterfaceOffsets.awr_fgc_wait_for_bgc
+            && (int)alloc_wait_reason.awr_get_loh_seg == GCInterfaceOffsets.awr_get_loh_seg
+            && (int)alloc_wait_reason.awr_loh_alloc_during_plan == GCInterfaceOffsets.awr_loh_alloc_during_plan
+            && (int)alloc_wait_reason.awr_uoh_alloc_during_bgc == GCInterfaceOffsets.awr_uoh_alloc_during_bgc
+            && (int)msl_take_state.mt_get_large_seg == GCInterfaceOffsets.mt_get_large_seg
+            && (int)msl_take_state.mt_bgc_uoh_sweep == GCInterfaceOffsets.mt_bgc_uoh_sweep
+            && (int)msl_take_state.mt_wait_bgc == GCInterfaceOffsets.mt_wait_bgc
+            && (int)msl_take_state.mt_block_gc == GCInterfaceOffsets.mt_block_gc
+            && (int)msl_take_state.mt_clr_mem == GCInterfaceOffsets.mt_clr_mem
+            && (int)msl_take_state.mt_clr_large_mem == GCInterfaceOffsets.mt_clr_large_mem
+            && (int)msl_take_state.mt_t_eph_gc == GCInterfaceOffsets.mt_t_eph_gc
+            && (int)msl_take_state.mt_t_full_gc == GCInterfaceOffsets.mt_t_full_gc
+            && (int)msl_take_state.mt_alloc_small == GCInterfaceOffsets.mt_alloc_small
+            && (int)msl_take_state.mt_alloc_large == GCInterfaceOffsets.mt_alloc_large
+            && (int)msl_take_state.mt_alloc_small_cant == GCInterfaceOffsets.mt_alloc_small_cant
+            && (int)msl_take_state.mt_alloc_large_cant == GCInterfaceOffsets.mt_alloc_large_cant
+            && (int)msl_take_state.mt_try_alloc == GCInterfaceOffsets.mt_try_alloc
+            && (int)msl_take_state.mt_try_budget == GCInterfaceOffsets.mt_try_budget
+            && (int)msl_take_state.mt_try_servo_budget == GCInterfaceOffsets.mt_try_servo_budget
+            && (int)msl_take_state.mt_decommit_step == GCInterfaceOffsets.mt_decommit_step;
 
         private static bool VerifyGCRecordEnums() =>
             (int)gc_reason.reason_alloc_soh == GCInterfaceOffsets.reason_alloc_soh

@@ -30,10 +30,78 @@ namespace Internal.Runtime.GarbageCollection
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal struct last_recorded_gc_info
+    {
+        // Native VOLATILE(size_t); access this through GCEnv's volatile helpers.
+        public nuint index;
+        public nuint total_committed;
+        public nuint promoted;
+        public nuint pinned_objects;
+        public nuint finalize_promoted_objects;
+        public nuint pause_durations0;
+        public nuint pause_durations1;
+        public float pause_percentage;
+        public recorded_generation_info gen_info0;
+        public recorded_generation_info gen_info1;
+        public recorded_generation_info gen_info2;
+        public recorded_generation_info gen_info3;
+        public recorded_generation_info gen_info4;
+        public nuint heap_size;
+        public nuint fragmentation;
+        public uint memory_load;
+        public byte condemned_generation;
+        public byte compaction;
+        public byte concurrent;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct etw_opt_info
     {
         public nuint desired_allocation;
         public nuint new_allocation;
         public int gen_number;
+    }
+
+    internal enum alloc_wait_reason
+    {
+        awr_ignored = -1,
+        awr_low_memory = 0,
+        awr_low_ephemeral = 1,
+        awr_gen0_alloc = 2,
+        awr_loh_alloc = 3,
+        awr_alloc_loh_low_mem = 4,
+        awr_loh_oos = 5,
+        awr_gen0_oos_bgc = 6,
+        awr_loh_oos_bgc = 7,
+        awr_fgc_wait_for_bgc = 8,
+        awr_get_loh_seg = 9,
+        awr_loh_alloc_during_plan = 10,
+        awr_uoh_alloc_during_bgc = 11,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct alloc_thread_wait_data
+    {
+        public int awr;
+    }
+
+    internal enum msl_take_state
+    {
+        mt_get_large_seg = 0,
+        mt_bgc_uoh_sweep,
+        mt_wait_bgc,
+        mt_block_gc,
+        mt_clr_mem,
+        mt_clr_large_mem,
+        mt_t_eph_gc,
+        mt_t_full_gc,
+        mt_alloc_small,
+        mt_alloc_large,
+        mt_alloc_small_cant,
+        mt_alloc_large_cant,
+        mt_try_alloc,
+        mt_try_budget,
+        mt_try_servo_budget,
+        mt_decommit_step,
     }
 }
