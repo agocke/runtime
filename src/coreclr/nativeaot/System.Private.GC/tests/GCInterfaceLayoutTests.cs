@@ -394,65 +394,35 @@ public sealed class GCInterfaceLayoutTests
         // The table carries the value for both pointer sizes; the tests run in this process.
         int column = IntPtr.Size == 8 ? 1 : 0;
         List<Entry> entries = new();
-        Stack<(bool ParentIncluded, bool Condition)> conditionals = new();
+        Stack<(bool ParentIncluded, bool BranchTaken, bool CurrentCondition)> conditionals = new();
         bool includeLine = true;
 
         while (reader.ReadLine() is string line)
         {
             if (line.StartsWith("#if", StringComparison.Ordinal))
             {
-                bool condition = line switch
-                {
-                    "#ifdef HOST_64BIT" => IntPtr.Size == 8,
-                    "#if defined(_DEBUG) || defined(DEBUG)" =>
-#if DEBUG
-                        true,
-#else
-                        false,
-#endif
-                    "#if defined(FL_VERIFICATION)" => false,
-                    "#if defined(FEATURE_64BIT_ALIGNMENT)" =>
-#if TARGET_ARM || TARGET_WASM
-                        true,
-#else
-                        false,
-#endif
-                    "#if defined(TARGET_WASM)" =>
-#if TARGET_WASM
-                        true,
-#else
-                        false,
-#endif
-                    "#if !defined(TARGET_WASM)" =>
-#if TARGET_WASM
-                        false,
-#else
-                        true,
-#endif
-                    "#ifdef USE_REGIONS" =>
-#if USE_REGIONS
-                        true,
-#else
-                        false,
-#endif
-                    "#ifdef DOUBLY_LINKED_FL" =>
-#if TARGET_64BIT && !TARGET_WASM
-                        true,
-#else
-                        false,
-#endif
-                    _ => throw new InvalidDataException($"Unknown conditional in the offsets table: '{line}'."),
-                };
-                conditionals.Push((includeLine, condition));
+                bool condition = EvaluateCondition(line);
+                conditionals.Push((includeLine, condition, condition));
                 includeLine &= condition;
+                continue;
+            }
+
+            if (line.StartsWith("#elif", StringComparison.Ordinal))
+            {
+                (bool parentIncluded, bool branchTaken, _) = conditionals.Pop();
+                bool condition = EvaluateCondition($"#if{line[5..]}");
+                bool currentCondition = !branchTaken && condition;
+                conditionals.Push((parentIncluded, branchTaken || condition, currentCondition));
+                includeLine = parentIncluded && currentCondition;
                 continue;
             }
 
             if (line == "#else")
             {
-                (bool parentIncluded, bool condition) = conditionals.Pop();
-                conditionals.Push((parentIncluded, !condition));
-                includeLine = parentIncluded && !condition;
+                (bool parentIncluded, bool branchTaken, _) = conditionals.Pop();
+                bool currentCondition = !branchTaken;
+                conditionals.Push((parentIncluded, true, currentCondition));
+                includeLine = parentIncluded && currentCondition;
                 continue;
             }
 
@@ -484,6 +454,84 @@ public sealed class GCInterfaceLayoutTests
         Assert.NotEmpty(entries);
         return entries;
     }
+
+    private static bool EvaluateCondition(string line) =>
+        line switch
+        {
+            "#ifdef HOST_64BIT" => IntPtr.Size == 8,
+            "#ifdef MULTIPLE_HEAPS" => false,
+            "#ifdef BACKGROUND_GC" =>
+#if BACKGROUND_GC
+                true,
+#else
+                false,
+#endif
+            "#if defined(_DEBUG) || defined(DEBUG)" =>
+#if DEBUG
+                true,
+#else
+                false,
+#endif
+            "#if defined(_DEBUG) && !defined(USE_REGIONS)" =>
+#if DEBUG && !USE_REGIONS
+                true,
+#else
+                false,
+#endif
+            "#if defined(FL_VERIFICATION)" => false,
+            "#if defined(FEATURE_64BIT_ALIGNMENT)" =>
+#if TARGET_ARM || TARGET_WASM
+                true,
+#else
+                false,
+#endif
+            "#if defined(TARGET_WASM)" =>
+#if TARGET_WASM
+                true,
+#else
+                false,
+#endif
+            "#if !defined(TARGET_WASM)" =>
+#if TARGET_WASM
+                false,
+#else
+                true,
+#endif
+            "#ifdef USE_REGIONS" =>
+#if USE_REGIONS
+                true,
+#else
+                false,
+#endif
+            "#if !defined(USE_REGIONS) || defined(MULTIPLE_HEAPS)" =>
+#if !USE_REGIONS
+                true,
+#else
+                false,
+#endif
+            "#if defined(BACKGROUND_GC) && defined(USE_REGIONS)" =>
+#if BACKGROUND_GC && USE_REGIONS
+                true,
+#else
+                false,
+#endif
+            "#if defined(MULTIPLE_HEAPS) && defined(_DEBUG) && !defined(USE_REGIONS)" => false,
+            "#if defined(MULTIPLE_HEAPS) && defined(_DEBUG)" => false,
+            "#if defined(MULTIPLE_HEAPS)" => false,
+            "#if defined(USE_REGIONS)" =>
+#if USE_REGIONS
+                true,
+#else
+                false,
+#endif
+            "#ifdef DOUBLY_LINKED_FL" =>
+#if TARGET_64BIT && !TARGET_WASM
+                true,
+#else
+                false,
+#endif
+            _ => throw new InvalidDataException($"Unknown conditional in the offsets table: '{line}'."),
+        };
 
     private sealed record Entry(string Kind, int Value, string[] Arguments);
 }

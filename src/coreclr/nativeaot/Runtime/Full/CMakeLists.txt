@@ -126,7 +126,9 @@ if(FEATURE_PERFTRACING)
 endif()
 set_target_properties(Runtime.GC.Workstation PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 0)
 
-add_library(Runtime.GC.Server OBJECT ${GC_WKS_SVR_SOURCES})
+add_library(Runtime.GC.Server OBJECT
+    ${GC_WKS_SVR_SOURCES}
+    ${NATIVEAOT_RUNTIME_DIR}/GCInterfaceOffsetsVerify.cpp)
 if(FEATURE_PERFTRACING)
   add_dependencies(Runtime.GC.Server aot_eventing_headers)
 endif()

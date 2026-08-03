@@ -685,7 +685,7 @@ handles, and per-type behavior match the C++ handle table under differential tes
 
 Translate the schema from `gcpriv.h` and related headers:
 
-- `heap_segment` (forward declaration only)
+- `heap_segment` (done)
 - `generation` (done)
 - `alloc_list`
 - `dynamic_data` (done)
@@ -758,9 +758,13 @@ Translate the schema from `gcpriv.h` and related headers:
 - The per-heap `generation` schema and its dependency-free accessor block, built on the
   `allocator` and `dynamic_data` cores. Its embedded `allocation_context` is an `alloc_context`,
   which derives from `gc_alloc_context` and adds no fields, so the port reuses the existing
-  `gc_alloc_context` layout for it rather than introducing a distinct type. `heap_segment` is only
-  referenced through a pointer, so it is introduced as an empty `partial` forward declaration that
-  a later slice can complete without churn. The schema forks on `USE_REGIONS` -- the region layout
+  `gc_alloc_context` layout for it rather than introducing a distinct type. The dependency-closed
+  `heap_segment` schema and region-only `generation_region_info` are translated too, including
+  region/non-region tails, server-only heap/decommit branches, debug non-region saved fields,
+  one-byte native booleans, flag and region-age constants, `init_free_list`, and every
+  dependency-free accessor/predicate. `gc_heap` and `region_free_list` remain opaque unmanaged
+  declarations because this slice only needs their pointers; `thread_free_obj` remains deferred
+  with the free-list object representation. The schema forks on `USE_REGIONS` -- the region layout
   replaces `allocation_start`/`plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`
   -- which reduces from gcpriv.h's `HOST_64BIT && (!HOST_APPLE || HOST_OSX)` to 64-bit AND not an
   Apple mobile platform for this integrated port, computed once as a build symbol; the two trailing

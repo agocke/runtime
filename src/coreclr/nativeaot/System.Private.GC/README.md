@@ -205,9 +205,13 @@ reference-return API without a managed reference to collector state.
 The per-heap `generation` schema is translated on top of those `allocator` and `dynamic_data`
 cores. Its `allocation_context` is a native `alloc_context`, which derives from `gc_alloc_context`
 and adds no fields, so the port reuses the existing `gc_alloc_context` layout for it instead of a
-distinct type. `heap_segment` is only ever referenced through a pointer here, so it is introduced
-as an empty `partial` forward declaration that a later slice can complete without disturbing these
-pointer references. The schema forks on `USE_REGIONS`, gcpriv.h's region layout that replaces
+distinct type. The dependency-closed `heap_segment` and region-only `generation_region_info`
+schemas are translated alongside it. The segment preserves the region/non-region tail, the
+server-only heap and decommit branches, the debug non-region saved fields, native one-byte
+`swept_in_plan_p`, flags and age constants, and its dependency-free accessors; `gc_heap` and
+`region_free_list` remain opaque unmanaged declarations because the segment only stores pointers
+to them. `thread_free_obj` remains deferred with the free-list object representation. The schema
+forks on `USE_REGIONS`, gcpriv.h's region layout that replaces
 `allocation_start` and `plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`.
 gcpriv.h defines `USE_REGIONS` as `HOST_64BIT && !BUILD_AS_STANDALONE && !__sun && (!HOST_APPLE ||
 HOST_OSX)`; this integrated port is never `BUILD_AS_STANDALONE` and never targets illumos, so it
@@ -215,6 +219,10 @@ reduces to 64-bit AND not an Apple mobile platform (iOS/tvOS/MacCatalyst) -- OSX
 non-Apple 64-bit target use regions. The build defines a matching `USE_REGIONS` symbol for the
 managed sources, and `GCInterfaceOffsets.cspp` recomputes it from the same primitives so the pinned
 table selects the same layout; the native verifier gets the real definition through `gcinternal.h`.
+`BACKGROUND_GC` is likewise defined for every non-WASM managed full-runtime build. The managed
+runtime uses the workstation segment layout; `GCInterfaceOffsets.h` retains its
+`MULTIPLE_HEAPS` server branches so both native verifier targets continue to validate their
+distinct layouts.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

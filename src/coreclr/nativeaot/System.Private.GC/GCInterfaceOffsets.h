@@ -766,6 +766,126 @@ GC_OFFSET(         c,        18, loh_padding_obj, m_plug)
 GC_SIZEOF(        10,        20, loh_padding_obj)
 GC_ALIGNOF(        4,         8, loh_padding_obj)
 
+// heap_segment is the collector's segment record. BACKGROUND_GC is defined on every non-WASM
+// full runtime. MULTIPLE_HEAPS is the server-GC branch selected by gcimpl.h from SERVER_GC; the
+// native verifier builds the workstation branch as a full-runtime source and the server branch
+// with Runtime.GC.Server, while Runtime.ManagedGC uses the workstation branch that generated
+// GCInterfaceOffsets.cs. The table must consequently retain both layouts.
+GC_CONST(         1,         1, heap_segment_flags_readonly)
+GC_CONST(         2,         2, heap_segment_flags_inrange)
+GC_CONST(         8,         8, heap_segment_flags_loh)
+#ifdef BACKGROUND_GC
+GC_CONST(        10,        10, heap_segment_flags_swept)
+GC_CONST(        20,        20, heap_segment_flags_decommitted)
+GC_CONST(        40,        40, heap_segment_flags_ma_committed)
+GC_CONST(        80,        80, heap_segment_flags_ma_pcommitted)
+GC_CONST(       100,       100, heap_segment_flags_uoh_delete)
+#endif
+GC_CONST(       200,       200, heap_segment_flags_poh)
+#if defined(BACKGROUND_GC) && defined(USE_REGIONS)
+GC_CONST(       400,       400, heap_segment_flags_overflow)
+#endif
+
+#ifdef USE_REGIONS
+GC_CONST(       800,       800, heap_segment_flags_demoted)
+GC_CONST(        63,        63, MAX_AGE_IN_FREE)
+GC_CONST(        14,        14, AGE_IN_FREE_TO_DECOMMIT_BASIC)
+GC_CONST(         5,         5, AGE_IN_FREE_TO_DECOMMIT_LARGE)
+GC_CONST(         2,         2, AGE_IN_FREE_TO_DECOMMIT_HUGE)
+
+GC_OFFSET(         0,         0, generation_region_info, head)
+GC_OFFSET(         4,         8, generation_region_info, tail)
+GC_SIZEOF(         8,        10, generation_region_info)
+GC_ALIGNOF(         4,         8, generation_region_info)
+#endif
+
+GC_OFFSET(         0,         0, heap_segment, allocated)
+GC_OFFSET(         4,         8, heap_segment, committed)
+GC_OFFSET(         8,        10, heap_segment, reserved)
+GC_OFFSET(         c,        18, heap_segment, used)
+GC_OFFSET(        10,        20, heap_segment, mem)
+GC_OFFSET(        14,        28, heap_segment, flags)
+GC_OFFSET(        18,        30, heap_segment, next)
+GC_OFFSET(        1c,        38, heap_segment, background_allocated)
+#ifdef MULTIPLE_HEAPS
+GC_OFFSET(        20,        40, heap_segment, heap)
+#if defined(_DEBUG) && !defined(USE_REGIONS)
+GC_OFFSET(        24,        48, heap_segment, saved_committed)
+GC_OFFSET(        28,        50, heap_segment, saved_desired_allocation)
+#endif
+#endif
+#if !defined(USE_REGIONS) || defined(MULTIPLE_HEAPS)
+#if defined(MULTIPLE_HEAPS) && defined(_DEBUG) && !defined(USE_REGIONS)
+GC_OFFSET(        2c,        58, heap_segment, decommit_target)
+#elif defined(MULTIPLE_HEAPS)
+GC_OFFSET(        24,        48, heap_segment, decommit_target)
+#else
+GC_OFFSET(        20,        40, heap_segment, decommit_target)
+#endif
+#endif
+#if defined(MULTIPLE_HEAPS) && defined(_DEBUG) && !defined(USE_REGIONS)
+GC_OFFSET(        30,        60, heap_segment, plan_allocated)
+GC_OFFSET(        34,        68, heap_segment, saved_allocated)
+GC_OFFSET(        38,        70, heap_segment, saved_bg_allocated)
+#elif defined(MULTIPLE_HEAPS)
+GC_OFFSET(        28,        50, heap_segment, plan_allocated)
+GC_OFFSET(        2c,        58, heap_segment, saved_allocated)
+GC_OFFSET(        30,        60, heap_segment, saved_bg_allocated)
+#elif defined(USE_REGIONS)
+GC_OFFSET(        20,        40, heap_segment, plan_allocated)
+GC_OFFSET(        24,        48, heap_segment, saved_allocated)
+GC_OFFSET(        28,        50, heap_segment, saved_bg_allocated)
+#else
+GC_OFFSET(        24,        48, heap_segment, plan_allocated)
+GC_OFFSET(        28,        50, heap_segment, saved_allocated)
+GC_OFFSET(        2c,        58, heap_segment, saved_bg_allocated)
+#endif
+#ifdef USE_REGIONS
+#ifdef MULTIPLE_HEAPS
+GC_OFFSET(        34,        68, heap_segment, survived)
+GC_OFFSET(        38,        70, heap_segment, gen_num)
+GC_OFFSET(        39,        71, heap_segment, swept_in_plan_p)
+GC_OFFSET(        3c,        74, heap_segment, plan_gen_num)
+GC_OFFSET(        40,        78, heap_segment, old_card_survived)
+GC_OFFSET(        44,        7c, heap_segment, pinned_survived)
+GC_OFFSET(        48,        80, heap_segment, age_in_free)
+GC_OFFSET(        4c,        88, heap_segment, free_list_head)
+GC_OFFSET(        50,        90, heap_segment, free_list_tail)
+GC_OFFSET(        54,        98, heap_segment, free_list_size)
+GC_OFFSET(        58,        a0, heap_segment, free_obj_size)
+GC_OFFSET(        5c,        a8, heap_segment, prev_free_region)
+GC_OFFSET(        60,        b0, heap_segment, containing_free_list)
+GC_SIZEOF(        64,        b8, heap_segment)
+#else
+GC_OFFSET(        2c,        58, heap_segment, survived)
+GC_OFFSET(        30,        60, heap_segment, gen_num)
+GC_OFFSET(        31,        61, heap_segment, swept_in_plan_p)
+GC_OFFSET(        34,        64, heap_segment, plan_gen_num)
+GC_OFFSET(        38,        68, heap_segment, old_card_survived)
+GC_OFFSET(        3c,        6c, heap_segment, pinned_survived)
+GC_OFFSET(        40,        70, heap_segment, age_in_free)
+GC_OFFSET(        44,        78, heap_segment, free_list_head)
+GC_OFFSET(        48,        80, heap_segment, free_list_tail)
+GC_OFFSET(        4c,        88, heap_segment, free_list_size)
+GC_OFFSET(        50,        90, heap_segment, free_obj_size)
+GC_OFFSET(        54,        98, heap_segment, prev_free_region)
+GC_OFFSET(        58,        a0, heap_segment, containing_free_list)
+GC_SIZEOF(        5c,        a8, heap_segment)
+#endif
+#else
+#if defined(MULTIPLE_HEAPS) && defined(_DEBUG)
+GC_OFFSET(        40,        78, heap_segment, padandplug)
+GC_SIZEOF(        58,        a0, heap_segment)
+#elif defined(MULTIPLE_HEAPS)
+GC_OFFSET(        38,        68, heap_segment, padandplug)
+GC_SIZEOF(        50,        90, heap_segment)
+#else
+GC_OFFSET(        30,        60, heap_segment, padandplug)
+GC_SIZEOF(        48,        88, heap_segment)
+#endif
+#endif
+GC_ALIGNOF(         8,         8, heap_segment)
+
 // -----------------------------------------------------------------------------------------
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
 // GC_Initialize, so its layout is part of the loader protocol; the types below it are the

@@ -525,6 +525,63 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+#if USE_REGIONS
+            generation_region_info regionInfo;
+            if (sizeof(generation_region_info) != GCInterfaceOffsets.SIZEOF__generation_region_info
+                || AlignOf<generation_region_info>() != GCInterfaceOffsets.ALIGNOF__generation_region_info
+                || OffsetOf(&regionInfo, &regionInfo.head) != GCInterfaceOffsets.OFFSETOF__generation_region_info__head
+                || OffsetOf(&regionInfo, &regionInfo.tail) != GCInterfaceOffsets.OFFSETOF__generation_region_info__tail)
+            {
+                return false;
+            }
+#endif
+
+            heap_segment heapSegment;
+            if (sizeof(heap_segment) != GCInterfaceOffsets.SIZEOF__heap_segment
+                || AlignOf<heap_segment>() != GCInterfaceOffsets.ALIGNOF__heap_segment
+                || OffsetOf(&heapSegment, &heapSegment.allocated) != GCInterfaceOffsets.OFFSETOF__heap_segment__allocated
+                || OffsetOf(&heapSegment, &heapSegment.committed) != GCInterfaceOffsets.OFFSETOF__heap_segment__committed
+                || OffsetOf(&heapSegment, &heapSegment.reserved) != GCInterfaceOffsets.OFFSETOF__heap_segment__reserved
+                || OffsetOf(&heapSegment, &heapSegment.used) != GCInterfaceOffsets.OFFSETOF__heap_segment__used
+                || OffsetOf(&heapSegment, &heapSegment.mem) != GCInterfaceOffsets.OFFSETOF__heap_segment__mem
+                || OffsetOf(&heapSegment, &heapSegment.flags) != GCInterfaceOffsets.OFFSETOF__heap_segment__flags
+                || OffsetOf(&heapSegment, &heapSegment.next) != GCInterfaceOffsets.OFFSETOF__heap_segment__next
+                || OffsetOf(&heapSegment, &heapSegment.background_allocated) != GCInterfaceOffsets.OFFSETOF__heap_segment__background_allocated
+#if MULTIPLE_HEAPS
+                || OffsetOf(&heapSegment, &heapSegment.heap) != GCInterfaceOffsets.OFFSETOF__heap_segment__heap
+#if DEBUG && !USE_REGIONS
+                || OffsetOf(&heapSegment, &heapSegment.saved_committed) != GCInterfaceOffsets.OFFSETOF__heap_segment__saved_committed
+                || OffsetOf(&heapSegment, &heapSegment.saved_desired_allocation) != GCInterfaceOffsets.OFFSETOF__heap_segment__saved_desired_allocation
+#endif
+#endif
+#if !USE_REGIONS || MULTIPLE_HEAPS
+                || OffsetOf(&heapSegment, &heapSegment.decommit_target) != GCInterfaceOffsets.OFFSETOF__heap_segment__decommit_target
+#endif
+                || OffsetOf(&heapSegment, &heapSegment.plan_allocated) != GCInterfaceOffsets.OFFSETOF__heap_segment__plan_allocated
+                || OffsetOf(&heapSegment, &heapSegment.saved_allocated) != GCInterfaceOffsets.OFFSETOF__heap_segment__saved_allocated
+                || OffsetOf(&heapSegment, &heapSegment.saved_bg_allocated) != GCInterfaceOffsets.OFFSETOF__heap_segment__saved_bg_allocated
+#if USE_REGIONS
+                || OffsetOf(&heapSegment, &heapSegment.survived) != GCInterfaceOffsets.OFFSETOF__heap_segment__survived
+                || OffsetOf(&heapSegment, &heapSegment.gen_num) != GCInterfaceOffsets.OFFSETOF__heap_segment__gen_num
+                || OffsetOf(&heapSegment, &heapSegment.swept_in_plan_p) != GCInterfaceOffsets.OFFSETOF__heap_segment__swept_in_plan_p
+                || OffsetOf(&heapSegment, &heapSegment.plan_gen_num) != GCInterfaceOffsets.OFFSETOF__heap_segment__plan_gen_num
+                || OffsetOf(&heapSegment, &heapSegment.old_card_survived) != GCInterfaceOffsets.OFFSETOF__heap_segment__old_card_survived
+                || OffsetOf(&heapSegment, &heapSegment.pinned_survived) != GCInterfaceOffsets.OFFSETOF__heap_segment__pinned_survived
+                || OffsetOf(&heapSegment, &heapSegment.age_in_free) != GCInterfaceOffsets.OFFSETOF__heap_segment__age_in_free
+                || OffsetOf(&heapSegment, &heapSegment.free_list_head) != GCInterfaceOffsets.OFFSETOF__heap_segment__free_list_head
+                || OffsetOf(&heapSegment, &heapSegment.free_list_tail) != GCInterfaceOffsets.OFFSETOF__heap_segment__free_list_tail
+                || OffsetOf(&heapSegment, &heapSegment.free_list_size) != GCInterfaceOffsets.OFFSETOF__heap_segment__free_list_size
+                || OffsetOf(&heapSegment, &heapSegment.free_obj_size) != GCInterfaceOffsets.OFFSETOF__heap_segment__free_obj_size
+                || OffsetOf(&heapSegment, &heapSegment.prev_free_region) != GCInterfaceOffsets.OFFSETOF__heap_segment__prev_free_region
+                || OffsetOf(&heapSegment, &heapSegment.containing_free_list) != GCInterfaceOffsets.OFFSETOF__heap_segment__containing_free_list
+#else
+                || OffsetOf(&heapSegment, &heapSegment.padandplug) != GCInterfaceOffsets.OFFSETOF__heap_segment__padandplug
+#endif
+                )
+            {
+                return false;
+            }
+
             plug plugValue;
             pair pairValue;
             plug_and_pair plugAndPair;

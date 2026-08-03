@@ -33,6 +33,11 @@
          native build labels it Linux. gcenv.managed.cpp checks the two selections against each
          other. -->
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true'">TARGET_ANDROID;$(DefineConstants)</DefineConstants>
+    <!-- gcpriv.h enables BACKGROUND_GC on every non-WASM full runtime. MULTIPLE_HEAPS is not
+         defined here: Runtime.ManagedGC and its generated offsets table are built from the
+         workstation collector; GCInterfaceOffsets.h retains the server branch for its separate
+         native verifier. -->
+    <DefineConstants Condition="'$(Platform)' != 'wasm'">BACKGROUND_GC;$(DefineConstants)</DefineConstants>
     <!-- USE_REGIONS is the collector's region layout. gcpriv.h defines it as
          HOST_64BIT && !BUILD_AS_STANDALONE && !__sun && (!HOST_APPLE || HOST_OSX). This integrated
          port is never BUILD_AS_STANDALONE and never targets illumos/Solaris, so it reduces to

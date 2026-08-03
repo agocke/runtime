@@ -22,6 +22,10 @@
     <DefineConstants Condition="'$(TargetsLinuxMusl)' == 'true'">TARGET_LINUX_MUSL;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true' or '$(TargetsLinuxBionic)' == 'true'">TARGET_BIONIC;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true'">TARGET_ANDROID;$(DefineConstants)</DefineConstants>
+    <!-- Kept in step with src/System.Private.GC.csproj: gcpriv.h enables BACKGROUND_GC on every
+         non-WASM full runtime. The managed runtime is the workstation configuration, while the
+         offsets table itself keeps the native server branch for its separate verifier. -->
+    <DefineConstants Condition="'$(Platform)' != 'wasm'">BACKGROUND_GC;$(DefineConstants)</DefineConstants>
     <!-- Kept in step with src/System.Private.GC.csproj: USE_REGIONS selects the region layout of
          the generation schema, matching gcpriv.h's HOST_64BIT && (!HOST_APPLE || HOST_OSX) after
          the standalone/illumos terms drop out for this port. -->

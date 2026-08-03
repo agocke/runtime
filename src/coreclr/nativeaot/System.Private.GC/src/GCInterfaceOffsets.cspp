@@ -12,11 +12,14 @@ namespace Internal.Runtime.GarbageCollection
     internal static class GCInterfaceOffsets
     {
 // GCInterfaceOffsets.h selects the generation schema with the same gcpriv.h feature switches the
-// real GC uses. gcpriv.h defines them, but this file does not include it, so reproduce the two the
+// real GC uses. gcpriv.h defines them, but this file does not include it, so reproduce the three the
 // table needs from the same primitives the compile definitions carry. The verify side in
 // GCInterfaceOffsetsVerify.cpp gets the real definitions through gcinternal.h instead. These
 // #defines are consumed by the preprocessor and are placed inside the class so any surviving
 // comment lands in the class body rather than the generated file's license header.
+#if !defined(TARGET_WASM)
+#define BACKGROUND_GC
+#endif
 #if defined(HOST_64BIT) && !defined(BUILD_AS_STANDALONE) && !defined(__sun) && (!defined(HOST_APPLE) || defined(HOST_OSX))
 #define USE_REGIONS
 #endif

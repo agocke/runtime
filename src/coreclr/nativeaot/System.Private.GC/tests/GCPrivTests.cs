@@ -802,4 +802,231 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)0x900, (nuint)p->last_free_list_allocated);
 #endif
     }
+
+#if USE_REGIONS
+    [Fact]
+    public void GenerationRegionInfoHasTwoSegmentPointers()
+    {
+        generation_region_info info = default;
+
+        Assert.Equal((nuint)0, (nuint)info.head);
+        Assert.Equal((nuint)0, (nuint)info.tail);
+        Assert.Equal((nuint)(2 * sizeof(void*)), (nuint)sizeof(generation_region_info));
+    }
+#endif
+
+    [Fact]
+    public void HeapSegmentDefaultStateIsZeroed()
+    {
+        heap_segment segment = default;
+        heap_segment* p = &segment;
+
+        Assert.Equal((nuint)0, (nuint)p->allocated);
+        Assert.Equal((nuint)0, (nuint)p->committed);
+        Assert.Equal((nuint)0, (nuint)p->reserved);
+        Assert.Equal((nuint)0, (nuint)p->used);
+        Assert.Equal((nuint)0, (nuint)p->mem);
+        Assert.Equal((nuint)0, p->flags);
+        Assert.Equal((nuint)0, (nuint)p->next);
+        Assert.Equal((nuint)0, (nuint)p->background_allocated);
+        Assert.Equal((nuint)0, (nuint)p->plan_allocated);
+        Assert.Equal((nuint)0, (nuint)p->saved_allocated);
+        Assert.Equal((nuint)0, (nuint)p->saved_bg_allocated);
+#if !USE_REGIONS || MULTIPLE_HEAPS
+        Assert.Equal((nuint)0, (nuint)p->decommit_target);
+#endif
+#if USE_REGIONS
+        Assert.Equal((nuint)0, p->survived);
+        Assert.Equal((byte)0, p->gen_num);
+        Assert.Equal((byte)0, p->swept_in_plan_p);
+        Assert.Equal(0, p->plan_gen_num);
+        Assert.Equal(0, p->old_card_survived);
+        Assert.Equal(0, p->pinned_survived);
+        Assert.Equal(0, p->age_in_free);
+        Assert.Equal((nuint)0, (nuint)p->free_list_head);
+        Assert.Equal((nuint)0, (nuint)p->free_list_tail);
+        Assert.Equal((nuint)0, p->free_list_size);
+        Assert.Equal((nuint)0, p->free_obj_size);
+        Assert.Equal((nuint)0, (nuint)p->prev_free_region);
+        Assert.Equal((nuint)0, (nuint)p->containing_free_list);
+#endif
+    }
+
+    [Fact]
+    public void HeapSegmentFieldsAndReferenceAccessorsFollowNativeOrder()
+    {
+        heap_segment segment = default;
+        heap_segment* p = &segment;
+        nuint previous = 0;
+
+        Assert.Equal((nuint)0, OffsetOf(&p->allocated, p));
+        previous = Ascending(OffsetOf(&p->committed, p), previous);
+        previous = Ascending(OffsetOf(&p->reserved, p), previous);
+        previous = Ascending(OffsetOf(&p->used, p), previous);
+        previous = Ascending(OffsetOf(&p->mem, p), previous);
+        previous = Ascending(OffsetOf(&p->flags, p), previous);
+        previous = Ascending(OffsetOf(&p->next, p), previous);
+        previous = Ascending(OffsetOf(&p->background_allocated, p), previous);
+#if MULTIPLE_HEAPS
+        previous = Ascending(OffsetOf(&p->heap, p), previous);
+#if DEBUG && !USE_REGIONS
+        previous = Ascending(OffsetOf(&p->saved_committed, p), previous);
+        previous = Ascending(OffsetOf(&p->saved_desired_allocation, p), previous);
+#endif
+#endif
+#if !USE_REGIONS || MULTIPLE_HEAPS
+        previous = Ascending(OffsetOf(&p->decommit_target, p), previous);
+#endif
+        previous = Ascending(OffsetOf(&p->plan_allocated, p), previous);
+        previous = Ascending(OffsetOf(&p->saved_allocated, p), previous);
+        previous = Ascending(OffsetOf(&p->saved_bg_allocated, p), previous);
+#if USE_REGIONS
+        previous = Ascending(OffsetOf(&p->survived, p), previous);
+        previous = Ascending(OffsetOf(&p->gen_num, p), previous);
+        previous = Ascending(OffsetOf(&p->swept_in_plan_p, p), previous);
+        previous = Ascending(OffsetOf(&p->plan_gen_num, p), previous);
+        previous = Ascending(OffsetOf(&p->old_card_survived, p), previous);
+        previous = Ascending(OffsetOf(&p->pinned_survived, p), previous);
+        previous = Ascending(OffsetOf(&p->age_in_free, p), previous);
+        previous = Ascending(OffsetOf(&p->free_list_head, p), previous);
+        previous = Ascending(OffsetOf(&p->free_list_tail, p), previous);
+        previous = Ascending(OffsetOf(&p->free_list_size, p), previous);
+        previous = Ascending(OffsetOf(&p->free_obj_size, p), previous);
+        previous = Ascending(OffsetOf(&p->prev_free_region, p), previous);
+        previous = Ascending(OffsetOf(&p->containing_free_list, p), previous);
+#else
+        previous = Ascending(OffsetOf(&p->padandplug, p), previous);
+#endif
+
+        heap_segment.heap_segment_reserved(p) = (byte*)1;
+        heap_segment.heap_segment_committed(p) = (byte*)2;
+        heap_segment.heap_segment_used(p) = (byte*)3;
+        heap_segment.heap_segment_allocated(p) = (byte*)4;
+        heap_segment.heap_segment_next(p) = (heap_segment*)5;
+        heap_segment.heap_segment_mem(p) = (byte*)6;
+        heap_segment.heap_segment_plan_allocated(p) = (byte*)7;
+        heap_segment.heap_segment_saved_allocated(p) = (byte*)8;
+#if BACKGROUND_GC
+        heap_segment.heap_segment_background_allocated(p) = (byte*)9;
+        heap_segment.heap_segment_saved_bg_allocated(p) = (byte*)10;
+#endif
+
+        Assert.Equal((nuint)1, (nuint)p->reserved);
+        Assert.Equal((nuint)2, (nuint)p->committed);
+        Assert.Equal((nuint)3, (nuint)p->used);
+        Assert.Equal((nuint)4, (nuint)p->allocated);
+        Assert.Equal((nuint)5, (nuint)p->next);
+        Assert.Equal((nuint)6, (nuint)p->mem);
+        Assert.Equal((nuint)7, (nuint)p->plan_allocated);
+        Assert.Equal((nuint)8, (nuint)p->saved_allocated);
+#if BACKGROUND_GC
+        Assert.Equal((nuint)9, (nuint)p->background_allocated);
+        Assert.Equal((nuint)10, (nuint)p->saved_bg_allocated);
+#endif
+    }
+
+    [Theory]
+    [InlineData(0UL, 0, 1)]
+    [InlineData(1UL, 1, 0)]
+    [InlineData(2UL, 0, 1)]
+    [InlineData(3UL, 1, 1)]
+    public void HeapSegmentReadOnlyAndInRangeFlagsHaveNativeTruthTable(ulong flags, int readOnly, int inRange)
+    {
+        heap_segment segment = default;
+        segment.flags = (nuint)flags;
+
+        Assert.Equal(readOnly, heap_segment.heap_segment_read_only_p(&segment));
+        Assert.Equal(inRange, heap_segment.heap_segment_in_range_p(&segment));
+    }
+
+    [Fact]
+    public void HeapSegmentObjectHeapAndBackgroundPredicatesPreserveNativePrecedence()
+    {
+        heap_segment segment = default;
+
+        Assert.Equal(0, heap_segment.heap_segment_loh_p(&segment));
+        Assert.Equal(0, heap_segment.heap_segment_poh_p(&segment));
+        Assert.Equal(0, heap_segment.heap_segment_uoh_p(&segment));
+        Assert.Equal(gc_oh_num.soh, heap_segment.heap_segment_oh(&segment));
+
+        segment.flags = heap_segment.heap_segment_flags_poh;
+        Assert.Equal(1, heap_segment.heap_segment_poh_p(&segment));
+        Assert.Equal(1, heap_segment.heap_segment_uoh_p(&segment));
+        Assert.Equal(gc_oh_num.poh, heap_segment.heap_segment_oh(&segment));
+
+        segment.flags |= heap_segment.heap_segment_flags_loh;
+        Assert.Equal(1, heap_segment.heap_segment_loh_p(&segment));
+        Assert.Equal(1, heap_segment.heap_segment_poh_p(&segment));
+        Assert.Equal(1, heap_segment.heap_segment_uoh_p(&segment));
+        Assert.Equal(gc_oh_num.loh, heap_segment.heap_segment_oh(&segment));
+
+#if BACKGROUND_GC
+        segment.flags = heap_segment.heap_segment_flags_decommitted | heap_segment.heap_segment_flags_swept;
+        Assert.Equal(1, heap_segment.heap_segment_decommitted_p(&segment));
+        Assert.Equal(1, heap_segment.heap_segment_swept_p(&segment));
+        segment.flags = 0;
+        Assert.Equal(0, heap_segment.heap_segment_decommitted_p(&segment));
+        Assert.Equal(0, heap_segment.heap_segment_swept_p(&segment));
+#endif
+#if BACKGROUND_GC && USE_REGIONS
+        segment.flags = heap_segment.heap_segment_flags_overflow;
+        Assert.True(heap_segment.heap_segment_overflow_p(&segment));
+        segment.flags = 0;
+        Assert.False(heap_segment.heap_segment_overflow_p(&segment));
+#endif
+#if USE_REGIONS
+        segment.flags = heap_segment.heap_segment_flags_demoted;
+        Assert.True(heap_segment.heap_segment_demoted_p(&segment));
+        segment.flags = 0;
+        Assert.False(heap_segment.heap_segment_demoted_p(&segment));
+#endif
+    }
+
+#if USE_REGIONS
+    [Fact]
+    public void HeapSegmentRegionAccessorsAndFreeListInitializationMutateOnlyTheirFields()
+    {
+        heap_segment segment = default;
+        heap_segment* p = &segment;
+
+        heap_segment.heap_segment_containing_free_list(p) = (region_free_list*)1;
+        heap_segment.heap_segment_prev_free_region(p) = (heap_segment*)2;
+        heap_segment.heap_segment_gen_num(p) = 3;
+        heap_segment.heap_segment_swept_in_plan(p) = 1;
+        heap_segment.heap_segment_plan_gen_num(p) = 4;
+        heap_segment.heap_segment_age_in_free(p) = 5;
+        heap_segment.heap_segment_survived(p) = 6;
+        heap_segment.heap_segment_old_card_survived(p) = 7;
+        heap_segment.heap_segment_pinned_survived(p) = 8;
+        p->free_list_head = (byte*)9;
+        p->free_list_tail = (byte*)10;
+        p->free_list_size = 11;
+        p->free_obj_size = 12;
+
+        Assert.Equal((nuint)1, (nuint)p->containing_free_list);
+        Assert.Equal((nuint)2, (nuint)p->prev_free_region);
+        Assert.Equal((byte)3, p->gen_num);
+        Assert.Equal((byte)1, p->swept_in_plan_p);
+        Assert.Equal(4, p->plan_gen_num);
+        Assert.Equal(5, p->age_in_free);
+        Assert.Equal((nuint)6, p->survived);
+        Assert.Equal(7, p->old_card_survived);
+        Assert.Equal(8, p->pinned_survived);
+        Assert.Equal((nuint)9, (nuint)heap_segment.heap_segment_free_list_head(p));
+        Assert.Equal((nuint)10, (nuint)heap_segment.heap_segment_free_list_tail(p));
+        Assert.Equal((nuint)11, heap_segment.heap_segment_free_list_size(p));
+        Assert.Equal((nuint)12, heap_segment.heap_segment_free_obj_size(p));
+
+        p->init_free_list();
+
+        Assert.Equal((nuint)0, (nuint)p->free_list_head);
+        Assert.Equal((nuint)0, (nuint)p->free_list_tail);
+        Assert.Equal((nuint)0, p->free_list_size);
+        Assert.Equal((nuint)0, p->free_obj_size);
+        Assert.Equal((byte)3, p->gen_num);
+        Assert.Equal(5, p->age_in_free);
+    }
+#endif
+
+    private static nuint OffsetOf(void* field, heap_segment* segment) => (nuint)((byte*)field - (byte*)segment);
 }

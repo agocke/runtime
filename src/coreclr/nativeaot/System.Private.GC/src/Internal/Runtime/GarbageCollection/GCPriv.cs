@@ -338,13 +338,209 @@ namespace Internal.Runtime.GarbageCollection
 #endif
     }
 
-    // A generation only ever refers to heap_segment through a pointer, so the port needs nothing
-    // more than an incomplete type here. It is declared partial so the later slice that ports the
-    // full heap_segment schema can add its fields in its own file without disturbing the pointer
-    // references below. As an empty unmanaged type it is only ever used as heap_segment*, whose
-    // size does not depend on the (still absent) field list.
-    internal unsafe partial struct heap_segment
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    internal unsafe partial struct gc_heap
     {
+    }
+
+    internal unsafe partial struct region_free_list
+    {
+    }
+#pragma warning restore CS8981
+
+#if USE_REGIONS
+    internal unsafe struct generation_region_info
+    {
+        public heap_segment* head;
+        public heap_segment* tail;
+    }
+#endif
+
+    // The segment schema is dependency-closed: gc_heap and region_free_list are deliberately
+    // opaque until their owning schemas arrive, as this record only holds pointers to them.
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe partial struct heap_segment
+#pragma warning restore CS8981
+    {
+        public const nuint heap_segment_flags_readonly = 1;
+        public const nuint heap_segment_flags_inrange = 2;
+        public const nuint heap_segment_flags_loh = 8;
+#if BACKGROUND_GC
+        public const nuint heap_segment_flags_swept = 16;
+        public const nuint heap_segment_flags_decommitted = 32;
+        public const nuint heap_segment_flags_ma_committed = 64;
+        public const nuint heap_segment_flags_ma_pcommitted = 128;
+        public const nuint heap_segment_flags_uoh_delete = 256;
+#endif
+        public const nuint heap_segment_flags_poh = 512;
+#if BACKGROUND_GC && USE_REGIONS
+        public const nuint heap_segment_flags_overflow = 1024;
+#endif
+#if USE_REGIONS
+        public const nuint heap_segment_flags_demoted = 2048;
+        public const int MAX_AGE_IN_FREE = 99;
+        public const int AGE_IN_FREE_TO_DECOMMIT_BASIC = 20;
+        public const int AGE_IN_FREE_TO_DECOMMIT_LARGE = 5;
+        public const int AGE_IN_FREE_TO_DECOMMIT_HUGE = 2;
+#endif
+
+        public byte* allocated;
+        public byte* committed;
+        public byte* reserved;
+        public byte* used;
+        public byte* mem;
+        public nuint flags;
+        public heap_segment* next;
+        public byte* background_allocated;
+#if MULTIPLE_HEAPS
+        public gc_heap* heap;
+#if DEBUG && !USE_REGIONS
+        public byte* saved_committed;
+        public nuint saved_desired_allocation;
+#endif
+#endif
+#if !USE_REGIONS || MULTIPLE_HEAPS
+        public byte* decommit_target;
+#endif
+        public byte* plan_allocated;
+        public byte* saved_allocated;
+        public byte* saved_bg_allocated;
+#if USE_REGIONS
+        public nuint survived;
+        public byte gen_num;
+        public byte swept_in_plan_p;
+        public int plan_gen_num;
+        public int old_card_survived;
+        public int pinned_survived;
+        public int age_in_free;
+        public byte* free_list_head;
+        public byte* free_list_tail;
+        public nuint free_list_size;
+        public nuint free_obj_size;
+        public heap_segment* prev_free_region;
+        public region_free_list* containing_free_list;
+#else
+        public aligned_plug_and_gap padandplug;
+#endif
+
+#if USE_REGIONS
+        public void init_free_list()
+        {
+            free_list_head = null;
+            free_list_tail = null;
+            free_list_size = 0;
+            free_obj_size = 0;
+        }
+
+        // thread_free_obj depends on the later free-list object representation.
+#endif
+
+        public static ref byte* heap_segment_reserved(heap_segment* inst) => ref inst->reserved;
+
+        public static ref byte* heap_segment_committed(heap_segment* inst) => ref inst->committed;
+
+#if !USE_REGIONS || MULTIPLE_HEAPS
+        public static ref byte* heap_segment_decommit_target(heap_segment* inst) => ref inst->decommit_target;
+#endif
+
+        public static ref byte* heap_segment_used(heap_segment* inst) => ref inst->used;
+
+        public static ref byte* heap_segment_allocated(heap_segment* inst) => ref inst->allocated;
+
+        public static int heap_segment_read_only_p(heap_segment* inst) =>
+            (inst->flags & heap_segment_flags_readonly) != 0 ? 1 : 0;
+
+        public static int heap_segment_in_range_p(heap_segment* inst) =>
+            ((inst->flags & heap_segment_flags_readonly) == 0
+             || (inst->flags & heap_segment_flags_inrange) != 0) ? 1 : 0;
+
+        public static int heap_segment_loh_p(heap_segment* inst) =>
+            (inst->flags & heap_segment_flags_loh) != 0 ? 1 : 0;
+
+        public static int heap_segment_poh_p(heap_segment* inst) =>
+            (inst->flags & heap_segment_flags_poh) != 0 ? 1 : 0;
+
+        public static int heap_segment_uoh_p(heap_segment* inst) =>
+            (inst->flags & (heap_segment_flags_loh | heap_segment_flags_poh)) != 0 ? 1 : 0;
+
+        public static gc_oh_num heap_segment_oh(heap_segment* inst)
+        {
+            if ((inst->flags & heap_segment_flags_loh) != 0)
+            {
+                return gc_oh_num.loh;
+            }
+            else if ((inst->flags & heap_segment_flags_poh) != 0)
+            {
+                return gc_oh_num.poh;
+            }
+
+            return gc_oh_num.soh;
+        }
+
+#if USE_REGIONS
+        public static ref region_free_list* heap_segment_containing_free_list(heap_segment* inst) => ref inst->containing_free_list;
+
+        public static ref heap_segment* heap_segment_prev_free_region(heap_segment* inst) => ref inst->prev_free_region;
+#endif
+
+#if BACKGROUND_GC
+#if USE_REGIONS
+        public static bool heap_segment_overflow_p(heap_segment* inst) =>
+            (inst->flags & heap_segment_flags_overflow) != 0;
+#endif
+
+        public static int heap_segment_decommitted_p(heap_segment* inst) =>
+            (inst->flags & heap_segment_flags_decommitted) != 0 ? 1 : 0;
+
+        public static int heap_segment_swept_p(heap_segment* inst) =>
+            (inst->flags & heap_segment_flags_swept) != 0 ? 1 : 0;
+#endif
+
+        public static ref heap_segment* heap_segment_next(heap_segment* inst) => ref inst->next;
+
+        public static ref byte* heap_segment_mem(heap_segment* inst) => ref inst->mem;
+
+        public static ref byte* heap_segment_plan_allocated(heap_segment* inst) => ref inst->plan_allocated;
+
+        public static ref byte* heap_segment_saved_allocated(heap_segment* inst) => ref inst->saved_allocated;
+
+#if BACKGROUND_GC
+        public static ref byte* heap_segment_background_allocated(heap_segment* inst) => ref inst->background_allocated;
+
+        public static ref byte* heap_segment_saved_bg_allocated(heap_segment* inst) => ref inst->saved_bg_allocated;
+#endif
+
+#if MULTIPLE_HEAPS
+        public static ref gc_heap* heap_segment_heap(heap_segment* inst) => ref inst->heap;
+#endif
+
+#if USE_REGIONS
+        public static ref byte heap_segment_gen_num(heap_segment* inst) => ref inst->gen_num;
+
+        public static ref byte heap_segment_swept_in_plan(heap_segment* inst) => ref inst->swept_in_plan_p;
+
+        public static ref int heap_segment_plan_gen_num(heap_segment* inst) => ref inst->plan_gen_num;
+
+        public static ref int heap_segment_age_in_free(heap_segment* inst) => ref inst->age_in_free;
+
+        public static ref nuint heap_segment_survived(heap_segment* inst) => ref inst->survived;
+
+        public static ref int heap_segment_old_card_survived(heap_segment* inst) => ref inst->old_card_survived;
+
+        public static ref int heap_segment_pinned_survived(heap_segment* inst) => ref inst->pinned_survived;
+
+        public static byte* heap_segment_free_list_head(heap_segment* inst) => inst->free_list_head;
+
+        public static byte* heap_segment_free_list_tail(heap_segment* inst) => inst->free_list_tail;
+
+        public static nuint heap_segment_free_list_size(heap_segment* inst) => inst->free_list_size;
+
+        public static nuint heap_segment_free_obj_size(heap_segment* inst) => inst->free_obj_size;
+
+        public static bool heap_segment_demoted_p(heap_segment* inst) =>
+            (inst->flags & heap_segment_flags_demoted) != 0;
+#endif
     }
 
     // A generation is a per heap concept: each heap has its own gen0/1/2/loh/poh. The native class
