@@ -725,6 +725,9 @@ Translate the schema from `gcpriv.h` and related headers:
   `interesting_data_point`, reusing the translated interface status and finalizer callback types.
 - The unconditional core collector enums for LOH compaction, pause-mode results, latency and
   tuning, object-heap identity, memory type, allocation state, and multi-segment-lock entry.
+- The unconditional planning and relocation records `plug`, `pair`, `plug_and_pair`,
+  `plug_and_reloc`, `gap_reloc_pair`, `loh_obj_and_pad`, and `loh_padding_obj`. Their pointer and
+  padding layouts are pinned independently of the later collection-phase algorithms.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.

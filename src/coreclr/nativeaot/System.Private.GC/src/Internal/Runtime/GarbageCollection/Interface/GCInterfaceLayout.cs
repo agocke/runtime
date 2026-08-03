@@ -412,21 +412,63 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             no_gc_region_info noGCInfo;
-            return sizeof(no_gc_region_info) == GCInterfaceOffsets.SIZEOF__no_gc_region_info
-                && AlignOf<no_gc_region_info>() == GCInterfaceOffsets.ALIGNOF__no_gc_region_info
-                && OffsetOf(&noGCInfo, &noGCInfo.soh_allocation_size) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__soh_allocation_size
-                && OffsetOf(&noGCInfo, &noGCInfo.loh_allocation_size) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__loh_allocation_size
-                && OffsetOf(&noGCInfo, &noGCInfo.started) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__started
-                && OffsetOf(&noGCInfo, &noGCInfo.num_gcs) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__num_gcs
-                && OffsetOf(&noGCInfo, &noGCInfo.num_gcs_induced) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__num_gcs_induced
-                && OffsetOf(&noGCInfo, &noGCInfo.start_status) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__start_status
-                && OffsetOf(&noGCInfo, &noGCInfo.saved_pause_mode) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_pause_mode
-                && OffsetOf(&noGCInfo, &noGCInfo.saved_gen0_min_size) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_gen0_min_size
-                && OffsetOf(&noGCInfo, &noGCInfo.saved_gen3_min_size) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_gen3_min_size
-                && OffsetOf(&noGCInfo, &noGCInfo.minimal_gc_p) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__minimal_gc_p
-                && OffsetOf(&noGCInfo, &noGCInfo.soh_withheld_budget) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__soh_withheld_budget
-                && OffsetOf(&noGCInfo, &noGCInfo.loh_withheld_budget) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__loh_withheld_budget
-                && OffsetOf(&noGCInfo, &noGCInfo.callback) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__callback;
+            if (sizeof(no_gc_region_info) != GCInterfaceOffsets.SIZEOF__no_gc_region_info
+                || AlignOf<no_gc_region_info>() != GCInterfaceOffsets.ALIGNOF__no_gc_region_info
+                || OffsetOf(&noGCInfo, &noGCInfo.soh_allocation_size) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__soh_allocation_size
+                || OffsetOf(&noGCInfo, &noGCInfo.loh_allocation_size) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__loh_allocation_size
+                || OffsetOf(&noGCInfo, &noGCInfo.started) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__started
+                || OffsetOf(&noGCInfo, &noGCInfo.num_gcs) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__num_gcs
+                || OffsetOf(&noGCInfo, &noGCInfo.num_gcs_induced) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__num_gcs_induced
+                || OffsetOf(&noGCInfo, &noGCInfo.start_status) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__start_status
+                || OffsetOf(&noGCInfo, &noGCInfo.saved_pause_mode) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_pause_mode
+                || OffsetOf(&noGCInfo, &noGCInfo.saved_gen0_min_size) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_gen0_min_size
+                || OffsetOf(&noGCInfo, &noGCInfo.saved_gen3_min_size) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_gen3_min_size
+                || OffsetOf(&noGCInfo, &noGCInfo.minimal_gc_p) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__minimal_gc_p
+                || OffsetOf(&noGCInfo, &noGCInfo.soh_withheld_budget) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__soh_withheld_budget
+                || OffsetOf(&noGCInfo, &noGCInfo.loh_withheld_budget) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__loh_withheld_budget
+                || OffsetOf(&noGCInfo, &noGCInfo.callback) != GCInterfaceOffsets.OFFSETOF__no_gc_region_info__callback)
+            {
+                return false;
+            }
+
+            plug plugValue;
+            pair pairValue;
+            plug_and_pair plugAndPair;
+            plug_and_reloc plugAndReloc;
+            gap_reloc_pair gapRelocPair;
+            loh_obj_and_pad lohObjAndPad;
+            loh_padding_obj lohPaddingObj;
+            return sizeof(plug) == GCInterfaceOffsets.SIZEOF__plug
+                && AlignOf<plug>() == GCInterfaceOffsets.ALIGNOF__plug
+                && OffsetOf(&plugValue, &plugValue.skew0) == GCInterfaceOffsets.OFFSETOF__plug__skew
+                && sizeof(pair) == GCInterfaceOffsets.SIZEOF__pair
+                && AlignOf<pair>() == GCInterfaceOffsets.ALIGNOF__pair
+                && OffsetOf(&pairValue, &pairValue.left) == GCInterfaceOffsets.OFFSETOF__pair__left
+                && OffsetOf(&pairValue, &pairValue.right) == GCInterfaceOffsets.OFFSETOF__pair__right
+                && sizeof(plug_and_pair) == GCInterfaceOffsets.SIZEOF__plug_and_pair
+                && AlignOf<plug_and_pair>() == GCInterfaceOffsets.ALIGNOF__plug_and_pair
+                && OffsetOf(&plugAndPair, &plugAndPair.m_pair) == GCInterfaceOffsets.OFFSETOF__plug_and_pair__m_pair
+                && OffsetOf(&plugAndPair, &plugAndPair.m_plug) == GCInterfaceOffsets.OFFSETOF__plug_and_pair__m_plug
+                && sizeof(plug_and_reloc) == GCInterfaceOffsets.SIZEOF__plug_and_reloc
+                && AlignOf<plug_and_reloc>() == GCInterfaceOffsets.ALIGNOF__plug_and_reloc
+                && OffsetOf(&plugAndReloc, &plugAndReloc.reloc) == GCInterfaceOffsets.OFFSETOF__plug_and_reloc__reloc
+                && OffsetOf(&plugAndReloc, &plugAndReloc.m_pair) == GCInterfaceOffsets.OFFSETOF__plug_and_reloc__m_pair
+                && OffsetOf(&plugAndReloc, &plugAndReloc.m_plug) == GCInterfaceOffsets.OFFSETOF__plug_and_reloc__m_plug
+                && sizeof(gap_reloc_pair) == GCInterfaceOffsets.SIZEOF__gap_reloc_pair
+                && AlignOf<gap_reloc_pair>() == GCInterfaceOffsets.ALIGNOF__gap_reloc_pair
+                && OffsetOf(&gapRelocPair, &gapRelocPair.gap) == GCInterfaceOffsets.OFFSETOF__gap_reloc_pair__gap
+                && OffsetOf(&gapRelocPair, &gapRelocPair.reloc) == GCInterfaceOffsets.OFFSETOF__gap_reloc_pair__reloc
+                && OffsetOf(&gapRelocPair, &gapRelocPair.m_pair) == GCInterfaceOffsets.OFFSETOF__gap_reloc_pair__m_pair
+                && sizeof(loh_obj_and_pad) == GCInterfaceOffsets.SIZEOF__loh_obj_and_pad
+                && AlignOf<loh_obj_and_pad>() == GCInterfaceOffsets.ALIGNOF__loh_obj_and_pad
+                && OffsetOf(&lohObjAndPad, &lohObjAndPad.reloc) == GCInterfaceOffsets.OFFSETOF__loh_obj_and_pad__reloc
+                && OffsetOf(&lohObjAndPad, &lohObjAndPad.m_plug) == GCInterfaceOffsets.OFFSETOF__loh_obj_and_pad__m_plug
+                && sizeof(loh_padding_obj) == GCInterfaceOffsets.SIZEOF__loh_padding_obj
+                && AlignOf<loh_padding_obj>() == GCInterfaceOffsets.ALIGNOF__loh_padding_obj
+                && OffsetOf(&lohPaddingObj, &lohPaddingObj.mt) == GCInterfaceOffsets.OFFSETOF__loh_padding_obj__mt
+                && OffsetOf(&lohPaddingObj, &lohPaddingObj.len) == GCInterfaceOffsets.OFFSETOF__loh_padding_obj__len
+                && OffsetOf(&lohPaddingObj, &lohPaddingObj.reloc) == GCInterfaceOffsets.OFFSETOF__loh_padding_obj__reloc
+                && OffsetOf(&lohPaddingObj, &lohPaddingObj.m_plug) == GCInterfaceOffsets.OFFSETOF__loh_padding_obj__m_plug;
         }
 
         /// <summary>

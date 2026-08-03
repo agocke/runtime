@@ -227,4 +227,58 @@ namespace Internal.Runtime.GarbageCollection
         idp_post_short_padded = 8,
         max_idp_count,
     }
+
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct plug
+    {
+        public byte* skew0;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct pair
+    {
+        public short left;
+        public short right;
+    }
+#pragma warning restore CS8981
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct plug_and_pair
+    {
+        public pair m_pair;
+        public plug m_plug;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct plug_and_reloc
+    {
+        public nint reloc;
+        public pair m_pair;
+        public plug m_plug;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct gap_reloc_pair
+    {
+        public nuint gap;
+        public nuint reloc;
+        public pair m_pair;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct loh_obj_and_pad
+    {
+        public nint reloc;
+        public plug m_plug;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct loh_padding_obj
+    {
+        public byte* mt;
+        public nuint len;
+        public nint reloc;
+        public plug m_plug;
+    }
 }

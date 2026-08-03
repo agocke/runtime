@@ -171,7 +171,9 @@ flags are bytes so their one-byte ABI is explicit. Their complete layouts and en
 checked against both workstation and server GC headers and again by the managed startup verifier
 and foundation tests. The same file also carries the dependency-free collector enums for LOH
 compaction, latency and tuning, object-heap identity, memory state, allocation state, and
-multi-segment-lock entry.
+multi-segment-lock entry. The first plan/relocation records are present too: `plug`, `pair`,
+`plug_and_pair`, `plug_and_reloc`, `gap_reloc_pair`, `loh_obj_and_pad`, and
+`loh_padding_obj`.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`

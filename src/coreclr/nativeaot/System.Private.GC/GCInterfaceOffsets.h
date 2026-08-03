@@ -565,6 +565,44 @@ GC_CONST(         7,         7, idp_pre_short_padded)
 GC_CONST(         8,         8, idp_post_short_padded)
 GC_CONST(         9,         9, max_idp_count)
 
+GC_OFFSET(         0,         0, plug, skew)
+GC_SIZEOF(         4,         8, plug)
+GC_ALIGNOF(        4,         8, plug)
+
+GC_OFFSET(         0,         0, pair, left)
+GC_OFFSET(         2,         2, pair, right)
+GC_SIZEOF(         4,         4, pair)
+GC_ALIGNOF(        2,         2, pair)
+
+GC_OFFSET(         0,         0, plug_and_pair, m_pair)
+GC_OFFSET(         4,         8, plug_and_pair, m_plug)
+GC_SIZEOF(         8,        10, plug_and_pair)
+GC_ALIGNOF(        4,         8, plug_and_pair)
+
+GC_OFFSET(         0,         0, plug_and_reloc, reloc)
+GC_OFFSET(         4,         8, plug_and_reloc, m_pair)
+GC_OFFSET(         8,        10, plug_and_reloc, m_plug)
+GC_SIZEOF(         c,        18, plug_and_reloc)
+GC_ALIGNOF(        4,         8, plug_and_reloc)
+
+GC_OFFSET(         0,         0, gap_reloc_pair, gap)
+GC_OFFSET(         4,         8, gap_reloc_pair, reloc)
+GC_OFFSET(         8,        10, gap_reloc_pair, m_pair)
+GC_SIZEOF(         c,        18, gap_reloc_pair)
+GC_ALIGNOF(        4,         8, gap_reloc_pair)
+
+GC_OFFSET(         0,         0, loh_obj_and_pad, reloc)
+GC_OFFSET(         4,         8, loh_obj_and_pad, m_plug)
+GC_SIZEOF(         8,        10, loh_obj_and_pad)
+GC_ALIGNOF(        4,         8, loh_obj_and_pad)
+
+GC_OFFSET(         0,         0, loh_padding_obj, mt)
+GC_OFFSET(         4,         8, loh_padding_obj, len)
+GC_OFFSET(         8,        10, loh_padding_obj, reloc)
+GC_OFFSET(         c,        18, loh_padding_obj, m_plug)
+GC_SIZEOF(        10,        20, loh_padding_obj)
+GC_ALIGNOF(        4,         8, loh_padding_obj)
+
 // -----------------------------------------------------------------------------------------
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
 // GC_Initialize, so its layout is part of the loader protocol; the types below it are the

@@ -11,8 +11,10 @@
 
 #ifdef SERVER_GC
 using namespace SVR;
+using gc_pair = SVR::pair;
 #else
 using namespace WKS;
+using gc_pair = WKS::pair;
 #endif
 
 class GCInterfaceOffsets
@@ -40,7 +42,9 @@ class GCInterfaceOffsets
 #define PLAT_GC_VALUE(constant, name, expr) \
     static_assert((int)(expr) == 0x##constant, "Bad GC interface constant for '" #expr "'.");
 
+#define pair gc_pair
 #include "../System.Private.GC/GCInterfaceOffsets.h"
+#undef pair
 
 };
 
