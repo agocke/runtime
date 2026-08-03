@@ -223,6 +223,11 @@ table selects the same layout; the native verifier gets the real definition thro
 runtime uses the workstation segment layout; `GCInterfaceOffsets.h` retains its
 `MULTIPLE_HEAPS` server branches so both native verifier targets continue to validate their
 distinct layouts.
+The adjacent `seg_mapping`/`ro_in_entry` schema is translated with the segment: region builds
+embed a complete `heap_segment`, while non-region builds preserve the boundary, server-only
+heap pointers, and `seg0`/low-bit-tagged-`seg1` fields. Its table sizing and address-to-segment
+or heap lookup algorithms remain deferred to `regions_segments.cpp` and `gc.cpp`, when the
+required heap constants and state are available.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

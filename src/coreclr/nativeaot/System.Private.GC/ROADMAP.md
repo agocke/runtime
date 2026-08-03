@@ -777,6 +777,11 @@ Translate the schema from `gcpriv.h` and related headers:
   `generation_alloc_context`, the allocation-context pointer/limit, the free-list and region
   pointers, and `generation_total_plan_allocated` -- are static helpers taking a `generation*`,
   mirroring the native reference-return API without a managed reference to collector state.
+- The adjacent `seg_mapping` record and `ro_in_entry` low-bit constant. Under `USE_REGIONS` the
+  mapping embeds the complete `heap_segment`; without regions it preserves the boundary,
+  `MULTIPLE_HEAPS`-only `h0`/`h1`, and `seg0`/`seg1` fields, including the read-only `seg1`
+  tagging convention. The table-size and address-to-segment/heap algorithms are intentionally
+  deferred to `regions_segments.cpp` and `gc.cpp`, after their heap constants and state arrive.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.

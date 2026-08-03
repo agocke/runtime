@@ -816,6 +816,63 @@ public sealed unsafe class GCPrivTests
 #endif
 
     [Fact]
+    public void SegMappingDefaultStateIsZeroed()
+    {
+        seg_mapping mapping = default;
+        byte* bytes = (byte*)&mapping;
+
+        for (int i = 0; i < sizeof(seg_mapping); i++)
+        {
+            Assert.Equal((byte)0, bytes[i]);
+        }
+    }
+
+    [Fact]
+    public void SegMappingFieldsFollowNativeOrder()
+    {
+        seg_mapping mapping = default;
+        seg_mapping* p = &mapping;
+
+#if USE_REGIONS
+        Assert.Equal((nuint)0, OffsetOf(&p->region_info, p));
+        Assert.Equal((nuint)sizeof(heap_segment), (nuint)sizeof(seg_mapping));
+#else
+        nuint previous = 0;
+
+        Assert.Equal((nuint)0, OffsetOf(&p->boundary, p));
+#if MULTIPLE_HEAPS
+        previous = Ascending(OffsetOf(&p->h0, p), previous);
+        previous = Ascending(OffsetOf(&p->h1, p), previous);
+#endif
+        previous = Ascending(OffsetOf(&p->seg0, p), previous);
+        previous = Ascending(OffsetOf(&p->seg1, p), previous);
+#endif
+    }
+
+#if USE_REGIONS
+    [Fact]
+    public void SegMappingEmbedsFullHeapSegmentAsRegionInfo()
+    {
+        seg_mapping mapping = default;
+        mapping.region_info.flags = heap_segment.heap_segment_flags_poh;
+
+        Assert.Equal(heap_segment.heap_segment_flags_poh, mapping.region_info.flags);
+        Assert.Equal((nuint)sizeof(heap_segment), (nuint)sizeof(seg_mapping));
+    }
+#endif
+
+    [Fact]
+    public void SegMappingReadOnlyEntryFlagUsesLowBit()
+    {
+        const nuint SegmentAddress = 0x100;
+        nuint taggedSegment = SegmentAddress | seg_mapping.ro_in_entry;
+
+        Assert.Equal((nuint)1, seg_mapping.ro_in_entry);
+        Assert.Equal(seg_mapping.ro_in_entry, taggedSegment & seg_mapping.ro_in_entry);
+        Assert.Equal(SegmentAddress, taggedSegment & ~seg_mapping.ro_in_entry);
+    }
+
+    [Fact]
     public void HeapSegmentDefaultStateIsZeroed()
     {
         heap_segment segment = default;
@@ -1027,6 +1084,8 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(5, p->age_in_free);
     }
 #endif
+
+    private static nuint OffsetOf(void* field, seg_mapping* mapping) => (nuint)((byte*)field - (byte*)mapping);
 
     private static nuint OffsetOf(void* field, heap_segment* segment) => (nuint)((byte*)field - (byte*)segment);
 }

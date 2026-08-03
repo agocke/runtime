@@ -582,6 +582,26 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            seg_mapping segmentMapping;
+            if (sizeof(seg_mapping) != GCInterfaceOffsets.SIZEOF__seg_mapping
+                || AlignOf<seg_mapping>() != GCInterfaceOffsets.ALIGNOF__seg_mapping
+                || seg_mapping.ro_in_entry != (nuint)GCInterfaceOffsets.ro_in_entry
+#if USE_REGIONS
+                || OffsetOf(&segmentMapping, &segmentMapping.region_info) != GCInterfaceOffsets.OFFSETOF__seg_mapping__region_info
+#else
+                || OffsetOf(&segmentMapping, &segmentMapping.boundary) != GCInterfaceOffsets.OFFSETOF__seg_mapping__boundary
+#if MULTIPLE_HEAPS
+                || OffsetOf(&segmentMapping, &segmentMapping.h0) != GCInterfaceOffsets.OFFSETOF__seg_mapping__h0
+                || OffsetOf(&segmentMapping, &segmentMapping.h1) != GCInterfaceOffsets.OFFSETOF__seg_mapping__h1
+#endif
+                || OffsetOf(&segmentMapping, &segmentMapping.seg0) != GCInterfaceOffsets.OFFSETOF__seg_mapping__seg0
+                || OffsetOf(&segmentMapping, &segmentMapping.seg1) != GCInterfaceOffsets.OFFSETOF__seg_mapping__seg1
+#endif
+                )
+            {
+                return false;
+            }
+
             plug plugValue;
             pair pairValue;
             plug_and_pair plugAndPair;

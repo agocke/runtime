@@ -886,6 +886,34 @@ GC_SIZEOF(        48,        88, heap_segment)
 #endif
 GC_ALIGNOF(         8,         8, heap_segment)
 
+// A basic-region mapping either carries its complete region segment record or, without regions,
+// caches the address boundary, heap(s), and segment(s) used by the fast heap lookup. The low bit
+// of seg1 marks a read-only segment in a non-region entry. The lookup/table-size algorithms that
+// consume this shape remain with regions_segments.cpp and gc.cpp.
+GC_CONST(         1,         1, ro_in_entry)
+#ifdef USE_REGIONS
+GC_OFFSET(         0,         0, seg_mapping, region_info)
+#ifdef MULTIPLE_HEAPS
+GC_SIZEOF(        64,        b8, seg_mapping)
+#else
+GC_SIZEOF(        5c,        a8, seg_mapping)
+#endif
+#else
+GC_OFFSET(         0,         0, seg_mapping, boundary)
+#ifdef MULTIPLE_HEAPS
+GC_OFFSET(         4,         8, seg_mapping, h0)
+GC_OFFSET(         8,        10, seg_mapping, h1)
+GC_OFFSET(         c,        18, seg_mapping, seg0)
+GC_OFFSET(        10,        20, seg_mapping, seg1)
+GC_SIZEOF(        14,        28, seg_mapping)
+#else
+GC_OFFSET(         4,         8, seg_mapping, seg0)
+GC_OFFSET(         8,        10, seg_mapping, seg1)
+GC_SIZEOF(         c,        18, seg_mapping)
+#endif
+#endif
+GC_ALIGNOF(         4,         8, seg_mapping)
+
 // -----------------------------------------------------------------------------------------
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
 // GC_Initialize, so its layout is part of the loader protocol; the types below it are the

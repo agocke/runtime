@@ -543,6 +543,29 @@ namespace Internal.Runtime.GarbageCollection
 #endif
     }
 
+    // Maps a basic-region table entry to its segment information. In a region build the entry is
+    // the complete region record; otherwise it caches the boundary, owning heap(s), and segment(s)
+    // that heap_of uses. The lookup algorithms remain with regions_segments.cpp and gc.cpp.
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct seg_mapping
+#pragma warning restore CS8981
+    {
+        public const nuint ro_in_entry = 1;
+
+#if USE_REGIONS
+        public heap_segment region_info;
+#else
+        public byte* boundary;
+#if MULTIPLE_HEAPS
+        public gc_heap* h0;
+        public gc_heap* h1;
+#endif
+        public heap_segment* seg0;
+        public heap_segment* seg1;
+#endif
+    }
+
     // A generation is a per heap concept: each heap has its own gen0/1/2/loh/poh. The native class
     // has no constructor, so a zero-initialized instance matches the native default for every field
     // except the embedded free_list_allocator, which the native allocator default constructor brings
