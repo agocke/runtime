@@ -9,6 +9,13 @@
 #include "common.h"
 #include "gcenv.h"
 #include "gcheaputilities.h"
+
+// gcrecord.h uses these gc.h declarations, but including gc.h here conflicts with the
+// standalone-GC interface types already included by gcheaputilities.h.
+static constexpr int total_generation_count = 5;
+enum gc_reason : int;
+
+#include "gcrecord.h"
 #include "handletablepriv.h"
 
 class GCInterfaceOffsets

@@ -40,6 +40,7 @@ Ported so far:
 | `GCEvents.cs` | `gceventstatus.h`, expanded `gcevents.h` event helpers |
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
+| `GCRecord.cs` | dependency-free prefix of `gcrecord.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
 | `HandleTableCache.cs` | `handletablecache.cpp` |
@@ -147,6 +148,12 @@ directly; the one-heap collector makes the current bucket contain one table.
 All-table handle counting and the variable-handle type helpers also operate over this translated
 map and extra-info storage. `HndNotifyGcCycleComplete` currently has its retail no-op behavior;
 the checked-build scan-statistics logging arrives with handle scanning.
+
+The first core-schema slice translates the dependency-free prefix of `gcrecord.h`: the
+generation and condition condemn-reason enums, their native two-bit/one-bit packed tuning
+record, the ten-field `gc_generation_data` event payload, and `maxgen_size_increase`. The
+shared offsets table verifies the public record layouts and every enum value against C++; direct
+tests cover the private tuning record's size and native OR-based bit-packing behavior.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

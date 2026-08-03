@@ -1,0 +1,61 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System;
+using System.Runtime.InteropServices;
+using Xunit;
+
+namespace Internal.Runtime.GarbageCollection;
+
+public sealed unsafe class GCRecordTests
+{
+    [Fact]
+    public void CondemnReasonsUseNativeBitPacking()
+    {
+        gen_to_condemn_tuning tuning = default;
+        tuning.init();
+
+        tuning.set_gen(gc_condemn_reason_gen.gen_initial, 2);
+        tuning.set_gen(gc_condemn_reason_gen.gen_initial, 1);
+        tuning.set_gen(gc_condemn_reason_gen.gen_alloc_budget, 1);
+        tuning.set_condition(gc_condemn_reason_condition.gen_high_mem_p);
+        tuning.set_condition(gc_condemn_reason_condition.gen_before_bgc);
+
+        Assert.Equal(3u, tuning.get_gen(gc_condemn_reason_gen.gen_initial));
+        Assert.Equal(1u, tuning.get_gen(gc_condemn_reason_gen.gen_alloc_budget));
+        Assert.Equal(0x13u, tuning.get_reasons0());
+        Assert.Equal(1u << 2, tuning.get_condition(gc_condemn_reason_condition.gen_high_mem_p));
+        Assert.Equal((1u << 2) | (1u << 15), tuning.get_reasons1());
+        Assert.False(tuning.is_only_condition(gc_condemn_reason_condition.gen_high_mem_p));
+
+        gen_to_condemn_tuning copy = default;
+        copy.init(&tuning);
+        Assert.Equal(tuning.get_reasons0(), copy.get_reasons0());
+        Assert.Equal(tuning.get_reasons1(), copy.get_reasons1());
+    }
+
+    [Fact]
+    public void SingleConditionIsDetected()
+    {
+        gen_to_condemn_tuning tuning = default;
+        tuning.set_condition(gc_condemn_reason_condition.gen_joined_aggressive);
+
+        Assert.True(tuning.is_only_condition(gc_condemn_reason_condition.gen_joined_aggressive));
+    }
+
+    [Fact]
+    public void RecordStructsMatchNativePointerSizedLayout()
+    {
+        Assert.Equal(8, sizeof(gen_to_condemn_tuning));
+        Assert.Equal(IntPtr.Size * 10, sizeof(gc_generation_data));
+        Assert.Equal(IntPtr.Size == 8 ? 56 : 28, sizeof(maxgen_size_increase));
+
+        Assert.Equal(0, Marshal.OffsetOf<gc_generation_data>(nameof(gc_generation_data.size_before)).ToInt32());
+        Assert.Equal(
+            IntPtr.Size * 9,
+            Marshal.OffsetOf<gc_generation_data>(nameof(gc_generation_data.new_allocation)).ToInt32());
+        Assert.Equal(
+            IntPtr.Size * 6,
+            Marshal.OffsetOf<maxgen_size_increase>(nameof(maxgen_size_increase.running_free_list_efficiency)).ToInt32());
+    }
+}

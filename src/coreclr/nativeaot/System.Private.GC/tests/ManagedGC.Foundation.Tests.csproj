@@ -40,6 +40,7 @@
     <Compile Include="GCSleepYieldTests.cs" />
     <Compile Include="GCTimerTests.cs" />
     <Compile Include="GCProcessorTests.cs" />
+    <Compile Include="GCRecordTests.cs" />
     <Compile Include="GCCommonTests.cs" />
     <Compile Include="GCScanTests.cs" />
     <Compile Include="GCFoundationTests.cs" />
@@ -99,6 +100,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventSerializer.cs" Link="GCEventSerializer.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCRecord.cs" Link="GCRecord.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCScan.cs" Link="GCScan.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableConstants.cs" Link="HandleTableConstants.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTable.cs" Link="HandleTable.cs" />

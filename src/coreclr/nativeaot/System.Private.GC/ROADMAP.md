@@ -681,7 +681,7 @@ handles, and per-type behavior match the C++ handle table under differential tes
 
 ### 6. Core GC data structures
 
-**Status: Not started**
+**Status: In progress**
 
 Translate the schema from `gcpriv.h` and related headers:
 
@@ -694,6 +694,14 @@ Translate the schema from `gcpriv.h` and related headers:
 - Card and brick tables
 - `gcrecord.h`
 - `gcdesc.h`
+
+#### Completed
+
+- The dependency-free prefix of `gcrecord.h`: `gc_condemn_reason_gen`,
+  `gc_condemn_reason_condition`, `gen_to_condemn_tuning`, `gc_generation_data`, and
+  `maxgen_size_increase`. The translation preserves the native enum values, OR-based bit packing,
+  pointer-sized fields, and layout. Native static assertions verify the public record layouts,
+  while direct tests verify the private tuning record.
 
 This stage also completes the `gcinterface.dac.h` translation started in stage 2: `dac_generation`
 and `dac_gc_heap` are generated from the field lists of `dac_generation_fields.h` and
