@@ -87,6 +87,23 @@ namespace Internal.Runtime.GarbageCollection
         public static ref nuint alloc_list_damage_count(alloc_list* list) => ref list->damage_count;
     }
 
+#if !TARGET_WASM
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct etw_bucket_info
+    {
+        public ushort index;
+        public uint count;
+        public nuint size;
+
+        public void set(ushort _index, uint _count, nuint _size)
+        {
+            index = _index;
+            count = _count;
+            size = _size;
+        }
+    }
+#endif
+
     internal enum alloc_wait_reason
     {
         awr_ignored = -1,

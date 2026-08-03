@@ -7,6 +7,25 @@ namespace Internal.Runtime.GarbageCollection;
 
 public sealed unsafe class GCPrivTests
 {
+#if !TARGET_WASM
+    [Fact]
+    public void EventBucketSetReplacesAllFields()
+    {
+        etw_bucket_info info = new()
+        {
+            index = ushort.MaxValue,
+            count = uint.MaxValue,
+            size = nuint.MaxValue,
+        };
+
+        info.set(12, 34, 56);
+
+        Assert.Equal((ushort)12, info.index);
+        Assert.Equal((uint)34, info.count);
+        Assert.Equal((nuint)56, info.size);
+    }
+#endif
+
     [Fact]
     public void AllocListStartsEmptyAndAccessorsReferToItsFields()
     {

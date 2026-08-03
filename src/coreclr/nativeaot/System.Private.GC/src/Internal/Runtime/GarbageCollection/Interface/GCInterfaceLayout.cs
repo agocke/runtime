@@ -409,6 +409,18 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+#if !TARGET_WASM
+            etw_bucket_info bucketInfo;
+            if (sizeof(etw_bucket_info) != GCInterfaceOffsets.SIZEOF__etw_bucket_info
+                || AlignOf<etw_bucket_info>() != GCInterfaceOffsets.ALIGNOF__etw_bucket_info
+                || OffsetOf(&bucketInfo, &bucketInfo.index) != GCInterfaceOffsets.OFFSETOF__etw_bucket_info__index
+                || OffsetOf(&bucketInfo, &bucketInfo.count) != GCInterfaceOffsets.OFFSETOF__etw_bucket_info__count
+                || OffsetOf(&bucketInfo, &bucketInfo.size) != GCInterfaceOffsets.OFFSETOF__etw_bucket_info__size)
+            {
+                return false;
+            }
+#endif
+
             alloc_thread_wait_data waitData;
             if (sizeof(alloc_thread_wait_data) != GCInterfaceOffsets.SIZEOF__alloc_thread_wait_data
                 || AlignOf<alloc_thread_wait_data>() != GCInterfaceOffsets.ALIGNOF__alloc_thread_wait_data

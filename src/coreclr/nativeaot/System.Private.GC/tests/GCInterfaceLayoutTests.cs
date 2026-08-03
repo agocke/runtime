@@ -409,6 +409,12 @@ public sealed class GCInterfaceLayoutTests
 #else
                         false,
 #endif
+                    "#if !defined(TARGET_WASM)" =>
+#if TARGET_WASM
+                        false,
+#else
+                        true,
+#endif
                     _ => throw new InvalidDataException($"Unknown conditional in the offsets table: '{line}'."),
                 };
                 conditionals.Push((includeLine, condition));

@@ -178,6 +178,8 @@ The first allocator record, `alloc_list`, carries the 64-bit doubly-linked free-
 the common head/tail/damage state, and pointer-based ref accessors that preserve the native
 reference-return behavior without introducing managed references. Its layout follows the
 `BACKGROUND_GC`, `TARGET_WASM`, and diagnostic `FL_VERIFICATION` feature combinations.
+The adjacent non-WASM `etw_bucket_info` event record and its replacing `set` operation are
+translated too.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`

@@ -733,6 +733,7 @@ Translate the schema from `gcpriv.h` and related headers:
   pointer-based ref accessors for the native reference-return API. The shared native size table
   covers both the `TARGET_WASM` exclusion of that prefix and the diagnostic-only
   `FL_VERIFICATION` field; the shipping managed type omits that unused diagnostic field.
+- The `FEATURE_EVENT_TRACE` `etw_bucket_info` record and its field-replacing `set` helper.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.

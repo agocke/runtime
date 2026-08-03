@@ -460,6 +460,14 @@ GC_SIZEOF(       c,      28, alloc_list)
 #endif
 GC_ALIGNOF(      4,       8, alloc_list)
 
+#if !defined(TARGET_WASM)
+GC_OFFSET(       0,       0, etw_bucket_info, index)
+GC_OFFSET(       4,       4, etw_bucket_info, count)
+GC_OFFSET(       8,       8, etw_bucket_info, size)
+GC_SIZEOF(       c,      10, etw_bucket_info)
+GC_ALIGNOF(      4,       8, etw_bucket_info)
+#endif
+
 GC_CONST( ffffffff, ffffffff, awr_ignored)
 GC_CONST(         0,         0, awr_low_memory)
 GC_CONST(         1,         1, awr_low_ephemeral)
