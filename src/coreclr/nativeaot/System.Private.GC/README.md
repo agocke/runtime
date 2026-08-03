@@ -186,6 +186,9 @@ The native-width `gib`, brick/card alignment, card-word/bit, card-bundle-word/bi
 pointer-to-card arithmetic preserve unsigned wrapping and division. `GC_PAGE_SIZE`, card-word
 and card-bundle-word widths, target-width card size, and card-bundle size join the card-bundle
 thresholds, decommit, and 64-bit tuning constants pinned with the layout.
+The adjacent heap-segment iteration helpers skip read-only segments outside the heap's current
+address range, preserve half-open segment address tests, and select the native generation
+iteration bounds for region and non-region collectors.
 The first allocator record, `alloc_list`, carries the 64-bit doubly-linked free-list prefix,
 the common head/tail/damage state, and pointer-based ref accessors that preserve the native
 reference-return behavior without introducing managed references. Its layout follows the

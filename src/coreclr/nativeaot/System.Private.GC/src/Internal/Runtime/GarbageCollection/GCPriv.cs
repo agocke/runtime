@@ -341,6 +341,51 @@ namespace Internal.Runtime.GarbageCollection
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
     internal unsafe partial struct gc_heap
     {
+        public static heap_segment* heap_segment_in_range(heap_segment* segment)
+        {
+            if (segment is null || heap_segment.heap_segment_in_range_p(segment) != 0)
+            {
+                return segment;
+            }
+
+            do
+            {
+                segment = heap_segment.heap_segment_next(segment);
+            }
+            while (segment is not null && heap_segment.heap_segment_in_range_p(segment) == 0);
+
+            return segment;
+        }
+
+        public static heap_segment* heap_segment_next_in_range(heap_segment* segment)
+        {
+            heap_segment* nextSegment = heap_segment.heap_segment_next(segment);
+            return heap_segment_in_range(nextSegment);
+        }
+
+        public static int in_range_for_segment(byte* address, heap_segment* segment)
+        {
+            return address >= heap_segment.heap_segment_mem(segment)
+                && address < heap_segment.heap_segment_reserved(segment) ? 1 : 0;
+        }
+
+        public static int get_start_generation_index()
+        {
+#if USE_REGIONS
+            return 0;
+#else
+            return GCInterfaceOffsets.max_generation;
+#endif
+        }
+
+        public static int get_stop_generation_index(int condemned_gen_number)
+        {
+#if USE_REGIONS
+            return 0;
+#else
+            return condemned_gen_number;
+#endif
+        }
     }
 
     internal unsafe partial struct region_free_list

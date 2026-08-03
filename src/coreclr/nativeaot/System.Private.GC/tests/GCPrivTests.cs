@@ -1287,6 +1287,53 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void HeapSegmentRangeTraversalSkipsOutOfRangeReadOnlySegments()
+    {
+        heap_segment first = default;
+        heap_segment skipped = default;
+        heap_segment included = default;
+
+        first.next = &skipped;
+        skipped.flags = heap_segment.heap_segment_flags_readonly;
+        skipped.next = &included;
+        included.flags = heap_segment.heap_segment_flags_readonly | heap_segment.heap_segment_flags_inrange;
+
+        Assert.Equal((nuint)0, (nuint)gc_heap.heap_segment_in_range(null));
+        Assert.Equal((nuint)(&first), (nuint)gc_heap.heap_segment_in_range(&first));
+        Assert.Equal((nuint)(&included), (nuint)gc_heap.heap_segment_in_range(&skipped));
+        Assert.Equal((nuint)(&included), (nuint)gc_heap.heap_segment_next_in_range(&first));
+
+        included.next = &skipped;
+        skipped.next = null;
+        Assert.Equal((nuint)0, (nuint)gc_heap.heap_segment_next_in_range(&included));
+    }
+
+    [Fact]
+    public void HeapSegmentAddressRangeUsesHalfOpenBounds()
+    {
+        heap_segment segment = default;
+        segment.mem = (byte*)0x1000;
+        segment.reserved = (byte*)0x2000;
+
+        Assert.Equal(0, gc_heap.in_range_for_segment((byte*)0xFFF, &segment));
+        Assert.Equal(1, gc_heap.in_range_for_segment((byte*)0x1000, &segment));
+        Assert.Equal(1, gc_heap.in_range_for_segment((byte*)0x1FFF, &segment));
+        Assert.Equal(0, gc_heap.in_range_for_segment((byte*)0x2000, &segment));
+    }
+
+    [Fact]
+    public void HeapSegmentGenerationIterationBoundsMatchNativeConfiguration()
+    {
+#if USE_REGIONS
+        Assert.Equal(0, gc_heap.get_start_generation_index());
+        Assert.Equal(0, gc_heap.get_stop_generation_index(2));
+#else
+        Assert.Equal(GCInterfaceOffsets.max_generation, gc_heap.get_start_generation_index());
+        Assert.Equal(2, gc_heap.get_stop_generation_index(2));
+#endif
+    }
+
+    [Fact]
     public void HeapSegmentObjectHeapAndBackgroundPredicatesPreserveNativePrecedence()
     {
         heap_segment segment = default;
