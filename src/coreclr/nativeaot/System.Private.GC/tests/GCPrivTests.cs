@@ -87,6 +87,142 @@ public sealed unsafe class GCPrivTests
     private static nuint OffsetOf(void* field, alloc_list* list) => (nuint)((byte*)field - (byte*)list);
 
     [Theory]
+    [InlineData(false, 0)]
+    [InlineData(false, 1)]
+    [InlineData(false, 2)]
+    [InlineData(true, 0)]
+    [InlineData(true, 1)]
+    [InlineData(true, 2)]
+    public void MarkShortBitsPreserveEveryNativeMask(bool post, int bit)
+    {
+        mark value = default;
+        mark* p = &value;
+        int expected = 1 << (28 + bit);
+
+        Assert.Equal((nuint)3, mark.get_max_short_bits());
+        Assert.Equal((nuint)28, mark.get_pre_short_start_bit());
+        Assert.Equal((nuint)28, mark.get_post_short_start_bit());
+
+        if (post)
+        {
+            mark.set_post_short_bit(p, (nuint)bit);
+            Assert.Equal(expected, value.saved_post_p);
+            Assert.Equal(expected, mark.post_short_bit_p(p, (nuint)bit));
+            Assert.Equal(0, mark.post_short_p(p));
+        }
+        else
+        {
+            mark.set_pre_short_bit(p, (nuint)bit);
+            Assert.Equal(expected, value.saved_pre_p);
+            Assert.Equal(expected, mark.pre_short_bit_p(p, (nuint)bit));
+            Assert.Equal(0, mark.pre_short_p(p));
+        }
+    }
+
+    [Fact]
+    public void MarkShortAndCollectibleBitsPreserveNativeBoolValues()
+    {
+        mark value = default;
+        mark* p = &value;
+
+        mark.set_pre_short(p);
+        mark.set_post_short(p);
+        Assert.Equal(unchecked((int)0x80000000), value.saved_pre_p);
+        Assert.Equal(unchecked((int)0x80000000), value.saved_post_p);
+        Assert.Equal(unchecked((int)0x80000000), mark.pre_short_p(p));
+        Assert.Equal(unchecked((int)0x80000000), mark.post_short_p(p));
+
+#if COLLECTIBLE_CLASS
+        mark.set_pre_short_collectible(p);
+        mark.set_post_short_collectible(p);
+        Assert.Equal(2, mark.pre_short_collectible_p(p));
+        Assert.Equal(2, mark.post_short_collectible_p(p));
+#else
+        // NativeAOT defines FEATURE_NATIVEAOT, so gcpriv.h does not define COLLECTIBLE_CLASS.
+        // The reserved collectible bit remains part of the packed BOOL and must not be normalized.
+        value.saved_pre_p |= 2;
+        value.saved_post_p |= 2;
+#endif
+
+        Assert.Equal(unchecked((int)0x80000002), value.saved_pre_p);
+        Assert.Equal(unchecked((int)0x80000002), value.saved_post_p);
+
+        value.saved_pre_p = 0x40000002;
+        value.saved_post_p = 0x20000002;
+        Assert.Equal(0x40000002, mark.has_pre_plug_info(p));
+        Assert.Equal(0x20000002, mark.has_post_plug_info(p));
+    }
+
+    [Fact]
+    public void MarkPointerAccessorsReferToStoredAddresses()
+    {
+        mark value = default;
+        mark* p = &value;
+
+        value.first = (byte*)0x100;
+        value.saved_post_plug_info_start = (byte*)0x200;
+        mark.set_pre_plug_info_reloc_start(p, (byte*)0x300);
+
+        Assert.Equal((nuint)0x100, (nuint)mark.get_plug_address(p));
+        Assert.Equal((nuint)0x200, (nuint)mark.get_post_plug_info_start(p));
+        Assert.Equal((nuint)0x300, (nuint)value.saved_pre_plug_info_reloc_start);
+        Assert.True(mark.get_pre_plug_reloc_info(p) == &value.saved_pre_plug_reloc);
+        Assert.True(mark.get_post_plug_reloc_info(p) == &value.saved_post_plug_reloc);
+
+        mark.get_pre_plug_reloc_info(p)->gap = 0x11;
+        mark.get_post_plug_reloc_info(p)->reloc = 0x22;
+        Assert.Equal((nuint)0x11, value.saved_pre_plug_reloc.gap);
+        Assert.Equal((nuint)0x22, value.saved_post_plug_reloc.reloc);
+    }
+
+    [Fact]
+    public void MarkSwapMethodsExchangeExactGapRelocPairs()
+    {
+        byte* storage = stackalloc byte[2 * sizeof(plug_and_gap)];
+        mark value = default;
+        mark* p = &value;
+        p->first = storage + sizeof(plug_and_gap);
+        p->saved_post_plug_info_start = storage + sizeof(plug_and_gap);
+        gap_reloc_pair* pre = (gap_reloc_pair*)(p->first - sizeof(plug_and_gap));
+        gap_reloc_pair* post = (gap_reloc_pair*)p->saved_post_plug_info_start;
+
+        *pre = Pair(1, 2, 3, 4);
+        value.saved_pre_plug_reloc = Pair(5, 6, 7, 8);
+        mark.swap_pre_plug_and_saved(p);
+        AssertPair(*pre, 5, 6, 7, 8);
+        AssertPair(value.saved_pre_plug_reloc, 1, 2, 3, 4);
+
+        *post = Pair(9, 10, 11, 12);
+        value.saved_post_plug_reloc = Pair(13, 14, 15, 16);
+        mark.swap_post_plug_and_saved(p);
+        AssertPair(*post, 13, 14, 15, 16);
+        AssertPair(value.saved_post_plug_reloc, 9, 10, 11, 12);
+
+        *pre = Pair(17, 18, 19, 20);
+        value.saved_pre_plug = Pair(21, 22, 23, 24);
+        mark.swap_pre_plug_and_saved_for_profiler(p);
+        AssertPair(*pre, 21, 22, 23, 24);
+        AssertPair(value.saved_pre_plug, 17, 18, 19, 20);
+
+        *post = Pair(25, 26, 27, 28);
+        value.saved_post_plug = Pair(29, 30, 31, 32);
+        mark.swap_post_plug_and_saved_for_profiler(p);
+        AssertPair(*post, 29, 30, 31, 32);
+        AssertPair(value.saved_post_plug, 25, 26, 27, 28);
+    }
+
+    private static gap_reloc_pair Pair(nuint gap, nuint reloc, short left, short right) =>
+        new() { gap = gap, reloc = reloc, m_pair = new pair { left = left, right = right } };
+
+    private static void AssertPair(gap_reloc_pair actual, nuint gap, nuint reloc, short left, short right)
+    {
+        Assert.Equal(gap, actual.gap);
+        Assert.Equal(reloc, actual.reloc);
+        Assert.Equal(left, actual.m_pair.left);
+        Assert.Equal(right, actual.m_pair.right);
+    }
+
+    [Theory]
     [InlineData(1u, 1)]
     [InlineData(2u, 0)]
     [InlineData(4u, 0)]

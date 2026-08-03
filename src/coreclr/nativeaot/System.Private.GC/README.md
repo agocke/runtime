@@ -174,6 +174,11 @@ compaction, latency and tuning, object-heap identity, memory state, allocation s
 multi-segment-lock entry. The first plan/relocation records are present too: `plug`, `pair`,
 `plug_and_pair`, `plug_and_reloc`, the overlaid `plug_and_gap`, `gap_reloc_pair`,
 the forced-alignment `aligned_plug_and_gap`, `loh_obj_and_pad`, and `loh_padding_obj`.
+The dependency-free portion of `mark` from `gcinternal.h` is translated too: its complete
+short-plug schema, native `BOOL` bit predicates, pointer accessors, and allocation-free
+gap/relocation-pair swaps are present. `SHORT_PLUGS` is unconditional, while
+`COLLECTIBLE_CLASS` remains gated as it is natively (disabled for NativeAOT). `recover_plug_info`
+is deferred until the compaction settings and diagnostics slices are available.
 The first allocator record, `alloc_list`, carries the 64-bit doubly-linked free-list prefix,
 the common head/tail/damage state, and pointer-based ref accessors that preserve the native
 reference-return behavior without introducing managed references. Its layout follows the

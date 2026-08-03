@@ -341,6 +341,28 @@ namespace Internal.Runtime.GarbageCollection
 
         private static bool VerifyGCPrivTypes()
         {
+            mark markValue;
+            if (sizeof(mark) != GCInterfaceOffsets.SIZEOF__mark
+                || AlignOf<mark>() != GCInterfaceOffsets.ALIGNOF__mark
+                || OffsetOf(&markValue, &markValue.first) != GCInterfaceOffsets.OFFSETOF__mark__first
+                || OffsetOf(&markValue, &markValue.len) != GCInterfaceOffsets.OFFSETOF__mark__len
+                || OffsetOf(&markValue, &markValue.saved_pre_plug) != GCInterfaceOffsets.OFFSETOF__mark__saved_pre_plug
+                || OffsetOf(&markValue, &markValue.saved_pre_plug_reloc) != GCInterfaceOffsets.OFFSETOF__mark__saved_pre_plug_reloc
+                || OffsetOf(&markValue, &markValue.saved_post_plug) != GCInterfaceOffsets.OFFSETOF__mark__saved_post_plug
+                || OffsetOf(&markValue, &markValue.saved_post_plug_reloc) != GCInterfaceOffsets.OFFSETOF__mark__saved_post_plug_reloc
+                || OffsetOf(&markValue, &markValue.saved_pre_plug_info_reloc_start) != GCInterfaceOffsets.OFFSETOF__mark__saved_pre_plug_info_reloc_start
+                || OffsetOf(&markValue, &markValue.saved_post_plug_info_start) != GCInterfaceOffsets.OFFSETOF__mark__saved_post_plug_info_start
+                || OffsetOf(&markValue, &markValue.allocation_context_start_region) != GCInterfaceOffsets.OFFSETOF__mark__allocation_context_start_region
+                || OffsetOf(&markValue, &markValue.saved_pre_p) != GCInterfaceOffsets.OFFSETOF__mark__saved_pre_p
+                || OffsetOf(&markValue, &markValue.saved_post_p) != GCInterfaceOffsets.OFFSETOF__mark__saved_post_p
+#if DEBUG
+                || OffsetOf(&markValue, &markValue.saved_post_plug_debug) != GCInterfaceOffsets.OFFSETOF__mark__saved_post_plug_debug
+#endif
+                )
+            {
+                return false;
+            }
+
             static_data staticData;
             if (sizeof(static_data) != GCInterfaceOffsets.SIZEOF__static_data
                 || AlignOf<static_data>() != GCInterfaceOffsets.ALIGNOF__static_data

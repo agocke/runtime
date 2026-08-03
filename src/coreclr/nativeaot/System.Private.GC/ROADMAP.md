@@ -729,6 +729,13 @@ Translate the schema from `gcpriv.h` and related headers:
   `plug_and_reloc`, `plug_and_gap`, `gap_reloc_pair`, `aligned_plug_and_gap`,
   `loh_obj_and_pad`, and `loh_padding_obj`. Their pointer, union, forced-alignment, and padding
   layouts are pinned independently of the later collection-phase algorithms.
+- The dependency-free `mark` schema from `gcinternal.h`: all saved plug and relocation pairs,
+  the unconditional `SHORT_PLUGS` allocation-context pointer, native four-byte `BOOL` flags, and
+  the debug saved post-plug copy. Its short-plug bit helpers preserve their native mask-valued
+  `BOOL` results, and its four gap/relocation swaps use direct struct copies. `COLLECTIBLE_CLASS`
+  remains gated as it is in `gcpriv.h` (disabled when `FEATURE_NATIVEAOT` is defined).
+  `recover_plug_info` remains deferred until `gc_heap::settings.compaction` and the
+  allocation-free diagnostics path are translated.
 - The dependency-free `alloc_list` core, including the 64-bit `DOUBLY_LINKED_FL` prefix and
   pointer-based ref accessors for the native reference-return API. The shared native size table
   covers both the `TARGET_WASM` exclusion of that prefix and the diagnostic-only

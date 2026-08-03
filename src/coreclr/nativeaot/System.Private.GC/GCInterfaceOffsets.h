@@ -402,6 +402,29 @@ GC_ALIGNOF(      4,       8, gc_history_global)
 // but pin the schema used by dynamic tuning, diagnostics, and the later generation structures.
 // -----------------------------------------------------------------------------------------
 
+// The mark record of gcinternal.h. SHORT_PLUGS is unconditionally defined in gcpriv.h, so
+// allocation_context_start_region is always present. COLLECTIBLE_CLASS changes only methods, not
+// this layout. The DEBUG-only saved_post_plug_debug is retained because native DEBUG builds use it
+// to detect corruption of post-plug information.
+GC_OFFSET(       0,       0, mark, first)
+GC_OFFSET(       4,       8, mark, len)
+GC_OFFSET(       8,      10, mark, saved_pre_plug)
+GC_OFFSET(      14,      28, mark, saved_pre_plug_reloc)
+GC_OFFSET(      20,      40, mark, saved_post_plug)
+GC_OFFSET(      2c,      58, mark, saved_post_plug_reloc)
+GC_OFFSET(      38,      70, mark, saved_pre_plug_info_reloc_start)
+GC_OFFSET(      3c,      78, mark, saved_post_plug_info_start)
+GC_OFFSET(      40,      80, mark, allocation_context_start_region)
+GC_OFFSET(      44,      88, mark, saved_pre_p)
+GC_OFFSET(      48,      8c, mark, saved_post_p)
+#if defined(_DEBUG) || defined(DEBUG)
+GC_OFFSET(      4c,      90, mark, saved_post_plug_debug)
+GC_SIZEOF(      58,      a8, mark)
+#else
+GC_SIZEOF(      4c,      90, mark)
+#endif
+GC_ALIGNOF(      4,       8, mark)
+
 GC_OFFSET(       0,       0, static_data, min_size)
 GC_OFFSET(       4,       8, static_data, max_size)
 GC_OFFSET(       8,      10, static_data, fragmentation_limit)

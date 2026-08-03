@@ -850,6 +850,141 @@ namespace Internal.Runtime.GarbageCollection
         public NoGCRegionCallbackFinalizerWorkItem* callback;
     }
 
+    // Ported from mark in gcinternal.h. SHORT_PLUGS is unconditionally defined in gcpriv.h, so
+    // allocation_context_start_region is likewise unconditional here. COLLECTIBLE_CLASS is
+    // omitted for NativeAOT by gcpriv.h because FEATURE_NATIVEAOT is defined; retain its methods
+    // under the native feature symbol for configurations that enable it.
+    //
+    // recover_plug_info remains with the later mark/compact slice: it depends on
+    // gc_heap::settings.compaction and diagnostic logging.
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct mark
+#pragma warning restore CS8981
+    {
+        public byte* first;
+        public nuint len;
+
+        public gap_reloc_pair saved_pre_plug;
+        public gap_reloc_pair saved_pre_plug_reloc;
+        public gap_reloc_pair saved_post_plug;
+        public gap_reloc_pair saved_post_plug_reloc;
+
+        public byte* saved_pre_plug_info_reloc_start;
+        public byte* saved_post_plug_info_start;
+        public byte* allocation_context_start_region;
+
+        public int saved_pre_p;
+        public int saved_post_p;
+
+#if DEBUG
+        public gap_reloc_pair saved_post_plug_debug;
+#endif
+
+        public static nuint get_max_short_bits() => (nuint)(sizeof(gap_reloc_pair) / sizeof(byte*));
+
+        public static nuint get_pre_short_start_bit() =>
+            (nuint)((sizeof(int) * 8) - 1) - get_max_short_bits();
+
+        public static int pre_short_p(mark* inst) =>
+            inst->saved_pre_p & (1 << ((sizeof(int) * 8) - 1));
+
+        public static void set_pre_short(mark* inst)
+        {
+            inst->saved_pre_p |= 1 << ((sizeof(int) * 8) - 1);
+        }
+
+        public static void set_pre_short_bit(mark* inst, nuint bit)
+        {
+            inst->saved_pre_p |= 1 << (int)(get_pre_short_start_bit() + bit);
+        }
+
+        public static int pre_short_bit_p(mark* inst, nuint bit) =>
+            inst->saved_pre_p & (1 << (int)(get_pre_short_start_bit() + bit));
+
+#if COLLECTIBLE_CLASS
+        public static void set_pre_short_collectible(mark* inst)
+        {
+            inst->saved_pre_p |= 2;
+        }
+
+        public static int pre_short_collectible_p(mark* inst) => inst->saved_pre_p & 2;
+#endif
+
+        public static nuint get_post_short_start_bit() =>
+            (nuint)((sizeof(int) * 8) - 1) - get_max_short_bits();
+
+        public static int post_short_p(mark* inst) =>
+            inst->saved_post_p & (1 << ((sizeof(int) * 8) - 1));
+
+        public static void set_post_short(mark* inst)
+        {
+            inst->saved_post_p |= 1 << ((sizeof(int) * 8) - 1);
+        }
+
+        public static void set_post_short_bit(mark* inst, nuint bit)
+        {
+            inst->saved_post_p |= 1 << (int)(get_post_short_start_bit() + bit);
+        }
+
+        public static int post_short_bit_p(mark* inst, nuint bit) =>
+            inst->saved_post_p & (1 << (int)(get_post_short_start_bit() + bit));
+
+#if COLLECTIBLE_CLASS
+        public static void set_post_short_collectible(mark* inst)
+        {
+            inst->saved_post_p |= 2;
+        }
+
+        public static int post_short_collectible_p(mark* inst) => inst->saved_post_p & 2;
+#endif
+
+        public static byte* get_plug_address(mark* inst) => inst->first;
+
+        public static int has_pre_plug_info(mark* inst) => inst->saved_pre_p;
+
+        public static int has_post_plug_info(mark* inst) => inst->saved_post_p;
+
+        public static gap_reloc_pair* get_pre_plug_reloc_info(mark* inst) => &inst->saved_pre_plug_reloc;
+
+        public static gap_reloc_pair* get_post_plug_reloc_info(mark* inst) => &inst->saved_post_plug_reloc;
+
+        public static void set_pre_plug_info_reloc_start(mark* inst, byte* reloc)
+        {
+            inst->saved_pre_plug_info_reloc_start = reloc;
+        }
+
+        public static byte* get_post_plug_info_start(mark* inst) => inst->saved_post_plug_info_start;
+
+        public static void swap_pre_plug_and_saved(mark* inst)
+        {
+            gap_reloc_pair temp = *(gap_reloc_pair*)(inst->first - sizeof(plug_and_gap));
+            *(gap_reloc_pair*)(inst->first - sizeof(plug_and_gap)) = inst->saved_pre_plug_reloc;
+            inst->saved_pre_plug_reloc = temp;
+        }
+
+        public static void swap_post_plug_and_saved(mark* inst)
+        {
+            gap_reloc_pair temp = *(gap_reloc_pair*)inst->saved_post_plug_info_start;
+            *(gap_reloc_pair*)inst->saved_post_plug_info_start = inst->saved_post_plug_reloc;
+            inst->saved_post_plug_reloc = temp;
+        }
+
+        public static void swap_pre_plug_and_saved_for_profiler(mark* inst)
+        {
+            gap_reloc_pair temp = *(gap_reloc_pair*)(inst->first - sizeof(plug_and_gap));
+            *(gap_reloc_pair*)(inst->first - sizeof(plug_and_gap)) = inst->saved_pre_plug;
+            inst->saved_pre_plug = temp;
+        }
+
+        public static void swap_post_plug_and_saved_for_profiler(mark* inst)
+        {
+            gap_reloc_pair temp = *(gap_reloc_pair*)inst->saved_post_plug_info_start;
+            *(gap_reloc_pair*)inst->saved_post_plug_info_start = inst->saved_post_plug;
+            inst->saved_post_plug = temp;
+        }
+    }
+
     internal enum interesting_data_point
     {
         idp_pre_short = 0,
