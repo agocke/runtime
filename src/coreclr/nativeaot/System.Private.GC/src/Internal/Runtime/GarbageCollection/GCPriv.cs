@@ -338,6 +338,147 @@ namespace Internal.Runtime.GarbageCollection
 #endif
     }
 
+    // A generation only ever refers to heap_segment through a pointer, so the port needs nothing
+    // more than an incomplete type here. It is declared partial so the later slice that ports the
+    // full heap_segment schema can add its fields in its own file without disturbing the pointer
+    // references below. As an empty unmanaged type it is only ever used as heap_segment*, whose
+    // size does not depend on the (still absent) field list.
+    internal unsafe partial struct heap_segment
+    {
+    }
+
+    // A generation is a per heap concept: each heap has its own gen0/1/2/loh/poh. The native class
+    // has no constructor, so a zero-initialized instance matches the native default for every field
+    // except the embedded free_list_allocator, which the native allocator default constructor brings
+    // up; initialize reproduces that (see below). All members are public in the C++ class, and every
+    // native accessor hands out either a pointer to an embedded subobject or a reference into the
+    // instance, so they are translated as static helpers taking a generation* -- mirroring the native
+    // reference-return API without introducing a managed reference to collector state.
+    //
+    // USE_REGIONS is the collector's region layout, defined in gcpriv.h as
+    //   HOST_64BIT && !BUILD_AS_STANDALONE && !__sun && (!HOST_APPLE || HOST_OSX).
+    // This integrated port is never BUILD_AS_STANDALONE and never targets illumos/Solaris, so it
+    // reduces to 64-bit AND not an Apple mobile platform; the build defines the USE_REGIONS symbol
+    // for exactly those targets. DOUBLY_LINKED_FL is gcpriv.h's doubly linked free list, which is
+    // BACKGROUND_GC && HOST_64BIT, i.e. TARGET_64BIT && !TARGET_WASM. FREE_USAGE_STATS is a
+    // diagnostics-only feature that is never defined, so its trailing fields are not translated.
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct generation
+#pragma warning restore CS8981
+    {
+        // Native `allocation_context` is an `alloc_context`, which derives from gc_alloc_context and
+        // adds no fields (only FEATURE_SVR_GC member functions). The port reuses the gc_alloc_context
+        // layout directly: a distinct managed alloc_context type would carry no extra field or
+        // behavior, so none is introduced.
+        public gc_alloc_context allocation_context;
+
+        public heap_segment* start_segment;
+#if !USE_REGIONS
+        public byte* allocation_start;
+#endif
+        public heap_segment* allocation_segment;
+        public byte* allocation_context_start_region;
+#if USE_REGIONS
+        public heap_segment* tail_region;
+        public heap_segment* tail_ro_region;
+#endif
+        public allocator free_list_allocator;
+        public nuint free_list_allocated;
+        public nuint end_seg_allocated;
+        public nuint condemned_allocated;
+        public nuint sweep_allocated;
+        public int allocate_end_seg_p;
+        public nuint free_list_space;
+        public nuint free_obj_space;
+        public nuint allocation_size;
+#if !USE_REGIONS
+        public byte* plan_allocation_start;
+        public nuint plan_allocation_start_size;
+#endif
+        public nuint pinned_allocation_compact_size;
+        public nuint pinned_allocation_sweep_size;
+        public int gen_num;
+#if TARGET_64BIT && !TARGET_WASM
+        public int set_bgc_mark_bit_p;
+        public byte* last_free_list_allocated;
+#endif
+
+        // C# does not run a struct constructor for embedded or unmanaged storage, so the embedded
+        // free_list_allocator of a zero-initialized generation would be left with zero buckets. The
+        // native allocator default constructor -- which the containing gc_heap runs when it creates
+        // the generation_table -- is load-bearing for the young generations, so reproduce it here.
+        // Every other field stays zero, matching the native default; make_generation fills in the
+        // rest once the generation is wired to its segments.
+        public static void initialize(generation* inst)
+        {
+            allocator.initialize(&inst->free_list_allocator);
+        }
+
+        public static gc_alloc_context* generation_alloc_context(generation* inst) => &inst->allocation_context;
+
+#if !USE_REGIONS
+        public static ref byte* generation_allocation_start(generation* inst) => ref inst->allocation_start;
+#endif
+
+        public static ref byte* generation_allocation_pointer(generation* inst) => ref inst->allocation_context.alloc_ptr;
+
+        public static ref byte* generation_allocation_limit(generation* inst) => ref inst->allocation_context.alloc_limit;
+
+        public static allocator* generation_allocator(generation* inst) => &inst->free_list_allocator;
+
+        public static ref heap_segment* generation_start_segment(generation* inst) => ref inst->start_segment;
+
+#if USE_REGIONS
+        public static ref heap_segment* generation_tail_region(generation* inst) => ref inst->tail_region;
+
+        public static ref heap_segment* generation_tail_ro_region(generation* inst) => ref inst->tail_ro_region;
+
+        public static heap_segment* generation_start_segment_rw(generation* inst) =>
+            inst->tail_ro_region is not null ? inst->tail_ro_region : inst->start_segment;
+#endif
+
+        public static ref heap_segment* generation_allocation_segment(generation* inst) => ref inst->allocation_segment;
+
+#if !USE_REGIONS
+        public static ref byte* generation_plan_allocation_start(generation* inst) => ref inst->plan_allocation_start;
+
+        public static ref nuint generation_plan_allocation_start_size(generation* inst) => ref inst->plan_allocation_start_size;
+#endif
+
+        public static ref byte* generation_allocation_context_start_region(generation* inst) => ref inst->allocation_context_start_region;
+
+        public static ref nuint generation_free_list_space(generation* inst) => ref inst->free_list_space;
+
+        public static ref nuint generation_free_obj_space(generation* inst) => ref inst->free_obj_space;
+
+        public static ref nuint generation_allocation_size(generation* inst) => ref inst->allocation_size;
+
+        public static ref nuint generation_pinned_allocation_sweep_size(generation* inst) => ref inst->pinned_allocation_sweep_size;
+
+        public static ref nuint generation_pinned_allocation_compact_size(generation* inst) => ref inst->pinned_allocation_compact_size;
+
+        public static ref nuint generation_free_list_allocated(generation* inst) => ref inst->free_list_allocated;
+
+        public static ref nuint generation_end_seg_allocated(generation* inst) => ref inst->end_seg_allocated;
+
+        public static ref int generation_allocate_end_seg_p(generation* inst) => ref inst->allocate_end_seg_p;
+
+        public static ref nuint generation_condemned_allocated(generation* inst) => ref inst->condemned_allocated;
+
+        public static ref nuint generation_sweep_allocated(generation* inst) => ref inst->sweep_allocated;
+
+        // These are allocations we did while doing planning, we use this to calculate free list efficiency.
+        public static nuint generation_total_plan_allocated(generation* inst) =>
+            inst->free_list_allocated + inst->end_seg_allocated + inst->condemned_allocated;
+
+#if TARGET_64BIT && !TARGET_WASM
+        public static ref int generation_set_bgc_mark_bit_p(generation* inst) => ref inst->set_bgc_mark_bit_p;
+
+        public static ref byte* generation_last_free_list_allocated(generation* inst) => ref inst->last_free_list_allocated;
+#endif
+    }
+
     internal enum alloc_wait_reason
     {
         awr_ignored = -1,

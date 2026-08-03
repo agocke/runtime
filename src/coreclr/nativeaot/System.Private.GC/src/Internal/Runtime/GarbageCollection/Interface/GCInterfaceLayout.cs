@@ -446,6 +446,45 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            generation gen;
+            if (sizeof(generation) != GCInterfaceOffsets.SIZEOF__generation
+                || AlignOf<generation>() != GCInterfaceOffsets.ALIGNOF__generation
+                || OffsetOf(&gen, &gen.allocation_context) != GCInterfaceOffsets.OFFSETOF__generation__allocation_context
+                || OffsetOf(&gen, &gen.start_segment) != GCInterfaceOffsets.OFFSETOF__generation__start_segment
+#if !USE_REGIONS
+                || OffsetOf(&gen, &gen.allocation_start) != GCInterfaceOffsets.OFFSETOF__generation__allocation_start
+#endif
+                || OffsetOf(&gen, &gen.allocation_segment) != GCInterfaceOffsets.OFFSETOF__generation__allocation_segment
+                || OffsetOf(&gen, &gen.allocation_context_start_region) != GCInterfaceOffsets.OFFSETOF__generation__allocation_context_start_region
+#if USE_REGIONS
+                || OffsetOf(&gen, &gen.tail_region) != GCInterfaceOffsets.OFFSETOF__generation__tail_region
+                || OffsetOf(&gen, &gen.tail_ro_region) != GCInterfaceOffsets.OFFSETOF__generation__tail_ro_region
+#endif
+                || OffsetOf(&gen, &gen.free_list_allocator) != GCInterfaceOffsets.OFFSETOF__generation__free_list_allocator
+                || OffsetOf(&gen, &gen.free_list_allocated) != GCInterfaceOffsets.OFFSETOF__generation__free_list_allocated
+                || OffsetOf(&gen, &gen.end_seg_allocated) != GCInterfaceOffsets.OFFSETOF__generation__end_seg_allocated
+                || OffsetOf(&gen, &gen.condemned_allocated) != GCInterfaceOffsets.OFFSETOF__generation__condemned_allocated
+                || OffsetOf(&gen, &gen.sweep_allocated) != GCInterfaceOffsets.OFFSETOF__generation__sweep_allocated
+                || OffsetOf(&gen, &gen.allocate_end_seg_p) != GCInterfaceOffsets.OFFSETOF__generation__allocate_end_seg_p
+                || OffsetOf(&gen, &gen.free_list_space) != GCInterfaceOffsets.OFFSETOF__generation__free_list_space
+                || OffsetOf(&gen, &gen.free_obj_space) != GCInterfaceOffsets.OFFSETOF__generation__free_obj_space
+                || OffsetOf(&gen, &gen.allocation_size) != GCInterfaceOffsets.OFFSETOF__generation__allocation_size
+#if !USE_REGIONS
+                || OffsetOf(&gen, &gen.plan_allocation_start) != GCInterfaceOffsets.OFFSETOF__generation__plan_allocation_start
+                || OffsetOf(&gen, &gen.plan_allocation_start_size) != GCInterfaceOffsets.OFFSETOF__generation__plan_allocation_start_size
+#endif
+                || OffsetOf(&gen, &gen.pinned_allocation_compact_size) != GCInterfaceOffsets.OFFSETOF__generation__pinned_allocation_compact_size
+                || OffsetOf(&gen, &gen.pinned_allocation_sweep_size) != GCInterfaceOffsets.OFFSETOF__generation__pinned_allocation_sweep_size
+                || OffsetOf(&gen, &gen.gen_num) != GCInterfaceOffsets.OFFSETOF__generation__gen_num
+#if TARGET_64BIT && !TARGET_WASM
+                || OffsetOf(&gen, &gen.set_bgc_mark_bit_p) != GCInterfaceOffsets.OFFSETOF__generation__set_bgc_mark_bit_p
+                || OffsetOf(&gen, &gen.last_free_list_allocated) != GCInterfaceOffsets.OFFSETOF__generation__last_free_list_allocated
+#endif
+                )
+            {
+                return false;
+            }
+
 #if !TARGET_WASM
             etw_bucket_info bucketInfo;
             if (sizeof(etw_bucket_info) != GCInterfaceOffsets.SIZEOF__etw_bucket_info

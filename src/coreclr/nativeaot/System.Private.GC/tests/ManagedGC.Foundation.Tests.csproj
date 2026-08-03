@@ -22,6 +22,10 @@
     <DefineConstants Condition="'$(TargetsLinuxMusl)' == 'true'">TARGET_LINUX_MUSL;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true' or '$(TargetsLinuxBionic)' == 'true'">TARGET_BIONIC;$(DefineConstants)</DefineConstants>
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true'">TARGET_ANDROID;$(DefineConstants)</DefineConstants>
+    <!-- Kept in step with src/System.Private.GC.csproj: USE_REGIONS selects the region layout of
+         the generation schema, matching gcpriv.h's HOST_64BIT && (!HOST_APPLE || HOST_OSX) after
+         the standalone/illumos terms drop out for this port. -->
+    <DefineConstants Condition="('$(Platform)' == 'x64' or '$(Platform)' == 'arm64' or '$(Platform)' == 'loongarch64' or '$(Platform)' == 'riscv64') and '$(TargetsMacCatalyst)' != 'true' and '$(TargetsiOS)' != 'true' and '$(TargetstvOS)' != 'true'">USE_REGIONS;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

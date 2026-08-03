@@ -33,6 +33,13 @@
          native build labels it Linux. gcenv.managed.cpp checks the two selections against each
          other. -->
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true'">TARGET_ANDROID;$(DefineConstants)</DefineConstants>
+    <!-- USE_REGIONS is the collector's region layout. gcpriv.h defines it as
+         HOST_64BIT && !BUILD_AS_STANDALONE && !__sun && (!HOST_APPLE || HOST_OSX). This integrated
+         port is never BUILD_AS_STANDALONE and never targets illumos/Solaris, so it reduces to
+         64-bit AND not an Apple mobile platform (iOS/tvOS/MacCatalyst); OSX and every non-Apple
+         64-bit target use regions. The generated GCInterfaceOffsets.cs computes the same symbol
+         from the same primitives so the pinned layout table matches. -->
+    <DefineConstants Condition="('$(Platform)' == 'x64' or '$(Platform)' == 'arm64' or '$(Platform)' == 'loongarch64' or '$(Platform)' == 'riscv64') and '$(TargetsMacCatalyst)' != 'true' and '$(TargetsiOS)' != 'true' and '$(TargetstvOS)' != 'true'">USE_REGIONS;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
     <!-- The generated GCInterfaceOffsets.cs is only available when the native runtime is built

@@ -526,6 +526,65 @@ GC_ALIGNOF(      4,       8, allocator)
 GC_CONST(         2,         2, max_generation)
 GC_CONST(        14,        14, MAX_BUCKET_COUNT)
 
+// The per-heap generation. It has no native constructor, so a zero instance matches the native
+// default for every field except the embedded free_list_allocator, whose one-bucket default the
+// allocator constructor supplies; the managed port reproduces that in generation::initialize. Its
+// allocation_context is an alloc_context, which derives from gc_alloc_context and adds no fields,
+// so the port reuses the gc_alloc_context layout for it. The schema forks on USE_REGIONS -- the
+// region layout replaces allocation_start / plan_allocation_start(_size) with tail_region /
+// tail_ro_region -- and DOUBLY_LINKED_FL adds the two trailing gen2 fields. USE_REGIONS implies
+// HOST_64BIT, so the 32-bit column of that branch is never evaluated; it is filled for
+// completeness. FREE_USAGE_STATS is diagnostics-only and never defined, so its fields are omitted.
+GC_OFFSET(       0,       0, generation, allocation_context)
+GC_OFFSET(      28,      38, generation, start_segment)
+#ifdef USE_REGIONS
+GC_OFFSET(      2c,      40, generation, allocation_segment)
+GC_OFFSET(      30,      48, generation, allocation_context_start_region)
+GC_OFFSET(      34,      50, generation, tail_region)
+GC_OFFSET(      38,      58, generation, tail_ro_region)
+GC_OFFSET(      3c,      60, generation, free_list_allocator)
+GC_OFFSET(      58,      a0, generation, free_list_allocated)
+GC_OFFSET(      5c,      a8, generation, end_seg_allocated)
+GC_OFFSET(      60,      b0, generation, condemned_allocated)
+GC_OFFSET(      64,      b8, generation, sweep_allocated)
+GC_OFFSET(      68,      c0, generation, allocate_end_seg_p)
+GC_OFFSET(      6c,      c8, generation, free_list_space)
+GC_OFFSET(      70,      d0, generation, free_obj_space)
+GC_OFFSET(      74,      d8, generation, allocation_size)
+GC_OFFSET(      78,      e0, generation, pinned_allocation_compact_size)
+GC_OFFSET(      7c,      e8, generation, pinned_allocation_sweep_size)
+GC_OFFSET(      80,      f0, generation, gen_num)
+#ifdef DOUBLY_LINKED_FL
+GC_OFFSET(      84,      f4, generation, set_bgc_mark_bit_p)
+GC_OFFSET(      88,      f8, generation, last_free_list_allocated)
+#endif
+GC_SIZEOF(      88,     100, generation)
+#else
+GC_OFFSET(      2c,      40, generation, allocation_start)
+GC_OFFSET(      30,      48, generation, allocation_segment)
+GC_OFFSET(      34,      50, generation, allocation_context_start_region)
+GC_OFFSET(      38,      58, generation, free_list_allocator)
+GC_OFFSET(      54,      98, generation, free_list_allocated)
+GC_OFFSET(      58,      a0, generation, end_seg_allocated)
+GC_OFFSET(      5c,      a8, generation, condemned_allocated)
+GC_OFFSET(      60,      b0, generation, sweep_allocated)
+GC_OFFSET(      64,      b8, generation, allocate_end_seg_p)
+GC_OFFSET(      68,      c0, generation, free_list_space)
+GC_OFFSET(      6c,      c8, generation, free_obj_space)
+GC_OFFSET(      70,      d0, generation, allocation_size)
+GC_OFFSET(      74,      d8, generation, plan_allocation_start)
+GC_OFFSET(      78,      e0, generation, plan_allocation_start_size)
+GC_OFFSET(      7c,      e8, generation, pinned_allocation_compact_size)
+GC_OFFSET(      80,      f0, generation, pinned_allocation_sweep_size)
+GC_OFFSET(      84,      f8, generation, gen_num)
+#ifdef DOUBLY_LINKED_FL
+GC_OFFSET(      88,      fc, generation, set_bgc_mark_bit_p)
+GC_OFFSET(      8c,     100, generation, last_free_list_allocated)
+#endif
+GC_SIZEOF(      88,     108, generation)
+#endif
+GC_ALIGNOF(      8,       8, generation)
+
 #if !defined(TARGET_WASM)
 GC_OFFSET(       0,       0, etw_bucket_info, index)
 GC_OFFSET(       4,       4, etw_bucket_info, count)

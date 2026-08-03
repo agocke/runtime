@@ -685,8 +685,8 @@ handles, and per-type behavior match the C++ handle table under differential tes
 
 Translate the schema from `gcpriv.h` and related headers:
 
-- `heap_segment`
-- `generation`
+- `heap_segment` (forward declaration only)
+- `generation` (done)
 - `alloc_list`
 - `dynamic_data` (done)
 - Mark structures
@@ -755,6 +755,24 @@ Translate the schema from `gcpriv.h` and related headers:
   `dynamic_data*`, mirroring the native reference-return API without a managed reference to
   collector state.
 - The `FEATURE_EVENT_TRACE` `etw_bucket_info` record and its field-replacing `set` helper.
+- The per-heap `generation` schema and its dependency-free accessor block, built on the
+  `allocator` and `dynamic_data` cores. Its embedded `allocation_context` is an `alloc_context`,
+  which derives from `gc_alloc_context` and adds no fields, so the port reuses the existing
+  `gc_alloc_context` layout for it rather than introducing a distinct type. `heap_segment` is only
+  referenced through a pointer, so it is introduced as an empty `partial` forward declaration that
+  a later slice can complete without churn. The schema forks on `USE_REGIONS` -- the region layout
+  replaces `allocation_start`/`plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`
+  -- which reduces from gcpriv.h's `HOST_64BIT && (!HOST_APPLE || HOST_OSX)` to 64-bit AND not an
+  Apple mobile platform for this integrated port, computed once as a build symbol; the two trailing
+  gen2 fields are gated on `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
+  never-defined diagnostic `FREE_USAGE_STATS` fields are omitted. The class has no native
+  constructor, so zero initialization matches the native default for every field except the
+  embedded `free_list_allocator`, whose one-bucket young-generation default the native allocator
+  constructor supplies; `generation.initialize` reproduces that explicitly because C# does not run
+  struct constructors for embedded or unmanaged storage. The `generation_*` accessors -- including
+  `generation_alloc_context`, the allocation-context pointer/limit, the free-list and region
+  pointers, and `generation_total_plan_allocated` -- are static helpers taking a `generation*`,
+  mirroring the native reference-return API without a managed reference to collector state.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.

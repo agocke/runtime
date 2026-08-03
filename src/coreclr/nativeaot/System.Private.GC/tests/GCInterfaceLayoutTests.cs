@@ -429,6 +429,18 @@ public sealed class GCInterfaceLayoutTests
 #else
                         true,
 #endif
+                    "#ifdef USE_REGIONS" =>
+#if USE_REGIONS
+                        true,
+#else
+                        false,
+#endif
+                    "#ifdef DOUBLY_LINKED_FL" =>
+#if TARGET_64BIT && !TARGET_WASM
+                        true,
+#else
+                        false,
+#endif
                     _ => throw new InvalidDataException($"Unknown conditional in the offsets table: '{line}'."),
                 };
                 conditionals.Push((includeLine, condition));

@@ -202,6 +202,29 @@ that field on it. Every native `dd_*` accessor -- the direct fields, the ones th
 ref-returning (or value-returning) helper taking a `dynamic_data*`, preserving the native
 reference-return API without a managed reference to collector state.
 
+The per-heap `generation` schema is translated on top of those `allocator` and `dynamic_data`
+cores. Its `allocation_context` is a native `alloc_context`, which derives from `gc_alloc_context`
+and adds no fields, so the port reuses the existing `gc_alloc_context` layout for it instead of a
+distinct type. `heap_segment` is only ever referenced through a pointer here, so it is introduced
+as an empty `partial` forward declaration that a later slice can complete without disturbing these
+pointer references. The schema forks on `USE_REGIONS`, gcpriv.h's region layout that replaces
+`allocation_start` and `plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`.
+gcpriv.h defines `USE_REGIONS` as `HOST_64BIT && !BUILD_AS_STANDALONE && !__sun && (!HOST_APPLE ||
+HOST_OSX)`; this integrated port is never `BUILD_AS_STANDALONE` and never targets illumos, so it
+reduces to 64-bit AND not an Apple mobile platform (iOS/tvOS/MacCatalyst) -- OSX and every
+non-Apple 64-bit target use regions. The build defines a matching `USE_REGIONS` symbol for the
+managed sources, and `GCInterfaceOffsets.cspp` recomputes it from the same primitives so the pinned
+table selects the same layout; the native verifier gets the real definition through `gcinternal.h`.
+The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
+diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
+`HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class
+has no native constructor, so zero initialization matches its default for every field except the
+embedded `free_list_allocator`, which the native allocator constructor brings up when the
+containing `gc_heap` is created; `generation.initialize` reproduces that explicitly because C# does
+not run struct constructors for embedded or unmanaged storage. The `generation_*` accessors are
+static helpers taking a `generation*`, preserving the native reference-return API without a managed
+reference to collector state.
+
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`
 descriptor's size, initialization, and series-address arithmetic. The MethodTable-dependent
@@ -868,7 +891,10 @@ times:
   `gcinterface.h`/`gcinterface.ee.h`, so the native build breaks if the C++ layout drifts.
 * `src/GCInterfaceOffsets.cspp` is preprocessed by the native build into `GCInterfaceOffsets.cs`,
   a set of C# constants that `GCInterfaceLayout.Verify()` checks the managed structs against
-  during GC startup.
+  during GC startup. Where the table selects a schema on a gcpriv.h feature switch that the switch
+  itself defines (such as `USE_REGIONS` for the `generation` layout), the `.cspp` recomputes that
+  switch from the same primitives the compile definitions carry, since it does not include
+  gcpriv.h; the native verifier gets the real definition through `gcinternal.h` instead.
 * `tests/GCInterfaceLayoutTests.cs` embeds the table and checks the same entries against the
   translated types with plain reflection, so a mistake is reported per entry by `dotnet test`
   without building or booting a runtime.

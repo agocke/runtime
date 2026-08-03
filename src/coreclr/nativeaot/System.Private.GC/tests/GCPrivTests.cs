@@ -559,4 +559,247 @@ public sealed unsafe class GCPrivTests
 
         Assert.Equal(expected, dynamic_data.dd_v_fragmentation_burden_limit(&dd));
     }
+
+    private static nuint OffsetOf(void* field, generation* g) => (nuint)((byte*)field - (byte*)g);
+
+    [Fact]
+    public void GenerationInitializeBringsUpEmbeddedAllocatorAndLeavesOtherFieldsZero()
+    {
+        generation g = default;
+        generation* p = &g;
+
+        generation.initialize(p);
+
+        // The load-bearing part of native default construction is the embedded allocator: a young
+        // generation must come up with a single bucket, which the C# struct default would not give.
+        allocator* a = generation.generation_allocator(p);
+        Assert.Equal(1u, a->number_of_buckets());
+        Assert.Equal(1, a->discard_if_no_fit_p());
+#if TARGET_64BIT && !TARGET_WASM
+        Assert.False(a->is_doubly_linked_p());
+#endif
+
+        // initialize touches only the embedded allocator; every other field stays zero.
+        Assert.Equal((nuint)0, (nuint)p->start_segment);
+        Assert.Equal((nuint)0, (nuint)p->allocation_segment);
+        Assert.Equal((nuint)0, (nuint)p->allocation_context_start_region);
+        Assert.Equal((nuint)0, (nuint)p->allocation_context.alloc_ptr);
+        Assert.Equal((nuint)0, (nuint)p->allocation_context.alloc_limit);
+        Assert.Equal((nuint)0, p->free_list_space);
+        Assert.Equal((nuint)0, p->free_obj_space);
+        Assert.Equal((nuint)0, p->allocation_size);
+        Assert.Equal(0, p->allocate_end_seg_p);
+        Assert.Equal(0, p->gen_num);
+#if USE_REGIONS
+        Assert.Equal((nuint)0, (nuint)p->tail_region);
+        Assert.Equal((nuint)0, (nuint)p->tail_ro_region);
+#else
+        Assert.Equal((nuint)0, (nuint)p->allocation_start);
+        Assert.Equal((nuint)0, (nuint)p->plan_allocation_start);
+        Assert.Equal((nuint)0, p->plan_allocation_start_size);
+#endif
+#if TARGET_64BIT && !TARGET_WASM
+        Assert.Equal(0, p->set_bgc_mark_bit_p);
+        Assert.Equal((nuint)0, (nuint)p->last_free_list_allocated);
+#endif
+    }
+
+    [Fact]
+    public void GenerationAccessorsReferToFieldsInNativeOrder()
+    {
+        generation g = default;
+        generation* p = &g;
+        nuint previous = 0;
+
+        // allocation_context is the first field; alloc_context adds nothing over gc_alloc_context.
+        Assert.True(generation.generation_alloc_context(p) == &p->allocation_context);
+        Assert.Equal((nuint)0, OffsetOf(&p->allocation_context, p));
+
+        fixed (heap_segment** f = &generation.generation_start_segment(p))
+        {
+            Assert.True(f == &p->start_segment);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#if !USE_REGIONS
+        fixed (byte** f = &generation.generation_allocation_start(p))
+        {
+            Assert.True(f == &p->allocation_start);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#endif
+        fixed (heap_segment** f = &generation.generation_allocation_segment(p))
+        {
+            Assert.True(f == &p->allocation_segment);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (byte** f = &generation.generation_allocation_context_start_region(p))
+        {
+            Assert.True(f == &p->allocation_context_start_region);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#if USE_REGIONS
+        fixed (heap_segment** f = &generation.generation_tail_region(p))
+        {
+            Assert.True(f == &p->tail_region);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (heap_segment** f = &generation.generation_tail_ro_region(p))
+        {
+            Assert.True(f == &p->tail_ro_region);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#endif
+        Assert.True(generation.generation_allocator(p) == &p->free_list_allocator);
+        previous = Ascending(OffsetOf(&p->free_list_allocator, p), previous);
+
+        fixed (nuint* f = &generation.generation_free_list_allocated(p))
+        {
+            Assert.True(f == &p->free_list_allocated);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &generation.generation_end_seg_allocated(p))
+        {
+            Assert.True(f == &p->end_seg_allocated);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &generation.generation_condemned_allocated(p))
+        {
+            Assert.True(f == &p->condemned_allocated);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &generation.generation_sweep_allocated(p))
+        {
+            Assert.True(f == &p->sweep_allocated);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (int* f = &generation.generation_allocate_end_seg_p(p))
+        {
+            Assert.True(f == &p->allocate_end_seg_p);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &generation.generation_free_list_space(p))
+        {
+            Assert.True(f == &p->free_list_space);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &generation.generation_free_obj_space(p))
+        {
+            Assert.True(f == &p->free_obj_space);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &generation.generation_allocation_size(p))
+        {
+            Assert.True(f == &p->allocation_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#if !USE_REGIONS
+        fixed (byte** f = &generation.generation_plan_allocation_start(p))
+        {
+            Assert.True(f == &p->plan_allocation_start);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &generation.generation_plan_allocation_start_size(p))
+        {
+            Assert.True(f == &p->plan_allocation_start_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#endif
+        fixed (nuint* f = &generation.generation_pinned_allocation_compact_size(p))
+        {
+            Assert.True(f == &p->pinned_allocation_compact_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &generation.generation_pinned_allocation_sweep_size(p))
+        {
+            Assert.True(f == &p->pinned_allocation_sweep_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+
+        // gen_num has no accessor of its own; it closes the unconditional part of the layout.
+        previous = Ascending(OffsetOf(&p->gen_num, p), previous);
+#if TARGET_64BIT && !TARGET_WASM
+        fixed (int* f = &generation.generation_set_bgc_mark_bit_p(p))
+        {
+            Assert.True(f == &p->set_bgc_mark_bit_p);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (byte** f = &generation.generation_last_free_list_allocated(p))
+        {
+            Assert.True(f == &p->last_free_list_allocated);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#endif
+    }
+
+    [Fact]
+    public void GenerationRefAndPointerAccessorsMutateTheirFields()
+    {
+        generation g = default;
+        generation* p = &g;
+
+        // generation_alloc_context returns the embedded context; the pointer accessors reach into it.
+        Assert.True(generation.generation_alloc_context(p) == &p->allocation_context);
+        generation.generation_allocation_pointer(p) = (byte*)0x11;
+        generation.generation_allocation_limit(p) = (byte*)0x22;
+        Assert.Equal((nuint)0x11, (nuint)p->allocation_context.alloc_ptr);
+        Assert.Equal((nuint)0x22, (nuint)p->allocation_context.alloc_limit);
+
+        generation.generation_start_segment(p) = (heap_segment*)0x100;
+        generation.generation_allocation_segment(p) = (heap_segment*)0x200;
+        generation.generation_allocation_context_start_region(p) = (byte*)0x300;
+        Assert.Equal((nuint)0x100, (nuint)p->start_segment);
+        Assert.Equal((nuint)0x200, (nuint)p->allocation_segment);
+        Assert.Equal((nuint)0x300, (nuint)p->allocation_context_start_region);
+
+        generation.generation_free_list_allocated(p) = 5;
+        generation.generation_end_seg_allocated(p) = 7;
+        generation.generation_condemned_allocated(p) = 9;
+        Assert.Equal((nuint)5, p->free_list_allocated);
+        Assert.Equal((nuint)7, p->end_seg_allocated);
+        Assert.Equal((nuint)9, p->condemned_allocated);
+
+        // generation_total_plan_allocated sums the three planning allocation counters.
+        Assert.Equal((nuint)21, generation.generation_total_plan_allocated(p));
+
+        generation.generation_sweep_allocated(p) = 13;
+        generation.generation_allocate_end_seg_p(p) = 1;
+        generation.generation_free_list_space(p) = 41;
+        generation.generation_free_obj_space(p) = 42;
+        generation.generation_allocation_size(p) = 43;
+        generation.generation_pinned_allocation_compact_size(p) = 44;
+        generation.generation_pinned_allocation_sweep_size(p) = 45;
+        Assert.Equal((nuint)13, p->sweep_allocated);
+        Assert.Equal(1, p->allocate_end_seg_p);
+        Assert.Equal((nuint)41, p->free_list_space);
+        Assert.Equal((nuint)42, p->free_obj_space);
+        Assert.Equal((nuint)43, p->allocation_size);
+        Assert.Equal((nuint)44, p->pinned_allocation_compact_size);
+        Assert.Equal((nuint)45, p->pinned_allocation_sweep_size);
+
+#if USE_REGIONS
+        generation.generation_tail_region(p) = (heap_segment*)0x400;
+        generation.generation_tail_ro_region(p) = (heap_segment*)0x500;
+        Assert.Equal((nuint)0x400, (nuint)p->tail_region);
+        Assert.Equal((nuint)0x500, (nuint)p->tail_ro_region);
+
+        // start_segment_rw returns a non-null tail_ro_region and otherwise the start segment.
+        Assert.Equal((nuint)0x500, (nuint)generation.generation_start_segment_rw(p));
+        generation.generation_tail_ro_region(p) = null;
+        Assert.Equal((nuint)0x100, (nuint)generation.generation_start_segment_rw(p));
+#else
+        generation.generation_allocation_start(p) = (byte*)0x600;
+        generation.generation_plan_allocation_start(p) = (byte*)0x700;
+        generation.generation_plan_allocation_start_size(p) = 0x800;
+        Assert.Equal((nuint)0x600, (nuint)p->allocation_start);
+        Assert.Equal((nuint)0x700, (nuint)p->plan_allocation_start);
+        Assert.Equal((nuint)0x800, p->plan_allocation_start_size);
+#endif
+
+#if TARGET_64BIT && !TARGET_WASM
+        generation.generation_set_bgc_mark_bit_p(p) = 1;
+        generation.generation_last_free_list_allocated(p) = (byte*)0x900;
+        Assert.Equal(1, p->set_bgc_mark_bit_p);
+        Assert.Equal((nuint)0x900, (nuint)p->last_free_list_allocated);
+#endif
+    }
 }
