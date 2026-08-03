@@ -8,6 +8,29 @@ using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection
 {
+    internal enum gc_reason
+    {
+        reason_alloc_soh = 0,
+        reason_induced = 1,
+        reason_lowmemory = 2,
+        reason_empty = 3,
+        reason_alloc_loh = 4,
+        reason_oos_soh = 5,
+        reason_oos_loh = 6,
+        reason_induced_noforce = 7,
+        reason_gcstress = 8,
+        reason_lowmemory_blocking = 9,
+        reason_induced_compacting = 10,
+        reason_lowmemory_host = 11,
+        reason_pm_full_gc = 12,
+        reason_lowmemory_host_blocking = 13,
+        reason_bgc_tuning_soh = 14,
+        reason_bgc_tuning_loh = 15,
+        reason_bgc_stepping = 16,
+        reason_induced_aggressive = 17,
+        reason_max = 18,
+    }
+
     internal enum gc_condemn_reason_gen
     {
         gen_initial = 0,
@@ -235,6 +258,41 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             return -1;
+        }
+    }
+
+    internal enum gc_global_mechanism_p
+    {
+        global_concurrent = 0,
+        global_compaction = 1,
+        global_promotion = 2,
+        global_demotion = 3,
+        global_card_bundles = 4,
+        global_elevation = 5,
+        max_global_mechanisms_count = 6,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct gc_history_global
+    {
+        public nuint final_youngest_desired;
+        public uint num_heaps;
+        public int condemned_generation;
+        public int gen0_reduction_count;
+        public gc_reason reason;
+        public int pause_mode;
+        public uint mem_pressure;
+        public uint global_mechanisms_p;
+        public gen_to_condemn_tuning gen_to_condemn_reasons;
+
+        public void set_mechanism_p(gc_global_mechanism_p mechanism)
+        {
+            global_mechanisms_p |= 1u << (int)mechanism;
+        }
+
+        public bool get_mechanism_p(gc_global_mechanism_p mechanism)
+        {
+            return (global_mechanisms_p & (1u << (int)mechanism)) != 0;
         }
     }
 }

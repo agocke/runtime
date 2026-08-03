@@ -705,6 +705,10 @@ Translate the schema from `gcpriv.h` and related headers:
 - The per-heap mechanism records of `gcrecord.h`: expansion and compaction reasons,
   mechanism-bit enums, and `gc_history_per_heap`. The port preserves the high-bit operation
   marker, reason-bit encoding, and contiguous five-generation history layout.
+- The global history record of `gcrecord.h` and its `gc_reason` dependency from `gc.h`, including
+  global mechanism-bit helpers. The native verifier now includes `gcinternal.h` and selects the
+  actual WKS or SVR namespace, so current and future core-schema assertions use the real
+  collector headers rather than synthetic declarations.
 - The remaining `gcinterface.dac.h` schema: `dac_generation` and `dac_gc_heap`, generated
   mechanically from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Their complete layouts
   are verified against the native classes and by the managed startup verifier.

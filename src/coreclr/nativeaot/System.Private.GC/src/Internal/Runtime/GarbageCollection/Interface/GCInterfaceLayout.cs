@@ -319,6 +319,22 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            gc_history_global globalHistory;
+            if (sizeof(gc_history_global) != GCInterfaceOffsets.SIZEOF__gc_history_global
+                || AlignOf<gc_history_global>() != GCInterfaceOffsets.ALIGNOF__gc_history_global
+                || OffsetOf(&globalHistory, &globalHistory.final_youngest_desired) != GCInterfaceOffsets.OFFSETOF__gc_history_global__final_youngest_desired
+                || OffsetOf(&globalHistory, &globalHistory.num_heaps) != GCInterfaceOffsets.OFFSETOF__gc_history_global__num_heaps
+                || OffsetOf(&globalHistory, &globalHistory.condemned_generation) != GCInterfaceOffsets.OFFSETOF__gc_history_global__condemned_generation
+                || OffsetOf(&globalHistory, &globalHistory.gen0_reduction_count) != GCInterfaceOffsets.OFFSETOF__gc_history_global__gen0_reduction_count
+                || OffsetOf(&globalHistory, &globalHistory.reason) != GCInterfaceOffsets.OFFSETOF__gc_history_global__reason
+                || OffsetOf(&globalHistory, &globalHistory.pause_mode) != GCInterfaceOffsets.OFFSETOF__gc_history_global__pause_mode
+                || OffsetOf(&globalHistory, &globalHistory.mem_pressure) != GCInterfaceOffsets.OFFSETOF__gc_history_global__mem_pressure
+                || OffsetOf(&globalHistory, &globalHistory.global_mechanisms_p) != GCInterfaceOffsets.OFFSETOF__gc_history_global__global_mechanisms_p
+                || OffsetOf(&globalHistory, &globalHistory.gen_to_condemn_reasons) != GCInterfaceOffsets.OFFSETOF__gc_history_global__gen_to_condemn_reasons)
+            {
+                return false;
+            }
+
             return true;
         }
 
@@ -691,7 +707,26 @@ namespace Internal.Runtime.GarbageCollection
             && VerifyGCRecordEnums();
 
         private static bool VerifyGCRecordEnums() =>
-            (int)gc_condemn_reason_gen.gen_initial == GCInterfaceOffsets.gen_initial
+            (int)gc_reason.reason_alloc_soh == GCInterfaceOffsets.reason_alloc_soh
+            && (int)gc_reason.reason_induced == GCInterfaceOffsets.reason_induced
+            && (int)gc_reason.reason_lowmemory == GCInterfaceOffsets.reason_lowmemory
+            && (int)gc_reason.reason_empty == GCInterfaceOffsets.reason_empty
+            && (int)gc_reason.reason_alloc_loh == GCInterfaceOffsets.reason_alloc_loh
+            && (int)gc_reason.reason_oos_soh == GCInterfaceOffsets.reason_oos_soh
+            && (int)gc_reason.reason_oos_loh == GCInterfaceOffsets.reason_oos_loh
+            && (int)gc_reason.reason_induced_noforce == GCInterfaceOffsets.reason_induced_noforce
+            && (int)gc_reason.reason_gcstress == GCInterfaceOffsets.reason_gcstress
+            && (int)gc_reason.reason_lowmemory_blocking == GCInterfaceOffsets.reason_lowmemory_blocking
+            && (int)gc_reason.reason_induced_compacting == GCInterfaceOffsets.reason_induced_compacting
+            && (int)gc_reason.reason_lowmemory_host == GCInterfaceOffsets.reason_lowmemory_host
+            && (int)gc_reason.reason_pm_full_gc == GCInterfaceOffsets.reason_pm_full_gc
+            && (int)gc_reason.reason_lowmemory_host_blocking == GCInterfaceOffsets.reason_lowmemory_host_blocking
+            && (int)gc_reason.reason_bgc_tuning_soh == GCInterfaceOffsets.reason_bgc_tuning_soh
+            && (int)gc_reason.reason_bgc_tuning_loh == GCInterfaceOffsets.reason_bgc_tuning_loh
+            && (int)gc_reason.reason_bgc_stepping == GCInterfaceOffsets.reason_bgc_stepping
+            && (int)gc_reason.reason_induced_aggressive == GCInterfaceOffsets.reason_induced_aggressive
+            && (int)gc_reason.reason_max == GCInterfaceOffsets.reason_max
+            && (int)gc_condemn_reason_gen.gen_initial == GCInterfaceOffsets.gen_initial
             && (int)gc_condemn_reason_gen.gen_final_per_heap == GCInterfaceOffsets.gen_final_per_heap
             && (int)gc_condemn_reason_gen.gen_alloc_budget == GCInterfaceOffsets.gen_alloc_budget
             && (int)gc_condemn_reason_gen.gen_time_tuning == GCInterfaceOffsets.gen_time_tuning
@@ -753,7 +788,14 @@ namespace Internal.Runtime.GarbageCollection
             && (int)gc_mechanism_per_heap.max_mechanism_per_heap == GCInterfaceOffsets.max_mechanism_per_heap
             && (int)gc_mechanism_bit_per_heap.gc_mark_list_bit == GCInterfaceOffsets.gc_mark_list_bit
             && (int)gc_mechanism_bit_per_heap.gc_demotion_bit == GCInterfaceOffsets.gc_demotion_bit
-            && (int)gc_mechanism_bit_per_heap.max_gc_mechanism_bits_count == GCInterfaceOffsets.max_gc_mechanism_bits_count;
+            && (int)gc_mechanism_bit_per_heap.max_gc_mechanism_bits_count == GCInterfaceOffsets.max_gc_mechanism_bits_count
+            && (int)gc_global_mechanism_p.global_concurrent == GCInterfaceOffsets.global_concurrent
+            && (int)gc_global_mechanism_p.global_compaction == GCInterfaceOffsets.global_compaction
+            && (int)gc_global_mechanism_p.global_promotion == GCInterfaceOffsets.global_promotion
+            && (int)gc_global_mechanism_p.global_demotion == GCInterfaceOffsets.global_demotion
+            && (int)gc_global_mechanism_p.global_card_bundles == GCInterfaceOffsets.global_card_bundles
+            && (int)gc_global_mechanism_p.global_elevation == GCInterfaceOffsets.global_elevation
+            && (int)gc_global_mechanism_p.max_global_mechanisms_count == GCInterfaceOffsets.max_global_mechanisms_count;
 
         private static bool VerifySuspensionEnums() =>
             (int)SUSPEND_REASON.SUSPEND_FOR_GC == GCInterfaceOffsets.SUSPEND_FOR_GC

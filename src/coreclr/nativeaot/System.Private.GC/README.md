@@ -41,7 +41,7 @@ Ported so far:
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `GCDesc.cs` | dependency-free types and descriptor arithmetic from `gcdesc.h` |
-| `GCRecord.cs` | dependency-free prefix of `gcrecord.h` |
+| `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `gc_reason` from `gc.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
 | `HandleTableCache.cs` | `handletablecache.cpp` |
@@ -152,12 +152,14 @@ All-table handle counting and the variable-handle type helpers also operate over
 map and extra-info storage. `HndNotifyGcCycleComplete` currently has its retail no-op behavior;
 the checked-build scan-statistics logging arrives with handle scanning.
 
-The first core-schema slice translates the dependency-free prefix of `gcrecord.h`: the
+The GC history schema translates `gcrecord.h`: the
 generation and condition condemn-reason enums, their native two-bit/one-bit packed tuning
 record, the ten-field `gc_generation_data` event payload, `maxgen_size_increase`, and the
-per-heap expansion/compaction mechanism history. The shared offsets table verifies the public
-record layouts and every enum value against C++; direct tests cover the private tuning record's
-size, native OR-based bit packing, most-significant-bit mechanism encoding, and mechanism flags.
+per-heap and global mechanism histories. It also carries the `gc_reason` enum those records use
+from `gc.h`. The shared offsets table verifies the public record layouts and every enum value
+against the real WKS and SVR headers; direct tests cover the private tuning record's size, native
+OR-based bit packing, most-significant-bit mechanism encoding, and mechanism flags. The
+string-based diagnostic `print` bodies remain with the later tracing work.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`

@@ -97,4 +97,18 @@ public sealed unsafe class GCRecordTests
         Assert.False(history.is_mechanism_bit_set(gc_mechanism_bit_per_heap.gc_mark_list_bit));
         Assert.True(history.is_mechanism_bit_set(gc_mechanism_bit_per_heap.gc_demotion_bit));
     }
+
+    [Fact]
+    public void GlobalMechanismBitsUseNativeEncoding()
+    {
+        gc_history_global history = default;
+
+        history.set_mechanism_p(gc_global_mechanism_p.global_concurrent);
+        history.set_mechanism_p(gc_global_mechanism_p.global_card_bundles);
+
+        Assert.True(history.get_mechanism_p(gc_global_mechanism_p.global_concurrent));
+        Assert.True(history.get_mechanism_p(gc_global_mechanism_p.global_card_bundles));
+        Assert.False(history.get_mechanism_p(gc_global_mechanism_p.global_compaction));
+        Assert.Equal(0x11u, history.global_mechanisms_p);
+    }
 }

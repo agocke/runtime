@@ -6,22 +6,14 @@
 // types. If this file fails to compile, either the C++ interface changed and the table plus the
 // managed structs need to be updated, or the table is simply wrong.
 
-#include "common.h"
-#include "gcenv.h"
-#include "gcheaputilities.h"
-
-// gcrecord.h uses these gc.h declarations, but including gc.h here conflicts with the
-// standalone-GC interface types already included by gcheaputilities.h.
-static constexpr int total_generation_count = 5;
-enum gc_reason : int;
-
-#include "gcrecord.h"
-#define DACCESS_COMPILE
-#define SOS_INCLUDE
-#include "gcdesc.h"
-#undef SOS_INCLUDE
-#undef DACCESS_COMPILE
+#include "gcinternal.h"
 #include "handletablepriv.h"
+
+#ifdef SERVER_GC
+using namespace SVR;
+#else
+using namespace WKS;
+#endif
 
 class GCInterfaceOffsets
 {
