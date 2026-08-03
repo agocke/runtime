@@ -190,6 +190,17 @@ pins only the allocator's size and alignment under the same `FL_VERIFICATION`/`T
 combinations as its embedded `alloc_list`, while the managed tests pin the field order and every
 accessor directly. The native default constructor is an explicit pointer initializer because C#
 does not run struct constructors for embedded fields or storage carved from unmanaged memory.
+The per-generation `dynamic_data` schema and its dependency-free `dd_*` accessors are translated
+too. The native class has no constructor, so zero initialization matches its default, and its
+fields are public, so the table pins each field's offset explicitly rather than only the size.
+`padding_size` is always present because `SHORT_PLUGS` is unconditional; `num_npinned_plugs` and
+the one-pointer shift of every later field follow `RESPECT_LARGE_ALIGNMENT || FEATURE_STRUCTALIGN`,
+which reduces to the GC's `FEATURE_64BIT_ALIGNMENT` (`TARGET_ARM || TARGET_WASM`) since
+`FEATURE_STRUCTALIGN` is never defined here, so the offsets table and the managed struct both gate
+that field on it. Every native `dd_*` accessor -- the direct fields, the ones that forward through
+`sdata`, and the doubling-and-capping `dd_v_fragmentation_burden_limit` -- is a static
+ref-returning (or value-returning) helper taking a `dynamic_data*`, preserving the native
+reference-return API without a managed reference to collector state.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`

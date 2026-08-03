@@ -356,6 +356,37 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            dynamic_data dynamicData;
+            if (sizeof(dynamic_data) != GCInterfaceOffsets.SIZEOF__dynamic_data
+                || AlignOf<dynamic_data>() != GCInterfaceOffsets.ALIGNOF__dynamic_data
+                || OffsetOf(&dynamicData, &dynamicData.new_allocation) != GCInterfaceOffsets.OFFSETOF__dynamic_data__new_allocation
+                || OffsetOf(&dynamicData, &dynamicData.gc_new_allocation) != GCInterfaceOffsets.OFFSETOF__dynamic_data__gc_new_allocation
+                || OffsetOf(&dynamicData, &dynamicData.surv) != GCInterfaceOffsets.OFFSETOF__dynamic_data__surv
+                || OffsetOf(&dynamicData, &dynamicData.desired_allocation) != GCInterfaceOffsets.OFFSETOF__dynamic_data__desired_allocation
+                || OffsetOf(&dynamicData, &dynamicData.begin_data_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__begin_data_size
+                || OffsetOf(&dynamicData, &dynamicData.survived_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__survived_size
+                || OffsetOf(&dynamicData, &dynamicData.pinned_survived_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__pinned_survived_size
+                || OffsetOf(&dynamicData, &dynamicData.artificial_pinned_survived_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__artificial_pinned_survived_size
+                || OffsetOf(&dynamicData, &dynamicData.added_pinned_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__added_pinned_size
+                || OffsetOf(&dynamicData, &dynamicData.padding_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__padding_size
+#if TARGET_ARM || TARGET_WASM
+                || OffsetOf(&dynamicData, &dynamicData.num_npinned_plugs) != GCInterfaceOffsets.OFFSETOF__dynamic_data__num_npinned_plugs
+#endif
+                || OffsetOf(&dynamicData, &dynamicData.current_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__current_size
+                || OffsetOf(&dynamicData, &dynamicData.collection_count) != GCInterfaceOffsets.OFFSETOF__dynamic_data__collection_count
+                || OffsetOf(&dynamicData, &dynamicData.promoted_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__promoted_size
+                || OffsetOf(&dynamicData, &dynamicData.freach_previous_promotion) != GCInterfaceOffsets.OFFSETOF__dynamic_data__freach_previous_promotion
+                || OffsetOf(&dynamicData, &dynamicData.fragmentation) != GCInterfaceOffsets.OFFSETOF__dynamic_data__fragmentation
+                || OffsetOf(&dynamicData, &dynamicData.gc_clock) != GCInterfaceOffsets.OFFSETOF__dynamic_data__gc_clock
+                || OffsetOf(&dynamicData, &dynamicData.time_clock) != GCInterfaceOffsets.OFFSETOF__dynamic_data__time_clock
+                || OffsetOf(&dynamicData, &dynamicData.previous_time_clock) != GCInterfaceOffsets.OFFSETOF__dynamic_data__previous_time_clock
+                || OffsetOf(&dynamicData, &dynamicData.gc_elapsed_time) != GCInterfaceOffsets.OFFSETOF__dynamic_data__gc_elapsed_time
+                || OffsetOf(&dynamicData, &dynamicData.min_size) != GCInterfaceOffsets.OFFSETOF__dynamic_data__min_size
+                || OffsetOf(&dynamicData, &dynamicData.sdata) != GCInterfaceOffsets.OFFSETOF__dynamic_data__sdata)
+            {
+                return false;
+            }
+
             recorded_generation_info generationInfo;
             if (sizeof(recorded_generation_info) != GCInterfaceOffsets.SIZEOF__recorded_generation_info
                 || AlignOf<recorded_generation_info>() != GCInterfaceOffsets.ALIGNOF__recorded_generation_info

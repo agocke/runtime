@@ -688,7 +688,7 @@ Translate the schema from `gcpriv.h` and related headers:
 - `heap_segment`
 - `generation`
 - `alloc_list`
-- `dynamic_data`
+- `dynamic_data` (done)
 - Mark structures
 - Region tables
 - Card and brick tables
@@ -744,6 +744,16 @@ Translate the schema from `gcpriv.h` and related headers:
   combinations as its embedded `alloc_list`) and the managed tests pin field order and accessor
   behavior directly. The native default constructor is represented as a pointer initializer
   because C# does not run struct constructors for embedded fields or unmanaged storage.
+- The per-generation `dynamic_data` schema and its dependency-free `dd_*` accessors. The class
+  has no native constructor, so zero initialization matches the native default, and its fields are
+  public, so the shared table pins every field's offset explicitly. `padding_size` is always
+  present because `SHORT_PLUGS` is defined unconditionally; `num_npinned_plugs` and the one-pointer
+  shift of every field after it are gated on `RESPECT_LARGE_ALIGNMENT || FEATURE_STRUCTALIGN`,
+  which reduces to the GC's `FEATURE_64BIT_ALIGNMENT` (`TARGET_ARM || TARGET_WASM`) because
+  `FEATURE_STRUCTALIGN` is never defined here. The direct-field, `sdata`-forwarding, and
+  `dd_v_fragmentation_burden_limit` accessors are static ref-returning helpers taking a
+  `dynamic_data*`, mirroring the native reference-return API without a managed reference to
+  collector state.
 - The `FEATURE_EVENT_TRACE` `etw_bucket_info` record and its field-replacing `set` helper.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state

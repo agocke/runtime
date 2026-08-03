@@ -268,4 +268,295 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(expected, a.is_doubly_linked_p());
     }
 #endif
+
+    private static nuint OffsetOf(void* field, dynamic_data* dd) => (nuint)((byte*)field - (byte*)dd);
+
+    [Fact]
+    public void DefaultDynamicDataIsZeroInitialized()
+    {
+        dynamic_data dd = default;
+        dynamic_data* p = &dd;
+
+        Assert.Equal((nint)0, dynamic_data.dd_new_allocation(p));
+        Assert.Equal((nint)0, dynamic_data.dd_gc_new_allocation(p));
+        Assert.Equal(0f, dynamic_data.dd_surv(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_desired_allocation(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_begin_data_size(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_survived_size(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_pinned_survived_size(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_artificial_pinned_survived_size(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_added_pinned_size(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_padding_size(p));
+#if TARGET_ARM || TARGET_WASM
+        Assert.Equal((nuint)0, dynamic_data.dd_num_npinned_plugs(p));
+#endif
+        Assert.Equal((nuint)0, dynamic_data.dd_current_size(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_collection_count(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_promoted_size(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_freach_previous_promotion(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_fragmentation(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_gc_clock(p));
+        Assert.Equal(0UL, dynamic_data.dd_time_clock(p));
+        Assert.Equal(0UL, dynamic_data.dd_previous_time_clock(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_gc_elapsed_time(p));
+        Assert.Equal((nuint)0, dynamic_data.dd_min_size(p));
+        Assert.Equal((nuint)0, (nuint)dd.sdata);
+    }
+
+    [Fact]
+    public void DirectAccessorsReferToFieldsInNativeOrder()
+    {
+        dynamic_data dd = default;
+        dynamic_data* p = &dd;
+        nuint previous = 0;
+
+        fixed (nint* f = &dynamic_data.dd_new_allocation(p))
+        {
+            Assert.True(f == &p->new_allocation);
+            Assert.Equal((nuint)0, OffsetOf(f, p));
+        }
+        fixed (nint* f = &dynamic_data.dd_gc_new_allocation(p))
+        {
+            Assert.True(f == &p->gc_new_allocation);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (float* f = &dynamic_data.dd_surv(p))
+        {
+            Assert.True(f == &p->surv);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_desired_allocation(p))
+        {
+            Assert.True(f == &p->desired_allocation);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_begin_data_size(p))
+        {
+            Assert.True(f == &p->begin_data_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_survived_size(p))
+        {
+            Assert.True(f == &p->survived_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_pinned_survived_size(p))
+        {
+            Assert.True(f == &p->pinned_survived_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_artificial_pinned_survived_size(p))
+        {
+            Assert.True(f == &p->artificial_pinned_survived_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_added_pinned_size(p))
+        {
+            Assert.True(f == &p->added_pinned_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_padding_size(p))
+        {
+            Assert.True(f == &p->padding_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#if TARGET_ARM || TARGET_WASM
+        fixed (nuint* f = &dynamic_data.dd_num_npinned_plugs(p))
+        {
+            Assert.True(f == &p->num_npinned_plugs);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+#endif
+        fixed (nuint* f = &dynamic_data.dd_current_size(p))
+        {
+            Assert.True(f == &p->current_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_collection_count(p))
+        {
+            Assert.True(f == &p->collection_count);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_promoted_size(p))
+        {
+            Assert.True(f == &p->promoted_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_freach_previous_promotion(p))
+        {
+            Assert.True(f == &p->freach_previous_promotion);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_fragmentation(p))
+        {
+            Assert.True(f == &p->fragmentation);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_gc_clock(p))
+        {
+            Assert.True(f == &p->gc_clock);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (ulong* f = &dynamic_data.dd_time_clock(p))
+        {
+            Assert.True(f == &p->time_clock);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (ulong* f = &dynamic_data.dd_previous_time_clock(p))
+        {
+            Assert.True(f == &p->previous_time_clock);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_gc_elapsed_time(p))
+        {
+            Assert.True(f == &p->gc_elapsed_time);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+        fixed (nuint* f = &dynamic_data.dd_min_size(p))
+        {
+            Assert.True(f == &p->min_size);
+            previous = Ascending(OffsetOf(f, p), previous);
+        }
+
+        // sdata is the last field; it has no direct accessor but closes the layout.
+        Assert.True(OffsetOf(&p->sdata, p) > previous);
+    }
+
+    private static nuint Ascending(nuint offset, nuint previous)
+    {
+        Assert.True(offset > previous);
+        return offset;
+    }
+
+    [Fact]
+    public void DirectAccessorsMutateTheirFields()
+    {
+        dynamic_data dd = default;
+        dynamic_data* p = &dd;
+
+        dynamic_data.dd_new_allocation(p) = -11;
+        dynamic_data.dd_gc_new_allocation(p) = -22;
+        dynamic_data.dd_surv(p) = 1.5f;
+        dynamic_data.dd_desired_allocation(p) = 33;
+        dynamic_data.dd_begin_data_size(p) = 44;
+        dynamic_data.dd_survived_size(p) = 55;
+        dynamic_data.dd_pinned_survived_size(p) = 66;
+        dynamic_data.dd_artificial_pinned_survived_size(p) = 77;
+        dynamic_data.dd_added_pinned_size(p) = 88;
+        dynamic_data.dd_padding_size(p) = 99;
+#if TARGET_ARM || TARGET_WASM
+        dynamic_data.dd_num_npinned_plugs(p) = 100;
+#endif
+        dynamic_data.dd_current_size(p) = 111;
+        dynamic_data.dd_collection_count(p) = 122;
+        dynamic_data.dd_promoted_size(p) = 133;
+        dynamic_data.dd_freach_previous_promotion(p) = 144;
+        dynamic_data.dd_fragmentation(p) = 155;
+        dynamic_data.dd_gc_clock(p) = 166;
+        dynamic_data.dd_time_clock(p) = 0x1122334455667788UL;
+        dynamic_data.dd_previous_time_clock(p) = 0x8877665544332211UL;
+        dynamic_data.dd_gc_elapsed_time(p) = 177;
+        dynamic_data.dd_min_size(p) = 188;
+
+        Assert.Equal((nint)(-11), dd.new_allocation);
+        Assert.Equal((nint)(-22), dd.gc_new_allocation);
+        Assert.Equal(1.5f, dd.surv);
+        Assert.Equal((nuint)33, dd.desired_allocation);
+        Assert.Equal((nuint)44, dd.begin_data_size);
+        Assert.Equal((nuint)55, dd.survived_size);
+        Assert.Equal((nuint)66, dd.pinned_survived_size);
+        Assert.Equal((nuint)77, dd.artificial_pinned_survived_size);
+        Assert.Equal((nuint)88, dd.added_pinned_size);
+        Assert.Equal((nuint)99, dd.padding_size);
+#if TARGET_ARM || TARGET_WASM
+        Assert.Equal((nuint)100, dd.num_npinned_plugs);
+#endif
+        Assert.Equal((nuint)111, dd.current_size);
+        Assert.Equal((nuint)122, dd.collection_count);
+        Assert.Equal((nuint)133, dd.promoted_size);
+        Assert.Equal((nuint)144, dd.freach_previous_promotion);
+        Assert.Equal((nuint)155, dd.fragmentation);
+        Assert.Equal((nuint)166, dd.gc_clock);
+        Assert.Equal(0x1122334455667788UL, dd.time_clock);
+        Assert.Equal(0x8877665544332211UL, dd.previous_time_clock);
+        Assert.Equal((nuint)177, dd.gc_elapsed_time);
+        Assert.Equal((nuint)188, dd.min_size);
+
+        // The accessors read back the same values they set.
+        Assert.Equal((nuint)166, dynamic_data.dd_gc_clock(p));
+        Assert.Equal((nuint)188, dynamic_data.dd_min_size(p));
+    }
+
+    [Fact]
+    public void SdataAccessorsReadAndWriteThroughSdata()
+    {
+        static_data sd = default;
+        dynamic_data dd = default;
+        dd.sdata = &sd;
+        dynamic_data* p = &dd;
+
+        fixed (float* f = &dynamic_data.dd_limit(p))
+        {
+            Assert.True(f == &sd.limit);
+        }
+        fixed (float* f = &dynamic_data.dd_max_limit(p))
+        {
+            Assert.True(f == &sd.max_limit);
+        }
+        fixed (nuint* f = &dynamic_data.dd_max_size(p))
+        {
+            Assert.True(f == &sd.max_size);
+        }
+        fixed (nuint* f = &dynamic_data.dd_fragmentation_limit(p))
+        {
+            Assert.True(f == &sd.fragmentation_limit);
+        }
+        fixed (float* f = &dynamic_data.dd_fragmentation_burden_limit(p))
+        {
+            Assert.True(f == &sd.fragmentation_burden_limit);
+        }
+        fixed (nuint* f = &dynamic_data.dd_gc_clock_interval(p))
+        {
+            Assert.True(f == &sd.gc_clock);
+        }
+        fixed (ulong* f = &dynamic_data.dd_time_clock_interval(p))
+        {
+            Assert.True(f == &sd.time_clock);
+        }
+
+        dynamic_data.dd_limit(p) = 0.5f;
+        dynamic_data.dd_max_limit(p) = 0.25f;
+        dynamic_data.dd_max_size(p) = 4096;
+        dynamic_data.dd_fragmentation_limit(p) = 512;
+        dynamic_data.dd_fragmentation_burden_limit(p) = 0.125f;
+        dynamic_data.dd_gc_clock_interval(p) = 7;
+        dynamic_data.dd_time_clock_interval(p) = 0xdeadbeefUL;
+
+        Assert.Equal(0.5f, sd.limit);
+        Assert.Equal(0.25f, sd.max_limit);
+        Assert.Equal((nuint)4096, sd.max_size);
+        Assert.Equal((nuint)512, sd.fragmentation_limit);
+        Assert.Equal(0.125f, sd.fragmentation_burden_limit);
+        Assert.Equal((nuint)7, sd.gc_clock);
+        Assert.Equal(0xdeadbeefUL, sd.time_clock);
+    }
+
+    [Theory]
+    [InlineData(0f, 0f)]
+    [InlineData(0.125f, 0.25f)]
+    [InlineData(0.3125f, 0.625f)]
+    // 2 * 0.375 == 0.75, which the cap keeps rather than exceeds.
+    [InlineData(0.375f, 0.75f)]
+    [InlineData(0.5f, 0.75f)]
+    [InlineData(1f, 0.75f)]
+    [InlineData(float.NaN, float.NaN)]
+    public void VFragmentationBurdenLimitDoublesAndCapsAt075(float burden, float expected)
+    {
+        static_data sd = default;
+        sd.fragmentation_burden_limit = burden;
+        dynamic_data dd = default;
+        dd.sdata = &sd;
+
+        Assert.Equal(expected, dynamic_data.dd_v_fragmentation_burden_limit(&dd));
+    }
 }

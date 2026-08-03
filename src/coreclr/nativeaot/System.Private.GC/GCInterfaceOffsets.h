@@ -413,6 +413,52 @@ GC_OFFSET(      20,      30, static_data, gc_clock)
 GC_SIZEOF(      28,      38, static_data)
 GC_ALIGNOF(      8,       8, static_data)
 
+// dynamic_data has no native constructor, so zero initialization matches the native default, and
+// all of its fields are public. padding_size is present because SHORT_PLUGS is defined
+// unconditionally in gcpriv.h. num_npinned_plugs is gated on RESPECT_LARGE_ALIGNMENT ||
+// FEATURE_STRUCTALIGN; RESPECT_LARGE_ALIGNMENT tracks the GC's FEATURE_64BIT_ALIGNMENT (defined
+// for TARGET_ARM and TARGET_WASM) and FEATURE_STRUCTALIGN is never defined here, so the field and
+// every field after it shift by one pointer only in a FEATURE_64BIT_ALIGNMENT build.
+GC_OFFSET(       0,       0, dynamic_data, new_allocation)
+GC_OFFSET(       4,       8, dynamic_data, gc_new_allocation)
+GC_OFFSET(       8,      10, dynamic_data, surv)
+GC_OFFSET(       c,      18, dynamic_data, desired_allocation)
+GC_OFFSET(      10,      20, dynamic_data, begin_data_size)
+GC_OFFSET(      14,      28, dynamic_data, survived_size)
+GC_OFFSET(      18,      30, dynamic_data, pinned_survived_size)
+GC_OFFSET(      1c,      38, dynamic_data, artificial_pinned_survived_size)
+GC_OFFSET(      20,      40, dynamic_data, added_pinned_size)
+GC_OFFSET(      24,      48, dynamic_data, padding_size)
+#if defined(FEATURE_64BIT_ALIGNMENT)
+GC_OFFSET(      28,      50, dynamic_data, num_npinned_plugs)
+GC_OFFSET(      2c,      58, dynamic_data, current_size)
+GC_OFFSET(      30,      60, dynamic_data, collection_count)
+GC_OFFSET(      34,      68, dynamic_data, promoted_size)
+GC_OFFSET(      38,      70, dynamic_data, freach_previous_promotion)
+GC_OFFSET(      3c,      78, dynamic_data, fragmentation)
+GC_OFFSET(      40,      80, dynamic_data, gc_clock)
+GC_OFFSET(      48,      88, dynamic_data, time_clock)
+GC_OFFSET(      50,      90, dynamic_data, previous_time_clock)
+GC_OFFSET(      58,      98, dynamic_data, gc_elapsed_time)
+GC_OFFSET(      5c,      a0, dynamic_data, min_size)
+GC_OFFSET(      60,      a8, dynamic_data, sdata)
+GC_SIZEOF(      68,      b0, dynamic_data)
+#else
+GC_OFFSET(      28,      50, dynamic_data, current_size)
+GC_OFFSET(      2c,      58, dynamic_data, collection_count)
+GC_OFFSET(      30,      60, dynamic_data, promoted_size)
+GC_OFFSET(      34,      68, dynamic_data, freach_previous_promotion)
+GC_OFFSET(      38,      70, dynamic_data, fragmentation)
+GC_OFFSET(      3c,      78, dynamic_data, gc_clock)
+GC_OFFSET(      40,      80, dynamic_data, time_clock)
+GC_OFFSET(      48,      88, dynamic_data, previous_time_clock)
+GC_OFFSET(      50,      90, dynamic_data, gc_elapsed_time)
+GC_OFFSET(      54,      98, dynamic_data, min_size)
+GC_OFFSET(      58,      a0, dynamic_data, sdata)
+GC_SIZEOF(      60,      a8, dynamic_data)
+#endif
+GC_ALIGNOF(      8,       8, dynamic_data)
+
 GC_OFFSET(       0,       0, recorded_generation_info, size_before)
 GC_OFFSET(       4,       8, recorded_generation_info, fragmentation_before)
 GC_OFFSET(       8,      10, recorded_generation_info, size_after)

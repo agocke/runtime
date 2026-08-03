@@ -21,6 +21,109 @@ namespace Internal.Runtime.GarbageCollection
         public nuint gc_clock;
     }
 
+    // Dynamic data is maintained per generation. The native class groups its fields into
+    // calculated logical data, physical data, and the const data it reads through sdata; it has no
+    // constructor, so zero initialization matches the native default. All fields are public in the
+    // C++ class, and every native accessor hands out a reference into the instance, so they are
+    // translated as static ref-returning helpers taking a dynamic_data* -- mirroring the native
+    // reference-return API without introducing a managed reference to collector state.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct dynamic_data
+    {
+        public nint new_allocation;
+        public nint gc_new_allocation;
+        public float surv;
+        public nuint desired_allocation;
+        public nuint begin_data_size;
+        public nuint survived_size;
+        public nuint pinned_survived_size;
+        public nuint artificial_pinned_survived_size;
+        public nuint added_pinned_size;
+        // SHORT_PLUGS is defined unconditionally in gcpriv.h.
+        public nuint padding_size;
+#if TARGET_ARM || TARGET_WASM
+        // RESPECT_LARGE_ALIGNMENT || FEATURE_STRUCTALIGN. RESPECT_LARGE_ALIGNMENT tracks the GC's
+        // FEATURE_64BIT_ALIGNMENT, which gcenv.object.h defines for TARGET_ARM and TARGET_WASM;
+        // FEATURE_STRUCTALIGN is never defined in this codebase.
+        public nuint num_npinned_plugs;
+#endif
+        public nuint current_size;
+        public nuint collection_count;
+        public nuint promoted_size;
+        public nuint freach_previous_promotion;
+        public nuint fragmentation;
+        public nuint gc_clock;
+        public ulong time_clock;
+        public ulong previous_time_clock;
+        public nuint gc_elapsed_time;
+        public nuint min_size;
+        public static_data* sdata;
+
+        public static ref nuint dd_begin_data_size(dynamic_data* inst) => ref inst->begin_data_size;
+
+        public static ref nuint dd_survived_size(dynamic_data* inst) => ref inst->survived_size;
+
+#if TARGET_ARM || TARGET_WASM
+        public static ref nuint dd_num_npinned_plugs(dynamic_data* inst) => ref inst->num_npinned_plugs;
+#endif
+
+        public static ref nuint dd_pinned_survived_size(dynamic_data* inst) => ref inst->pinned_survived_size;
+
+        public static ref nuint dd_added_pinned_size(dynamic_data* inst) => ref inst->added_pinned_size;
+
+        public static ref nuint dd_artificial_pinned_survived_size(dynamic_data* inst) => ref inst->artificial_pinned_survived_size;
+
+        public static ref nuint dd_padding_size(dynamic_data* inst) => ref inst->padding_size;
+
+        public static ref nuint dd_current_size(dynamic_data* inst) => ref inst->current_size;
+
+        public static ref float dd_surv(dynamic_data* inst) => ref inst->surv;
+
+        public static ref nuint dd_freach_previous_promotion(dynamic_data* inst) => ref inst->freach_previous_promotion;
+
+        public static ref nuint dd_desired_allocation(dynamic_data* inst) => ref inst->desired_allocation;
+
+        public static ref nuint dd_collection_count(dynamic_data* inst) => ref inst->collection_count;
+
+        public static ref nuint dd_promoted_size(dynamic_data* inst) => ref inst->promoted_size;
+
+        public static ref float dd_limit(dynamic_data* inst) => ref inst->sdata->limit;
+
+        public static ref float dd_max_limit(dynamic_data* inst) => ref inst->sdata->max_limit;
+
+        public static ref nuint dd_max_size(dynamic_data* inst) => ref inst->sdata->max_size;
+
+        public static ref nuint dd_min_size(dynamic_data* inst) => ref inst->min_size;
+
+        public static ref nint dd_new_allocation(dynamic_data* inst) => ref inst->new_allocation;
+
+        public static ref nint dd_gc_new_allocation(dynamic_data* inst) => ref inst->gc_new_allocation;
+
+        public static ref nuint dd_fragmentation_limit(dynamic_data* inst) => ref inst->sdata->fragmentation_limit;
+
+        public static ref float dd_fragmentation_burden_limit(dynamic_data* inst) => ref inst->sdata->fragmentation_burden_limit;
+
+        public static float dd_v_fragmentation_burden_limit(dynamic_data* inst)
+        {
+            float doubled = 2f * dd_fragmentation_burden_limit(inst);
+            return 0.75f < doubled ? 0.75f : doubled;
+        }
+
+        public static ref nuint dd_fragmentation(dynamic_data* inst) => ref inst->fragmentation;
+
+        public static ref nuint dd_gc_clock(dynamic_data* inst) => ref inst->gc_clock;
+
+        public static ref ulong dd_time_clock(dynamic_data* inst) => ref inst->time_clock;
+
+        public static ref ulong dd_previous_time_clock(dynamic_data* inst) => ref inst->previous_time_clock;
+
+        public static ref nuint dd_gc_clock_interval(dynamic_data* inst) => ref inst->sdata->gc_clock;
+
+        public static ref ulong dd_time_clock_interval(dynamic_data* inst) => ref inst->sdata->time_clock;
+
+        public static ref nuint dd_gc_elapsed_time(dynamic_data* inst) => ref inst->gc_elapsed_time;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct recorded_generation_info
     {

@@ -411,6 +411,12 @@ public sealed class GCInterfaceLayoutTests
                         false,
 #endif
                     "#if defined(FL_VERIFICATION)" => false,
+                    "#if defined(FEATURE_64BIT_ALIGNMENT)" =>
+#if TARGET_ARM || TARGET_WASM
+                        true,
+#else
+                        false,
+#endif
                     "#if defined(TARGET_WASM)" =>
 #if TARGET_WASM
                         true,
