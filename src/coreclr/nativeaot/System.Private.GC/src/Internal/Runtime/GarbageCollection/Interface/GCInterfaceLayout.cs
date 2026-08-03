@@ -409,6 +409,12 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            if (sizeof(allocator) != GCInterfaceOffsets.SIZEOF__allocator
+                || AlignOf<allocator>() != GCInterfaceOffsets.ALIGNOF__allocator)
+            {
+                return false;
+            }
+
 #if !TARGET_WASM
             etw_bucket_info bucketInfo;
             if (sizeof(etw_bucket_info) != GCInterfaceOffsets.SIZEOF__etw_bucket_info

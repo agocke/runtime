@@ -71,6 +71,14 @@ public sealed class GCInterfaceLayoutTests
         ["alloc_list.added_tail"] = "private in the C++ class",
 #endif
 
+        // The allocator, like alloc_list, keeps every field private, so the table pins only its
+        // size and alignment and the managed tests pin the field order.
+        ["allocator.first_bucket_bits"] = "private in the C++ class",
+        ["allocator.num_buckets"] = "private in the C++ class",
+        ["allocator.first_bucket"] = "private in the C++ class",
+        ["allocator.buckets"] = "private in the C++ class",
+        ["allocator.gen_number"] = "private in the C++ class",
+
         // C# has no declaration-level alignment attribute. This unmanaged overlay exists only
         // on 32-bit targets to reproduce DECLSPEC_ALIGN(8); the native fields remain separately
         // pinned by the table.

@@ -460,6 +460,26 @@ GC_SIZEOF(       c,      28, alloc_list)
 #endif
 GC_ALIGNOF(      4,       8, alloc_list)
 
+// allocator embeds a first_bucket alloc_list and keeps every member private, so like alloc_list
+// only its size and alignment are pinned here; the managed tests pin the field order. The size
+// tracks alloc_list's own FL_VERIFICATION/TARGET_WASM combinations because it contains one.
+#if defined(FL_VERIFICATION)
+#if defined(TARGET_WASM)
+GC_SIZEOF(      20,      38, allocator)
+#else
+GC_SIZEOF(      20,      48, allocator)
+#endif
+#else
+#if defined(TARGET_WASM)
+GC_SIZEOF(      1c,      30, allocator)
+#else
+GC_SIZEOF(      1c,      40, allocator)
+#endif
+#endif
+GC_ALIGNOF(      4,       8, allocator)
+GC_CONST(         2,         2, max_generation)
+GC_CONST(        14,        14, MAX_BUCKET_COUNT)
+
 #if !defined(TARGET_WASM)
 GC_OFFSET(       0,       0, etw_bucket_info, index)
 GC_OFFSET(       4,       4, etw_bucket_info, count)

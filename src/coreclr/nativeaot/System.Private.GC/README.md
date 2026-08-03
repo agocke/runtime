@@ -179,7 +179,17 @@ the common head/tail/damage state, and pointer-based ref accessors that preserve
 reference-return behavior without introducing managed references. Its layout follows the
 `BACKGROUND_GC`, `TARGET_WASM`, and diagnostic `FL_VERIFICATION` feature combinations.
 The adjacent non-WASM `etw_bucket_info` event record and its replacing `set` operation are
-translated too.
+translated too. The dependency-free core of the `allocator` class that owns those free lists is
+translated with them: its private `first_bucket_bits`/`num_buckets`/`first_bucket`/`buckets`/
+`gen_number` schema, parameterized construction and explicit young-generation initialization,
+bucket counting, `first_suitable_bucket` size-to-bucket mapping (over the existing `BitScanReverse`
+wrappers), `first_bucket_size`, `alloc_list_of`, the damage-count lookup, the pointer-based
+head/tail/`added_` ref accessors, `clear`, `discard_if_no_fit_p`, and the non-WASM 64-bit
+`is_doubly_linked_p` generation predicate. Since every native member is private, the shared table
+pins only the allocator's size and alignment under the same `FL_VERIFICATION`/`TARGET_WASM`
+combinations as its embedded `alloc_list`, while the managed tests pin the field order and every
+accessor directly. The native default constructor is an explicit pointer initializer because C#
+does not run struct constructors for embedded fields or storage carved from unmanaged memory.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`

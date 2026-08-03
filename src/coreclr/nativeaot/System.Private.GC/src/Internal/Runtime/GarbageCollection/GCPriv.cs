@@ -3,6 +3,7 @@
 
 // Ported from the dependency-free data records of src/coreclr/gc/gcpriv.h.
 
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection
@@ -103,6 +104,136 @@ namespace Internal.Runtime.GarbageCollection
         }
     }
 #endif
+
+    // The free-list allocator of gcpriv.h. Its state is entirely private in the C++ class, so the
+    // shared offsets table pins only the size and alignment; the managed tests pin the field order
+    // and the accessor behavior directly. Every native member function that hands out a reference
+    // into the object is a static ref-returning helper taking an allocator*, mirroring the C++
+    // reference-return API without introducing a managed reference to collector state.
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct allocator
+#pragma warning restore CS8981
+    {
+        private int first_bucket_bits;
+        private uint num_buckets;
+        private alloc_list first_bucket;
+        private alloc_list* buckets;
+        private int gen_number;
+
+        public allocator(uint num_b, int fbb, alloc_list* b, int gen = -1)
+        {
+            Debug.Assert(num_b < GCInterfaceOffsets.MAX_BUCKET_COUNT);
+            num_buckets = num_b;
+            first_bucket_bits = fbb;
+            first_bucket = default;
+            buckets = b;
+            gen_number = gen;
+        }
+
+        // C# does not run a struct constructor for embedded or unmanaged storage. Keep the native
+        // default-construction semantics explicit so generation initialization cannot accidentally
+        // leave a zero-bucket allocator behind.
+        public static void initialize(allocator* a)
+        {
+            a->num_buckets = 1;
+            a->first_bucket_bits = sizeof(nuint) * 8 - 1;
+            a->first_bucket = default;
+            a->buckets = null;
+            // for young gens we just set it to 0 since we don't treat
+            // them differently from each other
+            a->gen_number = 0;
+        }
+
+        private static alloc_list* alloc_list_of(allocator* a, uint bn)
+        {
+            Debug.Assert(bn < a->num_buckets);
+            if (bn == 0)
+                return &a->first_bucket;
+            else
+                return &a->buckets[bn - 1];
+        }
+
+        public static ref nuint alloc_list_damage_count_of(allocator* a, uint bn)
+        {
+            Debug.Assert(bn < a->num_buckets);
+            if (bn == 0)
+                return ref alloc_list.alloc_list_damage_count(&a->first_bucket);
+            else
+                return ref alloc_list.alloc_list_damage_count(&a->buckets[bn - 1]);
+        }
+
+        public uint number_of_buckets()
+        {
+            return num_buckets;
+        }
+
+        // skip buckets that cannot possibly fit "size" and return the next one
+        // there is always such bucket since the last one fits everything
+        public uint first_suitable_bucket(nuint size)
+        {
+            // sizes taking first_bucket_bits or less are mapped to bucket 0
+            // others are mapped to buckets 0, 1, 2 respectively
+            size = (size >> first_bucket_bits) | 1;
+
+            uint highest_set_bit_index;
+#if TARGET_64BIT
+            GCEnv.BitScanReverse64(&highest_set_bit_index, size);
+#else
+            GCEnv.BitScanReverse(&highest_set_bit_index, (uint)size);
+#endif
+
+            return (highest_set_bit_index < num_buckets) ? highest_set_bit_index : (num_buckets - 1);
+        }
+
+        public nuint first_bucket_size()
+        {
+            return (nuint)1 << (first_bucket_bits + 1);
+        }
+
+        public static ref byte* alloc_list_head_of(allocator* a, uint bn)
+        {
+            return ref alloc_list.alloc_list_head(alloc_list_of(a, bn));
+        }
+
+        public static ref byte* alloc_list_tail_of(allocator* a, uint bn)
+        {
+            return ref alloc_list.alloc_list_tail(alloc_list_of(a, bn));
+        }
+
+#if TARGET_64BIT && !TARGET_WASM
+        public static ref byte* added_alloc_list_head_of(allocator* a, uint bn)
+        {
+            return ref alloc_list.added_alloc_list_head(alloc_list_of(a, bn));
+        }
+
+        public static ref byte* added_alloc_list_tail_of(allocator* a, uint bn)
+        {
+            return ref alloc_list.added_alloc_list_tail(alloc_list_of(a, bn));
+        }
+#endif
+
+        public static void clear(allocator* a)
+        {
+            for (uint i = 0; i < a->num_buckets; i++)
+            {
+                alloc_list_head_of(a, i) = null;
+                alloc_list_tail_of(a, i) = null;
+            }
+        }
+
+        public int discard_if_no_fit_p()
+        {
+            return (num_buckets == 1) ? 1 : 0;
+        }
+
+#if TARGET_64BIT && !TARGET_WASM
+        public bool is_doubly_linked_p()
+        {
+            return (gen_number == GCInterfaceOffsets.max_generation);
+        }
+#endif
+    }
 
     internal enum alloc_wait_reason
     {

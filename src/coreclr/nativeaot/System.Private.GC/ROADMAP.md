@@ -733,6 +733,17 @@ Translate the schema from `gcpriv.h` and related headers:
   pointer-based ref accessors for the native reference-return API. The shared native size table
   covers both the `TARGET_WASM` exclusion of that prefix and the diagnostic-only
   `FL_VERIFICATION` field; the shipping managed type omits that unused diagnostic field.
+- The dependency-free `allocator` core that owns those free lists: the private
+  `first_bucket_bits`/`num_buckets`/`first_bucket`/`buckets`/`gen_number` schema, parameterized
+  construction and explicit young-generation initialization, `number_of_buckets`,
+  `first_suitable_bucket`, `first_bucket_size`, `alloc_list_of`, damage-count lookup, the
+  pointer-based head/tail and
+  64-bit `added_` ref accessors, `clear`, `discard_if_no_fit_p`, and the non-WASM 64-bit
+  `is_doubly_linked_p` predicate. Because every native member is private, the shared table pins
+  only the allocator's size and alignment (under the same `FL_VERIFICATION`/`TARGET_WASM`
+  combinations as its embedded `alloc_list`) and the managed tests pin field order and accessor
+  behavior directly. The native default constructor is represented as a pointer initializer
+  because C# does not run struct constructors for embedded fields or unmanaged storage.
 - The `FEATURE_EVENT_TRACE` `etw_bucket_info` record and its field-replacing `set` helper.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
