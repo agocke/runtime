@@ -104,4 +104,45 @@ namespace Internal.Runtime.GarbageCollection
         mt_try_servo_budget,
         mt_decommit_step,
     }
+
+    internal enum gc_pause_mode
+    {
+        pause_batch = 0,
+        pause_interactive = 1,
+        pause_low_latency = 2,
+        pause_sustained_low_latency = 3,
+        pause_no_gc = 4,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct no_gc_region_info
+    {
+        public nuint soh_allocation_size;
+        public nuint loh_allocation_size;
+        public nuint started;
+        public nuint num_gcs;
+        public nuint num_gcs_induced;
+        public start_no_gc_region_status start_status;
+        public gc_pause_mode saved_pause_mode;
+        public nuint saved_gen0_min_size;
+        public nuint saved_gen3_min_size;
+        public int minimal_gc_p;
+        public nuint soh_withheld_budget;
+        public nuint loh_withheld_budget;
+        public NoGCRegionCallbackFinalizerWorkItem* callback;
+    }
+
+    internal enum interesting_data_point
+    {
+        idp_pre_short = 0,
+        idp_post_short = 1,
+        idp_merged_pin = 2,
+        idp_converted_pin = 3,
+        idp_pre_pin = 4,
+        idp_post_pin = 5,
+        idp_pre_and_post_pin = 6,
+        idp_pre_short_padded = 7,
+        idp_post_short_padded = 8,
+        max_idp_count,
+    }
 }

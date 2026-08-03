@@ -721,6 +721,8 @@ Translate the schema from `gcpriv.h` and related headers:
 - The adjacent recorded-GC and allocation-wait schema: `last_recorded_gc_info`,
   `alloc_wait_reason`, `alloc_thread_wait_data`, and `msl_take_state`, including the contiguous
   five-generation snapshot and one-byte native boolean fields.
+- The no-GC-region state and diagnostics schema: `gc_pause_mode`, `no_gc_region_info`, and
+  `interesting_data_point`, reusing the translated interface status and finalizer callback types.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.

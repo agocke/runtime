@@ -404,9 +404,29 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             alloc_thread_wait_data waitData;
-            return sizeof(alloc_thread_wait_data) == GCInterfaceOffsets.SIZEOF__alloc_thread_wait_data
-                && AlignOf<alloc_thread_wait_data>() == GCInterfaceOffsets.ALIGNOF__alloc_thread_wait_data
-                && OffsetOf(&waitData, &waitData.awr) == GCInterfaceOffsets.OFFSETOF__alloc_thread_wait_data__awr;
+            if (sizeof(alloc_thread_wait_data) != GCInterfaceOffsets.SIZEOF__alloc_thread_wait_data
+                || AlignOf<alloc_thread_wait_data>() != GCInterfaceOffsets.ALIGNOF__alloc_thread_wait_data
+                || OffsetOf(&waitData, &waitData.awr) != GCInterfaceOffsets.OFFSETOF__alloc_thread_wait_data__awr)
+            {
+                return false;
+            }
+
+            no_gc_region_info noGCInfo;
+            return sizeof(no_gc_region_info) == GCInterfaceOffsets.SIZEOF__no_gc_region_info
+                && AlignOf<no_gc_region_info>() == GCInterfaceOffsets.ALIGNOF__no_gc_region_info
+                && OffsetOf(&noGCInfo, &noGCInfo.soh_allocation_size) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__soh_allocation_size
+                && OffsetOf(&noGCInfo, &noGCInfo.loh_allocation_size) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__loh_allocation_size
+                && OffsetOf(&noGCInfo, &noGCInfo.started) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__started
+                && OffsetOf(&noGCInfo, &noGCInfo.num_gcs) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__num_gcs
+                && OffsetOf(&noGCInfo, &noGCInfo.num_gcs_induced) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__num_gcs_induced
+                && OffsetOf(&noGCInfo, &noGCInfo.start_status) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__start_status
+                && OffsetOf(&noGCInfo, &noGCInfo.saved_pause_mode) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_pause_mode
+                && OffsetOf(&noGCInfo, &noGCInfo.saved_gen0_min_size) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_gen0_min_size
+                && OffsetOf(&noGCInfo, &noGCInfo.saved_gen3_min_size) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__saved_gen3_min_size
+                && OffsetOf(&noGCInfo, &noGCInfo.minimal_gc_p) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__minimal_gc_p
+                && OffsetOf(&noGCInfo, &noGCInfo.soh_withheld_budget) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__soh_withheld_budget
+                && OffsetOf(&noGCInfo, &noGCInfo.loh_withheld_budget) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__loh_withheld_budget
+                && OffsetOf(&noGCInfo, &noGCInfo.callback) == GCInterfaceOffsets.OFFSETOF__no_gc_region_info__callback;
         }
 
         /// <summary>
@@ -807,7 +827,22 @@ namespace Internal.Runtime.GarbageCollection
             && (int)msl_take_state.mt_try_alloc == GCInterfaceOffsets.mt_try_alloc
             && (int)msl_take_state.mt_try_budget == GCInterfaceOffsets.mt_try_budget
             && (int)msl_take_state.mt_try_servo_budget == GCInterfaceOffsets.mt_try_servo_budget
-            && (int)msl_take_state.mt_decommit_step == GCInterfaceOffsets.mt_decommit_step;
+            && (int)msl_take_state.mt_decommit_step == GCInterfaceOffsets.mt_decommit_step
+            && (int)gc_pause_mode.pause_batch == GCInterfaceOffsets.pause_batch
+            && (int)gc_pause_mode.pause_interactive == GCInterfaceOffsets.pause_interactive
+            && (int)gc_pause_mode.pause_low_latency == GCInterfaceOffsets.pause_low_latency
+            && (int)gc_pause_mode.pause_sustained_low_latency == GCInterfaceOffsets.pause_sustained_low_latency
+            && (int)gc_pause_mode.pause_no_gc == GCInterfaceOffsets.pause_no_gc
+            && (int)interesting_data_point.idp_pre_short == GCInterfaceOffsets.idp_pre_short
+            && (int)interesting_data_point.idp_post_short == GCInterfaceOffsets.idp_post_short
+            && (int)interesting_data_point.idp_merged_pin == GCInterfaceOffsets.idp_merged_pin
+            && (int)interesting_data_point.idp_converted_pin == GCInterfaceOffsets.idp_converted_pin
+            && (int)interesting_data_point.idp_pre_pin == GCInterfaceOffsets.idp_pre_pin
+            && (int)interesting_data_point.idp_post_pin == GCInterfaceOffsets.idp_post_pin
+            && (int)interesting_data_point.idp_pre_and_post_pin == GCInterfaceOffsets.idp_pre_and_post_pin
+            && (int)interesting_data_point.idp_pre_short_padded == GCInterfaceOffsets.idp_pre_short_padded
+            && (int)interesting_data_point.idp_post_short_padded == GCInterfaceOffsets.idp_post_short_padded
+            && (int)interesting_data_point.max_idp_count == GCInterfaceOffsets.max_idp_count;
 
         private static bool VerifyGCRecordEnums() =>
             (int)gc_reason.reason_alloc_soh == GCInterfaceOffsets.reason_alloc_soh
