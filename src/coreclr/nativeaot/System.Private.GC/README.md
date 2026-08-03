@@ -41,7 +41,7 @@ Ported so far:
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
-| `HandleTable.cs` | `handletable.cpp` (table lifecycle subset) |
+| `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
 | `HandleTableCache.cs` | `handletablecache.cpp` |
 | `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
@@ -133,9 +133,11 @@ path uses the native free-order comparison and prepared bulk free path. Handle t
 table lookup, table containment, extra-info get/set/compare-exchange, and cache-aware handle
 counting are also translated. Typed and unknown-type single destruction use the cache, while
 unprepared bulk free copies, sorts, clears, and frees handles in native-sized chunks with an
-unmanaged large scratch buffer when available. The flat `ManagedGCHandleManager` still supplies
-the running bootstrap heap until object-publishing creation, the remaining table entrypoints,
-and manager glue are ported over this schema.
+unmanaged large scratch buffer when available. `GetConvertedGeneration`,
+`HndWriteBarrierWorker`, `HndAssignHandle`, and `HndCreateHandle` now publish object references
+with the same clump-age barrier and extra-info-before-referent ordering as the C++ table. The
+flat `ManagedGCHandleManager` still supplies the running bootstrap heap until the remaining table
+entrypoints and manager glue are ported over this schema.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

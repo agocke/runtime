@@ -419,7 +419,7 @@ namespace Internal.Runtime.GarbageCollection
             OBJECTHANDLE handle)
         {
 #if DEBUG
-            *(nuint*)handle.Value = 0x7;
+            *(nuint*)handle.Value = HandleTableConstants.DEBUG_DestroyedHandleValue;
 #else
             *(nuint*)handle.Value = 0;
 #endif

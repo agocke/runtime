@@ -177,6 +177,151 @@ public sealed unsafe class HandleTableTests
     }
 
     [Fact]
+    public void CreateHandlePublishesReferentExtraInfoAndUpdatesClumpAge()
+    {
+        const uint Type = 0;
+        const nuint ExtraInfo = 0x1234;
+        uint* typeFlags = stackalloc uint[1];
+        typeFlags[Type] = HandleTableConstants.HNDF_EXTRAINFO;
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, 1);
+        Assert.True(table != null);
+
+        try
+        {
+            ManagedGCHeap.TestGeneration = 1;
+            byte* obj = (byte*)0x5678;
+            OBJECTHANDLE handle = HandleTableManager.HndCreateHandle(table, Type, obj, ExtraInfo);
+
+            Assert.False(handle.IsNull);
+            Assert.Equal((nuint)obj, GCEnv.VolatileLoad((nuint*)handle.Value));
+            Assert.Equal(ExtraInfo, HandleTableManager.HndGetHandleExtraInfo(handle));
+
+            TableSegment* segment = (TableSegment*)HandleTableCore.HandleFetchSegmentPointer(handle);
+            nuint handleOrdinal = (((nuint)handle.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK)
+                - HandleTableConstants.HANDLE_HEADER_SIZE) / (nuint)IntPtr.Size;
+            nuint clump = handleOrdinal / 16;
+            Assert.Equal(0, segment->Header.rgGeneration[(int)clump]);
+            Assert.Equal(1u, HandleTableManager.HndCountHandles(table));
+        }
+        finally
+        {
+            ManagedGCHeap.TestGeneration = 0;
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Theory]
+    [InlineData(0u, 2u, 1, 1)]
+    [InlineData(0u, int.MaxValue, 3, 0)]
+    [InlineData((uint)HandleType.HNDTYPE_DEPENDENT, 2u, 1, 0)]
+    [InlineData((uint)HandleType.HNDTYPE_ASYNCPINNED, 2u, 1, 0)]
+    public void WriteBarrierRecordsConvertedAndSpecialHandleAges(
+        uint type,
+        uint generation,
+        int initialClumpAge,
+        int expectedClumpAge)
+    {
+        uint typeCount = type + 1;
+        uint* typeFlags = stackalloc uint[(int)typeCount];
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, typeCount);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE handle = HandleTableCache.TableAllocSingleHandleFromCache(table, type);
+            TableSegment* segment = (TableSegment*)HandleTableCore.HandleFetchSegmentPointer(handle);
+            nuint handleOrdinal = (((nuint)handle.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK)
+                - HandleTableConstants.HANDLE_HEADER_SIZE) / (nuint)IntPtr.Size;
+            nuint clump = handleOrdinal / 16;
+            segment->Header.rgGeneration[(int)clump] = (byte)initialClumpAge;
+            ManagedGCHeap.TestGeneration = generation;
+
+            HandleTableManager.HndAssignHandle(handle, (byte*)0x5678);
+
+            Assert.Equal(expectedClumpAge, segment->Header.rgGeneration[(int)clump]);
+        }
+        finally
+        {
+            ManagedGCHeap.TestGeneration = 0;
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Fact]
+    public void CreateNullHandleDoesNotUpdateClumpAge()
+    {
+        uint* typeFlags = stackalloc uint[1];
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, 1);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE handle = HandleTableManager.HndCreateHandle(table, 0, null, 0);
+            Assert.False(handle.IsNull);
+
+            TableSegment* segment = (TableSegment*)HandleTableCore.HandleFetchSegmentPointer(handle);
+            nuint handleOrdinal = (((nuint)handle.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK)
+                - HandleTableConstants.HANDLE_HEADER_SIZE) / (nuint)IntPtr.Size;
+            nuint clump = handleOrdinal / 16;
+            Assert.Equal(byte.MaxValue, segment->Header.rgGeneration[(int)clump]);
+            Assert.Equal((nuint)0, GCEnv.VolatileLoad((nuint*)handle.Value));
+        }
+        finally
+        {
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Fact]
+    public void AssignHandleFiresEnabledSetEvent()
+    {
+        uint* typeFlags = stackalloc uint[1];
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, 1);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE handle = HandleTableCache.TableAllocSingleHandleFromCache(table, 0);
+            GCToEEInterface.Reset();
+            GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.GCHandle, GCEventLevel.Information);
+            GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
+
+            HandleTableManager.HndAssignHandle(handle, (byte*)0x5678);
+
+            Assert.Equal(GCToEEInterface.FiredEvent.SetGCHandle, GCToEEInterface.LastFiredEvent);
+        }
+        finally
+        {
+            GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+            GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Fact]
+    public void CreateHandleReusesDestroyedDebugHandle()
+    {
+        uint* typeFlags = stackalloc uint[1];
+        HandleTable* table = HandleTableManager.HndCreateHandleTable(typeFlags, 1);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE first = HandleTableManager.HndCreateHandle(table, 0, (byte*)0x1234, 0);
+            HandleTableManager.HndDestroyHandle(table, 0, first);
+
+            OBJECTHANDLE second = HandleTableManager.HndCreateHandle(table, 0, (byte*)0x5678, 0);
+
+            Assert.True(first.Value == second.Value);
+            Assert.Equal((nuint)0x5678, *(nuint*)second.Value);
+        }
+        finally
+        {
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Fact]
     public void TypedAndUnknownTypeDestructionReturnHandlesToCache()
     {
         uint* typeFlags = stackalloc uint[2];

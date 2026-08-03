@@ -29,6 +29,8 @@ namespace Internal.Runtime.GarbageCollection
     /// </remarks>
     internal static unsafe class ManagedGCHeap
     {
+        internal const uint MaxGeneration = 2;
+
         private const int S_OK = 0;
         private const int E_OUTOFMEMORY = unchecked((int)0x8007000E);
 
@@ -331,7 +333,7 @@ namespace Internal.Runtime.GarbageCollection
             return S_OK;
         }
 
-        private static uint GetMaxGeneration(void* thisPtr) => 2;
+        private static uint GetMaxGeneration(void* thisPtr) => MaxGeneration;
 
         private static uint GetCondemnedGeneration(void* thisPtr) => 0;
 
@@ -445,7 +447,7 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         private static uint WhichGeneration(void* thisPtr, byte* obj) => GenerationOf(obj);
 
-        private static uint GenerationOf(byte* obj) => GCHeapMemory.Contains(obj) ? 0u : 2u;
+        internal static uint GenerationOf(byte* obj) => GCHeapMemory.Contains(obj) ? 0u : MaxGeneration;
 
         private static uint GetGenerationWithRange(void* thisPtr, byte* obj, byte** ppStart, byte** ppAllocated, byte** ppReserved)
         {

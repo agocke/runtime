@@ -99,6 +99,124 @@ namespace Internal.Runtime.GarbageCollection
             return pTable->uTableIndex;
         }
 
+        public static int GetConvertedGeneration(byte* obj)
+        {
+            uint generation = ManagedGCHeap.GenerationOf(obj);
+            return generation == int.MaxValue ? (int)ManagedGCHeap.MaxGeneration : (int)generation;
+        }
+
+        private static void HndLogSetEvent(OBJECTHANDLE handle, byte* value)
+        {
+            if (GCEvents.GCEventEnabledSetGCHandle() || GCEvents.GCEventEnabledPrvSetGCHandle())
+            {
+                uint hndType = HandleTableCore.HandleFetchType(handle);
+                uint generation = value != null ? ManagedGCHeap.GenerationOf(value) : 0;
+                GCEvents.GCEventFireSetGCHandle(handle.Value, value, hndType, generation);
+                GCEvents.GCEventFirePrvSetGCHandle(handle.Value, value, hndType, generation);
+
+                if (hndType == (uint)HandleType.HNDTYPE_ASYNCPINNED)
+                {
+                    // The EE invokes this while already in cooperative mode, so use the plain
+                    // managed entrypoint rather than a reverse-P/Invoke thunk.
+                    delegate*<byte*, byte*, void*, void> callback = &HndLogSetEventAsyncPinned;
+                    GCToEEInterface.WalkAsyncPinned(
+                        value,
+                        value,
+                        (delegate* unmanaged<byte*, byte*, void*, void>)callback);
+                }
+            }
+        }
+
+        private static void HndLogSetEventAsyncPinned(byte* from, byte* to, void* context)
+        {
+            byte* overlapped = (byte*)context;
+            uint generation = to != null ? ManagedGCHeap.GenerationOf(to) : 0;
+            GCEvents.GCEventFireSetGCHandle(
+                overlapped,
+                to,
+                (uint)HandleType.HNDTYPE_PINNED,
+                generation);
+        }
+
+        public static void HndWriteBarrierWorker(OBJECTHANDLE handle, byte* value)
+        {
+            Debug.Assert(value != null);
+
+            byte* barrier = (byte*)((nuint)handle.Value & HandleTableConstants.HANDLE_SEGMENT_ALIGN_MASK);
+            Debug.Assert(barrier != null);
+
+            nuint offset = (nuint)handle.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK;
+            Debug.Assert(offset >= HandleTableConstants.HANDLE_HEADER_SIZE);
+
+            offset = (offset - HandleTableConstants.HANDLE_HEADER_SIZE)
+                / (HandleTableConstants.HANDLE_SIZE * HandleTableConstants.HANDLE_HANDLES_PER_CLUMP);
+
+            byte* pClumpAge = barrier + offset;
+            if (GCEnv.VolatileLoad(pClumpAge) != 0)
+            {
+                int generation = GetConvertedGeneration(value);
+                uint uType = HandleTableCore.HandleFetchType(handle);
+
+                if (uType == (uint)HandleType.HNDTYPE_ASYNCPINNED)
+                {
+                    generation = 0;
+                }
+
+                if (uType == (uint)HandleType.HNDTYPE_DEPENDENT)
+                {
+                    generation = 0;
+                }
+
+                if (GCEnv.VolatileLoad(pClumpAge) > (byte)generation)
+                {
+                    GCEnv.VolatileStore(pClumpAge, 0);
+                }
+            }
+        }
+
+        public static void HndAssignHandle(OBJECTHANDLE handle, byte* obj)
+        {
+            Debug.Assert(!handle.IsNull);
+
+            HndLogSetEvent(handle, obj);
+
+            if (obj != null)
+            {
+                HndWriteBarrierWorker(handle, obj);
+            }
+
+            GCEnv.VolatileStore((nuint*)handle.Value, (nuint)obj);
+        }
+
+        public static OBJECTHANDLE HndCreateHandle(HandleTable* pTable, uint uType, byte* obj, nuint lExtraInfo)
+        {
+            Debug.Assert(uType < pTable->uTypeCount);
+
+            OBJECTHANDLE handle = HandleTableCache.TableAllocSingleHandleFromCache(pTable, uType);
+            if (handle.IsNull)
+            {
+                return default;
+            }
+
+#if DEBUG
+            if (*(nuint*)handle.Value == HandleTableConstants.DEBUG_DestroyedHandleValue)
+            {
+                *(nuint*)handle.Value = 0;
+            }
+#endif
+
+            Debug.Assert(*(nuint*)handle.Value == 0);
+
+            if (lExtraInfo != 0)
+            {
+                HandleTableCore.HandleQuickSetUserData(handle, lExtraInfo);
+            }
+
+            HndAssignHandle(handle, obj);
+
+            return handle;
+        }
+
         public static void HndDestroyHandle(HandleTable* pTable, uint uType, OBJECTHANDLE handle)
         {
             Debug.Assert(!handle.IsNull);

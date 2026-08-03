@@ -253,6 +253,10 @@ internal static unsafe class GCToEEInterface
     public static void FireDestroyGCHandle(void* handleId) => LastFiredEvent = FiredEvent.DestroyGCHandle;
     public static void FirePrvDestroyGCHandle(void* handleId) => LastFiredEvent = FiredEvent.PrvDestroyGCHandle;
 
+    public static void WalkAsyncPinned(byte* @object, void* context, delegate* unmanaged<byte*, byte*, void*, void> callback)
+    {
+    }
+
     internal static void SetPrivateValue(string privateKey, ulong value) => s_privateValues[privateKey] = value;
 
     internal static void SetPublicValue(string publicKey, ulong value) => s_publicValues[publicKey] = value;

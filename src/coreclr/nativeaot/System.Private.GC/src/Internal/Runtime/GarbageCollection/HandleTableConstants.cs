@@ -26,6 +26,10 @@ namespace Internal.Runtime.GarbageCollection
         public const uint HNDF_NORMAL = 0x00;
         public const uint HNDF_EXTRAINFO = 0x01;
 
+#if DEBUG
+        public const nuint DEBUG_DestroyedHandleValue = 0x7;
+#endif
+
         public const int HANDLE_SEGMENT_CONTENT_MASK = HANDLE_SEGMENT_SIZE - 1;
         public const ulong HANDLE_SEGMENT_ALIGN_MASK = ~(ulong)HANDLE_SEGMENT_CONTENT_MASK;
 

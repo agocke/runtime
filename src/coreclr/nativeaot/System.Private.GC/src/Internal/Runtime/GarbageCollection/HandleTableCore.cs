@@ -124,7 +124,7 @@ namespace Internal.Runtime.GarbageCollection
         private static bool HndIsNullOrDestroyedHandle(nuint value)
         {
 #if DEBUG
-            if (value == 0x7)
+            if (value == HandleTableConstants.DEBUG_DestroyedHandleValue)
             {
                 return true;
             }

@@ -649,15 +649,18 @@ extended into an independent design. `dac_handle_table` and `dac_handle_table_se
   `TableFreeBulkUnpreparedHandlesWorker`, and `TableFreeBulkUnpreparedHandles`. The native
   optional large sorting buffer is unmanaged memory; allocation failure falls back to the same
   block-sized stack chunks as C++.
+- Generation-aware object publication through `GetConvertedGeneration`,
+  `HndWriteBarrierWorker`, `HndAssignHandle`, and `HndCreateHandle`. The translation retains
+  volatile clump-age accesses, conservative age-zero race resolution, special treatment for
+  dependent/async-pinned handles, set-handle event publication (including the async-pinned
+  walk), and extra-info initialization before referent publication.
 
 #### Remaining
 
-Port object-publishing creation and assignment once the generational handle write barrier is
-available, then the remaining public allocation/free entrypoints and manager/store glue. The
+Port the remaining public assignment/allocation/free entrypoints and manager/store glue. The
 current flat `ManagedGCHandleManager` remains the runtime implementation until those pieces can
-replace it as one coherent allocation path.
-Handle scanning, weak/dependent processing, write-barrier generation updates, and multi-heap
-table selection remain blocked on the core heap and collection state of stages 6-10.
+replace it as one coherent allocation path. Handle scanning, weak/dependent processing, and
+multi-heap table selection remain blocked on the core heap and collection state of stages 6-10.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.

@@ -92,9 +92,13 @@ internal static class GCInterfaceLayout
 
 internal static unsafe class ManagedGCHeap
 {
+    internal const uint MaxGeneration = 2;
+
     private static nint s_createResult = 1;
 
     public static int CreateCallCount { get; private set; }
+
+    public static uint TestGeneration { get; set; }
 
     public static void* Create()
     {
@@ -102,12 +106,15 @@ internal static unsafe class ManagedGCHeap
         return (void*)s_createResult;
     }
 
+    internal static uint GenerationOf(byte* obj) => TestGeneration;
+
     public static void SetCreateResult(void* createResult) => s_createResult = (nint)createResult;
 
     public static void Reset()
     {
         s_createResult = 1;
         CreateCallCount = 0;
+        TestGeneration = 0;
     }
 }
 
