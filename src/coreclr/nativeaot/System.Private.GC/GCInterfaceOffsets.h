@@ -317,6 +317,46 @@ GC_OFFSET(       4,       8, CGCDescSeries, startoffset)
 GC_SIZEOF(        8,      10, CGCDescSeries)
 GC_ALIGNOF(       4,       8, CGCDescSeries)
 
+GC_CONST(       0,       0, expand_reuse_normal)
+GC_CONST(       1,       1, expand_reuse_bestfit)
+GC_CONST(       2,       2, expand_new_seg_ep)
+GC_CONST(       3,       3, expand_new_seg)
+GC_CONST(       4,       4, expand_no_memory)
+GC_CONST(       5,       5, expand_next_full_gc)
+GC_CONST(       6,       6, max_expand_mechanisms_count)
+
+GC_CONST(       0,       0, compact_low_ephemeral)
+GC_CONST(       1,       1, compact_high_frag)
+GC_CONST(       2,       2, compact_no_gaps)
+GC_CONST(       3,       3, compact_loh_forced)
+GC_CONST(       4,       4, compact_last_gc)
+GC_CONST(       5,       5, compact_induced_compacting)
+GC_CONST(       6,       6, compact_fragmented_gen0)
+GC_CONST(       7,       7, compact_high_mem_load)
+GC_CONST(       8,       8, compact_high_mem_frag)
+GC_CONST(       9,       9, compact_vhigh_mem_frag)
+GC_CONST(       a,       a, compact_no_gc_mode)
+GC_CONST(       b,       b, compact_aggressive_compacting)
+GC_CONST(       c,       c, max_compact_reasons_count)
+
+GC_CONST(       0,       0, gc_heap_expand)
+GC_CONST(       1,       1, gc_heap_compact)
+GC_CONST(       2,       2, max_mechanism_per_heap)
+
+GC_CONST(       0,       0, gc_mark_list_bit)
+GC_CONST(       1,       1, gc_demotion_bit)
+GC_CONST(       2,       2, max_gc_mechanism_bits_count)
+
+GC_OFFSET(       0,       0, gc_history_per_heap, gen_data)
+GC_OFFSET(      c8,     190, gc_history_per_heap, maxgen_size_info)
+GC_OFFSET(      e4,     1c8, gc_history_per_heap, gen_to_condemn_reasons)
+GC_OFFSET(      ec,     1d0, gc_history_per_heap, mechanisms)
+GC_OFFSET(      f4,     1d8, gc_history_per_heap, machanism_bits)
+GC_OFFSET(      f8,     1dc, gc_history_per_heap, heap_index)
+GC_OFFSET(      fc,     1e0, gc_history_per_heap, extra_gen0_committed)
+GC_SIZEOF(     100,     1e8, gc_history_per_heap)
+GC_ALIGNOF(      4,       8, gc_history_per_heap)
+
 // -----------------------------------------------------------------------------------------
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
 // GC_Initialize, so its layout is part of the loader protocol; the types below it are the

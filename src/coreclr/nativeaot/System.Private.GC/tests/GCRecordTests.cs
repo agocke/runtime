@@ -58,4 +58,43 @@ public sealed unsafe class GCRecordTests
             IntPtr.Size * 6,
             Marshal.OffsetOf<maxgen_size_increase>(nameof(maxgen_size_increase.running_free_list_efficiency)).ToInt32());
     }
+
+    [Fact]
+    public void PerHeapMechanismsUseNativeEncoding()
+    {
+        gc_history_per_heap history = default;
+
+        history.set_mechanism(
+            gc_mechanism_per_heap.gc_heap_expand,
+            (uint)gc_heap_expand_mechanism.expand_new_seg);
+        history.set_mechanism(
+            gc_mechanism_per_heap.gc_heap_compact,
+            (uint)gc_heap_compact_reason.compact_high_mem_frag);
+
+        Assert.Equal(
+            (int)gc_heap_expand_mechanism.expand_new_seg,
+            history.get_mechanism(gc_mechanism_per_heap.gc_heap_expand));
+        Assert.Equal(
+            (int)gc_heap_compact_reason.compact_high_mem_frag,
+            history.get_mechanism(gc_mechanism_per_heap.gc_heap_compact));
+
+        history.clear_mechanism(gc_mechanism_per_heap.gc_heap_expand);
+        Assert.Equal(-1, history.get_mechanism(gc_mechanism_per_heap.gc_heap_expand));
+    }
+
+    [Fact]
+    public void PerHeapMechanismBitsCanBeSetAndCleared()
+    {
+        gc_history_per_heap history = default;
+
+        history.set_mechanism_bit(gc_mechanism_bit_per_heap.gc_mark_list_bit);
+        history.set_mechanism_bit(gc_mechanism_bit_per_heap.gc_demotion_bit);
+
+        Assert.True(history.is_mechanism_bit_set(gc_mechanism_bit_per_heap.gc_mark_list_bit));
+        Assert.True(history.is_mechanism_bit_set(gc_mechanism_bit_per_heap.gc_demotion_bit));
+
+        history.clear_mechanism_bit(gc_mechanism_bit_per_heap.gc_mark_list_bit);
+        Assert.False(history.is_mechanism_bit_set(gc_mechanism_bit_per_heap.gc_mark_list_bit));
+        Assert.True(history.is_mechanism_bit_set(gc_mechanism_bit_per_heap.gc_demotion_bit));
+    }
 }

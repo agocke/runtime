@@ -702,6 +702,9 @@ Translate the schema from `gcpriv.h` and related headers:
   `maxgen_size_increase`. The translation preserves the native enum values, OR-based bit packing,
   pointer-sized fields, and layout. Native static assertions verify the public record layouts,
   while direct tests verify the private tuning record.
+- The per-heap mechanism records of `gcrecord.h`: expansion and compaction reasons,
+  mechanism-bit enums, and `gc_history_per_heap`. The port preserves the high-bit operation
+  marker, reason-bit encoding, and contiguous five-generation history layout.
 - The remaining `gcinterface.dac.h` schema: `dac_generation` and `dac_gc_heap`, generated
   mechanically from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Their complete layouts
   are verified against the native classes and by the managed startup verifier.

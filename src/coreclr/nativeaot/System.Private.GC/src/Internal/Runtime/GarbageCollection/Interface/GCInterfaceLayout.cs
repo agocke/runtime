@@ -34,6 +34,7 @@ namespace Internal.Runtime.GarbageCollection
             && VerifyEnvironmentTypes()
             && VerifyHandleTableTypes()
             && VerifyGCDescTypes()
+            && VerifyGCRecordTypes()
             && VerifyDacTypes()
             && VerifyVtables()
             && VerifyEnumSizes()
@@ -291,6 +292,29 @@ namespace Internal.Runtime.GarbageCollection
                 || OffsetOf(&series, &series.seriessize) != GCInterfaceOffsets.OFFSETOF__CGCDescSeries__seriessize
                 || OffsetOf(&series, &series.val_serie) != GCInterfaceOffsets.OFFSETOF__CGCDescSeries__val_serie
                 || OffsetOf(&series, &series.startoffset) != GCInterfaceOffsets.OFFSETOF__CGCDescSeries__startoffset)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool VerifyGCRecordTypes()
+        {
+            gc_history_per_heap history;
+            if (sizeof(gc_history_per_heap) != GCInterfaceOffsets.SIZEOF__gc_history_per_heap
+                || AlignOf<gc_history_per_heap>() != GCInterfaceOffsets.ALIGNOF__gc_history_per_heap
+                || OffsetOf(&history, &history.gen_data0) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__gen_data
+                || OffsetOf(&history, &history.gen_data1) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__gen_data + sizeof(gc_generation_data)
+                || OffsetOf(&history, &history.gen_data2) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__gen_data + (2 * sizeof(gc_generation_data))
+                || OffsetOf(&history, &history.gen_data3) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__gen_data + (3 * sizeof(gc_generation_data))
+                || OffsetOf(&history, &history.gen_data4) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__gen_data + (4 * sizeof(gc_generation_data))
+                || OffsetOf(&history, &history.maxgen_size_info) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__maxgen_size_info
+                || OffsetOf(&history, &history.gen_to_condemn_reasons) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__gen_to_condemn_reasons
+                || OffsetOf(&history, &history.mechanisms[0]) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__mechanisms
+                || OffsetOf(&history, &history.machanism_bits) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__machanism_bits
+                || OffsetOf(&history, &history.heap_index) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__heap_index
+                || OffsetOf(&history, &history.extra_gen0_committed) != GCInterfaceOffsets.OFFSETOF__gc_history_per_heap__extra_gen0_committed)
             {
                 return false;
             }
@@ -663,7 +687,73 @@ namespace Internal.Runtime.GarbageCollection
             && VerifyHandleTypes()
             && VerifyAllocationEnums()
             && VerifyEventEnums()
-            && VerifyDacEnums();
+            && VerifyDacEnums()
+            && VerifyGCRecordEnums();
+
+        private static bool VerifyGCRecordEnums() =>
+            (int)gc_condemn_reason_gen.gen_initial == GCInterfaceOffsets.gen_initial
+            && (int)gc_condemn_reason_gen.gen_final_per_heap == GCInterfaceOffsets.gen_final_per_heap
+            && (int)gc_condemn_reason_gen.gen_alloc_budget == GCInterfaceOffsets.gen_alloc_budget
+            && (int)gc_condemn_reason_gen.gen_time_tuning == GCInterfaceOffsets.gen_time_tuning
+            && (int)gc_condemn_reason_gen.gcrg_max == GCInterfaceOffsets.gcrg_max
+            && (int)gc_condemn_reason_condition.gen_induced_fullgc_p == GCInterfaceOffsets.gen_induced_fullgc_p
+            && (int)gc_condemn_reason_condition.gen_expand_fullgc_p == GCInterfaceOffsets.gen_expand_fullgc_p
+            && (int)gc_condemn_reason_condition.gen_high_mem_p == GCInterfaceOffsets.gen_high_mem_p
+            && (int)gc_condemn_reason_condition.gen_very_high_mem_p == GCInterfaceOffsets.gen_very_high_mem_p
+            && (int)gc_condemn_reason_condition.gen_low_ephemeral_p == GCInterfaceOffsets.gen_low_ephemeral_p
+            && (int)gc_condemn_reason_condition.gen_low_card_p == GCInterfaceOffsets.gen_low_card_p
+            && (int)gc_condemn_reason_condition.gen_eph_high_frag_p == GCInterfaceOffsets.gen_eph_high_frag_p
+            && (int)gc_condemn_reason_condition.gen_max_high_frag_p == GCInterfaceOffsets.gen_max_high_frag_p
+            && (int)gc_condemn_reason_condition.gen_max_high_frag_e_p == GCInterfaceOffsets.gen_max_high_frag_e_p
+            && (int)gc_condemn_reason_condition.gen_max_high_frag_m_p == GCInterfaceOffsets.gen_max_high_frag_m_p
+            && (int)gc_condemn_reason_condition.gen_max_high_frag_vm_p == GCInterfaceOffsets.gen_max_high_frag_vm_p
+            && (int)gc_condemn_reason_condition.gen_max_gen1 == GCInterfaceOffsets.gen_max_gen1
+            && (int)gc_condemn_reason_condition.gen_before_oom == GCInterfaceOffsets.gen_before_oom
+            && (int)gc_condemn_reason_condition.gen_gen2_too_small == GCInterfaceOffsets.gen_gen2_too_small
+            && (int)gc_condemn_reason_condition.gen_induced_noforce_p == GCInterfaceOffsets.gen_induced_noforce_p
+            && (int)gc_condemn_reason_condition.gen_before_bgc == GCInterfaceOffsets.gen_before_bgc
+            && (int)gc_condemn_reason_condition.gen_almost_max_alloc == GCInterfaceOffsets.gen_almost_max_alloc
+            && (int)gc_condemn_reason_condition.gen_joined_avoid_unproductive == GCInterfaceOffsets.gen_joined_avoid_unproductive
+            && (int)gc_condemn_reason_condition.gen_joined_pm_induced_fullgc_p == GCInterfaceOffsets.gen_joined_pm_induced_fullgc_p
+            && (int)gc_condemn_reason_condition.gen_joined_pm_alloc_loh == GCInterfaceOffsets.gen_joined_pm_alloc_loh
+            && (int)gc_condemn_reason_condition.gen_joined_gen1_in_pm == GCInterfaceOffsets.gen_joined_gen1_in_pm
+            && (int)gc_condemn_reason_condition.gen_joined_limit_before_oom == GCInterfaceOffsets.gen_joined_limit_before_oom
+            && (int)gc_condemn_reason_condition.gen_joined_limit_loh_frag == GCInterfaceOffsets.gen_joined_limit_loh_frag
+            && (int)gc_condemn_reason_condition.gen_joined_limit_loh_reclaim == GCInterfaceOffsets.gen_joined_limit_loh_reclaim
+            && (int)gc_condemn_reason_condition.gen_joined_servo_initial == GCInterfaceOffsets.gen_joined_servo_initial
+            && (int)gc_condemn_reason_condition.gen_joined_servo_ngc == GCInterfaceOffsets.gen_joined_servo_ngc
+            && (int)gc_condemn_reason_condition.gen_joined_servo_bgc == GCInterfaceOffsets.gen_joined_servo_bgc
+            && (int)gc_condemn_reason_condition.gen_joined_servo_postpone == GCInterfaceOffsets.gen_joined_servo_postpone
+            && (int)gc_condemn_reason_condition.gen_joined_stress_mix == GCInterfaceOffsets.gen_joined_stress_mix
+            && (int)gc_condemn_reason_condition.gen_joined_stress == GCInterfaceOffsets.gen_joined_stress
+            && (int)gc_condemn_reason_condition.gen_joined_aggressive == GCInterfaceOffsets.gen_joined_aggressive
+            && (int)gc_condemn_reason_condition.gcrc_max == GCInterfaceOffsets.gcrc_max
+            && (int)gc_heap_expand_mechanism.expand_reuse_normal == GCInterfaceOffsets.expand_reuse_normal
+            && (int)gc_heap_expand_mechanism.expand_reuse_bestfit == GCInterfaceOffsets.expand_reuse_bestfit
+            && (int)gc_heap_expand_mechanism.expand_new_seg_ep == GCInterfaceOffsets.expand_new_seg_ep
+            && (int)gc_heap_expand_mechanism.expand_new_seg == GCInterfaceOffsets.expand_new_seg
+            && (int)gc_heap_expand_mechanism.expand_no_memory == GCInterfaceOffsets.expand_no_memory
+            && (int)gc_heap_expand_mechanism.expand_next_full_gc == GCInterfaceOffsets.expand_next_full_gc
+            && (int)gc_heap_expand_mechanism.max_expand_mechanisms_count == GCInterfaceOffsets.max_expand_mechanisms_count
+            && (int)gc_heap_compact_reason.compact_low_ephemeral == GCInterfaceOffsets.compact_low_ephemeral
+            && (int)gc_heap_compact_reason.compact_high_frag == GCInterfaceOffsets.compact_high_frag
+            && (int)gc_heap_compact_reason.compact_no_gaps == GCInterfaceOffsets.compact_no_gaps
+            && (int)gc_heap_compact_reason.compact_loh_forced == GCInterfaceOffsets.compact_loh_forced
+            && (int)gc_heap_compact_reason.compact_last_gc == GCInterfaceOffsets.compact_last_gc
+            && (int)gc_heap_compact_reason.compact_induced_compacting == GCInterfaceOffsets.compact_induced_compacting
+            && (int)gc_heap_compact_reason.compact_fragmented_gen0 == GCInterfaceOffsets.compact_fragmented_gen0
+            && (int)gc_heap_compact_reason.compact_high_mem_load == GCInterfaceOffsets.compact_high_mem_load
+            && (int)gc_heap_compact_reason.compact_high_mem_frag == GCInterfaceOffsets.compact_high_mem_frag
+            && (int)gc_heap_compact_reason.compact_vhigh_mem_frag == GCInterfaceOffsets.compact_vhigh_mem_frag
+            && (int)gc_heap_compact_reason.compact_no_gc_mode == GCInterfaceOffsets.compact_no_gc_mode
+            && (int)gc_heap_compact_reason.compact_aggressive_compacting == GCInterfaceOffsets.compact_aggressive_compacting
+            && (int)gc_heap_compact_reason.max_compact_reasons_count == GCInterfaceOffsets.max_compact_reasons_count
+            && (int)gc_mechanism_per_heap.gc_heap_expand == GCInterfaceOffsets.gc_heap_expand
+            && (int)gc_mechanism_per_heap.gc_heap_compact == GCInterfaceOffsets.gc_heap_compact
+            && (int)gc_mechanism_per_heap.max_mechanism_per_heap == GCInterfaceOffsets.max_mechanism_per_heap
+            && (int)gc_mechanism_bit_per_heap.gc_mark_list_bit == GCInterfaceOffsets.gc_mark_list_bit
+            && (int)gc_mechanism_bit_per_heap.gc_demotion_bit == GCInterfaceOffsets.gc_demotion_bit
+            && (int)gc_mechanism_bit_per_heap.max_gc_mechanism_bits_count == GCInterfaceOffsets.max_gc_mechanism_bits_count;
 
         private static bool VerifySuspensionEnums() =>
             (int)SUSPEND_REASON.SUSPEND_FOR_GC == GCInterfaceOffsets.SUSPEND_FOR_GC

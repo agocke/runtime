@@ -139,4 +139,102 @@ namespace Internal.Runtime.GarbageCollection
         public nuint pinned_allocated_advance;
         public uint running_free_list_efficiency;
     }
+
+    internal enum gc_heap_expand_mechanism
+    {
+        expand_reuse_normal = 0,
+        expand_reuse_bestfit = 1,
+        expand_new_seg_ep = 2,
+        expand_new_seg = 3,
+        expand_no_memory = 4,
+        expand_next_full_gc = 5,
+        max_expand_mechanisms_count = 6,
+    }
+
+    internal enum gc_heap_compact_reason
+    {
+        compact_low_ephemeral = 0,
+        compact_high_frag = 1,
+        compact_no_gaps = 2,
+        compact_loh_forced = 3,
+        compact_last_gc = 4,
+        compact_induced_compacting = 5,
+        compact_fragmented_gen0 = 6,
+        compact_high_mem_load = 7,
+        compact_high_mem_frag = 8,
+        compact_vhigh_mem_frag = 9,
+        compact_no_gc_mode = 10,
+        compact_aggressive_compacting = 11,
+        max_compact_reasons_count = 12,
+    }
+
+    internal enum gc_mechanism_per_heap
+    {
+        gc_heap_expand,
+        gc_heap_compact,
+        max_mechanism_per_heap,
+    }
+
+    internal enum gc_mechanism_bit_per_heap
+    {
+        gc_mark_list_bit = 0,
+        gc_demotion_bit = 1,
+        max_gc_mechanism_bits_count = 2,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct gc_history_per_heap
+    {
+        private const uint mechanism_mask = 1u << 31;
+
+        public gc_generation_data gen_data0;
+        public gc_generation_data gen_data1;
+        public gc_generation_data gen_data2;
+        public gc_generation_data gen_data3;
+        public gc_generation_data gen_data4;
+        public maxgen_size_increase maxgen_size_info;
+        public gen_to_condemn_tuning gen_to_condemn_reasons;
+        public fixed uint mechanisms[(int)gc_mechanism_per_heap.max_mechanism_per_heap];
+        public uint machanism_bits;
+        public uint heap_index;
+        public nuint extra_gen0_committed;
+
+        public void set_mechanism(gc_mechanism_per_heap mechanism_per_heap, uint value)
+        {
+            mechanisms[(int)mechanism_per_heap] = mechanism_mask | (1u << (int)value);
+        }
+
+        public void set_mechanism_bit(gc_mechanism_bit_per_heap mech_bit)
+        {
+            machanism_bits |= 1u << (int)mech_bit;
+        }
+
+        public void clear_mechanism_bit(gc_mechanism_bit_per_heap mech_bit)
+        {
+            machanism_bits &= ~(1u << (int)mech_bit);
+        }
+
+        public bool is_mechanism_bit_set(gc_mechanism_bit_per_heap mech_bit)
+        {
+            return (machanism_bits & (1u << (int)mech_bit)) != 0;
+        }
+
+        public void clear_mechanism(gc_mechanism_per_heap mechanism_per_heap)
+        {
+            mechanisms[(int)mechanism_per_heap] = 0;
+        }
+
+        public int get_mechanism(gc_mechanism_per_heap mechanism_per_heap)
+        {
+            uint mechanism = mechanisms[(int)mechanism_per_heap];
+            if ((mechanism & mechanism_mask) != 0)
+            {
+                int index = 31 - (int)uint.LeadingZeroCount(mechanism & ~mechanism_mask);
+                Debug.Assert(index != -1);
+                return index;
+            }
+
+            return -1;
+        }
+    }
 }

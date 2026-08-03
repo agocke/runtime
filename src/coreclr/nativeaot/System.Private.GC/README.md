@@ -154,9 +154,10 @@ the checked-build scan-statistics logging arrives with handle scanning.
 
 The first core-schema slice translates the dependency-free prefix of `gcrecord.h`: the
 generation and condition condemn-reason enums, their native two-bit/one-bit packed tuning
-record, the ten-field `gc_generation_data` event payload, and `maxgen_size_increase`. The
-shared offsets table verifies the public record layouts and every enum value against C++; direct
-tests cover the private tuning record's size and native OR-based bit-packing behavior.
+record, the ten-field `gc_generation_data` event payload, `maxgen_size_increase`, and the
+per-heap expansion/compaction mechanism history. The shared offsets table verifies the public
+record layouts and every enum value against C++; direct tests cover the private tuning record's
+size, native OR-based bit packing, most-significant-bit mechanism encoding, and mechanism flags.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`
