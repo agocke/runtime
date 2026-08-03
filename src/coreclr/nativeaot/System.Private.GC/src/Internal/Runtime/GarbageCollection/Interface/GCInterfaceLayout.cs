@@ -833,6 +833,52 @@ namespace Internal.Runtime.GarbageCollection
             && (int)gc_pause_mode.pause_low_latency == GCInterfaceOffsets.pause_low_latency
             && (int)gc_pause_mode.pause_sustained_low_latency == GCInterfaceOffsets.pause_sustained_low_latency
             && (int)gc_pause_mode.pause_no_gc == GCInterfaceOffsets.pause_no_gc
+            && (int)gc_loh_compaction_mode.loh_compaction_default == GCInterfaceOffsets.loh_compaction_default
+            && (int)gc_loh_compaction_mode.loh_compaction_once == GCInterfaceOffsets.loh_compaction_once
+            && (int)gc_loh_compaction_mode.loh_compaction_auto == GCInterfaceOffsets.loh_compaction_auto
+            && (int)set_pause_mode_status.set_pause_mode_success == GCInterfaceOffsets.set_pause_mode_success
+            && (int)set_pause_mode_status.set_pause_mode_no_gc == GCInterfaceOffsets.set_pause_mode_no_gc
+            && (int)gc_latency_level.latency_level_first == GCInterfaceOffsets.latency_level_first
+            && (int)gc_latency_level.latency_level_memory_footprint == GCInterfaceOffsets.latency_level_memory_footprint
+            && (int)gc_latency_level.latency_level_balanced == GCInterfaceOffsets.latency_level_balanced
+            && (int)gc_latency_level.latency_level_last == GCInterfaceOffsets.latency_level_last
+            && (int)gc_latency_level.latency_level_default == GCInterfaceOffsets.latency_level_default
+            && (int)gc_tuning_point.tuning_deciding_condemned_gen == GCInterfaceOffsets.tuning_deciding_condemned_gen
+            && (int)gc_tuning_point.tuning_deciding_full_gc == GCInterfaceOffsets.tuning_deciding_full_gc
+            && (int)gc_tuning_point.tuning_deciding_compaction == GCInterfaceOffsets.tuning_deciding_compaction
+            && (int)gc_tuning_point.tuning_deciding_expansion == GCInterfaceOffsets.tuning_deciding_expansion
+            && (int)gc_tuning_point.tuning_deciding_promote_ephemeral == GCInterfaceOffsets.tuning_deciding_promote_ephemeral
+            && (int)gc_tuning_point.tuning_deciding_short_on_seg == GCInterfaceOffsets.tuning_deciding_short_on_seg
+            && (int)gc_oh_num.soh == GCInterfaceOffsets.soh
+            && (int)gc_oh_num.loh == GCInterfaceOffsets.loh
+            && (int)gc_oh_num.poh == GCInterfaceOffsets.poh
+            && (int)gc_oh_num.unknown == GCInterfaceOffsets.unknown
+            && (int)memory_type.memory_type_reserved == GCInterfaceOffsets.memory_type_reserved
+            && (int)memory_type.memory_type_committed == GCInterfaceOffsets.memory_type_committed
+            && (int)allocation_state.a_state_start == GCInterfaceOffsets.a_state_start
+            && (int)allocation_state.a_state_can_allocate == GCInterfaceOffsets.a_state_can_allocate
+            && (int)allocation_state.a_state_cant_allocate == GCInterfaceOffsets.a_state_cant_allocate
+            && (int)allocation_state.a_state_retry_allocate == GCInterfaceOffsets.a_state_retry_allocate
+            && (int)allocation_state.a_state_try_fit == GCInterfaceOffsets.a_state_try_fit
+            && (int)allocation_state.a_state_try_fit_new_seg == GCInterfaceOffsets.a_state_try_fit_new_seg
+            && (int)allocation_state.a_state_try_fit_after_cg == GCInterfaceOffsets.a_state_try_fit_after_cg
+            && (int)allocation_state.a_state_try_fit_after_bgc == GCInterfaceOffsets.a_state_try_fit_after_bgc
+            && (int)allocation_state.a_state_try_free_full_seg_in_bgc == GCInterfaceOffsets.a_state_try_free_full_seg_in_bgc
+            && (int)allocation_state.a_state_try_free_after_bgc == GCInterfaceOffsets.a_state_try_free_after_bgc
+            && (int)allocation_state.a_state_try_seg_end == GCInterfaceOffsets.a_state_try_seg_end
+            && (int)allocation_state.a_state_acquire_seg == GCInterfaceOffsets.a_state_acquire_seg
+            && (int)allocation_state.a_state_acquire_seg_after_cg == GCInterfaceOffsets.a_state_acquire_seg_after_cg
+            && (int)allocation_state.a_state_acquire_seg_after_bgc == GCInterfaceOffsets.a_state_acquire_seg_after_bgc
+            && (int)allocation_state.a_state_check_and_wait_for_bgc == GCInterfaceOffsets.a_state_check_and_wait_for_bgc
+            && (int)allocation_state.a_state_trigger_full_compact_gc == GCInterfaceOffsets.a_state_trigger_full_compact_gc
+            && (int)allocation_state.a_state_trigger_ephemeral_gc == GCInterfaceOffsets.a_state_trigger_ephemeral_gc
+            && (int)allocation_state.a_state_trigger_2nd_ephemeral_gc == GCInterfaceOffsets.a_state_trigger_2nd_ephemeral_gc
+            && (int)allocation_state.a_state_check_retry_seg == GCInterfaceOffsets.a_state_check_retry_seg
+            && (int)allocation_state.a_state_max == GCInterfaceOffsets.a_state_max
+            && (int)enter_msl_status.msl_entered == GCInterfaceOffsets.msl_entered
+            && (int)enter_msl_status.msl_retry_different_heap == GCInterfaceOffsets.msl_retry_different_heap
+            && (int)msl_enter_state.me_acquire == GCInterfaceOffsets.me_acquire
+            && (int)msl_enter_state.me_release == GCInterfaceOffsets.me_release
             && (int)interesting_data_point.idp_pre_short == GCInterfaceOffsets.idp_pre_short
             && (int)interesting_data_point.idp_post_short == GCInterfaceOffsets.idp_post_short
             && (int)interesting_data_point.idp_merged_pin == GCInterfaceOffsets.idp_merged_pin

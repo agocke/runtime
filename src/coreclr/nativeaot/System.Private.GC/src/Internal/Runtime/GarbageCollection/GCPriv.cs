@@ -114,6 +114,88 @@ namespace Internal.Runtime.GarbageCollection
         pause_no_gc = 4,
     }
 
+    internal enum gc_loh_compaction_mode
+    {
+        loh_compaction_default = 1,
+        loh_compaction_once = 2,
+        loh_compaction_auto = 4,
+    }
+
+    internal enum set_pause_mode_status
+    {
+        set_pause_mode_success = 0,
+        set_pause_mode_no_gc = 1,
+    }
+
+    internal enum gc_latency_level
+    {
+        latency_level_first = 0,
+        latency_level_memory_footprint = latency_level_first,
+        latency_level_balanced = 1,
+        latency_level_last = latency_level_balanced,
+        latency_level_default = latency_level_balanced,
+    }
+
+    internal enum gc_tuning_point
+    {
+        tuning_deciding_condemned_gen = 0,
+        tuning_deciding_full_gc = 1,
+        tuning_deciding_compaction = 2,
+        tuning_deciding_expansion = 3,
+        tuning_deciding_promote_ephemeral = 4,
+        tuning_deciding_short_on_seg = 5,
+    }
+
+    internal enum gc_oh_num
+    {
+        soh = 0,
+        loh = 1,
+        poh = 2,
+        unknown = -1,
+    }
+
+    internal enum memory_type
+    {
+        memory_type_reserved = 0,
+        memory_type_committed = 1,
+    }
+
+    internal enum allocation_state
+    {
+        a_state_start = 0,
+        a_state_can_allocate,
+        a_state_cant_allocate,
+        a_state_retry_allocate,
+        a_state_try_fit,
+        a_state_try_fit_new_seg,
+        a_state_try_fit_after_cg,
+        a_state_try_fit_after_bgc,
+        a_state_try_free_full_seg_in_bgc,
+        a_state_try_free_after_bgc,
+        a_state_try_seg_end,
+        a_state_acquire_seg,
+        a_state_acquire_seg_after_cg,
+        a_state_acquire_seg_after_bgc,
+        a_state_check_and_wait_for_bgc,
+        a_state_trigger_full_compact_gc,
+        a_state_trigger_ephemeral_gc,
+        a_state_trigger_2nd_ephemeral_gc,
+        a_state_check_retry_seg,
+        a_state_max,
+    }
+
+    internal enum enter_msl_status
+    {
+        msl_entered,
+        msl_retry_different_heap,
+    }
+
+    internal enum msl_enter_state
+    {
+        me_acquire,
+        me_release,
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct no_gc_region_info
     {

@@ -169,7 +169,9 @@ names so the later dynamic-tuning, diagnostics, generation, and no-GC-region por
 without an adapter. Native arrays are contiguous numbered fields, and the C++ `bool` snapshot
 flags are bytes so their one-byte ABI is explicit. Their complete layouts and enum values are
 checked against both workstation and server GC headers and again by the managed startup verifier
-and foundation tests.
+and foundation tests. The same file also carries the dependency-free collector enums for LOH
+compaction, latency and tuning, object-heap identity, memory state, allocation state, and
+multi-segment-lock entry.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`
