@@ -33,6 +33,7 @@ namespace Internal.Runtime.GarbageCollection
             VerifySharedStructs()
             && VerifyEnvironmentTypes()
             && VerifyHandleTableTypes()
+            && VerifyGCDescTypes()
             && VerifyDacTypes()
             && VerifyVtables()
             && VerifyEnumSizes()
@@ -266,6 +267,30 @@ namespace Internal.Runtime.GarbageCollection
                 || OffsetOf(cache, &cache->lReserveIndex) != GCInterfaceOffsets.OFFSETOF__HandleTypeCache__lReserveIndex
                 || OffsetOf(cache, &cache->rgFreeBank[0]) != GCInterfaceOffsets.OFFSETOF__HandleTypeCache__rgFreeBank
                 || OffsetOf(cache, &cache->lFreeIndex) != GCInterfaceOffsets.OFFSETOF__HandleTypeCache__lFreeIndex)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool VerifyGCDescTypes()
+        {
+            val_serie_item item;
+            if (sizeof(val_serie_item) != GCInterfaceOffsets.SIZEOF__val_serie_item
+                || AlignOf<val_serie_item>() != GCInterfaceOffsets.ALIGNOF__val_serie_item
+                || OffsetOf(&item, &item.nptrs) != GCInterfaceOffsets.OFFSETOF__val_serie_item__nptrs
+                || OffsetOf(&item, &item.skip) != GCInterfaceOffsets.OFFSETOF__val_serie_item__skip)
+            {
+                return false;
+            }
+
+            CGCDescSeries series;
+            if (sizeof(CGCDescSeries) != GCInterfaceOffsets.SIZEOF__CGCDescSeries
+                || AlignOf<CGCDescSeries>() != GCInterfaceOffsets.ALIGNOF__CGCDescSeries
+                || OffsetOf(&series, &series.seriessize) != GCInterfaceOffsets.OFFSETOF__CGCDescSeries__seriessize
+                || OffsetOf(&series, &series.val_serie) != GCInterfaceOffsets.OFFSETOF__CGCDescSeries__val_serie
+                || OffsetOf(&series, &series.startoffset) != GCInterfaceOffsets.OFFSETOF__CGCDescSeries__startoffset)
             {
                 return false;
             }

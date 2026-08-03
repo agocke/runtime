@@ -40,6 +40,7 @@ Ported so far:
 | `GCEvents.cs` | `gceventstatus.h`, expanded `gcevents.h` event helpers |
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
+| `GCDesc.cs` | dependency-free types and descriptor arithmetic from `gcdesc.h` |
 | `GCRecord.cs` | dependency-free prefix of `gcrecord.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
@@ -156,6 +157,12 @@ generation and condition condemn-reason enums, their native two-bit/one-bit pack
 record, the ten-field `gc_generation_data` event payload, and `maxgen_size_increase`. The
 shared offsets table verifies the public record layouts and every enum value against C++; direct
 tests cover the private tuning record's size and native OR-based bit-packing behavior.
+
+`GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
+`val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`
+descriptor's size, initialization, and series-address arithmetic. The MethodTable-dependent
+pointer-counting helper remains with object scanning. Native static assertions and direct tests
+cover both normal and negative-count repeating descriptors.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

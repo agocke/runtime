@@ -50,6 +50,7 @@
     <Compile Include="ManagedGCEntryPointsTests.cs" />
     <Compile Include="GCInterfaceLayoutTests.cs" />
     <Compile Include="GCConfigTests.cs" />
+    <Compile Include="GCDescTests.cs" />
     <Compile Include="ManagedGCEntryPoints.TestHost.cs" />
     <Compile Include="GCCommon.TestHost.cs" />
     <!-- The environment layer. Its OS calls are [RuntimeImport] declarations, which resolve
@@ -100,6 +101,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventSerializer.cs" Link="GCEventSerializer.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCDesc.cs" Link="GCDesc.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCRecord.cs" Link="GCRecord.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCScan.cs" Link="GCScan.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableConstants.cs" Link="HandleTableConstants.cs" />

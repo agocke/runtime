@@ -306,6 +306,17 @@ GC_OFFSET(      18,      30, maxgen_size_increase, running_free_list_efficiency)
 GC_SIZEOF(      1c,      38, maxgen_size_increase)
 GC_ALIGNOF(      4,       8, maxgen_size_increase)
 
+GC_OFFSET(       0,       0, val_serie_item, nptrs)
+GC_OFFSET(       2,       4, val_serie_item, skip)
+GC_SIZEOF(        4,       8, val_serie_item)
+GC_ALIGNOF(       2,       4, val_serie_item)
+
+GC_OFFSET(       0,       0, CGCDescSeries, seriessize)
+GC_OFFSET(       0,       0, CGCDescSeries, val_serie)
+GC_OFFSET(       4,       8, CGCDescSeries, startoffset)
+GC_SIZEOF(        8,      10, CGCDescSeries)
+GC_ALIGNOF(       4,       8, CGCDescSeries)
+
 // -----------------------------------------------------------------------------------------
 // The DAC-facing shared data of gcinterface.dac.h. GcDacVars is the fourth argument of
 // GC_Initialize, so its layout is part of the loader protocol; the types below it are the

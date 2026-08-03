@@ -16,6 +16,11 @@ static constexpr int total_generation_count = 5;
 enum gc_reason : int;
 
 #include "gcrecord.h"
+#define DACCESS_COMPILE
+#define SOS_INCLUDE
+#include "gcdesc.h"
+#undef SOS_INCLUDE
+#undef DACCESS_COMPILE
 #include "handletablepriv.h"
 
 class GCInterfaceOffsets
