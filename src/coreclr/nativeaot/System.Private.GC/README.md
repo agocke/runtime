@@ -172,7 +172,8 @@ checked against both workstation and server GC headers and again by the managed 
 and foundation tests. The same file also carries the dependency-free collector enums for LOH
 compaction, latency and tuning, object-heap identity, memory state, allocation state, and
 multi-segment-lock entry. The first plan/relocation records are present too: `plug`, `pair`,
-`plug_and_pair`, `plug_and_reloc`, `gap_reloc_pair`, `loh_obj_and_pad`, and
+`plug_and_pair`, `plug_and_reloc`, the overlaid `plug_and_gap`, `gap_reloc_pair`,
+`loh_obj_and_pad`, and
 `loh_padding_obj`.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized

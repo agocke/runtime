@@ -258,6 +258,45 @@ namespace Internal.Runtime.GarbageCollection
         public plug m_plug;
     }
 
+#if TARGET_64BIT
+    [StructLayout(LayoutKind.Explicit, Size = 0x20)]
+#else
+    [StructLayout(LayoutKind.Explicit, Size = 0x10)]
+#endif
+    internal struct plug_and_gap
+    {
+        [FieldOffset(0)]
+        public nint gap;
+
+#if TARGET_64BIT
+        [FieldOffset(0x08)]
+#else
+        [FieldOffset(0x04)]
+#endif
+        public nint reloc;
+
+#if TARGET_64BIT
+        [FieldOffset(0x10)]
+#else
+        [FieldOffset(0x08)]
+#endif
+        public pair m_pair;
+
+#if TARGET_64BIT
+        [FieldOffset(0x10)]
+#else
+        [FieldOffset(0x08)]
+#endif
+        public int lr;
+
+#if TARGET_64BIT
+        [FieldOffset(0x18)]
+#else
+        [FieldOffset(0x0c)]
+#endif
+        public plug m_plug;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct gap_reloc_pair
     {
