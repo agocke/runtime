@@ -191,6 +191,8 @@ also preserve the native unsigned address arithmetic and half-open range coverag
 The card-table pointer accessors alias the `card_table_info` record immediately before the card
 words, including its DAC-visible prefix and optional background mark array, and translated card
 tables retain native zero-based word indexing.
+For background GC builds, mark-bit pitch, word width/size, address alignment, bit/word indexing,
+address reconstruction, and mark-array sizing now preserve the native target-width arithmetic.
 The adjacent heap-segment iteration helpers skip read-only segments outside the heap's current
 address range, preserve half-open segment address tests, and select the native generation
 iteration bounds for region and non-region collectors.

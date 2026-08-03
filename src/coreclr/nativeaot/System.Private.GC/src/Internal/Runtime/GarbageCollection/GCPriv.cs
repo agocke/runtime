@@ -1050,6 +1050,16 @@ namespace Internal.Runtime.GarbageCollection
         public uint* mark_array;
 #endif
 
+#if BACKGROUND_GC
+#if TARGET_64BIT
+        public const nuint mark_bit_pitch = 16;
+#else
+        public const nuint mark_bit_pitch = 8;
+#endif
+        public const nuint mark_word_width = 32;
+        public const nuint mark_word_size = mark_word_width * mark_bit_pitch;
+#endif
+
 #if TARGET_64BIT
         public const nuint brick_size = 4096;
 #else
@@ -1213,6 +1223,68 @@ namespace Internal.Runtime.GarbageCollection
                 (nuint)ct
                 - (card_word(gcard_of(card_table_lowest_address(ct))) * sizeof(uint)));
         }
+
+#if BACKGROUND_GC
+        public static byte* align_on_mark_bit(byte* add)
+        {
+            return (byte*)unchecked(((nuint)add + mark_bit_pitch - 1) & ~(mark_bit_pitch - 1));
+        }
+
+        public static byte* align_lower_mark_bit(byte* add)
+        {
+            return (byte*)((nuint)add & ~(mark_bit_pitch - 1));
+        }
+
+        public static int is_aligned_on_mark_word(byte* add)
+        {
+            return (nuint)add == ((nuint)add & ~(mark_word_size - 1)) ? 1 : 0;
+        }
+
+        public static byte* align_on_mark_word(byte* add)
+        {
+            return (byte*)unchecked(((nuint)add + mark_word_size - 1) & ~(mark_word_size - 1));
+        }
+
+        public static byte* align_lower_mark_word(byte* add)
+        {
+            return (byte*)((nuint)add & ~(mark_word_size - 1));
+        }
+
+        public static nuint mark_bit_of(byte* add)
+        {
+            return (nuint)add / mark_bit_pitch;
+        }
+
+        public static uint mark_bit_bit(nuint mark_bit)
+        {
+            return (uint)(mark_bit % mark_word_width);
+        }
+
+        public static nuint mark_bit_bit_of(byte* add)
+        {
+            return ((nuint)add / mark_bit_pitch) % mark_word_width;
+        }
+
+        public static nuint mark_bit_word(nuint mark_bit)
+        {
+            return mark_bit / mark_word_width;
+        }
+
+        public static nuint mark_word_of(byte* add)
+        {
+            return (nuint)add / mark_word_size;
+        }
+
+        public static byte* mark_bit_address(nuint mark_bit)
+        {
+            return (byte*)(mark_bit * mark_bit_pitch);
+        }
+
+        public static nuint size_mark_array_of(byte* from, byte* end)
+        {
+            return sizeof(uint) * ((nuint)(end - from) / mark_word_size);
+        }
+#endif
     }
 
     internal enum interesting_data_point

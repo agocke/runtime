@@ -447,6 +447,11 @@ GC_CONST(      20,      20, card_word_width)
 GC_CONST(      80,     100, card_size)
 GC_CONST(      20,      20, card_bundle_word_width)
 GC_CONST(      20,      20, card_bundle_size)
+#ifdef BACKGROUND_GC
+GC_CONST(       8,      10, mark_bit_pitch)
+GC_CONST(      20,      20, mark_word_width)
+GC_CONST(     100,     200, mark_word_size)
+#endif
 GC_CONST( 2800000, 2800000, SH_TH_CARD_BUNDLE)
 GC_CONST( b400000, b400000, MH_TH_CARD_BUNDLE)
 GC_CONST(      64,      64, DECOMMIT_TIME_STEP_MILLISECONDS)

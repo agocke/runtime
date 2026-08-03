@@ -444,6 +444,51 @@ public sealed unsafe class GCPrivTests
             (nuint)card_table_info.translate_card_table(cardTable));
     }
 
+#if BACKGROUND_GC
+    [Theory]
+    [InlineData(0UL, 0UL, 0U, 0UL)]
+    [InlineData(1UL, 0UL, 0U, 0UL)]
+#if TARGET_64BIT
+    [InlineData(15UL, 0UL, 0U, 0UL)]
+    [InlineData(16UL, 1UL, 1U, 0UL)]
+    [InlineData(511UL, 31UL, 31U, 0UL)]
+    [InlineData(512UL, 32UL, 0U, 1UL)]
+#else
+    [InlineData(7UL, 0UL, 0U, 0UL)]
+    [InlineData(8UL, 1UL, 1U, 0UL)]
+    [InlineData(255UL, 31UL, 31U, 0UL)]
+    [InlineData(256UL, 32UL, 0U, 1UL)]
+#endif
+    public void CardTableInfoMarkIndexesPreserveNativeArithmetic(
+        ulong address,
+        ulong markBit,
+        uint bitInWord,
+        ulong markWord)
+    {
+        Assert.Equal((nuint)markBit, card_table_info.mark_bit_of((byte*)address));
+        Assert.Equal(bitInWord, card_table_info.mark_bit_bit((nuint)markBit));
+        Assert.Equal((nuint)bitInWord, card_table_info.mark_bit_bit_of((byte*)address));
+        Assert.Equal((nuint)markWord, card_table_info.mark_bit_word((nuint)markBit));
+        Assert.Equal((nuint)markWord, card_table_info.mark_word_of((byte*)address));
+        Assert.Equal((nuint)(markBit * card_table_info.mark_bit_pitch), (nuint)card_table_info.mark_bit_address((nuint)markBit));
+    }
+
+    [Fact]
+    public void CardTableInfoMarkAlignmentAndSizingPreserveNativeArithmetic()
+    {
+        nuint pitch = card_table_info.mark_bit_pitch;
+        nuint word = card_table_info.mark_word_size;
+
+        Assert.Equal(pitch, (nuint)card_table_info.align_on_mark_bit((byte*)1));
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_lower_mark_bit((byte*)(pitch - 1)));
+        Assert.Equal(word, (nuint)card_table_info.align_on_mark_word((byte*)1));
+        Assert.Equal((nuint)0, (nuint)card_table_info.align_lower_mark_word((byte*)(word - 1)));
+        Assert.Equal(1, card_table_info.is_aligned_on_mark_word((byte*)word));
+        Assert.Equal(0, card_table_info.is_aligned_on_mark_word((byte*)(word - 1)));
+        Assert.Equal((nuint)8, card_table_info.size_mark_array_of((byte*)word, (byte*)(3 * word)));
+    }
+#endif
+
     [Fact]
     public void CardTableInfoAlignmentHelpersPreserveNativeArithmetic()
     {
@@ -487,6 +532,16 @@ public sealed unsafe class GCPrivTests
 #endif
         Assert.Equal((nuint)32, card_table_info.card_bundle_word_width);
         Assert.Equal((nuint)32, card_table_info.card_bundle_size);
+#if BACKGROUND_GC
+#if TARGET_64BIT
+        Assert.Equal((nuint)16, card_table_info.mark_bit_pitch);
+        Assert.Equal((nuint)512, card_table_info.mark_word_size);
+#else
+        Assert.Equal((nuint)8, card_table_info.mark_bit_pitch);
+        Assert.Equal((nuint)256, card_table_info.mark_word_size);
+#endif
+        Assert.Equal((nuint)32, card_table_info.mark_word_width);
+#endif
         Assert.Equal(40u * 1024 * 1024, card_table_info.SH_TH_CARD_BUNDLE);
         Assert.Equal(180u * 1024 * 1024, card_table_info.MH_TH_CARD_BUNDLE);
         Assert.Equal(100u, card_table_info.DECOMMIT_TIME_STEP_MILLISECONDS);
