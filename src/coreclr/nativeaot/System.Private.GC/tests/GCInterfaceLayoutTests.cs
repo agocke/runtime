@@ -63,6 +63,11 @@ public sealed class GCInterfaceLayoutTests
         ["AffinitySet.m_bitset"] = "private in the C++ class",
         ["AffinitySet.m_bitsetDataSize"] = "private in the C++ class",
         ["GCEvent.m_impl"] = "private in the C++ class",
+
+        // C# has no declaration-level alignment attribute. This unmanaged overlay exists only
+        // on 32-bit targets to reproduce DECLSPEC_ALIGN(8); the native fields remain separately
+        // pinned by the table.
+        ["aligned_plug_and_gap._alignment"] = "forces the native 8-byte alignment on 32-bit",
     };
 
     /// <summary>

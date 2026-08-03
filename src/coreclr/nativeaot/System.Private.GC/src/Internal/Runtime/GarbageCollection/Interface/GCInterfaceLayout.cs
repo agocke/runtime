@@ -437,6 +437,7 @@ namespace Internal.Runtime.GarbageCollection
             plug_and_reloc plugAndReloc;
             plug_and_gap plugAndGap;
             gap_reloc_pair gapRelocPair;
+            aligned_plug_and_gap alignedPlugAndGap;
             loh_obj_and_pad lohObjAndPad;
             loh_padding_obj lohPaddingObj;
             return sizeof(plug) == GCInterfaceOffsets.SIZEOF__plug
@@ -467,6 +468,10 @@ namespace Internal.Runtime.GarbageCollection
                 && OffsetOf(&gapRelocPair, &gapRelocPair.gap) == GCInterfaceOffsets.OFFSETOF__gap_reloc_pair__gap
                 && OffsetOf(&gapRelocPair, &gapRelocPair.reloc) == GCInterfaceOffsets.OFFSETOF__gap_reloc_pair__reloc
                 && OffsetOf(&gapRelocPair, &gapRelocPair.m_pair) == GCInterfaceOffsets.OFFSETOF__gap_reloc_pair__m_pair
+                && sizeof(aligned_plug_and_gap) == GCInterfaceOffsets.SIZEOF__aligned_plug_and_gap
+                && AlignOf<aligned_plug_and_gap>() == GCInterfaceOffsets.ALIGNOF__aligned_plug_and_gap
+                && OffsetOf(&alignedPlugAndGap, &alignedPlugAndGap.additional_pad) == GCInterfaceOffsets.OFFSETOF__aligned_plug_and_gap__additional_pad
+                && OffsetOf(&alignedPlugAndGap, &alignedPlugAndGap.plugandgap) == GCInterfaceOffsets.OFFSETOF__aligned_plug_and_gap__plugandgap
                 && sizeof(loh_obj_and_pad) == GCInterfaceOffsets.SIZEOF__loh_obj_and_pad
                 && AlignOf<loh_obj_and_pad>() == GCInterfaceOffsets.ALIGNOF__loh_obj_and_pad
                 && OffsetOf(&lohObjAndPad, &lohObjAndPad.reloc) == GCInterfaceOffsets.OFFSETOF__loh_obj_and_pad__reloc

@@ -599,6 +599,11 @@ GC_OFFSET(         8,        10, gap_reloc_pair, m_pair)
 GC_SIZEOF(         c,        18, gap_reloc_pair)
 GC_ALIGNOF(        4,         8, gap_reloc_pair)
 
+GC_OFFSET(         0,         0, aligned_plug_and_gap, additional_pad)
+GC_OFFSET(         4,         8, aligned_plug_and_gap, plugandgap)
+GC_SIZEOF(        18,        28, aligned_plug_and_gap)
+GC_ALIGNOF(        8,         8, aligned_plug_and_gap)
+
 GC_OFFSET(         0,         0, loh_obj_and_pad, reloc)
 GC_OFFSET(         4,         8, loh_obj_and_pad, m_plug)
 GC_SIZEOF(         8,        10, loh_obj_and_pad)

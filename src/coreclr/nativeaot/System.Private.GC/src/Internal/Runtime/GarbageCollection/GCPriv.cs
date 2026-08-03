@@ -305,6 +305,30 @@ namespace Internal.Runtime.GarbageCollection
         public pair m_pair;
     }
 
+#if TARGET_64BIT
+    [StructLayout(LayoutKind.Explicit, Size = 0x28)]
+#else
+    [StructLayout(LayoutKind.Explicit, Size = 0x18)]
+#endif
+    internal struct aligned_plug_and_gap
+    {
+        [FieldOffset(0)]
+        public nuint additional_pad;
+
+#if !TARGET_64BIT
+        // DECLSPEC_ALIGN(8) raises the native struct alignment above that of its 32-bit fields.
+        [FieldOffset(0)]
+        private ulong _alignment;
+#endif
+
+#if TARGET_64BIT
+        [FieldOffset(0x08)]
+#else
+        [FieldOffset(0x04)]
+#endif
+        public plug_and_gap plugandgap;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct loh_obj_and_pad
     {
