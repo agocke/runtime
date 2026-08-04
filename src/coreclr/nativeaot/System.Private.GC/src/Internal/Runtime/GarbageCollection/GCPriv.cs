@@ -689,11 +689,20 @@ namespace Internal.Runtime.GarbageCollection
     }
 
 #if USE_REGIONS
+    internal enum allocate_direction
+    {
+        allocate_forward = 1,
+        allocate_backward = -1,
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct region_allocator
     {
         public const int LARGE_REGION_FACTOR = 8;
+        public const int region_alloc_free_bit = unchecked(1 << (sizeof(uint) * 8 - 1));
 
+        // This is the native field prefix through large_region_alignment. The next native field
+        // is GCSpinLock region_allocator_lock, which is still deferred with allocator lock paths.
         private byte* global_region_start;
         private byte* global_region_end;
         private byte* global_region_left_used;
@@ -705,12 +714,38 @@ namespace Internal.Runtime.GarbageCollection
         public void initialize_alignment(nuint alignment)
         {
             region_alignment = alignment;
-            large_region_alignment = (nuint)LARGE_REGION_FACTOR * alignment;
+            large_region_alignment = unchecked((nuint)LARGE_REGION_FACTOR * alignment);
         }
 
         public nuint get_region_alignment() => region_alignment;
 
         public nuint get_large_region_alignment() => large_region_alignment;
+
+        public nuint align_region_up(nuint size)
+        {
+            return unchecked((size + (region_alignment - 1)) & ~(region_alignment - 1));
+        }
+
+        public nuint align_region_down(nuint size)
+        {
+            return unchecked(size & ~(region_alignment - 1));
+        }
+
+        public nuint is_region_aligned(byte* address)
+        {
+            nuint value = (nuint)address;
+            return value == unchecked(value & ~(region_alignment - 1)) ? (nuint)1 : 0;
+        }
+
+        public static bool is_unit_memory_free(uint val)
+        {
+            return (val & unchecked((uint)region_alloc_free_bit)) != 0;
+        }
+
+        public static uint get_num_units(uint val)
+        {
+            return val & ~unchecked((uint)region_alloc_free_bit);
+        }
     }
 
     internal enum free_region_kind

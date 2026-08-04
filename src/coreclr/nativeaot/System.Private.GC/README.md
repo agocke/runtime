@@ -243,12 +243,19 @@ an opaque unmanaged declaration because this slice only stores its pointer. `reg
 has its native bookkeeping layout and the dependency-closed list-management core from
 `region_free_list.cpp` (reset/add/unlink/transfer/aging/sort plus region-size accounting over
 `heap_segment`). A minimal `region_allocator` prefix from `gcpriv.h` is now present too, through
-the `region_alignment` and `large_region_alignment` fields and their getters, with
-`gc_heap.global_region_allocator` as its state carrier. That unlocks the
+`region_alignment` and `large_region_alignment` fields and their getters, with
+`gc_heap.global_region_allocator` as its state carrier. It also carries
+`LARGE_REGION_FACTOR`, `region_alloc_free_bit`, `allocate_direction`, and the dependency-closed
+alignment/bit-decoding helpers (`align_region_up`, `align_region_down`, `is_region_aligned`,
+`is_unit_memory_free`, `get_num_units`) that do not depend on allocator reservation or lock state.
+That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
 its native large-region minimum assertion and early-break control flow. The full allocator map,
-reservation, and allocation/deletion algorithms of `region_allocator.cpp` remain deferred.
+reservation, and allocation/deletion algorithms of `region_allocator.cpp` remain deferred, as do
+the `region_address_of` / `region_map_index_of` arithmetic helpers because the next field in the
+native layout is `GCSpinLock region_allocator_lock` and the map-pointer fields after it have not
+been translated yet.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,
 gcpriv.h's region layout that replaces

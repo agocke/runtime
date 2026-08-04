@@ -1944,8 +1944,38 @@ public sealed unsafe class GCPrivTests
         gc_heap.global_region_allocator.initialize_alignment(0x1000);
 
         Assert.Equal(8, region_allocator.LARGE_REGION_FACTOR);
+        Assert.Equal(unchecked((int)0x80000000), region_allocator.region_alloc_free_bit);
+        Assert.Equal(1, (int)allocate_direction.allocate_forward);
+        Assert.Equal(-1, (int)allocate_direction.allocate_backward);
         Assert.Equal((nuint)0x1000, gc_heap.global_region_allocator.get_region_alignment());
         Assert.Equal((nuint)(region_allocator.LARGE_REGION_FACTOR * 0x1000), gc_heap.global_region_allocator.get_large_region_alignment());
+    }
+
+    [Fact]
+    public void RegionAllocatorAlignmentHelpersMatchNativeBitMath()
+    {
+        gc_heap.global_region_allocator.initialize_alignment(0x1000);
+
+        Assert.Equal((nuint)0x1000, gc_heap.global_region_allocator.align_region_up(0x1));
+        Assert.Equal((nuint)0x2000, gc_heap.global_region_allocator.align_region_up(0x1001));
+        Assert.Equal((nuint)0x2000, gc_heap.global_region_allocator.align_region_up(0x2000));
+        Assert.Equal((nuint)0, gc_heap.global_region_allocator.align_region_up(nuint.MaxValue));
+        Assert.Equal((nuint)0x0000, gc_heap.global_region_allocator.align_region_down(0x001));
+        Assert.Equal((nuint)0x1000, gc_heap.global_region_allocator.align_region_down(0x1ABC));
+        Assert.Equal((nuint)0x2000, gc_heap.global_region_allocator.align_region_down(0x2000));
+        Assert.Equal((nuint)1, gc_heap.global_region_allocator.is_region_aligned((byte*)0x3000));
+        Assert.Equal((nuint)0, gc_heap.global_region_allocator.is_region_aligned((byte*)0x3001));
+    }
+
+    [Theory]
+    [InlineData(0x80000001u, true, 1u)]
+    [InlineData(0x00000001u, false, 1u)]
+    [InlineData(0x80000000u, true, 0u)]
+    [InlineData(0x7fffffffu, false, 0x7fffffffu)]
+    public void RegionAllocatorUnitDecodePreservesFreeBitEncoding(uint encoded, bool expectedFree, uint expectedUnits)
+    {
+        Assert.Equal(expectedFree, region_allocator.is_unit_memory_free(encoded));
+        Assert.Equal(expectedUnits, region_allocator.get_num_units(encoded));
     }
 
     [Fact]

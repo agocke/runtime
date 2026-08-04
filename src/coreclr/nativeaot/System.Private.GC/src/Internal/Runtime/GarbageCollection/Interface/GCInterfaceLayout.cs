@@ -1081,6 +1081,7 @@ namespace Internal.Runtime.GarbageCollection
             && sizeof(oom_reason) == GCInterfaceOffsets.SIZEOF__oom_reason
             && sizeof(failure_get_memory) == GCInterfaceOffsets.SIZEOF__failure_get_memory
 #if USE_REGIONS
+            && sizeof(allocate_direction) == GCInterfaceOffsets.SIZEOF__allocate_direction
             && sizeof(free_region_kind) == GCInterfaceOffsets.SIZEOF__free_region_kind
 #endif
             ;
@@ -1200,6 +1201,9 @@ namespace Internal.Runtime.GarbageCollection
             && (int)interesting_data_point.max_idp_count == GCInterfaceOffsets.max_idp_count
 #if USE_REGIONS
             && region_allocator.LARGE_REGION_FACTOR == GCInterfaceOffsets.LARGE_REGION_FACTOR
+            && region_allocator.region_alloc_free_bit == GCInterfaceOffsets.region_alloc_free_bit
+            && (int)allocate_direction.allocate_forward == GCInterfaceOffsets.allocate_forward
+            && (int)allocate_direction.allocate_backward == GCInterfaceOffsets.allocate_backward
             && (int)free_region_kind.basic_free_region == GCInterfaceOffsets.basic_free_region
             && (int)free_region_kind.large_free_region == GCInterfaceOffsets.large_free_region
             && (int)free_region_kind.count_distributed_free_region_kinds == GCInterfaceOffsets.count_distributed_free_region_kinds

@@ -802,8 +802,11 @@ Translate the schema from `gcpriv.h` and related headers:
   list-management core from `region_free_list.cpp` (reset/add/unlink/transfer/aging/sort and
   region-size accounting over `heap_segment`). A minimal `region_allocator` prefix from
   `gcpriv.h` is also present through `region_alignment` and `large_region_alignment`, with
-  `gc_heap.global_region_allocator` carrying the active values. That unlocks
-  `region_free_list`'s deferred `get_region_kind`, dispatch
+  `gc_heap.global_region_allocator` carrying the active values. The same slice includes
+  `LARGE_REGION_FACTOR`, `region_alloc_free_bit`, `allocate_direction`, and the dependency-closed
+  alignment/bit-decoding helpers (`align_region_up`, `align_region_down`, `is_region_aligned`,
+  `is_unit_memory_free`, `get_num_units`) from `gcpriv.h`. That unlocks `region_free_list`'s
+  deferred `get_region_kind`, dispatch
   wrappers (`add_region`, `add_region_descending`, `is_on_free_list`), and
   `unlink_smallest_region` with its native large-region assertion and early-break flow.
   `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
@@ -852,12 +855,16 @@ Done so far:
   `get_region_committed_size` helpers from `gcinternal.h` that those methods depend on.
 - `region_allocator.cpp/gcpriv.h` alignment/configuration prerequisite slice: the exact native
   field prefix through `region_alignment` / `large_region_alignment`, their getters,
-  `LARGE_REGION_FACTOR`, and `gc_heap.global_region_allocator` as the managed state carrier.
+  `LARGE_REGION_FACTOR`, `region_alloc_free_bit`, `allocate_direction`, the dependency-closed
+  alignment/bit-decoding helpers, and `gc_heap.global_region_allocator` as the managed state
+  carrier.
 - Remaining `region_free_list.cpp` helpers previously blocked on that prerequisite:
   `get_region_kind`, `add_region`, `add_region_descending`, `is_on_free_list`, and
   `unlink_smallest_region` with native large-region assertion and early-break behavior.
-- Still deferred from `region_allocator.cpp`: map reservation/state, allocation/deallocation
-  algorithms, lock and callback paths, and end-allocation fallback logic.
+- Still deferred from `region_allocator.cpp`: `GCSpinLock` and the fields after it
+  (`region_map_*`, free-unit counters), `region_address_of`/`region_map_index_of`, map
+  reservation/state, allocation/deallocation algorithms, lock and callback paths, and
+  end-allocation fallback logic.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.
