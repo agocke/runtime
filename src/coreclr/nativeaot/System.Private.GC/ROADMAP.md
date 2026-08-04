@@ -838,7 +838,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_free_list.cpp` helpers unblocked by minimal `region_allocator` alignment slice**
+**Status: In progress -- `region_allocator::init` and the dependency-closed region-map setup are translated**
 
 Translate:
 
@@ -864,12 +864,18 @@ Done so far:
   constructor-sentinel initialization helper needed to carry that field.
 - Dependency-closed map arithmetic from `region_allocator.cpp`: `region_address_of` and
   `region_map_index_of`.
+- Dependency-closed map initialization from `region_allocator.cpp`: `region_allocator::init`
+  aligns the reserved range, initializes the allocator bounds and free-unit counters in native
+  order, allocates the zeroed `uint32_t` map through `ManagedGC_AllocZeroed`, preserves the
+  lowest/highest output-pointer success semantics, fails without calling the shim when the map
+  byte count overflows `size_t`, and leaves the native allocation-failure logging string deferred
+  until string-free GC init logging is ported.
 - Remaining `region_free_list.cpp` helpers previously blocked on that prerequisite:
   `get_region_kind`, `add_region`, `add_region_descending`, `is_on_free_list`, and
   `unlink_smallest_region` with native large-region assertion and early-break behavior.
-- Still deferred from `region_allocator.cpp`: map reservation/state (`init`), spin-lock
-  enter/leave behavior, allocation/deallocation algorithms, lock callback paths, and
-  end-allocation fallback logic.
+- Still deferred from `region_allocator.cpp`: reservation state after `init`, spin-lock enter/leave
+  behavior, allocation/deallocation algorithms, lock callback paths, and end-allocation fallback
+  logic.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

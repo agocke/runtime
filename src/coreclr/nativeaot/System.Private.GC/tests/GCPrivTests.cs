@@ -2046,6 +2046,108 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void RegionAllocatorInitAlignsRangeAllocatesZeroedMapAndPreservesSpinLock()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        byte* lowest = (byte*)0x1111;
+        byte* highest = (byte*)0x2222;
+        WriteRegionAllocatorField(&allocator, "region_allocator_lock", new GCSpinLock { @lock = 1234 });
+
+        Assert.True(allocator.init((byte*)0x1003, (byte*)0xAFFF, 0x1000, &lowest, &highest));
+
+        uint* map = (uint*)ReadRegionAllocatorPointerField(&allocator, "region_map_left_start");
+        try
+        {
+            Assert.Equal((nuint)0x2000, (nuint)lowest);
+            Assert.Equal((nuint)0xA000, (nuint)highest);
+            Assert.Equal((nuint)0x2000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_start"));
+            Assert.Equal((nuint)0xA000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_end"));
+            Assert.Equal((nuint)0x2000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal((nuint)0xA000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_right_used"));
+            Assert.Equal(8u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            Assert.Equal((nuint)0x1000, ReadRegionAllocatorField<nuint>(&allocator, "region_alignment"));
+            Assert.Equal((nuint)0x8000, ReadRegionAllocatorField<nuint>(&allocator, "large_region_alignment"));
+            Assert.Equal(1234, ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock").@lock);
+            Assert.Equal((nuint)map, (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+            Assert.Equal((nuint)(map + 8), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_start"));
+            Assert.Equal((nuint)(map + 8), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_end"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(1, SyncImports.AllocCount);
+            Assert.Equal((nuint)(8 * sizeof(uint)), SyncImports.LastAllocSize);
+
+            for (int i = 0; i < 8; i++)
+            {
+                Assert.Equal(0u, map[i]);
+            }
+
+            Assert.Equal((nuint)0x5000, (nuint)allocator.region_address_of(map + 3));
+            Assert.Equal((nuint)(map + 3), (nuint)allocator.region_map_index_of((byte*)0x5123));
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorInitFailureDoesNotWriteOutputsOrMapPointers()
+    {
+        SyncImports.ResetRecording();
+        SyncImports.FailNextAlloc = true;
+        region_allocator allocator = default;
+        byte* lowest = (byte*)0x1111;
+        byte* highest = (byte*)0x2222;
+        uint* oldMapLeftStart = (uint*)0x3333;
+        uint* oldMapLeftEnd = (uint*)0x4444;
+        uint* oldMapRightStart = (uint*)0x5555;
+        uint* oldMapRightEnd = (uint*)0x6666;
+        WriteRegionAllocatorField(&allocator, "region_allocator_lock", new GCSpinLock { @lock = 5678 });
+        WriteRegionAllocatorPointerField(&allocator, "region_map_left_start", oldMapLeftStart);
+        WriteRegionAllocatorPointerField(&allocator, "region_map_left_end", oldMapLeftEnd);
+        WriteRegionAllocatorPointerField(&allocator, "region_map_right_start", oldMapRightStart);
+        WriteRegionAllocatorPointerField(&allocator, "region_map_right_end", oldMapRightEnd);
+
+        Assert.False(allocator.init((byte*)0x1003, (byte*)0xAFFF, 0x1000, &lowest, &highest));
+
+        Assert.Equal((nuint)0x1111, (nuint)lowest);
+        Assert.Equal((nuint)0x2222, (nuint)highest);
+        Assert.Equal((nuint)oldMapLeftStart, (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_start"));
+        Assert.Equal((nuint)oldMapLeftEnd, (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+        Assert.Equal((nuint)oldMapRightStart, (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_start"));
+        Assert.Equal((nuint)oldMapRightEnd, (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_end"));
+        Assert.Equal(5678, ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock").@lock);
+        Assert.Equal((nuint)0x2000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_start"));
+        Assert.Equal((nuint)0xA000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_end"));
+        Assert.Equal(8u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+        Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+        Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+        Assert.Equal(1, SyncImports.AllocCount);
+        Assert.Equal((nuint)(8 * sizeof(uint)), SyncImports.LastAllocSize);
+    }
+
+    [Fact]
+    public void RegionAllocatorInitMapByteOverflowFailsBeforeAllocation()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        byte* lowest = (byte*)0x1111;
+        byte* highest = (byte*)0x2222;
+        uint* oldMapLeftStart = (uint*)0x3333;
+        WriteRegionAllocatorPointerField(&allocator, "region_map_left_start", oldMapLeftStart);
+
+        Assert.False(allocator.init((byte*)0, (byte*)nuint.MaxValue, 1, &lowest, &highest));
+
+        Assert.Equal((nuint)0x1111, (nuint)lowest);
+        Assert.Equal((nuint)0x2222, (nuint)highest);
+        Assert.Equal((nuint)oldMapLeftStart, (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_start"));
+        Assert.Equal(uint.MaxValue, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+        Assert.Equal(0, SyncImports.AllocCount);
+        Assert.Equal((nuint)0, SyncImports.LastAllocSize);
+    }
+
+    [Fact]
     public void RegionAllocatorAlignmentHelpersMatchNativeBitMath()
     {
         gc_heap.global_region_allocator.initialize_alignment(0x1000);
@@ -2188,6 +2290,28 @@ public sealed unsafe class GCPrivTests
         region->prev_free_region = null;
         region->containing_free_list = null;
         region->age_in_free = age;
+    }
+
+    private static T ReadRegionAllocatorField<T>(region_allocator* allocator, string fieldName)
+        where T : unmanaged
+    {
+        return *(T*)((byte*)allocator + (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>(fieldName));
+    }
+
+    private static void WriteRegionAllocatorField<T>(region_allocator* allocator, string fieldName, T value)
+        where T : unmanaged
+    {
+        *(T*)((byte*)allocator + (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>(fieldName)) = value;
+    }
+
+    private static void* ReadRegionAllocatorPointerField(region_allocator* allocator, string fieldName)
+    {
+        return *(void**)((byte*)allocator + (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>(fieldName));
+    }
+
+    private static void WriteRegionAllocatorPointerField(region_allocator* allocator, string fieldName, void* value)
+    {
+        *(void**)((byte*)allocator + (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>(fieldName)) = value;
     }
 #endif
 

@@ -252,11 +252,18 @@ The next dependency-closed schema slice extends the exact native field order thr
 `region_allocator_lock`, the four `region_map_*` pointers, and the used-free-unit counters, with
 the minimal `GCSpinLock` schema/constructor-sentinel helper needed to carry that field. The pure
 address/index arithmetic helpers `region_address_of` and `region_map_index_of` are translated too.
+The allocator's `init` now aligns the reserved range, initializes the map bounds and free-unit
+counts in native order, allocates the zeroed `uint32_t` region map through the managed GC's
+native nothrow allocation shim, and writes the returned lowest/highest bounds only after that map
+allocation succeeds. The allocation-size overflow case fails closed before calling the shim, as
+the native `new (nothrow) uint32_t[]` cannot produce a valid map in that case. The native
+allocation-failure `log_init_error_to_host` string is still deferred until string-free GC init
+logging is ported.
 That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
 its native large-region minimum assertion and early-break control flow. The full allocator map
-initialization/reservation, spin-lock enter/leave behavior, and allocation/deletion algorithms of
+reservation after `init`, spin-lock enter/leave behavior, and allocation/deletion algorithms of
 `region_allocator.cpp` remain deferred.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,

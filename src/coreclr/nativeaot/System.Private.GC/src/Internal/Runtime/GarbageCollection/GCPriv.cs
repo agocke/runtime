@@ -1,7 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Ported from the dependency-free data records of src/coreclr/gc/gcpriv.h.
+// Ported from the dependency-free data records of src/coreclr/gc/gcpriv.h and the adjacent
+// dependency-closed helpers of region_allocator.cpp and region_free_list.cpp.
 
 using System;
 using System.Diagnostics;
@@ -749,6 +750,43 @@ namespace Internal.Runtime.GarbageCollection
         public void initialize()
         {
             GCSpinLock.initialize(ref region_allocator_lock);
+        }
+
+        public bool init(byte* start, byte* end, nuint alignment, byte** lowest, byte** highest)
+        {
+            byte* actual_start = start;
+            region_alignment = alignment;
+            large_region_alignment = unchecked((nuint)LARGE_REGION_FACTOR * alignment);
+            global_region_start = (byte*)align_region_up((nuint)actual_start);
+            byte* actual_end = end;
+            global_region_end = (byte*)align_region_down((nuint)actual_end);
+            global_region_left_used = global_region_start;
+            global_region_right_used = global_region_end;
+            num_left_used_free_units = 0;
+            num_right_used_free_units = 0;
+
+            nuint total_num_units = unchecked((nuint)(global_region_end - global_region_start)) / region_alignment;
+            total_free_units = (uint)total_num_units;
+
+            uint* unit_map = null;
+            if (total_num_units <= nuint.MaxValue / (nuint)sizeof(uint))
+            {
+                unit_map = (uint*)SyncImports.ManagedGC_AllocZeroed(unchecked(total_num_units * (nuint)sizeof(uint)));
+            }
+
+            if (unit_map is not null)
+            {
+                region_map_left_start = unit_map;
+                region_map_left_end = region_map_left_start;
+
+                region_map_right_start = unit_map + (nint)total_num_units;
+                region_map_right_end = region_map_right_start;
+
+                *lowest = global_region_start;
+                *highest = global_region_end;
+            }
+
+            return unit_map is not null;
         }
 
         public void initialize_alignment(nuint alignment)
