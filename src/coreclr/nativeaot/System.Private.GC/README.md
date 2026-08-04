@@ -177,8 +177,10 @@ the forced-alignment `aligned_plug_and_gap`, `loh_obj_and_pad`, and `loh_padding
 It also carries the native test-only `gc_rand` linear congruential generator and its adjacent
 spin, cross-generation-reference, and target-width mark-stack constants.
 The `bk` and `sorted_table` storage schema is present as well, including the leading old-slot
-link, bucket offset, initialization, and maximum-pointer sentinel. Allocator-backed creation,
-growth, and deletion remain with the later memory-management layer.
+link, bucket offset, initialization, and maximum-pointer sentinel. Its allocation-free binary
+lookup, sorted insertion, containing-interval removal, and clear operations run over
+caller-provided storage. Allocator-backed creation, growth, and deletion remain with the later
+memory-management layer.
 The dependency-free portion of `mark` from `gcinternal.h` is translated too: its complete
 short-plug schema, native `BOOL` bit predicates, pointer accessors, and allocation-free
 gap/relocation-pair swaps are present. `SHORT_PLUGS` is unconditional, while

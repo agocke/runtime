@@ -78,6 +78,139 @@ namespace Internal.Runtime.GarbageCollection
             table->count = 1;
             buckets(table)[0].add = (byte*)nuint.MaxValue;
         }
+
+        public static nuint lookup(sorted_table* table, ref byte* add)
+        {
+            nint high = table->count - 1;
+            nint low = 0;
+            bk* bucket = buckets(table);
+
+            while (low <= high)
+            {
+                nint mid = (low + high) / 2;
+                nint index = mid;
+                if (bucket[index].add > add)
+                {
+                    if (index > 0 && bucket[index - 1].add <= add)
+                    {
+                        add = bucket[index - 1].add;
+                        return bucket[index - 1].val;
+                    }
+
+                    high = mid - 1;
+                }
+                else
+                {
+                    if (bucket[index + 1].add > add)
+                    {
+                        add = bucket[index].add;
+                        return bucket[index].val;
+                    }
+
+                    low = mid + 1;
+                }
+            }
+
+            add = null;
+            return 0;
+        }
+
+        public static int insert(sorted_table* table, byte* add, nuint val)
+        {
+            Debug.Assert(table->count < table->size);
+
+            nint high = table->count - 1;
+            nint low = 0;
+            bk* bucket = buckets(table);
+
+            while (low <= high)
+            {
+                nint mid = (low + high) / 2;
+                nint index = mid;
+                if (bucket[index].add > add)
+                {
+                    if (index == 0 || bucket[index - 1].add <= add)
+                    {
+                        for (nint current = table->count; current > index; current--)
+                        {
+                            bucket[current] = bucket[current - 1];
+                        }
+
+                        bucket[index].add = add;
+                        bucket[index].val = val;
+                        table->count++;
+                        return 1;
+                    }
+
+                    high = mid - 1;
+                }
+                else
+                {
+                    if (bucket[index + 1].add > add)
+                    {
+                        for (nint current = table->count; current > index + 1; current--)
+                        {
+                            bucket[current] = bucket[current - 1];
+                        }
+
+                        bucket[index + 1].add = add;
+                        bucket[index + 1].val = val;
+                        table->count++;
+                        return 1;
+                    }
+
+                    low = mid + 1;
+                }
+            }
+
+            Debug.Fail("No sorted table insertion point found.");
+            return 1;
+        }
+
+        public static void remove(sorted_table* table, byte* add)
+        {
+            nint high = table->count - 1;
+            nint low = 0;
+            bk* bucket = buckets(table);
+
+            while (low <= high)
+            {
+                nint mid = (low + high) / 2;
+                nint index = mid;
+                if (bucket[index].add > add)
+                {
+                    if (bucket[index - 1].add <= add)
+                    {
+                        for (nint current = index; current < table->count; current++)
+                        {
+                            bucket[current - 1] = bucket[current];
+                        }
+
+                        table->count--;
+                        return;
+                    }
+
+                    high = mid - 1;
+                }
+                else
+                {
+                    if (bucket[index + 1].add > add)
+                    {
+                        for (nint current = index + 1; current < table->count; current++)
+                        {
+                            bucket[current - 1] = bucket[current];
+                        }
+
+                        table->count--;
+                        return;
+                    }
+
+                    low = mid + 1;
+                }
+            }
+
+            Debug.Fail("No sorted table entry found.");
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]

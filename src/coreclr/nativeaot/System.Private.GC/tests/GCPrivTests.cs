@@ -68,6 +68,89 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(4 * sizeof(nuint), sizeof(sorted_table));
     }
 
+    [Fact]
+    public void SortedTableInsertAndLookupPreservePredecessorIntervals()
+    {
+        sorted_table table = default;
+        bk* slots = stackalloc bk[8];
+        sorted_table.initialize(&table, 7, slots);
+
+        Assert.Equal(1, sorted_table.insert(&table, (byte*)0x3000, 30));
+        Assert.Equal(1, sorted_table.insert(&table, (byte*)0x1000, 10));
+        Assert.Equal(1, sorted_table.insert(&table, (byte*)0x2000, 20));
+
+        AssertSortedTableLookup(&table, 0x1000, 0x1000, 10);
+        AssertSortedTableLookup(&table, 0x1FFF, 0x1000, 10);
+        AssertSortedTableLookup(&table, 0x2000, 0x2000, 20);
+        AssertSortedTableLookup(&table, 0x2FFF, 0x2000, 20);
+        AssertSortedTableLookup(&table, 0x3000, 0x3000, 30);
+        AssertSortedTableLookup(&table, 0xFFFF, 0x3000, 30);
+
+        byte* belowFirst = (byte*)0xFFF;
+        Assert.Equal((nuint)0, sorted_table.lookup(&table, ref belowFirst));
+        Assert.Equal((nuint)0, (nuint)belowFirst);
+    }
+
+    [Fact]
+    public void SortedTableRemoveUsesNativeContainingInterval()
+    {
+        sorted_table table = default;
+        bk* slots = stackalloc bk[8];
+        sorted_table.initialize(&table, 7, slots);
+        sorted_table.insert(&table, (byte*)0x1000, 10);
+        sorted_table.insert(&table, (byte*)0x2000, 20);
+        sorted_table.insert(&table, (byte*)0x3000, 30);
+
+        sorted_table.remove(&table, (byte*)0x2800);
+
+        AssertSortedTableLookup(&table, 0x2000, 0x1000, 10);
+        AssertSortedTableLookup(&table, 0x2FFF, 0x1000, 10);
+        AssertSortedTableLookup(&table, 0x3000, 0x3000, 30);
+    }
+
+    [Fact]
+    public void SortedTableDuplicateBoundaryUsesLastInsertedValue()
+    {
+        sorted_table table = default;
+        bk* slots = stackalloc bk[6];
+        sorted_table.initialize(&table, 5, slots);
+        sorted_table.insert(&table, (byte*)0x1000, 10);
+        sorted_table.insert(&table, (byte*)0x1000, 11);
+
+        AssertSortedTableLookup(&table, 0x1000, 0x1000, 11);
+
+        sorted_table.remove(&table, (byte*)0x1000);
+
+        AssertSortedTableLookup(&table, 0x1000, 0x1000, 10);
+    }
+
+    [Fact]
+    public void SortedTableClearRestoresOnlySentinel()
+    {
+        sorted_table table = default;
+        bk* slots = stackalloc bk[5];
+        sorted_table.initialize(&table, 4, slots);
+        sorted_table.insert(&table, (byte*)0x1000, 10);
+
+        sorted_table.clear(&table);
+
+        byte* address = (byte*)0x1000;
+        Assert.Equal((nuint)0, sorted_table.lookup(&table, ref address));
+        Assert.Equal((nuint)0, (nuint)address);
+        Assert.Equal(nuint.MaxValue, (nuint)sorted_table.buckets(&table)[0].add);
+    }
+
+    private static void AssertSortedTableLookup(
+        sorted_table* table,
+        nuint requested,
+        nuint expectedAddress,
+        nuint expectedValue)
+    {
+        byte* address = (byte*)requested;
+        Assert.Equal(expectedValue, sorted_table.lookup(table, ref address));
+        Assert.Equal(expectedAddress, (nuint)address);
+    }
+
     private static nuint OffsetOf(void* field, bk* bucket) => (nuint)((byte*)field - (byte*)bucket);
 
 #if !TARGET_WASM
