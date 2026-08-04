@@ -797,8 +797,13 @@ Translate the schema from `gcpriv.h` and related headers:
   `heap_segment` schema and region-only `generation_region_info` are translated too, including
   region/non-region tails, server-only heap/decommit branches, debug non-region saved fields,
   one-byte native booleans, flag and region-age constants, `init_free_list`, and every
-  dependency-free accessor/predicate. `gc_heap` and `region_free_list` remain opaque unmanaged
-  declarations because this slice only needs their pointers; `thread_free_obj` remains deferred
+  dependency-free accessor/predicate. `gc_heap` remains opaque because this slice only needs its
+  pointer. `region_free_list` now has its native bookkeeping layout and the dependency-closed
+  list-management core from `region_free_list.cpp` (reset/add/unlink/transfer/aging/sort and
+  region-size accounting over `heap_segment`); the `get_region_kind` and free-list-family dispatch
+  helpers are deferred with `region_allocator.cpp`, where `global_region_allocator` arrives.
+  `unlink_smallest_region` is deferred there too because its native minimum-size assertion and
+  early exit depend on that allocator's large-region alignment. `thread_free_obj` remains deferred
   with the free-list object representation. The schema forks on `USE_REGIONS` -- the region layout
   replaces `allocation_start`/`plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`
   -- which reduces from gcpriv.h's `HOST_64BIT && (!HOST_APPLE || HOST_OSX)` to 64-bit AND not an
@@ -827,7 +832,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: Not started**
+**Status: In progress -- `region_free_list.cpp` list-management core translated**
 
 Translate:
 
@@ -835,6 +840,16 @@ Translate:
 - `region_allocator.cpp`
 - `region_free_list.cpp`
 - `regions_segments.cpp`
+
+Done so far:
+
+- `region_free_list.cpp`: the dependency-closed list-management core (`verify`, `reset`,
+  add/unlink front, descending insertion, transfer, age increment, and committed-size/age merge
+  sort), plus the adjacent `get_region_start` / `get_region_size` /
+  `get_region_committed_size` helpers from `gcinternal.h` that those methods depend on.
+- Deferred with `region_allocator.cpp`: `get_region_kind`, and the kind-indexed helper wrappers
+  (`add_region`, `add_region_descending`, `is_on_free_list`) plus `unlink_smallest_region`, which
+  require `global_region_allocator` alignment data.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

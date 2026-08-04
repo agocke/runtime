@@ -82,6 +82,15 @@ public sealed class GCInterfaceLayoutTests
         ["sorted_table.count"] = "private in the C++ class",
         ["sorted_table.slots"] = "private in the C++ class",
         ["sorted_table.old_slots"] = "private in the C++ class",
+#if USE_REGIONS
+        ["region_free_list.num_free_regions"] = "private in the C++ class",
+        ["region_free_list.size_free_regions"] = "private in the C++ class",
+        ["region_free_list.size_committed_in_free_regions"] = "private in the C++ class",
+        ["region_free_list.num_free_regions_added"] = "private in the C++ class",
+        ["region_free_list.num_free_regions_removed"] = "private in the C++ class",
+        ["region_free_list.head_free_region"] = "private in the C++ class",
+        ["region_free_list.tail_free_region"] = "private in the C++ class",
+#endif
 
         // C# has no declaration-level alignment attribute. This unmanaged overlay exists only
         // on 32-bit targets to reproduce DECLSPEC_ALIGN(8); the native fields remain separately

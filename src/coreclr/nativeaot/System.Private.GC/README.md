@@ -238,10 +238,16 @@ and adds no fields, so the port reuses the existing `gc_alloc_context` layout fo
 distinct type. The dependency-closed `heap_segment` and region-only `generation_region_info`
 schemas are translated alongside it. The segment preserves the region/non-region tail, the
 server-only heap and decommit branches, the debug non-region saved fields, native one-byte
-`swept_in_plan_p`, flags and age constants, and its dependency-free accessors; `gc_heap` and
-`region_free_list` remain opaque unmanaged declarations because the segment only stores pointers
-to them. `thread_free_obj` remains deferred with the free-list object representation. The schema
-forks on `USE_REGIONS`, gcpriv.h's region layout that replaces
+`swept_in_plan_p`, flags and age constants, and its dependency-free accessors; `gc_heap` remains
+an opaque unmanaged declaration because this slice only stores its pointer. `region_free_list` now
+has its native bookkeeping layout and the dependency-closed list-management core from
+`region_free_list.cpp` (reset/add/unlink/transfer/aging/sort plus region-size accounting over
+`heap_segment`). The `get_region_kind` and free-list-family dispatch helpers are still deferred
+with `region_allocator.cpp`, where `global_region_allocator` arrives; `unlink_smallest_region`
+is deferred there too because its native minimum-size assertion and early exit depend on that
+allocator's large-region alignment. `thread_free_obj` remains deferred with the free-list object
+representation. The schema forks on `USE_REGIONS`,
+gcpriv.h's region layout that replaces
 `allocation_start` and `plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`.
 gcpriv.h defines `USE_REGIONS` as `HOST_64BIT && !BUILD_AS_STANDALONE && !__sun && (!HOST_APPLE ||
 HOST_OSX)`; this integrated port is never `BUILD_AS_STANDALONE` and never targets illumos, so it

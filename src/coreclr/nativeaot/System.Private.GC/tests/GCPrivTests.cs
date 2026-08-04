@@ -1812,6 +1812,172 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((byte)3, p->gen_num);
         Assert.Equal(5, p->age_in_free);
     }
+
+    [Fact]
+    public void RegionHelpersPreserveHeaderSkewedSizeArithmetic()
+    {
+        heap_segment region = default;
+        region.mem = (byte*)0x2000;
+        region.committed = (byte*)0x2A00;
+        region.reserved = (byte*)0x3000;
+
+        byte* expectedStart = region.mem - sizeof(aligned_plug_and_gap);
+
+        Assert.Equal((nuint)expectedStart, (nuint)gc_heap.get_region_start(&region));
+        Assert.Equal((nuint)(region.reserved - expectedStart), gc_heap.get_region_size(&region));
+        Assert.Equal((nuint)(region.committed - expectedStart), gc_heap.get_region_committed_size(&region));
+    }
+
+    [Fact]
+    public void RegionFreeListAddAndUnlinkFrontPreserveNativeBookkeeping()
+    {
+        region_free_list list = default;
+        region_free_list* pList = &list;
+        heap_segment first = default;
+        heap_segment second = default;
+
+        InitializeRegion(&first, 0x1000, 0x1900, 0x2000, age: 3);
+        InitializeRegion(&second, 0x3000, 0x3700, 0x4000, age: 7);
+
+        region_free_list.add_region_front(pList, &first);
+        region_free_list.add_region_front(pList, &second);
+
+        Assert.Equal((nuint)2, region_free_list.get_num_free_regions(pList));
+        Assert.Equal((nuint)(&second), (nuint)list.get_first_free_region());
+        Assert.Equal((nuint)(&first), (nuint)heap_segment.heap_segment_next(&second));
+        Assert.Equal((nuint)(&second), (nuint)heap_segment.heap_segment_prev_free_region(&first));
+        Assert.Equal((nuint)pList, (nuint)heap_segment.heap_segment_containing_free_list(&first));
+        Assert.Equal((nuint)pList, (nuint)heap_segment.heap_segment_containing_free_list(&second));
+
+        nuint expectedSize = gc_heap.get_region_size(&first) + gc_heap.get_region_size(&second);
+        nuint expectedCommitted = gc_heap.get_region_committed_size(&first) + gc_heap.get_region_committed_size(&second);
+        Assert.Equal(expectedSize, list.get_size_free_regions());
+        Assert.Equal(expectedCommitted, list.get_size_committed_in_free());
+
+        heap_segment* unlinked = region_free_list.unlink_region_front(pList);
+        Assert.Equal((nuint)(&second), (nuint)unlinked);
+        Assert.Equal((nuint)1, region_free_list.get_num_free_regions(pList));
+        Assert.Equal((nuint)(&first), (nuint)list.get_first_free_region());
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_containing_free_list(unlinked));
+        Assert.Equal(gc_heap.get_region_size(&first), list.get_size_free_regions());
+        Assert.Equal(gc_heap.get_region_committed_size(&first), list.get_size_committed_in_free());
+    }
+
+    [Fact]
+    public void RegionFreeListSortUsesCommittedSizeThenAge()
+    {
+        region_free_list list = default;
+        heap_segment highCommitted = default;
+        heap_segment youngerMid = default;
+        heap_segment olderMid = default;
+
+        InitializeRegion(&highCommitted, 0x1000, 0x1C00, 0x2600, age: 4);
+        InitializeRegion(&youngerMid, 0x3000, 0x3800, 0x4200, age: 1);
+        InitializeRegion(&olderMid, 0x5000, 0x5800, 0x6200, age: 9);
+
+        region_free_list* pList = &list;
+        region_free_list.add_region_front(pList, &youngerMid);
+        region_free_list.add_region_front(pList, &highCommitted);
+        region_free_list.add_region_front(pList, &olderMid);
+
+        heap_segment.heap_segment_age_in_free(&highCommitted) = 4;
+        heap_segment.heap_segment_age_in_free(&youngerMid) = 1;
+        heap_segment.heap_segment_age_in_free(&olderMid) = 9;
+
+        list.sort_by_committed_and_age();
+
+        heap_segment* first = list.get_first_free_region();
+        heap_segment* second = heap_segment.heap_segment_next(first);
+        heap_segment* third = heap_segment.heap_segment_next(second);
+
+        Assert.Equal((nuint)(&highCommitted), (nuint)first);
+        Assert.Equal((nuint)(&youngerMid), (nuint)second);
+        Assert.Equal((nuint)(&olderMid), (nuint)third);
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_prev_free_region(first));
+        Assert.Equal((nuint)(&highCommitted), (nuint)heap_segment.heap_segment_prev_free_region(second));
+        Assert.Equal((nuint)(&youngerMid), (nuint)heap_segment.heap_segment_prev_free_region(third));
+    }
+
+    [Fact]
+    public void RegionFreeListDescendingInsertionOrdersCommittedSizesAndFullyCommittedFirst()
+    {
+        region_free_list list = default;
+        region_free_list* pList = &list;
+        heap_segment small = default;
+        heap_segment large = default;
+        heap_segment middle = default;
+        heap_segment fullyCommitted = default;
+
+        InitializeRegion(&small, 0x1000, 0x1400, 0x2000, age: 1);
+        InitializeRegion(&large, 0x3000, 0x3C00, 0x5000, age: 2);
+        InitializeRegion(&middle, 0x6000, 0x6800, 0x8000, age: 3);
+        InitializeRegion(&fullyCommitted, 0x9000, 0xA000, 0xA000, age: 4);
+
+        region_free_list.add_region_in_descending_order(pList, &small);
+        region_free_list.add_region_in_descending_order(pList, &large);
+        region_free_list.add_region_in_descending_order(pList, &middle);
+        region_free_list.add_region_in_descending_order(pList, &fullyCommitted);
+
+        heap_segment* first = list.get_first_free_region();
+        heap_segment* second = heap_segment.heap_segment_next(first);
+        heap_segment* third = heap_segment.heap_segment_next(second);
+        heap_segment* fourth = heap_segment.heap_segment_next(third);
+
+        Assert.Equal((nuint)(&fullyCommitted), (nuint)first);
+        Assert.Equal((nuint)(&large), (nuint)second);
+        Assert.Equal((nuint)(&middle), (nuint)third);
+        Assert.Equal((nuint)(&small), (nuint)fourth);
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_prev_free_region(first));
+        Assert.Equal((nuint)first, (nuint)heap_segment.heap_segment_prev_free_region(second));
+        Assert.Equal((nuint)second, (nuint)heap_segment.heap_segment_prev_free_region(third));
+        Assert.Equal((nuint)third, (nuint)heap_segment.heap_segment_prev_free_region(fourth));
+        Assert.Equal(0, heap_segment.heap_segment_age_in_free(&small));
+        Assert.Equal(0, heap_segment.heap_segment_age_in_free(&large));
+        Assert.Equal(0, heap_segment.heap_segment_age_in_free(&middle));
+        Assert.Equal(0, heap_segment.heap_segment_age_in_free(&fullyCommitted));
+        Assert.Equal((nuint)4, region_free_list.get_num_free_regions(pList));
+    }
+
+    [Fact]
+    public void RegionFreeListTransferAndAgeArrayPreserveOwnershipAndCap()
+    {
+        region_free_list* lists = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        heap_segment basic = default;
+        heap_segment large = default;
+        heap_segment huge = default;
+
+        InitializeRegion(&basic, 0x1000, 0x1800, 0x2000, age: heap_segment.MAX_AGE_IN_FREE - 1);
+        InitializeRegion(&large, 0x3000, 0x3800, 0x5000, age: heap_segment.MAX_AGE_IN_FREE);
+        InitializeRegion(&huge, 0x6000, 0x7400, 0x9000, age: 0);
+
+        region_free_list.add_region_front(&lists[(int)free_region_kind.basic_free_region], &basic);
+        region_free_list.add_region_front(&lists[(int)free_region_kind.large_free_region], &large);
+        region_free_list.add_region_front(&lists[(int)free_region_kind.huge_free_region], &huge);
+
+        region_free_list.age_free_regions(lists);
+        Assert.Equal(heap_segment.MAX_AGE_IN_FREE, heap_segment.heap_segment_age_in_free(&basic));
+        Assert.Equal(heap_segment.MAX_AGE_IN_FREE, heap_segment.heap_segment_age_in_free(&large));
+        Assert.Equal(1, heap_segment.heap_segment_age_in_free(&huge));
+
+        region_free_list destination = default;
+        region_free_list* pDestination = &destination;
+        region_free_list.transfer_regions(pDestination, &lists[(int)free_region_kind.basic_free_region]);
+
+        Assert.Equal((nuint)1, region_free_list.get_num_free_regions(pDestination));
+        Assert.Equal((nuint)0, region_free_list.get_num_free_regions(&lists[(int)free_region_kind.basic_free_region]));
+        Assert.Equal((nuint)pDestination, (nuint)heap_segment.heap_segment_containing_free_list(&basic));
+    }
+
+    private static void InitializeRegion(heap_segment* region, nuint start, nuint committed, nuint reserved, int age)
+    {
+        region->mem = (byte*)(start + (nuint)sizeof(aligned_plug_and_gap));
+        region->committed = (byte*)committed;
+        region->reserved = (byte*)reserved;
+        region->next = null;
+        region->prev_free_region = null;
+        region->containing_free_list = null;
+        region->age_in_free = age;
+    }
 #endif
 
     private static nuint OffsetOf(void* field, seg_mapping* mapping) => (nuint)((byte*)field - (byte*)mapping);

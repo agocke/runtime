@@ -664,11 +664,435 @@ namespace Internal.Runtime.GarbageCollection
             return condemned_gen_number;
 #endif
         }
+
+#if USE_REGIONS
+        public static byte* get_region_start(heap_segment* region_info)
+        {
+            byte* objStart = heap_segment.heap_segment_mem(region_info);
+            return objStart - sizeof(aligned_plug_and_gap);
+        }
+
+        public static nuint get_region_size(heap_segment* region_info)
+        {
+            return (nuint)(heap_segment.heap_segment_reserved(region_info) - get_region_start(region_info));
+        }
+
+        public static nuint get_region_committed_size(heap_segment* region)
+        {
+            byte* start = get_region_start(region);
+            byte* committed = heap_segment.heap_segment_committed(region);
+            return (nuint)(committed - start);
+        }
+#endif
     }
 
+#if USE_REGIONS
+    internal enum free_region_kind
+    {
+        basic_free_region = 0,
+        large_free_region = 1,
+        count_distributed_free_region_kinds = 2,
+        huge_free_region = 2,
+        count_free_region_kinds = 3,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct region_free_list
+    {
+        private nuint num_free_regions;
+        private nuint size_free_regions;
+        private nuint size_committed_in_free_regions;
+        private nuint num_free_regions_added;
+        private nuint num_free_regions_removed;
+        private heap_segment* head_free_region;
+        private heap_segment* tail_free_region;
+
+        public static void verify(region_free_list* inst, bool empty_p)
+        {
+#if DEBUG
+            Debug.Assert((inst->num_free_regions == 0) == empty_p);
+            Debug.Assert((inst->size_free_regions == 0) == empty_p);
+            Debug.Assert((inst->size_committed_in_free_regions == 0) == empty_p);
+            Debug.Assert((inst->head_free_region is null) == empty_p);
+            Debug.Assert((inst->tail_free_region is null) == empty_p);
+            Debug.Assert(inst->num_free_regions == (inst->num_free_regions_added - inst->num_free_regions_removed));
+
+            if (!empty_p)
+            {
+                Debug.Assert(heap_segment.heap_segment_next(inst->tail_free_region) is null);
+                Debug.Assert(heap_segment.heap_segment_prev_free_region(inst->head_free_region) is null);
+
+                nuint actualCount = 0;
+                heap_segment* lastRegion = null;
+                for (heap_segment* region = inst->head_free_region; region is not null; region = heap_segment.heap_segment_next(region))
+                {
+                    lastRegion = region;
+                    actualCount++;
+                }
+
+                Debug.Assert(inst->num_free_regions == actualCount);
+                Debug.Assert(lastRegion == inst->tail_free_region);
+
+                heap_segment* firstRegion = null;
+                for (heap_segment* region = inst->tail_free_region; region is not null; region = heap_segment.heap_segment_prev_free_region(region))
+                {
+                    firstRegion = region;
+                    actualCount--;
+                }
+
+                Debug.Assert(actualCount == 0);
+                Debug.Assert(inst->head_free_region == firstRegion);
+            }
+#endif
+        }
+
+        public void reset()
+        {
+            num_free_regions = 0;
+            size_free_regions = 0;
+            size_committed_in_free_regions = 0;
+            head_free_region = null;
+            tail_free_region = null;
+        }
+
+        private static void update_added_region_info(region_free_list* inst, heap_segment* region)
+        {
+            inst->num_free_regions++;
+            inst->num_free_regions_added++;
+
+            nuint regionSize = gc_heap.get_region_size(region);
+            inst->size_free_regions += regionSize;
+
+            nuint regionCommittedSize = gc_heap.get_region_committed_size(region);
+            inst->size_committed_in_free_regions += regionCommittedSize;
+
+            verify(inst, false);
+        }
+
+        public static void add_region_front(region_free_list* inst, heap_segment* region)
+        {
+            Debug.Assert(heap_segment.heap_segment_containing_free_list(region) is null);
+            heap_segment.heap_segment_containing_free_list(region) = inst;
+
+            if (inst->head_free_region is not null)
+            {
+                heap_segment.heap_segment_prev_free_region(inst->head_free_region) = region;
+                Debug.Assert(inst->tail_free_region is not null);
+            }
+            else
+            {
+                inst->tail_free_region = region;
+            }
+
+            heap_segment.heap_segment_next(region) = inst->head_free_region;
+            inst->head_free_region = region;
+            heap_segment.heap_segment_prev_free_region(region) = null;
+
+            update_added_region_info(inst, region);
+        }
+
+        // This inserts fully committed regions at the head, otherwise it goes backward in the
+        // list until it finds one whose committed size is >= this region's committed size.
+        public static void add_region_in_descending_order(region_free_list* inst, heap_segment* region_to_add)
+        {
+            Debug.Assert(heap_segment.heap_segment_containing_free_list(region_to_add) is null);
+            heap_segment.heap_segment_containing_free_list(region_to_add) = inst;
+            heap_segment.heap_segment_age_in_free(region_to_add) = 0;
+
+            heap_segment* prev_region = null;
+            heap_segment* region = null;
+
+            if (heap_segment.heap_segment_committed(region_to_add) == heap_segment.heap_segment_reserved(region_to_add))
+            {
+                region = inst->head_free_region;
+            }
+            else
+            {
+                nuint regionToAddCommitted = gc_heap.get_region_committed_size(region_to_add);
+                for (prev_region = inst->tail_free_region; prev_region is not null; prev_region = heap_segment.heap_segment_prev_free_region(prev_region))
+                {
+                    nuint prevRegionCommitted = gc_heap.get_region_committed_size(prev_region);
+                    if (prevRegionCommitted >= regionToAddCommitted)
+                    {
+                        break;
+                    }
+
+                    region = prev_region;
+                }
+            }
+
+            if (prev_region is not null)
+            {
+                heap_segment.heap_segment_next(prev_region) = region_to_add;
+            }
+            else
+            {
+                Debug.Assert(region == inst->head_free_region);
+                inst->head_free_region = region_to_add;
+            }
+
+            heap_segment.heap_segment_prev_free_region(region_to_add) = prev_region;
+            heap_segment.heap_segment_next(region_to_add) = region;
+
+            if (region is not null)
+            {
+                heap_segment.heap_segment_prev_free_region(region) = region_to_add;
+            }
+            else
+            {
+                Debug.Assert(prev_region == inst->tail_free_region);
+                inst->tail_free_region = region_to_add;
+            }
+
+            update_added_region_info(inst, region_to_add);
+        }
+
+        public static heap_segment* unlink_region_front(region_free_list* inst)
+        {
+            heap_segment* region = inst->head_free_region;
+            if (region is not null)
+            {
+                Debug.Assert(heap_segment.heap_segment_containing_free_list(region) == inst);
+                unlink_region(region);
+            }
+
+            return region;
+        }
+
+        public static void unlink_region(heap_segment* region)
+        {
+            region_free_list* rfl = heap_segment.heap_segment_containing_free_list(region);
+            verify(rfl, false);
+
+            heap_segment* prev = heap_segment.heap_segment_prev_free_region(region);
+            heap_segment* next = heap_segment.heap_segment_next(region);
+
+            if (prev is not null)
+            {
+                Debug.Assert(region != rfl->head_free_region);
+                Debug.Assert(heap_segment.heap_segment_next(prev) == region);
+                heap_segment.heap_segment_next(prev) = next;
+            }
+            else
+            {
+                Debug.Assert(region == rfl->head_free_region);
+                rfl->head_free_region = next;
+            }
+
+            if (next is not null)
+            {
+                Debug.Assert(region != rfl->tail_free_region);
+                Debug.Assert(heap_segment.heap_segment_prev_free_region(next) == region);
+                heap_segment.heap_segment_prev_free_region(next) = prev;
+            }
+            else
+            {
+                Debug.Assert(region == rfl->tail_free_region);
+                rfl->tail_free_region = prev;
+            }
+
+            heap_segment.heap_segment_containing_free_list(region) = null;
+
+            rfl->num_free_regions--;
+            rfl->num_free_regions_removed++;
+
+            nuint regionSize = gc_heap.get_region_size(region);
+            Debug.Assert(rfl->size_free_regions >= regionSize);
+            rfl->size_free_regions -= regionSize;
+
+            nuint regionCommittedSize = gc_heap.get_region_committed_size(region);
+            Debug.Assert(rfl->size_committed_in_free_regions >= regionCommittedSize);
+            rfl->size_committed_in_free_regions -= regionCommittedSize;
+        }
+
+        public static void transfer_regions(region_free_list* inst, region_free_list* from)
+        {
+            verify(inst, inst->num_free_regions == 0);
+            verify(from, from->num_free_regions == 0);
+
+            if (from->num_free_regions == 0)
+            {
+                return;
+            }
+
+            if (inst->num_free_regions == 0)
+            {
+                inst->head_free_region = from->head_free_region;
+                inst->tail_free_region = from->tail_free_region;
+            }
+            else
+            {
+                heap_segment* thisTail = inst->tail_free_region;
+                heap_segment* fromHead = from->head_free_region;
+
+                heap_segment.heap_segment_next(thisTail) = fromHead;
+                heap_segment.heap_segment_prev_free_region(fromHead) = thisTail;
+                inst->tail_free_region = from->tail_free_region;
+            }
+
+            for (heap_segment* region = from->head_free_region; region is not null; region = heap_segment.heap_segment_next(region))
+            {
+                heap_segment.heap_segment_containing_free_list(region) = inst;
+            }
+
+            inst->num_free_regions += from->num_free_regions;
+            inst->num_free_regions_added += from->num_free_regions;
+            inst->size_free_regions += from->size_free_regions;
+            inst->size_committed_in_free_regions += from->size_committed_in_free_regions;
+
+            from->num_free_regions_removed += from->num_free_regions;
+            from->reset();
+
+            verify(inst, false);
+        }
+
+        public static nuint get_num_free_regions(region_free_list* inst)
+        {
+#if DEBUG
+            verify(inst, inst->num_free_regions == 0);
+#endif
+            return inst->num_free_regions;
+        }
+
+        public nuint get_size_committed_in_free() => size_committed_in_free_regions;
+
+        public nuint get_size_free_regions() => size_free_regions;
+
+        public heap_segment* get_first_free_region() => head_free_region;
+
+        public void age_free_regions()
+        {
+            for (heap_segment* region = head_free_region; region is not null; region = heap_segment.heap_segment_next(region))
+            {
+                if (heap_segment.heap_segment_age_in_free(region) < heap_segment.MAX_AGE_IN_FREE)
+                {
+                    heap_segment.heap_segment_age_in_free(region)++;
+                }
+            }
+        }
+
+        public static void age_free_regions(region_free_list* free_lists)
+        {
+            for (int kind = (int)free_region_kind.basic_free_region;
+                 kind < (int)free_region_kind.count_free_region_kinds;
+                 kind++)
+            {
+                free_lists[kind].age_free_regions();
+            }
+        }
+
+        private static int compare_by_committed_and_age(heap_segment* l, heap_segment* r)
+        {
+            nuint lCommitted = gc_heap.get_region_committed_size(l);
+            nuint rCommitted = gc_heap.get_region_committed_size(r);
+            if (lCommitted > rCommitted)
+            {
+                return -1;
+            }
+            else if (lCommitted < rCommitted)
+            {
+                return 1;
+            }
+
+            int lAge = heap_segment.heap_segment_age_in_free(l);
+            int rAge = heap_segment.heap_segment_age_in_free(r);
+            return lAge - rAge;
+        }
+
+        private static heap_segment* merge_sort_by_committed_and_age(heap_segment* head, nuint count)
+        {
+            if (count <= 1)
+            {
+                return head;
+            }
+
+            nuint half = count / 2;
+            heap_segment* mid = null;
+            nuint i = 0;
+            for (heap_segment* region = head; region is not null; region = heap_segment.heap_segment_next(region))
+            {
+                i++;
+                if (i == half)
+                {
+                    mid = heap_segment.heap_segment_next(region);
+                    heap_segment.heap_segment_next(region) = null;
+                    break;
+                }
+            }
+
+            head = merge_sort_by_committed_and_age(head, half);
+            mid = merge_sort_by_committed_and_age(mid, count - half);
+
+            heap_segment* newHead;
+            if (compare_by_committed_and_age(head, mid) <= 0)
+            {
+                newHead = head;
+                head = heap_segment.heap_segment_next(head);
+            }
+            else
+            {
+                newHead = mid;
+                mid = heap_segment.heap_segment_next(mid);
+            }
+
+            heap_segment* newTail = newHead;
+            while (head is not null && mid is not null)
+            {
+                heap_segment* region;
+                if (compare_by_committed_and_age(head, mid) <= 0)
+                {
+                    region = head;
+                    head = heap_segment.heap_segment_next(head);
+                }
+                else
+                {
+                    region = mid;
+                    mid = heap_segment.heap_segment_next(mid);
+                }
+
+                heap_segment.heap_segment_next(newTail) = region;
+                newTail = region;
+            }
+
+            if (head is not null)
+            {
+                Debug.Assert(mid is null);
+                heap_segment.heap_segment_next(newTail) = head;
+            }
+            else
+            {
+                heap_segment.heap_segment_next(newTail) = mid;
+            }
+
+            return newHead;
+        }
+
+        public void sort_by_committed_and_age()
+        {
+            if (num_free_regions <= 1)
+            {
+                return;
+            }
+
+            heap_segment* newHead = merge_sort_by_committed_and_age(head_free_region, num_free_regions);
+
+            head_free_region = newHead;
+            heap_segment* prev = null;
+            for (heap_segment* region = newHead; region is not null; region = heap_segment.heap_segment_next(region))
+            {
+                heap_segment.heap_segment_prev_free_region(region) = prev;
+                Debug.Assert(prev is null || compare_by_committed_and_age(prev, region) <= 0);
+                prev = region;
+            }
+
+            tail_free_region = prev;
+        }
+    }
+#else
     internal unsafe partial struct region_free_list
     {
     }
+#endif
 #pragma warning restore CS8981
 
 #if USE_REGIONS
@@ -679,8 +1103,8 @@ namespace Internal.Runtime.GarbageCollection
     }
 #endif
 
-    // The segment schema is dependency-closed: gc_heap and region_free_list are deliberately
-    // opaque until their owning schemas arrive, as this record only holds pointers to them.
+    // The segment schema is dependency-closed: gc_heap is deliberately opaque here, while
+    // region_free_list is now translated but still referenced by pointer from this record.
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe partial struct heap_segment

@@ -607,6 +607,12 @@ namespace Internal.Runtime.GarbageCollection
             {
                 return false;
             }
+
+            if (sizeof(region_free_list) != GCInterfaceOffsets.SIZEOF__region_free_list
+                || AlignOf<region_free_list>() != GCInterfaceOffsets.ALIGNOF__region_free_list)
+            {
+                return false;
+            }
 #endif
 
             heap_segment heapSegment;
@@ -1073,7 +1079,11 @@ namespace Internal.Runtime.GarbageCollection
             && sizeof(GCEventKeyword) == GCInterfaceOffsets.SIZEOF__GCEventKeyword
             && sizeof(c_gc_state) == GCInterfaceOffsets.SIZEOF__c_gc_state
             && sizeof(oom_reason) == GCInterfaceOffsets.SIZEOF__oom_reason
-            && sizeof(failure_get_memory) == GCInterfaceOffsets.SIZEOF__failure_get_memory;
+            && sizeof(failure_get_memory) == GCInterfaceOffsets.SIZEOF__failure_get_memory
+#if USE_REGIONS
+            && sizeof(free_region_kind) == GCInterfaceOffsets.SIZEOF__free_region_kind
+#endif
+            ;
 
         /// <summary>
         /// Returns true if the managed copies of the GC/EE interface enums still agree with the
@@ -1187,7 +1197,15 @@ namespace Internal.Runtime.GarbageCollection
             && (int)interesting_data_point.idp_pre_and_post_pin == GCInterfaceOffsets.idp_pre_and_post_pin
             && (int)interesting_data_point.idp_pre_short_padded == GCInterfaceOffsets.idp_pre_short_padded
             && (int)interesting_data_point.idp_post_short_padded == GCInterfaceOffsets.idp_post_short_padded
-            && (int)interesting_data_point.max_idp_count == GCInterfaceOffsets.max_idp_count;
+            && (int)interesting_data_point.max_idp_count == GCInterfaceOffsets.max_idp_count
+#if USE_REGIONS
+            && (int)free_region_kind.basic_free_region == GCInterfaceOffsets.basic_free_region
+            && (int)free_region_kind.large_free_region == GCInterfaceOffsets.large_free_region
+            && (int)free_region_kind.count_distributed_free_region_kinds == GCInterfaceOffsets.count_distributed_free_region_kinds
+            && (int)free_region_kind.huge_free_region == GCInterfaceOffsets.huge_free_region
+            && (int)free_region_kind.count_free_region_kinds == GCInterfaceOffsets.count_free_region_kinds
+#endif
+            ;
 
         private static bool VerifyGCRecordEnums() =>
             (int)gc_reason.reason_alloc_soh == GCInterfaceOffsets.reason_alloc_soh
