@@ -683,10 +683,36 @@ namespace Internal.Runtime.GarbageCollection
             byte* committed = heap_segment.heap_segment_committed(region);
             return (nuint)(committed - start);
         }
+
+        public static region_allocator global_region_allocator;
 #endif
     }
 
 #if USE_REGIONS
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct region_allocator
+    {
+        public const int LARGE_REGION_FACTOR = 8;
+
+        private byte* global_region_start;
+        private byte* global_region_end;
+        private byte* global_region_left_used;
+        private byte* global_region_right_used;
+        private uint total_free_units;
+        private nuint region_alignment;
+        private nuint large_region_alignment;
+
+        public void initialize_alignment(nuint alignment)
+        {
+            region_alignment = alignment;
+            large_region_alignment = (nuint)LARGE_REGION_FACTOR * alignment;
+        }
+
+        public nuint get_region_alignment() => region_alignment;
+
+        public nuint get_large_region_alignment() => large_region_alignment;
+    }
+
     internal enum free_region_kind
     {
         basic_free_region = 0,
@@ -905,6 +931,67 @@ namespace Internal.Runtime.GarbageCollection
             rfl->size_committed_in_free_regions -= regionCommittedSize;
         }
 
+        private static free_region_kind get_region_kind(heap_segment* region)
+        {
+            nuint BASIC_REGION_SIZE = gc_heap.global_region_allocator.get_region_alignment();
+            nuint LARGE_REGION_SIZE = gc_heap.global_region_allocator.get_large_region_alignment();
+            nuint region_size = gc_heap.get_region_size(region);
+
+            if (region_size == BASIC_REGION_SIZE)
+            {
+                return free_region_kind.basic_free_region;
+            }
+            else if (region_size == LARGE_REGION_SIZE)
+            {
+                return free_region_kind.large_free_region;
+            }
+            else
+            {
+                Debug.Assert(region_size > LARGE_REGION_SIZE);
+                return free_region_kind.huge_free_region;
+            }
+        }
+
+        public static heap_segment* unlink_smallest_region(region_free_list* inst, nuint minimum_size)
+        {
+            verify(inst, inst->num_free_regions == 0);
+
+            heap_segment* smallest_region = null;
+            nuint smallest_size = nuint.MaxValue;
+            nuint LARGE_REGION_SIZE = gc_heap.global_region_allocator.get_large_region_alignment();
+            for (heap_segment* region = inst->head_free_region; region is not null; region = heap_segment.heap_segment_next(region))
+            {
+                byte* region_start = gc_heap.get_region_start(region);
+                byte* region_end = heap_segment.heap_segment_reserved(region);
+                _ = region_start;
+                _ = region_end;
+
+                nuint region_size = gc_heap.get_region_size(region);
+                Debug.Assert(region_size >= LARGE_REGION_SIZE * 2);
+                if (region_size >= minimum_size)
+                {
+                    if (smallest_size > region_size)
+                    {
+                        smallest_size = region_size;
+                        smallest_region = region;
+                    }
+
+                    if (region_size == LARGE_REGION_SIZE * 2)
+                    {
+                        Debug.Assert(region == smallest_region);
+                        break;
+                    }
+                }
+            }
+
+            if (smallest_region is not null)
+            {
+                unlink_region(smallest_region);
+            }
+
+            return smallest_region;
+        }
+
         public static void transfer_regions(region_free_list* inst, region_free_list* from)
         {
             verify(inst, inst->num_free_regions == 0);
@@ -952,6 +1039,25 @@ namespace Internal.Runtime.GarbageCollection
             verify(inst, inst->num_free_regions == 0);
 #endif
             return inst->num_free_regions;
+        }
+
+        public static void add_region(heap_segment* region, region_free_list* to_free_list)
+        {
+            free_region_kind kind = get_region_kind(region);
+            add_region_front(&to_free_list[(int)kind], region);
+        }
+
+        public static void add_region_descending(heap_segment* region, region_free_list* to_free_list)
+        {
+            free_region_kind kind = get_region_kind(region);
+            add_region_in_descending_order(&to_free_list[(int)kind], region);
+        }
+
+        public static bool is_on_free_list(heap_segment* region, region_free_list* free_list)
+        {
+            region_free_list* rfl = heap_segment.heap_segment_containing_free_list(region);
+            free_region_kind kind = get_region_kind(region);
+            return rfl == &free_list[(int)kind];
         }
 
         public nuint get_size_committed_in_free() => size_committed_in_free_regions;

@@ -800,11 +800,14 @@ Translate the schema from `gcpriv.h` and related headers:
   dependency-free accessor/predicate. `gc_heap` remains opaque because this slice only needs its
   pointer. `region_free_list` now has its native bookkeeping layout and the dependency-closed
   list-management core from `region_free_list.cpp` (reset/add/unlink/transfer/aging/sort and
-  region-size accounting over `heap_segment`); the `get_region_kind` and free-list-family dispatch
-  helpers are deferred with `region_allocator.cpp`, where `global_region_allocator` arrives.
-  `unlink_smallest_region` is deferred there too because its native minimum-size assertion and
-  early exit depend on that allocator's large-region alignment. `thread_free_obj` remains deferred
-  with the free-list object representation. The schema forks on `USE_REGIONS` -- the region layout
+  region-size accounting over `heap_segment`). A minimal `region_allocator` prefix from
+  `gcpriv.h` is also present through `region_alignment` and `large_region_alignment`, with
+  `gc_heap.global_region_allocator` carrying the active values. That unlocks
+  `region_free_list`'s deferred `get_region_kind`, dispatch
+  wrappers (`add_region`, `add_region_descending`, `is_on_free_list`), and
+  `unlink_smallest_region` with its native large-region assertion and early-break flow.
+  `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
+  `USE_REGIONS` -- the region layout
   replaces `allocation_start`/`plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`
   -- which reduces from gcpriv.h's `HOST_64BIT && (!HOST_APPLE || HOST_OSX)` to 64-bit AND not an
   Apple mobile platform for this integrated port, computed once as a build symbol; the two trailing
@@ -832,7 +835,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_free_list.cpp` list-management core translated**
+**Status: In progress -- `region_free_list.cpp` helpers unblocked by minimal `region_allocator` alignment slice**
 
 Translate:
 
@@ -847,9 +850,14 @@ Done so far:
   add/unlink front, descending insertion, transfer, age increment, and committed-size/age merge
   sort), plus the adjacent `get_region_start` / `get_region_size` /
   `get_region_committed_size` helpers from `gcinternal.h` that those methods depend on.
-- Deferred with `region_allocator.cpp`: `get_region_kind`, and the kind-indexed helper wrappers
-  (`add_region`, `add_region_descending`, `is_on_free_list`) plus `unlink_smallest_region`, which
-  require `global_region_allocator` alignment data.
+- `region_allocator.cpp/gcpriv.h` alignment/configuration prerequisite slice: the exact native
+  field prefix through `region_alignment` / `large_region_alignment`, their getters,
+  `LARGE_REGION_FACTOR`, and `gc_heap.global_region_allocator` as the managed state carrier.
+- Remaining `region_free_list.cpp` helpers previously blocked on that prerequisite:
+  `get_region_kind`, `add_region`, `add_region_descending`, `is_on_free_list`, and
+  `unlink_smallest_region` with native large-region assertion and early-break behavior.
+- Still deferred from `region_allocator.cpp`: map reservation/state, allocation/deallocation
+  algorithms, lock and callback paths, and end-allocation fallback logic.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

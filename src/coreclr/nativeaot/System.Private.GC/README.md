@@ -242,11 +242,15 @@ server-only heap and decommit branches, the debug non-region saved fields, nativ
 an opaque unmanaged declaration because this slice only stores its pointer. `region_free_list` now
 has its native bookkeeping layout and the dependency-closed list-management core from
 `region_free_list.cpp` (reset/add/unlink/transfer/aging/sort plus region-size accounting over
-`heap_segment`). The `get_region_kind` and free-list-family dispatch helpers are still deferred
-with `region_allocator.cpp`, where `global_region_allocator` arrives; `unlink_smallest_region`
-is deferred there too because its native minimum-size assertion and early exit depend on that
-allocator's large-region alignment. `thread_free_obj` remains deferred with the free-list object
-representation. The schema forks on `USE_REGIONS`,
+`heap_segment`). A minimal `region_allocator` prefix from `gcpriv.h` is now present too, through
+the `region_alignment` and `large_region_alignment` fields and their getters, with
+`gc_heap.global_region_allocator` as its state carrier. That unlocks the
+remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
+(`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
+its native large-region minimum assertion and early-break control flow. The full allocator map,
+reservation, and allocation/deletion algorithms of `region_allocator.cpp` remain deferred.
+`thread_free_obj` remains deferred with the free-list object representation. The schema forks on
+`USE_REGIONS`,
 gcpriv.h's region layout that replaces
 `allocation_start` and `plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`.
 gcpriv.h defines `USE_REGIONS` as `HOST_64BIT && !BUILD_AS_STANDALONE && !__sun && (!HOST_APPLE ||

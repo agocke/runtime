@@ -1199,6 +1199,7 @@ namespace Internal.Runtime.GarbageCollection
             && (int)interesting_data_point.idp_post_short_padded == GCInterfaceOffsets.idp_post_short_padded
             && (int)interesting_data_point.max_idp_count == GCInterfaceOffsets.max_idp_count
 #if USE_REGIONS
+            && region_allocator.LARGE_REGION_FACTOR == GCInterfaceOffsets.LARGE_REGION_FACTOR
             && (int)free_region_kind.basic_free_region == GCInterfaceOffsets.basic_free_region
             && (int)free_region_kind.large_free_region == GCInterfaceOffsets.large_free_region
             && (int)free_region_kind.count_distributed_free_region_kinds == GCInterfaceOffsets.count_distributed_free_region_kinds

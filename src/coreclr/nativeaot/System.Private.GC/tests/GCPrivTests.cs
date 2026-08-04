@@ -1939,6 +1939,93 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void RegionAllocatorAlignmentSliceComputesLargeRegionFactor()
+    {
+        gc_heap.global_region_allocator.initialize_alignment(0x1000);
+
+        Assert.Equal(8, region_allocator.LARGE_REGION_FACTOR);
+        Assert.Equal((nuint)0x1000, gc_heap.global_region_allocator.get_region_alignment());
+        Assert.Equal((nuint)(region_allocator.LARGE_REGION_FACTOR * 0x1000), gc_heap.global_region_allocator.get_large_region_alignment());
+    }
+
+    [Fact]
+    public void RegionFreeListKindDispatchHelpersUseGlobalAllocatorAlignment()
+    {
+        gc_heap.global_region_allocator.initialize_alignment(0x1000);
+
+        region_free_list* lists = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        heap_segment basic = default;
+        heap_segment large = default;
+        heap_segment huge = default;
+
+        InitializeRegion(&basic, 0x1000, 0x1800, 0x2000, age: 0);
+        InitializeRegion(&large, 0x3000, 0x5800, 0xB000, age: 0);
+        InitializeRegion(&huge, 0xC000, 0xE000, 0x17000, age: 0);
+
+        region_free_list.add_region(&basic, lists);
+        region_free_list.add_region(&large, lists);
+        region_free_list.add_region(&huge, lists);
+
+        Assert.Equal((nuint)1, region_free_list.get_num_free_regions(&lists[(int)free_region_kind.basic_free_region]));
+        Assert.Equal((nuint)1, region_free_list.get_num_free_regions(&lists[(int)free_region_kind.large_free_region]));
+        Assert.Equal((nuint)1, region_free_list.get_num_free_regions(&lists[(int)free_region_kind.huge_free_region]));
+        Assert.True(region_free_list.is_on_free_list(&basic, lists));
+        Assert.True(region_free_list.is_on_free_list(&large, lists));
+        Assert.True(region_free_list.is_on_free_list(&huge, lists));
+        Assert.False(region_free_list.is_on_free_list(&basic, &lists[(int)free_region_kind.large_free_region]));
+    }
+
+    [Fact]
+    public void RegionFreeListAddRegionDescendingDispatchesByKind()
+    {
+        gc_heap.global_region_allocator.initialize_alignment(0x1000);
+
+        region_free_list* lists = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        heap_segment lessCommitted = default;
+        heap_segment moreCommitted = default;
+
+        InitializeRegion(&lessCommitted, 0x10000, 0x12000, 0x18000, age: 7);
+        InitializeRegion(&moreCommitted, 0x20000, 0x26000, 0x28000, age: 3);
+
+        region_free_list.add_region_descending(&lessCommitted, lists);
+        region_free_list.add_region_descending(&moreCommitted, lists);
+
+        region_free_list* largeList = &lists[(int)free_region_kind.large_free_region];
+        Assert.Equal((nuint)2, region_free_list.get_num_free_regions(largeList));
+        Assert.Equal((nuint)(&moreCommitted), (nuint)largeList->get_first_free_region());
+        Assert.Equal((nuint)(&lessCommitted), (nuint)heap_segment.heap_segment_next(&moreCommitted));
+        Assert.True(region_free_list.is_on_free_list(&moreCommitted, lists));
+        Assert.True(region_free_list.is_on_free_list(&lessCommitted, lists));
+    }
+
+    [Fact]
+    public void RegionFreeListUnlinkSmallestRegionUsesLargeAlignmentMinimum()
+    {
+        gc_heap.global_region_allocator.initialize_alignment(0x1000);
+
+        nuint largeSize = gc_heap.global_region_allocator.get_large_region_alignment();
+        region_free_list list = default;
+        region_free_list* pList = &list;
+        heap_segment twoLarge = default;
+        heap_segment threeLarge = default;
+        heap_segment fourLarge = default;
+
+        InitializeRegion(&twoLarge, 0x100000, 0x118000, 0x100000 + (2 * largeSize), age: 0);
+        InitializeRegion(&threeLarge, 0x200000, 0x225000, 0x200000 + (3 * largeSize), age: 0);
+        InitializeRegion(&fourLarge, 0x300000, 0x330000, 0x300000 + (4 * largeSize), age: 0);
+
+        region_free_list.add_region_front(pList, &fourLarge);
+        region_free_list.add_region_front(pList, &twoLarge);
+        region_free_list.add_region_front(pList, &threeLarge);
+
+        heap_segment* selected = region_free_list.unlink_smallest_region(pList, largeSize);
+
+        Assert.Equal((nuint)(&twoLarge), (nuint)selected);
+        Assert.Equal((nuint)2, region_free_list.get_num_free_regions(pList));
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_containing_free_list(&twoLarge));
+    }
+
+    [Fact]
     public void RegionFreeListTransferAndAgeArrayPreserveOwnershipAndCap()
     {
         region_free_list* lists = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
