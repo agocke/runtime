@@ -564,6 +564,121 @@ public sealed unsafe class GCVirtualMemoryTests
     }
 
     [Fact]
+    [Trait("Category", "GetNewRegion")]
+    public void GetNewRegionThreadsUohTailSetsFlagsAndLeavesStateOnFailure()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        nuint largeRegionSize = region_allocator.LARGE_REGION_FACTOR * pageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(32 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 32 * pageSize, pageSize);
+        try
+        {
+            short* bricks = stackalloc short[32];
+            gc_heap.brick_table = bricks;
+#if BACKGROUND_GC
+            gc_heap.lowest_address = reservation;
+            gc_heap.highest_address = reservation + (nint)(32 * pageSize);
+#endif
+
+            heap_segment* lohFree = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.loh_generation,
+                uoh_p: true,
+                largeRegionSize);
+            heap_segment* pohFree = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.poh_generation,
+                uoh_p: true,
+                largeRegionSize);
+            Assert.True(lohFree != null);
+            Assert.True(pohFree != null);
+            nuint lohCommitted = gc_heap.get_region_committed_size(lohFree);
+            gc_heap.committed_by_oh[(int)gc_oh_num.loh] -= lohCommitted;
+            gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] += lohCommitted;
+            region_free_list.add_region(
+                lohFree,
+                gc_heap.free_regions_of((int)free_region_kind.basic_free_region));
+            Assert.Equal(largeRegionSize, gc_heap.global_region_allocator.get_large_region_alignment());
+            Assert.Equal((nuint)1, region_free_list.get_num_free_regions(
+                gc_heap.free_regions_of((int)free_region_kind.large_free_region)));
+
+            generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generation.initialize(&generations[i]);
+            }
+
+            heap_segment lohInitial = default;
+            heap_segment pohInitial = default;
+            heap_segment sohInitial = default;
+            gc_heap.make_generation(
+                generations,
+                (int)gc_generation_num.loh_generation,
+                &lohInitial,
+                (byte*)0x1000);
+            gc_heap.make_generation(
+                generations,
+                (int)gc_generation_num.poh_generation,
+                &pohInitial,
+                (byte*)0x2000);
+            gc_heap.make_generation(
+                generations,
+                (int)gc_generation_num.soh_gen0,
+                &sohInitial,
+                (byte*)0x3000);
+
+            heap_segment* loh = gc_heap.get_new_region(
+                generations,
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.loh_generation,
+                largeRegionSize);
+
+            nuint pohCommitted = gc_heap.get_region_committed_size(pohFree);
+            gc_heap.committed_by_oh[(int)gc_oh_num.poh] -= pohCommitted;
+            gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] += pohCommitted;
+            region_free_list.add_region(
+                pohFree,
+                gc_heap.free_regions_of((int)free_region_kind.basic_free_region));
+            heap_segment* poh = gc_heap.get_new_region(
+                generations,
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.poh_generation,
+                largeRegionSize);
+
+            Assert.Equal((nuint)lohFree, (nuint)loh);
+            Assert.Equal((nuint)pohFree, (nuint)poh);
+            Assert.Equal(1, heap_segment.heap_segment_loh_p(loh));
+            Assert.Equal(0, heap_segment.heap_segment_poh_p(loh));
+            Assert.Equal(0, heap_segment.heap_segment_loh_p(poh));
+            Assert.Equal(1, heap_segment.heap_segment_poh_p(poh));
+            Assert.Equal((nuint)loh, (nuint)heap_segment.heap_segment_next(&lohInitial));
+            Assert.Equal((nuint)poh, (nuint)heap_segment.heap_segment_next(&pohInitial));
+            Assert.Equal((nuint)loh, (nuint)generation.generation_tail_region(
+                gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation)));
+            Assert.Equal((nuint)poh, (nuint)generation.generation_tail_region(
+                gc_heap.generation_of(generations, (int)gc_generation_num.poh_generation)));
+
+            gc_heap.heap_hard_limit = gc_heap.current_total_committed + pageSize - 1;
+            heap_segment* failed = gc_heap.get_new_region(
+                generations,
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.soh_gen0);
+
+            Assert.True(failed is null);
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(&sohInitial));
+            Assert.Equal((nuint)(&sohInitial), (nuint)generation.generation_tail_region(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0)));
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 32 * pageSize);
+        }
+    }
+
+    [Fact]
     [Trait("Category", "GetFreeRegion")]
     public void GetFreeRegionSelectsLocalHugeBeforeGlobalHugeUnderGcLock()
     {

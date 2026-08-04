@@ -379,8 +379,7 @@ region: it reserves the card/brick/generation-map/segment-map/mark-array layout,
 required card-through-segment-map range with page boundaries, rolls back partial commits, tracks
 the committed coverage and per-element sizes, and retries a failed speculative doubling at the
 minimum range. The table pointers are initialized before the translated card table is published;
-write-barrier stomping remains with the later collector initialization that owns it. UOH flags
-remain the responsibility of the deferred `get_new_region` caller, as in C++. `init_heap_segment`
+write-barrier stomping remains with the later collector initialization that owns it. `init_heap_segment`
 mechanically resets segment allocation state, preserves only an existing region's
 mark-array-committed flag, clamps the region generation, and initializes large-region
 continuation sentinels. `init_table_for_region`
@@ -400,6 +399,14 @@ lock or a synthetic success path. This WKS project does not define `MULTIPLE_HEA
 per-heap accounting/debug branch and cross-heap free-region work remain deferred with the server
 collector. As in C++, this path does not set LOH/POH flags: deferred generation-threading callers
 own those flags.
+The next construction/threading slice adds the raw contiguous generation-table accessor,
+`make_generation` from `init.cpp`, read-only-skipping segment traversal, `thread_uoh_segment`,
+and `get_new_region` from `plan_phase.cpp`. It resets allocation/free-list state while retaining
+the generation's initialized allocator shape, wires start/allocation/tail segments, preserves
+append order, and assigns LOH/POH flags at the native `get_new_region` owner before publishing
+the new tail. The initial SOH/UOH constructors remain deferred: their `initial_regions`
+reservation table and production/destruction lifecycle have not been ported, so no synthetic
+success path was introduced.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Port of the dependency-closed WKS USE_REGIONS helpers from regions_segments.cpp,
-// plan_phase.cpp, background.cpp, diagnostics.cpp, and gc.cpp.
+// Port of the dependency-closed WKS USE_REGIONS helpers from init.cpp,
+// regions_segments.cpp, plan_phase.cpp, background.cpp, diagnostics.cpp, and gc.cpp.
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -622,6 +622,118 @@ internal unsafe partial struct gc_heap
         }
 
         return region;
+    }
+
+    public static generation* generation_of(generation* generation_table, int n)
+    {
+        Debug.Assert(n < (int)gc_generation_num.total_generation_count && n >= 0);
+        return generation_table + n;
+    }
+
+    public static void make_generation(generation* generation_table, int gen_num, heap_segment* seg, byte* start)
+    {
+        generation* gen = generation_of(generation_table, gen_num);
+
+        gen->gen_num = gen_num;
+#if !USE_REGIONS
+        gen->allocation_start = start;
+        gen->plan_allocation_start = null;
+#endif
+        gen->allocation_context.alloc_ptr = null;
+        gen->allocation_context.alloc_limit = null;
+        gen->allocation_context.alloc_bytes = 0;
+        gen->allocation_context.alloc_bytes_uoh = 0;
+        gen->allocation_context_start_region = null;
+        gen->start_segment = seg;
+
+#if USE_REGIONS
+        gen->tail_region = seg;
+        gen->tail_ro_region = null;
+#endif
+        gen->allocation_segment = seg;
+        gen->free_list_space = 0;
+        gen->free_list_allocated = 0;
+        gen->end_seg_allocated = 0;
+        gen->condemned_allocated = 0;
+        gen->sweep_allocated = 0;
+        gen->free_obj_space = 0;
+        gen->allocation_size = 0;
+        gen->pinned_allocation_sweep_size = 0;
+        gen->pinned_allocation_compact_size = 0;
+        gen->allocate_end_seg_p = 0;
+        allocator.clear(&gen->free_list_allocator);
+
+#if TARGET_64BIT && !TARGET_WASM
+        gen->set_bgc_mark_bit_p = 0;
+#endif
+    }
+
+    public static heap_segment* heap_segment_rw(heap_segment* ns)
+    {
+        if (ns is null || heap_segment.heap_segment_read_only_p(ns) == 0)
+        {
+            return ns;
+        }
+
+        do
+        {
+            ns = heap_segment.heap_segment_next(ns);
+        }
+        while (ns is not null && heap_segment.heap_segment_read_only_p(ns) != 0);
+
+        return ns;
+    }
+
+    public static heap_segment* heap_segment_next_rw(heap_segment* seg)
+    {
+        heap_segment* ns = heap_segment.heap_segment_next(seg);
+        return heap_segment_rw(ns);
+    }
+
+    public static void thread_uoh_segment(generation* generation_table, int gen_number, heap_segment* new_seg)
+    {
+        heap_segment* seg = generation.generation_allocation_segment(generation_of(generation_table, gen_number));
+
+        while (heap_segment_next_rw(seg) is not null)
+        {
+            seg = heap_segment_next_rw(seg);
+        }
+
+        heap_segment.heap_segment_next(seg) = new_seg;
+    }
+
+    public static heap_segment* get_new_region(
+        generation* generation_table,
+        gc_heap* hp,
+        int gen_number,
+        nuint size = 0)
+    {
+        heap_segment* new_region = get_free_region(hp, gen_number, size);
+
+        if (new_region is not null)
+        {
+            switch (gen_number)
+            {
+                default:
+                    Debug.Assert((new_region->flags &
+                        (heap_segment.heap_segment_flags_loh | heap_segment.heap_segment_flags_poh)) == 0);
+                    break;
+
+                case (int)gc_generation_num.loh_generation:
+                    new_region->flags |= heap_segment.heap_segment_flags_loh;
+                    break;
+
+                case (int)gc_generation_num.poh_generation:
+                    new_region->flags |= heap_segment.heap_segment_flags_poh;
+                    break;
+            }
+
+            generation* gen = generation_of(generation_table, gen_number);
+            heap_segment.heap_segment_next(generation.generation_tail_region(gen)) = new_region;
+            generation.generation_tail_region(gen) = new_region;
+        }
+
+        return new_region;
     }
 
     public static gc_oh_num gen_to_oh(int gen)

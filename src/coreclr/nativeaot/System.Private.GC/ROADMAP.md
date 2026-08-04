@@ -1024,12 +1024,24 @@ Done so far:
   constructor. The WKS project does not build `MULTIPLE_HEAPS`, so server per-heap accounting
   diagnostics and cross-heap selection remain deferred. LOH/POH flags stay at their native
   deferred generation-threading callers rather than being set by this path.
+- The next dependency-closed WKS construction/threading slice: `generation_of` and
+  `make_generation` from `init.cpp`, `heap_segment_rw` / `heap_segment_next_rw` and
+  `thread_uoh_segment` from `gcpriv.h` / `regions_segments.cpp`, and `get_new_region` from
+  `plan_phase.cpp`. The raw contiguous generation-table parameter represents the still-deferred
+  `gc_heap.generation_table` field without inventing a partial heap layout. Construction retains
+  the initialized allocator shape while clearing all native allocation/free-list state, assigns
+  generation numbers and start/allocation/tail segment fields, and preserves the WKS
+  `DOUBLY_LINKED_FL` reset. Threading skips read-only segments and retains native append order.
+  `get_new_region` assigns LOH/POH flags at their native owner before linking and publishing the
+  UOH tail, and retains the null failure path without changing the generation list. Initial
+  SOH/UOH construction remains explicitly deferred because `initial_regions`, its reservation
+  producer, and destruction lifecycle are not represented; no success stub was added.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
-  mutable read-only segment list operations, generation threading, full heap-segment deletion, and free-region
+  mutable read-only segment list operations, full heap-segment deletion, and free-region
   distribution.
   The dependent allocation helpers remain blocked on region allocation and generation
   construction.

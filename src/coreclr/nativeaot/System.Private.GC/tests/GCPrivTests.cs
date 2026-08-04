@@ -1495,6 +1495,117 @@ public sealed unsafe class GCPrivTests
 
 #if USE_REGIONS
     [Fact]
+    public void MakeGenerationResetsSohStateAndPreservesListPointers()
+    {
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation.initialize(&generations[i]);
+        }
+
+        heap_segment segment = default;
+        heap_segment.heap_segment_mem(&segment) = (byte*)0x1000;
+        generation* gen = &generations[(int)gc_generation_num.soh_gen1];
+        gen->allocation_context.alloc_ptr = (byte*)0x1;
+        gen->allocation_context.alloc_limit = (byte*)0x2;
+        gen->allocation_context.alloc_bytes = 3;
+        gen->allocation_context.alloc_bytes_uoh = 4;
+        gen->allocation_context_start_region = (byte*)0x5;
+        gen->start_segment = (heap_segment*)0x6;
+        gen->tail_region = (heap_segment*)0x7;
+        gen->tail_ro_region = (heap_segment*)0x8;
+        gen->allocation_segment = (heap_segment*)0x9;
+        gen->free_list_space = 10;
+        gen->free_list_allocated = 11;
+        gen->end_seg_allocated = 12;
+        gen->condemned_allocated = 13;
+        gen->sweep_allocated = 14;
+        gen->free_obj_space = 15;
+        gen->allocation_size = 16;
+        gen->pinned_allocation_sweep_size = 17;
+        gen->pinned_allocation_compact_size = 18;
+        gen->allocate_end_seg_p = 1;
+#if TARGET_64BIT && !TARGET_WASM
+        gen->set_bgc_mark_bit_p = 1;
+#endif
+        allocator.alloc_list_head_of(&gen->free_list_allocator, 0) = (byte*)0xA;
+        allocator.alloc_list_tail_of(&gen->free_list_allocator, 0) = (byte*)0xB;
+
+        gc_heap.make_generation(
+            generations,
+            (int)gc_generation_num.soh_gen1,
+            &segment,
+            heap_segment.heap_segment_mem(&segment));
+
+        Assert.Equal((int)gc_generation_num.soh_gen1, gen->gen_num);
+        Assert.Equal((nuint)0, (nuint)gen->allocation_context.alloc_ptr);
+        Assert.Equal((nuint)0, (nuint)gen->allocation_context.alloc_limit);
+        Assert.Equal(0L, gen->allocation_context.alloc_bytes);
+        Assert.Equal(0L, gen->allocation_context.alloc_bytes_uoh);
+        Assert.Equal((nuint)0, (nuint)gen->allocation_context_start_region);
+        Assert.Equal((nuint)(&segment), (nuint)gen->start_segment);
+        Assert.Equal((nuint)(&segment), (nuint)gen->tail_region);
+        Assert.Equal((nuint)0, (nuint)gen->tail_ro_region);
+        Assert.Equal((nuint)(&segment), (nuint)gen->allocation_segment);
+        Assert.Equal((nuint)0, gen->free_list_space);
+        Assert.Equal((nuint)0, gen->free_list_allocated);
+        Assert.Equal((nuint)0, gen->end_seg_allocated);
+        Assert.Equal((nuint)0, gen->condemned_allocated);
+        Assert.Equal((nuint)0, gen->sweep_allocated);
+        Assert.Equal((nuint)0, gen->free_obj_space);
+        Assert.Equal((nuint)0, gen->allocation_size);
+        Assert.Equal((nuint)0, gen->pinned_allocation_sweep_size);
+        Assert.Equal((nuint)0, gen->pinned_allocation_compact_size);
+        Assert.Equal(0, gen->allocate_end_seg_p);
+#if TARGET_64BIT && !TARGET_WASM
+        Assert.Equal(0, gen->set_bgc_mark_bit_p);
+#endif
+        Assert.Equal((nuint)0, (nuint)allocator.alloc_list_head_of(&gen->free_list_allocator, 0));
+        Assert.Equal((nuint)0, (nuint)allocator.alloc_list_tail_of(&gen->free_list_allocator, 0));
+    }
+
+    [Fact]
+    public void ThreadUohSegmentAppendsAfterEmptyAndNonemptyWritableLists()
+    {
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation.initialize(&generations[i]);
+        }
+
+        heap_segment first = default;
+        heap_segment second = default;
+        heap_segment third = default;
+        heap_segment fourth = default;
+        heap_segment readOnly = default;
+        readOnly.flags = heap_segment.heap_segment_flags_readonly;
+        heap_segment.heap_segment_next(&readOnly) = &third;
+
+        gc_heap.make_generation(
+            generations,
+            (int)gc_generation_num.loh_generation,
+            &first,
+            (byte*)0x1000);
+        generation* loh = gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation);
+
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(&first));
+        gc_heap.thread_uoh_segment(generations, (int)gc_generation_num.loh_generation, &second);
+        Assert.Equal((nuint)(&second), (nuint)heap_segment.heap_segment_next(&first));
+        Assert.Equal((nuint)(&first), (nuint)generation.generation_allocation_segment(loh));
+
+        heap_segment.heap_segment_next(&second) = &readOnly;
+        Assert.Equal((nuint)(&third), (nuint)gc_heap.heap_segment_next_rw(&second));
+        gc_heap.thread_uoh_segment(generations, (int)gc_generation_num.loh_generation, &fourth);
+
+        Assert.Equal((nuint)(&readOnly), (nuint)heap_segment.heap_segment_next(&second));
+        Assert.Equal((nuint)(&third), (nuint)heap_segment.heap_segment_next(&readOnly));
+        Assert.Equal((nuint)(&fourth), (nuint)heap_segment.heap_segment_next(&third));
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(&fourth));
+    }
+#endif
+
+#if USE_REGIONS
+    [Fact]
     public void GenerationRegionInfoHasTwoSegmentPointers()
     {
         generation_region_info info = default;
