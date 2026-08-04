@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Port of the dependency-closed address/commit accounting helpers from memory.cpp.
+// Port of the dependency-closed WKS region memory helpers from memory.cpp.
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -11,6 +11,8 @@ namespace Internal.Runtime.GarbageCollection;
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
 internal unsafe partial struct gc_heap
 {
+    public const nuint DECOMMIT_SIZE_PER_MILLISECOND = 160 * 1024;
+
     public const int total_oh_count = (int)gc_oh_num.poh + 1;
 
 #if USE_REGIONS
@@ -44,6 +46,29 @@ internal unsafe partial struct gc_heap
     public static nuint heap_hard_limit;
     public static object_heap_array heap_hard_limit_oh;
     public static bool never_decommit_p;
+    public static gc_mechanisms settings;
+
+#if USE_REGIONS
+    [InlineArray((int)free_region_kind.count_free_region_kinds)]
+    internal struct region_free_list_array
+    {
+        private region_free_list _element0;
+    }
+
+    public static region_free_list_array global_regions_to_decommit;
+
+    public static region_free_list* global_regions_to_decommit_of(int kind)
+    {
+        Debug.Assert(kind >= (int)free_region_kind.basic_free_region && kind < (int)free_region_kind.count_free_region_kinds);
+        return (region_free_list*)Unsafe.AsPointer(ref global_regions_to_decommit[kind]);
+    }
+#endif
+
+#if BACKGROUND_GC
+    public static byte* lowest_address;
+    public static byte* highest_address;
+    public static uint* mark_array;
+#endif
 
     public static bool virtual_alloc_commit_for_heap(void* addr, nuint size, int h_number)
     {
@@ -189,7 +214,7 @@ internal unsafe partial struct gc_heap
         }
     }
 
-    public static bool virtual_decommit(void* address, nuint size, int bucket, int h_number)
+    public static bool virtual_decommit(void* address, nuint size, int bucket, int h_number = -1)
     {
         /*
          * Here are all possible cases for the decommits:
@@ -221,5 +246,180 @@ internal unsafe partial struct gc_heap
             reserved_memory = unchecked(reserved_memory - allocated_size);
         }
     }
+
+    public static nuint align_on_page(nuint add)
+    {
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        return unchecked((add + pageSize - 1) & ~(pageSize - 1));
+    }
+
+    public static byte* align_on_page(byte* add)
+    {
+        return (byte*)align_on_page((nuint)add);
+    }
+
+    public static nuint align_lower_page(nuint add)
+    {
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        return add & ~(pageSize - 1);
+    }
+
+    public static byte* align_lower_page(byte* add)
+    {
+        return (byte*)align_lower_page((nuint)add);
+    }
+
+    public static void memclr(byte* mem, nuint size)
+    {
+        Debug.Assert((size & ((nuint)sizeof(nuint) - 1)) == 0);
+        GCCommon.MemSet(mem, 0, size);
+    }
+
+#if BACKGROUND_GC
+    public static byte* get_start_address(heap_segment* seg)
+    {
+#if USE_REGIONS
+        byte* start = heap_segment.heap_segment_mem(seg);
+#else
+        byte* start = heap_segment.heap_segment_read_only_p(seg) != 0 ? heap_segment.heap_segment_mem(seg) : (byte*)seg;
+#endif
+        return start;
+    }
+
+    public static void decommit_mark_array_by_seg(heap_segment* seg)
+    {
+        // if BGC is disabled (the finalize watchdog does this at shutdown), the mark array could have
+        // been set to NULL.
+        if (mark_array is null)
+        {
+            return;
+        }
+
+        nuint flags = seg->flags;
+
+        if ((flags & heap_segment.heap_segment_flags_ma_committed) != 0 ||
+            (flags & heap_segment.heap_segment_flags_ma_pcommitted) != 0)
+        {
+            byte* start = get_start_address(seg);
+            byte* end = heap_segment.heap_segment_reserved(seg);
+
+            if ((flags & heap_segment.heap_segment_flags_ma_pcommitted) != 0)
+            {
+                start = lowest_address > start ? lowest_address : start;
+                end = highest_address < end ? highest_address : end;
+            }
+
+            nuint beg_word = card_table_info.mark_word_of(start);
+            nuint end_word = card_table_info.mark_word_of(card_table_info.align_on_mark_word(end));
+            byte* decommit_start = align_on_page((byte*)&mark_array[(nint)beg_word]);
+            byte* decommit_end = align_lower_page((byte*)&mark_array[(nint)end_word]);
+            nuint size = (nuint)(decommit_end - decommit_start);
+
+            if (decommit_start < decommit_end)
+            {
+                bool decommitted = virtual_decommit(decommit_start, size, recorded_committed_mark_array_bucket);
+                Debug.Assert(decommitted);
+            }
+        }
+    }
+#endif
+
+#if USE_REGIONS
+    // return true if we actually decommitted anything
+    public static bool decommit_step(ulong step_milliseconds)
+    {
+        if (settings.pause_mode == gc_pause_mode.pause_no_gc)
+        {
+            // don't decommit at all if we have entered a no gc region
+            return false;
+        }
+
+        nuint decommit_size = 0;
+
+        nuint max_decommit_step_size = unchecked(DECOMMIT_SIZE_PER_MILLISECOND * (nuint)step_milliseconds);
+        for (int kind = (int)free_region_kind.basic_free_region;
+             kind < (int)free_region_kind.count_free_region_kinds;
+             kind++)
+        {
+            region_free_list* regions_to_decommit = global_regions_to_decommit_of(kind);
+            while (region_free_list.get_num_free_regions(regions_to_decommit) > 0)
+            {
+                heap_segment* region = region_free_list.unlink_region_front(regions_to_decommit);
+                nuint size = decommit_region(region, recorded_committed_free_bucket, -1);
+                decommit_size += size;
+                if (decommit_size >= max_decommit_step_size)
+                {
+                    return true;
+                }
+            }
+        }
+
+        if (never_decommit_p)
+        {
+            return decommit_size != 0;
+        }
+
+        return decommit_size != 0;
+    }
+
+    public static nuint decommit_region(heap_segment* region, int bucket, int h_number)
+    {
+        GCEvents.GCEventFireGCFreeSegment_V1(heap_segment.heap_segment_mem(region));
+        byte* page_start = align_lower_page(get_region_start(region));
+        byte* decommit_end = heap_segment.heap_segment_committed(region);
+        nuint decommit_size = (nuint)(decommit_end - page_start);
+        bool decommit_succeeded_p;
+        if (never_decommit_p)
+        {
+            // VirtualDecommit is a no-op when never_decommit_p is set, so skip it and
+            // update committed bookkeeping directly. Memory clearing is handled below.
+            decommit_succeeded_p = true;
+            reduce_committed_bytes(page_start, decommit_size, bucket, h_number, true);
+        }
+        else
+        {
+            decommit_succeeded_p = virtual_decommit(page_start, decommit_size, bucket, h_number);
+        }
+
+        bool require_clearing_memory_p = !decommit_succeeded_p || never_decommit_p;
+        if (require_clearing_memory_p)
+        {
+            byte* clear_end = never_decommit_p ? heap_segment.heap_segment_used(region) : heap_segment.heap_segment_committed(region);
+            nuint clear_size = (nuint)(clear_end - page_start);
+            memclr(page_start, clear_size);
+            heap_segment.heap_segment_used(region) = heap_segment.heap_segment_mem(region);
+        }
+        else
+        {
+            heap_segment.heap_segment_committed(region) = heap_segment.heap_segment_mem(region);
+        }
+
+#if BACKGROUND_GC
+        // Under USE_REGIONS, mark array is never partially committed. So we are only checking for this
+        // flag here.
+        if ((region->flags & heap_segment.heap_segment_flags_ma_committed) != 0)
+        {
+            decommit_mark_array_by_seg(region);
+            region->flags &= ~heap_segment.heap_segment_flags_ma_committed;
+        }
+#endif
+
+        if (never_decommit_p)
+        {
+            Debug.Assert(heap_segment.heap_segment_used(region) == heap_segment.heap_segment_mem(region));
+        }
+        else
+        {
+            Debug.Assert(heap_segment.heap_segment_committed(region) == heap_segment.heap_segment_mem(region));
+        }
+#if BACKGROUND_GC
+        Debug.Assert((region->flags & heap_segment.heap_segment_flags_ma_committed) == 0);
+#endif
+
+        global_region_allocator.delete_region(get_region_start(region));
+
+        return decommit_size;
+    }
+#endif
 }
 #pragma warning restore CS8981

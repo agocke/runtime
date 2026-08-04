@@ -55,6 +55,7 @@ internal static unsafe partial class GCToOSInterface
     internal static int VirtualFreeCount;
 
     internal static int VirtualUnlockCount;
+    internal static int ForceVirtualDecommitFailureCount;
 
     internal struct WriteWatchCall
     {
@@ -104,6 +105,7 @@ internal static unsafe partial class GCToOSInterface
         LastVirtualFree = default;
         VirtualFreeCount = 0;
         VirtualUnlockCount = 0;
+        ForceVirtualDecommitFailureCount = 0;
         LastResetWriteWatch = default;
         ResetWriteWatchCount = 0;
         LastGetWriteWatch = default;
@@ -145,6 +147,20 @@ internal static unsafe partial class GCToOSInterface
 
     private static int VirtualFree(void* lpAddress, nuint dwSize, uint dwFreeType)
     {
+        if (ForceVirtualDecommitFailureCount > 0 && dwFreeType == MEM_DECOMMIT)
+        {
+            ForceVirtualDecommitFailureCount--;
+            LastVirtualFree = new VirtualFreeCall
+            {
+                lpAddress = lpAddress,
+                dwSize = dwSize,
+                dwFreeType = dwFreeType,
+                result = 0,
+            };
+            VirtualFreeCount++;
+            return 0;
+        }
+
         int result = sys_VirtualFree(lpAddress, dwSize, dwFreeType);
         LastVirtualFree = new VirtualFreeCall
         {

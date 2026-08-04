@@ -847,7 +847,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, and the first `memory.cpp` commit/accounting helpers are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, and WKS `USE_REGIONS` region decommit are translated**
 
 Translate:
 
@@ -934,11 +934,18 @@ Done so far:
   accounting, the large-page/never-decommit heap-memory bypass, decommit-success gating, and
   release-success-only reserved-memory subtraction. `ManagedGCHeap.Initialize` explicitly
   initializes `check_commit_cs` before heap memory initialization.
+- WKS `USE_REGIONS` region decommit from `memory.cpp`: `decommit_region` and `decommit_step`,
+  plus the real prerequisites they require (`settings.pause_mode`,
+  `global_regions_to_decommit`, page alignment helpers, shared `memset`/`memclr`, the
+  `DECOMMIT_SIZE_PER_MILLISECOND` cadence, and the background-GC mark-array decommit slice
+  used by region cleanup). This preserves GCFreeSegment event timing, exact page-aligned
+  decommit ranges, never-decommit direct accounting, failed-decommit and never-decommit memory
+  clearing extents, used/committed state updates, mark-array committed-flag cleanup and
+  accounting, allocator deletion, and per-step quota/free-list early return.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
-- Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages`, `decommit_step`,
-  `decommit_region`, and `decommit_ephemeral_segment_pages_step`, because they pull in
-  collection settings, ephemeral generations, region/segment decommit targets, and time-based
-  decommit policy.
+- Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
+  `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
+  region/segment decommit targets, and the server-GC decommit-step branch.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

@@ -15,13 +15,12 @@
 // translate. Inventing one would not be a translation of anything, so it is intentionally
 // omitted here.
 //
-// memcpy and memset are Buffer.MemoryCopy and a small chunked wrapper over
-// Unsafe.InitBlockUnaligned respectively: both are allocation-free CoreLib primitives, unlike
-// NativeMemory, which owns memory rather than merely operating on caller-supplied pointers.
+// memcpy and memset are Buffer.MemoryCopy and GCCommon.MemSet respectively: both are
+// allocation-free CoreLib primitives, unlike NativeMemory, which owns memory rather than merely
+// operating on caller-supplied pointers.
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 
 namespace Internal.Runtime.GarbageCollection;
 
@@ -283,7 +282,7 @@ internal static unsafe class SoftwareWriteWatch
         byte* tableBaseAddress;
         nuint tableRegionByteSize;
         TranslateToTableRegion(baseAddress, regionByteSize, &tableBaseAddress, &tableRegionByteSize);
-        MemSet(tableBaseAddress, 0, tableRegionByteSize);
+        GCCommon.MemSet(tableBaseAddress, 0, tableRegionByteSize);
     }
 
     public static void SetDirty(void* address, nuint writeByteSize)
@@ -311,7 +310,7 @@ internal static unsafe class SoftwareWriteWatch
         byte* tableBaseAddress;
         nuint tableRegionByteSize;
         TranslateToTableRegion(baseAddress, regionByteSize, &tableBaseAddress, &tableRegionByteSize);
-        MemSet(tableBaseAddress, 0xff, tableRegionByteSize);
+        GCCommon.MemSet(tableBaseAddress, 0xff, tableRegionByteSize);
     }
 
     private static bool GetDirtyFromBlock(
@@ -523,22 +522,4 @@ internal static unsafe class SoftwareWriteWatch
         }
     }
 
-    /// <summary>
-    /// Fills <paramref name="byteCount"/> bytes at <paramref name="destination"/> with
-    /// <paramref name="value"/>, without allocating. This is the <c>memset</c> that ClearDirty
-    /// and SetDirtyRegion call in the C++; it is chunked because
-    /// <see cref="Unsafe.InitBlockUnaligned(void*, byte, uint)"/> takes a 32 bit count where the
-    /// table region size is a <c>size_t</c>.
-    /// </summary>
-    private static void MemSet(byte* destination, byte value, nuint byteCount)
-    {
-        while (byteCount > uint.MaxValue)
-        {
-            Unsafe.InitBlockUnaligned(destination, value, uint.MaxValue);
-            destination += uint.MaxValue;
-            byteCount -= uint.MaxValue;
-        }
-
-        Unsafe.InitBlockUnaligned(destination, value, (uint)byteCount);
-    }
 }

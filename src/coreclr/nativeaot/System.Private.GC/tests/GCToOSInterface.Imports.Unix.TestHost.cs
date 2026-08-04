@@ -86,6 +86,8 @@ internal static unsafe partial class GCToOSInterface
     internal static RangeCall LastBindMemoryPolicy;
     internal static int BindMemoryPolicyCount;
 
+    internal static int ForceVirtualDecommitFailureCount;
+
     //
     // Sleep and yield. These recordings are deliberately not touched by ResetRecording, so that
     // the sleep and yield tests cannot clobber -- or be clobbered by -- a virtual memory test
@@ -157,6 +159,7 @@ internal static unsafe partial class GCToOSInterface
         MadviseCount = 0;
         LastBindMemoryPolicy = default;
         BindMemoryPolicyCount = 0;
+        ForceVirtualDecommitFailureCount = 0;
     }
 
     [ModuleInitializer]
@@ -171,6 +174,23 @@ internal static unsafe partial class GCToOSInterface
 
     private static void* mmap(void* addr, nuint length, int prot, int flags, int fd, nint offset)
     {
+        if (ForceVirtualDecommitFailureCount > 0 && addr is not null && prot == PROT_NONE && (flags & MAP_FIXED) != 0)
+        {
+            ForceVirtualDecommitFailureCount--;
+            LastMmap = new MmapCall
+            {
+                addr = addr,
+                length = length,
+                prot = prot,
+                flags = flags,
+                fd = fd,
+                offset = offset,
+                result = MAP_FAILED,
+            };
+            MmapCount++;
+            return MAP_FAILED;
+        }
+
         void* result = sys_mmap(addr, length, prot, flags, fd, offset);
         LastMmap = new MmapCall
         {

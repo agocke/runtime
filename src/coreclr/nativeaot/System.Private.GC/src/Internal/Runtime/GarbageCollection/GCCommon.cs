@@ -3,6 +3,8 @@
 
 // Port of the dependency-closed parts of gccommon.cpp, in their original order.
 
+using System.Runtime.CompilerServices;
+
 namespace Internal.Runtime.GarbageCollection;
 
 internal static unsafe partial class GCCommon
@@ -32,5 +34,17 @@ internal static unsafe partial class GCCommon
         }
 
         return (ulong)((double)GCToOSInterface.QueryPerformanceCounter() * g_QPFus);
+    }
+
+    public static void MemSet(byte* destination, byte value, nuint byteCount)
+    {
+        while (byteCount > uint.MaxValue)
+        {
+            Unsafe.InitBlockUnaligned(destination, value, uint.MaxValue);
+            destination += uint.MaxValue;
+            byteCount -= uint.MaxValue;
+        }
+
+        Unsafe.InitBlockUnaligned(destination, value, (uint)byteCount);
     }
 }

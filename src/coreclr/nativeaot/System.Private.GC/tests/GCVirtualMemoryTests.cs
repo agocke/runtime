@@ -262,6 +262,238 @@ public sealed unsafe class GCVirtualMemoryTests
         Assert.Equal(pageSize, gc_heap.reserved_memory);
     }
 
+#if USE_REGIONS
+    [Fact]
+    public void DecommitRegionWithNeverDecommitCountsDirectlyAndClearsOnlyUsedBytes()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        region_allocator oldAllocator = gc_heap.global_region_allocator;
+        uint* map = null;
+        try
+        {
+            map = InitializeGlobalRegionAllocator(reservation, pageSize, pageSize);
+            byte* regionStart = AllocateMappedRegion(pageSize, out byte* regionEnd);
+            Assert.True(GCToOSInterface.VirtualCommit(regionStart, pageSize));
+
+            heap_segment region = default;
+            byte* originalUsed = regionStart + (nint)(pageSize / 2);
+            InitializeRegionSegment(&region, regionStart, pageSize, originalUsed);
+            Fill(regionStart, pageSize, 0xCD);
+
+            gc_heap.never_decommit_p = true;
+            gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] = pageSize;
+            gc_heap.current_total_committed = pageSize;
+            GCToEEInterface.Reset();
+            GCToOSInterface.ResetRecording();
+
+            nuint decommitted = gc_heap.decommit_region(&region, gc_heap.recorded_committed_free_bucket, -1);
+
+            Assert.Equal(pageSize, decommitted);
+            Assert.Equal(GCToEEInterface.FiredEvent.GCFreeSegment_V1, GCToEEInterface.LastFiredEvent);
+            AssertNoVirtualDecommitWasRequested();
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
+            Assert.Equal((nuint)0, gc_heap.current_total_committed);
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(&region), (nuint)heap_segment.heap_segment_used(&region));
+            Assert.Equal((nuint)regionEnd, (nuint)heap_segment.heap_segment_committed(&region));
+            AssertRangeIsZero(regionStart, (nuint)(originalUsed - regionStart));
+            AssertRangeIs(originalUsed, (nuint)(regionEnd - originalUsed), 0xCD);
+        }
+        finally
+        {
+            RestoreGlobalRegionAllocator(oldAllocator, map);
+            gc_heap.never_decommit_p = false;
+            GCToOSInterface.VirtualRelease(reservation, pageSize);
+        }
+    }
+
+    [Fact]
+    public void DecommitRegionFailedDecommitClearsCommittedBytesAndKeepsAccounting()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        region_allocator oldAllocator = gc_heap.global_region_allocator;
+        uint* map = null;
+        try
+        {
+            map = InitializeGlobalRegionAllocator(reservation, pageSize, pageSize);
+            byte* regionStart = AllocateMappedRegion(pageSize, out byte* regionEnd);
+            Assert.True(GCToOSInterface.VirtualCommit(regionStart, pageSize));
+
+            heap_segment region = default;
+            InitializeRegionSegment(&region, regionStart, pageSize, regionStart + sizeof(aligned_plug_and_gap) + 64);
+            Fill(regionStart, pageSize, 0xCD);
+
+            gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] = pageSize;
+            gc_heap.current_total_committed = pageSize;
+            GCToOSInterface.ResetRecording();
+            GCToOSInterface.ForceVirtualDecommitFailureCount = 1;
+
+#if DEBUG
+            try
+            {
+                gc_heap.decommit_region(&region, gc_heap.recorded_committed_free_bucket, -1);
+                Assert.Fail("The native debug assert for a failed region decommit should fire.");
+            }
+            catch (Exception ex) when (ex.GetType().Name == "DebugAssertException")
+            {
+            }
+#else
+            nuint decommitted = gc_heap.decommit_region(&region, gc_heap.recorded_committed_free_bucket, -1);
+
+            Assert.Equal(pageSize, decommitted);
+#endif
+            Assert.Equal(1, VirtualDecommitRequestCount());
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
+            Assert.Equal(pageSize, gc_heap.current_total_committed);
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(&region), (nuint)heap_segment.heap_segment_used(&region));
+            Assert.Equal((nuint)regionEnd, (nuint)heap_segment.heap_segment_committed(&region));
+            AssertRangeIsZero(regionStart, pageSize);
+        }
+        finally
+        {
+            GCToOSInterface.ForceVirtualDecommitFailureCount = 0;
+            RestoreGlobalRegionAllocator(oldAllocator, map);
+            GCToOSInterface.VirtualRelease(reservation, pageSize);
+        }
+    }
+
+#if BACKGROUND_GC
+    [Fact]
+    public void DecommitRegionDecommitsCommittedMarkArrayAndClearsFlag()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint regionSize = 1024 * 1024;
+        nuint pageSize = PageSize;
+        const nuint AllocatorAlignment = 64 * 1024;
+        byte* reservation = GCToOSInterface.VirtualReserve(regionSize, AllocatorAlignment, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        region_allocator oldAllocator = gc_heap.global_region_allocator;
+        uint* oldMarkArray = gc_heap.mark_array;
+        byte* oldLowestAddress = gc_heap.lowest_address;
+        byte* oldHighestAddress = gc_heap.highest_address;
+        uint* map = null;
+        byte* markReservation = null;
+        nuint markReservationSize = 0;
+        try
+        {
+            map = InitializeGlobalRegionAllocator(reservation, regionSize, AllocatorAlignment);
+            byte* regionStart = AllocateMappedRegion(regionSize, out _);
+            Assert.True(GCToOSInterface.VirtualCommit(regionStart, regionSize));
+
+            heap_segment region = default;
+            InitializeRegionSegment(&region, regionStart, regionSize, regionStart + sizeof(aligned_plug_and_gap));
+            region.flags = heap_segment.heap_segment_flags_ma_committed;
+
+            nuint begWord = card_table_info.mark_word_of(heap_segment.heap_segment_mem(&region));
+            nuint endWord = card_table_info.mark_word_of(card_table_info.align_on_mark_word(heap_segment.heap_segment_reserved(&region)));
+            nuint markBytes = gc_heap.align_lower_page((endWord - begWord) * (nuint)sizeof(uint));
+            Assert.NotEqual((nuint)0, markBytes);
+            markReservationSize = gc_heap.align_on_page(markBytes);
+            markReservation = GCToOSInterface.VirtualReserve(markReservationSize, pageSize, (uint)VirtualReserveFlags.None);
+            Assert.True(markReservation != null);
+            Assert.True(GCToOSInterface.VirtualCommit(markReservation, markReservationSize));
+
+            gc_heap.mark_array = (uint*)(markReservation - (nint)(begWord * (nuint)sizeof(uint)));
+            gc_heap.lowest_address = heap_segment.heap_segment_mem(&region);
+            gc_heap.highest_address = heap_segment.heap_segment_reserved(&region);
+            gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] = regionSize;
+            gc_heap.committed_by_oh[gc_heap.recorded_committed_mark_array_bucket] += markBytes;
+            gc_heap.current_total_committed = regionSize + markBytes;
+            gc_heap.current_total_committed_bookkeeping = markBytes;
+            GCToOSInterface.ResetRecording();
+
+            nuint decommitted = gc_heap.decommit_region(&region, gc_heap.recorded_committed_free_bucket, -1);
+
+            Assert.Equal(regionSize, decommitted);
+            Assert.Equal(2, VirtualDecommitRequestCount());
+            Assert.Equal((nuint)0, region.flags & heap_segment.heap_segment_flags_ma_committed);
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[gc_heap.recorded_committed_mark_array_bucket]);
+            Assert.Equal((nuint)0, gc_heap.current_total_committed);
+            Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
+        }
+        finally
+        {
+            gc_heap.mark_array = oldMarkArray;
+            gc_heap.lowest_address = oldLowestAddress;
+            gc_heap.highest_address = oldHighestAddress;
+            RestoreGlobalRegionAllocator(oldAllocator, map);
+            if (markReservation is not null)
+            {
+                GCToOSInterface.VirtualRelease(markReservation, markReservationSize);
+            }
+
+            GCToOSInterface.VirtualRelease(reservation, regionSize);
+        }
+    }
+#endif
+
+    [Fact]
+    public void DecommitStepHonorsPauseModeQuotaAndGlobalFreeListOrder()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(2 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        region_allocator oldAllocator = gc_heap.global_region_allocator;
+        gc_heap.region_free_list_array oldRegionsToDecommit = gc_heap.global_regions_to_decommit;
+        gc_mechanisms oldSettings = gc_heap.settings;
+        uint* map = null;
+        try
+        {
+            map = InitializeGlobalRegionAllocator(reservation, 2 * pageSize, pageSize);
+            byte* firstStart = AllocateMappedRegion(pageSize, out _);
+            byte* secondStart = AllocateMappedRegion(pageSize, out _);
+            Assert.True(GCToOSInterface.VirtualCommit(firstStart, pageSize));
+            Assert.True(GCToOSInterface.VirtualCommit(secondStart, pageSize));
+
+            heap_segment first = default;
+            heap_segment second = default;
+            InitializeRegionSegment(&first, firstStart, pageSize, firstStart + sizeof(aligned_plug_and_gap));
+            InitializeRegionSegment(&second, secondStart, pageSize, secondStart + sizeof(aligned_plug_and_gap));
+
+            gc_heap.global_regions_to_decommit = default;
+            region_free_list* regionsToDecommit = gc_heap.global_regions_to_decommit_of((int)free_region_kind.basic_free_region);
+            region_free_list.add_region(&first, regionsToDecommit);
+            region_free_list.add_region(&second, regionsToDecommit);
+            gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] = 2 * pageSize;
+            gc_heap.current_total_committed = 2 * pageSize;
+
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_no_gc;
+            Assert.False(gc_heap.decommit_step(0));
+            Assert.Equal((nuint)2, region_free_list.get_num_free_regions(regionsToDecommit));
+            Assert.Equal(2 * pageSize, gc_heap.current_total_committed);
+
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_batch;
+            GCToOSInterface.ResetRecording();
+            Assert.True(gc_heap.decommit_step(0));
+            Assert.Equal(1, VirtualDecommitRequestCount());
+            Assert.Equal((nuint)1, region_free_list.get_num_free_regions(regionsToDecommit));
+            Assert.Equal(pageSize, gc_heap.current_total_committed);
+
+            Assert.True(gc_heap.decommit_step(1));
+            Assert.Equal((nuint)0, region_free_list.get_num_free_regions(regionsToDecommit));
+            Assert.Equal((nuint)0, gc_heap.current_total_committed);
+        }
+        finally
+        {
+            RestoreGlobalRegionAllocator(oldAllocator, map);
+            gc_heap.global_regions_to_decommit = oldRegionsToDecommit;
+            gc_heap.settings = oldSettings;
+            GCToOSInterface.VirtualRelease(reservation, 2 * pageSize);
+        }
+    }
+#endif
+
     private static void Fill(byte* address, nuint size, byte value)
     {
         for (nuint i = 0; i < size; i++)
@@ -310,6 +542,69 @@ public sealed unsafe class GCVirtualMemoryTests
         Assert.Equal(0, GCToOSInterface.MprotectCount);
 #endif
     }
+
+#if USE_REGIONS
+    private static void AssertNoVirtualDecommitWasRequested()
+    {
+        Assert.Equal(0, VirtualDecommitRequestCount());
+    }
+
+    private static int VirtualDecommitRequestCount()
+    {
+#if TARGET_WINDOWS
+        return GCToOSInterface.VirtualFreeCount;
+#else
+        return GCToOSInterface.MmapCount;
+#endif
+    }
+
+    private static uint* InitializeGlobalRegionAllocator(byte* reservation, nuint reservationSize, nuint alignment)
+    {
+        gc_heap.global_region_allocator = default;
+        gc_heap.global_region_allocator.initialize();
+        byte* lowest = null;
+        byte* highest = null;
+        Assert.True(gc_heap.global_region_allocator.init(reservation, reservation + (nint)reservationSize, alignment, &lowest, &highest));
+        Assert.Equal((nuint)reservation, (nuint)lowest);
+        Assert.Equal((nuint)(reservation + (nint)reservationSize), (nuint)highest);
+        return gc_heap.global_region_allocator.region_map_index_of(reservation);
+    }
+
+    private static void RestoreGlobalRegionAllocator(region_allocator oldAllocator, uint* map)
+    {
+        if (map is not null)
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+        gc_heap.global_region_allocator = oldAllocator;
+    }
+
+    private static byte* AllocateMappedRegion(nuint size, out byte* end)
+    {
+        byte* start = null;
+        byte* localEnd = null;
+        Assert.True(gc_heap.global_region_allocator.allocate_region(
+            (int)gc_generation_num.soh_gen0,
+            size,
+            &start,
+            &localEnd,
+            allocate_direction.allocate_forward,
+            null));
+        end = localEnd;
+        return start;
+    }
+
+    private static void InitializeRegionSegment(heap_segment* region, byte* regionStart, nuint regionSize, byte* used)
+    {
+        *region = default;
+        byte* mem = regionStart + sizeof(aligned_plug_and_gap);
+        heap_segment.heap_segment_mem(region) = mem;
+        heap_segment.heap_segment_allocated(region) = mem;
+        heap_segment.heap_segment_used(region) = used;
+        heap_segment.heap_segment_committed(region) = regionStart + (nint)regionSize;
+        heap_segment.heap_segment_reserved(region) = regionStart + (nint)regionSize;
+    }
+#endif
 
     private sealed class MemoryAccountingScope : IDisposable
     {

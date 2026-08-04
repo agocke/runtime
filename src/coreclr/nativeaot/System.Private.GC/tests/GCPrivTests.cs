@@ -769,6 +769,7 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(40u * 1024 * 1024, card_table_info.SH_TH_CARD_BUNDLE);
         Assert.Equal(180u * 1024 * 1024, card_table_info.MH_TH_CARD_BUNDLE);
         Assert.Equal(100u, card_table_info.DECOMMIT_TIME_STEP_MILLISECONDS);
+        Assert.Equal((nuint)(160 * 1024), gc_heap.DECOMMIT_SIZE_PER_MILLISECOND);
     }
 
     private static nuint OffsetOf(void* field, card_table_info* info) => (nuint)((byte*)field - (byte*)info);

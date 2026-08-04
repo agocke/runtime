@@ -93,7 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `GCMemory.cs` | dependency-closed address/commit accounting helpers from `memory.cpp` |
+| `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
@@ -299,16 +299,22 @@ its native large-region minimum assertion and early-break control flow.
 region-map scan over busy basic-or-large blocks, preserving the destination-list exclusion,
 source unlink, destination add, and signed quota break. The full allocator map reservation after
 `init` remains deferred.
-The first `memory.cpp` slice is now translated in `GCMemory.cs`: `virtual_alloc_commit_for_heap`,
-`virtual_commit`, `reduce_committed_bytes`, `virtual_decommit`, and `virtual_free`, plus the
-minimal native accounting state they require (`recorded_committed_*` buckets,
-`committed_by_oh`, `current_total_committed`, `current_total_committed_bookkeeping`,
-`heap_hard_limit`, `heap_hard_limit_oh`, `check_commit_cs`, `reserved_memory`, and
-`never_decommit_p`). It preserves hard-limit preflight, rollback on OS commit failure,
-bookkeeping-vs-heap accounting, never-decommit heap-memory bypasses, and release-only reserved
-memory reduction. `ManagedGCHeap.Initialize` explicitly initializes the commit-accounting
-critical section before heap memory can use these helpers. The collection-phase decommit
-workflows later in `memory.cpp` remain deferred until `settings`, ephemeral generations, and
+The first `memory.cpp` slices are now translated in `GCMemory.cs`:
+`virtual_alloc_commit_for_heap`, `virtual_commit`, `reduce_committed_bytes`,
+`virtual_decommit`, and `virtual_free`, plus the WKS `USE_REGIONS` `decommit_region` and
+`decommit_step` paths. The port includes the minimal native accounting and policy state they
+touch (`recorded_committed_*` buckets, `committed_by_oh`, `current_total_committed`,
+`current_total_committed_bookkeeping`, `heap_hard_limit`, `heap_hard_limit_oh`,
+`check_commit_cs`, `reserved_memory`, `never_decommit_p`, `settings.pause_mode`,
+`global_regions_to_decommit`, and the background mark-array pointers used by region cleanup).
+It preserves hard-limit preflight, rollback on OS commit failure, bookkeeping-vs-heap
+accounting, never-decommit heap-memory bypasses and direct decommit accounting, release-only
+reserved-memory reduction, GCFreeSegment event firing, page-aligned region decommit ranges,
+failed-decommit and never-decommit clearing extents, region used/committed updates, mark-array
+decommit flag cleanup and accounting, allocator deletion, and the time-quota/free-list early
+return of `decommit_step`. `ManagedGCHeap.Initialize` explicitly initializes the
+commit-accounting critical section before heap memory can use these helpers. Ephemeral segment
+decommit workflows later in `memory.cpp` remain deferred until ephemeral generations and
 segment-decommit state are present.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,

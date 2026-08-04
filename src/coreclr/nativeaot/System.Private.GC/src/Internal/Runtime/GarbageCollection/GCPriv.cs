@@ -2213,6 +2213,35 @@ namespace Internal.Runtime.GarbageCollection
         pause_no_gc = 4,
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct gc_mechanisms
+    {
+        public nuint gc_index;
+        public int condemned_generation;
+        public int promotion;
+        public int compaction;
+        public int loh_compaction;
+        public int heap_expansion;
+        public uint concurrent;
+        public int demotion;
+        public int card_bundles;
+        public int gen0_reduction_count;
+        public int should_lock_elevation;
+        public int elevation_locked_count;
+        public int elevation_reduced;
+        public int minimal_gc;
+        public gc_reason reason;
+        public gc_pause_mode pause_mode;
+        public int found_finalizers;
+#if BACKGROUND_GC
+        public int background_p;
+        public int b_state;
+#endif
+        public uint entry_memory_load;
+        public ulong entry_available_physical_mem;
+        public uint exit_memory_load;
+    }
+
     internal enum gc_loh_compaction_mode
     {
         loh_compaction_default = 1,
