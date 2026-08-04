@@ -101,6 +101,65 @@ internal unsafe partial struct gc_heap
         return heap_segment.heap_segment_gen_num(region);
     }
 
+    public static int get_region_gen_num(byte* obj)
+    {
+        nuint skewed_basic_region_index = get_skewed_basic_region_index_for_address(obj);
+        int gen_num = (byte)map_region_to_generation_skewed[(nint)skewed_basic_region_index] & (byte)region_info.RI_GEN_MASK;
+        Debug.Assert((int)gc_generation_num.soh_gen0 <= gen_num && gen_num <= (int)gc_generation_num.soh_gen2);
+        Debug.Assert(gen_num == heap_segment.heap_segment_gen_num(region_of(obj)));
+        return gen_num;
+    }
+
+    public static int get_region_plan_gen_num(byte* obj)
+    {
+        nuint skewed_basic_region_index = get_skewed_basic_region_index_for_address(obj);
+        int plan_gen_num = (byte)map_region_to_generation_skewed[(nint)skewed_basic_region_index] >> (int)region_info.RI_PLAN_GEN_SHR;
+        Debug.Assert((int)gc_generation_num.soh_gen0 <= plan_gen_num && plan_gen_num <= (int)gc_generation_num.soh_gen2);
+        Debug.Assert(plan_gen_num == heap_segment.heap_segment_plan_gen_num(region_of(obj)));
+        return plan_gen_num;
+    }
+
+    public static bool is_region_demoted(byte* obj)
+    {
+        nuint skewed_basic_region_index = get_skewed_basic_region_index_for_address(obj);
+        bool demoted_p = ((byte)map_region_to_generation_skewed[(nint)skewed_basic_region_index] & (byte)region_info.RI_DEMOTED) != 0;
+        Debug.Assert(demoted_p == heap_segment.heap_segment_demoted_p(region_of(obj)));
+        return demoted_p;
+    }
+
+    public static void set_region_sweep_in_plan(heap_segment* region)
+    {
+        heap_segment.heap_segment_swept_in_plan(region) = 1;
+
+        Debug.Assert(get_region_size(region) == global_region_allocator.get_region_alignment());
+
+        byte* region_start = get_region_start(region);
+        nuint region_index = get_basic_region_index_for_address(region_start);
+        map_region_to_generation[(nint)region_index] = (region_info)((byte)map_region_to_generation[(nint)region_index] | (byte)region_info.RI_SIP);
+    }
+
+    public static void clear_region_sweep_in_plan(heap_segment* region)
+    {
+        heap_segment.heap_segment_swept_in_plan(region) = 0;
+
+        Debug.Assert(get_region_size(region) == global_region_allocator.get_region_alignment());
+
+        byte* region_start = get_region_start(region);
+        nuint region_index = get_basic_region_index_for_address(region_start);
+        map_region_to_generation[(nint)region_index] = (region_info)((byte)map_region_to_generation[(nint)region_index] & ~(byte)region_info.RI_SIP);
+    }
+
+    public static void clear_region_demoted(heap_segment* region)
+    {
+        region->flags &= ~heap_segment.heap_segment_flags_demoted;
+
+        Debug.Assert(get_region_size(region) == global_region_allocator.get_region_alignment());
+
+        byte* region_start = get_region_start(region);
+        nuint region_index = get_basic_region_index_for_address(region_start);
+        map_region_to_generation[(nint)region_index] = (region_info)((byte)map_region_to_generation[(nint)region_index] & ~(byte)region_info.RI_DEMOTED);
+    }
+
     public static byte* get_uoh_start_object(heap_segment* region, generation* gen)
     {
         _ = gen;

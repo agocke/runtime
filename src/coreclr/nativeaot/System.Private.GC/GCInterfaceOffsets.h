@@ -167,6 +167,21 @@ GC_CONST(     2,     2, ephemeral_generation_count)
 GC_CONST(     5,     5, total_generation_count)
 GC_CONST(     2,     2, uoh_generation_count)
 
+#ifdef USE_REGIONS
+// gc_heap::region_info is byte-sized state consumed directly by the region write barrier.
+GC_VALUE(     0,     0, RI_GEN_0,         gc_heap::RI_GEN_0)
+GC_VALUE(     1,     1, RI_GEN_1,         gc_heap::RI_GEN_1)
+GC_VALUE(     2,     2, RI_GEN_2,         gc_heap::RI_GEN_2)
+GC_VALUE(     3,     3, RI_GEN_MASK,      gc_heap::RI_GEN_MASK)
+GC_VALUE(     4,     4, RI_SIP,           gc_heap::RI_SIP)
+GC_VALUE(     8,     8, RI_DEMOTED,       gc_heap::RI_DEMOTED)
+GC_VALUE(     6,     6, RI_PLAN_GEN_SHR,  gc_heap::RI_PLAN_GEN_SHR)
+GC_VALUE(     0,     0, RI_PLAN_GEN_0,    gc_heap::RI_PLAN_GEN_0)
+GC_VALUE(    40,    40, RI_PLAN_GEN_1,    gc_heap::RI_PLAN_GEN_1)
+GC_VALUE(    80,    80, RI_PLAN_GEN_2,    gc_heap::RI_PLAN_GEN_2)
+GC_VALUE(    c0,    c0, RI_PLAN_GEN_MASK, gc_heap::RI_PLAN_GEN_MASK)
+#endif
+
 // The GCEventProvider / GCEventLevel / GCEventKeyword enumerators of gcinterface.h. These are
 // not a memory layout, but they are an ABI: they cross the GC/EE boundary in
 // IGCHeap::ControlEvents, IGCHeap::ControlPrivateEvents and IGCToCLR::UpdateGCEventStatus, and

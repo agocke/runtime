@@ -619,6 +619,25 @@ namespace Internal.Runtime.GarbageCollection
 #endif
     }
 
+#if USE_REGIONS
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    internal enum region_info : byte
+#pragma warning restore CS8981
+    {
+        RI_GEN_0 = 0x0,
+        RI_GEN_1 = 0x1,
+        RI_GEN_2 = 0x2,
+        RI_GEN_MASK = 0x3,
+        RI_SIP = 0x4,
+        RI_DEMOTED = 0x8,
+        RI_PLAN_GEN_SHR = 0x6,
+        RI_PLAN_GEN_0 = 0x00,
+        RI_PLAN_GEN_1 = 0x40,
+        RI_PLAN_GEN_2 = 0x80,
+        RI_PLAN_GEN_MASK = 0xC0,
+    }
+#endif
+
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
     internal unsafe partial struct gc_heap
     {
@@ -627,6 +646,8 @@ namespace Internal.Runtime.GarbageCollection
         public const nuint MAX_REGION_SIZE = (nuint)1 << 31;
 
         public static nuint min_segment_size_shr;
+        public static region_info* map_region_to_generation;
+        public static region_info* map_region_to_generation_skewed;
 #endif
 
         public static heap_segment* heap_segment_in_range(heap_segment* segment)

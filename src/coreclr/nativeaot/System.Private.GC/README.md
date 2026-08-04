@@ -355,10 +355,17 @@ helper remains its intentional no-op. The next dependency-closed lookup slice ad
 the already-skewed mapping table with the absolute address shift, while `get_region_at_index`
 first adds the shifted nonzero heap base. The region-build `get_uoh_start_object`,
 `get_soh_start_object`, and `get_soh_start_obj_len` helpers are also translated: both starts are
-the region's memory and the SOH length is zero. `get_free_region`, `init_heap_segment`,
-`set_region_gen_num`, generation-map accessors, `allocate_new_region`, and `init_table_for_region`
-remain deferred because they require region reuse/allocation, generation-map writes, or
-write-barrier/mark-array work.
+the region's memory and the SOH length is zero. The adjacent byte-sized `region_info` map,
+including its current/planned generation and demotion/sweep flags, is now represented with both
+the absolute and skewed table pointers. Map reads and safe flag updates preserve the native
+absolute-versus-skewed indexing; Debug checks cross-check map reads against embedded segment
+fields, while the flag updates change both representations.
+`set_region_gen_num` remains deferred: it must atomically expand the ephemeral range while
+holding the native write-barrier lock, publish the skewed map and shift through
+`StompWriteBarrier`, and update the ephemeral bounds only after that publication. The managed
+heap does not yet own that lock or the collector ephemeral-bound state. Consequently,
+`get_free_region`, `init_heap_segment`, `allocate_new_region`, and `init_table_for_region` remain
+deferred too.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

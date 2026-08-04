@@ -968,17 +968,24 @@ Done so far:
   `get_region_at_index` adds the shifted lowest heap address before indexing; and direct
   generation lookup reads the embedded segment field. The start-object helpers preserve the
   region-build results (region memory and zero SOH start length).
+- The region-generation-map read/flag slice from `gcpriv.h` and `regions_segments.cpp`:
+  byte-sized `region_info`, including current and planned generation fields plus `RI_SIP` and
+  `RI_DEMOTED`; the absolute and absolute-address-skewed map pointers; object-address generation,
+  plan-generation, and demotion reads; and sweep/demotion flag updates. The read path preserves
+  native skewed indexing, while flag updates use the unskewed index and retain the unrelated
+  packed bits.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
   mutable read-only segment list operations, region creation/reuse, generation threading,
-  `get_free_region`, `init_heap_segment`, `set_region_gen_num`, generation-map accessors,
-  `allocate_new_region`, `init_table_for_region`, full heap-segment deletion, and free-region
-  distribution because they pull in generation construction, generation-map writes, region
-  allocation, write-barrier/mark-array commitment, allocation/collection state, or server-GC
-  branches.
+  `set_region_gen_num`, `get_free_region`, `init_heap_segment`, `allocate_new_region`,
+  `init_table_for_region`, full heap-segment deletion, and free-region distribution.
+  `set_region_gen_num` is specifically blocked on the collector's ephemeral bounds and
+  write-barrier lock/publication protocol: it must publish the skewed map/shift via
+  `StompWriteBarrier` before changing those bounds. The dependent allocation helpers remain
+  blocked until that protocol, region allocation, and generation construction are complete.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

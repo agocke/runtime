@@ -1725,6 +1725,113 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void RegionGenerationMapReadsUseSkewedAbsoluteIndicesAndPackedFields()
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        seg_mapping* segMappingTable = stackalloc seg_mapping[4];
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x9000;
+            GCCommon.seg_mapping_table = segMappingTable - 5;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - 5;
+
+            Assert.Equal((nuint)1, (nuint)sizeof(region_info));
+
+            segMappingTable[1].region_info.gen_num = 1;
+            segMappingTable[1].region_info.plan_gen_num = 1;
+            segMappingTable[1].region_info.flags = heap_segment.heap_segment_flags_demoted;
+            generationMap[1] = (region_info)((byte)region_info.RI_GEN_1 | (byte)region_info.RI_PLAN_GEN_1 | (byte)region_info.RI_DEMOTED);
+
+            segMappingTable[2].region_info.gen_num = 2;
+            segMappingTable[2].region_info.plan_gen_num = 2;
+            generationMap[2] = (region_info)((byte)region_info.RI_GEN_2 | (byte)region_info.RI_PLAN_GEN_2);
+
+            Assert.Equal(1, gc_heap.get_region_gen_num((byte*)0x6000));
+            Assert.Equal(1, gc_heap.get_region_gen_num((byte*)0x6FFF));
+            Assert.Equal(1, gc_heap.get_region_plan_gen_num((byte*)0x6000));
+            Assert.True(gc_heap.is_region_demoted((byte*)0x6FFF));
+
+            Assert.Equal(2, gc_heap.get_region_gen_num((byte*)0x7000));
+            Assert.Equal(2, gc_heap.get_region_plan_gen_num((byte*)0x7000));
+            Assert.False(gc_heap.is_region_demoted((byte*)0x7000));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+        }
+    }
+
+    [Fact]
+    public void RegionGenerationMapFlagsKeepSegmentFieldsConsistent()
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        region_allocator oldGlobalRegionAllocator = gc_heap.global_region_allocator;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        region_info* generationMap = stackalloc region_info[4];
+        heap_segment region = default;
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x9000;
+            gc_heap.global_region_allocator.initialize_alignment(0x1000);
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - 5;
+            generationMap[1] = (region_info)((byte)region_info.RI_GEN_1 | (byte)region_info.RI_PLAN_GEN_2 | (byte)region_info.RI_DEMOTED);
+
+            region.mem = (byte*)0x6000 + sizeof(aligned_plug_and_gap);
+            region.reserved = (byte*)0x7000;
+            region.flags = heap_segment.heap_segment_flags_demoted;
+
+            gc_heap.set_region_sweep_in_plan(&region);
+            Assert.Equal((byte)1, region.swept_in_plan_p);
+            Assert.Equal(
+                (byte)region_info.RI_GEN_1 | (byte)region_info.RI_PLAN_GEN_2 | (byte)region_info.RI_DEMOTED | (byte)region_info.RI_SIP,
+                (byte)generationMap[1]);
+
+            gc_heap.clear_region_sweep_in_plan(&region);
+            Assert.Equal((byte)0, region.swept_in_plan_p);
+            Assert.Equal(
+                (byte)region_info.RI_GEN_1 | (byte)region_info.RI_PLAN_GEN_2 | (byte)region_info.RI_DEMOTED,
+                (byte)generationMap[1]);
+
+            gc_heap.clear_region_demoted(&region);
+            Assert.Equal((nuint)0, region.flags & heap_segment.heap_segment_flags_demoted);
+            Assert.Equal(
+                (byte)region_info.RI_GEN_1 | (byte)region_info.RI_PLAN_GEN_2,
+                (byte)generationMap[1]);
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            gc_heap.global_region_allocator = oldGlobalRegionAllocator;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+        }
+    }
+
+    [Fact]
     public void RegionStartObjectHelpersUseRegionMemory()
     {
         heap_segment region = default;
