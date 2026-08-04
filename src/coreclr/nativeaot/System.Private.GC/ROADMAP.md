@@ -838,7 +838,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init` and the dependency-closed region-map setup are translated**
+**Status: In progress -- `region_allocator::init`, endpoint block marking, and terminal allocation are translated**
 
 Translate:
 
@@ -870,12 +870,19 @@ Done so far:
   lowest/highest output-pointer success semantics, fails without calling the shim when the map
   byte count overflows `size_t`, and leaves the native allocation-failure logging string deferred
   until string-free GC init logging is ported.
+- Dependency-closed endpoint map updates from `region_allocator.cpp`: `make_busy_block`,
+  `make_free_block`, and `allocate_end` preserve the native forward/backward boundary tests,
+  endpoint-only busy/free encoding, high-bit free marker, unsigned size arithmetic, exact-fit
+  behavior, and the fact that free-unit counters are updated by callers rather than by these
+  helpers. The native `dprintf(REGIONS_LOG)` debug traces and
+  `ASSERT_HOLDING_SPIN_LOCK(&region_allocator_lock)` checks remain explicitly deferred until the
+  managed GC has string-free region logging and spin-lock ownership diagnostics.
 - Remaining `region_free_list.cpp` helpers previously blocked on that prerequisite:
   `get_region_kind`, `add_region`, `add_region_descending`, `is_on_free_list`, and
   `unlink_smallest_region` with native large-region assertion and early-break behavior.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`, spin-lock enter/leave
-  behavior, allocation/deallocation algorithms, lock callback paths, and end-allocation fallback
-  logic.
+  behavior, free-block search allocation, callback paths, region deletion, and high-region
+  movement.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

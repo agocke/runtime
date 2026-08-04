@@ -730,8 +730,8 @@ namespace Internal.Runtime.GarbageCollection
         public const int LARGE_REGION_FACTOR = 8;
         public const int region_alloc_free_bit = unchecked(1 << (sizeof(uint) * 8 - 1));
 
-        // This is the native field order through the region-map and free-unit counters. Lock
-        // behavior and allocation/deletion algorithms that operate on these fields are deferred.
+        // This is the native field order through the region-map and free-unit counters. Full
+        // spin-lock behavior and the remaining allocation/deletion algorithms are deferred.
         private byte* global_region_start;
         private byte* global_region_end;
         private byte* global_region_left_used;
@@ -835,6 +835,56 @@ namespace Internal.Runtime.GarbageCollection
         {
             nuint addressDelta = unchecked((nuint)(address - global_region_start));
             return unchecked(region_map_left_start + (nint)(addressDelta / region_alignment));
+        }
+
+        // Native dprintf(REGIONS_LOG) and ASSERT_HOLDING_SPIN_LOCK(&region_allocator_lock) in
+        // these region-map helpers are deferred until the GC has string-free region logging and
+        // spin-lock ownership diagnostics; do not introduce managed diagnostics here.
+        public void make_busy_block(uint* index_start, uint num_units)
+        {
+            uint* index_end = index_start + (nint)(num_units - 1);
+            *index_start = num_units;
+            *index_end = num_units;
+        }
+
+        public void make_free_block(uint* index_start, uint num_units)
+        {
+            uint* index_end = index_start + (nint)(num_units - 1);
+            uint encoded = unchecked((uint)region_alloc_free_bit) | num_units;
+            *index_start = encoded;
+            *index_end = encoded;
+        }
+
+        public byte* allocate_end(uint num_units, allocate_direction direction)
+        {
+            byte* alloc = null;
+
+            if (global_region_left_used < global_region_right_used)
+            {
+                nuint end_remaining = unchecked((nuint)(global_region_right_used - global_region_left_used));
+
+                if ((end_remaining / region_alignment) >= num_units)
+                {
+                    nuint allocation_size = unchecked((nuint)num_units * region_alignment);
+                    if (direction == allocate_direction.allocate_forward)
+                    {
+                        make_busy_block(region_map_left_end, num_units);
+                        region_map_left_end += (nint)num_units;
+                        alloc = global_region_left_used;
+                        global_region_left_used += (nint)allocation_size;
+                    }
+                    else
+                    {
+                        Debug.Assert(direction == allocate_direction.allocate_backward);
+                        region_map_right_start -= (nint)num_units;
+                        make_busy_block(region_map_right_start, num_units);
+                        global_region_right_used -= (nint)allocation_size;
+                        alloc = global_region_right_used;
+                    }
+                }
+            }
+
+            return alloc;
         }
     }
 

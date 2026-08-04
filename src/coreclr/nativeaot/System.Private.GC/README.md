@@ -259,12 +259,19 @@ allocation succeeds. The allocation-size overflow case fails closed before calli
 the native `new (nothrow) uint32_t[]` cannot produce a valid map in that case. The native
 allocation-failure `log_init_error_to_host` string is still deferred until string-free GC init
 logging is ported.
+The region-map endpoint writers `make_busy_block` and `make_free_block`, plus the terminal-space
+allocator `allocate_end`, now preserve the native endpoint-only block encoding, high-bit free
+marker, forward/backward pointer movement, exact-fit boundary behavior, and counter ownership
+(the caller still adjusts `total_free_units`). Their native `dprintf(REGIONS_LOG)` debug lines
+and `ASSERT_HOLDING_SPIN_LOCK(&region_allocator_lock)` checks are deliberately deferred until
+string-free region logging and spin-lock ownership diagnostics are ported; this slice does not
+substitute managed diagnostics for them.
 That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
 its native large-region minimum assertion and early-break control flow. The full allocator map
-reservation after `init`, spin-lock enter/leave behavior, and allocation/deletion algorithms of
-`region_allocator.cpp` remain deferred.
+reservation after `init`, spin-lock enter/leave behavior, free-block search/callback allocation,
+and region deletion algorithms of `region_allocator.cpp` remain deferred.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,
 gcpriv.h's region layout that replaces
