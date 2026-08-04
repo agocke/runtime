@@ -264,6 +264,131 @@ public sealed unsafe class GCVirtualMemoryTests
 
 #if USE_REGIONS
     [Fact]
+    public void OnUsedChangedExtendsBookkeepingCoverageAndRoundsCommitsToPages()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        const nuint ReservationSize = 128 * 1024 * 1024;
+        byte* reservation = GCToOSInterface.VirtualReserve(ReservationSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, ReservationSize, pageSize);
+        try
+        {
+            Assert.True(regions.InitializeBookkeeping());
+            byte* newUsed = reservation + (nint)(33 * pageSize + 1);
+            nuint committedBefore = gc_heap.current_total_committed_bookkeeping;
+
+            Assert.Equal((byte)1, gc_heap.on_used_changed(newUsed));
+
+            Assert.Equal((nuint)newUsed, (nuint)gc_heap.bookkeeping_covered_committed);
+            Assert.Equal(
+                gc_heap.size_seg_mapping_table_of(reservation, newUsed),
+                gc_heap.bookkeeping_sizes[(int)bookkeeping_element.seg_mapping_table_element]);
+            Assert.True(gc_heap.current_total_committed_bookkeeping > committedBefore);
+            Assert.Equal(
+                (nuint)0,
+                (gc_heap.current_total_committed_bookkeeping - committedBefore) & (pageSize - 1));
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, ReservationSize);
+        }
+    }
+
+    [Fact]
+    public void OnUsedChangedIsANoOpWithinCommittedCoverage()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(8 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 8 * pageSize, pageSize);
+        try
+        {
+            Assert.True(regions.InitializeBookkeeping());
+            byte* coverage = gc_heap.bookkeeping_covered_committed;
+            nuint committed = gc_heap.current_total_committed_bookkeeping;
+
+            GCToOSInterface.ResetRecording();
+            Assert.Equal((byte)1, gc_heap.on_used_changed(coverage));
+
+            Assert.Equal((nuint)coverage, (nuint)gc_heap.bookkeeping_covered_committed);
+            Assert.Equal(committed, gc_heap.current_total_committed_bookkeeping);
+            AssertNoVirtualCommitWasRequested();
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 8 * pageSize);
+        }
+    }
+
+    [Fact]
+    public void OnUsedChangedFailureLeavesCoverageAndSizesUnchanged()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        const nuint ReservationSize = 128 * 1024 * 1024;
+        byte* reservation = GCToOSInterface.VirtualReserve(ReservationSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, ReservationSize, pageSize);
+        try
+        {
+            Assert.True(regions.InitializeBookkeeping());
+            byte* coverage = gc_heap.bookkeeping_covered_committed;
+            nuint cardSize = gc_heap.bookkeeping_sizes[(int)bookkeeping_element.card_table_element];
+            nuint brickSize = gc_heap.bookkeeping_sizes[(int)bookkeeping_element.brick_table_element];
+            nuint regionSize = gc_heap.bookkeeping_sizes[(int)bookkeeping_element.region_to_generation_table_element];
+            nuint mappingSize = gc_heap.bookkeeping_sizes[(int)bookkeeping_element.seg_mapping_table_element];
+            gc_heap.heap_hard_limit = 1;
+
+            Assert.Equal((byte)0, gc_heap.on_used_changed(reservation + (nint)(65 * pageSize)));
+
+            Assert.Equal((nuint)coverage, (nuint)gc_heap.bookkeeping_covered_committed);
+            Assert.Equal(cardSize, gc_heap.bookkeeping_sizes[(int)bookkeeping_element.card_table_element]);
+            Assert.Equal(brickSize, gc_heap.bookkeeping_sizes[(int)bookkeeping_element.brick_table_element]);
+            Assert.Equal(regionSize, gc_heap.bookkeeping_sizes[(int)bookkeeping_element.region_to_generation_table_element]);
+            Assert.Equal(mappingSize, gc_heap.bookkeeping_sizes[(int)bookkeeping_element.seg_mapping_table_element]);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, ReservationSize);
+        }
+    }
+
+    [Fact]
+    public void SubsequentRegionAllocationUsesCommittedBookkeeping()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(8 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 8 * pageSize, pageSize);
+        try
+        {
+            Assert.True(regions.InitializeBookkeeping());
+
+            heap_segment* region = gc_heap.get_free_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.soh_gen2);
+
+            Assert.True(region != null);
+            Assert.Equal((nint)(-1), gc_heap.brick_table[(nint)gc_heap.brick_of(heap_segment.heap_segment_mem(region))]);
+            Assert.Equal((nuint)region, (nuint)gc_heap.get_region_info(gc_heap.get_region_start(region)));
+            Assert.Equal(
+                (byte)((int)gc_generation_num.soh_gen2 | ((int)gc_generation_num.soh_gen2 << (int)region_info.RI_PLAN_GEN_SHR)),
+                (byte)gc_heap.map_region_to_generation[0]);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 8 * pageSize);
+        }
+    }
+
+    [Fact]
     public void AllocateNewRegionBuildsAndMapsBasicRegion()
     {
         using MemoryAccountingScope accounting = new();
@@ -295,7 +420,8 @@ public sealed unsafe class GCVirtualMemoryTests
                 (byte)((int)gc_generation_num.soh_gen2 | ((int)gc_generation_num.soh_gen2 << (int)region_info.RI_PLAN_GEN_SHR)),
                 (byte)gc_heap.map_region_to_generation[0]);
             Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
-            Assert.Equal(pageSize, gc_heap.current_total_committed);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket]);
+            Assert.Equal(2 * pageSize, gc_heap.current_total_committed);
         }
         finally
         {
@@ -903,9 +1029,20 @@ public sealed unsafe class GCVirtualMemoryTests
         private readonly GCSpinLock _oldGcLock;
         private readonly uint* _oldCardTable;
         private readonly short* _oldBrickTable;
+        private readonly byte* _oldBookkeepingStart;
+        private readonly byte* _oldBookkeepingCoveredCommitted;
+        private readonly gc_heap.bookkeeping_layout_array _oldCardTableElementLayout;
+        private readonly gc_heap.bookkeeping_size_array _oldBookkeepingSizes;
+        private readonly byte* _oldHeapLowestAddress;
+        private readonly byte* _oldHeapHighestAddress;
+#if BACKGROUND_GC
+        private readonly uint* _oldMarkArray;
+#endif
         private readonly seg_mapping* _mappings;
         private readonly region_info* _regions;
         private readonly uint* _regionMap;
+        private byte* _bookkeepingStart;
+        private nuint _bookkeepingSize;
 
         public RegionAllocationScope(byte* reservation, nuint reservationSize, nuint alignment)
         {
@@ -921,6 +1058,15 @@ public sealed unsafe class GCVirtualMemoryTests
             _oldGcLock = gc_heap.gc_lock;
             _oldCardTable = gc_heap.card_table;
             _oldBrickTable = gc_heap.brick_table;
+            _oldBookkeepingStart = gc_heap.bookkeeping_start;
+            _oldBookkeepingCoveredCommitted = gc_heap.bookkeeping_covered_committed;
+            _oldCardTableElementLayout = gc_heap.card_table_element_layout;
+            _oldBookkeepingSizes = gc_heap.bookkeeping_sizes;
+            _oldHeapLowestAddress = gc_heap.lowest_address;
+            _oldHeapHighestAddress = gc_heap.highest_address;
+#if BACKGROUND_GC
+            _oldMarkArray = gc_heap.mark_array;
+#endif
 
             gc_heap.initialize_min_segment_size_shr(alignment);
             nuint regionCount = reservationSize / alignment;
@@ -954,10 +1100,34 @@ public sealed unsafe class GCVirtualMemoryTests
             Assert.Equal((nuint)reservation, (nuint)lowest);
             Assert.Equal((nuint)(reservation + (nint)reservationSize), (nuint)highest);
             _regionMap = gc_heap.global_region_allocator.region_map_index_of(reservation);
+            Assert.True(InitializeBookkeeping());
+            ResetMemoryAccounting();
+        }
+
+        public bool InitializeBookkeeping()
+        {
+            if (_bookkeepingStart != null)
+            {
+                return true;
+            }
+
+            if (!gc_heap.initialize_region_bookkeeping())
+            {
+                return false;
+            }
+
+            _bookkeepingStart = gc_heap.bookkeeping_start;
+            _bookkeepingSize = gc_heap.card_table_element_layout[(int)bookkeeping_element.total_bookkeeping_elements];
+            return true;
         }
 
         public void Dispose()
         {
+            if (_bookkeepingStart != null)
+            {
+                GCToOSInterface.VirtualRelease(_bookkeepingStart, _bookkeepingSize);
+            }
+
             SyncImports.ManagedGC_Free(_regionMap);
             SyncImports.ManagedGC_Free(_regions);
             SyncImports.ManagedGC_Free(_mappings);
@@ -973,6 +1143,15 @@ public sealed unsafe class GCVirtualMemoryTests
             gc_heap.gc_lock = _oldGcLock;
             gc_heap.card_table = _oldCardTable;
             gc_heap.brick_table = _oldBrickTable;
+            gc_heap.bookkeeping_start = _oldBookkeepingStart;
+            gc_heap.bookkeeping_covered_committed = _oldBookkeepingCoveredCommitted;
+            gc_heap.card_table_element_layout = _oldCardTableElementLayout;
+            gc_heap.bookkeeping_sizes = _oldBookkeepingSizes;
+            gc_heap.lowest_address = _oldHeapLowestAddress;
+            gc_heap.highest_address = _oldHeapHighestAddress;
+#if BACKGROUND_GC
+            gc_heap.mark_array = _oldMarkArray;
+#endif
         }
     }
 

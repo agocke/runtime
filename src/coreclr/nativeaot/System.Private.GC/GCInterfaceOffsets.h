@@ -48,6 +48,20 @@
 
 // NOTE: the values MUST be in hex notation WITHOUT the 0x prefix.
 
+#ifdef USE_REGIONS
+GC_CONST(         0,         0, card_table_element)
+GC_CONST(         1,         1, brick_table_element)
+GC_CONST(         2,         2, card_bundle_table_element)
+GC_CONST(         3,         3, region_to_generation_table_element)
+GC_CONST(         4,         4, seg_mapping_table_element)
+#ifdef BACKGROUND_GC
+GC_CONST(         5,         5, mark_array_element)
+GC_CONST(         6,         6, total_bookkeeping_elements)
+#else
+GC_CONST(         5,         5, total_bookkeeping_elements)
+#endif
+#endif
+
 //        32-bit,64-bit, class, member
 GC_OFFSET(     0,     0, gc_alloc_context, alloc_ptr)
 GC_OFFSET(     4,     8, gc_alloc_context, alloc_limit)

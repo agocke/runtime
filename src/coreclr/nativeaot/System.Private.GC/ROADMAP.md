@@ -1003,8 +1003,17 @@ Done so far:
   `allocate_new_region` paths from `regions_segments.cpp`. They retain basic versus
   large/huge allocator selection and rounding, first-page commitment and accounting, region-map
   segment publication, generation initialization, and allocator rollback after a failed commit.
-  `on_used_changed` is currently a bootstrap success no-op; card-table growth remains with the
-  later bookkeeping allocation work.
+  The matching `card_table.cpp` bookkeeping slice is now dependency-closed: its native element
+  enum/layout, card/brick/region-generation/segment-mapping/mark-array reservation, initial
+  and incremental commit-range calculation, page rounding and element-bound clamping,
+  bookkeeping accounting, partial-commit rollback, old/new size tracking, coverage doubling and
+  minimum-range retry are translated. `on_used_changed` therefore refuses growth when no
+  bookkeeping table is installed instead of returning bootstrap success. The current WKS
+  configuration has no software-write-watch table and does not enable card bundles, so their
+  optional native allocation branches remain deferred; card-bundle metadata is still laid out
+  and initialized. The translated card and dependent table pointers are installed before
+  publishing `card_table`; the write-barrier stomp itself remains owned by the deferred full heap
+  initialization path.
 - The dependency-closed WKS `USE_REGIONS` `get_free_region` path from
   `regions_segments.cpp`. It preserves local basic/large selection, local smallest-fitting huge
   selection, caller-held-GC-spin-lock validation before the global huge fallback, reused-region

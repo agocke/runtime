@@ -10,12 +10,44 @@ using System.Runtime.CompilerServices;
 namespace Internal.Runtime.GarbageCollection;
 
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
+#if USE_REGIONS
+internal enum bookkeeping_element
+{
+    card_table_element,
+    brick_table_element,
+    card_bundle_table_element,
+    region_to_generation_table_element,
+    seg_mapping_table_element,
+#if BACKGROUND_GC
+    mark_array_element,
+#endif
+    total_bookkeeping_elements,
+}
+#endif
+
 internal unsafe partial struct gc_heap
 {
 #if USE_REGIONS
     public static uint* card_table;
     public static short* brick_table;
     public static region_free_list_array free_regions;
+
+    [InlineArray((int)bookkeeping_element.total_bookkeeping_elements + 1)]
+    internal struct bookkeeping_layout_array
+    {
+        private nuint _element0;
+    }
+
+    [InlineArray((int)bookkeeping_element.total_bookkeeping_elements)]
+    internal struct bookkeeping_size_array
+    {
+        private nuint _element0;
+    }
+
+    public static bookkeeping_layout_array card_table_element_layout;
+    public static byte* bookkeeping_covered_committed;
+    public static bookkeeping_size_array bookkeeping_sizes;
+    public static byte* bookkeeping_start;
 #if BACKGROUND_GC
     public static volatile bgc_state current_bgc_state;
     public static byte* background_saved_lowest_address;
@@ -127,11 +159,336 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    private static nuint get_card_table_element_alignment(bookkeeping_element element)
+    {
+        switch (element)
+        {
+            case bookkeeping_element.card_table_element:
+            case bookkeeping_element.card_bundle_table_element:
+                return (nuint)sizeof(uint);
+
+            case bookkeeping_element.brick_table_element:
+                return (nuint)sizeof(short);
+
+            case bookkeeping_element.region_to_generation_table_element:
+                return (nuint)sizeof(byte);
+
+            case bookkeeping_element.seg_mapping_table_element:
+                return (nuint)sizeof(byte*);
+
+#if BACKGROUND_GC
+            case bookkeeping_element.mark_array_element:
+#endif
+            case bookkeeping_element.total_bookkeeping_elements:
+                return (nuint)GCToOSInterface.GetPageSize();
+
+            default:
+                Debug.Assert(false);
+                return (nuint)1;
+        }
+    }
+
+    private static void get_card_table_element_sizes(byte* start, byte* end, nuint* sizes)
+    {
+        for (int i = (int)bookkeeping_element.card_table_element;
+             i < (int)bookkeeping_element.total_bookkeeping_elements;
+             i++)
+        {
+            sizes[i] = 0;
+        }
+
+        if (start == end)
+        {
+            return;
+        }
+
+        sizes[(int)bookkeeping_element.card_table_element] = card_table_info.size_card_of(start, end);
+        sizes[(int)bookkeeping_element.brick_table_element] = card_table_info.size_brick_of(start, end);
+        sizes[(int)bookkeeping_element.region_to_generation_table_element] = size_region_to_generation_table_of(start, end);
+        sizes[(int)bookkeeping_element.seg_mapping_table_element] = size_seg_mapping_table_of(start, end);
+#if BACKGROUND_GC
+        sizes[(int)bookkeeping_element.mark_array_element] = card_table_info.size_mark_array_of(start, end);
+#endif
+    }
+
+    private static void get_card_table_element_layout(byte* start, byte* end, nuint* layout)
+    {
+        nuint* sizes = stackalloc nuint[(int)bookkeeping_element.total_bookkeeping_elements];
+        get_card_table_element_sizes(start, end, sizes);
+
+        layout[(int)bookkeeping_element.card_table_element] =
+            align_on_size((nuint)sizeof(card_table_info), get_card_table_element_alignment(bookkeeping_element.card_table_element));
+        for (int i = (int)bookkeeping_element.brick_table_element;
+             i <= (int)bookkeeping_element.total_bookkeeping_elements;
+             i++)
+        {
+            layout[i] = unchecked(layout[i - 1] + sizes[i - 1]);
+            if (i != (int)bookkeeping_element.total_bookkeeping_elements && sizes[i] != 0)
+            {
+                layout[i] = align_on_size(layout[i], get_card_table_element_alignment((bookkeeping_element)i));
+            }
+        }
+    }
+
+    private static nuint align_on_size(nuint value, nuint alignment)
+    {
+        return unchecked((value + alignment - 1) & ~(alignment - 1));
+    }
+
+    private static bool get_card_table_commit_layout(
+        byte* from,
+        byte* to,
+        byte** commit_begins,
+        nuint* commit_sizes,
+        nuint* new_sizes)
+    {
+        byte* start = GCCommon.g_gc_lowest_address;
+
+        bool initial_commit = from == start;
+        bool additional_commit = !initial_commit && to > from;
+        if (!initial_commit && !additional_commit)
+        {
+            return false;
+        }
+
+#if DEBUG
+        nuint* layout = stackalloc nuint[(int)bookkeeping_element.total_bookkeeping_elements + 1];
+        get_card_table_element_layout(start, GCCommon.g_gc_highest_address, layout);
+        for (int i = (int)bookkeeping_element.card_table_element;
+             i <= (int)bookkeeping_element.total_bookkeeping_elements;
+             i++)
+        {
+            Debug.Assert(layout[i] == card_table_element_layout[i]);
+        }
+#endif
+
+        get_card_table_element_sizes(start, to, new_sizes);
+
+        for (int i = (int)bookkeeping_element.card_table_element;
+             i <= (int)bookkeeping_element.seg_mapping_table_element;
+             i++)
+        {
+            byte* required_begin;
+            byte* required_end;
+            byte* commit_begin;
+
+            if (initial_commit)
+            {
+                required_begin = bookkeeping_start + (i == (int)bookkeeping_element.card_table_element ? 0 : (nint)card_table_element_layout[i]);
+                required_end = bookkeeping_start + (nint)card_table_element_layout[i] + (nint)new_sizes[i];
+                commit_begin = align_lower_page(required_begin);
+            }
+            else
+            {
+                Debug.Assert(additional_commit);
+                required_begin = bookkeeping_start + (nint)card_table_element_layout[i] + (nint)bookkeeping_sizes[i];
+                required_end = required_begin + (nint)(new_sizes[i] - bookkeeping_sizes[i]);
+                commit_begin = align_on_page(required_begin);
+            }
+
+            Debug.Assert(required_begin <= required_end);
+            byte* commit_end = align_on_page(required_end);
+            byte* element_end = align_lower_page(bookkeeping_start + (nint)card_table_element_layout[i + 1]);
+            if (commit_end > element_end)
+            {
+                commit_end = element_end;
+            }
+
+            if (commit_begin > commit_end)
+            {
+                commit_begin = commit_end;
+            }
+
+            commit_begins[i] = commit_begin;
+            commit_sizes[i] = (nuint)(commit_end - commit_begin);
+        }
+
+        return true;
+    }
+
+    public static bool inplace_commit_card_table(byte* from, byte* to)
+    {
+        byte** commit_begins = stackalloc byte*[(int)bookkeeping_element.total_bookkeeping_elements];
+        nuint* commit_sizes = stackalloc nuint[(int)bookkeeping_element.total_bookkeeping_elements];
+        nuint* new_sizes = stackalloc nuint[(int)bookkeeping_element.total_bookkeeping_elements];
+
+        if (!get_card_table_commit_layout(from, to, commit_begins, commit_sizes, new_sizes))
+        {
+            return true;
+        }
+
+        int failed_commit = -1;
+        for (int i = (int)bookkeeping_element.card_table_element;
+             i <= (int)bookkeeping_element.seg_mapping_table_element;
+             i++)
+        {
+            if (commit_sizes[i] != 0 &&
+                !virtual_commit(commit_begins[i], commit_sizes[i], recorded_committed_bookkeeping_bucket, -1))
+            {
+                failed_commit = i;
+                break;
+            }
+        }
+
+        if (failed_commit == -1)
+        {
+            for (int i = (int)bookkeeping_element.card_table_element;
+                 i < (int)bookkeeping_element.total_bookkeeping_elements;
+                 i++)
+            {
+                bookkeeping_sizes[i] = new_sizes[i];
+            }
+
+            return true;
+        }
+
+        for (int i = (int)bookkeeping_element.card_table_element; i < failed_commit; i++)
+        {
+            if (commit_sizes[i] != 0)
+            {
+                bool succeeded = virtual_decommit(
+                    commit_begins[i],
+                    commit_sizes[i],
+                    recorded_committed_bookkeeping_bucket,
+                    -1);
+                Debug.Assert(succeeded);
+            }
+        }
+
+        return false;
+    }
+
+    public static uint* make_card_table(byte* start, byte* end)
+    {
+        Debug.Assert(GCCommon.g_gc_lowest_address == start);
+        Debug.Assert(GCCommon.g_gc_highest_address == end);
+
+        nuint* layout = stackalloc nuint[(int)bookkeeping_element.total_bookkeeping_elements + 1];
+        get_card_table_element_layout(start, end, layout);
+        for (int i = (int)bookkeeping_element.card_table_element;
+             i <= (int)bookkeeping_element.total_bookkeeping_elements;
+             i++)
+        {
+            card_table_element_layout[i] = layout[i];
+        }
+
+        nuint alloc_size = card_table_element_layout[(int)bookkeeping_element.total_bookkeeping_elements];
+        byte* mem = GCToOSInterface.VirtualReserve(alloc_size, 0, (uint)VirtualReserveFlags.None);
+        bookkeeping_start = mem;
+        if (mem is null)
+        {
+            return null;
+        }
+
+        if (!inplace_commit_card_table(start, global_region_allocator.get_left_used_unsafe()))
+        {
+            GCToOSInterface.VirtualRelease(mem, alloc_size);
+            bookkeeping_start = null;
+            return null;
+        }
+
+        bookkeeping_covered_committed = global_region_allocator.get_left_used_unsafe();
+
+        uint* ct = (uint*)(mem + (nint)card_table_element_layout[(int)bookkeeping_element.card_table_element]);
+        card_table_info.card_table_refcount(ct) = 0;
+        card_table_info.card_table_lowest_address(ct) = start;
+        card_table_info.card_table_highest_address(ct) = end;
+        card_table_info.card_table_brick_table(ct) =
+            (short*)(mem + (nint)card_table_element_layout[(int)bookkeeping_element.brick_table_element]);
+        card_table_info.card_table_size(ct) = alloc_size;
+        card_table_info.card_table_next(ct) = null;
+        card_table_info.card_table_card_bundle_table(ct) =
+            (uint*)(mem + (nint)card_table_element_layout[(int)bookkeeping_element.card_bundle_table_element]);
+
+        map_region_to_generation =
+            (region_info*)(mem + (nint)card_table_element_layout[(int)bookkeeping_element.region_to_generation_table_element]);
+        map_region_to_generation_skewed = map_region_to_generation -
+            (nint)size_region_to_generation_table_of(null, GCCommon.g_gc_lowest_address);
+
+        GCCommon.seg_mapping_table =
+            (seg_mapping*)(mem + (nint)card_table_element_layout[(int)bookkeeping_element.seg_mapping_table_element]);
+        GCCommon.seg_mapping_table = (seg_mapping*)((byte*)GCCommon.seg_mapping_table -
+            (nint)size_seg_mapping_table_of(null, align_lower_segment(GCCommon.g_gc_lowest_address)));
+
+#if BACKGROUND_GC
+        card_table_info.card_table_mark_array(ct) =
+            (uint*)(mem + (nint)card_table_element_layout[(int)bookkeeping_element.mark_array_element]);
+#endif
+
+        return card_table_info.translate_card_table(ct);
+    }
+
+    public static bool initialize_region_bookkeeping()
+    {
+        uint* new_card_table = make_card_table(GCCommon.g_gc_lowest_address, GCCommon.g_gc_highest_address);
+        if (new_card_table is null)
+        {
+            return false;
+        }
+
+        uint* ct = &new_card_table[(nint)card_table_info.card_word(card_table_info.gcard_of(GCCommon.g_gc_lowest_address))];
+        brick_table = card_table_info.card_table_brick_table(ct);
+        lowest_address = card_table_info.card_table_lowest_address(ct);
+        highest_address = card_table_info.card_table_highest_address(ct);
+#if BACKGROUND_GC
+        mark_array = (uint*)((byte*)card_table_info.card_table_mark_array(ct) -
+            (nint)card_table_info.size_mark_array_of(null, GCCommon.g_gc_lowest_address));
+#endif
+        card_table = new_card_table;
+        return true;
+    }
+
     public static byte on_used_changed(byte* new_used)
     {
-        // Card-table growth has not yet been ported; the bootstrap has no incremental
-        // bookkeeping coverage to extend.
-        _ = new_used;
+        if (new_used <= bookkeeping_covered_committed)
+        {
+            return 1;
+        }
+
+        if (bookkeeping_start is null)
+        {
+            return 0;
+        }
+
+        bool speculative_commit_tried = false;
+        while (true)
+        {
+            byte* new_bookkeeping_covered_committed;
+            if (speculative_commit_tried)
+            {
+                new_bookkeeping_covered_committed = new_used;
+            }
+            else
+            {
+                nuint committed_size = (nuint)(bookkeeping_covered_committed - GCCommon.g_gc_lowest_address);
+                nuint total_size = (nuint)(GCCommon.g_gc_highest_address - GCCommon.g_gc_lowest_address);
+                Debug.Assert(committed_size <= total_size);
+                Debug.Assert(committed_size < nuint.MaxValue / 2);
+                nuint new_committed_size = committed_size * 2;
+                if (new_committed_size > total_size)
+                {
+                    new_committed_size = total_size;
+                }
+
+                Debug.Assert(nuint.MaxValue - new_committed_size > (nuint)GCCommon.g_gc_lowest_address);
+                byte* double_commit = GCCommon.g_gc_lowest_address + (nint)new_committed_size;
+                new_bookkeeping_covered_committed = double_commit > new_used ? double_commit : new_used;
+            }
+
+            if (inplace_commit_card_table(bookkeeping_covered_committed, new_bookkeeping_covered_committed))
+            {
+                bookkeeping_covered_committed = new_bookkeeping_covered_committed;
+                break;
+            }
+
+            if (new_bookkeeping_covered_committed == new_used)
+            {
+                return 0;
+            }
+
+            speculative_commit_tried = true;
+        }
+
         return 1;
     }
 

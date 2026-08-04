@@ -374,8 +374,13 @@ the new bounds, then releases with a volatile store. `make_heap_segment` and
 `allocate_new_region` now allocate basic, large, and huge regions through the translated
 allocator, commit and account for the initial page, publish the segment fields through the
 region mapping table, and return an allocation to the allocator if commit fails. The callback
-is a bootstrap success no-op until card-table growth is available. UOH flags remain the
-responsibility of the deferred `get_new_region` caller, as in C++. `init_heap_segment`
+now grows the native-shaped bookkeeping coverage before an allocator can return a new high-water
+region: it reserves the card/brick/generation-map/segment-map/mark-array layout, commits each
+required card-through-segment-map range with page boundaries, rolls back partial commits, tracks
+the committed coverage and per-element sizes, and retries a failed speculative doubling at the
+minimum range. The table pointers are initialized before the translated card table is published;
+write-barrier stomping remains with the later collector initialization that owns it. UOH flags
+remain the responsibility of the deferred `get_new_region` caller, as in C++. `init_heap_segment`
 mechanically resets segment allocation state, preserves only an existing region's
 mark-array-committed flag, clamps the region generation, and initializes large-region
 continuation sentinels. `init_table_for_region`
@@ -816,6 +821,11 @@ reset flag. On Unix the write watch tests pin the platform behavior that makes t
 software write watch: an unsupported answer that reserves nothing. The expected flag values are
 written out in the test rather than read from the constants of the port, so a wrong constant
 fails a test instead of being confirmed by it.
+
+The same virtual-memory suite also creates a real region bookkeeping reservation and exercises
+the `on_used_changed` callback through its native card-table layout: high-water growth, an
+in-coverage no-op, hard-limit commit failure without coverage mutation, page-rounded commitment,
+and a later region allocation that writes the committed brick, mapping, and generation entries.
 
 `SoftwareWriteWatchTests` runs the software write watch port itself, over a synthetic heap of
 unmanaged memory and a table sized by the port's own `GetTableByteSize`: `SoftwareWriteWatch`
