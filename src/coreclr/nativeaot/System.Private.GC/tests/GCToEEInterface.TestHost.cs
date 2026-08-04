@@ -139,6 +139,10 @@ internal static unsafe class GCToEEInterface
 
     internal static ScanContext* LastGcScanRootsContext { get; private set; }
 
+    internal static int GetThreadCallCount { get; private set; }
+
+    internal static void* CurrentThread { get; set; }
+
     internal static string LastFiredEvent { get; private set; }
 
     internal static string LastDynamicEventName { get; private set; }
@@ -163,6 +167,8 @@ internal static unsafe class GCToEEInterface
         LastGcScanRootsCondemned = 0;
         LastGcScanRootsMaxGeneration = 0;
         LastGcScanRootsContext = null;
+        GetThreadCallCount = 0;
+        CurrentThread = null;
         LastFiredEvent = FiredEvent.None;
         LastDynamicEventName = null;
         LastDynamicEventPayload = null;
@@ -206,6 +212,12 @@ internal static unsafe class GCToEEInterface
         LastGcScanRootsCondemned = condemned;
         LastGcScanRootsMaxGeneration = max_gen;
         LastGcScanRootsContext = sc;
+    }
+
+    public static void* GetThread()
+    {
+        GetThreadCallCount++;
+        return CurrentThread;
     }
 
     public static void FireDynamicEvent(byte* name, void* payload, uint payloadSize)

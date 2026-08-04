@@ -730,8 +730,8 @@ namespace Internal.Runtime.GarbageCollection
         public const int LARGE_REGION_FACTOR = 8;
         public const int region_alloc_free_bit = unchecked(1 << (sizeof(uint) * 8 - 1));
 
-        // This is the native field order through the region-map and free-unit counters. Full
-        // spin-lock behavior and the remaining allocation/deletion algorithms are deferred.
+        // This is the native field order through the region-map and free-unit counters. The
+        // remaining allocation/deletion algorithms are deferred.
         private byte* global_region_start;
         private byte* global_region_end;
         private byte* global_region_left_used;
@@ -750,6 +750,40 @@ namespace Internal.Runtime.GarbageCollection
         public void initialize()
         {
             GCSpinLock.initialize(ref region_allocator_lock);
+        }
+
+        public void enter_spin_lock()
+        {
+            fixed (int* lock_address = &region_allocator_lock.@lock)
+            {
+                while (true)
+                {
+                    if (Interlocked.CompareExchange(lock_address, 0, GCSpinLock.lock_free) < 0)
+                    {
+                        break;
+                    }
+
+                    while (GCEnv.VolatileLoadWithoutBarrier(lock_address) >= 0)
+                    {
+                        GCEnv.YieldProcessor();
+                    }
+                }
+            }
+
+#if DEBUG
+            region_allocator_lock.holding_thread = GCToEEInterface.GetThread();
+#endif
+        }
+
+        public void leave_spin_lock()
+        {
+#if DEBUG
+            region_allocator_lock.holding_thread = (void*)(-1);
+#endif
+            fixed (int* lock_address = &region_allocator_lock.@lock)
+            {
+                GCEnv.VolatileStore(lock_address, GCSpinLock.lock_free);
+            }
         }
 
         public bool init(byte* start, byte* end, nuint alignment, byte** lowest, byte** highest)

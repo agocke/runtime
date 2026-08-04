@@ -250,8 +250,11 @@ alignment/bit-decoding helpers (`align_region_up`, `align_region_down`, `is_regi
 `is_unit_memory_free`, `get_num_units`) that do not depend on allocator reservation or lock state.
 The next dependency-closed schema slice extends the exact native field order through
 `region_allocator_lock`, the four `region_map_*` pointers, and the used-free-unit counters, with
-the minimal `GCSpinLock` schema/constructor-sentinel helper needed to carry that field. The pure
-address/index arithmetic helpers `region_address_of` and `region_map_index_of` are translated too.
+the minimal `GCSpinLock` schema/constructor-sentinel helper needed to carry that field. The
+allocator spin-lock enter/leave loop is translated too, preserving the native `-1` free / `0`
+held encoding, the compare-exchange acquire loop, debug owner sentinel/current-thread recording,
+and the release store used to publish the unlocked state. The pure address/index arithmetic
+helpers `region_address_of` and `region_map_index_of` are translated too.
 The allocator's `init` now aligns the reserved range, initializes the map bounds and free-unit
 counts in native order, allocates the zeroed `uint32_t` region map through the managed GC's
 native nothrow allocation shim, and writes the returned lowest/highest bounds only after that map
@@ -264,14 +267,14 @@ allocator `allocate_end`, now preserve the native endpoint-only block encoding, 
 marker, forward/backward pointer movement, exact-fit boundary behavior, and counter ownership
 (the caller still adjusts `total_free_units`). Their native `dprintf(REGIONS_LOG)` debug lines
 and `ASSERT_HOLDING_SPIN_LOCK(&region_allocator_lock)` checks are deliberately deferred until
-string-free region logging and spin-lock ownership diagnostics are ported; this slice does not
-substitute managed diagnostics for them.
+string-free region logging and broader spin-lock ownership diagnostics are ported; this slice
+does not substitute managed diagnostics for them.
 That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
 its native large-region minimum assertion and early-break control flow. The full allocator map
-reservation after `init`, spin-lock enter/leave behavior, free-block search/callback allocation,
-and region deletion algorithms of `region_allocator.cpp` remain deferred.
+reservation after `init`, free-block search/callback allocation, and region deletion algorithms
+of `region_allocator.cpp` remain deferred.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,
 gcpriv.h's region layout that replaces

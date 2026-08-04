@@ -1,6 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Threading;
+using SysInterlocked = System.Threading.Interlocked;
+using SysVolatile = System.Threading.Volatile;
 using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
@@ -2044,6 +2047,189 @@ public sealed unsafe class GCPrivTests
         int lockOffset = System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_allocator_lock").ToInt32();
         Assert.Equal(GCSpinLock.lock_free, *(int*)((byte*)&allocator + lockOffset));
     }
+
+    [Fact]
+    public void RegionAllocatorSpinLockAcquiresAndReleasesUncontended()
+    {
+        region_allocator allocator = default;
+        allocator.initialize();
+
+        allocator.enter_spin_lock();
+
+        Assert.Equal(0, ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock").@lock);
+
+        allocator.leave_spin_lock();
+
+        Assert.Equal(GCSpinLock.lock_free, ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock").@lock);
+    }
+
+    [Fact]
+    public void RegionAllocatorSpinLockWorkerWaitsUntilRelease()
+    {
+        region_allocator* allocator = (region_allocator*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)sizeof(region_allocator));
+        var workerReady = new ManualResetEventSlim(false);
+        var workerAcquired = new ManualResetEventSlim(false);
+        var workerCanLeave = new ManualResetEventSlim(false);
+        Thread? worker = null;
+        bool mainHoldsLock = false;
+
+        try
+        {
+            allocator->initialize();
+            allocator->enter_spin_lock();
+            mainHoldsLock = true;
+
+            nuint allocatorAddress = (nuint)allocator;
+            worker = new Thread(() =>
+            {
+                region_allocator* workerAllocator = (region_allocator*)allocatorAddress;
+                workerReady.Set();
+                workerAllocator->enter_spin_lock();
+                workerAcquired.Set();
+                workerCanLeave.Wait();
+                workerAllocator->leave_spin_lock();
+            })
+            {
+                IsBackground = true,
+            };
+
+            worker.Start();
+            Assert.True(workerReady.Wait(30000));
+            Assert.False(workerAcquired.Wait(0));
+
+            allocator->leave_spin_lock();
+            mainHoldsLock = false;
+
+            Assert.True(workerAcquired.Wait(30000));
+            workerCanLeave.Set();
+            Assert.True(worker.Join(30000));
+            Assert.Equal(GCSpinLock.lock_free, ReadRegionAllocatorField<GCSpinLock>(allocator, "region_allocator_lock").@lock);
+        }
+        finally
+        {
+            if (mainHoldsLock)
+            {
+                allocator->leave_spin_lock();
+            }
+
+            workerCanLeave.Set();
+            bool workerStopped = worker is null || worker.Join(30000);
+            if (workerStopped)
+            {
+                workerReady.Dispose();
+                workerAcquired.Dispose();
+                workerCanLeave.Dispose();
+                System.Runtime.InteropServices.NativeMemory.Free(allocator);
+            }
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorSpinLockPreservesMutualExclusionUnderConcurrency()
+    {
+        const int ThreadCount = 4;
+        const int IterationsPerThread = 2000;
+
+        region_allocator* allocator = (region_allocator*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)sizeof(region_allocator));
+        var start = new ManualResetEventSlim(false);
+        Thread[] threads = new Thread[ThreadCount];
+        int inCritical = 0;
+        int protectedCounter = 0;
+        int acquisitions = 0;
+        int violations = 0;
+
+        try
+        {
+            allocator->initialize();
+            nuint allocatorAddress = (nuint)allocator;
+
+            for (int threadIndex = 0; threadIndex < ThreadCount; threadIndex++)
+            {
+                threads[threadIndex] = new Thread(() =>
+                {
+                    region_allocator* workerAllocator = (region_allocator*)allocatorAddress;
+                    start.Wait();
+
+                    for (int iteration = 0; iteration < IterationsPerThread; iteration++)
+                    {
+                        workerAllocator->enter_spin_lock();
+
+                        if (SysInterlocked.Increment(ref inCritical) != 1)
+                        {
+                            SysVolatile.Write(ref violations, 1);
+                        }
+
+                        int value = protectedCounter;
+                        GCEnv.YieldProcessor();
+                        protectedCounter = value + 1;
+
+                        if (SysInterlocked.Decrement(ref inCritical) != 0)
+                        {
+                            SysVolatile.Write(ref violations, 1);
+                        }
+
+                        workerAllocator->leave_spin_lock();
+                        SysInterlocked.Increment(ref acquisitions);
+                    }
+                })
+                {
+                    IsBackground = true,
+                };
+                threads[threadIndex].Start();
+            }
+
+            start.Set();
+
+            foreach (Thread thread in threads)
+            {
+                Assert.True(thread.Join(30000));
+            }
+
+            Assert.Equal(0, SysVolatile.Read(ref violations));
+            Assert.Equal(ThreadCount * IterationsPerThread, protectedCounter);
+            Assert.Equal(ThreadCount * IterationsPerThread, acquisitions);
+            Assert.Equal(GCSpinLock.lock_free, ReadRegionAllocatorField<GCSpinLock>(allocator, "region_allocator_lock").@lock);
+        }
+        finally
+        {
+            start.Set();
+            bool allThreadsStopped = true;
+            foreach (Thread? thread in threads)
+            {
+                allThreadsStopped &= thread is null || thread.Join(30000);
+            }
+
+            start.Dispose();
+            if (allThreadsStopped)
+            {
+                System.Runtime.InteropServices.NativeMemory.Free(allocator);
+            }
+        }
+    }
+
+#if DEBUG
+    [Fact]
+    public void RegionAllocatorSpinLockRecordsCurrentThreadAndRestoresSentinelInDebug()
+    {
+        GCToEEInterface.Reset();
+        GCToEEInterface.CurrentThread = (void*)0x12345678;
+        region_allocator allocator = default;
+        allocator.initialize();
+
+        allocator.enter_spin_lock();
+
+        GCSpinLock held = ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock");
+        Assert.Equal(0, held.@lock);
+        Assert.Equal((nuint)0x12345678, (nuint)held.holding_thread);
+        Assert.Equal(1, GCToEEInterface.GetThreadCallCount);
+
+        allocator.leave_spin_lock();
+
+        GCSpinLock released = ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock");
+        Assert.Equal(GCSpinLock.lock_free, released.@lock);
+        Assert.Equal(nuint.MaxValue, (nuint)released.holding_thread);
+    }
+#endif
 
     [Fact]
     public void RegionAllocatorInitAlignsRangeAllocatesZeroedMapAndPreservesSpinLock()
