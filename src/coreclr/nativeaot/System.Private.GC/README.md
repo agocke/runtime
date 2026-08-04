@@ -370,9 +370,10 @@ empty range is the native `MAX_PTR`/null pair, represented by `(byte*)nuint.MaxV
 `set_region_gen_num` updates the embedded segment generation and every basic-region map entry
 before acquiring that lock for gen0/gen1. A contending updater rechecks whether another updater
 already covered the range, and an expanding updater stomps the write barrier before publishing
-the new bounds, then releases with a volatile store. `get_free_region`, `init_heap_segment`,
-`allocate_new_region`, and `init_table_for_region` remain deferred; in particular,
-`init_heap_segment` still owns large-region continuation-entry initialization.
+the new bounds, then releases with a volatile store. `init_heap_segment` now mechanically resets
+segment allocation state, preserves only an existing region's mark-array-committed flag, clamps
+the region generation, and initializes large-region continuation sentinels. `get_free_region`,
+`allocate_new_region`, and `init_table_for_region` remain deferred.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

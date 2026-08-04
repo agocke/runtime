@@ -23,6 +23,7 @@ public sealed unsafe class GCWriteBarrierTests : IDisposable
     private readonly nuint _minSegmentSizeShr;
     private readonly region_info* _mapRegionToGeneration;
     private readonly region_info* _mapRegionToGenerationSkewed;
+    private readonly seg_mapping* _segMappingTable;
     private readonly byte* _lowestAddress;
     private readonly byte* _highestAddress;
     private readonly GCSpinLock _writeBarrierSpinLock;
@@ -40,6 +41,7 @@ public sealed unsafe class GCWriteBarrierTests : IDisposable
         _minSegmentSizeShr = gc_heap.min_segment_size_shr;
         _mapRegionToGeneration = gc_heap.map_region_to_generation;
         _mapRegionToGenerationSkewed = gc_heap.map_region_to_generation_skewed;
+        _segMappingTable = GCCommon.seg_mapping_table;
         _lowestAddress = GCCommon.g_gc_lowest_address;
         _highestAddress = GCCommon.g_gc_highest_address;
         _writeBarrierSpinLock = GCWriteBarrier.write_barrier_spin_lock;
@@ -68,6 +70,7 @@ public sealed unsafe class GCWriteBarrierTests : IDisposable
         gc_heap.min_segment_size_shr = _minSegmentSizeShr;
         gc_heap.map_region_to_generation = _mapRegionToGeneration;
         gc_heap.map_region_to_generation_skewed = _mapRegionToGenerationSkewed;
+        GCCommon.seg_mapping_table = _segMappingTable;
         GCCommon.g_gc_lowest_address = _lowestAddress;
         GCCommon.g_gc_highest_address = _highestAddress;
         GCWriteBarrier.write_barrier_spin_lock = _writeBarrierSpinLock;
@@ -237,6 +240,141 @@ public sealed unsafe class GCWriteBarrierTests : IDisposable
         Assert.Equal(GCSpinLock.lock_free, GCWriteBarrier.write_barrier_spin_lock.@lock);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InitHeapSegmentResetsBasicRegionAndRetainsOnlyExistingMarkArrayCommit(bool existingRegion)
+    {
+        SetWriteBarrierFlavor(WriteBarrierFlavor.WRITE_BARRIER_REGION_BIT);
+        seg_mapping* mappings = stackalloc seg_mapping[16];
+        region_info* map = stackalloc region_info[16];
+        for (int i = 0; i < 16; i++)
+        {
+            mappings[i] = default;
+        }
+
+        GCCommon.seg_mapping_table = mappings;
+        InitializeMap(map);
+        heap_segment* segment = &mappings[2].region_info;
+        InitializeSegment(segment, (byte*)0x2000, BasicRegionSize);
+        segment->flags = heap_segment.heap_segment_flags_poh;
+#if BACKGROUND_GC
+        segment->flags |= heap_segment.heap_segment_flags_ma_committed;
+        heap_segment.heap_segment_background_allocated(segment) = (byte*)0x7777;
+        heap_segment.heap_segment_saved_bg_allocated(segment) = (byte*)0x8888;
+#endif
+        heap_segment.heap_segment_next(segment) = (heap_segment*)0x3333;
+        heap_segment.heap_segment_plan_allocated(segment) = (byte*)0x4444;
+        heap_segment.heap_segment_allocated(segment) = (byte*)0x5555;
+        heap_segment.heap_segment_saved_allocated(segment) = (byte*)0x6666;
+#if !USE_REGIONS || MULTIPLE_HEAPS
+        heap_segment.heap_segment_decommit_target(segment) = (byte*)0x7777;
+#endif
+#if MULTIPLE_HEAPS
+        heap_segment.heap_segment_heap(segment) = null;
+#endif
+        heap_segment.heap_segment_plan_gen_num(segment) = -1;
+        heap_segment.heap_segment_swept_in_plan(segment) = 1;
+
+        gc_heap.init_heap_segment(
+            segment,
+            (gc_heap*)0x1234,
+            (byte*)0x2000,
+            BasicRegionSize,
+            (int)gc_generation_num.soh_gen1,
+            existingRegion);
+
+#if BACKGROUND_GC
+        Assert.Equal(
+            existingRegion ? heap_segment.heap_segment_flags_ma_committed : 0,
+            segment->flags);
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_background_allocated(segment));
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_saved_bg_allocated(segment));
+#else
+        Assert.Equal((nuint)0, segment->flags);
+#endif
+        Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(segment));
+        Assert.Equal((nuint)heap_segment.heap_segment_mem(segment), (nuint)heap_segment.heap_segment_plan_allocated(segment));
+        Assert.Equal((nuint)heap_segment.heap_segment_mem(segment), (nuint)heap_segment.heap_segment_allocated(segment));
+        Assert.Equal((nuint)heap_segment.heap_segment_mem(segment), (nuint)heap_segment.heap_segment_saved_allocated(segment));
+#if !USE_REGIONS || MULTIPLE_HEAPS
+        Assert.Equal((nuint)heap_segment.heap_segment_reserved(segment), (nuint)heap_segment.heap_segment_decommit_target(segment));
+#endif
+#if MULTIPLE_HEAPS
+        Assert.Equal((nuint)0x1234, (nuint)heap_segment.heap_segment_heap(segment));
+#endif
+        Assert.Equal((byte)gc_generation_num.soh_gen1, heap_segment.heap_segment_gen_num(segment));
+        Assert.Equal((int)gc_generation_num.soh_gen1, heap_segment.heap_segment_plan_gen_num(segment));
+        Assert.Equal((byte)0, heap_segment.heap_segment_swept_in_plan(segment));
+        Assert.Equal(
+            (byte)((int)gc_generation_num.soh_gen1 | ((int)gc_generation_num.soh_gen1 << (int)region_info.RI_PLAN_GEN_SHR)),
+            (byte)map[1]);
+
+        Assert.Equal(1, GCToEEInterface.StompWriteBarrierCallCount);
+        WriteBarrierParameters args = GCToEEInterface.LastStompWriteBarrier;
+        Assert.Equal(WriteBarrierOp.StompEphemeral, args.operation);
+        Assert.Equal((byte)1, args.is_runtime_suspended);
+        Assert.Equal((nuint)0x2000, (nuint)args.ephemeral_low);
+        Assert.Equal((nuint)0x3000, (nuint)args.ephemeral_high);
+        Assert.Equal((nuint)gc_heap.map_region_to_generation_skewed, (nuint)args.region_to_generation_table);
+        Assert.Equal(BasicRegionShift, args.region_shr);
+        Assert.Equal((byte)1, args.region_use_bitwise_write_barrier);
+    }
+
+    [Fact]
+    public void InitHeapSegmentClampsUohGenerationAndInitializesLargeRegionContinuations()
+    {
+        seg_mapping* mappings = stackalloc seg_mapping[16];
+        region_info* map = stackalloc region_info[16];
+        for (int i = 0; i < 16; i++)
+        {
+            mappings[i] = default;
+        }
+
+        GCCommon.seg_mapping_table = mappings;
+        InitializeMap(map);
+        heap_segment* segment = &mappings[2].region_info;
+        InitializeSegment(segment, (byte*)0x2000, 3 * BasicRegionSize);
+        for (int i = 1; i < 3; i++)
+        {
+            heap_segment* basicRegion = &mappings[2 + i].region_info;
+            basicRegion->allocated = (byte*)0xCCCC;
+            basicRegion->gen_num = byte.MaxValue;
+            basicRegion->plan_gen_num = -1;
+#if MULTIPLE_HEAPS
+            basicRegion->heap = null;
+#endif
+        }
+
+        gc_heap.init_heap_segment(
+            segment,
+            (gc_heap*)0x1234,
+            (byte*)0x2000,
+            3 * BasicRegionSize,
+            (int)gc_generation_num.loh_generation);
+
+        int expectedGeneration = GCInterfaceOffsets.max_generation;
+        byte expectedMapEntry = (byte)(expectedGeneration | (expectedGeneration << (int)region_info.RI_PLAN_GEN_SHR));
+        Assert.Equal((byte)expectedGeneration, heap_segment.heap_segment_gen_num(segment));
+        Assert.Equal(expectedGeneration, heap_segment.heap_segment_plan_gen_num(segment));
+        Assert.Equal((byte)0, heap_segment.heap_segment_swept_in_plan(segment));
+        Assert.Equal(expectedMapEntry, (byte)map[1]);
+        Assert.Equal(expectedMapEntry, (byte)map[2]);
+        Assert.Equal(expectedMapEntry, (byte)map[3]);
+        Assert.Equal(0, GCToEEInterface.StompWriteBarrierCallCount);
+
+        for (int i = 1; i < 3; i++)
+        {
+            heap_segment* basicRegion = &mappings[2 + i].region_info;
+            Assert.Equal((nint)(-i), (nint)heap_segment.heap_segment_allocated(basicRegion));
+            Assert.Equal((byte)expectedGeneration, heap_segment.heap_segment_gen_num(basicRegion));
+            Assert.Equal(expectedGeneration, heap_segment.heap_segment_plan_gen_num(basicRegion));
+#if MULTIPLE_HEAPS
+            Assert.Equal((nuint)0x1234, (nuint)heap_segment.heap_segment_heap(basicRegion));
+#endif
+        }
+    }
+
     private static void InitializeMap(region_info* map)
     {
         gc_heap.map_region_to_generation = map;
@@ -251,6 +389,15 @@ public sealed unsafe class GCWriteBarrierTests : IDisposable
         heap_segment.heap_segment_mem(region) = memory;
         heap_segment.heap_segment_allocated(region) = memory;
         heap_segment.heap_segment_reserved(region) = start + (nint)size;
+    }
+
+    private static void InitializeSegment(heap_segment* segment, byte* start, nuint size)
+    {
+        *segment = default;
+        byte* memory = start + sizeof(aligned_plug_and_gap);
+        heap_segment.heap_segment_mem(segment) = memory;
+        heap_segment.heap_segment_committed(segment) = start + (nint)size;
+        heap_segment.heap_segment_reserved(segment) = start + (nint)size;
     }
 
     private static void ObserveStomp(WriteBarrierParameters args)

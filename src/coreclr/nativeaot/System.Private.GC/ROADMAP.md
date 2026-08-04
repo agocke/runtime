@@ -987,15 +987,19 @@ Done so far:
   constructor. Gen0/gen1 updates fill the basic-region map, acquire the native sentinel lock
   only when the current range does not cover the region, recheck coverage after contention,
   stomp before publishing expanded bounds, and release through the GC volatile helper.
+- The dependency-closed WKS `USE_REGIONS` `init_heap_segment` from
+  `regions_segments.cpp`. It retains only `heap_segment_flags_ma_committed` when reusing a
+  region during background GC, resets the native allocation and background fields, publishes the
+  clamped generation through `set_region_gen_num`, and initializes each large-region continuation
+  with its negative backtracking sentinel and generation fields.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
   mutable read-only segment list operations, region creation/reuse, generation threading,
-  `get_free_region`, `init_heap_segment`, `allocate_new_region`,
-  `init_table_for_region`, full heap-segment deletion, and free-region distribution.
-  `init_heap_segment` remains responsible for initializing large-region continuation entries.
+  `get_free_region`, `allocate_new_region`, `init_table_for_region`, full heap-segment deletion,
+  and free-region distribution.
   The dependent allocation helpers remain blocked on region allocation and generation
   construction.
 

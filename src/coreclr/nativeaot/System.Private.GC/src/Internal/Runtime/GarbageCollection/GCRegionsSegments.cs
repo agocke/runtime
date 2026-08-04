@@ -80,6 +80,52 @@ internal unsafe partial struct gc_heap
         _ = seg;
     }
 
+    public static void init_heap_segment(heap_segment* seg, gc_heap* hp, byte* start, nuint size, int gen_num, bool existing_region_p = false)
+    {
+#if BACKGROUND_GC
+        seg->flags = existing_region_p ? seg->flags & heap_segment.heap_segment_flags_ma_committed : 0;
+#else
+        seg->flags = 0;
+#endif
+        heap_segment.heap_segment_next(seg) = null;
+        heap_segment.heap_segment_plan_allocated(seg) = heap_segment.heap_segment_mem(seg);
+        heap_segment.heap_segment_allocated(seg) = heap_segment.heap_segment_mem(seg);
+        heap_segment.heap_segment_saved_allocated(seg) = heap_segment.heap_segment_mem(seg);
+#if !USE_REGIONS || MULTIPLE_HEAPS
+        heap_segment.heap_segment_decommit_target(seg) = heap_segment.heap_segment_reserved(seg);
+#endif
+#if BACKGROUND_GC
+        heap_segment.heap_segment_background_allocated(seg) = null;
+        heap_segment.heap_segment_saved_bg_allocated(seg) = null;
+#endif
+
+#if MULTIPLE_HEAPS
+        heap_segment.heap_segment_heap(seg) = hp;
+#endif
+
+        int gen_num_for_region = gen_num < GCInterfaceOffsets.max_generation ? gen_num : GCInterfaceOffsets.max_generation;
+        set_region_gen_num(seg, gen_num_for_region);
+        heap_segment.heap_segment_plan_gen_num(seg) = gen_num_for_region;
+        heap_segment.heap_segment_swept_in_plan(seg) = 0;
+        int num_basic_regions = (int)(size >> (int)min_segment_size_shr);
+        nuint basic_region_size = (nuint)1 << (int)min_segment_size_shr;
+        if (num_basic_regions > 1)
+        {
+            for (int i = 1; i < num_basic_regions; i++)
+            {
+                byte* basic_region_start = start + ((nuint)i * basic_region_size);
+                heap_segment* basic_region = get_region_info(basic_region_start);
+                heap_segment.heap_segment_allocated(basic_region) = (byte*)(nint)(-i);
+                heap_segment.heap_segment_gen_num(basic_region) = (byte)gen_num_for_region;
+                heap_segment.heap_segment_plan_gen_num(basic_region) = gen_num_for_region;
+
+#if MULTIPLE_HEAPS
+                heap_segment.heap_segment_heap(basic_region) = hp;
+#endif
+            }
+        }
+    }
+
     // Note that this gets the basic region index for obj. If the obj is in a large region,
     // this region may not be the start of it.
     public static heap_segment* region_of(byte* obj)
