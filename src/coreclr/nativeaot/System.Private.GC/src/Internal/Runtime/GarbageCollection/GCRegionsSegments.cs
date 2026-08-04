@@ -743,6 +743,73 @@ internal unsafe partial struct gc_heap
 #endif
     }
 
+    // generation_table, ephemeral_heap_segment, and alloc_allocated stand in for the corresponding
+    // fields of the still-deferred gc_heap layout. They must remain distinct outputs so the
+    // caller publishes them in the same order as the native per-heap fields.
+    public static bool initial_make_soh_regions(
+        generation* generation_table,
+        heap_segment** ephemeral_heap_segment,
+        byte** alloc_allocated,
+        gc_heap* hp)
+    {
+        byte* region_start;
+        byte* region_end;
+        int hn = 0;
+#if MULTIPLE_HEAPS
+        hn = hp->heap_number;
+#endif
+
+        for (int i = GCInterfaceOffsets.max_generation; i >= 0; i--)
+        {
+            get_initial_region(i, hn, &region_start, &region_end);
+
+            nuint region_size = (nuint)(region_end - region_start);
+
+            heap_segment* current_region = make_heap_segment(region_start, region_size, hp, i);
+            if (current_region is null)
+            {
+                return false;
+            }
+
+            byte* gen_start = heap_segment.heap_segment_mem(current_region);
+            make_generation(generation_table, i, current_region, gen_start);
+
+            if (i == 0)
+            {
+                *ephemeral_heap_segment = current_region;
+                *alloc_allocated = heap_segment.heap_segment_allocated(current_region);
+            }
+        }
+
+        return true;
+    }
+
+    public static bool initial_make_uoh_regions(int gen, generation* generation_table, gc_heap* hp)
+    {
+        byte* region_start;
+        byte* region_end;
+        int hn = 0;
+#if MULTIPLE_HEAPS
+        hn = hp->heap_number;
+#endif
+
+        get_initial_region(gen, hn, &region_start, &region_end);
+
+        nuint region_size = (nuint)(region_end - region_start);
+        heap_segment* uoh_region = make_heap_segment(region_start, region_size, hp, gen);
+        if (uoh_region is null)
+        {
+            return false;
+        }
+
+        uoh_region->flags |= gen == (int)gc_generation_num.loh_generation
+            ? heap_segment.heap_segment_flags_loh
+            : heap_segment.heap_segment_flags_poh;
+        byte* gen_start = heap_segment.heap_segment_mem(uoh_region);
+        make_generation(generation_table, gen, uoh_region, gen_start);
+        return true;
+    }
+
     public static heap_segment* heap_segment_rw(heap_segment* ns)
     {
         if (ns is null || heap_segment.heap_segment_read_only_p(ns) == 0)

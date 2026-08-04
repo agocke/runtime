@@ -430,6 +430,206 @@ public sealed unsafe class GCVirtualMemoryTests
     }
 
     [Fact]
+    public void InitialMakeSohRegionsBuildsGen2ThroughGen0AndPublishesGen0()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(24 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 24 * pageSize, pageSize);
+        byte** initialRegions = null;
+        try
+        {
+            GCWriteBarrier.initialize();
+            Assert.True(gc_heap.allocate_initial_regions(1));
+            initialRegions = gc_heap.initial_regions;
+
+            generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+            InitializeGenerations(generations);
+            heap_segment* ephemeralHeapSegment = (heap_segment*)0x1234;
+            byte* allocAllocated = (byte*)0x5678;
+
+            Assert.True(gc_heap.initial_make_soh_regions(
+                generations,
+                &ephemeralHeapSegment,
+                &allocAllocated,
+                (gc_heap*)0x9ABC));
+
+            AssertInitialSohGeneration(generations, (int)gc_generation_num.soh_gen2, reservation + (nint)(8 * pageSize));
+            AssertInitialSohGeneration(generations, (int)gc_generation_num.soh_gen1, reservation + (nint)(9 * pageSize));
+            AssertInitialSohGeneration(generations, (int)gc_generation_num.soh_gen0, reservation + (nint)(10 * pageSize));
+
+            generation* gen0 = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0);
+            Assert.Equal((nuint)generation.generation_allocation_segment(gen0), (nuint)ephemeralHeapSegment);
+            Assert.Equal((nuint)heap_segment.heap_segment_allocated(ephemeralHeapSegment), (nuint)allocAllocated);
+            Assert.Equal((nuint)(reservation + (nint)(9 * pageSize)), (nuint)gc_heap.ephemeral_low);
+            Assert.Equal((nuint)(reservation + (nint)(11 * pageSize)), (nuint)gc_heap.ephemeral_high);
+            Assert.Equal(3 * pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+            Assert.Equal(3 * pageSize, gc_heap.current_total_committed);
+        }
+        finally
+        {
+            if (initialRegions is not null)
+            {
+                SyncImports.ManagedGC_Free(initialRegions);
+            }
+
+            GCToOSInterface.VirtualRelease(reservation, 24 * pageSize);
+        }
+    }
+
+    [Fact]
+    public void InitialMakeSohRegionsStopsAfterMakeHeapSegmentFailure()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(24 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 24 * pageSize, pageSize);
+        byte** initialRegions = null;
+        try
+        {
+            GCWriteBarrier.initialize();
+            Assert.True(gc_heap.allocate_initial_regions(1));
+            initialRegions = gc_heap.initial_regions;
+
+            generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+            InitializeGenerations(generations);
+            generation* gen1 = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen1);
+            generation* gen0 = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0);
+            gen1->gen_num = 101;
+            gen0->gen_num = 102;
+            generation.generation_start_segment(gen1) = (heap_segment*)0x1111;
+            generation.generation_start_segment(gen0) = (heap_segment*)0x2222;
+            heap_segment* ephemeralHeapSegment = (heap_segment*)0x3333;
+            byte* allocAllocated = (byte*)0x4444;
+            gc_heap.heap_hard_limit = pageSize;
+
+            Assert.False(gc_heap.initial_make_soh_regions(
+                generations,
+                &ephemeralHeapSegment,
+                &allocAllocated,
+                (gc_heap*)0x9ABC));
+
+            AssertInitialSohGeneration(generations, (int)gc_generation_num.soh_gen2, reservation + (nint)(8 * pageSize));
+            Assert.Equal(101, gen1->gen_num);
+            Assert.Equal(102, gen0->gen_num);
+            Assert.Equal((nuint)0x1111, (nuint)generation.generation_start_segment(gen1));
+            Assert.Equal((nuint)0x2222, (nuint)generation.generation_start_segment(gen0));
+            Assert.Equal((nuint)0x3333, (nuint)ephemeralHeapSegment);
+            Assert.Equal((nuint)0x4444, (nuint)allocAllocated);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+            Assert.Equal(pageSize, gc_heap.current_total_committed);
+        }
+        finally
+        {
+            if (initialRegions is not null)
+            {
+                SyncImports.ManagedGC_Free(initialRegions);
+            }
+
+            GCToOSInterface.VirtualRelease(reservation, 24 * pageSize);
+        }
+    }
+
+    [Fact]
+    public void InitialMakeUohRegionsSetsLohAndPohFlagsAndAccountsCommit()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(24 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 24 * pageSize, pageSize);
+        byte** initialRegions = null;
+        try
+        {
+            Assert.True(gc_heap.allocate_initial_regions(1));
+            initialRegions = gc_heap.initial_regions;
+
+            generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+            InitializeGenerations(generations);
+
+            Assert.True(gc_heap.initial_make_uoh_regions(
+                (int)gc_generation_num.loh_generation,
+                generations,
+                (gc_heap*)0x9ABC));
+            Assert.True(gc_heap.initial_make_uoh_regions(
+                (int)gc_generation_num.poh_generation,
+                generations,
+                (gc_heap*)0x9ABC));
+
+            AssertInitialUohGeneration(
+                generations,
+                (int)gc_generation_num.loh_generation,
+                reservation + (nint)(11 * pageSize),
+                heap_segment.heap_segment_flags_loh);
+            AssertInitialUohGeneration(
+                generations,
+                (int)gc_generation_num.poh_generation,
+                reservation,
+                heap_segment.heap_segment_flags_poh);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.loh]);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.poh]);
+            Assert.Equal(2 * pageSize, gc_heap.current_total_committed);
+        }
+        finally
+        {
+            if (initialRegions is not null)
+            {
+                SyncImports.ManagedGC_Free(initialRegions);
+            }
+
+            GCToOSInterface.VirtualRelease(reservation, 24 * pageSize);
+        }
+    }
+
+    [Fact]
+    public void InitialMakeUohRegionsLeavesGenerationAndAccountingOnFailure()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(24 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 24 * pageSize, pageSize);
+        byte** initialRegions = null;
+        try
+        {
+            Assert.True(gc_heap.allocate_initial_regions(1));
+            initialRegions = gc_heap.initial_regions;
+
+            generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+            InitializeGenerations(generations);
+            generation* loh = gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation);
+            loh->gen_num = 201;
+            generation.generation_start_segment(loh) = (heap_segment*)0x1234;
+            gc_heap.heap_hard_limit = pageSize - 1;
+
+            Assert.False(gc_heap.initial_make_uoh_regions(
+                (int)gc_generation_num.loh_generation,
+                generations,
+                (gc_heap*)0x9ABC));
+
+            Assert.Equal(201, loh->gen_num);
+            Assert.Equal((nuint)0x1234, (nuint)generation.generation_start_segment(loh));
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[(int)gc_oh_num.loh]);
+            Assert.Equal((nuint)0, gc_heap.current_total_committed);
+        }
+        finally
+        {
+            if (initialRegions is not null)
+            {
+                SyncImports.ManagedGC_Free(initialRegions);
+            }
+
+            GCToOSInterface.VirtualRelease(reservation, 24 * pageSize);
+        }
+    }
+
+    [Fact]
     public void AllocateNewRegionRoundsUohBoundariesAndRollsBackCommitFailure()
     {
         using MemoryAccountingScope accounting = new();
@@ -1130,6 +1330,38 @@ public sealed unsafe class GCVirtualMemoryTests
         region_free_list.add_region(region, gc_heap.free_regions_of((int)free_region_kind.basic_free_region));
     }
 
+    private static void InitializeGenerations(generation* generations)
+    {
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation.initialize(&generations[i]);
+        }
+    }
+
+    private static void AssertInitialSohGeneration(generation* generations, int genNum, byte* expectedRegionStart)
+    {
+        generation* gen = gc_heap.generation_of(generations, genNum);
+        heap_segment* expectedSegment = gc_heap.get_region_info(expectedRegionStart);
+
+        Assert.Equal(genNum, gen->gen_num);
+        Assert.Equal((nuint)expectedSegment, (nuint)generation.generation_start_segment(gen));
+        Assert.Equal((nuint)expectedSegment, (nuint)generation.generation_allocation_segment(gen));
+        Assert.Equal((nuint)expectedSegment, (nuint)generation.generation_tail_region(gen));
+        Assert.Equal((nuint)0, (nuint)generation.generation_tail_ro_region(gen));
+        Assert.Equal((nuint)(expectedRegionStart + sizeof(aligned_plug_and_gap)), (nuint)heap_segment.heap_segment_mem(expectedSegment));
+    }
+
+    private static void AssertInitialUohGeneration(
+        generation* generations,
+        int genNum,
+        byte* expectedRegionStart,
+        nuint expectedFlag)
+    {
+        AssertInitialSohGeneration(generations, genNum, expectedRegionStart);
+        heap_segment* segment = generation.generation_start_segment(gc_heap.generation_of(generations, genNum));
+        Assert.Equal(expectedFlag, segment->flags & (heap_segment.heap_segment_flags_loh | heap_segment.heap_segment_flags_poh));
+    }
+
     private sealed class RegionAllocationScope : IDisposable
     {
         private readonly region_allocator _oldAllocator;
@@ -1150,6 +1382,10 @@ public sealed unsafe class GCVirtualMemoryTests
         private readonly gc_heap.bookkeeping_size_array _oldBookkeepingSizes;
         private readonly byte* _oldHeapLowestAddress;
         private readonly byte* _oldHeapHighestAddress;
+        private readonly byte** _oldInitialRegions;
+        private readonly GCSpinLock _oldWriteBarrierSpinLock;
+        private readonly byte* _oldEphemeralLow;
+        private readonly byte* _oldEphemeralHigh;
 #if BACKGROUND_GC
         private readonly uint* _oldMarkArray;
 #endif
@@ -1179,6 +1415,10 @@ public sealed unsafe class GCVirtualMemoryTests
             _oldBookkeepingSizes = gc_heap.bookkeeping_sizes;
             _oldHeapLowestAddress = gc_heap.lowest_address;
             _oldHeapHighestAddress = gc_heap.highest_address;
+            _oldInitialRegions = gc_heap.initial_regions;
+            _oldWriteBarrierSpinLock = GCWriteBarrier.write_barrier_spin_lock;
+            _oldEphemeralLow = gc_heap.ephemeral_low;
+            _oldEphemeralHigh = gc_heap.ephemeral_high;
 #if BACKGROUND_GC
             _oldMarkArray = gc_heap.mark_array;
 #endif
@@ -1264,6 +1504,10 @@ public sealed unsafe class GCVirtualMemoryTests
             gc_heap.bookkeeping_sizes = _oldBookkeepingSizes;
             gc_heap.lowest_address = _oldHeapLowestAddress;
             gc_heap.highest_address = _oldHeapHighestAddress;
+            gc_heap.initial_regions = _oldInitialRegions;
+            GCWriteBarrier.write_barrier_spin_lock = _oldWriteBarrierSpinLock;
+            gc_heap.ephemeral_low = _oldEphemeralLow;
+            gc_heap.ephemeral_high = _oldEphemeralHigh;
 #if BACKGROUND_GC
             gc_heap.mark_array = _oldMarkArray;
 #endif

@@ -411,9 +411,12 @@ The next construction/threading slice adds the raw contiguous generation-table a
 and `get_new_region` from `plan_phase.cpp`. It resets allocation/free-list state while retaining
 the generation's initialized allocator shape, wires start/allocation/tail segments, preserves
 append order, and assigns LOH/POH flags at the native `get_new_region` owner before publishing
-the new tail. The initial SOH/UOH constructors remain deferred: their `initial_regions`
-consumers, production initialization integration, and destruction lifecycle have not been
-ported, so no synthetic success path was introduced.
+the new tail. The WKS initial SOH/UOH constructors now consume `initial_regions` through that
+same raw generation-table adapter: SOH constructs gen2 through gen0, stops immediately on a
+failed segment commit, and publishes the gen0 ephemeral segment before its allocation pointer;
+UOH sets its native LOH/POH flag before generation construction. Production initialization
+integration and the destruction lifecycle remain deferred with the full heap layout, so this
+does not add a synthetic startup path.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

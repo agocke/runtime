@@ -1041,10 +1041,12 @@ Done so far:
   generation numbers and start/allocation/tail segment fields, and preserves the WKS
   `DOUBLY_LINKED_FL` reset. Threading skips read-only segments and retains native append order.
   `get_new_region` assigns LOH/POH flags at their native owner before linking and publishing the
-  UOH tail, and retains the null failure path without changing the generation list. Initial
-  SOH/UOH construction remains explicitly deferred because `initial_regions` consumers and its
-  destruction lifecycle are not represented; the reservation producer itself is now translated,
-  with no construction success stub added.
+  UOH tail, and retains the null failure path without changing the generation list. The WKS
+  initial SOH/UOH constructors now consume the reserved initial regions through the same
+  raw generation-table adapter, preserving gen2-to-gen0 construction order, commit-failure
+  short-circuiting, gen0 ephemeral publications, and LOH/POH flags. The deferred full heap layout
+  still owns their production call site, so no initialization wiring or destruction lifecycle has
+  been added.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
