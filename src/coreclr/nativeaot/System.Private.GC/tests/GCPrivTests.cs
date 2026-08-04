@@ -1692,6 +1692,51 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void RegionOfAndGetRegionAtIndexPreserveSkewedAbsoluteIndexing()
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        seg_mapping* table = stackalloc seg_mapping[4];
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x9000;
+            GCCommon.seg_mapping_table = table - 5;
+            table[2].region_info.gen_num = 2;
+
+            heap_segment* regionOf = gc_heap.region_of((byte*)0x7001);
+            heap_segment* regionAtIndex = gc_heap.get_region_at_index(2);
+
+            Assert.Equal((nuint)(&table[2]), (nuint)regionOf);
+            Assert.Equal((nuint)(&table[2]), (nuint)regionAtIndex);
+            Assert.Equal(2, gc_heap.get_region_gen_num(regionOf));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            GCCommon.seg_mapping_table = oldTable;
+        }
+    }
+
+    [Fact]
+    public void RegionStartObjectHelpersUseRegionMemory()
+    {
+        heap_segment region = default;
+        generation gen = default;
+        region.mem = (byte*)0x12345678;
+
+        Assert.Equal((nuint)region.mem, (nuint)gc_heap.get_uoh_start_object(&region, &gen));
+        Assert.Equal((nuint)region.mem, (nuint)gc_heap.get_soh_start_object(&region, &gen));
+        Assert.Equal((nuint)0, gc_heap.get_soh_start_obj_len(region.mem));
+    }
+
+    [Fact]
     public void RegionMappingForAddressBacktracksLargeRegionContinuationSentinel()
     {
         nuint oldShift = gc_heap.min_segment_size_shr;

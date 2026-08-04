@@ -350,7 +350,15 @@ segment recording and debug mark-array verification, and returning a live region
 per-heap free lists. It preserves the native absolute-index arithmetic, `ro_in_entry` sentinel,
 UOH brick-skip, committed-byte transfer from the owning object heap to the free bucket,
 descending free-list dispatch, and basic-region `allocated` sentinel clearing. The native remove
-helper remains its intentional no-op.
+helper remains its intentional no-op. The next dependency-closed lookup slice adds `region_of`,
+`get_region_at_index`, and direct `get_region_gen_num(heap_segment*)` access. `region_of` indexes
+the already-skewed mapping table with the absolute address shift, while `get_region_at_index`
+first adds the shifted nonzero heap base. The region-build `get_uoh_start_object`,
+`get_soh_start_object`, and `get_soh_start_obj_len` helpers are also translated: both starts are
+the region's memory and the SOH length is zero. `get_free_region`, `init_heap_segment`,
+`set_region_gen_num`, generation-map accessors, `allocate_new_region`, and `init_table_for_region`
+remain deferred because they require region reuse/allocation, generation-map writes, or
+write-barrier/mark-array work.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

@@ -80,6 +80,45 @@ internal unsafe partial struct gc_heap
         _ = seg;
     }
 
+    // Note that this gets the basic region index for obj. If the obj is in a large region,
+    // this region may not be the start of it.
+    public static heap_segment* region_of(byte* obj)
+    {
+        nuint index = (nuint)obj >> (int)min_segment_size_shr;
+        seg_mapping* entry = &GCCommon.seg_mapping_table[(nint)index];
+
+        return (heap_segment*)entry;
+    }
+
+    public static heap_segment* get_region_at_index(nuint index)
+    {
+        index += (nuint)GCCommon.g_gc_lowest_address >> (int)min_segment_size_shr;
+        return (heap_segment*)&GCCommon.seg_mapping_table[(nint)index];
+    }
+
+    public static int get_region_gen_num(heap_segment* region)
+    {
+        return heap_segment.heap_segment_gen_num(region);
+    }
+
+    public static byte* get_uoh_start_object(heap_segment* region, generation* gen)
+    {
+        _ = gen;
+        return heap_segment.heap_segment_mem(region);
+    }
+
+    public static byte* get_soh_start_object(heap_segment* region, generation* gen)
+    {
+        _ = gen;
+        return heap_segment.heap_segment_mem(region);
+    }
+
+    public static nuint get_soh_start_obj_len(byte* start_obj)
+    {
+        _ = start_obj;
+        return 0;
+    }
+
     public static nuint brick_of(byte* add)
     {
         return (nuint)(add - lowest_address) / card_table_info.brick_size;

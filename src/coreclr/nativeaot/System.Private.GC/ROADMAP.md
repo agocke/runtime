@@ -960,14 +960,25 @@ Done so far:
   `check_commit_cs`, descending free-list dispatch through `region_free_list`, and clearing
   each basic region's `allocated`/continuation sentinel without resetting its generation
   diagnostics.
+- The adjacent dependency-closed WKS `USE_REGIONS` lookup slice from
+  `regions_segments.cpp`: `region_of`, `get_region_at_index`, and
+  `get_region_gen_num(heap_segment*)`, plus the region-only start-object helpers
+  `get_uoh_start_object`, `get_soh_start_object`, and `get_soh_start_obj_len`. `region_of`
+  preserves direct absolute-address indexing of the already-skewed mapping table;
+  `get_region_at_index` adds the shifted lowest heap address before indexing; and direct
+  generation lookup reads the embedded segment field. The start-object helpers preserve the
+  region-build results (region memory and zero SOH start length).
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
   mutable read-only segment list operations, region creation/reuse, generation threading,
-  full heap-segment initialization/deletion, and free-region distribution because they pull in
-  generation construction, allocation/collection state, or server-GC branches.
+  `get_free_region`, `init_heap_segment`, `set_region_gen_num`, generation-map accessors,
+  `allocate_new_region`, `init_table_for_region`, full heap-segment deletion, and free-region
+  distribution because they pull in generation construction, generation-map writes, region
+  allocation, write-barrier/mark-array commitment, allocation/collection state, or server-GC
+  branches.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.
