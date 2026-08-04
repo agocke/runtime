@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Diagnostics;
 using System.Threading;
 using SysInterlocked = System.Threading.Interlocked;
 using SysVolatile = System.Threading.Volatile;
@@ -2038,6 +2039,73 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(-1, (int)allocate_direction.allocate_backward);
         Assert.Equal((nuint)0x1000, gc_heap.global_region_allocator.get_region_alignment());
         Assert.Equal((nuint)(region_allocator.LARGE_REGION_FACTOR * 0x1000), gc_heap.global_region_allocator.get_large_region_alignment());
+    }
+
+    [Theory]
+    [InlineData(0xA000ul, 0x0000ul, 0x0000ul, 0u)]
+    [InlineData(0xA000ul, 0x3000ul, 0x0000ul, 30u)]
+    [InlineData(0xA000ul, 0x0000ul, 0x2000ul, 20u)]
+    [InlineData(0xA000ul, 0x3000ul, 0x2000ul, 50u)]
+    [InlineData(0x3000ul, 0x1000ul, 0x0000ul, 33u)]
+    public void RegionAllocatorVaMemoryLoadPreservesNativeArithmetic(ulong totalBytes, ulong leftUsedBytes, ulong rightUsedBytes, uint expectedLoad)
+    {
+        region_allocator allocator = default;
+        byte* start = (byte*)0x0010_0000;
+        byte* end = start + (nint)totalBytes;
+
+        WriteRegionAllocatorPointerField(&allocator, "global_region_start", start);
+        WriteRegionAllocatorPointerField(&allocator, "global_region_end", end);
+        WriteRegionAllocatorPointerField(&allocator, "global_region_left_used", start + (nint)leftUsedBytes);
+        WriteRegionAllocatorPointerField(&allocator, "global_region_right_used", end - (nint)rightUsedBytes);
+
+        Assert.Equal(expectedLoad, allocator.get_va_memory_load());
+    }
+
+    [Fact]
+    public void RegionAllocatorGetFreePreservesNativeTargetWidthProduct()
+    {
+        region_allocator allocator = default;
+
+        WriteRegionAllocatorField(&allocator, "total_free_units", 5u);
+        WriteRegionAllocatorField(&allocator, "region_alignment", (nuint)0x1000);
+        Assert.Equal((nuint)0x5000, allocator.get_free());
+
+#if TARGET_64BIT
+        nuint overflowAlignment = ((nuint)1 << 32) + 3;
+#else
+        nuint overflowAlignment = 0x1001;
+#endif
+        WriteRegionAllocatorField(&allocator, "total_free_units", uint.MaxValue);
+        WriteRegionAllocatorField(&allocator, "region_alignment", overflowAlignment);
+        Assert.Equal(unchecked((nuint)uint.MaxValue * overflowAlignment), allocator.get_free());
+    }
+
+    [Fact]
+    public void RegionAllocatorGetUsedRegionCountReturnsLeftMapCount()
+    {
+        region_allocator allocator = default;
+        uint* map = (uint*)0x0020_0000;
+
+        WriteRegionAllocatorPointerField(&allocator, "region_map_left_start", map);
+        WriteRegionAllocatorPointerField(&allocator, "region_map_left_end", map + 5);
+        WriteRegionAllocatorPointerField(&allocator, "region_map_right_start", map + 12);
+        WriteRegionAllocatorPointerField(&allocator, "region_map_right_end", map + 12);
+
+        Assert.Equal((nuint)5, allocator.get_used_region_count());
+    }
+
+    [Fact]
+    public void RegionAllocatorUnsafePointerGettersReturnNativeFields()
+    {
+        region_allocator allocator = default;
+        byte* start = (byte*)0x0012_3400;
+        byte* leftUsed = (byte*)0x0056_7800;
+
+        WriteRegionAllocatorPointerField(&allocator, "global_region_start", start);
+        WriteRegionAllocatorPointerField(&allocator, "global_region_left_used", leftUsed);
+
+        Assert.Equal((nuint)start, (nuint)allocator.get_start());
+        Assert.Equal((nuint)leftUsed, (nuint)allocator.get_left_used_unsafe());
     }
 
     [Fact]

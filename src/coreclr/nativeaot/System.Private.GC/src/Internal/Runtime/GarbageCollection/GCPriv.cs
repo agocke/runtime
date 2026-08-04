@@ -831,9 +831,36 @@ namespace Internal.Runtime.GarbageCollection
             large_region_alignment = unchecked((nuint)LARGE_REGION_FACTOR * alignment);
         }
 
+        public uint get_va_memory_load()
+        {
+            return unchecked((uint)(((global_region_left_used - global_region_start) + (global_region_end - global_region_right_used)) * 100.0
+                / (global_region_end - global_region_start)));
+        }
+
+        public nuint get_free()
+        {
+            return unchecked((nuint)total_free_units * region_alignment);
+        }
+
         public nuint get_region_alignment() => region_alignment;
 
         public nuint get_large_region_alignment() => large_region_alignment;
+
+        public nuint get_used_region_count()
+        {
+            // currently we don't allocate anything from the right -
+            // once we do, we need a more sophisticated way to iterate
+            // through the used regions
+            Debug.Assert(region_map_right_start == region_map_right_end);
+            return (nuint)(region_map_left_end - region_map_left_start);
+        }
+
+        public byte* get_start() => global_region_start;
+
+        // global_region_left_used can be modified concurrently by allocate and delete
+        // usage of this function must make sure either it is under the region lock or we
+        // are certain that these functions cannot be running concurrently.
+        public byte* get_left_used_unsafe() => global_region_left_used;
 
         public nuint align_region_up(nuint size)
         {

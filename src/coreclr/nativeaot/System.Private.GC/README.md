@@ -286,6 +286,10 @@ The public `allocate_region`, `allocate_basic_region`, and `allocate_large_regio
 translated too, including basic/large alignment, default large-region sizing, generation-to-ETW
 segment type selection, output writes after failed allocation, and the native
 `GCCreateSegment_V1` event call that still fires when no region was allocated.
+The adjacent inline public `gcpriv.h` accessors are now present too: `get_va_memory_load`,
+`get_free`, `get_used_region_count`, `get_start`, and `get_left_used_unsafe`, preserving the
+native pointer-difference arithmetic, target-width free-byte product, right-map-unused debug
+assertion, and raw pointer returns.
 That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
