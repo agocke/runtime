@@ -3,6 +3,7 @@
 
 // Ported from the dependency-free data records of src/coreclr/gc/gcpriv.h.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -79,6 +80,50 @@ namespace Internal.Runtime.GarbageCollection
             buckets(table)[0].add = (byte*)nuint.MaxValue;
         }
 
+        public static sorted_table* make_sorted_table()
+        {
+            nint size = 400;
+
+            sorted_table* result = (sorted_table*)SyncImports.ManagedGC_AllocZeroed(
+                (nuint)sizeof(sorted_table) + (nuint)(size + 1) * (nuint)sizeof(bk));
+            if (result is null)
+            {
+                return null;
+            }
+
+            initialize(result, size, (bk*)(result + 1));
+            return result;
+        }
+
+        public static void delete_sorted_table(sorted_table* table)
+        {
+            if (table->slots != (bk*)(table + 1))
+            {
+                SyncImports.ManagedGC_Free(table->slots);
+            }
+
+            delete_old_slots(table);
+        }
+
+        public static void delete_old_slots(sorted_table* table)
+        {
+            byte* slots = (byte*)table->old_slots;
+            while (slots is not null)
+            {
+                byte* slotsToDelete = slots;
+                slots = last_slot((bk*)slots);
+                SyncImports.ManagedGC_Free(slotsToDelete);
+            }
+
+            table->old_slots = null;
+        }
+
+        public static void enqueue_old_slot(sorted_table* table, bk* slots)
+        {
+            last_slot(slots) = (byte*)table->old_slots;
+            table->old_slots = slots;
+        }
+
         public static nuint lookup(sorted_table* table, ref byte* add)
         {
             nint high = table->count - 1;
@@ -113,6 +158,34 @@ namespace Internal.Runtime.GarbageCollection
 
             add = null;
             return 0;
+        }
+
+        public static int ensure_space_for_insert(sorted_table* table)
+        {
+            if (table->count == table->size)
+            {
+                table->size = (table->size * 3) / 2;
+                Debug.Assert((nuint)table->size * (nuint)sizeof(bk) > 0);
+                bk* resizedSlots = (bk*)SyncImports.ManagedGC_AllocZeroed(
+                    (nuint)(table->size + 1) * (nuint)sizeof(bk));
+                Debug.Assert(resizedSlots is not null);
+                if (resizedSlots is null)
+                {
+                    return 0;
+                }
+
+                last_slot(resizedSlots) = null;
+                nuint bytesToCopy = (nuint)table->count * (nuint)sizeof(bk);
+                Buffer.MemoryCopy(buckets(table), resizedSlots + 1, (long)bytesToCopy, (long)bytesToCopy);
+                bk* lastOldSlots = table->slots;
+                table->slots = resizedSlots;
+                if (lastOldSlots != (bk*)(table + 1))
+                {
+                    enqueue_old_slot(table, lastOldSlots);
+                }
+            }
+
+            return 1;
         }
 
         public static int insert(sorted_table* table, byte* add, nuint val)

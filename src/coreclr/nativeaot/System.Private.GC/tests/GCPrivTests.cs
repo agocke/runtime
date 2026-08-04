@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
 
+[Collection(SyncImportsCollection.Name)]
 public sealed unsafe class GCPrivTests
 {
     [Fact]
@@ -138,6 +139,76 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)0, sorted_table.lookup(&table, ref address));
         Assert.Equal((nuint)0, (nuint)address);
         Assert.Equal(nuint.MaxValue, (nuint)sorted_table.buckets(&table)[0].add);
+    }
+
+    [Fact]
+    public void SortedTableAllocationGrowthAndReclamationPreserveNativeOwnership()
+    {
+        SyncImports.ResetRecording();
+        sorted_table* table = sorted_table.make_sorted_table();
+        Assert.NotEqual((nuint)0, (nuint)table);
+        Assert.Equal(1, SyncImports.AllocCount);
+        int freeCountAfterDelete = 0;
+
+        try
+        {
+            for (nuint index = 0; index < 399; index++)
+            {
+                sorted_table.insert(table, (byte*)((index + 1) * 0x1000), index + 1);
+            }
+
+            Assert.Equal(1, sorted_table.ensure_space_for_insert(table));
+            Assert.Equal(2, SyncImports.AllocCount);
+            AssertSortedTableLookup(table, 399 * 0x1000, 399 * 0x1000, 399);
+
+            for (nuint index = 399; index < 599; index++)
+            {
+                sorted_table.insert(table, (byte*)((index + 1) * 0x1000), index + 1);
+            }
+
+            Assert.Equal(1, sorted_table.ensure_space_for_insert(table));
+            Assert.Equal(3, SyncImports.AllocCount);
+            AssertSortedTableLookup(table, 599 * 0x1000, 599 * 0x1000, 599);
+        }
+        finally
+        {
+            sorted_table.delete_sorted_table(table);
+            freeCountAfterDelete = SyncImports.FreeCount;
+            SyncImports.ManagedGC_Free(table);
+        }
+
+        Assert.Equal(2, freeCountAfterDelete);
+        Assert.Equal(3, SyncImports.FreeCount);
+    }
+
+    [Fact]
+    public void SortedTableAllocationFailuresReturnNullOrFalse()
+    {
+        SyncImports.ResetRecording();
+        SyncImports.FailNextAlloc = true;
+        Assert.Equal((nuint)0, (nuint)sorted_table.make_sorted_table());
+
+#if !DEBUG
+        // This path asserts in the port, as it does in the C++, so it can only be driven in a
+        // build where the assert is compiled out.
+        sorted_table* table = sorted_table.make_sorted_table();
+        Assert.NotEqual((nuint)0, (nuint)table);
+        try
+        {
+            for (nuint index = 0; index < 399; index++)
+            {
+                sorted_table.insert(table, (byte*)((index + 1) * 0x1000), index + 1);
+            }
+
+            SyncImports.FailNextAlloc = true;
+            Assert.Equal(0, sorted_table.ensure_space_for_insert(table));
+        }
+        finally
+        {
+            sorted_table.delete_sorted_table(table);
+            SyncImports.ManagedGC_Free(table);
+        }
+#endif
     }
 
     private static void AssertSortedTableLookup(

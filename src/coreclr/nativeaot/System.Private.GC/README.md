@@ -179,8 +179,9 @@ spin, cross-generation-reference, and target-width mark-stack constants.
 The `bk` and `sorted_table` storage schema is present as well, including the leading old-slot
 link, bucket offset, initialization, and maximum-pointer sentinel. Its allocation-free binary
 lookup, sorted insertion, containing-interval removal, and clear operations run over
-caller-provided storage. Allocator-backed creation, growth, and deletion remain with the later
-memory-management layer.
+caller-provided storage. Creation and growth use the managed runtime's unmanaged allocation
+surface, preserve old arrays until explicit reclamation, and release current/queued arrays in
+the same order as native.
 The dependency-free portion of `mark` from `gcinternal.h` is translated too: its complete
 short-plug schema, native `BOOL` bit predicates, pointer accessors, and allocation-free
 gap/relocation-pair swaps are present. `SHORT_PLUGS` is unconditional, while

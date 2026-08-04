@@ -703,8 +703,8 @@ Translate the schema from `gcpriv.h` and related headers:
 - The `bk` and `sorted_table` storage schema from `gcinternal.h`, including its leading
   old-allocation link, bucket offset, explicit initialization, and maximum-pointer sentinel.
   Allocation-free binary lookup, sorted insertion, containing-interval removal, and clear run
-  over caller-provided storage. Allocation-backed creation, growth, and reclamation remain with
-  the memory-management stage.
+  over caller-provided storage. Allocation-backed creation, 3/2 growth, old-array queuing, and
+  reclamation use the managed runtime's unmanaged allocation surface.
 - The dependency-free prefix of `gcrecord.h`: `gc_condemn_reason_gen`,
   `gc_condemn_reason_condition`, `gen_to_condemn_tuning`, `gc_generation_data`, and
   `maxgen_size_increase`. The translation preserves the native enum values, OR-based bit packing,
