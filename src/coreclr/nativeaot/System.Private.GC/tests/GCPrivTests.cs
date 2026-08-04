@@ -3577,6 +3577,420 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsTraversesDescendingEndpoints()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[5];
+        uint* map = stackalloc uint[4];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map, 3, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 1);
+            allocator.make_busy_block(map + 1, 1);
+            allocator.make_busy_block(map + 2, 1);
+
+            heap_segment* lowest = InitializeMappedRegion(table, 0x1000, 1, Alignment);
+            heap_segment* middle = InitializeMappedRegion(table, 0x2000, 1, Alignment);
+            heap_segment* highest = InitializeMappedRegion(table, 0x3000, 1, Alignment);
+            region_free_list.add_region(lowest, source);
+            region_free_list.add_region(middle, source);
+            region_free_list.add_region(highest, source);
+
+            allocator.move_highest_free_regions(2, small_region_p: true, destination);
+
+            region_free_list* destinationBasic = &destination[(int)free_region_kind.basic_free_region];
+            Assert.Equal((nuint)2, region_free_list.get_num_free_regions(destinationBasic));
+            Assert.Equal((nuint)middle, (nuint)destinationBasic->get_first_free_region());
+            Assert.Equal((nuint)highest, (nuint)heap_segment.heap_segment_next(middle));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(highest));
+            Assert.True(region_free_list.is_on_free_list(lowest, source));
+            Assert.True(region_free_list.is_on_free_list(middle, destination));
+            Assert.True(region_free_list.is_on_free_list(highest, destination));
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsFiltersBasicRegions()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[12];
+        uint* map = stackalloc uint[10];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map, 10, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 1);
+            allocator.make_busy_block(map + 1, 8);
+            allocator.make_busy_block(map + 9, 1);
+
+            heap_segment* lowBasic = InitializeMappedRegion(table, 0x1000, 1, Alignment);
+            heap_segment* large = InitializeMappedRegion(table, 0x2000, 8, Alignment);
+            heap_segment* highBasic = InitializeMappedRegion(table, 0xA000, 1, Alignment);
+            region_free_list.add_region(lowBasic, source);
+            region_free_list.add_region(large, source);
+            region_free_list.add_region(highBasic, source);
+
+            allocator.move_highest_free_regions(10, small_region_p: true, destination);
+
+            Assert.Equal((nuint)2, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.basic_free_region]));
+            Assert.Equal((nuint)0, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.large_free_region]));
+            Assert.True(region_free_list.is_on_free_list(lowBasic, destination));
+            Assert.True(region_free_list.is_on_free_list(highBasic, destination));
+            Assert.True(region_free_list.is_on_free_list(large, source));
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsFiltersLargeRegions()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[12];
+        uint* map = stackalloc uint[10];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map, 10, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 1);
+            allocator.make_busy_block(map + 1, 8);
+            allocator.make_busy_block(map + 9, 1);
+
+            heap_segment* lowBasic = InitializeMappedRegion(table, 0x1000, 1, Alignment);
+            heap_segment* large = InitializeMappedRegion(table, 0x2000, 8, Alignment);
+            heap_segment* highBasic = InitializeMappedRegion(table, 0xA000, 1, Alignment);
+            region_free_list.add_region(lowBasic, source);
+            region_free_list.add_region(large, source);
+            region_free_list.add_region(highBasic, source);
+
+            allocator.move_highest_free_regions(8, small_region_p: false, destination);
+
+            Assert.Equal((nuint)0, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.basic_free_region]));
+            Assert.Equal((nuint)1, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.large_free_region]));
+            Assert.True(region_free_list.is_on_free_list(lowBasic, source));
+            Assert.True(region_free_list.is_on_free_list(highBasic, source));
+            Assert.True(region_free_list.is_on_free_list(large, destination));
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsSkipsMapFreeAndAllocatedSegments()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[6];
+        uint* map = stackalloc uint[4];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map, 4, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 1);
+            allocator.make_free_block(map + 1, 1);
+            allocator.make_busy_block(map + 2, 1);
+            allocator.make_busy_block(map + 3, 1);
+
+            heap_segment* lowBusy = InitializeMappedRegion(table, 0x1000, 1, Alignment);
+            heap_segment* mapFree = InitializeMappedRegion(table, 0x2000, 1, Alignment);
+            heap_segment* allocated = InitializeMappedRegion(table, 0x3000, 1, Alignment);
+            heap_segment* highBusy = InitializeMappedRegion(table, 0x4000, 1, Alignment);
+            heap_segment.heap_segment_allocated(allocated) = (byte*)0x3333;
+            region_free_list.add_region(lowBusy, source);
+            region_free_list.add_region(mapFree, source);
+            region_free_list.add_region(highBusy, source);
+
+            allocator.move_highest_free_regions(4, small_region_p: true, destination);
+
+            Assert.Equal((nuint)2, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.basic_free_region]));
+            Assert.True(region_free_list.is_on_free_list(lowBusy, destination));
+            Assert.True(region_free_list.is_on_free_list(highBusy, destination));
+            Assert.True(region_free_list.is_on_free_list(mapFree, source));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_containing_free_list(allocated));
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsSkipsDestinationMembersAndUsesExactQuota()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[6];
+        uint* map = stackalloc uint[4];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map, 4, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 1);
+            allocator.make_busy_block(map + 1, 1);
+            allocator.make_busy_block(map + 2, 1);
+            allocator.make_busy_block(map + 3, 1);
+            WriteRegionAllocatorField(&allocator, "region_allocator_lock", new GCSpinLock { @lock = 1234 });
+
+            heap_segment* lowest = InitializeMappedRegion(table, 0x1000, 1, Alignment);
+            heap_segment* movedLow = InitializeMappedRegion(table, 0x2000, 1, Alignment);
+            heap_segment* movedHigh = InitializeMappedRegion(table, 0x3000, 1, Alignment);
+            heap_segment* alreadyDestination = InitializeMappedRegion(table, 0x4000, 1, Alignment);
+            region_free_list.add_region(lowest, source);
+            region_free_list.add_region(movedLow, source);
+            region_free_list.add_region(movedHigh, source);
+            region_free_list.add_region(alreadyDestination, destination);
+
+            allocator.move_highest_free_regions(2, small_region_p: true, destination);
+
+            Assert.Equal((nuint)3, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.basic_free_region]));
+            Assert.True(region_free_list.is_on_free_list(alreadyDestination, destination));
+            Assert.True(region_free_list.is_on_free_list(movedHigh, destination));
+            Assert.True(region_free_list.is_on_free_list(movedLow, destination));
+            Assert.True(region_free_list.is_on_free_list(lowest, source));
+            Assert.Equal(1234, ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock").@lock);
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsBreaksWithoutContinuingToLowerFit()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[10];
+        uint* map = stackalloc uint[17];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map, 17, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 8);
+            allocator.make_busy_block(map + 8, 9);
+
+            heap_segment* lowerLarge = InitializeMappedRegion(table, 0x1000, 8, Alignment);
+            heap_segment* higherHuge = InitializeMappedRegion(table, 0x9000, 9, Alignment);
+            region_free_list.add_region(lowerLarge, source);
+            region_free_list.add_region(higherHuge, source);
+
+            allocator.move_highest_free_regions(8, small_region_p: false, destination);
+
+            Assert.Equal((nuint)0, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.large_free_region]));
+            Assert.Equal((nuint)0, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.huge_free_region]));
+            Assert.True(region_free_list.is_on_free_list(lowerLarge, source));
+            Assert.True(region_free_list.is_on_free_list(higherHuge, source));
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsQuotaSpansMultipleLargeRegions()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[10];
+        uint* map = stackalloc uint[16];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map, 16, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 8);
+            allocator.make_busy_block(map + 8, 8);
+
+            heap_segment* lowerLarge = InitializeMappedRegion(table, 0x1000, 8, Alignment);
+            heap_segment* higherLarge = InitializeMappedRegion(table, 0x9000, 8, Alignment);
+            region_free_list.add_region(lowerLarge, source);
+            region_free_list.add_region(higherLarge, source);
+
+            allocator.move_highest_free_regions(16, small_region_p: false, destination);
+
+            region_free_list* destinationLarge = &destination[(int)free_region_kind.large_free_region];
+            Assert.Equal((nuint)2, region_free_list.get_num_free_regions(destinationLarge));
+            Assert.Equal((nuint)lowerLarge, (nuint)destinationLarge->get_first_free_region());
+            Assert.Equal((nuint)higherLarge, (nuint)heap_segment.heap_segment_next(lowerLarge));
+            Assert.Equal((nuint)0, region_free_list.get_num_free_regions(&source[(int)free_region_kind.large_free_region]));
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsUpdatesSourceAndDestinationIntegrity()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[5];
+        uint* map = stackalloc uint[3];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map, 3, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 1);
+            allocator.make_busy_block(map + 1, 1);
+            allocator.make_busy_block(map + 2, 1);
+
+            heap_segment* low = InitializeMappedRegion(table, 0x1000, 1, Alignment);
+            heap_segment* middle = InitializeMappedRegion(table, 0x2000, 1, Alignment);
+            heap_segment* high = InitializeMappedRegion(table, 0x3000, 1, Alignment);
+            region_free_list.add_region(low, source);
+            region_free_list.add_region(middle, source);
+            region_free_list.add_region(high, source);
+
+            nuint movedSize = gc_heap.get_region_size(high);
+            nuint movedCommitted = gc_heap.get_region_committed_size(high);
+            nuint sourceSizeBefore = source[(int)free_region_kind.basic_free_region].get_size_free_regions();
+            nuint sourceCommittedBefore = source[(int)free_region_kind.basic_free_region].get_size_committed_in_free();
+
+            allocator.move_highest_free_regions(1, small_region_p: true, destination);
+
+            Assert.Equal((nuint)2, region_free_list.get_num_free_regions(&source[(int)free_region_kind.basic_free_region]));
+            Assert.Equal(sourceSizeBefore - movedSize, source[(int)free_region_kind.basic_free_region].get_size_free_regions());
+            Assert.Equal(sourceCommittedBefore - movedCommitted, source[(int)free_region_kind.basic_free_region].get_size_committed_in_free());
+            Assert.Equal((nuint)1, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.basic_free_region]));
+            Assert.Equal(movedSize, destination[(int)free_region_kind.basic_free_region].get_size_free_regions());
+            Assert.Equal(movedCommitted, destination[(int)free_region_kind.basic_free_region].get_size_committed_in_free());
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_prev_free_region(high));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(high));
+            Assert.True(region_free_list.is_on_free_list(low, source));
+            Assert.True(region_free_list.is_on_free_list(middle, source));
+            Assert.True(region_free_list.is_on_free_list(high, destination));
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorMoveHighestFreeRegionsHonorsLeftMapTraversalBoundary()
+    {
+        const nuint Alignment = 0x1000;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        region_allocator oldGlobalAllocator = gc_heap.global_region_allocator;
+        seg_mapping* table = stackalloc seg_mapping[5];
+        uint* map = stackalloc uint[4];
+        region_free_list* source = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_free_list* destination = stackalloc region_free_list[(int)free_region_kind.count_free_region_kinds];
+        region_allocator allocator = default;
+
+        try
+        {
+            InitializeRegionMoveGlobals(table, Alignment);
+            InitializeRegionAllocatorForMove(&allocator, map + 1, 3, Alignment, (byte*)0x1000);
+            ClearRegionFreeLists(source);
+            ClearRegionFreeLists(destination);
+            allocator.make_busy_block(map, 1);
+            allocator.make_busy_block(map + 1, 1);
+            allocator.make_busy_block(map + 2, 1);
+            allocator.make_busy_block(map + 3, 1);
+
+            heap_segment* beforeLeftStart = InitializeMappedRegion(table, 0x0, 1, Alignment);
+            heap_segment* lowest = InitializeMappedRegion(table, 0x1000, 1, Alignment);
+            heap_segment* middle = InitializeMappedRegion(table, 0x2000, 1, Alignment);
+            heap_segment* highest = InitializeMappedRegion(table, 0x3000, 1, Alignment);
+            region_free_list.add_region(beforeLeftStart, source);
+            region_free_list.add_region(lowest, source);
+            region_free_list.add_region(middle, source);
+            region_free_list.add_region(highest, source);
+
+            allocator.move_highest_free_regions(3, small_region_p: true, destination);
+
+            Assert.Equal((nuint)3, region_free_list.get_num_free_regions(&destination[(int)free_region_kind.basic_free_region]));
+            Assert.True(region_free_list.is_on_free_list(lowest, destination));
+            Assert.True(region_free_list.is_on_free_list(middle, destination));
+            Assert.True(region_free_list.is_on_free_list(highest, destination));
+            Assert.True(region_free_list.is_on_free_list(beforeLeftStart, source));
+        }
+        finally
+        {
+            RestoreRegionMoveGlobals(oldShift, oldTable, oldGlobalAllocator);
+        }
+    }
+
+    [Fact]
     public void RegionFreeListKindDispatchHelpersUseGlobalAllocatorAlignment()
     {
         gc_heap.global_region_allocator.initialize_alignment(0x1000);
@@ -3746,6 +4160,56 @@ public sealed unsafe class GCPrivTests
         region->prev_free_region = null;
         region->containing_free_list = null;
         region->age_in_free = age;
+    }
+
+    private static void InitializeRegionMoveGlobals(seg_mapping* table, nuint alignment)
+    {
+        gc_heap.min_segment_size_shr = (nuint)gc_heap.index_of_highest_set_bit(alignment);
+        GCCommon.seg_mapping_table = table;
+        gc_heap.global_region_allocator.initialize_alignment(alignment);
+    }
+
+    private static void RestoreRegionMoveGlobals(nuint oldShift, seg_mapping* oldTable, region_allocator oldGlobalAllocator)
+    {
+        gc_heap.min_segment_size_shr = oldShift;
+        GCCommon.seg_mapping_table = oldTable;
+        gc_heap.global_region_allocator = oldGlobalAllocator;
+    }
+
+    private static void InitializeRegionAllocatorForMove(region_allocator* allocator, uint* mapLeftStart, int usedUnits, nuint alignment, byte* globalStart)
+    {
+        WriteRegionAllocatorPointerField(allocator, "global_region_start", globalStart);
+        WriteRegionAllocatorPointerField(allocator, "global_region_end", globalStart + (nint)((nuint)usedUnits * alignment));
+        WriteRegionAllocatorPointerField(allocator, "global_region_left_used", globalStart + (nint)((nuint)usedUnits * alignment));
+        WriteRegionAllocatorPointerField(allocator, "global_region_right_used", globalStart + (nint)((nuint)usedUnits * alignment));
+        WriteRegionAllocatorField(allocator, "total_free_units", 0u);
+        WriteRegionAllocatorField(allocator, "region_alignment", alignment);
+        WriteRegionAllocatorField(allocator, "large_region_alignment", (nuint)region_allocator.LARGE_REGION_FACTOR * alignment);
+        WriteRegionAllocatorPointerField(allocator, "region_map_left_start", mapLeftStart);
+        WriteRegionAllocatorPointerField(allocator, "region_map_left_end", mapLeftStart + usedUnits);
+        WriteRegionAllocatorPointerField(allocator, "region_map_right_start", mapLeftStart + usedUnits);
+        WriteRegionAllocatorPointerField(allocator, "region_map_right_end", mapLeftStart + usedUnits);
+        WriteRegionAllocatorField(allocator, "num_left_used_free_units", 0u);
+        WriteRegionAllocatorField(allocator, "num_right_used_free_units", 0u);
+    }
+
+    private static heap_segment* InitializeMappedRegion(seg_mapping* table, nuint start, uint numUnits, nuint alignment)
+    {
+        heap_segment* region = &table[(int)(start >> (int)gc_heap.min_segment_size_shr)].region_info;
+        *region = default;
+        nuint size = (nuint)numUnits * alignment;
+        InitializeRegion(region, start, start + size, start + size, age: 0);
+        return region;
+    }
+
+    private static void ClearRegionFreeLists(region_free_list* lists)
+    {
+        for (int kind = (int)free_region_kind.basic_free_region;
+             kind < (int)free_region_kind.count_free_region_kinds;
+             kind++)
+        {
+            lists[kind] = default;
+        }
     }
 
     private static uint* InitializeRegionAllocatorMap(region_allocator* allocator, nuint start, nuint end, nuint alignment)

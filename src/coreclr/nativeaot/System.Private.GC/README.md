@@ -293,9 +293,11 @@ assertion, and raw pointer returns.
 That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
-its native large-region minimum assertion and early-break control flow. The full allocator map
-reservation after `init` and high-region movement algorithms of `region_allocator.cpp` remain
-deferred.
+its native large-region minimum assertion and early-break control flow.
+`region_allocator::move_highest_free_regions` is translated as the caller-locked high-to-low
+region-map scan over busy basic-or-large blocks, preserving the destination-list exclusion,
+source unlink, destination add, and signed quota break. The full allocator map reservation after
+`init` remains deferred.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,
 gcpriv.h's region layout that replaces

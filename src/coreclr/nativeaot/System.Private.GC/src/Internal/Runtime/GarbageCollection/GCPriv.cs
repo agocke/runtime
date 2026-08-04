@@ -1285,6 +1285,42 @@ namespace Internal.Runtime.GarbageCollection
 
             total_free_units += current_val;
         }
+
+        public void move_highest_free_regions(long n, bool small_region_p, region_free_list* to_free_list)
+        {
+            Debug.Assert(n > 0);
+
+            uint* current_index = region_map_left_end - 1;
+            uint* lowest_index = region_map_left_start;
+
+            while (current_index >= lowest_index)
+            {
+                uint current_val = *current_index;
+                uint current_num_units = get_num_units(current_val);
+                bool free_p = is_unit_memory_free(current_val);
+                if (!free_p && ((current_num_units == 1) == small_region_p))
+                {
+                    uint* index = current_index - (nint)(current_num_units - 1);
+                    heap_segment* region = gc_heap.get_region_info(region_address_of(index));
+                    if (gc_heap.is_free_region(region) && !region_free_list.is_on_free_list(region, to_free_list))
+                    {
+                        if (n >= current_num_units)
+                        {
+                            n -= current_num_units;
+
+                            region_free_list.unlink_region(region);
+
+                            region_free_list.add_region(region, to_free_list);
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                }
+                current_index -= (nint)current_num_units;
+            }
+        }
     }
 
     internal enum free_region_kind

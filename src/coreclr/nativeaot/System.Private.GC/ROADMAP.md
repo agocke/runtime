@@ -847,7 +847,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, and the USE_REGIONS mapping helpers needed by highest-free-region movement are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, and highest-free-region movement are translated**
 
 Translate:
 
@@ -920,8 +920,11 @@ Done so far:
 - Remaining `region_free_list.cpp` helpers previously blocked on that prerequisite:
   `get_region_kind`, `add_region`, `add_region_descending`, `is_on_free_list`, and
   `unlink_smallest_region` with native large-region assertion and early-break behavior.
-- Still deferred from `region_allocator.cpp`: reservation state after `init` and high-region
-  movement.
+- Highest-free-region movement from `region_allocator.cpp`:
+  `move_highest_free_regions` preserves the caller-locking contract, descending left-map endpoint
+  traversal, busy-map and small/large filters, `gc_heap` region-info lookup/free checks,
+  destination-list exclusion, source unlink before destination add, and signed quota break.
+- Still deferred from `region_allocator.cpp`: reservation state after `init`.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.
