@@ -129,6 +129,9 @@ internal static unsafe class GCToEEInterface
     /// </summary>
     internal static WriteBarrierParameters LastStompWriteBarrier { get; private set; }
 
+    /// <summary>Optional observer invoked while a write-barrier stomp is in progress.</summary>
+    internal static Action<WriteBarrierParameters> StompWriteBarrierObserver { get; set; }
+
     internal static int GcScanRootsCallCount { get; private set; }
 
     internal static nuint LastGcScanRootsCallback { get; private set; }
@@ -170,6 +173,7 @@ internal static unsafe class GCToEEInterface
         WriteWithoutProviding = null;
         StompWriteBarrierCallCount = 0;
         LastStompWriteBarrier = default;
+        StompWriteBarrierObserver = null;
         GcScanRootsCallCount = 0;
         LastGcScanRootsCallback = 0;
         LastGcScanRootsCondemned = 0;
@@ -204,13 +208,15 @@ internal static unsafe class GCToEEInterface
     /// <summary>
     /// Substitute for the indirect <c>IGCToCLR::StompWriteBarrier</c> call.
     /// <see cref="SoftwareWriteWatch.EnableForGCHeap"/> and
-    /// <see cref="SoftwareWriteWatch.DisableForGCHeap"/> are the only callers this file's tests
-    /// exercise, so recording the arguments is enough; no real write barrier is bashed.
+    /// <see cref="SoftwareWriteWatch.DisableForGCHeap"/> and the region write-barrier helpers are
+    /// the callers this file's tests exercise, so recording the arguments is enough; no real
+    /// write barrier is bashed.
     /// </summary>
     public static void StompWriteBarrier(WriteBarrierParameters* args)
     {
         StompWriteBarrierCallCount++;
         LastStompWriteBarrier = *args;
+        StompWriteBarrierObserver?.Invoke(*args);
     }
 
     public static void GcScanRoots(

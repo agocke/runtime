@@ -40,6 +40,7 @@
     <Compile Include="GCEnvironmentTests.cs" />
     <Compile Include="GCMemoryLimitsTests.cs" />
     <Compile Include="GCVirtualMemoryTests.cs" />
+    <Compile Include="GCWriteBarrierTests.cs" />
     <Compile Include="GCWriteWatchTests.cs" />
     <Compile Include="SoftwareWriteWatchTests.cs" />
     <Compile Include="GCEventTests.cs" />
@@ -116,6 +117,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCRecord.cs" Link="GCRecord.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCRegionsSegments.cs" Link="GCRegionsSegments.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCScan.cs" Link="GCScan.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCWriteBarrier.cs" Link="GCWriteBarrier.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableConstants.cs" Link="HandleTableConstants.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTable.cs" Link="HandleTable.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableCache.cs" Link="HandleTableCache.cs" />

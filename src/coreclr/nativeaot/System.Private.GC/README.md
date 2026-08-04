@@ -95,6 +95,7 @@ Ported so far:
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping helpers from `regions_segments.cpp` |
+| `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
@@ -360,12 +361,18 @@ including its current/planned generation and demotion/sweep flags, is now repres
 the absolute and skewed table pointers. Map reads and safe flag updates preserve the native
 absolute-versus-skewed indexing; Debug checks cross-check map reads against embedded segment
 fields, while the flag updates change both representations.
-`set_region_gen_num` remains deferred: it must atomically expand the ephemeral range while
-holding the native write-barrier lock, publish the skewed map and shift through
-`StompWriteBarrier`, and update the ephemeral bounds only after that publication. The managed
-heap does not yet own that lock or the collector ephemeral-bound state. Consequently,
-`get_free_region`, `init_heap_segment`, `allocate_new_region`, and `init_table_for_region` remain
-deferred too.
+The synchronization-sensitive region write-barrier slice is now translated. `GCWriteBarrier`
+preserves the `GCWriteBarrier` flavor selection of `gc.cpp`, including the zero-initialized
+`WriteBarrierParameters` requirement of the server flavor, and publishes ephemeral ranges with
+`StompEphemeral`, the skewed map, and the basic-region shift. Its global spin lock is explicitly
+initialized during `ManagedGC_Initialize`, without a static constructor; the collector's initial
+empty range is the native `MAX_PTR`/null pair, represented by `(byte*)nuint.MaxValue` and null.
+`set_region_gen_num` updates the embedded segment generation and every basic-region map entry
+before acquiring that lock for gen0/gen1. A contending updater rechecks whether another updater
+already covered the range, and an expanding updater stomps the write barrier before publishing
+the new bounds, then releases with a volatile store. `get_free_region`, `init_heap_segment`,
+`allocate_new_region`, and `init_table_for_region` remain deferred; in particular,
+`init_heap_segment` still owns large-region continuation-entry initialization.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class
@@ -804,6 +811,12 @@ edge of the caller's output capacity, with dirty state retained versus cleared, 
 bit-scan position of a table word mapped to its own page, and with the process-wide barrier
 called only when the runtime is not already suspended and only as many times as the C++ comments
 say it must be.
+
+`GCWriteBarrierTests` uses the same substituted `GCToEEInterface.StompWriteBarrier` call to
+verify every `GCWriteBarrier` flavor, exact ephemeral stomp arguments, the multi-basic-region
+map update, gen2's lack of ephemeral publication, monotonic range expansion, lock release, and
+the ordering that exposes new barrier state before global bounds. A controlled contending thread
+also verifies that a concurrently covered range suppresses a redundant stomp.
 
 `GCEventTests` and `GCCriticalSectionTests` do the same for the event and lock ports, over
 `tests/SyncImports.*.TestHost.cs`. Because the substitutes forward to the real pthreads or the

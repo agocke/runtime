@@ -648,6 +648,8 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint min_segment_size_shr;
         public static region_info* map_region_to_generation;
         public static region_info* map_region_to_generation_skewed;
+        public static volatile byte* ephemeral_low;
+        public static volatile byte* ephemeral_high;
 #endif
 
         public static heap_segment* heap_segment_in_range(heap_segment* segment)

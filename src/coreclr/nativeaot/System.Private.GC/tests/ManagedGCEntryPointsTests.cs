@@ -172,6 +172,14 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         Assert.Equal(1, ManagedGCHeap.CreateCallCount);
         Assert.Equal(5, gcDacVars.major_version_number);
         Assert.Equal(8, gcDacVars.minor_version_number);
+#if USE_REGIONS
+        Assert.Equal(GCSpinLock.lock_free, GCWriteBarrier.write_barrier_spin_lock.@lock);
+        Assert.Equal(nuint.MaxValue, (nuint)gc_heap.ephemeral_low);
+        Assert.Equal((nuint)0, (nuint)gc_heap.ephemeral_high);
+#if DEBUG
+        Assert.Equal(nuint.MaxValue, (nuint)GCWriteBarrier.write_barrier_spin_lock.holding_thread);
+#endif
+#endif
     }
 
     private static void ResetState()

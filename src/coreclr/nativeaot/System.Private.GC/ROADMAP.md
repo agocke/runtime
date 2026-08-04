@@ -837,6 +837,13 @@ Translate the schema from `gcpriv.h` and related headers:
   validation before initializing the shift; adaptive default sizing and range-per-heap validation
   remain deferred. Non-region table-size and address-to-segment/heap algorithms are intentionally
   deferred to `regions_segments.cpp` and `gc.cpp`, after their heap constants and state arrive.
+- The region write-barrier publication core from `gc.cpp` and `gcinternal.h`:
+  `region_write_barrier_settings`, `stomp_write_barrier_ephemeral`, and
+  `set_region_gen_num`. The translated global lock is explicitly initialized at managed-GC
+  startup with no static constructor, alongside the native empty-range `MAX_PTR`/null sentinels.
+  Generation updates fill every basic-region map entry before gen0/gen1 synchronize; an
+  expanding update publishes the skewed map and shift through `StompEphemeral` before it changes
+  the global ephemeral bounds, while a contended updater rechecks coverage before spinning.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
 still waits for the corresponding collector structures.
@@ -847,7 +854,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, WKS `USE_REGIONS` region decommit, and the first `regions_segments.cpp` mapping and region-return lifecycle helpers are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, WKS `USE_REGIONS` region decommit, region write-barrier publication, and the first `regions_segments.cpp` mapping and region-return lifecycle helpers are translated**
 
 Translate:
 
@@ -974,18 +981,23 @@ Done so far:
   plan-generation, and demotion reads; and sweep/demotion flag updates. The read path preserves
   native skewed indexing, while flag updates use the unskewed index and retain the unrelated
   packed bits.
+- The synchronization-sensitive write-barrier slice: the `gc.cpp` region-flavor settings and
+  `StompEphemeral` call, plus `gcinternal.h` `set_region_gen_num`. The explicit startup path
+  initializes the global lock and `MAX_PTR`/null collector bounds without a managed static
+  constructor. Gen0/gen1 updates fill the basic-region map, acquire the native sentinel lock
+  only when the current range does not cover the region, recheck coverage after contention,
+  stomp before publishing expanded bounds, and release through the GC volatile helper.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
   mutable read-only segment list operations, region creation/reuse, generation threading,
-  `set_region_gen_num`, `get_free_region`, `init_heap_segment`, `allocate_new_region`,
+  `get_free_region`, `init_heap_segment`, `allocate_new_region`,
   `init_table_for_region`, full heap-segment deletion, and free-region distribution.
-  `set_region_gen_num` is specifically blocked on the collector's ephemeral bounds and
-  write-barrier lock/publication protocol: it must publish the skewed map/shift via
-  `StompWriteBarrier` before changing those bounds. The dependent allocation helpers remain
-  blocked until that protocol, region allocation, and generation construction are complete.
+  `init_heap_segment` remains responsible for initializing large-region continuation entries.
+  The dependent allocation helpers remain blocked on region allocation and generation
+  construction.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

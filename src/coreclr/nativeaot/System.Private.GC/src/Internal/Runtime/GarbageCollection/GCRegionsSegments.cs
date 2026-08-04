@@ -101,6 +101,86 @@ internal unsafe partial struct gc_heap
         return heap_segment.heap_segment_gen_num(region);
     }
 
+    public static void set_region_gen_num(heap_segment* region, int gen_num)
+    {
+        Debug.Assert(gen_num < (1 << (sizeof(byte) * 8)));
+        Debug.Assert(gen_num >= 0);
+        heap_segment.heap_segment_gen_num(region) = (byte)gen_num;
+
+        byte* region_start = get_region_start(region);
+        byte* region_end = heap_segment.heap_segment_reserved(region);
+
+        nuint region_index_start = get_basic_region_index_for_address(region_start);
+        nuint region_index_end = get_basic_region_index_for_address(region_end);
+        region_info entry = (region_info)((gen_num << (int)region_info.RI_PLAN_GEN_SHR) | gen_num);
+        for (nuint region_index = region_index_start; region_index < region_index_end; region_index++)
+        {
+            Debug.Assert(gen_num <= GCInterfaceOffsets.max_generation);
+            map_region_to_generation[(nint)region_index] = entry;
+        }
+
+        if (gen_num <= (int)gc_generation_num.soh_gen1)
+        {
+            if ((region_start < ephemeral_low) || (ephemeral_high < region_end))
+            {
+                fixed (int* lock_address = &GCWriteBarrier.write_barrier_spin_lock.@lock)
+                {
+                    while (true)
+                    {
+                        if (Interlocked.CompareExchange(lock_address, 0, GCSpinLock.lock_free) < 0)
+                        {
+                            break;
+                        }
+
+                        if ((ephemeral_low <= region_start) && (region_end <= ephemeral_high))
+                        {
+                            return;
+                        }
+
+                        while (GCEnv.VolatileLoadWithoutBarrier(lock_address) >= 0)
+                        {
+                            GCEnv.YieldProcessor();
+                        }
+                    }
+
+#if DEBUG
+                    GCWriteBarrier.write_barrier_spin_lock.holding_thread = GCToEEInterface.GetThread();
+#endif
+
+                    if ((region_start < ephemeral_low) || (ephemeral_high < region_end))
+                    {
+                        byte* new_ephemeral_low = region_start < ephemeral_low ? region_start : ephemeral_low;
+                        byte* new_ephemeral_high = ephemeral_high < region_end ? region_end : ephemeral_high;
+
+                        GCWriteBarrier.stomp_write_barrier_ephemeral(
+                            new_ephemeral_low,
+                            new_ephemeral_high,
+                            map_region_to_generation_skewed,
+                            (byte)min_segment_size_shr);
+
+                        if (ephemeral_low < new_ephemeral_low)
+                        {
+                            GCToOSInterface.DebugBreak();
+                        }
+
+                        if (new_ephemeral_high < ephemeral_high)
+                        {
+                            GCToOSInterface.DebugBreak();
+                        }
+
+                        ephemeral_low = new_ephemeral_low;
+                        ephemeral_high = new_ephemeral_high;
+                    }
+
+#if DEBUG
+                    GCWriteBarrier.write_barrier_spin_lock.holding_thread = (void*)(-1);
+#endif
+                    GCEnv.VolatileStore(lock_address, GCSpinLock.lock_free);
+                }
+            }
+        }
+    }
+
     public static int get_region_gen_num(byte* obj)
     {
         nuint skewed_basic_region_index = get_skewed_basic_region_index_for_address(obj);

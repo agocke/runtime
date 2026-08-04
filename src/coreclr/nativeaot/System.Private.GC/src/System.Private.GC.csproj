@@ -73,6 +73,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCRecord.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCRegionsSegments.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCScan.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCWriteBarrier.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableConstants.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTable.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableCache.cs" />
