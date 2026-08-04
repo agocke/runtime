@@ -854,7 +854,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, WKS `USE_REGIONS` region decommit, region write-barrier publication, and the first `regions_segments.cpp` mapping and region-return lifecycle helpers are translated**
+**Status: In progress -- `region_allocator::init`, initial-region reservation state, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, WKS `USE_REGIONS` region decommit, region write-barrier publication, and the first `regions_segments.cpp` mapping and region-return lifecycle helpers are translated**
 
 Translate:
 
@@ -890,6 +890,14 @@ Done so far:
   lowest/highest output-pointer success semantics, fails without calling the shim when the map
   byte count overflows `size_t`, and leaves the native allocation-failure logging string deferred
   until string-free GC init logging is ported.
+- The reservation state immediately after `region_allocator::init` from `init.cpp`:
+  `initial_regions` is the same unmanaged `[heap][generation][start/end]` table, and
+  `allocate_initial_regions` preserves the native POH-large, gen2-to-gen0-basic, then
+  LOH-large forward-allocation order. Its entries retain the allocator's start/end outputs;
+  the null callbacks deliberately leave bookkeeping coverage unchanged. The producer's
+  allocation failure returns false before allocating a region, while native asserted
+  region-allocation success remains an assertion. The later `interface.cpp` destruction of the
+  table and `regions_segments.cpp` consumers remain deferred with their lifecycle owners.
 - Dependency-closed endpoint map updates from `region_allocator.cpp`: `make_busy_block`,
   `make_free_block`, and `allocate_end` preserve the native forward/backward boundary tests,
   endpoint-only busy/free encoding, high-bit free marker, unsigned size arithmetic, exact-fit
@@ -1034,9 +1042,9 @@ Done so far:
   `DOUBLY_LINKED_FL` reset. Threading skips read-only segments and retains native append order.
   `get_new_region` assigns LOH/POH flags at their native owner before linking and publishing the
   UOH tail, and retains the null failure path without changing the generation list. Initial
-  SOH/UOH construction remains explicitly deferred because `initial_regions`, its reservation
-  producer, and destruction lifecycle are not represented; no success stub was added.
-- Still deferred from `region_allocator.cpp`: reservation state after `init`.
+  SOH/UOH construction remains explicitly deferred because `initial_regions` consumers and its
+  destruction lifecycle are not represented; the reservation producer itself is now translated,
+  with no construction success stub added.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.

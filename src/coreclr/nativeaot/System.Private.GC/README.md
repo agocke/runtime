@@ -299,8 +299,15 @@ remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch w
 its native large-region minimum assertion and early-break control flow.
 `region_allocator::move_highest_free_regions` is translated as the caller-locked high-to-low
 region-map scan over busy basic-or-large blocks, preserving the destination-list exclusion,
-source unlink, destination add, and signed quota break. The full allocator map reservation after
-`init` remains deferred.
+source unlink, destination add, and signed quota break. The formerly deferred initial-region
+reservation state after `init` is now represented by `allocate_initial_regions` from `init.cpp`:
+it owns the unmanaged
+`initial_regions[heap][generation][start/end]` table and reserves, in native order, one forward
+large POH region per heap, forward basic SOH regions from gen2 through gen0, then one forward
+large LOH region per heap. The table entries are the exact start/end outputs of the allocator;
+the allocator's map and left/right boundaries remain its owner, and these null callbacks do not
+extend bookkeeping coverage. Initial segment construction and table destruction remain with their
+later lifecycle owners.
 The first `memory.cpp` slices are now translated in `GCMemory.cs`:
 `virtual_alloc_commit_for_heap`, `virtual_commit`, `reduce_committed_bytes`,
 `virtual_decommit`, and `virtual_free`, plus the WKS `USE_REGIONS` `decommit_region` and
@@ -405,8 +412,8 @@ and `get_new_region` from `plan_phase.cpp`. It resets allocation/free-list state
 the generation's initialized allocator shape, wires start/allocation/tail segments, preserves
 append order, and assigns LOH/POH flags at the native `get_new_region` owner before publishing
 the new tail. The initial SOH/UOH constructors remain deferred: their `initial_regions`
-reservation table and production/destruction lifecycle have not been ported, so no synthetic
-success path was introduced.
+consumers, production initialization integration, and destruction lifecycle have not been
+ported, so no synthetic success path was introduced.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

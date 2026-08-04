@@ -31,6 +31,7 @@ internal unsafe partial struct gc_heap
     public static uint* card_table;
     public static short* brick_table;
     public static region_free_list_array free_regions;
+    public static byte** initial_regions;
 
     [InlineArray((int)bookkeeping_element.total_bookkeeping_elements + 1)]
     internal struct bookkeeping_layout_array
@@ -59,6 +60,80 @@ internal unsafe partial struct gc_heap
     {
         Debug.Assert(kind >= (int)free_region_kind.basic_free_region && kind < (int)free_region_kind.count_free_region_kinds);
         return (region_free_list*)Unsafe.AsPointer(ref free_regions[kind]);
+    }
+
+    public static bool allocate_initial_regions(int number_of_heaps)
+    {
+        const nuint InitialRegionsPerHeap = (nuint)gc_generation_num.total_generation_count * 2;
+        nuint heap_count = unchecked((nuint)number_of_heaps);
+        if (heap_count > nuint.MaxValue / InitialRegionsPerHeap ||
+            heap_count * InitialRegionsPerHeap > nuint.MaxValue / (nuint)sizeof(byte*))
+        {
+            initial_regions = null;
+            return false;
+        }
+
+        initial_regions = (byte**)SyncImports.ManagedGC_AllocZeroed(
+            heap_count * InitialRegionsPerHeap * (nuint)sizeof(byte*));
+        if (initial_regions is null)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < number_of_heaps; i++)
+        {
+            bool succeed = global_region_allocator.allocate_large_region(
+                (int)gc_generation_num.poh_generation,
+                initial_region_start(i, (int)gc_generation_num.poh_generation),
+                initial_region_end(i, (int)gc_generation_num.poh_generation),
+                allocate_direction.allocate_forward,
+                0,
+                null);
+            Debug.Assert(succeed);
+        }
+
+        for (int i = 0; i < number_of_heaps; i++)
+        {
+            for (int gen_num = (int)gc_generation_num.max_generation; gen_num >= 0; gen_num--)
+            {
+                bool succeed = global_region_allocator.allocate_basic_region(
+                    gen_num,
+                    initial_region_start(i, gen_num),
+                    initial_region_end(i, gen_num),
+                    null);
+                Debug.Assert(succeed);
+            }
+        }
+
+        for (int i = 0; i < number_of_heaps; i++)
+        {
+            bool succeed = global_region_allocator.allocate_large_region(
+                (int)gc_generation_num.loh_generation,
+                initial_region_start(i, (int)gc_generation_num.loh_generation),
+                initial_region_end(i, (int)gc_generation_num.loh_generation),
+                allocate_direction.allocate_forward,
+                0,
+                null);
+            Debug.Assert(succeed);
+        }
+
+        return true;
+    }
+
+    public static void get_initial_region(int gen, int hn, byte** region_start, byte** region_end)
+    {
+        *region_start = *initial_region_start(hn, gen);
+        *region_end = *initial_region_end(hn, gen);
+    }
+
+    private static byte** initial_region_start(int hn, int gen)
+    {
+        return initial_regions + (((nint)hn * (int)gc_generation_num.total_generation_count + gen) * 2);
+    }
+
+    private static byte** initial_region_end(int hn, int gen)
+    {
+        return initial_region_start(hn, gen) + 1;
     }
 
     public static byte* align_on_segment(byte* add)

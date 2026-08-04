@@ -2885,6 +2885,195 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void RegionAllocatorInitReinitializationReplacesReservationState()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        allocator.initialize();
+        uint* firstMap = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x9000, 0x1000);
+        uint* secondMap = null;
+
+        try
+        {
+            Assert.Equal((nuint)0x1000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_forward));
+
+            byte* lowest = null;
+            byte* highest = null;
+            Assert.True(allocator.init((byte*)0x2003, (byte*)0xEFFF, 0x1000, &lowest, &highest));
+            secondMap = (uint*)ReadRegionAllocatorPointerField(&allocator, "region_map_left_start");
+
+            Assert.Equal((nuint)0x3000, (nuint)lowest);
+            Assert.Equal((nuint)0xE000, (nuint)highest);
+            Assert.NotEqual((nuint)firstMap, (nuint)secondMap);
+            Assert.Equal((nuint)0x3000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_start"));
+            Assert.Equal((nuint)0xE000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_end"));
+            Assert.Equal((nuint)0x3000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal((nuint)0xE000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_right_used"));
+            Assert.Equal(11u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            Assert.Equal((nuint)secondMap, (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+            Assert.Equal((nuint)(secondMap + 11), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_start"));
+            Assert.Equal((nuint)(secondMap + 11), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_end"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(GCSpinLock.lock_free, ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock").@lock);
+
+            for (int i = 0; i < 11; i++)
+            {
+                Assert.Equal(0u, secondMap[i]);
+            }
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(firstMap);
+            if (secondMap is not null)
+            {
+                SyncImports.ManagedGC_Free(secondMap);
+            }
+        }
+    }
+
+    [Fact]
+    public void InitialRegionReservationPreservesNativeLayoutAndAllocatorBoundaries()
+    {
+        const nuint RegionSize = 0x1000;
+        region_allocator oldAllocator = gc_heap.global_region_allocator;
+        byte** oldInitialRegions = gc_heap.initial_regions;
+        byte* oldBookkeepingCoverage = gc_heap.bookkeeping_covered_committed;
+        uint* map = null;
+        byte** initialRegions = null;
+
+        try
+        {
+            SyncImports.ResetRecording();
+            region_allocator allocator = default;
+            allocator.initialize();
+            map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x29000, RegionSize);
+            gc_heap.global_region_allocator = allocator;
+            gc_heap.initial_regions = null;
+            gc_heap.bookkeeping_covered_committed = (byte*)0x7654_0000;
+
+            Assert.True(gc_heap.allocate_initial_regions(1));
+            initialRegions = gc_heap.initial_regions;
+
+            Assert.Equal(2, SyncImports.AllocCount);
+            Assert.Equal((nuint)(2 * (int)gc_generation_num.total_generation_count * sizeof(byte*)), SyncImports.LastAllocSize);
+            AssertInitialRegion((int)gc_generation_num.poh_generation, (byte*)0x1000, (byte*)0x9000);
+            AssertInitialRegion((int)gc_generation_num.soh_gen2, (byte*)0x9000, (byte*)0xA000);
+            AssertInitialRegion((int)gc_generation_num.soh_gen1, (byte*)0xA000, (byte*)0xB000);
+            AssertInitialRegion((int)gc_generation_num.soh_gen0, (byte*)0xB000, (byte*)0xC000);
+            AssertInitialRegion((int)gc_generation_num.loh_generation, (byte*)0xC000, (byte*)0x14000);
+            Assert.Equal((nuint)0x14000, (nuint)gc_heap.global_region_allocator.get_left_used_unsafe());
+            region_allocator current = gc_heap.global_region_allocator;
+            Assert.Equal((nuint)0x29000, (nuint)ReadRegionAllocatorPointerField(&current, "global_region_right_used"));
+            Assert.Equal((nuint)0x7654_0000, (nuint)gc_heap.bookkeeping_covered_committed);
+            Assert.Equal(8u, map[0]);
+            Assert.Equal(8u, map[7]);
+            Assert.Equal(1u, map[8]);
+            Assert.Equal(1u, map[9]);
+            Assert.Equal(1u, map[10]);
+            Assert.Equal(8u, map[11]);
+            Assert.Equal(8u, map[18]);
+
+            byte* forwardStart = null;
+            byte* forwardEnd = null;
+            Assert.True(gc_heap.global_region_allocator.allocate_region(
+                (int)gc_generation_num.soh_gen0,
+                RegionSize,
+                &forwardStart,
+                &forwardEnd,
+                allocate_direction.allocate_forward,
+                null));
+            Assert.Equal((nuint)0x14000, (nuint)forwardStart);
+            Assert.Equal((nuint)0x15000, (nuint)forwardEnd);
+
+            byte* backwardStart = null;
+            byte* backwardEnd = null;
+            Assert.True(gc_heap.global_region_allocator.allocate_region(
+                (int)gc_generation_num.soh_gen0,
+                RegionSize,
+                &backwardStart,
+                &backwardEnd,
+                allocate_direction.allocate_backward,
+                null));
+            Assert.Equal((nuint)0x28000, (nuint)backwardStart);
+            Assert.Equal((nuint)0x29000, (nuint)backwardEnd);
+            Assert.Equal((nuint)0x15000, (nuint)gc_heap.global_region_allocator.get_left_used_unsafe());
+            current = gc_heap.global_region_allocator;
+            Assert.Equal((nuint)0x28000, (nuint)ReadRegionAllocatorPointerField(&current, "global_region_right_used"));
+            Assert.Equal(1u, map[19]);
+            Assert.Equal(1u, map[39]);
+            Assert.Equal((nuint)19 * RegionSize, gc_heap.global_region_allocator.get_free());
+        }
+        finally
+        {
+            if (initialRegions is not null)
+            {
+                SyncImports.ManagedGC_Free(initialRegions);
+            }
+
+            gc_heap.initial_regions = oldInitialRegions;
+            gc_heap.global_region_allocator = oldAllocator;
+            gc_heap.bookkeeping_covered_committed = oldBookkeepingCoverage;
+            if (map is not null)
+            {
+                SyncImports.ManagedGC_Free(map);
+            }
+        }
+    }
+
+    [Fact]
+    public void InitialRegionReservationFailureDoesNotAllocateOrMutateAllocatorState()
+    {
+        region_allocator oldAllocator = gc_heap.global_region_allocator;
+        byte** oldInitialRegions = gc_heap.initial_regions;
+        byte* oldBookkeepingCoverage = gc_heap.bookkeeping_covered_committed;
+        uint* map = null;
+
+        try
+        {
+            SyncImports.ResetRecording();
+            region_allocator allocator = default;
+            allocator.initialize();
+            map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x29000, 0x1000);
+            gc_heap.global_region_allocator = allocator;
+            gc_heap.initial_regions = (byte**)0x1234;
+            gc_heap.bookkeeping_covered_committed = (byte*)0x7654_0000;
+            region_allocator current = gc_heap.global_region_allocator;
+            RegionAllocatorSnapshot expected = CaptureRegionAllocatorSnapshot(&current);
+
+            SyncImports.FailNextAlloc = true;
+            Assert.False(gc_heap.allocate_initial_regions(1));
+
+            current = gc_heap.global_region_allocator;
+            AssertRegionAllocatorSnapshotEqual(expected, &current);
+            Assert.Equal((nuint)0, (nuint)gc_heap.initial_regions);
+            Assert.Equal((nuint)0x7654_0000, (nuint)gc_heap.bookkeeping_covered_committed);
+            Assert.Equal(2, SyncImports.AllocCount);
+            Assert.Equal((nuint)(2 * (int)gc_generation_num.total_generation_count * sizeof(byte*)), SyncImports.LastAllocSize);
+        }
+        finally
+        {
+            gc_heap.initial_regions = oldInitialRegions;
+            gc_heap.global_region_allocator = oldAllocator;
+            gc_heap.bookkeeping_covered_committed = oldBookkeepingCoverage;
+            if (map is not null)
+            {
+                SyncImports.ManagedGC_Free(map);
+            }
+        }
+    }
+
+    private static void AssertInitialRegion(int gen, byte* expectedStart, byte* expectedEnd)
+    {
+        byte* start = null;
+        byte* end = null;
+        gc_heap.get_initial_region(gen, 0, &start, &end);
+
+        Assert.Equal((nuint)expectedStart, (nuint)start);
+        Assert.Equal((nuint)expectedEnd, (nuint)end);
+    }
+
+    [Fact]
     public void RegionAllocatorAlignmentHelpersMatchNativeBitMath()
     {
         gc_heap.global_region_allocator.initialize_alignment(0x1000);
