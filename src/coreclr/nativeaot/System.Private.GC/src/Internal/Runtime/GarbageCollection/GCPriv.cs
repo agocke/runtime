@@ -8,6 +8,8 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
+using unsafe region_allocator_callback_fn = delegate*<byte*, byte>;
+
 namespace Internal.Runtime.GarbageCollection
 {
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
@@ -917,6 +919,108 @@ namespace Internal.Runtime.GarbageCollection
                     }
                 }
             }
+
+            return alloc;
+        }
+
+        public byte* allocate(uint num_units, allocate_direction direction, region_allocator_callback_fn fn)
+        {
+            enter_spin_lock();
+
+            uint* current_index;
+            uint* end_index;
+            if (direction == allocate_direction.allocate_forward)
+            {
+                current_index = region_map_left_start;
+                end_index = region_map_left_end;
+            }
+            else
+            {
+                Debug.Assert(direction == allocate_direction.allocate_backward);
+                current_index = region_map_right_end;
+                end_index = region_map_right_start;
+            }
+
+            if (((direction == allocate_direction.allocate_forward) && (num_left_used_free_units >= num_units)) ||
+                ((direction == allocate_direction.allocate_backward) && (num_right_used_free_units >= num_units)))
+            {
+                while (((direction == allocate_direction.allocate_forward) && (current_index < end_index)) ||
+                    ((direction == allocate_direction.allocate_backward) && (current_index > end_index)))
+                {
+                    uint current_val = *(current_index - ((direction == allocate_direction.allocate_backward) ? 1 : 0));
+                    uint current_num_units = get_num_units(current_val);
+                    bool free_p = is_unit_memory_free(current_val);
+
+                    if (free_p)
+                    {
+                        if (current_num_units >= num_units)
+                        {
+                            if (direction == allocate_direction.allocate_forward)
+                            {
+                                Debug.Assert(num_left_used_free_units >= num_units);
+                                num_left_used_free_units -= num_units;
+                            }
+                            else
+                            {
+                                Debug.Assert(direction == allocate_direction.allocate_backward);
+                                Debug.Assert(num_right_used_free_units >= num_units);
+                                num_right_used_free_units -= num_units;
+                            }
+
+                            uint* busy_block;
+                            uint* free_block;
+                            if (direction == allocate_direction.allocate_forward)
+                            {
+                                busy_block = current_index;
+                                free_block = current_index + (nint)num_units;
+                            }
+                            else
+                            {
+                                busy_block = current_index - (nint)num_units;
+                                free_block = current_index - (nint)current_num_units;
+                            }
+
+                            make_busy_block(busy_block, num_units);
+                            if ((current_num_units - num_units) > 0)
+                            {
+                                make_free_block(free_block, current_num_units - num_units);
+                            }
+
+                            total_free_units -= num_units;
+
+                            leave_spin_lock();
+
+                            return region_address_of(busy_block);
+                        }
+                    }
+
+                    if (direction == allocate_direction.allocate_forward)
+                    {
+                        current_index += (nint)current_num_units;
+                    }
+                    else
+                    {
+                        current_index -= (nint)current_num_units;
+                    }
+                }
+            }
+
+            byte* alloc = allocate_end(num_units, direction);
+
+            if (alloc is not null)
+            {
+                total_free_units -= num_units;
+                if (fn is not null)
+                {
+                    if (fn(global_region_left_used) == 0)
+                    {
+                        delete_region_impl(alloc);
+                        alloc = null;
+                    }
+                }
+            }
+
+            leave_spin_lock();
 
             return alloc;
         }

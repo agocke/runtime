@@ -838,7 +838,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, and region deletion are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, and region deletion are translated**
 
 Translate:
 
@@ -888,11 +888,21 @@ Done so far:
   `int free_block_size` conversion through pointer arithmetic, and `total_free_units` mutation
   after the map/counter updates. The native region `dprintf` traces, `print_map`, and
   `ASSERT_HOLDING_SPIN_LOCK(&region_allocator_lock)` diagnostics remain deferred.
+- Free-block search and callback allocation from the private `region_allocator::allocate`:
+  the managed port keeps the exact enter/leave lock lifetime, direction-based current/end
+  index selection, used-free-unit fast gate, backward `current_index - 1` endpoint read,
+  busy-block skipping, fit/split placement for exact and oversized free blocks, left/right
+  used-free counter ownership, terminal `allocate_end` fallback, callback invocation on
+  `global_region_left_used`, `total_free_units` mutation order, and callback-failure rollback
+  through `delete_region_impl`. The callback typedef is a managed static function pointer
+  returning byte (`delegate*<byte*, byte>`), matching the GC vtable convention for callbacks
+  implemented by this assembly without allocating delegates or creating reverse P/Invoke thunks;
+  native `bool` is represented by the explicit one-byte result.
 - Remaining `region_free_list.cpp` helpers previously blocked on that prerequisite:
   `get_region_kind`, `add_region`, `add_region_descending`, `is_on_free_list`, and
   `unlink_smallest_region` with native large-region assertion and early-break behavior.
-- Still deferred from `region_allocator.cpp`: reservation state after `init`, free-block search
-  allocation, callback paths, and high-region movement.
+- Still deferred from `region_allocator.cpp`: reservation state after `init`, public
+  region-allocation wrappers, and high-region movement.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

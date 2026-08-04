@@ -274,12 +274,20 @@ uses the same spin-lock enter/leave shape, and the implementation preserves the 
 start assumption, endpoint decoding, left/right free-unit counter routing, previous/next
 free-block coalescing, terminal-end contraction, region-map pointer updates, and
 `total_free_units` update order. Native region logging and map printing remain deferred.
+The private `region_allocator::allocate` free-block search is now translated on top of that
+state. It keeps the native lock lifetime, forward/backward scan endpoints, used-free-unit fast
+gate, backward endpoint read from `current_index - 1`, free-block fit and split placement,
+left/right used-free counters, terminal-space fallback, `total_free_units` update order, and
+callback failure rollback through `delete_region_impl`. The C++ callback typedef is represented
+as a managed static function pointer returning a byte (`delegate*<byte*, byte>`): this follows
+the same internal convention as GC vtable slots implemented by this assembly, avoids delegates
+and reverse P/Invoke thunks, and maps native `bool` to an explicit one-byte result.
 That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
 its native large-region minimum assertion and early-break control flow. The full allocator map
-reservation after `init`, free-block search/callback allocation, and high-region movement
-algorithms of `region_allocator.cpp` remain deferred.
+reservation after `init`, public region-allocation wrappers, and high-region movement algorithms
+of `region_allocator.cpp` remain deferred.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,
 gcpriv.h's region layout that replaces
