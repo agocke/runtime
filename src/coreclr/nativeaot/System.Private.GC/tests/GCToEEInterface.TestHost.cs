@@ -149,6 +149,14 @@ internal static unsafe class GCToEEInterface
 
     internal static byte[] LastDynamicEventPayload { get; private set; }
 
+    internal static int GCCreateSegmentCallCount { get; private set; }
+
+    internal static void* LastGCCreateSegmentAddress { get; private set; }
+
+    internal static nuint LastGCCreateSegmentSize { get; private set; }
+
+    internal static uint LastGCCreateSegmentType { get; private set; }
+
     internal static void Reset()
     {
         LastInitializedGCToCLR = null;
@@ -172,6 +180,10 @@ internal static unsafe class GCToEEInterface
         LastFiredEvent = FiredEvent.None;
         LastDynamicEventName = null;
         LastDynamicEventPayload = null;
+        GCCreateSegmentCallCount = 0;
+        LastGCCreateSegmentAddress = null;
+        LastGCCreateSegmentSize = 0;
+        LastGCCreateSegmentType = 0;
 
         foreach (IntPtr outstanding in OutstandingStrings)
         {
@@ -231,7 +243,14 @@ internal static unsafe class GCToEEInterface
     public static void FireGCEnd_V1(uint count, uint depth) => LastFiredEvent = FiredEvent.GCEnd_V1;
     public static void FireGCGenerationRange(byte generation, void* rangeStart, ulong rangeUsedLength, ulong rangeReservedLength) => LastFiredEvent = FiredEvent.GCGenerationRange;
     public static void FireGCHeapStats_V2(ulong generationSize0, ulong totalPromotedSize0, ulong generationSize1, ulong totalPromotedSize1, ulong generationSize2, ulong totalPromotedSize2, ulong generationSize3, ulong totalPromotedSize3, ulong generationSize4, ulong totalPromotedSize4, ulong finalizationPromotedSize, ulong finalizationPromotedCount, uint pinnedObjectCount, uint sinkBlockCount, uint gcHandleCount) => LastFiredEvent = FiredEvent.GCHeapStats_V2;
-    public static void FireGCCreateSegment_V1(void* address, nuint size, uint type) => LastFiredEvent = FiredEvent.GCCreateSegment_V1;
+    public static void FireGCCreateSegment_V1(void* address, nuint size, uint type)
+    {
+        LastFiredEvent = FiredEvent.GCCreateSegment_V1;
+        GCCreateSegmentCallCount++;
+        LastGCCreateSegmentAddress = address;
+        LastGCCreateSegmentSize = size;
+        LastGCCreateSegmentType = type;
+    }
     public static void FireGCFreeSegment_V1(void* address) => LastFiredEvent = FiredEvent.GCFreeSegment_V1;
     public static void FireGCCreateConcurrentThread_V1() => LastFiredEvent = FiredEvent.GCCreateConcurrentThread_V1;
     public static void FireGCTerminateConcurrentThread_V1() => LastFiredEvent = FiredEvent.GCTerminateConcurrentThread_V1;

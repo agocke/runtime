@@ -2823,6 +2823,276 @@ public sealed unsafe class GCPrivTests
         }
     }
 
+    [Fact]
+    public void RegionAllocatorAllocateBasicRegionUsesOneBasicUnitAndFiresSegmentEvent()
+    {
+        SyncImports.ResetRecording();
+        ResetCreateSegmentEventRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x9000, 0x1000);
+
+        try
+        {
+            allocator.initialize();
+            byte* start = (byte*)0x1111;
+            byte* end = (byte*)0x2222;
+
+            Assert.True(allocator.allocate_basic_region(
+                (int)gc_generation_num.soh_gen2,
+                &start,
+                &end,
+                &RegionAllocatorCallbackSuccess));
+
+            Assert.Equal((nuint)0x1000, (nuint)start);
+            Assert.Equal((nuint)0x2000, (nuint)end);
+            Assert.Equal(1u, map[0]);
+            Assert.Equal((nuint)0x2000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal(1, s_regionAllocatorCallbackCount);
+            Assert.Equal((nuint)0x2000, s_regionAllocatorCallbackLastLeftUsed);
+            AssertCreateSegmentEvent(
+                (byte*)((nuint)0x1000 + (nuint)sizeof(aligned_plug_and_gap)),
+                (nuint)0x1000 - (nuint)sizeof(aligned_plug_and_gap),
+                gc_etw_segment_type.gc_etw_segment_small_object_heap);
+        }
+        finally
+        {
+            DisableCreateSegmentEvents();
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorAllocateLargeRegionUsesDefaultLargeSizeAndBackwardDirection()
+    {
+        SyncImports.ResetRecording();
+        ResetCreateSegmentEventRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x19000, 0x1000);
+
+        try
+        {
+            allocator.initialize();
+            byte* start = null;
+            byte* end = null;
+
+            Assert.True(allocator.allocate_large_region(
+                (int)gc_generation_num.loh_generation,
+                &start,
+                &end,
+                allocate_direction.allocate_backward,
+                0,
+                null));
+
+            Assert.Equal((nuint)0x11000, (nuint)start);
+            Assert.Equal((nuint)0x19000, (nuint)end);
+            Assert.Equal(8u, map[16]);
+            Assert.Equal(8u, map[23]);
+            Assert.Equal((nuint)0x11000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_right_used"));
+            Assert.Equal((nuint)(map + 16), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_start"));
+            Assert.Equal(16u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            AssertCreateSegmentEvent(
+                (byte*)((nuint)0x11000 + (nuint)sizeof(aligned_plug_and_gap)),
+                (nuint)0x8000 - (nuint)sizeof(aligned_plug_and_gap),
+                gc_etw_segment_type.gc_etw_segment_large_object_heap);
+        }
+        finally
+        {
+            DisableCreateSegmentEvents();
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorAllocateLargeRegionRoundsCustomSizeToLargeAlignment()
+    {
+        SyncImports.ResetRecording();
+        ResetCreateSegmentEventRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x21000, 0x1000);
+
+        try
+        {
+            allocator.initialize();
+            byte* start = null;
+            byte* end = null;
+
+            Assert.True(allocator.allocate_large_region(
+                (int)gc_generation_num.soh_gen0,
+                &start,
+                &end,
+                allocate_direction.allocate_forward,
+                0x9000,
+                null));
+
+            Assert.Equal((nuint)0x1000, (nuint)start);
+            Assert.Equal((nuint)0x11000, (nuint)end);
+            Assert.Equal(16u, map[0]);
+            Assert.Equal(16u, map[15]);
+            Assert.Equal((nuint)0x11000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal((nuint)(map + 16), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+            Assert.Equal(16u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            AssertCreateSegmentEvent(
+                (byte*)((nuint)0x1000 + (nuint)sizeof(aligned_plug_and_gap)),
+                (nuint)0x10000 - (nuint)sizeof(aligned_plug_and_gap),
+                gc_etw_segment_type.gc_etw_segment_small_object_heap);
+        }
+        finally
+        {
+            DisableCreateSegmentEvents();
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorAllocateRegionAlignsAllocationSizeButFiresRequestedSize()
+    {
+        SyncImports.ResetRecording();
+        ResetCreateSegmentEventRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x9000, 0x1000);
+
+        try
+        {
+            allocator.initialize();
+            byte* start = null;
+            byte* end = null;
+
+            Assert.True(allocator.allocate_region(
+                (int)gc_generation_num.soh_gen1,
+                0x1801,
+                &start,
+                &end,
+                allocate_direction.allocate_forward,
+                null));
+
+            Assert.Equal((nuint)0x1000, (nuint)start);
+            Assert.Equal((nuint)0x3000, (nuint)end);
+            Assert.Equal(2u, map[0]);
+            Assert.Equal(2u, map[1]);
+            Assert.Equal(6u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            AssertCreateSegmentEvent(
+                (byte*)((nuint)0x1000 + (nuint)sizeof(aligned_plug_and_gap)),
+                (nuint)0x1801 - (nuint)sizeof(aligned_plug_and_gap),
+                gc_etw_segment_type.gc_etw_segment_small_object_heap);
+        }
+        finally
+        {
+            DisableCreateSegmentEvents();
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Theory]
+    [InlineData((int)gc_generation_num.soh_gen0, (int)gc_etw_segment_type.gc_etw_segment_small_object_heap)]
+    [InlineData((int)gc_generation_num.loh_generation, (int)gc_etw_segment_type.gc_etw_segment_large_object_heap)]
+    [InlineData((int)gc_generation_num.poh_generation, (int)gc_etw_segment_type.gc_etw_segment_pinned_object_heap)]
+    public void RegionAllocatorAllocateRegionClassifiesGenerationSegmentTypes(int generation, int expectedSegmentType)
+    {
+        SyncImports.ResetRecording();
+        ResetCreateSegmentEventRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x5000, 0x1000);
+
+        try
+        {
+            allocator.initialize();
+            byte* start = null;
+            byte* end = null;
+
+            Assert.True(allocator.allocate_region(generation, 0x1000, &start, &end, allocate_direction.allocate_forward, null));
+
+            Assert.Equal((nuint)0x1000, (nuint)start);
+            Assert.Equal((nuint)0x2000, (nuint)end);
+            Assert.Equal((uint)expectedSegmentType, GCToEEInterface.LastGCCreateSegmentType);
+        }
+        finally
+        {
+            DisableCreateSegmentEvents();
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorAllocateRegionCallbackFailureWritesOutputsAndFiresFailedAllocationEvent()
+    {
+        SyncImports.ResetRecording();
+        ResetCreateSegmentEventRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x9000, 0x1000);
+
+        try
+        {
+            allocator.initialize();
+            RegionAllocatorSnapshot before = CaptureRegionAllocatorSnapshot(&allocator);
+            byte* start = (byte*)0x1111;
+            byte* end = (byte*)0x2222;
+
+            Assert.False(allocator.allocate_region(
+                (int)gc_generation_num.poh_generation,
+                0x1000,
+                &start,
+                &end,
+                allocate_direction.allocate_forward,
+                &RegionAllocatorCallbackFailure));
+
+            Assert.Equal((nuint)0, (nuint)start);
+            Assert.Equal((nuint)0x1000, (nuint)end);
+            Assert.Equal(1, s_regionAllocatorCallbackCount);
+            Assert.Equal((nuint)0x2000, s_regionAllocatorCallbackLastLeftUsed);
+            AssertRegionAllocatorSnapshotEqual(before, &allocator);
+            AssertCreateSegmentEvent(
+                (byte*)(nuint)sizeof(aligned_plug_and_gap),
+                (nuint)0x1000 - (nuint)sizeof(aligned_plug_and_gap),
+                gc_etw_segment_type.gc_etw_segment_pinned_object_heap);
+        }
+        finally
+        {
+            DisableCreateSegmentEvents();
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorAllocateRegionNoSpaceFailureStillWritesEndAndFiresEvent()
+    {
+        SyncImports.ResetRecording();
+        ResetCreateSegmentEventRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0x2000, 0x1000);
+
+        try
+        {
+            allocator.initialize();
+            Assert.Equal((nuint)0x1000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            WriteRegionAllocatorField(&allocator, "total_free_units", 0u);
+            RegionAllocatorSnapshot before = CaptureRegionAllocatorSnapshot(&allocator);
+            byte* start = (byte*)0x1111;
+            byte* end = (byte*)0x2222;
+
+            Assert.False(allocator.allocate_region(
+                (int)gc_generation_num.loh_generation,
+                0x1000,
+                &start,
+                &end,
+                allocate_direction.allocate_forward,
+                &RegionAllocatorCallbackSuccess));
+
+            Assert.Equal((nuint)0, (nuint)start);
+            Assert.Equal((nuint)0x1000, (nuint)end);
+            Assert.Equal(0, s_regionAllocatorCallbackCount);
+            AssertRegionAllocatorSnapshotEqual(before, &allocator);
+            AssertCreateSegmentEvent(
+                (byte*)(nuint)sizeof(aligned_plug_and_gap),
+                (nuint)0x1000 - (nuint)sizeof(aligned_plug_and_gap),
+                gc_etw_segment_type.gc_etw_segment_large_object_heap);
+        }
+        finally
+        {
+            DisableCreateSegmentEvents();
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
 #if !DEBUG
     [Fact]
     public void RegionAllocatorAllocateInvalidDirectionFallsBackToBackwardEndInRelease()
@@ -3202,6 +3472,28 @@ public sealed unsafe class GCPrivTests
     {
         s_regionAllocatorCallbackCount = 0;
         s_regionAllocatorCallbackLastLeftUsed = 0;
+    }
+
+    private static void ResetCreateSegmentEventRecording()
+    {
+        ResetRegionAllocatorCallbackRecorder();
+        GCToEEInterface.Reset();
+        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.GC, GCEventLevel.Information);
+    }
+
+    private static void DisableCreateSegmentEvents()
+    {
+        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+        GCToEEInterface.Reset();
+    }
+
+    private static void AssertCreateSegmentEvent(byte* address, nuint size, gc_etw_segment_type type)
+    {
+        Assert.Equal(GCToEEInterface.FiredEvent.GCCreateSegment_V1, GCToEEInterface.LastFiredEvent);
+        Assert.Equal(1, GCToEEInterface.GCCreateSegmentCallCount);
+        Assert.Equal((nuint)address, (nuint)GCToEEInterface.LastGCCreateSegmentAddress);
+        Assert.Equal(size, GCToEEInterface.LastGCCreateSegmentSize);
+        Assert.Equal((uint)type, GCToEEInterface.LastGCCreateSegmentType);
     }
 
     private static byte RegionAllocatorCallbackSuccess(byte* globalRegionLeftUsed)

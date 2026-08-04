@@ -838,7 +838,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, and region deletion are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, and region deletion are translated**
 
 Translate:
 
@@ -898,11 +898,17 @@ Done so far:
   returning byte (`delegate*<byte*, byte>`), matching the GC vtable convention for callbacks
   implemented by this assembly without allocating delegates or creating reverse P/Invoke thunks;
   native `bool` is represented by the explicit one-byte result.
+- Public region-allocation wrappers from `region_allocator.cpp`: `allocate_region`,
+  `allocate_basic_region`, and `allocate_large_region` preserve basic-region alignment, large
+  default sizing, power-of-two large-size rounding, `uint32_t` unit truncation, forward/backward
+  direction forwarding, `start`/`end` writes even after failed allocation, generation-to-ETW
+  segment type selection through the `gc.h` constants, and the native `GCCreateSegment_V1`
+  event call including its failed-allocation pointer arithmetic.
 - Remaining `region_free_list.cpp` helpers previously blocked on that prerequisite:
   `get_region_kind`, `add_region`, `add_region_descending`, `is_on_free_list`, and
   `unlink_smallest_region` with native large-region assertion and early-break behavior.
-- Still deferred from `region_allocator.cpp`: reservation state after `init`, public
-  region-allocation wrappers, and high-region movement.
+- Still deferred from `region_allocator.cpp`: reservation state after `init` and high-region
+  movement.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

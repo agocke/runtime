@@ -1,7 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Ported from the dependency-free prefix of src/coreclr/gc/gcrecord.h.
+// Ported from the dependency-free prefix of src/coreclr/gc/gcrecord.h, plus adjacent enums from
+// src/coreclr/gc/gc.h consumed by those records and early region-management slices.
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -29,6 +30,28 @@ namespace Internal.Runtime.GarbageCollection
         reason_bgc_stepping = 16,
         reason_induced_aggressive = 17,
         reason_max = 18,
+    }
+
+    internal enum gc_etw_segment_type
+    {
+        gc_etw_segment_small_object_heap = 0,
+        gc_etw_segment_large_object_heap = 1,
+        gc_etw_segment_read_only_heap = 2,
+        gc_etw_segment_pinned_object_heap = 3,
+    }
+
+    internal enum gc_generation_num
+    {
+        soh_gen0 = 0,
+        soh_gen1 = 1,
+        soh_gen2 = 2,
+        max_generation = soh_gen2,
+        loh_generation = 3,
+        poh_generation = 4,
+        uoh_start_generation = loh_generation,
+        ephemeral_generation_count = max_generation,
+        total_generation_count = poh_generation + 1,
+        uoh_generation_count = total_generation_count - uoh_start_generation,
     }
 
     internal enum gc_condemn_reason_gen

@@ -150,6 +150,23 @@ GC_CONST( 14C08, 14C08, LARGE_OBJECT_SIZE)
 GC_CONST(     c,    18, min_obj_size)
 GC_CONST(     c,     c, SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift)
 
+// Adjacent gc.h enumerators consumed by early region-management slices. These cross the
+// GCCreateSegment event boundary or classify generation-specific region allocation.
+GC_CONST(     0,     0, gc_etw_segment_small_object_heap)
+GC_CONST(     1,     1, gc_etw_segment_large_object_heap)
+GC_CONST(     2,     2, gc_etw_segment_read_only_heap)
+GC_CONST(     3,     3, gc_etw_segment_pinned_object_heap)
+
+GC_CONST(     0,     0, soh_gen0)
+GC_CONST(     1,     1, soh_gen1)
+GC_CONST(     2,     2, soh_gen2)
+GC_CONST(     3,     3, loh_generation)
+GC_CONST(     4,     4, poh_generation)
+GC_CONST(     3,     3, uoh_start_generation)
+GC_CONST(     2,     2, ephemeral_generation_count)
+GC_CONST(     5,     5, total_generation_count)
+GC_CONST(     2,     2, uoh_generation_count)
+
 // The GCEventProvider / GCEventLevel / GCEventKeyword enumerators of gcinterface.h. These are
 // not a memory layout, but they are an ABI: they cross the GC/EE boundary in
 // IGCHeap::ControlEvents, IGCHeap::ControlPrivateEvents and IGCToCLR::UpdateGCEventStatus, and

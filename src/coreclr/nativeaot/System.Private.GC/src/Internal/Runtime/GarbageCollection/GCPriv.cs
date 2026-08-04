@@ -1025,6 +1025,90 @@ namespace Internal.Runtime.GarbageCollection
             return alloc;
         }
 
+        public bool allocate_region(
+            int gen_num,
+            nuint size,
+            byte** start,
+            byte** end,
+            allocate_direction direction,
+            region_allocator_callback_fn fn)
+        {
+            nuint alignment = region_alignment;
+            nuint alloc_size = align_region_up(size);
+
+            uint num_units = (uint)(alloc_size / alignment);
+            bool ret = false;
+            byte* alloc = null;
+
+            alloc = allocate(num_units, direction, fn);
+            *start = alloc;
+            *end = alloc + (nint)alloc_size;
+            ret = alloc is not null;
+
+            gc_etw_segment_type segment_type;
+
+            if (gen_num == (int)gc_generation_num.loh_generation)
+            {
+                segment_type = gc_etw_segment_type.gc_etw_segment_large_object_heap;
+            }
+            else if (gen_num == (int)gc_generation_num.poh_generation)
+            {
+                segment_type = gc_etw_segment_type.gc_etw_segment_pinned_object_heap;
+            }
+            else
+            {
+                segment_type = gc_etw_segment_type.gc_etw_segment_small_object_heap;
+            }
+
+            GCEvents.GCEventFireGCCreateSegment_V1(
+                alloc + sizeof(aligned_plug_and_gap),
+                unchecked(size - (nuint)sizeof(aligned_plug_and_gap)),
+                (uint)segment_type);
+
+            return ret;
+        }
+
+        public bool allocate_basic_region(int gen_num, byte** start, byte** end, region_allocator_callback_fn fn)
+        {
+            return allocate_region(gen_num, region_alignment, start, end, allocate_direction.allocate_forward, fn);
+        }
+
+        public bool allocate_large_region(
+            int gen_num,
+            byte** start,
+            byte** end,
+            allocate_direction direction,
+            nuint size,
+            region_allocator_callback_fn fn)
+        {
+            if (size == 0)
+            {
+                size = large_region_alignment;
+            }
+            else
+            {
+                Debug.Assert(round_up_power2(large_region_alignment) == large_region_alignment);
+                size = unchecked((size + (large_region_alignment - 1)) & ~(large_region_alignment - 1));
+            }
+
+            return allocate_region(gen_num, size, start, end, direction, fn);
+        }
+
+        private static nuint round_up_power2(nuint size)
+        {
+            uint highest_set_bit_index;
+#if TARGET_64BIT
+            if (GCEnv.BitScanReverse64(&highest_set_bit_index, (ulong)(size - 1)) == 0)
+#else
+            if (GCEnv.BitScanReverse(&highest_set_bit_index, (uint)(size - 1)) == 0)
+#endif
+            {
+                return 1;
+            }
+
+            return (nuint)2 << (int)highest_set_bit_index;
+        }
+
         // Whenever a region is deleted, it is expected that the memory and the mark array
         // of the region is decommitted already.
         public void delete_region(byte* region_start)
