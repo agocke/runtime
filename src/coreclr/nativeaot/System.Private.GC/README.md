@@ -343,10 +343,14 @@ sizes at or above `MAX_REGION_SIZE` and non-power-of-two sizes before deriving t
 default sizing and range-per-heap validation remain deferred. Non-region address-to-segment or
 heap lookup algorithms remain deferred to `regions_segments.cpp` and `gc.cpp`, when the required
 heap constants and state are available.
-The first `regions_segments.cpp` slice is present too: segment alignment, segment-mapping and
-region-to-generation table sizing, read-only segment index clipping, and the WKS `USE_REGIONS`
-read-only segment-table marker preserve the native absolute-index arithmetic and `ro_in_entry`
-sentinel. The native remove helper remains its intentional no-op.
+The `regions_segments.cpp` port now covers the opening WKS `USE_REGIONS` lifecycle slice:
+segment alignment, segment-mapping and region-to-generation table sizing, read-only segment
+index clipping, the read-only segment-table marker, brick/card cleanup, background changed-
+segment recording and debug mark-array verification, and returning a live region to the
+per-heap free lists. It preserves the native absolute-index arithmetic, `ro_in_entry` sentinel,
+UOH brick-skip, committed-byte transfer from the owning object heap to the free bucket,
+descending free-list dispatch, and basic-region `allocated` sentinel clearing. The native remove
+helper remains its intentional no-op.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

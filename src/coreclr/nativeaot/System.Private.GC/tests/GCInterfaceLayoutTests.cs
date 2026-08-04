@@ -119,6 +119,23 @@ public sealed class GCInterfaceLayoutTests
     {
         ["collection_mode.collection_gcstress"] = "the C++ enumerator only exists in a STRESS_HEAP build",
         ["GCEventProvider.Count"] = "not a native enumerator; the length of the per-provider arrays of gceventstatus.cpp",
+#if BACKGROUND_GC
+        ["bgc_state.bgc_not_in_process"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_initialized"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_reset_ww"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_mark_handles"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_mark_stack"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_revisit_soh"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_revisit_uoh"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_overflow_soh"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_overflow_uoh"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_final_marking"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_sweep_soh"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_sweep_uoh"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["bgc_state.bgc_plan_phase"] = "internal background-GC diagnostic state from gc.h; pinned by GCPrivTests",
+        ["changed_seg_state.seg_deleted"] = "internal background-GC changed-segment state from gc.h; pinned by GCPrivTests",
+        ["changed_seg_state.seg_added"] = "internal background-GC changed-segment state from gc.h; pinned by GCPrivTests",
+#endif
     };
 
     /// <summary>

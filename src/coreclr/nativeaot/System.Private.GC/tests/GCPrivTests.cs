@@ -4167,6 +4167,209 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)pDestination, (nuint)heap_segment.heap_segment_containing_free_list(&basic));
     }
 
+    [Fact]
+    public void ClearRegionInfoClearsBrickAndCardsAndRecordsBackgroundChange()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        uint* cards = stackalloc uint[3];
+        short* bricks = stackalloc short[4];
+        for (int i = 0; i < 3; i++)
+        {
+            cards[i] = uint.MaxValue;
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            bricks[i] = -1;
+        }
+
+        gc_heap.card_table = cards;
+        gc_heap.brick_table = bricks;
+        gc_heap.settings.gc_index = 42;
+#if BACKGROUND_GC
+        gc_heap.current_bgc_state = bgc_state.bgc_sweep_soh;
+        gc_heap.gc_background_running = 0;
+#endif
+
+        heap_segment region = default;
+        InitializeRegion(&region, 0, card_table_info.brick_size * 4, card_table_info.brick_size * 4, age: 0);
+        heap_segment.heap_segment_allocated(&region) = heap_segment.heap_segment_mem(&region);
+
+        gc_heap.clear_region_info(&region);
+
+        Assert.Equal(0u, cards[0]);
+        Assert.Equal(0u, cards[1]);
+        Assert.Equal(uint.MaxValue, cards[2]);
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.Equal(0, bricks[i]);
+        }
+
+#if BACKGROUND_GC
+        changed_seg changed = GCCommon.saved_changed_segs[(int)(GCCommon.saved_changed_segs_count & (GCCommon.max_saved_changed_segs - 1))];
+        Assert.Equal((nuint)(&region), (nuint)changed.start);
+        Assert.Equal((nuint)heap_segment.heap_segment_reserved(&region), (nuint)changed.end);
+        Assert.Equal((nuint)42, changed.gc_index);
+        Assert.Equal(bgc_state.bgc_sweep_soh, changed.bgc);
+        Assert.Equal(changed_seg_state.seg_deleted, changed.changed);
+#endif
+    }
+
+    [Fact]
+    public void BrickOfUsesLowestAddress()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        gc_heap.lowest_address = (byte*)0x100000;
+
+        Assert.Equal((nuint)0, gc_heap.brick_of(gc_heap.lowest_address));
+        Assert.Equal((nuint)3, gc_heap.brick_of(gc_heap.lowest_address + (3 * card_table_info.brick_size)));
+    }
+
+    [Fact]
+    public void ClearBrickTableIndexesRelativeToLowestAddress()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        short* bricks = stackalloc short[5];
+        for (int i = 0; i < 5; i++)
+        {
+            bricks[i] = -1;
+        }
+
+        gc_heap.lowest_address = (byte*)0x100000;
+        gc_heap.brick_table = bricks;
+
+        gc_heap.clear_brick_table(
+            gc_heap.lowest_address + card_table_info.brick_size,
+            gc_heap.lowest_address + (4 * card_table_info.brick_size));
+
+        Assert.Equal(-1, bricks[0]);
+        Assert.Equal(0, bricks[1]);
+        Assert.Equal(0, bricks[2]);
+        Assert.Equal(0, bricks[3]);
+        Assert.Equal(-1, bricks[4]);
+    }
+
+#if BACKGROUND_GC
+    [Fact]
+    public void BackgroundGcDiagnosticEnumsMatchNativeOrder()
+    {
+        Assert.Equal(0, (int)bgc_state.bgc_not_in_process);
+        Assert.Equal(1, (int)bgc_state.bgc_initialized);
+        Assert.Equal(2, (int)bgc_state.bgc_reset_ww);
+        Assert.Equal(3, (int)bgc_state.bgc_mark_handles);
+        Assert.Equal(4, (int)bgc_state.bgc_mark_stack);
+        Assert.Equal(5, (int)bgc_state.bgc_revisit_soh);
+        Assert.Equal(6, (int)bgc_state.bgc_revisit_uoh);
+        Assert.Equal(7, (int)bgc_state.bgc_overflow_soh);
+        Assert.Equal(8, (int)bgc_state.bgc_overflow_uoh);
+        Assert.Equal(9, (int)bgc_state.bgc_final_marking);
+        Assert.Equal(10, (int)bgc_state.bgc_sweep_soh);
+        Assert.Equal(11, (int)bgc_state.bgc_sweep_uoh);
+        Assert.Equal(12, (int)bgc_state.bgc_plan_phase);
+        Assert.Equal(0, (int)changed_seg_state.seg_deleted);
+        Assert.Equal(1, (int)changed_seg_state.seg_added);
+    }
+#endif
+
+    [Fact]
+    public void ClearRegionInfoSkipsBrickClearingForUohRegions()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        uint* cards = stackalloc uint[3];
+        short* bricks = stackalloc short[4];
+        for (int i = 0; i < 3; i++)
+        {
+            cards[i] = uint.MaxValue;
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            bricks[i] = -1;
+        }
+
+        gc_heap.card_table = cards;
+        gc_heap.brick_table = bricks;
+
+        heap_segment region = default;
+        InitializeRegion(&region, 0, card_table_info.brick_size * 4, card_table_info.brick_size * 4, age: 0);
+        region.flags = heap_segment.heap_segment_flags_loh;
+        heap_segment.heap_segment_allocated(&region) = heap_segment.heap_segment_mem(&region);
+
+        gc_heap.clear_region_info(&region);
+
+        Assert.Equal(0u, cards[0]);
+        Assert.Equal(0u, cards[1]);
+        Assert.Equal(uint.MaxValue, cards[2]);
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.Equal(-1, bricks[i]);
+        }
+    }
+
+    [Fact]
+    public void ReturnFreeRegionTransfersAccountingAddsToFreeListAndClearsBasicRegionSentinels()
+    {
+        const nuint Alignment = 0x1000;
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        seg_mapping* table = stackalloc seg_mapping[region_allocator.LARGE_REGION_FACTOR];
+        uint* cards = stackalloc uint[5];
+        short* bricks = stackalloc short[8];
+        for (int i = 0; i < 5; i++)
+        {
+            cards[i] = uint.MaxValue;
+        }
+        for (int i = 0; i < 8; i++)
+        {
+            bricks[i] = -1;
+        }
+
+        gc_heap.card_table = cards;
+        gc_heap.brick_table = bricks;
+        gc_heap.min_segment_size_shr = (nuint)gc_heap.index_of_highest_set_bit(Alignment);
+        gc_heap.global_region_allocator.initialize_alignment(Alignment);
+        GCCommon.seg_mapping_table = table;
+
+        heap_segment* region = &table[0].region_info;
+        InitializeRegion(region, 0, 6 * Alignment, region_allocator.LARGE_REGION_FACTOR * Alignment, age: 7);
+        heap_segment.heap_segment_allocated(region) = heap_segment.heap_segment_mem(region);
+        heap_segment.heap_segment_gen_num(region) = 2;
+        heap_segment.heap_segment_plan_gen_num(region) = 1;
+        for (int i = 1; i < region_allocator.LARGE_REGION_FACTOR; i++)
+        {
+            heap_segment* basicRegion = &table[i].region_info;
+            basicRegion->allocated = (byte*)(nint)(-i);
+            basicRegion->gen_num = 2;
+            basicRegion->plan_gen_num = 1;
+        }
+
+        gc_heap.committed_by_oh[(int)gc_oh_num.soh] = 6 * Alignment;
+
+        gc_heap.return_free_region(region);
+
+        Assert.Equal((nuint)0, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+        Assert.Equal(6 * Alignment, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
+        Assert.Equal((nuint)1, region_free_list.get_num_free_regions(gc_heap.free_regions_of((int)free_region_kind.large_free_region)));
+        Assert.Equal((nuint)region, (nuint)gc_heap.free_regions_of((int)free_region_kind.large_free_region)->get_first_free_region());
+        Assert.Equal(region_allocator.LARGE_REGION_FACTOR * Alignment, gc_heap.free_regions_of((int)free_region_kind.large_free_region)->get_size_free_regions());
+        Assert.Equal(6 * Alignment, gc_heap.free_regions_of((int)free_region_kind.large_free_region)->get_size_committed_in_free());
+
+        for (int i = 0; i < region_allocator.LARGE_REGION_FACTOR; i++)
+        {
+            heap_segment* basicRegion = &table[i].region_info;
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_allocated(basicRegion));
+            Assert.Equal((byte)2, heap_segment.heap_segment_gen_num(basicRegion));
+            Assert.Equal(1, heap_segment.heap_segment_plan_gen_num(basicRegion));
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.Equal(0u, cards[i]);
+        }
+        Assert.Equal(uint.MaxValue, cards[4]);
+        for (int i = 0; i < 8; i++)
+        {
+            Assert.Equal(0, bricks[i]);
+        }
+    }
+
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private unsafe struct SegMappingAlignmentProbe
     {
@@ -4308,6 +4511,108 @@ public sealed unsafe class GCPrivTests
     private static uint EncodedFreeRegionBlock(uint numUnits)
     {
         return unchecked((uint)region_allocator.region_alloc_free_bit) | numUnits;
+    }
+
+    private sealed unsafe class RegionSegmentsStateScope : System.IDisposable
+    {
+        private readonly nuint _minSegmentSizeShr;
+        private readonly seg_mapping* _segMappingTable;
+        private readonly region_allocator _globalRegionAllocator;
+        private readonly gc_heap.region_free_list_array _freeRegions;
+        private readonly uint* _cardTable;
+        private readonly short* _brickTable;
+        private readonly gc_heap.recorded_committed_bucket_array _committedByOh;
+        private readonly gc_mechanisms _settings;
+        private readonly CLRCriticalSection _checkCommitCs;
+        private readonly bool _initializedCommitLock;
+#if BACKGROUND_GC
+        private readonly GCCommon.changed_seg_array _savedChangedSegs;
+        private readonly ulong _savedChangedSegsCount;
+        private readonly bgc_state _currentBgcState;
+        private readonly byte* _backgroundSavedLowestAddress;
+        private readonly byte* _backgroundSavedHighestAddress;
+        private readonly int _gcBackgroundRunning;
+        private readonly uint* _markArray;
+        private readonly byte* _lowestAddress;
+        private readonly byte* _highestAddress;
+#endif
+
+        public RegionSegmentsStateScope(bool initializeCommitLock)
+        {
+            _minSegmentSizeShr = gc_heap.min_segment_size_shr;
+            _segMappingTable = GCCommon.seg_mapping_table;
+            _globalRegionAllocator = gc_heap.global_region_allocator;
+            _freeRegions = gc_heap.free_regions;
+            _cardTable = gc_heap.card_table;
+            _brickTable = gc_heap.brick_table;
+            _committedByOh = gc_heap.committed_by_oh;
+            _settings = gc_heap.settings;
+            _checkCommitCs = gc_heap.check_commit_cs;
+#if BACKGROUND_GC
+            _savedChangedSegs = GCCommon.saved_changed_segs;
+            _savedChangedSegsCount = GCCommon.saved_changed_segs_count;
+            _currentBgcState = gc_heap.current_bgc_state;
+            _backgroundSavedLowestAddress = gc_heap.background_saved_lowest_address;
+            _backgroundSavedHighestAddress = gc_heap.background_saved_highest_address;
+            _gcBackgroundRunning = gc_heap.gc_background_running;
+            _markArray = gc_heap.mark_array;
+            _lowestAddress = gc_heap.lowest_address;
+            _highestAddress = gc_heap.highest_address;
+#endif
+
+            gc_heap.free_regions = default;
+            gc_heap.card_table = null;
+            gc_heap.brick_table = null;
+            gc_heap.committed_by_oh = default;
+            gc_heap.settings = default;
+#if BACKGROUND_GC
+            GCCommon.saved_changed_segs = default;
+            GCCommon.initialize();
+            gc_heap.current_bgc_state = default;
+            gc_heap.background_saved_lowest_address = null;
+            gc_heap.background_saved_highest_address = null;
+            gc_heap.gc_background_running = 0;
+            gc_heap.mark_array = null;
+            gc_heap.lowest_address = null;
+            gc_heap.highest_address = null;
+#endif
+
+            if (initializeCommitLock)
+            {
+                gc_heap.check_commit_cs = default;
+                _initializedCommitLock = gc_heap.check_commit_cs.Initialize();
+                Assert.True(_initializedCommitLock);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_initializedCommitLock)
+            {
+                gc_heap.check_commit_cs.Destroy();
+            }
+
+            gc_heap.min_segment_size_shr = _minSegmentSizeShr;
+            GCCommon.seg_mapping_table = _segMappingTable;
+            gc_heap.global_region_allocator = _globalRegionAllocator;
+            gc_heap.free_regions = _freeRegions;
+            gc_heap.card_table = _cardTable;
+            gc_heap.brick_table = _brickTable;
+            gc_heap.committed_by_oh = _committedByOh;
+            gc_heap.settings = _settings;
+            gc_heap.check_commit_cs = _checkCommitCs;
+#if BACKGROUND_GC
+            GCCommon.saved_changed_segs = _savedChangedSegs;
+            GCCommon.saved_changed_segs_count = _savedChangedSegsCount;
+            gc_heap.current_bgc_state = _currentBgcState;
+            gc_heap.background_saved_lowest_address = _backgroundSavedLowestAddress;
+            gc_heap.background_saved_highest_address = _backgroundSavedHighestAddress;
+            gc_heap.gc_background_running = _gcBackgroundRunning;
+            gc_heap.mark_array = _markArray;
+            gc_heap.lowest_address = _lowestAddress;
+            gc_heap.highest_address = _highestAddress;
+#endif
+        }
     }
 
     private unsafe struct RegionAllocatorSnapshot

@@ -1,7 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Port of the dependency-closed WKS USE_REGIONS mapping helpers from regions_segments.cpp.
+// Port of the dependency-closed WKS USE_REGIONS helpers from regions_segments.cpp.
+
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Internal.Runtime.GarbageCollection;
 
@@ -9,6 +12,22 @@ namespace Internal.Runtime.GarbageCollection;
 internal unsafe partial struct gc_heap
 {
 #if USE_REGIONS
+    public static uint* card_table;
+    public static short* brick_table;
+    public static region_free_list_array free_regions;
+#if BACKGROUND_GC
+    public static volatile bgc_state current_bgc_state;
+    public static byte* background_saved_lowest_address;
+    public static byte* background_saved_highest_address;
+    public static volatile int gc_background_running;
+#endif
+
+    public static region_free_list* free_regions_of(int kind)
+    {
+        Debug.Assert(kind >= (int)free_region_kind.basic_free_region && kind < (int)free_region_kind.count_free_region_kinds);
+        return (region_free_list*)Unsafe.AsPointer(ref free_regions[kind]);
+    }
+
     public static byte* align_on_segment(byte* add)
     {
         nuint alignment = (nuint)1 << (int)min_segment_size_shr;
@@ -59,6 +78,189 @@ internal unsafe partial struct gc_heap
     public static void seg_mapping_table_remove_ro_segment(heap_segment* seg)
     {
         _ = seg;
+    }
+
+    public static nuint brick_of(byte* add)
+    {
+        return (nuint)(add - lowest_address) / card_table_info.brick_size;
+    }
+
+    public static void clear_brick_table(byte* from, byte* end)
+    {
+        nuint from_brick = brick_of(from);
+        nuint end_brick = brick_of(end);
+        GCCommon.MemSet((byte*)&brick_table[(nint)from_brick], 0, (end_brick - from_brick) * (nuint)sizeof(short));
+    }
+
+    public static nuint card_of(byte* add)
+    {
+        return card_table_info.gcard_of(add);
+    }
+
+    private static uint lowbits(uint wrd, uint bits)
+    {
+        return wrd & ((1u << (int)bits) - 1u);
+    }
+
+    private static uint highbits(uint wrd, uint bits)
+    {
+        return wrd & ~((1u << (int)bits) - 1u);
+    }
+
+    public static void clear_cards(nuint start_card, nuint end_card)
+    {
+        if (start_card < end_card)
+        {
+            nuint start_word = card_table_info.card_word(start_card);
+            nuint end_word = card_table_info.card_word(end_card);
+            if (start_word < end_word)
+            {
+                uint bits = card_table_info.card_bit(start_card);
+                card_table[(nint)start_word] &= lowbits(uint.MaxValue, bits);
+                for (nuint i = start_word + 1; i < end_word; i++)
+                {
+                    card_table[(nint)i] = 0;
+                }
+
+                bits = card_table_info.card_bit(end_card);
+                if (bits != 0)
+                {
+                    card_table[(nint)end_word] &= highbits(uint.MaxValue, bits);
+                }
+            }
+            else
+            {
+                card_table[(nint)start_word] &= lowbits(uint.MaxValue, card_table_info.card_bit(start_card))
+                    | highbits(uint.MaxValue, card_table_info.card_bit(end_card));
+            }
+        }
+    }
+
+    public static void clear_card_for_addresses(byte* start_address, byte* end_address)
+    {
+        nuint start_card = card_of(card_table_info.align_on_card(start_address));
+        nuint end_card = card_of(card_table_info.align_lower_card(end_address));
+        clear_cards(start_card, end_card);
+    }
+
+#if BACKGROUND_GC
+    public static bool background_running_p()
+    {
+        return gc_background_running != 0;
+    }
+
+    public static bool bgc_mark_array_range(heap_segment* seg, bool whole_seg_p, byte** range_beg, byte** range_end)
+    {
+        byte* seg_start = heap_segment.heap_segment_mem(seg);
+        byte* seg_end = whole_seg_p
+            ? heap_segment.heap_segment_reserved(seg)
+            : card_table_info.align_on_mark_word(heap_segment.heap_segment_allocated(seg));
+
+        if ((seg_start < background_saved_highest_address) && (seg_end > background_saved_lowest_address))
+        {
+            *range_beg = seg_start > background_saved_lowest_address ? seg_start : background_saved_lowest_address;
+            *range_end = seg_end < background_saved_highest_address ? seg_end : background_saved_highest_address;
+            return true;
+        }
+
+        return false;
+    }
+
+    public static uint mark_array_marked(byte* add)
+    {
+        return mark_array[(nint)card_table_info.mark_word_of(add)] & (1u << (int)card_table_info.mark_bit_bit_of(add));
+    }
+
+    public static void bgc_verify_mark_array_cleared(heap_segment* seg, bool always_verify_p = false)
+    {
+#if DEBUG
+        if (background_running_p() || always_verify_p)
+        {
+            byte* range_beg = null;
+            byte* range_end = null;
+
+            if (bgc_mark_array_range(seg, true, &range_beg, &range_end) || always_verify_p)
+            {
+                if (always_verify_p)
+                {
+                    range_beg = heap_segment.heap_segment_mem(seg);
+                    range_end = heap_segment.heap_segment_reserved(seg);
+                }
+
+                nuint markw = card_table_info.mark_word_of(range_beg);
+                nuint markw_end = card_table_info.mark_word_of(range_end);
+                while (markw < markw_end)
+                {
+                    Debug.Assert(mark_array[(nint)markw] == 0);
+                    markw++;
+                }
+
+                byte* p = card_table_info.mark_bit_address(markw_end * card_table_info.mark_word_width);
+                while (p < range_end)
+                {
+                    Debug.Assert(mark_array_marked(p) == 0);
+                    p++;
+                }
+            }
+        }
+#else
+        _ = seg;
+        _ = always_verify_p;
+#endif
+    }
+#endif
+
+    public static void clear_region_info(heap_segment* region)
+    {
+        if (heap_segment.heap_segment_uoh_p(region) == 0)
+        {
+            clear_brick_table(heap_segment.heap_segment_mem(region), heap_segment.heap_segment_reserved(region));
+        }
+
+        clear_card_for_addresses(get_region_start(region), heap_segment.heap_segment_reserved(region));
+
+#if BACKGROUND_GC
+        GCCommon.record_changed_seg(
+            (byte*)region,
+            heap_segment.heap_segment_reserved(region),
+            settings.gc_index,
+            current_bgc_state,
+            changed_seg_state.seg_deleted);
+
+        bgc_verify_mark_array_cleared(region);
+#endif
+    }
+
+    public static void return_free_region(heap_segment* region)
+    {
+        gc_oh_num oh = heap_segment.heap_segment_oh(region);
+        nuint committed = (nuint)(heap_segment.heap_segment_committed(region) - get_region_start(region));
+        if (committed > 0)
+        {
+            check_commit_cs.Enter();
+            Debug.Assert(committed_by_oh[(int)oh] >= committed);
+            committed_by_oh[(int)oh] -= committed;
+            committed_by_oh[recorded_committed_free_bucket] += committed;
+            check_commit_cs.Leave();
+        }
+
+        clear_region_info(region);
+
+        region_free_list.add_region_descending(region, (region_free_list*)Unsafe.AsPointer(ref free_regions[0]));
+
+        byte* region_start = get_region_start(region);
+        byte* region_end = heap_segment.heap_segment_reserved(region);
+
+        int num_basic_regions = (int)((region_end - region_start) >> (int)min_segment_size_shr);
+        for (int i = 0; i < num_basic_regions; i++)
+        {
+            byte* basic_region_start = region_start + ((nuint)i << (int)min_segment_size_shr);
+            heap_segment* basic_region = get_region_info(basic_region_start);
+            heap_segment.heap_segment_allocated(basic_region) = null;
+#if MULTIPLE_HEAPS
+            heap_segment.heap_segment_heap(basic_region) = null;
+#endif
+        }
     }
 #endif
 }

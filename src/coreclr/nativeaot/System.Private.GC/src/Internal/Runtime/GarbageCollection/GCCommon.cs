@@ -7,6 +7,40 @@ using System.Runtime.CompilerServices;
 
 namespace Internal.Runtime.GarbageCollection;
 
+#if BACKGROUND_GC
+internal enum bgc_state
+{
+    bgc_not_in_process = 0,
+    bgc_initialized,
+    bgc_reset_ww,
+    bgc_mark_handles,
+    bgc_mark_stack,
+    bgc_revisit_soh,
+    bgc_revisit_uoh,
+    bgc_overflow_soh,
+    bgc_overflow_uoh,
+    bgc_final_marking,
+    bgc_sweep_soh,
+    bgc_sweep_uoh,
+    bgc_plan_phase,
+}
+
+internal enum changed_seg_state
+{
+    seg_deleted,
+    seg_added,
+}
+
+internal unsafe struct changed_seg
+{
+    public byte* start;
+    public byte* end;
+    public nuint gc_index;
+    public bgc_state bgc;
+    public changed_seg_state changed;
+}
+#endif
+
 internal static unsafe partial class GCCommon
 {
     // The heap's bounds. gccommon.cpp declares both and zero-initializes them; the C# default
@@ -22,6 +56,42 @@ internal static unsafe partial class GCCommon
     // directly by absolute-address >> gc_heap::min_segment_size_shr, so callers publish the
     // already-skewed base pointer.
     internal static seg_mapping* seg_mapping_table;
+#endif
+
+#if BACKGROUND_GC
+    internal const int max_saved_changed_segs = 128;
+
+    internal static changed_seg_array saved_changed_segs;
+    internal static ulong saved_changed_segs_count;
+
+    public static void initialize()
+    {
+        saved_changed_segs_count = ulong.MaxValue;
+    }
+
+    public static void record_changed_seg(byte* start, byte* end, nuint current_gc_index, bgc_state current_bgc_state, changed_seg_state changed_state)
+    {
+#if MULTIPLE_HEAPS && USE_REGIONS
+        ulong segs_count = Interlocked.Increment(ref saved_changed_segs_count);
+#else
+        saved_changed_segs_count = unchecked(saved_changed_segs_count + 1);
+        ulong segs_count = saved_changed_segs_count;
+#endif
+
+        uint segs_index = (uint)(segs_count & (max_saved_changed_segs - 1));
+
+        saved_changed_segs[(int)segs_index].start = start;
+        saved_changed_segs[(int)segs_index].end = end;
+        saved_changed_segs[(int)segs_index].gc_index = current_gc_index;
+        saved_changed_segs[(int)segs_index].bgc = current_bgc_state;
+        saved_changed_segs[(int)segs_index].changed = changed_state;
+    }
+
+    [InlineArray(max_saved_changed_segs)]
+    internal struct changed_seg_array
+    {
+        private changed_seg _element0;
+    }
 #endif
 
     private static double g_QPFus;

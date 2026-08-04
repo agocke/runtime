@@ -847,7 +847,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, WKS `USE_REGIONS` region decommit, and the first `regions_segments.cpp` mapping helpers are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, WKS `USE_REGIONS` region decommit, and the first `regions_segments.cpp` mapping and region-return lifecycle helpers are translated**
 
 Translate:
 
@@ -950,15 +950,24 @@ Done so far:
   segment alignment, lowest/highest-address clipping, the embedded-`heap_segment`
   reinterpretation of `seg_mapping`, and the native `ro_in_entry` sentinel in
   `heap_segment_allocated`.
+- The next dependency-closed WKS `USE_REGIONS` lifecycle/accounting slice from
+  `regions_segments.cpp`: `clear_region_info` and `return_free_region`, plus the small
+  prerequisite helpers they directly require (`clear_brick_table`, `clear_cards`,
+  `clear_card_for_addresses`, background changed-segment recording, and debug
+  mark-array range verification). This preserves SOH brick clearing vs UOH brick skipping,
+  card clearing over the basic-region range, BACKGROUND_GC changed-segment recording,
+  committed-byte transfer from the owning object heap to the free bucket under
+  `check_commit_cs`, descending free-list dispatch through `region_free_list`, and clearing
+  each basic region's `allocated`/continuation sentinel without resetting its generation
+  diagnostics.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
-  mutable read-only segment list operations, region creation/free-return, generation threading,
+  mutable read-only segment list operations, region creation/reuse, generation threading,
   full heap-segment initialization/deletion, and free-region distribution because they pull in
-  generation construction, brick/card-table clearing, allocation/collection state, or server-GC
-  branches.
+  generation construction, allocation/collection state, or server-GC branches.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.
