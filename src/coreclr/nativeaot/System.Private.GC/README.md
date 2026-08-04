@@ -94,7 +94,7 @@ Ported so far:
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
-| `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping helpers from `regions_segments.cpp` |
+| `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
@@ -372,8 +372,13 @@ before acquiring that lock for gen0/gen1. A contending updater rechecks whether 
 already covered the range, and an expanding updater stomps the write barrier before publishing
 the new bounds, then releases with a volatile store. `init_heap_segment` now mechanically resets
 segment allocation state, preserves only an existing region's mark-array-committed flag, clamps
-the region generation, and initializes large-region continuation sentinels. `get_free_region`,
-`allocate_new_region`, and `init_table_for_region` remain deferred.
+the region generation, and initializes large-region continuation sentinels. `init_table_for_region`
+now commits and verifies the background mark array for the saved range, propagates commitment
+failure by decommitting the region, preserves already committed mark arrays, and initializes only
+the first SOH brick. Its dependency-closed mark-array range/new-segment commitment and debug
+verification helpers retain the native page and mark-word boundaries, secondary card-table
+handling, and region partial-commit assertion. `get_free_region` and `allocate_new_region` remain
+deferred.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

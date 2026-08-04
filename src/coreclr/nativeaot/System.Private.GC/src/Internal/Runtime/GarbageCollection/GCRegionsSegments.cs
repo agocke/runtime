@@ -1,7 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Port of the dependency-closed WKS USE_REGIONS helpers from regions_segments.cpp.
+// Port of the dependency-closed WKS USE_REGIONS helpers from regions_segments.cpp,
+// plan_phase.cpp, background.cpp, diagnostics.cpp, and gc.cpp.
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -124,6 +125,151 @@ internal unsafe partial struct gc_heap
 #endif
             }
         }
+    }
+
+    public static gc_oh_num gen_to_oh(int gen)
+    {
+        switch (gen)
+        {
+            case (int)gc_generation_num.soh_gen0:
+            case (int)gc_generation_num.soh_gen1:
+            case (int)gc_generation_num.soh_gen2:
+                return gc_oh_num.soh;
+
+            case (int)gc_generation_num.loh_generation:
+                return gc_oh_num.loh;
+
+            case (int)gc_generation_num.poh_generation:
+                return gc_oh_num.poh;
+
+            default:
+                Debug.Assert(false);
+                return gc_oh_num.unknown;
+        }
+    }
+
+#if BACKGROUND_GC
+    public static void verify_mark_array_cleared(byte* begin, byte* end, uint* mark_array_addr)
+    {
+#if DEBUG
+        nuint markw = card_table_info.mark_word_of(begin);
+        nuint markw_end = card_table_info.mark_word_of(end);
+
+        while (markw < markw_end)
+        {
+            Debug.Assert(mark_array_addr[(nint)markw] == 0);
+            markw++;
+        }
+#else
+        _ = begin;
+        _ = end;
+        _ = mark_array_addr;
+#endif
+    }
+
+    public static bool commit_mark_array_by_range(byte* begin, byte* end, uint* mark_array_addr)
+    {
+        nuint beg_word = card_table_info.mark_word_of(begin);
+        nuint end_word = card_table_info.mark_word_of(card_table_info.align_on_mark_word(end));
+        byte* commit_start = align_lower_page((byte*)&mark_array_addr[(nint)beg_word]);
+        byte* commit_end = align_on_page((byte*)&mark_array_addr[(nint)end_word]);
+        nuint size = (nuint)(commit_end - commit_start);
+
+        if (virtual_commit(commit_start, size, recorded_committed_mark_array_bucket, -1))
+        {
+            verify_mark_array_cleared(begin, end, mark_array_addr);
+            return true;
+        }
+
+        return false;
+    }
+
+    public static bool commit_mark_array_new_seg(heap_segment* seg, uint* new_card_table = null, byte* new_lowest_address = null)
+    {
+        byte* start = get_start_address(seg);
+        byte* end = heap_segment.heap_segment_reserved(seg);
+
+        byte* lowest = background_saved_lowest_address;
+        byte* highest = background_saved_highest_address;
+
+        nuint commit_flag = 0;
+
+        if ((highest >= start) && (lowest <= end))
+        {
+            if ((start >= lowest) && (end <= highest))
+            {
+                commit_flag = heap_segment.heap_segment_flags_ma_committed;
+            }
+            else
+            {
+                commit_flag = heap_segment.heap_segment_flags_ma_pcommitted;
+                Debug.Assert(false);
+            }
+
+            byte* commit_start = lowest > start ? lowest : start;
+            byte* commit_end = highest < end ? highest : end;
+
+            if (!commit_mark_array_by_range(commit_start, commit_end, mark_array))
+            {
+                return false;
+            }
+
+            if (new_card_table is null)
+            {
+                new_card_table = card_table;
+            }
+
+            if (card_table != new_card_table)
+            {
+                if (new_lowest_address is null)
+                {
+                    new_lowest_address = GCCommon.g_gc_lowest_address;
+                }
+
+                uint* ct = &new_card_table[(nint)card_table_info.card_word(card_table_info.gcard_of(new_lowest_address))];
+                uint* ma = (uint*)((byte*)card_table_info.card_table_mark_array(ct)
+                    - card_table_info.size_mark_array_of(null, new_lowest_address));
+
+                if (!commit_mark_array_by_range(commit_start, commit_end, ma))
+                {
+                    return false;
+                }
+            }
+
+            seg->flags |= commit_flag;
+        }
+
+        return true;
+    }
+#endif
+
+    public static bool init_table_for_region(int gen_number, heap_segment* region)
+    {
+#if BACKGROUND_GC
+        if (((region->flags & heap_segment.heap_segment_flags_ma_committed) == 0) &&
+            !commit_mark_array_new_seg(region))
+        {
+            decommit_region(region, (int)gen_to_oh(gen_number), 0);
+            return false;
+        }
+
+        if ((region->flags & heap_segment.heap_segment_flags_ma_committed) != 0)
+        {
+            bgc_verify_mark_array_cleared(region, true);
+        }
+#endif
+
+        if (gen_number <= GCInterfaceOffsets.max_generation)
+        {
+            nuint first_brick = brick_of(heap_segment.heap_segment_mem(region));
+            brick_table[(nint)first_brick] = -1;
+        }
+        else
+        {
+            Debug.Assert(brick_table[(nint)brick_of(heap_segment.heap_segment_mem(region))] == 0);
+        }
+
+        return true;
     }
 
     // Note that this gets the basic region index for obj. If the obj is in a large region,

@@ -4402,6 +4402,160 @@ public sealed unsafe class GCPrivTests
 
 #if BACKGROUND_GC
     [Fact]
+    public void InitTableForRegionCommitsMarkArrayAndInitializesOnlyTheFirstSohBrick()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        byte* regionStart = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        byte* markStorage = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(regionStart is not null);
+        Assert.True(markStorage is not null);
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(regionStart, pageSize));
+
+            heap_segment region = default;
+            InitializeRegion(&region, (nuint)regionStart, (nuint)(regionStart + (nint)pageSize), (nuint)(regionStart + (nint)pageSize), age: 0);
+            heap_segment.heap_segment_used(&region) = heap_segment.heap_segment_reserved(&region);
+
+            nuint firstMarkWord = card_table_info.mark_word_of(heap_segment.heap_segment_mem(&region));
+            gc_heap.mark_array = (uint*)markStorage - (nint)firstMarkWord;
+            gc_heap.background_saved_lowest_address = heap_segment.heap_segment_mem(&region);
+            gc_heap.background_saved_highest_address = heap_segment.heap_segment_reserved(&region);
+            gc_heap.lowest_address = heap_segment.heap_segment_mem(&region);
+
+            short* bricks = stackalloc short[3];
+            bricks[0] = 17;
+            bricks[1] = 23;
+            bricks[2] = 29;
+            gc_heap.brick_table = bricks;
+
+            Assert.True(gc_heap.init_table_for_region((int)gc_generation_num.soh_gen0, &region));
+            Assert.Equal(heap_segment.heap_segment_flags_ma_committed, region.flags & heap_segment.heap_segment_flags_ma_committed);
+            Assert.Equal(-1, bricks[0]);
+            Assert.Equal(23, bricks[1]);
+            Assert.Equal(29, bricks[2]);
+            Assert.Equal(0u, markStorage[0]);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_mark_array_bucket]);
+            Assert.Equal(pageSize, gc_heap.current_total_committed);
+            Assert.Equal(pageSize, gc_heap.current_total_committed_bookkeeping);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(markStorage, pageSize);
+            GCToOSInterface.VirtualRelease(regionStart, pageSize);
+        }
+    }
+
+    [Fact]
+    public void InitTableForRegionPreservesExistingMarkCommitAndUohFirstBrick()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        byte* regionStart = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        byte* markStorage = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(regionStart is not null);
+        Assert.True(markStorage is not null);
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(regionStart, pageSize));
+            Assert.True(GCToOSInterface.VirtualCommit(markStorage, pageSize));
+
+            heap_segment region = default;
+            InitializeRegion(&region, (nuint)regionStart, (nuint)(regionStart + (nint)pageSize), (nuint)(regionStart + (nint)pageSize), age: 0);
+            heap_segment.heap_segment_used(&region) = heap_segment.heap_segment_reserved(&region);
+            region.flags = heap_segment.heap_segment_flags_ma_committed | heap_segment.heap_segment_flags_loh;
+
+            nuint firstMarkWord = card_table_info.mark_word_of(heap_segment.heap_segment_mem(&region));
+            gc_heap.mark_array = (uint*)markStorage - (nint)firstMarkWord;
+            gc_heap.background_saved_lowest_address = heap_segment.heap_segment_mem(&region);
+            gc_heap.background_saved_highest_address = heap_segment.heap_segment_reserved(&region);
+            gc_heap.lowest_address = heap_segment.heap_segment_mem(&region);
+
+            short* bricks = stackalloc short[2];
+            bricks[0] = 0;
+            bricks[1] = 31;
+            gc_heap.brick_table = bricks;
+
+            Assert.True(gc_heap.init_table_for_region((int)gc_generation_num.loh_generation, &region));
+            Assert.Equal(heap_segment.heap_segment_flags_ma_committed, region.flags & heap_segment.heap_segment_flags_ma_committed);
+            Assert.Equal(0, bricks[0]);
+            Assert.Equal(31, bricks[1]);
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[gc_heap.recorded_committed_mark_array_bucket]);
+            Assert.Equal((nuint)0, gc_heap.current_total_committed);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(markStorage, pageSize);
+            GCToOSInterface.VirtualRelease(regionStart, pageSize);
+        }
+    }
+
+    [Fact]
+    public void InitTableForRegionDecommitsAndFailsWhenMarkArrayCommitExceedsTheHardLimit()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        byte* regionReservation = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        byte* markStorage = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(regionReservation is not null);
+        Assert.True(markStorage is not null);
+
+        uint* map = null;
+        try
+        {
+            byte* lowest = null;
+            byte* highest = null;
+            Assert.True(gc_heap.global_region_allocator.init(regionReservation, regionReservation + (nint)pageSize, pageSize, &lowest, &highest));
+            gc_heap.global_region_allocator.initialize();
+            map = gc_heap.global_region_allocator.region_map_index_of(regionReservation);
+
+            byte* regionStart = null;
+            byte* regionEnd = null;
+            Assert.True(gc_heap.global_region_allocator.allocate_basic_region((int)gc_generation_num.soh_gen0, &regionStart, &regionEnd, null));
+            Assert.True(GCToOSInterface.VirtualCommit(regionStart, pageSize));
+
+            heap_segment region = default;
+            InitializeRegion(&region, (nuint)regionStart, (nuint)regionEnd, (nuint)regionEnd, age: 0);
+            heap_segment.heap_segment_used(&region) = heap_segment.heap_segment_reserved(&region);
+
+            nuint firstMarkWord = card_table_info.mark_word_of(heap_segment.heap_segment_mem(&region));
+            gc_heap.mark_array = (uint*)markStorage - (nint)firstMarkWord;
+            gc_heap.background_saved_lowest_address = heap_segment.heap_segment_mem(&region);
+            gc_heap.background_saved_highest_address = heap_segment.heap_segment_reserved(&region);
+            gc_heap.lowest_address = heap_segment.heap_segment_mem(&region);
+            gc_heap.heap_hard_limit = pageSize;
+            gc_heap.committed_by_oh[(int)gc_oh_num.soh] = pageSize;
+            gc_heap.current_total_committed = pageSize;
+
+            short* bricks = stackalloc short[2];
+            bricks[0] = 37;
+            bricks[1] = 41;
+            gc_heap.brick_table = bricks;
+
+            Assert.False(gc_heap.init_table_for_region((int)gc_generation_num.soh_gen0, &region));
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(&region), (nuint)heap_segment.heap_segment_committed(&region));
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+            Assert.Equal((nuint)0, gc_heap.current_total_committed);
+            Assert.Equal(pageSize, gc_heap.global_region_allocator.get_free());
+            Assert.Equal(37, bricks[0]);
+            Assert.Equal(41, bricks[1]);
+        }
+        finally
+        {
+            if (map is not null)
+            {
+                SyncImports.ManagedGC_Free(map);
+            }
+
+            GCToOSInterface.VirtualRelease(markStorage, pageSize);
+            GCToOSInterface.VirtualRelease(regionReservation, pageSize);
+        }
+    }
+
+    [Fact]
     public void BackgroundGcDiagnosticEnumsMatchNativeOrder()
     {
         Assert.Equal(0, (int)bgc_state.bgc_not_in_process);
@@ -4674,6 +4828,12 @@ public sealed unsafe class GCPrivTests
         private readonly uint* _cardTable;
         private readonly short* _brickTable;
         private readonly gc_heap.recorded_committed_bucket_array _committedByOh;
+        private readonly nuint _currentTotalCommitted;
+        private readonly nuint _currentTotalCommittedBookkeeping;
+        private readonly nuint _heapHardLimit;
+        private readonly gc_heap.object_heap_array _heapHardLimitOh;
+        private readonly bool _neverDecommit;
+        private readonly nuint _reservedMemory;
         private readonly gc_mechanisms _settings;
         private readonly CLRCriticalSection _checkCommitCs;
         private readonly bool _initializedCommitLock;
@@ -4698,6 +4858,12 @@ public sealed unsafe class GCPrivTests
             _cardTable = gc_heap.card_table;
             _brickTable = gc_heap.brick_table;
             _committedByOh = gc_heap.committed_by_oh;
+            _currentTotalCommitted = gc_heap.current_total_committed;
+            _currentTotalCommittedBookkeeping = gc_heap.current_total_committed_bookkeeping;
+            _heapHardLimit = gc_heap.heap_hard_limit;
+            _heapHardLimitOh = gc_heap.heap_hard_limit_oh;
+            _neverDecommit = gc_heap.never_decommit_p;
+            _reservedMemory = gc_heap.reserved_memory;
             _settings = gc_heap.settings;
             _checkCommitCs = gc_heap.check_commit_cs;
 #if BACKGROUND_GC
@@ -4716,6 +4882,12 @@ public sealed unsafe class GCPrivTests
             gc_heap.card_table = null;
             gc_heap.brick_table = null;
             gc_heap.committed_by_oh = default;
+            gc_heap.current_total_committed = 0;
+            gc_heap.current_total_committed_bookkeeping = 0;
+            gc_heap.heap_hard_limit = 0;
+            gc_heap.heap_hard_limit_oh = default;
+            gc_heap.never_decommit_p = false;
+            gc_heap.reserved_memory = 0;
             gc_heap.settings = default;
 #if BACKGROUND_GC
             GCCommon.saved_changed_segs = default;
@@ -4751,6 +4923,12 @@ public sealed unsafe class GCPrivTests
             gc_heap.card_table = _cardTable;
             gc_heap.brick_table = _brickTable;
             gc_heap.committed_by_oh = _committedByOh;
+            gc_heap.current_total_committed = _currentTotalCommitted;
+            gc_heap.current_total_committed_bookkeeping = _currentTotalCommittedBookkeeping;
+            gc_heap.heap_hard_limit = _heapHardLimit;
+            gc_heap.heap_hard_limit_oh = _heapHardLimitOh;
+            gc_heap.never_decommit_p = _neverDecommit;
+            gc_heap.reserved_memory = _reservedMemory;
             gc_heap.settings = _settings;
             gc_heap.check_commit_cs = _checkCommitCs;
 #if BACKGROUND_GC

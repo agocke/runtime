@@ -992,14 +992,21 @@ Done so far:
   region during background GC, resets the native allocation and background fields, publishes the
   clamped generation through `set_region_gen_num`, and initializes each large-region continuation
   with its negative backtracking sentinel and generation fields.
+- The dependency-closed WKS `USE_REGIONS` `init_table_for_region` from `plan_phase.cpp`, its
+  `gc.cpp` generation-to-object-heap mapping, and the required `background.cpp`/
+  `diagnostics.cpp` mark-array helpers. The port preserves inclusive saved-background-range
+  tests, page-rounded mark-array commitment, accounting rollback on failed commits, the
+  secondary card-table mark-array path, committed and partial-commit flags, debug clear checks,
+  failure-driven region decommit, and SOH-only first-brick initialization. Region partial mark
+  commitments remain asserted as they are natively.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
   mutable read-only segment list operations, region creation/reuse, generation threading,
-  `get_free_region`, `allocate_new_region`, `init_table_for_region`, full heap-segment deletion,
-  and free-region distribution.
+  `get_free_region`, `allocate_new_region`, full heap-segment deletion, and free-region
+  distribution.
   The dependent allocation helpers remain blocked on region allocation and generation
   construction.
 
