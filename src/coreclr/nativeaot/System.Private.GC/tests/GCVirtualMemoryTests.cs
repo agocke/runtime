@@ -148,6 +148,120 @@ public sealed unsafe class GCVirtualMemoryTests
         Assert.False(GCToOSInterface.VirtualReset(NeverMappedAddress, PageSize, false));
     }
 
+    [Fact]
+    public void HeapVirtualCommitTracksBookkeepingAndRollsBackFailedCommit()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+        byte* region = GCToOSInterface.VirtualReserve(pageSize, 0, (uint)VirtualReserveFlags.None);
+        Assert.True(region != null);
+
+        try
+        {
+            bool hardLimitExceeded = true;
+            Assert.True(gc_heap.virtual_commit(region, pageSize, gc_heap.recorded_committed_bookkeeping_bucket, -1, &hardLimitExceeded));
+            Assert.False(hardLimitExceeded);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket]);
+            Assert.Equal(pageSize, gc_heap.current_total_committed);
+            Assert.Equal(pageSize, gc_heap.current_total_committed_bookkeeping);
+
+            Assert.False(gc_heap.virtual_commit(NeverMappedAddress, pageSize, gc_heap.recorded_committed_bookkeeping_bucket, -1, &hardLimitExceeded));
+            Assert.False(hardLimitExceeded);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket]);
+            Assert.Equal(pageSize, gc_heap.current_total_committed);
+            Assert.Equal(pageSize, gc_heap.current_total_committed_bookkeeping);
+
+            Assert.True(gc_heap.virtual_decommit(region, pageSize, gc_heap.recorded_committed_bookkeeping_bucket, -1));
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket]);
+            Assert.Equal((nuint)0, gc_heap.current_total_committed);
+            Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(region, pageSize);
+        }
+    }
+
+    [Fact]
+    public void HeapVirtualCommitReportsHardLimitBeforeCallingTheOS()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+
+        gc_heap.heap_hard_limit = pageSize;
+        gc_heap.current_total_committed = pageSize;
+        gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket] = pageSize;
+        gc_heap.current_total_committed_bookkeeping = pageSize;
+
+        GCToOSInterface.ResetRecording();
+        bool hardLimitExceeded = false;
+        Assert.False(gc_heap.virtual_commit(NeverMappedAddress, pageSize, gc_heap.recorded_committed_bookkeeping_bucket, -1, &hardLimitExceeded));
+        Assert.True(hardLimitExceeded);
+        AssertNoVirtualCommitWasRequested();
+        Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket]);
+        Assert.Equal(pageSize, gc_heap.current_total_committed);
+        Assert.Equal(pageSize, gc_heap.current_total_committed_bookkeeping);
+
+        ResetMemoryAccounting();
+        gc_heap.heap_hard_limit = 3 * pageSize;
+        gc_heap.heap_hard_limit_oh[(int)gc_oh_num.soh] = pageSize;
+        gc_heap.committed_by_oh[(int)gc_oh_num.soh] = pageSize;
+        gc_heap.current_total_committed = pageSize;
+
+        GCToOSInterface.ResetRecording();
+        hardLimitExceeded = false;
+        Assert.False(gc_heap.virtual_commit(NeverMappedAddress, pageSize, (int)gc_oh_num.soh, 0, &hardLimitExceeded));
+        Assert.True(hardLimitExceeded);
+        AssertNoVirtualCommitWasRequested();
+        Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+        Assert.Equal(pageSize, gc_heap.current_total_committed);
+    }
+
+    [Fact]
+    public void HeapVirtualCommitSkipsOSForNeverDecommitHeapMemory()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+
+        gc_heap.never_decommit_p = true;
+        GCToOSInterface.ResetRecording();
+        Assert.True(gc_heap.virtual_commit(NeverMappedAddress, pageSize, (int)gc_oh_num.soh, 0));
+        AssertNoVirtualCommitWasRequested();
+        Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+        Assert.Equal(pageSize, gc_heap.current_total_committed);
+        Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
+    }
+
+    [Fact]
+    public void ReduceCommittedBytesIgnoresFailedDecommitAndVirtualFreeCountsOnlySuccessfulRelease()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+
+        gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket] = pageSize;
+        gc_heap.current_total_committed = pageSize;
+        gc_heap.current_total_committed_bookkeeping = pageSize;
+        gc_heap.reduce_committed_bytes(NeverMappedAddress, pageSize, gc_heap.recorded_committed_bookkeeping_bucket, -1, false);
+        Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket]);
+        Assert.Equal(pageSize, gc_heap.current_total_committed);
+        Assert.Equal(pageSize, gc_heap.current_total_committed_bookkeeping);
+
+        gc_heap.reduce_committed_bytes(NeverMappedAddress, pageSize, gc_heap.recorded_committed_bookkeeping_bucket, -1, true);
+        Assert.Equal((nuint)0, gc_heap.committed_by_oh[gc_heap.recorded_committed_bookkeeping_bucket]);
+        Assert.Equal((nuint)0, gc_heap.current_total_committed);
+        Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
+
+        byte* region = GCToOSInterface.VirtualReserve(pageSize, 0, (uint)VirtualReserveFlags.None);
+        Assert.True(region != null);
+        gc_heap.reserved_memory = pageSize;
+        gc_heap.virtual_free(region, pageSize, null);
+        Assert.Equal((nuint)0, gc_heap.reserved_memory);
+
+        gc_heap.reserved_memory = pageSize;
+        gc_heap.virtual_free((byte*)0x1001, pageSize, null);
+        Assert.Equal(pageSize, gc_heap.reserved_memory);
+    }
+
     private static void Fill(byte* address, nuint size, byte value)
     {
         for (nuint i = 0; i < size; i++)
@@ -168,6 +282,58 @@ public sealed unsafe class GCVirtualMemoryTests
     }
 
     private static void AssertRangeIsZero(byte* address, nuint size) => AssertRangeIs(address, size, 0);
+
+    private static void ResetMemoryAccounting()
+    {
+        gc_heap.reserved_memory = 0;
+        gc_heap.current_total_committed = 0;
+        gc_heap.current_total_committed_bookkeeping = 0;
+        gc_heap.heap_hard_limit = 0;
+        gc_heap.never_decommit_p = false;
+
+        for (int i = 0; i < gc_heap.recorded_committed_bucket_counts; i++)
+        {
+            gc_heap.committed_by_oh[i] = 0;
+        }
+
+        for (int i = 0; i < gc_heap.total_oh_count; i++)
+        {
+            gc_heap.heap_hard_limit_oh[i] = 0;
+        }
+    }
+
+    private static void AssertNoVirtualCommitWasRequested()
+    {
+#if TARGET_WINDOWS
+        Assert.Equal(0, GCToOSInterface.VirtualAllocCount);
+#else
+        Assert.Equal(0, GCToOSInterface.MprotectCount);
+#endif
+    }
+
+    private sealed class MemoryAccountingScope : IDisposable
+    {
+        private readonly bool _initialized;
+
+        public MemoryAccountingScope()
+        {
+            gc_heap.check_commit_cs = default;
+            ResetMemoryAccounting();
+            _initialized = gc_heap.check_commit_cs.Initialize();
+            Assert.True(_initialized);
+        }
+
+        public void Dispose()
+        {
+            if (_initialized)
+            {
+                gc_heap.check_commit_cs.Destroy();
+            }
+
+            gc_heap.check_commit_cs = default;
+            ResetMemoryAccounting();
+        }
+    }
 
 #if !TARGET_WINDOWS
     //

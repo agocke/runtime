@@ -201,8 +201,14 @@ namespace Internal.Runtime.GarbageCollection
 
         private static int Initialize(void* thisPtr)
         {
+            if (!gc_heap.check_commit_cs.Initialize())
+            {
+                return E_OUTOFMEMORY;
+            }
+
             if (!GCHeapMemory.Initialize())
             {
+                gc_heap.check_commit_cs.Destroy();
                 return E_OUTOFMEMORY;
             }
 

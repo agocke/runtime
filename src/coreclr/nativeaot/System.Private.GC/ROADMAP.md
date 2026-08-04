@@ -847,7 +847,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, and highest-free-region movement are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, and the first `memory.cpp` commit/accounting helpers are translated**
 
 Translate:
 
@@ -924,7 +924,21 @@ Done so far:
   `move_highest_free_regions` preserves the caller-locking contract, descending left-map endpoint
   traversal, busy-map and small/large filters, `gc_heap` region-info lookup/free checks,
   destination-list exclusion, source unlink before destination add, and signed quota break.
+- The dependency-closed opening helpers of `memory.cpp`: `virtual_alloc_commit_for_heap`,
+  `virtual_commit`, `reduce_committed_bytes`, `virtual_decommit`, and `virtual_free`. The slice
+  mechanically adds the minimal accounting state those functions touch: the
+  `recorded_committed_*` bucket constants, `committed_by_oh`, `current_total_committed`,
+  `current_total_committed_bookkeeping`, `heap_hard_limit`, `heap_hard_limit_oh`,
+  `check_commit_cs`, `reserved_memory`, and `never_decommit_p`. It preserves the hard-limit
+  decision and output flag, no-OS-call exceeded path, OS commit rollback, bookkeeping
+  accounting, the large-page/never-decommit heap-memory bypass, decommit-success gating, and
+  release-success-only reserved-memory subtraction. `ManagedGCHeap.Initialize` explicitly
+  initializes `check_commit_cs` before heap memory initialization.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
+- Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages`, `decommit_step`,
+  `decommit_region`, and `decommit_ephemeral_segment_pages_step`, because they pull in
+  collection settings, ephemeral generations, region/segment decommit targets, and time-based
+  decommit policy.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.
