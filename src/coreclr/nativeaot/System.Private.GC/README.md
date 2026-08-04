@@ -269,12 +269,17 @@ marker, forward/backward pointer movement, exact-fit boundary behavior, and coun
 and `ASSERT_HOLDING_SPIN_LOCK(&region_allocator_lock)` checks are deliberately deferred until
 string-free region logging and broader spin-lock ownership diagnostics are ported; this slice
 does not substitute managed diagnostics for them.
+`region_allocator::delete_region` and `delete_region_impl` are translated too: the public wrapper
+uses the same spin-lock enter/leave shape, and the implementation preserves the native aligned
+start assumption, endpoint decoding, left/right free-unit counter routing, previous/next
+free-block coalescing, terminal-end contraction, region-map pointer updates, and
+`total_free_units` update order. Native region logging and map printing remain deferred.
 That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
 its native large-region minimum assertion and early-break control flow. The full allocator map
-reservation after `init`, free-block search/callback allocation, and region deletion algorithms
-of `region_allocator.cpp` remain deferred.
+reservation after `init`, free-block search/callback allocation, and high-region movement
+algorithms of `region_allocator.cpp` remain deferred.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,
 gcpriv.h's region layout that replaces

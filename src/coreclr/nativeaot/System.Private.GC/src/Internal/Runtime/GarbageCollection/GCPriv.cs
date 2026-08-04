@@ -920,6 +920,81 @@ namespace Internal.Runtime.GarbageCollection
 
             return alloc;
         }
+
+        // Whenever a region is deleted, it is expected that the memory and the mark array
+        // of the region is decommitted already.
+        public void delete_region(byte* region_start)
+        {
+            enter_spin_lock();
+            delete_region_impl(region_start);
+            leave_spin_lock();
+        }
+
+        public void delete_region_impl(byte* region_start)
+        {
+            Debug.Assert(is_region_aligned(region_start) != 0);
+
+            uint* current_index = region_map_index_of(region_start);
+            uint current_val = *current_index;
+            Debug.Assert(!is_unit_memory_free(current_val));
+
+            uint* region_end_index = current_index + (nint)current_val;
+            byte* region_end = region_address_of(region_end_index);
+
+            int free_block_size = (int)current_val;
+            uint* free_index = current_index;
+
+            if (free_index <= region_map_left_end)
+            {
+                num_left_used_free_units += (uint)free_block_size;
+            }
+            else
+            {
+                Debug.Assert(free_index >= region_map_right_start);
+                num_right_used_free_units += (uint)free_block_size;
+            }
+
+            if ((current_index != region_map_left_start) && (current_index != region_map_right_start))
+            {
+                uint previous_val = *(current_index - 1);
+                if (is_unit_memory_free(previous_val))
+                {
+                    uint previous_size = get_num_units(previous_val);
+                    free_index -= (nint)previous_size;
+                    free_block_size = unchecked((int)((uint)free_block_size + previous_size));
+                }
+            }
+
+            if ((region_end != global_region_left_used) && (region_end != global_region_end))
+            {
+                uint next_val = *region_end_index;
+                if (is_unit_memory_free(next_val))
+                {
+                    uint next_size = get_num_units(next_val);
+                    free_block_size = unchecked((int)((uint)free_block_size + next_size));
+                    region_end += (nint)next_size;
+                }
+            }
+
+            if (region_end == global_region_left_used)
+            {
+                num_left_used_free_units -= (uint)free_block_size;
+                region_map_left_end = free_index;
+                global_region_left_used = region_address_of(free_index);
+            }
+            else if (region_start == global_region_right_used)
+            {
+                num_right_used_free_units -= (uint)free_block_size;
+                region_map_right_start = free_index + (nint)free_block_size;
+                global_region_right_used = region_address_of(free_index + (nint)free_block_size);
+            }
+            else
+            {
+                make_free_block(free_index, (uint)free_block_size);
+            }
+
+            total_free_units += current_val;
+        }
     }
 
     internal enum free_region_kind

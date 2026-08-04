@@ -2557,6 +2557,247 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void RegionAllocatorDeleteRegionWrapperLocksDeletesInteriorBusyBlockAndReleases()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0xB000, 0x1000);
+
+        try
+        {
+            allocator.initialize();
+            Assert.Equal((nuint)0x1000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x2000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x4000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            WriteRegionAllocatorField(&allocator, "total_free_units", 6u);
+
+            allocator.delete_region((byte*)0x2000);
+
+            Assert.Equal(1u, map[0]);
+            Assert.Equal(EncodedFreeRegionBlock(2), map[1]);
+            Assert.Equal(EncodedFreeRegionBlock(2), map[2]);
+            Assert.Equal(1u, map[3]);
+            Assert.Equal((nuint)0x5000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal((nuint)(map + 4), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+            Assert.Equal(2u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(8u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            Assert.Equal(GCSpinLock.lock_free, ReadRegionAllocatorField<GCSpinLock>(&allocator, "region_allocator_lock").@lock);
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorDeleteRegionCoalescesPreviousFreeBlock()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0xB000, 0x1000);
+
+        try
+        {
+            Assert.Equal((nuint)0x1000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x2000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x4000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x5000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            allocator.make_free_block(map + 1, 2);
+            WriteRegionAllocatorField(&allocator, "num_left_used_free_units", 2u);
+            WriteRegionAllocatorField(&allocator, "total_free_units", 7u);
+
+            DeleteRegionImplUnderLock(&allocator, (byte*)0x4000);
+
+            Assert.Equal(1u, map[0]);
+            Assert.Equal(EncodedFreeRegionBlock(3), map[1]);
+            Assert.Equal(EncodedFreeRegionBlock(2), map[2]);
+            Assert.Equal(EncodedFreeRegionBlock(3), map[3]);
+            Assert.Equal(1u, map[4]);
+            Assert.Equal(3u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(8u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            Assert.Equal((nuint)0x6000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal((nuint)(map + 5), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorDeleteRegionCoalescesNextFreeBlock()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0xB000, 0x1000);
+
+        try
+        {
+            Assert.Equal((nuint)0x1000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x2000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x3000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x5000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            allocator.make_free_block(map + 2, 2);
+            WriteRegionAllocatorField(&allocator, "num_left_used_free_units", 2u);
+            WriteRegionAllocatorField(&allocator, "total_free_units", 7u);
+
+            DeleteRegionImplUnderLock(&allocator, (byte*)0x2000);
+
+            Assert.Equal(1u, map[0]);
+            Assert.Equal(EncodedFreeRegionBlock(3), map[1]);
+            Assert.Equal(EncodedFreeRegionBlock(2), map[2]);
+            Assert.Equal(EncodedFreeRegionBlock(3), map[3]);
+            Assert.Equal(1u, map[4]);
+            Assert.Equal(3u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(8u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            Assert.Equal((nuint)0x6000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal((nuint)(map + 5), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorDeleteRegionCoalescesBothFreeNeighbors()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0xB000, 0x1000);
+
+        try
+        {
+            Assert.Equal((nuint)0x1000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x2000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x3000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x4000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x6000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            allocator.make_free_block(map + 1, 1);
+            allocator.make_free_block(map + 3, 2);
+            WriteRegionAllocatorField(&allocator, "num_left_used_free_units", 3u);
+            WriteRegionAllocatorField(&allocator, "total_free_units", 7u);
+
+            DeleteRegionImplUnderLock(&allocator, (byte*)0x3000);
+
+            Assert.Equal(1u, map[0]);
+            Assert.Equal(EncodedFreeRegionBlock(4), map[1]);
+            Assert.Equal(1u, map[2]);
+            Assert.Equal(EncodedFreeRegionBlock(2), map[3]);
+            Assert.Equal(EncodedFreeRegionBlock(4), map[4]);
+            Assert.Equal(1u, map[5]);
+            Assert.Equal(4u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(8u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            Assert.Equal((nuint)0x7000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal((nuint)(map + 6), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorDeleteRegionContractsLeftEndAfterCoalescingPrevious()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0xB000, 0x1000);
+
+        try
+        {
+            Assert.Equal((nuint)0x1000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_forward));
+            Assert.Equal((nuint)0x2000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_forward));
+            allocator.make_free_block(map, 1);
+            WriteRegionAllocatorField(&allocator, "num_left_used_free_units", 1u);
+            WriteRegionAllocatorField(&allocator, "total_free_units", 8u);
+
+            DeleteRegionImplUnderLock(&allocator, (byte*)0x2000);
+
+            Assert.Equal(EncodedFreeRegionBlock(1), map[0]);
+            Assert.Equal(2u, map[1]);
+            Assert.Equal(2u, map[2]);
+            Assert.Equal((nuint)0x1000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_left_used"));
+            Assert.Equal((nuint)map, (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_left_end"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(10u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorDeleteRegionContractsRightEndAfterCoalescingNext()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0xB000, 0x1000);
+
+        try
+        {
+            Assert.Equal((nuint)0xA000, (nuint)allocator.allocate_end(1, allocate_direction.allocate_backward));
+            Assert.Equal((nuint)0x8000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_backward));
+            allocator.make_free_block(map + 9, 1);
+            WriteRegionAllocatorField(&allocator, "num_right_used_free_units", 1u);
+            WriteRegionAllocatorField(&allocator, "total_free_units", 8u);
+
+            DeleteRegionImplUnderLock(&allocator, (byte*)0x8000);
+
+            Assert.Equal(2u, map[7]);
+            Assert.Equal(2u, map[8]);
+            Assert.Equal(EncodedFreeRegionBlock(1), map[9]);
+            Assert.Equal((nuint)0xB000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_right_used"));
+            Assert.Equal((nuint)(map + 10), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_start"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(10u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
+    public void RegionAllocatorDeleteRegionRoutesRightSideFreeCounters()
+    {
+        SyncImports.ResetRecording();
+        region_allocator allocator = default;
+        uint* map = InitializeRegionAllocatorMap(&allocator, 0x1000, 0xB000, 0x1000);
+
+        try
+        {
+            Assert.Equal((nuint)0x9000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_backward));
+            Assert.Equal((nuint)0x7000, (nuint)allocator.allocate_end(2, allocate_direction.allocate_backward));
+            WriteRegionAllocatorField(&allocator, "total_free_units", 6u);
+
+            DeleteRegionImplUnderLock(&allocator, (byte*)0x9000);
+
+            Assert.Equal(2u, map[6]);
+            Assert.Equal(2u, map[7]);
+            Assert.Equal(EncodedFreeRegionBlock(2), map[8]);
+            Assert.Equal(EncodedFreeRegionBlock(2), map[9]);
+            Assert.Equal(0u, ReadRegionAllocatorField<uint>(&allocator, "num_left_used_free_units"));
+            Assert.Equal(2u, ReadRegionAllocatorField<uint>(&allocator, "num_right_used_free_units"));
+            Assert.Equal(8u, ReadRegionAllocatorField<uint>(&allocator, "total_free_units"));
+            Assert.Equal((nuint)0x7000, (nuint)ReadRegionAllocatorPointerField(&allocator, "global_region_right_used"));
+            Assert.Equal((nuint)(map + 6), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_start"));
+            Assert.Equal((nuint)(map + 10), (nuint)ReadRegionAllocatorPointerField(&allocator, "region_map_right_end"));
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(map);
+        }
+    }
+
+    [Fact]
     public void RegionFreeListKindDispatchHelpersUseGlobalAllocatorAlignment()
     {
         gc_heap.global_region_allocator.initialize_alignment(0x1000);
@@ -2681,6 +2922,25 @@ public sealed unsafe class GCPrivTests
 
         Assert.True(allocator->init((byte*)start, (byte*)end, alignment, &lowest, &highest));
         return (uint*)ReadRegionAllocatorPointerField(allocator, "region_map_left_start");
+    }
+
+    private static void DeleteRegionImplUnderLock(region_allocator* allocator, byte* regionStart)
+    {
+        allocator->initialize();
+        allocator->enter_spin_lock();
+        try
+        {
+            allocator->delete_region_impl(regionStart);
+        }
+        finally
+        {
+            allocator->leave_spin_lock();
+        }
+    }
+
+    private static uint EncodedFreeRegionBlock(uint numUnits)
+    {
+        return unchecked((uint)region_allocator.region_alloc_free_bit) | numUnits;
     }
 
     private unsafe struct RegionAllocatorSnapshot
