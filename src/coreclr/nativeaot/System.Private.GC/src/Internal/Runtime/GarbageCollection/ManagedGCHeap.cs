@@ -210,8 +210,19 @@ namespace Internal.Runtime.GarbageCollection
                 return E_OUTOFMEMORY;
             }
 
+#if USE_REGIONS
+            if (!ManagedGCRegionBootstrap.Initialize())
+            {
+                gc_heap.check_commit_cs.Destroy();
+                return E_OUTOFMEMORY;
+            }
+#endif
+
             if (!GCHeapMemory.Initialize())
             {
+#if USE_REGIONS
+                ManagedGCRegionBootstrap.Shutdown();
+#endif
                 gc_heap.check_commit_cs.Destroy();
                 return E_OUTOFMEMORY;
             }
@@ -220,11 +231,23 @@ namespace Internal.Runtime.GarbageCollection
             // because a static would have to be a fixed-size buffer; the heap is available by
             // now and nothing it hands out is ever reclaimed, so the table is equally stable.
             s_frozenSegments = (FrozenSegment*)GCHeapMemory.Allocate((nuint)(sizeof(FrozenSegment) * MaxFrozenSegments));
-            return s_frozenSegments != null ? S_OK : E_OUTOFMEMORY;
+            if (s_frozenSegments is not null)
+            {
+                return S_OK;
+            }
+
+#if USE_REGIONS
+            ManagedGCRegionBootstrap.Shutdown();
+#endif
+            gc_heap.check_commit_cs.Destroy();
+            return E_OUTOFMEMORY;
         }
 
         private static void Shutdown(void* thisPtr)
         {
+#if USE_REGIONS
+            ManagedGCRegionBootstrap.Shutdown();
+#endif
         }
 
         // ------------------------------------------------------------------------------------

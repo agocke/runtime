@@ -182,8 +182,105 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
 #endif
     }
 
+#if USE_REGIONS
+    [Fact]
+    public void RegionBootstrapConstructsInitialGenerationsWithoutReplacingTheBumpAllocator()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            generation* generations = ManagedGCRegionBootstrap.GenerationTable;
+            heap_segment* ephemeral = ManagedGCRegionBootstrap.EphemeralHeapSegment;
+            byte* range = ManagedGCRegionBootstrap.ReservedRegionRange;
+            Assert.True(ManagedGCRegionBootstrap.IsInitialized);
+            Assert.True(generations is not null);
+            Assert.True(ephemeral is not null);
+            Assert.True(range is not null);
+            Assert.True(ManagedGCRegionBootstrap.ReservedRegionRangeSize >= 19 * gc_heap.DefaultMinSegmentSize);
+            Assert.Equal((nuint)ephemeral, (nuint)generation.generation_allocation_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0)));
+            Assert.Equal(
+                (nuint)heap_segment.heap_segment_allocated(ephemeral),
+                (nuint)ManagedGCRegionBootstrap.AllocAllocated);
+            Assert.Equal(1, heap_segment.heap_segment_loh_p(
+                generation.generation_allocation_segment(
+                    gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation))));
+            Assert.Equal(1, heap_segment.heap_segment_poh_p(
+                generation.generation_allocation_segment(
+                    gc_heap.generation_of(generations, (int)gc_generation_num.poh_generation))));
+            Assert.True(GCToEEInterface.StompWriteBarrierCallCount > 0);
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+
+        Assert.False(ManagedGCRegionBootstrap.IsInitialized);
+        Assert.True(ManagedGCRegionBootstrap.GenerationTable is null);
+        Assert.True(ManagedGCRegionBootstrap.EphemeralHeapSegment is null);
+        Assert.True(ManagedGCRegionBootstrap.ReservedRegionRange is null);
+        Assert.True(gc_heap.initial_regions is null);
+        Assert.True(gc_heap.bookkeeping_start is null);
+        Assert.Equal((nuint)0, gc_heap.current_total_committed);
+        Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void RegionBootstrapFailureInjectionReleasesEveryOwnedResource(int failAllocationOnCall)
+    {
+        GCToOSInterface.ResetRecording();
+        SyncImports.ResetRecording();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+        SyncImports.FailAllocOnCall = failAllocationOnCall;
+        int allocationsBeforeBootstrap = SyncImports.AllocCount;
+        int freesBeforeBootstrap = SyncImports.FreeCount;
+
+        try
+        {
+            Assert.False(ManagedGCRegionBootstrap.Initialize());
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+
+        Assert.False(ManagedGCRegionBootstrap.IsInitialized);
+        Assert.True(ManagedGCRegionBootstrap.GenerationTable is null);
+        Assert.True(ManagedGCRegionBootstrap.EphemeralHeapSegment is null);
+        Assert.True(ManagedGCRegionBootstrap.AllocAllocated is null);
+        Assert.True(ManagedGCRegionBootstrap.ReservedRegionRange is null);
+        Assert.Equal((nuint)0, ManagedGCRegionBootstrap.ReservedRegionRangeSize);
+        Assert.True(gc_heap.initial_regions is null);
+        Assert.True(gc_heap.bookkeeping_start is null);
+        Assert.True(gc_heap.map_region_to_generation is null);
+        Assert.True(GCCommon.seg_mapping_table is null);
+        Assert.Equal(allocationsBeforeBootstrap + failAllocationOnCall, SyncImports.AllocCount);
+        Assert.True(SyncImports.FreeCount >= freesBeforeBootstrap + failAllocationOnCall - 1);
+        Assert.Equal((nuint)0, gc_heap.current_total_committed);
+        Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
+    }
+#endif
+
     private static void ResetState()
     {
+#if USE_REGIONS
+        ManagedGCRegionBootstrap.Shutdown();
+#endif
         RestoreDeclaredConfigValues();
         GCToEEInterface.Reset();
         GCInterfaceLayout.Reset();

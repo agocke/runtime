@@ -127,6 +127,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCEntryPoints.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHandleManager.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHeap.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCRegionBootstrap.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ObjectHandle.cs" />
     <Compile Include="System\Runtime\RuntimeExportAttribute.cs" />
     <Compile Include="System\Runtime\RuntimeImportAttribute.cs" />

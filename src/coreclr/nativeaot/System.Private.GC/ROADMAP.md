@@ -895,9 +895,9 @@ Done so far:
   `allocate_initial_regions` preserves the native POH-large, gen2-to-gen0-basic, then
   LOH-large forward-allocation order. Its entries retain the allocator's start/end outputs;
   the null callbacks deliberately leave bookkeeping coverage unchanged. The producer's
-  allocation failure returns false before allocating a region, while native asserted
-  region-allocation success remains an assertion. The later `interface.cpp` destruction of the
-  table and `regions_segments.cpp` consumers remain deferred with their lifecycle owners.
+  allocation failure returns false rather than relying on the native assertion. The staged
+  startup owner frees this table on rollback or shutdown; the full `interface.cpp` lifecycle
+  remains deferred.
 - Dependency-closed endpoint map updates from `region_allocator.cpp`: `make_busy_block`,
   `make_free_block`, and `allocate_end` preserve the native forward/backward boundary tests,
   endpoint-only busy/free encoding, high-bit free marker, unsigned size arithmetic, exact-fit
@@ -1045,8 +1045,12 @@ Done so far:
   initial SOH/UOH constructors now consume the reserved initial regions through the same
   raw generation-table adapter, preserving gen2-to-gen0 construction order, commit-failure
   short-circuiting, gen0 ephemeral publications, and LOH/POH flags. The deferred full heap layout
-  still owns their production call site, so no initialization wiring or destruction lifecycle has
-  been added.
+  is represented by unmanaged bootstrap-owned generation, ephemeral-segment and allocation
+  state. `ManagedGCRegionBootstrap` now calls this sequence from production
+  `IGCHeap::Initialize`, reserves the configured/default range, creates and extends
+  bookkeeping coverage, and releases the range, maps, table and generation storage on every
+  failure or shutdown. The bump allocator remains the allocation owner until region allocation
+  dependencies are ported.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
@@ -1147,7 +1151,7 @@ performance is comparable to the native implementation.
 
 ### 13. NativeAOT and ILC integration
 
-**Status: Collector-free bootstrap complete; production integration incomplete**
+**Status: Collector-free bootstrap and staged production initialization complete; collector integration incomplete**
 
 Continue the existing integration work:
 

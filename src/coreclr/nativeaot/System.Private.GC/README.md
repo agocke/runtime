@@ -414,9 +414,10 @@ append order, and assigns LOH/POH flags at the native `get_new_region` owner bef
 the new tail. The WKS initial SOH/UOH constructors now consume `initial_regions` through that
 same raw generation-table adapter: SOH constructs gen2 through gen0, stops immediately on a
 failed segment commit, and publishes the gen0 ephemeral segment before its allocation pointer;
-UOH sets its native LOH/POH flag before generation construction. Production initialization
-integration and the destruction lifecycle remain deferred with the full heap layout, so this
-does not add a synthetic startup path.
+UOH sets its native LOH/POH flag before generation construction. `ManagedGCRegionBootstrap`
+now runs that reservation, bookkeeping, initial-region and initial-generation sequence during
+production `IGCHeap::Initialize`. It owns unmanaged generation, ephemeral-segment/allocation,
+range and initial-region state and unwinds every allocation and reservation on failure.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class
@@ -982,6 +983,13 @@ frees anything, so:
 fails, runtime startup fails. The selector never falls back to the C++ GC. The native collector
 is not included in a managed-GC application link. Native runtime and `gcenv` support remains
 temporarily while the corresponding environment modules are ported.
+
+On region targets, startup also reserves the configured `GCRegionRange` (or the current 256 MB
+bootstrap default), builds WKS bookkeeping, reserves initial regions, and constructs initial
+SOH/LOH/POH generation state. This is staged coexistence: `ManagedGCHeap.Alloc` continues to use
+`GCHeapMemory`'s non-collecting bump allocator, which subsequently publishes its own heap bounds
+and write-barrier tables. Region allocation, collection, and steady-state region lifecycle remain
+deferred until the `allocation.cpp` dependency chain is ported.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real

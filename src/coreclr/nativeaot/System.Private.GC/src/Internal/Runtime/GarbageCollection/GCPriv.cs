@@ -924,6 +924,29 @@ namespace Internal.Runtime.GarbageCollection
             GCSpinLock.initialize(ref region_allocator_lock);
         }
 
+        public void destroy()
+        {
+            if (region_map_left_start is not null)
+            {
+                SyncImports.ManagedGC_Free(region_map_left_start);
+            }
+
+            global_region_start = null;
+            global_region_end = null;
+            global_region_left_used = null;
+            global_region_right_used = null;
+            total_free_units = 0;
+            region_alignment = 0;
+            large_region_alignment = 0;
+            GCSpinLock.initialize(ref region_allocator_lock);
+            region_map_left_start = null;
+            region_map_left_end = null;
+            region_map_right_start = null;
+            region_map_right_end = null;
+            num_left_used_free_units = 0;
+            num_right_used_free_units = 0;
+        }
+
         public void enter_spin_lock()
         {
             fixed (int* lock_address = &region_allocator_lock.@lock)

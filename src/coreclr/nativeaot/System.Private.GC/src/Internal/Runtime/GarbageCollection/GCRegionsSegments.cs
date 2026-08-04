@@ -89,7 +89,10 @@ internal unsafe partial struct gc_heap
                 allocate_direction.allocate_forward,
                 0,
                 null);
-            Debug.Assert(succeed);
+            if (!succeed)
+            {
+                return false;
+            }
         }
 
         for (int i = 0; i < number_of_heaps; i++)
@@ -101,7 +104,10 @@ internal unsafe partial struct gc_heap
                     initial_region_start(i, gen_num),
                     initial_region_end(i, gen_num),
                     null);
-                Debug.Assert(succeed);
+                if (!succeed)
+                {
+                    return false;
+                }
             }
         }
 
@@ -114,10 +120,22 @@ internal unsafe partial struct gc_heap
                 allocate_direction.allocate_forward,
                 0,
                 null);
-            Debug.Assert(succeed);
+            if (!succeed)
+            {
+                return false;
+            }
         }
 
         return true;
+    }
+
+    public static void free_initial_regions()
+    {
+        if (initial_regions is not null)
+        {
+            SyncImports.ManagedGC_Free(initial_regions);
+            initial_regions = null;
+        }
     }
 
     public static void get_initial_region(int gen, int hn, byte** region_start, byte** region_end)
@@ -511,6 +529,31 @@ internal unsafe partial struct gc_heap
 #endif
         card_table = new_card_table;
         return true;
+    }
+
+    public static void free_region_bookkeeping()
+    {
+        byte* start = bookkeeping_start;
+        if (start is not null)
+        {
+            nuint size = card_table_element_layout[(int)bookkeeping_element.total_bookkeeping_elements];
+            GCToOSInterface.VirtualRelease(start, size);
+        }
+
+        card_table = null;
+        brick_table = null;
+        card_table_element_layout = default;
+        bookkeeping_covered_committed = null;
+        bookkeeping_sizes = default;
+        bookkeeping_start = null;
+        map_region_to_generation = null;
+        map_region_to_generation_skewed = null;
+        GCCommon.seg_mapping_table = null;
+#if BACKGROUND_GC
+        mark_array = null;
+        lowest_address = null;
+        highest_address = null;
+#endif
     }
 
     public static byte on_used_changed(byte* new_used)
