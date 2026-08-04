@@ -127,6 +127,68 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    public static byte on_used_changed(byte* new_used)
+    {
+        // Card-table growth has not yet been ported; the bootstrap has no incremental
+        // bookkeeping coverage to extend.
+        _ = new_used;
+        return 1;
+    }
+
+    public static heap_segment* make_heap_segment(byte* new_pages, nuint size, gc_heap* hp, int gen_num)
+    {
+        gc_oh_num oh = gen_to_oh(gen_num);
+        nuint initial_commit = never_decommit_p ? size : GCToOSInterface.GetPageSize();
+        int h_number =
+#if MULTIPLE_HEAPS
+            hp->heap_number;
+#else
+            0;
+#endif
+
+        if (!virtual_commit(new_pages, initial_commit, (int)oh, h_number))
+        {
+            return null;
+        }
+
+        heap_segment* new_segment = get_region_info(new_pages);
+        byte* start = new_pages + sizeof(aligned_plug_and_gap);
+        heap_segment.heap_segment_mem(new_segment) = start;
+        heap_segment.heap_segment_used(new_segment) = start;
+        heap_segment.heap_segment_reserved(new_segment) = new_pages + (nint)size;
+        heap_segment.heap_segment_committed(new_segment) = new_pages + (nint)initial_commit;
+
+        init_heap_segment(new_segment, hp, new_pages, size, gen_num);
+
+        return new_segment;
+    }
+
+    public static heap_segment* allocate_new_region(gc_heap* hp, int gen_num, bool uoh_p, nuint size = 0)
+    {
+        byte* start = null;
+        byte* end = null;
+
+        Debug.Assert(uoh_p || size == 0);
+
+        bool allocated_p = uoh_p
+            ? global_region_allocator.allocate_large_region(gen_num, &start, &end, allocate_direction.allocate_forward, size, &on_used_changed)
+            : global_region_allocator.allocate_basic_region(gen_num, &start, &end, &on_used_changed);
+
+        if (!allocated_p)
+        {
+            return null;
+        }
+
+        heap_segment* res = make_heap_segment(start, (nuint)(end - start), hp, gen_num);
+
+        if (res is null)
+        {
+            global_region_allocator.delete_region(start);
+        }
+
+        return res;
+    }
+
     public static gc_oh_num gen_to_oh(int gen)
     {
         switch (gen)

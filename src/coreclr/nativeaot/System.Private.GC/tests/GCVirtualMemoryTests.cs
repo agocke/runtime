@@ -264,6 +264,122 @@ public sealed unsafe class GCVirtualMemoryTests
 
 #if USE_REGIONS
     [Fact]
+    public void AllocateNewRegionBuildsAndMapsBasicRegion()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(4 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 4 * pageSize, pageSize);
+        try
+        {
+            heap_segment* region = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.soh_gen2,
+                uoh_p: false);
+
+            Assert.True(region != null);
+            Assert.Equal((nuint)(reservation + sizeof(aligned_plug_and_gap)), (nuint)heap_segment.heap_segment_mem(region));
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(region), (nuint)heap_segment.heap_segment_used(region));
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(region), (nuint)heap_segment.heap_segment_allocated(region));
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(region), (nuint)heap_segment.heap_segment_plan_allocated(region));
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(region), (nuint)heap_segment.heap_segment_saved_allocated(region));
+            Assert.Equal((nuint)(reservation + (nint)pageSize), (nuint)heap_segment.heap_segment_reserved(region));
+            Assert.Equal((nuint)(reservation + (nint)pageSize), (nuint)heap_segment.heap_segment_committed(region));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(region));
+            Assert.Equal((int)gc_generation_num.soh_gen2, heap_segment.heap_segment_gen_num(region));
+            Assert.Equal((int)gc_generation_num.soh_gen2, heap_segment.heap_segment_plan_gen_num(region));
+            Assert.Equal((nuint)region, (nuint)gc_heap.get_region_info(reservation));
+            Assert.Equal(
+                (byte)((int)gc_generation_num.soh_gen2 | ((int)gc_generation_num.soh_gen2 << (int)region_info.RI_PLAN_GEN_SHR)),
+                (byte)gc_heap.map_region_to_generation[0]);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+            Assert.Equal(pageSize, gc_heap.current_total_committed);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 4 * pageSize);
+        }
+    }
+
+    [Fact]
+    public void AllocateNewRegionRoundsUohBoundariesAndRollsBackCommitFailure()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        nuint largeRegionSize = region_allocator.LARGE_REGION_FACTOR * pageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(40 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 40 * pageSize, pageSize);
+        try
+        {
+            heap_segment* large = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.loh_generation,
+                uoh_p: true,
+                largeRegionSize - 1);
+            heap_segment* huge = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.poh_generation,
+                uoh_p: true,
+                largeRegionSize + 1);
+
+            Assert.True(large != null);
+            Assert.True(huge != null);
+            Assert.Equal(largeRegionSize, gc_heap.get_region_size(large));
+            Assert.Equal(2 * largeRegionSize, gc_heap.get_region_size(huge));
+            Assert.Equal((nuint)0, large->flags & (heap_segment.heap_segment_flags_loh | heap_segment.heap_segment_flags_poh));
+            Assert.Equal((nuint)0, huge->flags & (heap_segment.heap_segment_flags_loh | heap_segment.heap_segment_flags_poh));
+            Assert.Equal((byte)GCInterfaceOffsets.max_generation, heap_segment.heap_segment_gen_num(huge));
+            Assert.Equal(GCInterfaceOffsets.max_generation, heap_segment.heap_segment_plan_gen_num(huge));
+
+            byte* hugeStart = gc_heap.get_region_start(huge);
+            int hugeBasicRegionCount = (int)(gc_heap.get_region_size(huge) / pageSize);
+            for (int i = 1; i < hugeBasicRegionCount; i++)
+            {
+                heap_segment* continuation = gc_heap.get_region_info(hugeStart + ((nuint)i * pageSize));
+                Assert.Equal((nint)(-i), (nint)heap_segment.heap_segment_allocated(continuation));
+                Assert.Equal((byte)GCInterfaceOffsets.max_generation, heap_segment.heap_segment_gen_num(continuation));
+                Assert.Equal(GCInterfaceOffsets.max_generation, heap_segment.heap_segment_plan_gen_num(continuation));
+            }
+
+            nuint freeBeforeFailure = gc_heap.global_region_allocator.get_free();
+            nuint committedBeforeFailure = gc_heap.current_total_committed;
+            gc_heap.heap_hard_limit = committedBeforeFailure + pageSize - 1;
+            heap_segment* failed = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.soh_gen2,
+                uoh_p: false);
+
+            Assert.True(failed is null);
+            Assert.Equal(freeBeforeFailure, gc_heap.global_region_allocator.get_free());
+            Assert.Equal(committedBeforeFailure, gc_heap.current_total_committed);
+            Assert.Equal((nuint)0, (nuint)gc_heap.get_region_info(hugeStart + (nint)(2 * largeRegionSize))->allocated);
+
+            gc_heap.heap_hard_limit = 0;
+            Assert.True(gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.loh_generation,
+                uoh_p: true) != null);
+            Assert.True(gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.poh_generation,
+                uoh_p: true) != null);
+            Assert.True(gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.soh_gen2,
+                uoh_p: false) is null);
+            Assert.Equal((nuint)0, gc_heap.global_region_allocator.get_free());
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 40 * pageSize);
+        }
+    }
+
+    [Fact]
     public void DecommitRegionWithNeverDecommitCountsDirectlyAndClearsOnlyUsedBytes()
     {
         using MemoryAccountingScope scope = new();
@@ -577,6 +693,73 @@ public sealed unsafe class GCVirtualMemoryTests
             SyncImports.ManagedGC_Free(map);
         }
         gc_heap.global_region_allocator = oldAllocator;
+    }
+
+    private sealed class RegionAllocationScope : IDisposable
+    {
+        private readonly region_allocator _oldAllocator;
+        private readonly nuint _oldMinSegmentSizeShr;
+        private readonly region_info* _oldMapRegionToGeneration;
+        private readonly region_info* _oldMapRegionToGenerationSkewed;
+        private readonly seg_mapping* _oldSegMappingTable;
+        private readonly byte* _oldLowestAddress;
+        private readonly byte* _oldHighestAddress;
+        private readonly seg_mapping* _mappings;
+        private readonly region_info* _regions;
+        private readonly uint* _regionMap;
+
+        public RegionAllocationScope(byte* reservation, nuint reservationSize, nuint alignment)
+        {
+            _oldAllocator = gc_heap.global_region_allocator;
+            _oldMinSegmentSizeShr = gc_heap.min_segment_size_shr;
+            _oldMapRegionToGeneration = gc_heap.map_region_to_generation;
+            _oldMapRegionToGenerationSkewed = gc_heap.map_region_to_generation_skewed;
+            _oldSegMappingTable = GCCommon.seg_mapping_table;
+            _oldLowestAddress = GCCommon.g_gc_lowest_address;
+            _oldHighestAddress = GCCommon.g_gc_highest_address;
+
+            gc_heap.initialize_min_segment_size_shr(alignment);
+            nuint regionCount = reservationSize / alignment;
+            _mappings = (seg_mapping*)SyncImports.ManagedGC_AllocZeroed(regionCount * (nuint)sizeof(seg_mapping));
+            _regions = (region_info*)SyncImports.ManagedGC_AllocZeroed(regionCount * (nuint)sizeof(region_info));
+            Assert.True(_mappings != null);
+            Assert.True(_regions != null);
+
+            nuint firstIndex = (nuint)reservation >> (int)gc_heap.min_segment_size_shr;
+            GCCommon.g_gc_lowest_address = reservation;
+            GCCommon.g_gc_highest_address = reservation + (nint)reservationSize;
+            GCCommon.seg_mapping_table = _mappings - (nint)firstIndex;
+            gc_heap.map_region_to_generation = _regions;
+            gc_heap.map_region_to_generation_skewed = _regions - (nint)firstIndex;
+
+            gc_heap.global_region_allocator = default;
+            gc_heap.global_region_allocator.initialize();
+            byte* lowest = null;
+            byte* highest = null;
+            Assert.True(gc_heap.global_region_allocator.init(
+                reservation,
+                reservation + (nint)reservationSize,
+                alignment,
+                &lowest,
+                &highest));
+            Assert.Equal((nuint)reservation, (nuint)lowest);
+            Assert.Equal((nuint)(reservation + (nint)reservationSize), (nuint)highest);
+            _regionMap = gc_heap.global_region_allocator.region_map_index_of(reservation);
+        }
+
+        public void Dispose()
+        {
+            SyncImports.ManagedGC_Free(_regionMap);
+            SyncImports.ManagedGC_Free(_regions);
+            SyncImports.ManagedGC_Free(_mappings);
+            gc_heap.global_region_allocator = _oldAllocator;
+            gc_heap.min_segment_size_shr = _oldMinSegmentSizeShr;
+            gc_heap.map_region_to_generation = _oldMapRegionToGeneration;
+            gc_heap.map_region_to_generation_skewed = _oldMapRegionToGenerationSkewed;
+            GCCommon.seg_mapping_table = _oldSegMappingTable;
+            GCCommon.g_gc_lowest_address = _oldLowestAddress;
+            GCCommon.g_gc_highest_address = _oldHighestAddress;
+        }
     }
 
     private static byte* AllocateMappedRegion(nuint size, out byte* end)

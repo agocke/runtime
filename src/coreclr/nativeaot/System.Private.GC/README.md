@@ -370,15 +370,20 @@ empty range is the native `MAX_PTR`/null pair, represented by `(byte*)nuint.MaxV
 `set_region_gen_num` updates the embedded segment generation and every basic-region map entry
 before acquiring that lock for gen0/gen1. A contending updater rechecks whether another updater
 already covered the range, and an expanding updater stomps the write barrier before publishing
-the new bounds, then releases with a volatile store. `init_heap_segment` now mechanically resets
-segment allocation state, preserves only an existing region's mark-array-committed flag, clamps
-the region generation, and initializes large-region continuation sentinels. `init_table_for_region`
+the new bounds, then releases with a volatile store. `make_heap_segment` and
+`allocate_new_region` now allocate basic, large, and huge regions through the translated
+allocator, commit and account for the initial page, publish the segment fields through the
+region mapping table, and return an allocation to the allocator if commit fails. The callback
+is a bootstrap success no-op until card-table growth is available. UOH flags remain the
+responsibility of the deferred `get_new_region` caller, as in C++. `init_heap_segment`
+mechanically resets segment allocation state, preserves only an existing region's
+mark-array-committed flag, clamps the region generation, and initializes large-region
+continuation sentinels. `init_table_for_region`
 now commits and verifies the background mark array for the saved range, propagates commitment
 failure by decommitting the region, preserves already committed mark arrays, and initializes only
 the first SOH brick. Its dependency-closed mark-array range/new-segment commitment and debug
 verification helpers retain the native page and mark-word boundaries, secondary card-table
-handling, and region partial-commit assertion. `get_free_region` and `allocate_new_region` remain
-deferred.
+handling, and region partial-commit assertion. `get_free_region` remains deferred.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

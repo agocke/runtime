@@ -999,13 +999,19 @@ Done so far:
   secondary card-table mark-array path, committed and partial-commit flags, debug clear checks,
   failure-driven region decommit, and SOH-only first-brick initialization. Region partial mark
   commitments remain asserted as they are natively.
+- The dependency-closed WKS `USE_REGIONS` `make_heap_segment` and
+  `allocate_new_region` paths from `regions_segments.cpp`. They retain basic versus
+  large/huge allocator selection and rounding, first-page commitment and accounting, region-map
+  segment publication, generation initialization, and allocator rollback after a failed commit.
+  `on_used_changed` is currently a bootstrap success no-op; card-table growth remains with the
+  later bookkeeping allocation work.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
-  mutable read-only segment list operations, region creation/reuse, generation threading,
-  `get_free_region`, `allocate_new_region`, full heap-segment deletion, and free-region
+  mutable read-only segment list operations, region reuse, generation threading,
+  `get_free_region`, full heap-segment deletion, and free-region
   distribution.
   The dependent allocation helpers remain blocked on region allocation and generation
   construction.
