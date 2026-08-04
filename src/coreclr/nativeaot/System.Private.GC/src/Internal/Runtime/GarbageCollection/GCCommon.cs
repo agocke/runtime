@@ -15,6 +15,13 @@ internal static unsafe partial class GCCommon
     internal static byte* g_gc_lowest_address;
     internal static byte* g_gc_highest_address;
 
+#if USE_REGIONS
+    // gcinternal.h declares this as a global, not a gc_heap member. The entries are addressed
+    // directly by absolute-address >> gc_heap::min_segment_size_shr, so callers publish the
+    // already-skewed base pointer.
+    internal static seg_mapping* seg_mapping_table;
+#endif
+
     private static double g_QPFus;
 
     public static ulong GetHighPrecisionTimeStamp()

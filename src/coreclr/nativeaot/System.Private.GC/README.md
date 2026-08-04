@@ -312,9 +312,16 @@ runtime uses the workstation segment layout; `GCInterfaceOffsets.h` retains its
 distinct layouts.
 The adjacent `seg_mapping`/`ro_in_entry` schema is translated with the segment: region builds
 embed a complete `heap_segment`, while non-region builds preserve the boundary, server-only
-heap pointers, and `seg0`/low-bit-tagged-`seg1` fields. Its table sizing and address-to-segment
-or heap lookup algorithms remain deferred to `regions_segments.cpp` and `gc.cpp`, when the
-required heap constants and state are available.
+heap pointers, and `seg0`/low-bit-tagged-`seg1` fields. Region builds now also carry the global
+skewed `seg_mapping_table` pointer, the explicit initialization-only
+`gc_heap.min_segment_size_shr` state, and the `gcinternal.h` direct mapping helpers
+(`seg_mapping_word_of`, `get_region_info`, `get_region_info_for_address`,
+`get_basic_region_index_for_address`, and `is_free_region`). Large-region continuation entries
+preserve the native negative `allocated` sentinel backtracking. Startup rejects configured region
+sizes at or above `MAX_REGION_SIZE` and non-power-of-two sizes before deriving the shift; adaptive
+default sizing and range-per-heap validation remain deferred. Non-region address-to-segment or
+heap lookup algorithms remain deferred to `regions_segments.cpp` and `gc.cpp`, when the required
+heap constants and state are available.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

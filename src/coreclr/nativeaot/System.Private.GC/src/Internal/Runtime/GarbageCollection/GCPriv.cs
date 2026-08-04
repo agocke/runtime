@@ -622,6 +622,13 @@ namespace Internal.Runtime.GarbageCollection
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
     internal unsafe partial struct gc_heap
     {
+#if USE_REGIONS
+        public const nuint DefaultMinSegmentSize = 4 * 1024 * 1024;
+        public const nuint MAX_REGION_SIZE = (nuint)1 << 31;
+
+        public static nuint min_segment_size_shr;
+#endif
+
         public static heap_segment* heap_segment_in_range(heap_segment* segment)
         {
             if (segment is null || heap_segment.heap_segment_in_range_p(segment) != 0)
@@ -669,6 +676,36 @@ namespace Internal.Runtime.GarbageCollection
         }
 
 #if USE_REGIONS
+        public static void initialize_min_segment_size_shr(nuint min_segment_size)
+        {
+            min_segment_size_shr = (nuint)index_of_highest_set_bit(min_segment_size);
+        }
+
+        public static bool power_of_two_p(nuint value)
+        {
+            return (value & (value - 1)) == 0;
+        }
+
+        public static int index_of_highest_set_bit(nuint value)
+        {
+            uint highest_set_bit_index;
+#if TARGET_64BIT
+            return GCEnv.BitScanReverse64(&highest_set_bit_index, (ulong)value) == 0 ? -1 : (int)highest_set_bit_index;
+#else
+            return GCEnv.BitScanReverse(&highest_set_bit_index, (uint)value) == 0 ? -1 : (int)highest_set_bit_index;
+#endif
+        }
+
+        public static byte* align_lower_segment(byte* add)
+        {
+            return (byte*)((nuint)add & ~(((nuint)1 << (int)min_segment_size_shr) - 1));
+        }
+
+        public static nuint seg_mapping_word_of(byte* add)
+        {
+            return (nuint)add >> (int)min_segment_size_shr;
+        }
+
         public static byte* get_region_start(heap_segment* region_info)
         {
             byte* objStart = heap_segment.heap_segment_mem(region_info);
@@ -685,6 +722,44 @@ namespace Internal.Runtime.GarbageCollection
             byte* start = get_region_start(region);
             byte* committed = heap_segment.heap_segment_committed(region);
             return (nuint)(committed - start);
+        }
+
+        public static heap_segment* get_region_info_for_address(byte* address)
+        {
+            nuint basic_region_index = (nuint)address >> (int)min_segment_size_shr;
+            heap_segment* basic_region_info_entry = (heap_segment*)(GCCommon.seg_mapping_table + (nint)basic_region_index);
+            nint first_field = (nint)heap_segment.heap_segment_allocated(basic_region_info_entry);
+            if (first_field < 0)
+            {
+                basic_region_index = unchecked(basic_region_index + (nuint)first_field);
+            }
+
+            return (heap_segment*)(GCCommon.seg_mapping_table + (nint)basic_region_index);
+        }
+
+        public static nuint get_skewed_basic_region_index_for_address(byte* address)
+        {
+            Debug.Assert(GCCommon.g_gc_lowest_address <= address && address <= GCCommon.g_gc_highest_address);
+            nuint skewed_basic_region_index = (nuint)address >> (int)min_segment_size_shr;
+            return skewed_basic_region_index;
+        }
+
+        public static nuint get_basic_region_index_for_address(byte* address)
+        {
+            nuint skewed_basic_region_index = get_skewed_basic_region_index_for_address(address);
+            return skewed_basic_region_index - get_skewed_basic_region_index_for_address(GCCommon.g_gc_lowest_address);
+        }
+
+        public static heap_segment* get_region_info(byte* region_start)
+        {
+            nuint region_index = (nuint)region_start >> (int)min_segment_size_shr;
+            heap_segment* region_info_entry = (heap_segment*)(GCCommon.seg_mapping_table + (nint)region_index);
+            return region_info_entry;
+        }
+
+        public static bool is_free_region(heap_segment* region)
+        {
+            return heap_segment.heap_segment_allocated(region) is null;
         }
 
         public static region_allocator global_region_allocator;

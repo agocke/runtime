@@ -826,7 +826,16 @@ Translate the schema from `gcpriv.h` and related headers:
 - The adjacent `seg_mapping` record and `ro_in_entry` low-bit constant. Under `USE_REGIONS` the
   mapping embeds the complete `heap_segment`; without regions it preserves the boundary,
   `MULTIPLE_HEAPS`-only `h0`/`h1`, and `seg0`/`seg1` fields, including the read-only `seg1`
-  tagging convention. The table-size and address-to-segment/heap algorithms are intentionally
+  tagging convention. Region builds now also carry the global skewed `seg_mapping_table` pointer,
+  the explicit WKS initialization-only `gc_heap.min_segment_size_shr` state, and the direct
+  `gcinternal.h` mapping helpers needed by `region_allocator::move_highest_free_regions`:
+  `seg_mapping_word_of`, `get_region_info`, `get_region_info_for_address`,
+  `get_skewed_basic_region_index_for_address`, `get_basic_region_index_for_address`, and
+  `is_free_region`. The large-region continuation path preserves the native negative
+  `allocated` first-field sentinel and pointer reinterpretation of a `seg_mapping` entry as a
+  `heap_segment`. Configured region sizes also receive the native maximum-size and power-of-two
+  validation before initializing the shift; adaptive default sizing and range-per-heap validation
+  remain deferred. Non-region table-size and address-to-segment/heap algorithms are intentionally
   deferred to `regions_segments.cpp` and `gc.cpp`, after their heap constants and state arrive.
 
 This completes the `gcinterface.dac.h` translation started in stage 2. Publishing live DAC state
@@ -838,7 +847,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, and region deletion are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, and the USE_REGIONS mapping helpers needed by highest-free-region movement are translated**
 
 Translate:
 

@@ -99,6 +99,24 @@ namespace Internal.Runtime.GarbageCollection
             // GCConfig that PalInit already initialized for the C++ GC.
             GCConfig.Initialize();
 #if USE_REGIONS
+            long configuredRegionSize = GCConfig.GetGCRegionSize();
+            nuint regionSize = unchecked((nuint)configuredRegionSize);
+            if (regionSize >= gc_heap.MAX_REGION_SIZE)
+            {
+                return GCEnv.CLR_E_GC_BAD_REGION_SIZE;
+            }
+
+            if (regionSize == 0)
+            {
+                regionSize = gc_heap.DefaultMinSegmentSize;
+            }
+
+            if (!gc_heap.power_of_two_p(regionSize))
+            {
+                return E_OUTOFMEMORY;
+            }
+
+            gc_heap.initialize_min_segment_size_shr(regionSize);
             gc_heap.global_region_allocator.initialize();
 #endif
 
