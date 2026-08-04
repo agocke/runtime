@@ -650,6 +650,8 @@ namespace Internal.Runtime.GarbageCollection
         public static region_info* map_region_to_generation_skewed;
         public static volatile byte* ephemeral_low;
         public static volatile byte* ephemeral_high;
+        public static GCSpinLock gc_lock;
+        public static region_free_list global_free_huge_regions;
 #endif
 
         public static heap_segment* heap_segment_in_range(heap_segment* segment)
@@ -786,6 +788,47 @@ namespace Internal.Runtime.GarbageCollection
         }
 
         public static region_allocator global_region_allocator;
+
+        public static void initialize_gc_lock()
+        {
+            GCSpinLock.initialize(ref gc_lock);
+        }
+
+        public static void enter_gc_lock()
+        {
+            fixed (GCSpinLock* lock_address = &gc_lock)
+            {
+                GCSpinLock.enter(lock_address);
+            }
+        }
+
+        public static void leave_gc_lock()
+        {
+            fixed (GCSpinLock* lock_address = &gc_lock)
+            {
+                GCSpinLock.leave(lock_address);
+            }
+        }
+
+        public static void assert_holding_gc_lock()
+        {
+#if DEBUG
+            fixed (GCSpinLock* lock_address = &gc_lock)
+            {
+                Debug.Assert(lock_address->holding_thread != (void*)(-1));
+            }
+#endif
+        }
+
+        public static void assert_holding_gc_lock_by_current_thread()
+        {
+#if DEBUG
+            fixed (GCSpinLock* lock_address = &gc_lock)
+            {
+                Debug.Assert(lock_address->holding_thread == GCToEEInterface.GetThread());
+            }
+#endif
+        }
 #endif
     }
 
@@ -815,6 +858,35 @@ namespace Internal.Runtime.GarbageCollection
         public static void initialize(GCSpinLock* spin_lock)
         {
             initialize(ref *spin_lock);
+        }
+
+        public static void enter(GCSpinLock* spin_lock)
+        {
+            int* lock_address = &spin_lock->@lock;
+            while (true)
+            {
+                if (Interlocked.CompareExchange(lock_address, 0, lock_free) < 0)
+                {
+                    break;
+                }
+
+                while (GCEnv.VolatileLoadWithoutBarrier(lock_address) >= 0)
+                {
+                    GCEnv.YieldProcessor();
+                }
+            }
+
+#if DEBUG
+            spin_lock->holding_thread = GCToEEInterface.GetThread();
+#endif
+        }
+
+        public static void leave(GCSpinLock* spin_lock)
+        {
+#if DEBUG
+            spin_lock->holding_thread = (void*)(-1);
+#endif
+            GCEnv.VolatileStore(&spin_lock->@lock, lock_free);
         }
     }
 

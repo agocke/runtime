@@ -189,6 +189,84 @@ internal unsafe partial struct gc_heap
         return res;
     }
 
+    // USE_REGIONS TODO: SOH should be able to get a large region and split it up into basic regions
+    // if needed.
+    // USE_REGIONS TODO: In Server GC we should allow to get a free region from another heap.
+    public static heap_segment* get_free_region(gc_heap* hp, int gen_number, nuint size = 0)
+    {
+        heap_segment* region;
+
+        if (gen_number <= GCInterfaceOffsets.max_generation)
+        {
+            Debug.Assert(size == 0);
+            region = region_free_list.unlink_region_front(free_regions_of((int)free_region_kind.basic_free_region));
+        }
+        else
+        {
+            nuint LARGE_REGION_SIZE = global_region_allocator.get_large_region_alignment();
+
+            Debug.Assert(size >= LARGE_REGION_SIZE);
+            if (size == LARGE_REGION_SIZE)
+            {
+                region = region_free_list.unlink_region_front(free_regions_of((int)free_region_kind.large_free_region));
+            }
+            else
+            {
+                region = region_free_list.unlink_smallest_region(
+                    free_regions_of((int)free_region_kind.huge_free_region),
+                    size);
+                if (region is null)
+                {
+                    if (settings.pause_mode == gc_pause_mode.pause_no_gc)
+                    {
+                        // In case of no-gc-region, the gc lock is being held by the thread
+                        // triggering the GC.
+                        assert_holding_gc_lock();
+                    }
+                    else
+                    {
+                        assert_holding_gc_lock_by_current_thread();
+                    }
+
+                    region = region_free_list.unlink_smallest_region(
+                        (region_free_list*)Unsafe.AsPointer(ref global_free_huge_regions),
+                        size);
+                }
+            }
+        }
+
+        if (region is not null)
+        {
+            byte* region_start = get_region_start(region);
+            byte* region_end = heap_segment.heap_segment_reserved(region);
+            init_heap_segment(region, hp, region_start, (nuint)(region_end - region_start), gen_number, true);
+
+            gc_oh_num oh = gen_to_oh(gen_number);
+            nuint committed = (nuint)(heap_segment.heap_segment_committed(region) - get_region_start(region));
+            if (committed > 0)
+            {
+                check_commit_cs.Enter();
+                committed_by_oh[(int)oh] += committed;
+                Debug.Assert(committed_by_oh[recorded_committed_free_bucket] >= committed);
+                committed_by_oh[recorded_committed_free_bucket] -= committed;
+                check_commit_cs.Leave();
+            }
+
+            Debug.Assert(heap_segment.heap_segment_allocated(region) == heap_segment.heap_segment_mem(region));
+        }
+        else
+        {
+            region = allocate_new_region(hp, gen_number, gen_number > GCInterfaceOffsets.max_generation, size);
+        }
+
+        if (region is not null && !init_table_for_region(gen_number, region))
+        {
+            region = null;
+        }
+
+        return region;
+    }
+
     public static gc_oh_num gen_to_oh(int gen)
     {
         switch (gen)

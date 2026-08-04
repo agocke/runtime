@@ -383,7 +383,18 @@ now commits and verifies the background mark array for the saved range, propagat
 failure by decommitting the region, preserves already committed mark arrays, and initializes only
 the first SOH brick. Its dependency-closed mark-array range/new-segment commitment and debug
 verification helpers retain the native page and mark-word boundaries, secondary card-table
-handling, and region partial-commit assertion. `get_free_region` remains deferred.
+handling, and region partial-commit assertion.
+`get_free_region` now selects basic, large, and smallest-fitting huge regions from the local
+free lists, and falls back to the explicit WKS global huge list only while the caller holds the
+translated GC spin lock. Reused regions are reinitialized with `existing_region_p`, transfer
+committed bytes from the free bucket to the selected object-heap bucket under `check_commit_cs`,
+then initialize their tables; a miss follows `allocate_new_region`, and a table-init failure
+returns null after its native decommit path. The global huge-list lock is a real explicit
+compare-exchange/volatile-store leaf initialized during `ManagedGC_Initialize`, not a managed
+lock or a synthetic success path. This WKS project does not define `MULTIPLE_HEAPS`; its
+per-heap accounting/debug branch and cross-heap free-region work remain deferred with the server
+collector. As in C++, this path does not set LOH/POH flags: deferred generation-threading callers
+own those flags.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class

@@ -380,6 +380,191 @@ public sealed unsafe class GCVirtualMemoryTests
     }
 
     [Fact]
+    [Trait("Category", "GetFreeRegion")]
+    public void GetFreeRegionReusesBasicAndLargeRegionsAndTransfersCommittedAccounting()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        nuint largeRegionSize = region_allocator.LARGE_REGION_FACTOR * pageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(16 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 16 * pageSize, pageSize);
+        try
+        {
+            short* bricks = stackalloc short[16];
+            gc_heap.brick_table = bricks;
+#if BACKGROUND_GC
+            gc_heap.lowest_address = reservation;
+            gc_heap.highest_address = reservation + (nint)(16 * pageSize);
+#endif
+
+            heap_segment* basic = gc_heap.allocate_new_region((gc_heap*)0x1234, (int)gc_generation_num.soh_gen2, uoh_p: false);
+            heap_segment* large = gc_heap.allocate_new_region((gc_heap*)0x1234, (int)gc_generation_num.loh_generation, uoh_p: true, largeRegionSize);
+            Assert.True(basic != null);
+            Assert.True(large != null);
+
+            AddRegionToFreeList(basic, (int)gc_oh_num.soh);
+            AddRegionToFreeList(large, (int)gc_oh_num.loh);
+            heap_segment.heap_segment_allocated(basic) = (byte*)0x1234;
+            heap_segment.heap_segment_plan_allocated(basic) = (byte*)0x5678;
+            heap_segment.heap_segment_saved_allocated(basic) = (byte*)0x9ABC;
+            bricks[(nint)gc_heap.brick_of(heap_segment.heap_segment_mem(basic))] = 17;
+
+            heap_segment* reusedBasic = gc_heap.get_free_region((gc_heap*)0x1234, (int)gc_generation_num.soh_gen2);
+            bricks[(nint)gc_heap.brick_of(heap_segment.heap_segment_mem(large))] = 0;
+            heap_segment* reusedLarge = gc_heap.get_free_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.loh_generation,
+                largeRegionSize);
+
+            Assert.Equal((nuint)basic, (nuint)reusedBasic);
+            Assert.Equal((nuint)large, (nuint)reusedLarge);
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(basic), (nuint)heap_segment.heap_segment_allocated(basic));
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(basic), (nuint)heap_segment.heap_segment_plan_allocated(basic));
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(basic), (nuint)heap_segment.heap_segment_saved_allocated(basic));
+            Assert.Equal((int)gc_generation_num.soh_gen2, heap_segment.heap_segment_gen_num(basic));
+            Assert.Equal((int)gc_generation_num.soh_gen2, heap_segment.heap_segment_plan_gen_num(basic));
+            Assert.Equal(-1, bricks[(nint)gc_heap.brick_of(heap_segment.heap_segment_mem(basic))]);
+            Assert.Equal(0, heap_segment.heap_segment_uoh_p(large));
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.loh]);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 16 * pageSize);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "GetFreeRegion")]
+    public void GetFreeRegionSelectsLocalHugeBeforeGlobalHugeUnderGcLock()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        nuint largeRegionSize = region_allocator.LARGE_REGION_FACTOR * pageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(64 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 64 * pageSize, pageSize);
+        try
+        {
+            short* bricks = stackalloc short[64];
+            gc_heap.brick_table = bricks;
+#if BACKGROUND_GC
+            gc_heap.lowest_address = reservation;
+            gc_heap.highest_address = reservation + (nint)(64 * pageSize);
+#endif
+
+            heap_segment* localHuge = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.loh_generation,
+                uoh_p: true,
+                2 * largeRegionSize);
+            heap_segment* globalHuge = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.poh_generation,
+                uoh_p: true,
+                3 * largeRegionSize);
+            Assert.True(localHuge != null);
+            Assert.True(globalHuge != null);
+
+            AddRegionToFreeList(localHuge, (int)gc_oh_num.loh);
+            AddRegionToFreeList(globalHuge, (int)gc_oh_num.poh);
+            region_free_list.unlink_region(globalHuge);
+            region_free_list.add_region_in_descending_order(
+                (region_free_list*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref gc_heap.global_free_huge_regions),
+                globalHuge);
+
+            heap_segment* local = gc_heap.get_free_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.loh_generation,
+                2 * largeRegionSize);
+            Assert.Equal((nuint)localHuge, (nuint)local);
+            Assert.Equal((nuint)1, region_free_list.get_num_free_regions(
+                (region_free_list*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref gc_heap.global_free_huge_regions)));
+
+            gc_heap.enter_gc_lock();
+            heap_segment* global;
+            try
+            {
+                global = gc_heap.get_free_region(
+                    (gc_heap*)0x1234,
+                    (int)gc_generation_num.poh_generation,
+                    2 * largeRegionSize);
+            }
+            finally
+            {
+                gc_heap.leave_gc_lock();
+            }
+
+            Assert.Equal((nuint)globalHuge, (nuint)global);
+            Assert.Equal(0, heap_segment.heap_segment_uoh_p(local));
+            Assert.Equal(0, heap_segment.heap_segment_uoh_p(global));
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.loh]);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.poh]);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 64 * pageSize);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "GetFreeRegion")]
+    public void GetFreeRegionFallsBackToAllocationAndPreservesOtherFreeListsOnFailure()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        nuint largeRegionSize = region_allocator.LARGE_REGION_FACTOR * pageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(16 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, 16 * pageSize, pageSize);
+        try
+        {
+            short* bricks = stackalloc short[16];
+            gc_heap.brick_table = bricks;
+#if BACKGROUND_GC
+            gc_heap.lowest_address = reservation;
+            gc_heap.highest_address = reservation + (nint)(16 * pageSize);
+#endif
+
+            heap_segment* fallback = gc_heap.get_free_region((gc_heap*)0x1234, (int)gc_generation_num.soh_gen2);
+            Assert.True(fallback != null);
+            Assert.Equal(-1, bricks[0]);
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+
+            heap_segment* large = gc_heap.allocate_new_region(
+                (gc_heap*)0x1234,
+                (int)gc_generation_num.loh_generation,
+                uoh_p: true,
+                largeRegionSize);
+            Assert.True(large != null);
+            AddRegionToFreeList(large, (int)gc_oh_num.loh);
+
+            nuint freeBeforeFailure = gc_heap.global_region_allocator.get_free();
+            nuint committedBeforeFailure = gc_heap.current_total_committed;
+            gc_heap.heap_hard_limit = committedBeforeFailure + pageSize - 1;
+
+            heap_segment* failed = gc_heap.get_free_region((gc_heap*)0x1234, (int)gc_generation_num.soh_gen2);
+
+            Assert.True(failed is null);
+            Assert.Equal(freeBeforeFailure, gc_heap.global_region_allocator.get_free());
+            Assert.Equal(committedBeforeFailure, gc_heap.current_total_committed);
+            Assert.Equal((nuint)1, region_free_list.get_num_free_regions(
+                gc_heap.free_regions_of((int)free_region_kind.large_free_region)));
+            Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 16 * pageSize);
+        }
+    }
+
+    [Fact]
     public void DecommitRegionWithNeverDecommitCountsDirectlyAndClearsOnlyUsedBytes()
     {
         using MemoryAccountingScope scope = new();
@@ -695,6 +880,15 @@ public sealed unsafe class GCVirtualMemoryTests
         gc_heap.global_region_allocator = oldAllocator;
     }
 
+    private static void AddRegionToFreeList(heap_segment* region, int sourceBucket)
+    {
+        nuint committed = gc_heap.get_region_committed_size(region);
+        Assert.True(gc_heap.committed_by_oh[sourceBucket] >= committed);
+        gc_heap.committed_by_oh[sourceBucket] -= committed;
+        gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] += committed;
+        region_free_list.add_region(region, gc_heap.free_regions_of((int)free_region_kind.basic_free_region));
+    }
+
     private sealed class RegionAllocationScope : IDisposable
     {
         private readonly region_allocator _oldAllocator;
@@ -704,6 +898,11 @@ public sealed unsafe class GCVirtualMemoryTests
         private readonly seg_mapping* _oldSegMappingTable;
         private readonly byte* _oldLowestAddress;
         private readonly byte* _oldHighestAddress;
+        private readonly gc_heap.region_free_list_array _oldFreeRegions;
+        private readonly region_free_list _oldGlobalFreeHugeRegions;
+        private readonly GCSpinLock _oldGcLock;
+        private readonly uint* _oldCardTable;
+        private readonly short* _oldBrickTable;
         private readonly seg_mapping* _mappings;
         private readonly region_info* _regions;
         private readonly uint* _regionMap;
@@ -717,6 +916,11 @@ public sealed unsafe class GCVirtualMemoryTests
             _oldSegMappingTable = GCCommon.seg_mapping_table;
             _oldLowestAddress = GCCommon.g_gc_lowest_address;
             _oldHighestAddress = GCCommon.g_gc_highest_address;
+            _oldFreeRegions = gc_heap.free_regions;
+            _oldGlobalFreeHugeRegions = gc_heap.global_free_huge_regions;
+            _oldGcLock = gc_heap.gc_lock;
+            _oldCardTable = gc_heap.card_table;
+            _oldBrickTable = gc_heap.brick_table;
 
             gc_heap.initialize_min_segment_size_shr(alignment);
             nuint regionCount = reservationSize / alignment;
@@ -731,6 +935,11 @@ public sealed unsafe class GCVirtualMemoryTests
             GCCommon.seg_mapping_table = _mappings - (nint)firstIndex;
             gc_heap.map_region_to_generation = _regions;
             gc_heap.map_region_to_generation_skewed = _regions - (nint)firstIndex;
+            gc_heap.free_regions = default;
+            gc_heap.global_free_huge_regions = default;
+            gc_heap.initialize_gc_lock();
+            gc_heap.card_table = null;
+            gc_heap.brick_table = null;
 
             gc_heap.global_region_allocator = default;
             gc_heap.global_region_allocator.initialize();
@@ -759,6 +968,11 @@ public sealed unsafe class GCVirtualMemoryTests
             GCCommon.seg_mapping_table = _oldSegMappingTable;
             GCCommon.g_gc_lowest_address = _oldLowestAddress;
             GCCommon.g_gc_highest_address = _oldHighestAddress;
+            gc_heap.free_regions = _oldFreeRegions;
+            gc_heap.global_free_huge_regions = _oldGlobalFreeHugeRegions;
+            gc_heap.gc_lock = _oldGcLock;
+            gc_heap.card_table = _oldCardTable;
+            gc_heap.brick_table = _oldBrickTable;
         }
     }
 

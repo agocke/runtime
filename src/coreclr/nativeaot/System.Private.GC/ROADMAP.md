@@ -1005,13 +1005,22 @@ Done so far:
   segment publication, generation initialization, and allocator rollback after a failed commit.
   `on_used_changed` is currently a bootstrap success no-op; card-table growth remains with the
   later bookkeeping allocation work.
+- The dependency-closed WKS `USE_REGIONS` `get_free_region` path from
+  `regions_segments.cpp`. It preserves local basic/large selection, local smallest-fitting huge
+  selection, caller-held-GC-spin-lock validation before the global huge fallback, reused-region
+  initialization with `existing_region_p`, free-to-object-heap committed-accounting transfer
+  under `check_commit_cs`, allocation fallback, and `init_table_for_region` null failure
+  semantics. The explicit GC spin-lock leaf has the native compare-exchange acquire loop,
+  debug owner sentinel, and volatile release store; startup initializes it without a static
+  constructor. The WKS project does not build `MULTIPLE_HEAPS`, so server per-heap accounting
+  diagnostics and cross-heap selection remain deferred. LOH/POH flags stay at their native
+  deferred generation-threading callers rather than being set by this path.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
 - Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
-  mutable read-only segment list operations, region reuse, generation threading,
-  `get_free_region`, full heap-segment deletion, and free-region
+  mutable read-only segment list operations, generation threading, full heap-segment deletion, and free-region
   distribution.
   The dependent allocation helpers remain blocked on region allocation and generation
   construction.

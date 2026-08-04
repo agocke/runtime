@@ -118,6 +118,7 @@ namespace Internal.Runtime.GarbageCollection
 
             gc_heap.initialize_min_segment_size_shr(regionSize);
             gc_heap.global_region_allocator.initialize();
+            gc_heap.initialize_gc_lock();
             GCWriteBarrier.initialize();
 #endif
 
