@@ -847,7 +847,7 @@ with DAC/cDAC descriptors such as `dac_gcheap_fields.h`, `dac_generation_fields.
 
 ### 7. Memory and region management
 
-**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, and WKS `USE_REGIONS` region decommit are translated**
+**Status: In progress -- `region_allocator::init`, spin-lock enter/leave, endpoint block marking, terminal allocation, free-block search/callback allocation, public region-allocation wrappers, inline public accessors, region deletion, USE_REGIONS mapping helpers, highest-free-region movement, the first `memory.cpp` commit/accounting helpers, WKS `USE_REGIONS` region decommit, and the first `regions_segments.cpp` mapping helpers are translated**
 
 Translate:
 
@@ -942,10 +942,23 @@ Done so far:
   decommit ranges, never-decommit direct accounting, failed-decommit and never-decommit memory
   clearing extents, used/committed state updates, mark-array committed-flag cleanup and
   accounting, allocator deletion, and per-step quota/free-list early return.
+- The dependency-closed WKS `USE_REGIONS` opening helpers from `regions_segments.cpp`:
+  `align_on_segment`, `ro_seg_begin_index`, `ro_seg_end_index`,
+  `size_seg_mapping_table_of`, `size_region_to_generation_table_of`,
+  `seg_mapping_table_add_ro_segment`, and the intentionally empty
+  `seg_mapping_table_remove_ro_segment`. This preserves absolute basic-region indices, lower/up
+  segment alignment, lowest/highest-address clipping, the embedded-`heap_segment`
+  reinterpretation of `seg_mapping`, and the native `ro_in_entry` sentinel in
+  `heap_segment_allocated`.
 - Still deferred from `region_allocator.cpp`: reservation state after `init`.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
+- Still deferred from `regions_segments.cpp`: initial memory reservation/destruction,
+  mutable read-only segment list operations, region creation/free-return, generation threading,
+  full heap-segment initialization/deletion, and free-region distribution because they pull in
+  generation construction, brick/card-table clearing, allocation/collection state, or server-GC
+  branches.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment
 lifecycle match the C++ collector.

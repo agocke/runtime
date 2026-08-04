@@ -1595,6 +1595,75 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void RegionSegmentMappingSizeHelpersPreserveNativeAlignmentRules()
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+
+            Assert.Equal((nuint)0x2000, (nuint)gc_heap.align_on_segment((byte*)0x1001));
+            Assert.Equal((nuint)0x2000, (nuint)gc_heap.align_on_segment((byte*)0x2000));
+            Assert.Equal((nuint)(4 * sizeof(seg_mapping)), gc_heap.size_seg_mapping_table_of((byte*)0x1800, (byte*)0x4100));
+            Assert.Equal((nuint)3, gc_heap.size_region_to_generation_table_of((byte*)0x1800, (byte*)0x4800));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+        }
+    }
+
+    [Fact]
+    public void ReadOnlyRegionMappingMarksOnlyClippedIntersectingEntries()
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        seg_mapping* table = stackalloc seg_mapping[8];
+        heap_segment segment = default;
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x2000;
+            GCCommon.g_gc_highest_address = (byte*)0x5000;
+            GCCommon.seg_mapping_table = table;
+
+            segment.mem = (byte*)0x1000;
+            segment.reserved = (byte*)0x7000;
+
+            Assert.Equal((nuint)2, gc_heap.ro_seg_begin_index(&segment));
+            Assert.Equal((nuint)5, gc_heap.ro_seg_end_index(&segment));
+
+            gc_heap.seg_mapping_table_add_ro_segment(&segment);
+
+            Assert.Equal((nuint)0, (nuint)table[1].region_info.allocated);
+            Assert.Equal(seg_mapping.ro_in_entry, (nuint)table[2].region_info.allocated);
+            Assert.Equal(seg_mapping.ro_in_entry, (nuint)table[3].region_info.allocated);
+            Assert.Equal(seg_mapping.ro_in_entry, (nuint)table[4].region_info.allocated);
+            Assert.Equal(seg_mapping.ro_in_entry, (nuint)table[5].region_info.allocated);
+            Assert.Equal((nuint)0, (nuint)table[6].region_info.allocated);
+
+            segment.mem = (byte*)0x5000;
+            segment.reserved = (byte*)0x6000;
+            gc_heap.seg_mapping_table_add_ro_segment(&segment);
+            Assert.Equal((nuint)0, (nuint)table[6].region_info.allocated);
+
+            gc_heap.seg_mapping_table_remove_ro_segment(&segment);
+            Assert.Equal((nuint)0, (nuint)table[6].region_info.allocated);
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            GCCommon.seg_mapping_table = oldTable;
+        }
+    }
+
+    [Fact]
     public void RegionMappingDirectLookupReinterpretsSegMappingEntryAsHeapSegment()
     {
         nuint oldShift = gc_heap.min_segment_size_shr;
