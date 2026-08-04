@@ -17,6 +17,11 @@ internal static class GCInterfaceOffsets
     public const int GC_INTERFACE_MINOR_VERSION = 8;
     public const int max_generation = 2;
     public const int MAX_BUCKET_COUNT = 20;
+#if TARGET_64BIT
+    public const int min_obj_size = 0x18;
+#else
+    public const int min_obj_size = 0x0c;
+#endif
 
     // SOFTWARE_WRITE_WATCH_AddressToTableByteIndexShift of gcinterface.h, read directly by
     // SoftwareWriteWatch rather than being restated as a private constant of its own.

@@ -4976,6 +4976,103 @@ public sealed unsafe class GCPrivTests
         }
     }
 
+    [Fact]
+    public void AllocationContextAlignmentAndSizeFitPreserveNativeBoundaryAndOverflowArithmetic()
+    {
+        int sohAlignment = gc_heap.get_alignment_constant(small_object_p: true);
+        int uohAlignment = gc_heap.get_alignment_constant(small_object_p: false);
+        nuint alignedMinObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, sohAlignment);
+
+        Assert.Equal(GCEnv.DATA_ALIGNMENT - 1, sohAlignment);
+        Assert.Equal(7, uohAlignment);
+        Assert.Equal(unchecked(((nuint)0x11 + (nuint)sohAlignment) & ~(nuint)sohAlignment), gc_heap.Align(0x11, sohAlignment));
+        Assert.Equal((nuint)0, gc_heap.Align(nuint.MaxValue, 7));
+
+        gc_alloc_context context = default;
+        context.alloc_ptr = (byte*)0x1000;
+        context.alloc_limit = context.alloc_ptr + (nint)alignedMinObjectSize;
+        byte* originalPointer = context.alloc_ptr;
+        byte* originalLimit = context.alloc_limit;
+
+        Assert.True(gc_heap.a_size_fit_p(0, context.alloc_ptr, context.alloc_limit, sohAlignment));
+        Assert.False(gc_heap.a_size_fit_p(1, context.alloc_ptr, context.alloc_limit, sohAlignment));
+        Assert.False(gc_heap.a_size_fit_p(0, context.alloc_limit, context.alloc_ptr, sohAlignment));
+        byte* overflowLimit = context.alloc_ptr + (nint)(alignedMinObjectSize - 1);
+        Assert.True(gc_heap.a_size_fit_p(nuint.MaxValue, context.alloc_ptr, overflowLimit, sohAlignment));
+        Assert.Equal((nuint)originalPointer, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)originalLimit, (nuint)context.alloc_limit);
+    }
+
+    [Fact]
+    public void AllocationContextRetirementAndVoidPreserveAccountingAndNullBehavior()
+    {
+        gc_alloc_context context = default;
+        context.alloc_ptr = (byte*)0x1020;
+        context.alloc_limit = (byte*)0x1040;
+        context.alloc_bytes = 100;
+        context.alloc_bytes_uoh = 17;
+        ulong totalAllocatedBytesSoh = 500;
+
+        gc_heap.retire_allocation_context(&context, &totalAllocatedBytesSoh);
+
+        Assert.Equal(68, context.alloc_bytes);
+        Assert.Equal(17, context.alloc_bytes_uoh);
+        Assert.Equal(468ul, totalAllocatedBytesSoh);
+        Assert.Equal((nuint)0, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)0, (nuint)context.alloc_limit);
+
+        context.alloc_limit = (byte*)0x2000;
+        gc_heap.void_allocation(&context);
+
+        Assert.Equal((nuint)0, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)0x2000, (nuint)context.alloc_limit);
+        Assert.Equal(68, context.alloc_bytes);
+        Assert.Equal(468ul, totalAllocatedBytesSoh);
+    }
+
+    [Fact]
+    public void AllocationContextAccountingKeepsSohAndUohCountersDistinct()
+    {
+        gc_alloc_context context = default;
+        context.alloc_bytes = 100;
+        context.alloc_bytes_uoh = 200;
+        ulong totalAllocatedBytesSoh = 300;
+
+        gc_heap.add_alloc_bytes(&context, 24, &totalAllocatedBytesSoh);
+        gc_heap.add_uoh_alloc_bytes(&context, 40);
+
+        Assert.Equal(124, context.alloc_bytes);
+        Assert.Equal(240, context.alloc_bytes_uoh);
+        Assert.Equal(324ul, totalAllocatedBytesSoh);
+    }
+
+#if USE_REGIONS
+    [Fact]
+    public void ResetAllocationPointersSelectsTheFirstWritableRegionAndChecksHalfOpenBounds()
+    {
+        heap_segment readOnly = default;
+        heap_segment writable = default;
+        generation gen = default;
+
+        InitializeRegion(&readOnly, 0x1000, 0x1800, 0x2000, age: 0);
+        InitializeRegion(&writable, 0x2000, 0x2800, 0x3000, age: 0);
+        readOnly.flags = heap_segment.heap_segment_flags_readonly;
+        readOnly.next = &writable;
+        gen.start_segment = &readOnly;
+        gen.allocation_context.alloc_ptr = (byte*)0x2500;
+        gen.allocation_context.alloc_limit = (byte*)0x2800;
+
+        gc_heap.reset_allocation_pointers(&gen, (byte*)0x2000);
+
+        Assert.Equal((nuint)0, (nuint)generation.generation_allocation_pointer(&gen));
+        Assert.Equal((nuint)0, (nuint)generation.generation_allocation_limit(&gen));
+        Assert.Equal((nuint)(&writable), (nuint)generation.generation_allocation_segment(&gen));
+        Assert.Equal(1, gc_heap.in_range_for_segment(heap_segment.heap_segment_mem(&writable), &writable));
+        Assert.Equal(1, gc_heap.in_range_for_segment(heap_segment.heap_segment_reserved(&writable) - 1, &writable));
+        Assert.Equal(0, gc_heap.in_range_for_segment(heap_segment.heap_segment_reserved(&writable), &writable));
+    }
+#endif
+
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private unsafe struct SegMappingAlignmentProbe
     {

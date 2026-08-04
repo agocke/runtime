@@ -1065,7 +1065,7 @@ lifecycle match the C++ collector.
 
 ### 8. Allocator and write-barrier interaction
 
-**Status: Bootstrap allocator only**
+**Status: Bootstrap allocator plus allocation-context leaf**
 
 Translate `allocation.cpp`, including:
 
@@ -1075,6 +1075,13 @@ Translate `allocation.cpp`, including:
 - `allocate_more_space`
 - Large, pinned, and small object paths
 - `card_table.cpp` interaction
+
+The first dependency-closed WKS `USE_REGIONS` leaf is `GCAllocation.cs`: `Align`,
+`get_alignment_constant`, `a_size_fit_p`, `void_allocation`, and the pointer/limit reset path
+of `fix_allocation_context` are translated without object writes or allocation routing.
+It also carries the direct SOH refill/retirement and UOH object-counter arithmetic, plus
+`set_allocation_heap_segment`/`reset_allocation_pointers` for the region generation schema.
+The bootstrap allocator remains the production allocation owner.
 
 The fixed 256 MB bump allocator must be deleted as the translated allocator becomes usable.
 
