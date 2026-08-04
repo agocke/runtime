@@ -599,6 +599,25 @@ namespace Internal.Runtime.GarbageCollection
             }
 
 #if USE_REGIONS
+            GCSpinLock spinLock;
+            if (sizeof(GCSpinLock) != GCInterfaceOffsets.SIZEOF__GCSpinLock
+                || AlignOf<GCSpinLock>() != GCInterfaceOffsets.ALIGNOF__GCSpinLock
+                || OffsetOf(&spinLock, &spinLock.@lock) != GCInterfaceOffsets.OFFSETOF__GCSpinLock__lock
+#if DEBUG
+                || OffsetOf(&spinLock, &spinLock.holding_thread) != GCInterfaceOffsets.OFFSETOF__GCSpinLock__holding_thread
+                || OffsetOf(&spinLock, &spinLock.released_by_gc_p) != GCInterfaceOffsets.OFFSETOF__GCSpinLock__released_by_gc_p
+#endif
+                )
+            {
+                return false;
+            }
+
+            if (sizeof(region_allocator) != GCInterfaceOffsets.SIZEOF__region_allocator
+                || AlignOf<region_allocator>() != GCInterfaceOffsets.ALIGNOF__region_allocator)
+            {
+                return false;
+            }
+
             generation_region_info regionInfo;
             if (sizeof(generation_region_info) != GCInterfaceOffsets.SIZEOF__generation_region_info
                 || AlignOf<generation_region_info>() != GCInterfaceOffsets.ALIGNOF__generation_region_info

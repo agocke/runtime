@@ -858,12 +858,17 @@ Done so far:
   `LARGE_REGION_FACTOR`, `region_alloc_free_bit`, `allocate_direction`, the dependency-closed
   alignment/bit-decoding helpers, and `gc_heap.global_region_allocator` as the managed state
   carrier.
+- `region_allocator.cpp/gcpriv.h` schema-extension prerequisite slice: the exact native field
+  order through `GCSpinLock region_allocator_lock`, the four `region_map_*` pointers, and the two
+  used-free-unit counters, plus the minimal dependency-closed `GCSpinLock` schema and lock-free
+  constructor-sentinel initialization helper needed to carry that field.
+- Dependency-closed map arithmetic from `region_allocator.cpp`: `region_address_of` and
+  `region_map_index_of`.
 - Remaining `region_free_list.cpp` helpers previously blocked on that prerequisite:
   `get_region_kind`, `add_region`, `add_region_descending`, `is_on_free_list`, and
   `unlink_smallest_region` with native large-region assertion and early-break behavior.
-- Still deferred from `region_allocator.cpp`: `GCSpinLock` and the fields after it
-  (`region_map_*`, free-unit counters), `region_address_of`/`region_map_index_of`, map
-  reservation/state, allocation/deallocation algorithms, lock and callback paths, and
+- Still deferred from `region_allocator.cpp`: map reservation/state (`init`), spin-lock
+  enter/leave behavior, allocation/deallocation algorithms, lock callback paths, and
   end-allocation fallback logic.
 
 **Complete when:** reservation, commitment, release, region allocation, free lists, and segment

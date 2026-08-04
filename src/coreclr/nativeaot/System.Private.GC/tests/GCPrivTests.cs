@@ -1939,6 +1939,89 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void GCSpinLockInitializeSetsNativeLockFreeSentinel()
+    {
+        GCSpinLock spinLock = default;
+
+        GCSpinLock.initialize(&spinLock);
+
+        Assert.Equal(GCSpinLock.lock_free, spinLock.@lock);
+#if DEBUG
+        Assert.Equal(-1, (nint)spinLock.holding_thread);
+#endif
+    }
+
+    [Fact]
+    public void RegionAllocatorSchemaExtendsThroughMapFieldsInNativeOrder()
+    {
+        static nuint AlignUp(nuint value, nuint alignment)
+        {
+            return unchecked((value + (alignment - 1)) & ~(alignment - 1));
+        }
+
+        nuint pointerSize = (nuint)sizeof(void*);
+        nuint uintSize = (nuint)sizeof(uint);
+        nuint nuintSize = (nuint)sizeof(nuint);
+        nuint offset = 0;
+
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("global_region_start"));
+        offset += pointerSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("global_region_end"));
+        offset += pointerSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("global_region_left_used"));
+        offset += pointerSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("global_region_right_used"));
+        offset += pointerSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("total_free_units"));
+        offset += uintSize;
+        offset = AlignUp(offset, nuintSize);
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_alignment"));
+        offset += nuintSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("large_region_alignment"));
+        offset += nuintSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_allocator_lock"));
+        offset += (nuint)sizeof(GCSpinLock);
+        offset = AlignUp(offset, pointerSize);
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_map_left_start"));
+        offset += pointerSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_map_left_end"));
+        offset += pointerSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_map_right_start"));
+        offset += pointerSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_map_right_end"));
+        offset += pointerSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("num_left_used_free_units"));
+        offset += uintSize;
+        Assert.Equal(offset, (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("num_right_used_free_units"));
+        offset += uintSize;
+
+        Assert.Equal(AlignUp(offset, pointerSize), (nuint)sizeof(region_allocator));
+    }
+
+    [Fact]
+    public void RegionAllocatorMapAddressAndIndexHelpersPreserveNativeArithmetic()
+    {
+        region_allocator allocator = default;
+        byte* allocatorBytes = (byte*)&allocator;
+
+        byte* regionStart = (byte*)0x0010_0000;
+        uint* mapStart = (uint*)0x0020_0000;
+        nuint regionAlignment = 0x1000;
+
+        *(byte**)(allocatorBytes + (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("global_region_start")) = regionStart;
+        *(nuint*)(allocatorBytes + (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_alignment")) = regionAlignment;
+        *(uint**)(allocatorBytes + (nuint)System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_map_left_start")) = mapStart;
+
+        uint* mapIndex = mapStart + 9;
+        byte* address = allocator.region_address_of(mapIndex);
+        Assert.Equal((nuint)0x0010_9000, (nuint)address);
+        Assert.Equal((nuint)mapIndex, (nuint)allocator.region_map_index_of(address));
+
+        byte* unalignedAddress = (byte*)0x0010_5ABC;
+        Assert.Equal((nuint)(mapStart + 5), (nuint)allocator.region_map_index_of(unalignedAddress));
+    }
+
+    [Fact]
     public void RegionAllocatorAlignmentSliceComputesLargeRegionFactor()
     {
         gc_heap.global_region_allocator.initialize_alignment(0x1000);
@@ -1949,6 +2032,17 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(-1, (int)allocate_direction.allocate_backward);
         Assert.Equal((nuint)0x1000, gc_heap.global_region_allocator.get_region_alignment());
         Assert.Equal((nuint)(region_allocator.LARGE_REGION_FACTOR * 0x1000), gc_heap.global_region_allocator.get_large_region_alignment());
+    }
+
+    [Fact]
+    public void RegionAllocatorInitializeConstructsEmbeddedSpinLock()
+    {
+        region_allocator allocator = default;
+
+        allocator.initialize();
+
+        int lockOffset = System.Runtime.InteropServices.Marshal.OffsetOf<region_allocator>("region_allocator_lock").ToInt32();
+        Assert.Equal(GCSpinLock.lock_free, *(int*)((byte*)&allocator + lockOffset));
     }
 
     [Fact]

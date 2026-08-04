@@ -98,6 +98,9 @@ namespace Internal.Runtime.GarbageCollection
             // The managed GC keeps its own configuration state, independent of the native
             // GCConfig that PalInit already initialized for the C++ GC.
             GCConfig.Initialize();
+#if USE_REGIONS
+            gc_heap.global_region_allocator.initialize();
+#endif
 
             // The EE calls Initialize() on both of these before it uses them, so all that
             // happens here is that the vtables are built; neither touches memory yet.

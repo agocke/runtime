@@ -856,6 +856,27 @@ GC_CONST(       400,       400, heap_segment_flags_overflow)
 #endif
 
 #ifdef USE_REGIONS
+GC_OFFSET(         0,         0, GCSpinLock, lock)
+#if defined(_DEBUG) || defined(DEBUG)
+GC_OFFSET(         4,         8, GCSpinLock, holding_thread)
+GC_OFFSET(         8,        10, GCSpinLock, released_by_gc_p)
+#ifdef SERVER_GC
+GC_SIZEOF(        18,        20, GCSpinLock)
+GC_ALIGNOF(         8,         8, GCSpinLock)
+#else
+GC_SIZEOF(         c,        18, GCSpinLock)
+GC_ALIGNOF(         4,         8, GCSpinLock)
+#endif
+#else
+#ifdef SERVER_GC
+GC_SIZEOF(        10,        10, GCSpinLock)
+GC_ALIGNOF(         8,         8, GCSpinLock)
+#else
+GC_SIZEOF(         4,         4, GCSpinLock)
+GC_ALIGNOF(         4,         4, GCSpinLock)
+#endif
+#endif
+
 GC_CONST(       800,       800, heap_segment_flags_demoted)
 GC_CONST(        63,        63, MAX_AGE_IN_FREE)
 GC_CONST(        14,        14, AGE_IN_FREE_TO_DECOMMIT_BASIC)
@@ -874,6 +895,25 @@ GC_SIZEOF(         4,         4, allocate_direction)
 GC_ALIGNOF(         4,         4, allocate_direction)
 GC_SIZEOF(         4,         4, free_region_kind)
 GC_ALIGNOF(         4,         4, free_region_kind)
+// region_allocator keeps all fields private. The table pins size/alignment while managed tests
+// pin the field order and translated map-index/address arithmetic.
+#if defined(_DEBUG) || defined(DEBUG)
+#ifdef SERVER_GC
+GC_SIZEOF(        50,        80, region_allocator)
+GC_ALIGNOF(         8,         8, region_allocator)
+#else
+GC_SIZEOF(        40,        78, region_allocator)
+GC_ALIGNOF(         4,         8, region_allocator)
+#endif
+#else
+#ifdef SERVER_GC
+GC_SIZEOF(        48,        70, region_allocator)
+GC_ALIGNOF(         8,         8, region_allocator)
+#else
+GC_SIZEOF(        38,        68, region_allocator)
+GC_ALIGNOF(         4,         8, region_allocator)
+#endif
+#endif
 
 GC_OFFSET(         0,         0, generation_region_info, head)
 GC_OFFSET(         4,         8, generation_region_info, tail)

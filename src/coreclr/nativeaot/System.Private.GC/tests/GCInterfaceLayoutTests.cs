@@ -90,6 +90,20 @@ public sealed class GCInterfaceLayoutTests
         ["region_free_list.num_free_regions_removed"] = "private in the C++ class",
         ["region_free_list.head_free_region"] = "private in the C++ class",
         ["region_free_list.tail_free_region"] = "private in the C++ class",
+        ["region_allocator.global_region_start"] = "private in the C++ class",
+        ["region_allocator.global_region_end"] = "private in the C++ class",
+        ["region_allocator.global_region_left_used"] = "private in the C++ class",
+        ["region_allocator.global_region_right_used"] = "private in the C++ class",
+        ["region_allocator.total_free_units"] = "private in the C++ class",
+        ["region_allocator.region_alignment"] = "private in the C++ class",
+        ["region_allocator.large_region_alignment"] = "private in the C++ class",
+        ["region_allocator.region_allocator_lock"] = "private in the C++ class",
+        ["region_allocator.region_map_left_start"] = "private in the C++ class",
+        ["region_allocator.region_map_left_end"] = "private in the C++ class",
+        ["region_allocator.region_map_right_start"] = "private in the C++ class",
+        ["region_allocator.region_map_right_end"] = "private in the C++ class",
+        ["region_allocator.num_left_used_free_units"] = "private in the C++ class",
+        ["region_allocator.num_right_used_free_units"] = "private in the C++ class",
 #endif
 
         // C# has no declaration-level alignment attribute. This unmanaged overlay exists only
@@ -473,6 +487,7 @@ public sealed class GCInterfaceLayoutTests
         {
             "#ifdef HOST_64BIT" => IntPtr.Size == 8,
             "#ifdef MULTIPLE_HEAPS" => false,
+            "#ifdef SERVER_GC" => false,
             "#ifdef BACKGROUND_GC" =>
 #if BACKGROUND_GC
                 true,

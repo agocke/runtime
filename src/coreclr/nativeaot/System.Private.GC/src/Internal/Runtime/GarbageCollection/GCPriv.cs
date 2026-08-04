@@ -689,6 +689,34 @@ namespace Internal.Runtime.GarbageCollection
     }
 
 #if USE_REGIONS
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct GCSpinLock
+    {
+        public const int lock_free = -1;
+
+        // Native VOLATILE(int32_t); access this through GCEnv's volatile helpers.
+        public int @lock;
+#if DEBUG
+        public void* holding_thread;
+        public int released_by_gc_p;
+#endif
+
+        // C# does not run struct constructors for embedded fields or unmanaged storage, so keep
+        // the native constructor's lock sentinel assignment explicit.
+        public static void initialize(ref GCSpinLock spin_lock)
+        {
+            spin_lock.@lock = lock_free;
+#if DEBUG
+            spin_lock.holding_thread = (void*)(-1);
+#endif
+        }
+
+        public static void initialize(GCSpinLock* spin_lock)
+        {
+            initialize(ref *spin_lock);
+        }
+    }
+
     internal enum allocate_direction
     {
         allocate_forward = 1,
@@ -701,8 +729,8 @@ namespace Internal.Runtime.GarbageCollection
         public const int LARGE_REGION_FACTOR = 8;
         public const int region_alloc_free_bit = unchecked(1 << (sizeof(uint) * 8 - 1));
 
-        // This is the native field prefix through large_region_alignment. The next native field
-        // is GCSpinLock region_allocator_lock, which is still deferred with allocator lock paths.
+        // This is the native field order through the region-map and free-unit counters. Lock
+        // behavior and allocation/deletion algorithms that operate on these fields are deferred.
         private byte* global_region_start;
         private byte* global_region_end;
         private byte* global_region_left_used;
@@ -710,6 +738,18 @@ namespace Internal.Runtime.GarbageCollection
         private uint total_free_units;
         private nuint region_alignment;
         private nuint large_region_alignment;
+        private GCSpinLock region_allocator_lock;
+        private uint* region_map_left_start;
+        private uint* region_map_left_end;
+        private uint* region_map_right_start;
+        private uint* region_map_right_end;
+        private uint num_left_used_free_units;
+        private uint num_right_used_free_units;
+
+        public void initialize()
+        {
+            GCSpinLock.initialize(ref region_allocator_lock);
+        }
 
         public void initialize_alignment(nuint alignment)
         {
@@ -745,6 +785,18 @@ namespace Internal.Runtime.GarbageCollection
         public static uint get_num_units(uint val)
         {
             return val & ~unchecked((uint)region_alloc_free_bit);
+        }
+
+        public byte* region_address_of(uint* map_index)
+        {
+            nuint mapDelta = unchecked((nuint)(map_index - region_map_left_start));
+            return unchecked(global_region_start + (nint)(mapDelta * region_alignment));
+        }
+
+        public uint* region_map_index_of(byte* address)
+        {
+            nuint addressDelta = unchecked((nuint)(address - global_region_start));
+            return unchecked(region_map_left_start + (nint)(addressDelta / region_alignment));
         }
     }
 

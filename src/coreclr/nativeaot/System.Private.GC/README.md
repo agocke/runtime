@@ -248,14 +248,16 @@ has its native bookkeeping layout and the dependency-closed list-management core
 `LARGE_REGION_FACTOR`, `region_alloc_free_bit`, `allocate_direction`, and the dependency-closed
 alignment/bit-decoding helpers (`align_region_up`, `align_region_down`, `is_region_aligned`,
 `is_unit_memory_free`, `get_num_units`) that do not depend on allocator reservation or lock state.
+The next dependency-closed schema slice extends the exact native field order through
+`region_allocator_lock`, the four `region_map_*` pointers, and the used-free-unit counters, with
+the minimal `GCSpinLock` schema/constructor-sentinel helper needed to carry that field. The pure
+address/index arithmetic helpers `region_address_of` and `region_map_index_of` are translated too.
 That unlocks the
 remaining `region_free_list.cpp` helpers: `get_region_kind`, the kind-dispatch wrappers
 (`add_region`, `add_region_descending`, `is_on_free_list`), and `unlink_smallest_region` with
-its native large-region minimum assertion and early-break control flow. The full allocator map,
-reservation, and allocation/deletion algorithms of `region_allocator.cpp` remain deferred, as do
-the `region_address_of` / `region_map_index_of` arithmetic helpers because the next field in the
-native layout is `GCSpinLock region_allocator_lock` and the map-pointer fields after it have not
-been translated yet.
+its native large-region minimum assertion and early-break control flow. The full allocator map
+initialization/reservation, spin-lock enter/leave behavior, and allocation/deletion algorithms of
+`region_allocator.cpp` remain deferred.
 `thread_free_obj` remains deferred with the free-list object representation. The schema forks on
 `USE_REGIONS`,
 gcpriv.h's region layout that replaces
