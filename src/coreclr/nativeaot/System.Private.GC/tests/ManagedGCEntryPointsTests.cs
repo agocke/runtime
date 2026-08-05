@@ -291,6 +291,218 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
     }
 
     [Fact]
+    public void RegionBootstrapInitializesDynamicDataAndConfiguredBudgets()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        SetConfigValue("s_GCGen0MaxBudget", 128L * 1024);
+        SetConfigValue("s_GCGen1MaxBudget", 512L * 1024);
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            AssertDynamicData(
+                gc_heap.dynamic_data_of(heap, (int)gc_generation_num.soh_gen0),
+                128 * 1024,
+                128 * 1024,
+                40_000,
+                0.5f,
+                9.0f,
+                20.0f);
+            AssertDynamicData(
+                gc_heap.dynamic_data_of(heap, (int)gc_generation_num.soh_gen1),
+                256 * 1024,
+                512 * 1024,
+                80_000,
+                0.5f,
+                2.0f,
+                7.0f);
+            AssertDynamicData(
+                gc_heap.dynamic_data_of(heap, (int)gc_generation_num.max_generation),
+                256 * 1024,
+                nuint.MaxValue >> 1,
+                200_000,
+                0.25f,
+                1.2f,
+                1.8f);
+            AssertDynamicData(
+                gc_heap.dynamic_data_of(heap, (int)gc_generation_num.loh_generation),
+                3 * 1024 * 1024,
+                nuint.MaxValue >> 1,
+                0,
+                0.0f,
+                1.25f,
+                4.5f);
+            AssertDynamicData(
+                gc_heap.dynamic_data_of(heap, (int)gc_generation_num.poh_generation),
+                3 * 1024 * 1024,
+                nuint.MaxValue >> 1,
+                0,
+                0.0f,
+                1.25f,
+                4.5f);
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Fact]
+    public void RegionBootstrapUsesTheNativeConcurrentBudgetDefaults()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        bool concurrent = GCConfig.GetConcurrentGC() != 0;
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            nuint expectedMaxSize = (nuint)(concurrent ? 6 * 1024 * 1024 : 128 * 1024 * 1024);
+            Assert.Equal(
+                expectedMaxSize,
+                dynamic_data.dd_max_size(gc_heap.dynamic_data_of(heap, (int)gc_generation_num.soh_gen0)));
+            Assert.Equal(
+                expectedMaxSize,
+                dynamic_data.dd_max_size(gc_heap.dynamic_data_of(heap, (int)gc_generation_num.soh_gen1)));
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Theory]
+    [InlineData((int)gc_generation_num.soh_gen0)]
+    [InlineData((int)gc_generation_num.loh_generation)]
+    [InlineData((int)gc_generation_num.poh_generation)]
+    public void RegionAllocationRefillsConsumeInitialBudgetsAndStopAfterTheThreshold(int genNumber)
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        SetConfigValue("s_GCGen0MaxBudget", 128L * 1024);
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            dynamic_data* dd = gc_heap.dynamic_data_of(heap, genNumber);
+            nint initialBudget = dynamic_data.dd_new_allocation(dd);
+            Assert.True(initialBudget > 0);
+
+            gc_alloc_context allocationContext = default;
+            gc_heap.try_allocate_more_space_context context = default;
+            delegate* unmanaged<gc_heap.try_allocate_more_space_context*, int, gc_heap.allocation_callback_result*, void> callback =
+                gc_heap.managed_allocation_callback();
+
+            gc_heap.create_try_allocate_more_space_context(
+                heap,
+                &allocationContext,
+                unchecked((nuint)initialBudget / 2),
+                0,
+                genNumber,
+                &context);
+            Assert.True(gc_heap.allocate_more_space(&context, callback));
+
+            nint remainingBudget = dynamic_data.dd_new_allocation(dd);
+            Assert.True(remainingBudget > 0);
+            Assert.True(remainingBudget < initialBudget);
+
+            for (int refill = 0; refill < 2 && dynamic_data.dd_new_allocation(dd) >= 0; refill++)
+            {
+                nint budgetBeforeRefill = dynamic_data.dd_new_allocation(dd);
+                nuint refillSize = budgetBeforeRefill > (nint)GCInterfaceOffsets.min_obj_size
+                    ? unchecked((nuint)budgetBeforeRefill)
+                    : (nuint)GCInterfaceOffsets.min_obj_size;
+
+                gc_heap.create_try_allocate_more_space_context(
+                    heap,
+                    &allocationContext,
+                    refillSize,
+                    0,
+                    genNumber,
+                    &context);
+                Assert.True(gc_heap.allocate_more_space(&context, callback));
+                Assert.True(dynamic_data.dd_new_allocation(dd) < budgetBeforeRefill);
+            }
+
+            Assert.True(dynamic_data.dd_new_allocation(dd) < 0);
+
+            gc_heap.allocation_callback_result result = default;
+            callback(&context, (int)gc_heap.allocation_deferred_operation.check_allocation_budget, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.allocation_disallowed, result.kind);
+
+            gc_heap.create_try_allocate_more_space_context(
+                heap,
+                &allocationContext,
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                0,
+                genNumber,
+                &context);
+            Assert.False(gc_heap.allocate_more_space(&context, callback));
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Fact]
+    public void RegionBootstrapReinitializesDynamicDataAfterCleanup()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        SetConfigValue("s_GCGen0MaxBudget", 128L * 1024);
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+            dynamic_data* first = gc_heap.dynamic_data_of(
+                ManagedGCRegionBootstrap.Heap,
+                (int)gc_generation_num.soh_gen0);
+            dynamic_data.dd_new_allocation(first) = -1;
+
+            ManagedGCRegionBootstrap.Shutdown();
+            Assert.False(ManagedGCRegionBootstrap.IsInitialized);
+            Assert.True(ManagedGCRegionBootstrap.Heap is null);
+
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+            dynamic_data* second = gc_heap.dynamic_data_of(
+                ManagedGCRegionBootstrap.Heap,
+                (int)gc_generation_num.soh_gen0);
+            Assert.Equal((nint)(128 * 1024), dynamic_data.dd_new_allocation(second));
+            Assert.Equal((nuint)128 * 1024, dynamic_data.dd_desired_allocation(second));
+            Assert.Equal((nuint)128 * 1024, dynamic_data.dd_min_size(second));
+            Assert.True(second->sdata is not null);
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Fact]
     public void WksAllocationCallbackUsesOwnedLocksAndDefersUnportedOperations()
     {
         GCToOSInterface.ResetRecording();
@@ -437,6 +649,40 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         {
             declared.Key.SetValue(null, declared.Value);
         }
+    }
+
+    private static void SetConfigValue(string fieldName, long value)
+    {
+        FieldInfo field = typeof(GCConfig).GetField(fieldName, BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field.SetValue(null, value);
+    }
+
+    private static void AssertDynamicData(
+        dynamic_data* dd,
+        nuint expectedMinSize,
+        nuint expectedMaxSize,
+        nuint expectedFragmentationLimit,
+        float expectedFragmentationBurdenLimit,
+        float expectedLimit,
+        float expectedMaxLimit)
+    {
+        Assert.Equal((nint)expectedMinSize, dynamic_data.dd_new_allocation(dd));
+        Assert.Equal((nint)expectedMinSize, dynamic_data.dd_gc_new_allocation(dd));
+        Assert.Equal(expectedMinSize, dynamic_data.dd_desired_allocation(dd));
+        Assert.Equal((nuint)0, dynamic_data.dd_current_size(dd));
+        Assert.Equal((nuint)0, dynamic_data.dd_promoted_size(dd));
+        Assert.Equal((nuint)0, dynamic_data.dd_collection_count(dd));
+        Assert.Equal((nuint)0, dynamic_data.dd_fragmentation(dd));
+        Assert.Equal((nuint)0, dynamic_data.dd_gc_clock(dd));
+        Assert.Equal(dynamic_data.dd_time_clock(dd), dynamic_data.dd_previous_time_clock(dd));
+        Assert.Equal(expectedMinSize, dynamic_data.dd_min_size(dd));
+        Assert.True(dd->sdata is not null);
+        Assert.Equal(expectedMaxSize, dynamic_data.dd_max_size(dd));
+        Assert.Equal(expectedFragmentationLimit, dynamic_data.dd_fragmentation_limit(dd));
+        Assert.Equal(expectedFragmentationBurdenLimit, dynamic_data.dd_fragmentation_burden_limit(dd));
+        Assert.Equal(expectedLimit, dynamic_data.dd_limit(dd));
+        Assert.Equal(expectedMaxLimit, dynamic_data.dd_max_limit(dd));
     }
 
     private static Dictionary<string, int> ReadInterfaceConstants()

@@ -1031,10 +1031,16 @@ the WKS `allocation_state` transitions around the translated SOH/UOH fit paths, 
 initial/after-BGC/after-compacting-GC branches, segment-acquisition retry states, commit failure,
 short-end, `oom_reason`, allocation flags, selected generation, free-list/segment budget
 mutations, retry-other-heap exit, and failure lock-release order. Its context holds only explicit
-unmanaged heap inputs. GC/BGC waits and triggers, full-GC notifications, dynamic budget policy,
-more-space locks, UOH acquisition, retry decisions, and OOM reporting are an unmanaged function
-pointer protocol; a null callback returns the exact state and deferred operation rather than
-claiming that such work succeeded. This core is deliberately not wired to `ManagedGCHeap.Alloc`.
+unmanaged heap inputs. Its WKS heap now initializes the native `static_data_table` values and
+each generation's `dynamic_data` pointer, min-size, clocks, current/promoted/collection/
+fragmentation counters, and initial SOH/LOH/POH allocation budgets from
+`dynamic_tuning.cpp`. The native cache-, configured-segment-, Gen0/Gen1-budget-, latency-level-,
+write-watch/concurrent-budget-, and region-independent UOH rules are retained; collection-time
+retuning and hard-limit computation remain deferred. GC/BGC waits and triggers, full-GC
+notifications, more-space locks, UOH acquisition, retry decisions, and OOM reporting are an
+unmanaged function-pointer protocol;
+a null callback returns the exact state and deferred operation rather than claiming that such work
+succeeded. This core is deliberately not wired to `ManagedGCHeap.Alloc`.
 The WKS `allocate_more_space` wrapper now retries from the native initial state, clears transient
 retry/OOM/lock state before each re-entry, and returns whether the final state can allocate.
 `create_try_allocate_more_space_context` now supplies the translated WKS heap-owned fields, and

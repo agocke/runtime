@@ -1130,7 +1130,16 @@ remain an unmanaged function-pointer protocol: unsupported operations return the
 state and deferred operation rather than a plausible success. The WKS `allocate_more_space`
 wrapper still retries from the native initial state and clears transient state before re-entry;
 when a deferred failure follows a concrete lock acquisition, it releases that lock without
-discarding the deferred operation.
+discarding the deferred operation. The heap bootstrap now also ports the allocation-owned
+`dynamic_tuning.cpp` initialization subset: the literal WKS `static_data_table`, latency-level
+selection, write-watch/concurrent capability budget selection, configured/default workstation
+segment sizing, cache/physical-memory Gen0 minimum, configured Gen0/Gen1 maxima, and
+`set_static_data` / `init_dynamic_data` field initialization.
+Every SOH/LOH/POH dynamic record therefore begins with its native minimum budget in
+`new_allocation`, `gc_new_allocation`, and `desired_allocation`, plus its static fragmentation
+and desired-allocation policy. The dynamic post-collection tuning algorithms and the
+`initialize_gc` hard-limit computation that may further constrain those values remain deferred;
+this code neither fabricates a permissive budget nor reports an unported collection as successful.
 It is not routed into production allocation.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
 Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
