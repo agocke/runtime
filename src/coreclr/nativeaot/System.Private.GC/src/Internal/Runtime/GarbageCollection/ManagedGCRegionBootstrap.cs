@@ -13,9 +13,7 @@ internal static unsafe class ManagedGCRegionBootstrap
     private const int E_OUTOFMEMORY = unchecked((int)0x8007000E);
     private const nuint DefaultRegionRange = 256 * 1024 * 1024;
 
-    private static generation* s_generationTable;
-    private static heap_segment* s_ephemeralHeapSegment;
-    private static byte* s_allocAllocated;
+    private static gc_heap* s_heap;
     private static byte* s_reservedRegionRange;
     private static nuint s_reservedRegionRangeSize;
     private static byte* s_previousLowestAddress;
@@ -135,30 +133,26 @@ internal static unsafe class ManagedGCRegionBootstrap
             goto Fail;
         }
 
-        s_generationTable = (generation*)SyncImports.ManagedGC_AllocZeroed(
-            (nuint)gc_generation_num.total_generation_count * (nuint)sizeof(generation));
-        if (s_generationTable is null)
+        s_heap = (gc_heap*)SyncImports.ManagedGC_AllocZeroed((nuint)sizeof(gc_heap));
+        if (s_heap is null)
         {
             goto Fail;
         }
 
-        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
-        {
-            generation.initialize(gc_heap.generation_of(s_generationTable, i));
-        }
+        gc_heap.initialize_allocation_state(s_heap);
 
         // A gen1/gen0 construction can publish the region map before a later LOH/POH commit
         // fails, so cleanup must stomp the barrier before it releases the map.
         s_writeBarrierPublished = true;
-        bool initialRegionsConstructed;
-        fixed (heap_segment** ephemeral = &s_ephemeralHeapSegment)
-        fixed (byte** allocated = &s_allocAllocated)
-        {
-            initialRegionsConstructed =
-                gc_heap.initial_make_soh_regions(s_generationTable, ephemeral, allocated, null) &&
-                gc_heap.initial_make_uoh_regions((int)gc_generation_num.loh_generation, s_generationTable, null) &&
-                gc_heap.initial_make_uoh_regions((int)gc_generation_num.poh_generation, s_generationTable, null);
-        }
+        generation* generationTable = gc_heap.generation_table_of(s_heap);
+        bool initialRegionsConstructed =
+            gc_heap.initial_make_soh_regions(
+                generationTable,
+                &s_heap->ephemeral_heap_segment,
+                &s_heap->alloc_allocated,
+                s_heap) &&
+            gc_heap.initial_make_uoh_regions((int)gc_generation_num.loh_generation, generationTable, s_heap) &&
+            gc_heap.initial_make_uoh_regions((int)gc_generation_num.poh_generation, generationTable, s_heap);
 
         if (!initialRegionsConstructed)
         {
@@ -175,9 +169,10 @@ internal static unsafe class ManagedGCRegionBootstrap
     public static void Shutdown() => Cleanup();
 
     internal static bool IsInitialized => s_initialized;
-    internal static generation* GenerationTable => s_generationTable;
-    internal static heap_segment* EphemeralHeapSegment => s_ephemeralHeapSegment;
-    internal static byte* AllocAllocated => s_allocAllocated;
+    internal static gc_heap* Heap => s_heap;
+    internal static generation* GenerationTable => s_heap is null ? null : gc_heap.generation_table_of(s_heap);
+    internal static heap_segment* EphemeralHeapSegment => s_heap is null ? null : s_heap->ephemeral_heap_segment;
+    internal static byte* AllocAllocated => s_heap is null ? null : s_heap->alloc_allocated;
     internal static byte* ReservedRegionRange => s_reservedRegionRange;
     internal static nuint ReservedRegionRangeSize => s_reservedRegionRangeSize;
 
@@ -211,14 +206,12 @@ internal static unsafe class ManagedGCRegionBootstrap
             s_writeBarrierPublished = false;
         }
 
-        if (s_generationTable is not null)
+        if (s_heap is not null)
         {
-            SyncImports.ManagedGC_Free(s_generationTable);
-            s_generationTable = null;
+            SyncImports.ManagedGC_Free(s_heap);
+            s_heap = null;
         }
 
-        s_ephemeralHeapSegment = null;
-        s_allocAllocated = null;
         if (s_initialRegionsAllocated)
         {
             gc_heap.free_initial_regions();

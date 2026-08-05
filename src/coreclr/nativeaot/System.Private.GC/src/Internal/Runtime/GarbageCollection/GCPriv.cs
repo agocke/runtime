@@ -744,6 +744,31 @@ namespace Internal.Runtime.GarbageCollection
         public static volatile byte* ephemeral_high;
         public static GCSpinLock gc_lock;
         public static region_free_list global_free_huge_regions;
+
+        // This is the allocation-owned WKS prefix of gc_heap. The remaining native gc_heap
+        // fields stay deferred, but these fields have the same ownership as their native
+        // counterparts and are sufficient to create an allocation context without external
+        // state adapters.
+        public generation generation_table0;
+        public generation generation_table1;
+        public generation generation_table2;
+        public generation generation_table3;
+        public generation generation_table4;
+        public dynamic_data dynamic_data_table0;
+        public dynamic_data dynamic_data_table1;
+        public dynamic_data dynamic_data_table2;
+        public dynamic_data dynamic_data_table3;
+        public dynamic_data dynamic_data_table4;
+        public ulong total_alloc_bytes_soh;
+        public ulong total_alloc_bytes_uoh;
+        public byte* alloc_allocated;
+        public heap_segment* ephemeral_heap_segment;
+        public GCSpinLock more_space_lock_soh;
+        public GCSpinLock more_space_lock_uoh;
+        public ulong allocation_running_time;
+        public nuint allocation_running_amount;
+        public nuint allocation_quantum;
+        public int heap_number;
 #endif
 
         public static heap_segment* heap_segment_in_range(heap_segment* segment)

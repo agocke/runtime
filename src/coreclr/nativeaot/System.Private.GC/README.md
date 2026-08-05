@@ -93,7 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
@@ -417,8 +417,10 @@ same raw generation-table adapter: SOH constructs gen2 through gen0, stops immed
 failed segment commit, and publishes the gen0 ephemeral segment before its allocation pointer;
 UOH sets its native LOH/POH flag before generation construction. `ManagedGCRegionBootstrap`
 now runs that reservation, bookkeeping, initial-region and initial-generation sequence during
-production `IGCHeap::Initialize`. It owns unmanaged generation, ephemeral-segment/allocation,
-range and initial-region state and unwinds every allocation and reservation on failure.
+production `IGCHeap::Initialize`. Its unmanaged WKS `gc_heap` owns the generation table,
+dynamic allocation state, ephemeral segment, allocation counters, and SOH/UOH more-space locks;
+it also owns the range and initial-region state and unwinds every allocation and reservation on
+failure.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class
@@ -1030,10 +1032,14 @@ more-space locks, UOH acquisition, retry decisions, and OOM reporting are an unm
 pointer protocol; a null callback returns the exact state and deferred operation rather than
 claiming that such work succeeded. This core is deliberately not wired to `ManagedGCHeap.Alloc`.
 The WKS `allocate_more_space` wrapper now retries from the native initial state, clears transient
-retry/OOM/lock state before each re-entry, and returns whether the final state can allocate. Its
-context continues to carry all heap-owned inputs explicitly, and it uses the same unmanaged
-callback protocol to wait for a currently running GC. It remains independent of
-`ManagedGCHeap.Alloc` and `GCHeapMemory`.
+retry/OOM/lock state before each re-entry, and returns whether the final state can allocate.
+`create_try_allocate_more_space_context` now supplies the translated WKS heap-owned fields, and
+its unmanaged callback enters/leaves the selected SOH/UOH lock and performs the WKS
+`new_allocation_allowed` check, including the gen0 elapsed-time throttle. GC/BGC waits and triggers, full-GC notification,
+segment acquisition, retry policy, and OOM handling still return the exact deferred operation.
+When this terminal wrapper returns a deferred failure after acquiring a concrete lock, it releases
+that lock while preserving the pending operation for its caller.
+It remains independent of `ManagedGCHeap.Alloc` and `GCHeapMemory`.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real

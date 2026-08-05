@@ -233,6 +233,131 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
     }
 
+    [Fact]
+    public void RegionBootstrapOwnsWksAllocationStateAndCreatesAllocationContexts()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            generation* generations = ManagedGCRegionBootstrap.GenerationTable;
+            heap_segment* ephemeral = ManagedGCRegionBootstrap.EphemeralHeapSegment;
+            gc_alloc_context allocationContext = default;
+            gc_heap.try_allocate_more_space_context context = default;
+            gc_heap.create_try_allocate_more_space_context(
+                heap,
+                &allocationContext,
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                0,
+                (int)gc_generation_num.soh_gen0,
+                &context);
+
+            Assert.True(heap is not null);
+            Assert.True(ephemeral is not null);
+            Assert.Equal((nuint)generations, (nuint)context.generation_table);
+            Assert.Equal((nuint)(generations + 4), (nuint)(&heap->generation_table4));
+            Assert.Equal((nuint)(&heap->dynamic_data_table0 + 4), (nuint)(&heap->dynamic_data_table4));
+            Assert.True((nuint)(&heap->more_space_lock_soh) >= (nuint)(&heap->dynamic_data_table4 + 1));
+            Assert.Equal((nuint)gc_heap.dynamic_data_of(heap, (int)gc_generation_num.soh_gen0), (nuint)context.dd);
+            Assert.Equal((nuint)heap, (nuint)context.hp);
+            Assert.Equal((nuint)heap->ephemeral_heap_segment, (nuint)(*context.ephemeral_heap_segment));
+            Assert.Equal((nuint)heap->alloc_allocated, (nuint)(*context.alloc_allocated));
+            Assert.Equal((nuint)gc_heap.DefaultAllocationQuantum, context.allocation_quantum);
+            Assert.Equal(allocation_state.a_state_start, context.state);
+            Assert.Equal(GCSpinLock.lock_free, heap->more_space_lock_soh.@lock);
+            Assert.Equal(GCSpinLock.lock_free, heap->more_space_lock_uoh.@lock);
+
+            gc_heap.create_try_allocate_more_space_context(
+                heap,
+                &allocationContext,
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                0,
+                (int)gc_generation_num.loh_generation,
+                &context);
+            Assert.Equal((nuint)(&heap->dynamic_data_table3), (nuint)context.dd);
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Fact]
+    public void WksAllocationCallbackUsesOwnedLocksAndDefersUnportedOperations()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            gc_alloc_context allocationContext = default;
+            gc_heap.try_allocate_more_space_context context = default;
+            gc_heap.create_try_allocate_more_space_context(
+                heap,
+                &allocationContext,
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                0,
+                (int)gc_generation_num.soh_gen0,
+                &context);
+            delegate* unmanaged<gc_heap.try_allocate_more_space_context*, int, gc_heap.allocation_callback_result*, void> callback =
+                gc_heap.managed_allocation_callback();
+            gc_heap.allocation_callback_result result = default;
+
+            callback(&context, (int)gc_heap.allocation_deferred_operation.enter_more_space_lock, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.completed, result.kind);
+            Assert.Equal(0, heap->more_space_lock_soh.@lock);
+
+            callback(&context, (int)gc_heap.allocation_deferred_operation.leave_more_space_lock, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.completed, result.kind);
+            Assert.Equal(GCSpinLock.lock_free, heap->more_space_lock_soh.@lock);
+
+            dynamic_data.dd_new_allocation(context.dd) = -1;
+            callback(&context, (int)gc_heap.allocation_deferred_operation.check_allocation_budget, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.allocation_disallowed, result.kind);
+
+            dynamic_data.dd_new_allocation(context.dd) = 0;
+            callback(&context, (int)gc_heap.allocation_deferred_operation.check_allocation_budget, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.allocation_allowed, result.kind);
+
+            dynamic_data.dd_min_size(context.dd) = 1;
+            dynamic_data.dd_new_allocation(context.dd) = 0;
+            heap->allocation_running_amount = 2;
+            heap->allocation_running_time = 0;
+            callback(&context, (int)gc_heap.allocation_deferred_operation.check_allocation_budget, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.allocation_disallowed, result.kind);
+
+            heap->allocation_running_time = GCToOSInterface.GetLowPrecisionTimeStamp();
+            callback(&context, (int)gc_heap.allocation_deferred_operation.check_allocation_budget, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.allocation_allowed, result.kind);
+            Assert.Equal((nuint)0, heap->allocation_running_amount);
+
+            context.full_gc_notification_p = 1;
+            Assert.False(gc_heap.allocate_more_space(&context, callback));
+            Assert.Equal(gc_heap.allocation_deferred_operation.check_for_full_gc, context.deferred_operation);
+            Assert.Equal((byte)0, context.more_space_lock_held_p);
+            Assert.Equal(GCSpinLock.lock_free, heap->more_space_lock_soh.@lock);
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]

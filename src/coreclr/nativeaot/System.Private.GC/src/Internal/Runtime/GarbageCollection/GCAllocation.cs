@@ -936,6 +936,132 @@ internal unsafe partial struct gc_heap
         public byte oom_handled_p;
     }
 
+#if USE_REGIONS
+    // CLR_SIZE in gcinternal.h. Dynamic tuning owns later adjustments to this value.
+    public const nuint DefaultAllocationQuantum = 8 * 1024 + 32;
+
+    public static generation* generation_table_of(gc_heap* hp) => &hp->generation_table0;
+
+    public static dynamic_data* dynamic_data_of(gc_heap* hp, int gen_number)
+    {
+        System.Diagnostics.Debug.Assert(gen_number >= 0 && gen_number < (int)gc_generation_num.total_generation_count);
+        return &hp->dynamic_data_table0 + gen_number;
+    }
+
+    private static GCSpinLock* more_space_lock_of(gc_heap* hp, int gen_number)
+    {
+        return gen_number == (int)gc_generation_num.soh_gen0
+            ? &hp->more_space_lock_soh
+            : &hp->more_space_lock_uoh;
+    }
+
+    // This reproduces the allocation-owned initialization from gc_heap::initialize_gc. Dynamic
+    // tuning has not been ported, so its native initial budgets are deliberately left at zero.
+    public static void initialize_allocation_state(gc_heap* hp)
+    {
+        generation* generation_table = generation_table_of(hp);
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation.initialize(generation_table + i);
+        }
+
+        GCSpinLock.initialize(&hp->more_space_lock_soh);
+        GCSpinLock.initialize(&hp->more_space_lock_uoh);
+        hp->allocation_running_amount = dynamic_data.dd_min_size(dynamic_data_of(hp, (int)gc_generation_num.soh_gen0));
+        hp->allocation_quantum = DefaultAllocationQuantum;
+        hp->heap_number = 0;
+    }
+
+    public static void create_try_allocate_more_space_context(
+        gc_heap* hp,
+        gc_alloc_context* acontext,
+        nuint size,
+        uint flags,
+        int gen_number,
+        try_allocate_more_space_context* context)
+    {
+        System.Diagnostics.Debug.Assert(gen_number >= 0 && gen_number < (int)gc_generation_num.total_generation_count);
+
+        *context = default;
+        context->acontext = acontext;
+        context->dd = dynamic_data_of(hp, gen_number);
+        context->generation_table = generation_table_of(hp);
+        context->ephemeral_heap_segment = &hp->ephemeral_heap_segment;
+        context->alloc_allocated = &hp->alloc_allocated;
+        context->total_alloc_bytes_soh = &hp->total_alloc_bytes_soh;
+        context->total_alloc_bytes_uoh = &hp->total_alloc_bytes_uoh;
+        context->hp = hp;
+        context->size = size;
+        context->allocation_quantum = hp->allocation_quantum;
+        context->flags = flags;
+        context->gen_number = gen_number;
+        context->align_const = get_alignment_constant(gen_number <= (int)gc_generation_num.max_generation);
+        context->heap_number = hp->heap_number;
+        context->state = allocation_state.a_state_start;
+    }
+
+    public static delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void>
+        managed_allocation_callback() => &managed_allocation_callback_impl;
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void managed_allocation_callback_impl(
+        try_allocate_more_space_context* context,
+        int operation_value,
+        allocation_callback_result* result)
+    {
+        *result = default;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operation_value;
+        gc_heap* hp = context->hp;
+        if (hp is null)
+        {
+            return;
+        }
+
+        switch (operation)
+        {
+            case allocation_deferred_operation.enter_more_space_lock:
+                GCSpinLock.enter(more_space_lock_of(hp, context->gen_number));
+                result->kind = allocation_callback_result_kind.completed;
+                return;
+
+            case allocation_deferred_operation.leave_more_space_lock:
+                GCSpinLock.leave(more_space_lock_of(hp, context->gen_number));
+                result->kind = allocation_callback_result_kind.completed;
+                return;
+
+            case allocation_deferred_operation.check_allocation_budget:
+                nint new_allocation = dynamic_data.dd_new_allocation(context->dd);
+                if (new_allocation < 0)
+                {
+                    result->kind = allocation_callback_result_kind.allocation_disallowed;
+                    return;
+                }
+
+                if (settings.pause_mode != gc_pause_mode.pause_no_gc &&
+                    context->gen_number == (int)gc_generation_num.soh_gen0)
+                {
+                    dynamic_data* dd0 = dynamic_data_of(hp, (int)gc_generation_num.soh_gen0);
+                    nuint current_new_allocation = unchecked((nuint)dynamic_data.dd_new_allocation(dd0));
+                    if (unchecked(hp->allocation_running_amount - current_new_allocation) >
+                        dynamic_data.dd_min_size(dd0))
+                    {
+                        ulong current_time = GCToOSInterface.GetLowPrecisionTimeStamp();
+                        if (unchecked(current_time - hp->allocation_running_time) > 1000)
+                        {
+                            result->kind = allocation_callback_result_kind.allocation_disallowed;
+                            return;
+                        }
+
+                        hp->allocation_running_amount = current_new_allocation;
+                    }
+                }
+
+                result->kind = allocation_callback_result_kind.allocation_allowed;
+                return;
+        }
+    }
+#endif
+
     private static bool invoke_allocation_callback(
         try_allocate_more_space_context* context,
         allocation_deferred_operation operation,
@@ -1775,6 +1901,9 @@ internal unsafe partial struct gc_heap
 
         if (status != allocation_state.a_state_can_allocate)
         {
+            allocation_deferred_operation deferred_operation = context->deferred_operation;
+            leave_more_space_lock(context, callback);
+            context->deferred_operation = deferred_operation;
             return false;
         }
 

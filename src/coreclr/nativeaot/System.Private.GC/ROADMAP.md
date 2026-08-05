@@ -1044,9 +1044,10 @@ Done so far:
   UOH tail, and retains the null failure path without changing the generation list. The WKS
   initial SOH/UOH constructors now consume the reserved initial regions through the same
   raw generation-table adapter, preserving gen2-to-gen0 construction order, commit-failure
-  short-circuiting, gen0 ephemeral publications, and LOH/POH flags. The deferred full heap layout
-  is represented by unmanaged bootstrap-owned generation, ephemeral-segment and allocation
-  state. `ManagedGCRegionBootstrap` now calls this sequence from production
+  short-circuiting, gen0 ephemeral publications, and LOH/POH flags. The allocation-owned WKS
+  `gc_heap` allocation state now holds its unmanaged generation table, dynamic-data table, ephemeral
+  segment, allocation counters, allocation quantum, heap number, and SOH/UOH more-space locks.
+  `ManagedGCRegionBootstrap` now calls this sequence from production
   `IGCHeap::Initialize`, reserves the configured/default range, creates and extends
   bookkeeping coverage, and releases the range, maps, table and generation storage on every
   failure or shutdown. The bump allocator remains the allocation owner until region allocation
@@ -1114,14 +1115,17 @@ budget policy, `clearp`/`resetp` branches of
 `try_allocate_more_space` now has an explicit unmanaged state-machine core over the translated
 fit paths. It preserves the SOH/UOH `allocation_state` transitions, generation selection,
 allocation flags, commit-failure/short-end/OOM propagation, retry exits, UOH acquisition states,
-and the existing budget mutations made by fitting. Its context makes the still-untranslated
-heap fields explicit. GC/BGC waits and triggers, full compact collections, dynamic-budget
-decisions, locks, UOH acquisition, retry policy, and OOM handling cross an unmanaged function
-pointer boundary; without that callback it returns the exact pending native state and deferred
-operation. The WKS `allocate_more_space` wrapper now initializes that explicit context for each
-native retry, clears transient state before re-entry, waits through the same callback protocol
-when a GC is already running, and returns whether the final state can allocate. It is not routed
-into production allocation.
+and the existing budget mutations made by fitting. `create_try_allocate_more_space_context`
+now reads the concrete WKS heap-owned fields rather than requiring callers to hand-build those
+inputs. Its unmanaged callback enters/leaves the selected SOH/UOH lock and implements WKS
+`new_allocation_allowed`, including the gen0 elapsed-time throttle. GC/BGC waits and triggers, full
+compact collections, full-GC notification, UOH acquisition, retry policy, and OOM handling
+remain an unmanaged function-pointer protocol: unsupported operations return the exact pending
+state and deferred operation rather than a plausible success. The WKS `allocate_more_space`
+wrapper still retries from the native initial state and clears transient state before re-entry;
+when a deferred failure follows a concrete lock acquisition, it releases that lock without
+discarding the deferred operation.
+It is not routed into production allocation.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
 Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
 
