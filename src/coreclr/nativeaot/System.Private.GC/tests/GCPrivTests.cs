@@ -850,6 +850,173 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void MarkPhaseObjectSizeUsesNativeArrayLengthAndPointerSizedArithmetic()
+    {
+        byte* storage = stackalloc byte[2 * sizeof(nuint)];
+        MethodTable methodTable = default;
+        CObjectHeader* header = (CObjectHeader*)storage;
+
+        methodTable.m_uBaseSize = 3 * (uint)sizeof(nuint);
+        methodTable.m_uFlags = MethodTable.HasComponentSizeFlag;
+        methodTable.m_usComponentSize = 3;
+        header->RawSetMethodTable(&methodTable);
+        *(uint*)(storage + sizeof(nuint)) = 7;
+
+        Assert.Equal(7u, CObjectHeader.GetNumComponents(header));
+        Assert.Equal(
+            (nuint)(3 * sizeof(nuint)) + ((nuint)7 * 3),
+            gc_heap.size(storage));
+    }
+
+    [Theory]
+    [InlineData(0x100UL, 0, 0, 1, 0, 1)]
+    [InlineData(0x101UL, 0, 1, 0, 0, 0)]
+    [InlineData(0x102UL, 1, 0, 0, 0, 0)]
+    [InlineData(0x103UL, 0, 0, 1, 1, 1)]
+    public void MarkPhaseReferenceTagsPreserveNativePredicates(
+        ulong value,
+        int stolen,
+        int partial,
+        int straightReference,
+        int partialObject,
+        int reference)
+    {
+        byte* tagged = (byte*)(nuint)value;
+
+        Assert.Equal(stolen, gc_heap.stolen_p(tagged));
+        Assert.Equal(partial, gc_heap.partial_p(tagged));
+        Assert.Equal(straightReference, gc_heap.straight_ref_p(tagged));
+        Assert.Equal(partialObject, gc_heap.partial_object_p(tagged));
+        Assert.Equal(reference, gc_heap.ref_p(tagged));
+        Assert.Equal((nuint)0x100, (nuint)gc_heap.ref_from_slot((byte*)0x103));
+    }
+
+#if USE_REGIONS
+    [Fact]
+    public void MarkPhaseQueuePrefetchesAndDrainsInNativeRotationOrder()
+    {
+        MethodTable methodTable = default;
+        CObjectHeader* headers = stackalloc CObjectHeader[18];
+        mark_queue_t queue = default;
+
+        Assert.Equal((nuint)(17 * sizeof(nuint)), (nuint)sizeof(mark_queue_t));
+        mark_queue_t.initialize(&queue);
+        for (int index = 0; index < 18; index++)
+        {
+            headers[index].RawSetMethodTable(&methodTable);
+        }
+
+        for (int index = 0; index < 16; index++)
+        {
+            Assert.Equal((nuint)0, (nuint)queue.queue_mark((byte*)&headers[index]));
+            Assert.Equal(0, headers[index].IsMarked());
+        }
+
+        Assert.Equal((nuint)(byte*)&headers[0], (nuint)queue.queue_mark((byte*)&headers[16]));
+        Assert.True(headers[0].IsMarked() != 0);
+        Assert.Equal(0, headers[16].IsMarked());
+
+        Assert.Equal((nuint)(byte*)&headers[1], (nuint)queue.get_next_marked());
+        Assert.True(headers[1].IsMarked() != 0);
+
+        headers[2].SetMarked();
+        Assert.Equal((nuint)(byte*)&headers[3], (nuint)queue.get_next_marked());
+        for (int index = 4; index < 16; index++)
+        {
+            Assert.Equal((nuint)(byte*)&headers[index], (nuint)queue.get_next_marked());
+        }
+
+        Assert.Equal((nuint)(byte*)&headers[16], (nuint)queue.get_next_marked());
+        Assert.Equal((nuint)0, (nuint)queue.get_next_marked());
+
+        Assert.Equal((nuint)0, (nuint)queue.queue_mark((byte*)&headers[17]));
+        Assert.Equal((nuint)(byte*)&headers[17], (nuint)queue.get_next_marked());
+        queue.verify_empty();
+    }
+#endif
+
+#if USE_REGIONS
+    [Fact]
+    public void MarkPhaseQueueHonorsHeapAndRegionGenerationBoundaries()
+    {
+        MethodTable methodTable = default;
+        CObjectHeader header = default;
+        CObjectHeader* objectHeader = &header;
+        byte* objectAddress = (byte*)objectHeader;
+        mark_queue_t queue = default;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        region_info* generationMap = stackalloc region_info[1];
+        seg_mapping* segmentMap = stackalloc seg_mapping[1];
+
+        try
+        {
+            const nuint RegionSizeShift = 4;
+            nuint regionIndex = (nuint)objectAddress >> (int)RegionSizeShift;
+            objectHeader->RawSetMethodTable(&methodTable);
+            mark_queue_t.initialize(&queue);
+            gc_heap.min_segment_size_shr = RegionSizeShift;
+            GCCommon.g_gc_lowest_address = objectAddress;
+            GCCommon.g_gc_highest_address = objectAddress + sizeof(CObjectHeader);
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)regionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)regionIndex;
+            segmentMap[0].region_info.gen_num = (byte)gc_generation_num.soh_gen2;
+            generationMap[0] = region_info.RI_GEN_2;
+
+            Assert.True(gc_heap.is_in_heap_range(objectAddress));
+            Assert.False(gc_heap.is_in_heap_range(objectAddress + sizeof(CObjectHeader)));
+            Assert.Equal(
+                (nuint)0,
+                (nuint)queue.queue_mark(objectAddress, (int)gc_generation_num.soh_gen1));
+            Assert.Equal(0, objectHeader->IsMarked());
+
+            generationMap[0] = region_info.RI_GEN_1;
+            segmentMap[0].region_info.gen_num = (byte)gc_generation_num.soh_gen1;
+            Assert.Equal(
+                (nuint)0,
+                (nuint)queue.queue_mark(objectAddress, (int)gc_generation_num.soh_gen1));
+            Assert.Equal(0, objectHeader->IsMarked());
+            Assert.Equal(
+                (nuint)objectAddress,
+                (nuint)queue.get_next_marked());
+            Assert.Equal(
+                (nuint)0,
+                (nuint)queue.queue_mark(objectAddress, (int)gc_generation_num.soh_gen1));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+        }
+    }
+#endif
+
+    [Fact]
+    public void MarkPhaseOverflowRangeTracksInclusiveExtrema()
+    {
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        gc_heap.reset_mark_stack(pHeap);
+        gc_heap.record_mark_stack_overflow(pHeap, (byte*)0x300);
+        gc_heap.record_mark_stack_overflow(pHeap, (byte*)0x100);
+        gc_heap.record_mark_stack_overflow(pHeap, (byte*)0x500);
+        gc_heap.record_mark_stack_overflow(pHeap, (byte*)0x300);
+
+        Assert.Equal((nuint)0x100, (nuint)pHeap->min_overflow_address);
+        Assert.Equal((nuint)0x500, (nuint)pHeap->max_overflow_address);
+    }
+
+    [Fact]
     public void MarkPhaseShortPlugSizeMatchesNativeFormula()
     {
         Assert.Equal(sizeof(nuint) == 8 ? (nuint)48 : (nuint)24, gc_heap.min_pre_pin_obj_size);

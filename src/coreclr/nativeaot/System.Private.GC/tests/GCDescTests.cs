@@ -124,6 +124,56 @@ public sealed unsafe class GCDescTests
     }
 
     [Fact]
+    public void NormalDescriptorTraversalResumesAtTheNativeStartSlot()
+    {
+        const int NumSeries = 2;
+        const int ObjectWords = 8;
+        int pointerSize = sizeof(nuint);
+        int objectSize = ObjectWords * pointerSize;
+        int descriptorSize = sizeof(nuint) + (NumSeries * sizeof(CGCDescSeries));
+        byte* storage = stackalloc byte[descriptorSize + sizeof(MethodTable)];
+        MethodTable* methodTable = (MethodTable*)(storage + descriptorSize);
+        byte* @object = stackalloc byte[objectSize];
+        byte*** references = stackalloc byte**[2];
+        reference_recorder recorder = new() { references = references };
+
+        methodTable->m_uFlags = MethodTable.HasPointersFlag;
+        *((nuint*)methodTable - 1) = NumSeries;
+
+        CGCDescSeries* lowest = (CGCDescSeries*)storage;
+        lowest->seriessize = unchecked((nuint)(-(nint)(objectSize - pointerSize)));
+        lowest->startoffset = (nuint)pointerSize;
+
+        CGCDescSeries* highest = lowest + 1;
+        highest->seriessize = unchecked((nuint)(-(nint)(objectSize - (2 * pointerSize))));
+        highest->startoffset = (nuint)(4 * pointerSize);
+
+        gc_heap.go_through_object(
+            methodTable,
+            @object,
+            (nuint)objectSize,
+            &recorder,
+            &RecordReference,
+            @object + (5 * pointerSize),
+            start_useful: 1);
+
+        Assert.Equal(1, recorder.count);
+        Assert.Equal((nuint)(@object + (5 * pointerSize)), (nuint)references[0]);
+
+        recorder.count = 0;
+        gc_heap.go_through_object(
+            methodTable,
+            @object,
+            (nuint)objectSize,
+            &recorder,
+            &RecordReference,
+            @object + (6 * pointerSize),
+            start_useful: 1);
+
+        Assert.Equal(0, recorder.count);
+    }
+
+    [Fact]
     public void ComponentArrayDescriptorScansAllReferencesToTheObjectBoundary()
     {
         const int ObjectWords = 6;

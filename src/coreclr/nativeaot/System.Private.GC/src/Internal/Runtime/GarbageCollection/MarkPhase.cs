@@ -5,6 +5,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection;
@@ -167,10 +168,134 @@ internal unsafe struct CObjectHeader
 
     public int ContainsGCPointersOrCollectible() =>
         GetMethodTable()->ContainsGCPointersOrCollectible();
+
+    public static uint GetNumComponents(CObjectHeader* header) =>
+        *(uint*)((byte*)header + sizeof(nuint));
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct mark_queue_t
+{
+#if USE_REGIONS
+    private const int slot_count = 16;
+
+    [InlineArray(slot_count)]
+    private struct slot_table_t
+    {
+        private nuint _element0;
+    }
+
+    private slot_table_t slot_table;
+    private nuint curr_slot_index;
+#else
+    private byte unused;
+#endif
+
+    public static void initialize(mark_queue_t* queue)
+    {
+#if USE_REGIONS
+        *queue = default;
+#else
+        _ = queue;
+#endif
+    }
+
+    public byte* queue_mark(byte* o)
+    {
+#if USE_REGIONS
+        // The native Prefetch(o) is a performance hint with no cross-platform managed
+        // equivalent; the queue's storage and marking transition remain unchanged.
+        nuint slot_index = curr_slot_index;
+        byte* old_o = (byte*)slot_table[(int)slot_index];
+        slot_table[(int)slot_index] = (nuint)o;
+
+        curr_slot_index = (slot_index + 1) % slot_count;
+        if (old_o is null)
+        {
+            return null;
+        }
+#else
+        _ = unused;
+        byte* old_o = o;
+#endif
+
+        CObjectHeader* header = (CObjectHeader*)old_o;
+        if (header->IsMarked() != 0)
+        {
+            return null;
+        }
+
+        header->SetMarked();
+        return old_o;
+    }
+
+#if USE_REGIONS
+    public byte* queue_mark(byte* o, int condemned_gen)
+    {
+        if (!gc_heap.is_in_heap_range(o))
+        {
+            return null;
+        }
+
+        if (condemned_gen != GCInterfaceOffsets.max_generation &&
+            gc_heap.get_region_gen_num(o) > condemned_gen)
+        {
+            return null;
+        }
+
+        return queue_mark(o);
+    }
+#endif
+
+    public byte* get_next_marked()
+    {
+#if USE_REGIONS
+        nuint slot_index = curr_slot_index;
+        nuint empty_slot_count = 0;
+        while (empty_slot_count < slot_count)
+        {
+            byte* o = (byte*)slot_table[(int)slot_index];
+            slot_table[(int)slot_index] = 0;
+            slot_index = (slot_index + 1) % slot_count;
+            if (o is not null)
+            {
+                CObjectHeader* header = (CObjectHeader*)o;
+                if (header->IsMarked() == 0)
+                {
+                    header->SetMarked();
+                    curr_slot_index = slot_index;
+                    return o;
+                }
+            }
+
+            empty_slot_count++;
+        }
+#else
+        _ = unused;
+#endif
+        return null;
+    }
+
+    public void verify_empty()
+    {
+#if USE_REGIONS
+        for (nuint slot_index = 0; slot_index < slot_count; slot_index++)
+        {
+            Debug.Assert(slot_table[(int)slot_index] == 0);
+        }
+#else
+        _ = unused;
+#endif
+    }
+
 }
 
 internal unsafe partial struct gc_heap
 {
+    public const nuint stolen = 2;
+    public const nuint partial = 1;
+    public const nuint partial_object = 3;
+
     public static nuint min_pre_pin_obj_size =>
         (nuint)sizeof(gap_reloc_pair) + (nuint)GCInterfaceOffsets.min_obj_size;
 
@@ -199,6 +324,141 @@ internal unsafe partial struct gc_heap
         return ((CObjectHeader*)o)->ContainsGCPointersOrCollectible();
     }
 
+    public static nuint size(byte* o)
+    {
+        MethodTable* mt = method_table(o);
+        nuint component_size = mt->HasComponentSize() != 0
+            ? (nuint)CObjectHeader.GetNumComponents((CObjectHeader*)o) * mt->RawGetComponentSize()
+            : 0;
+
+        return mt->GetBaseSize() + component_size;
+    }
+
+    public static bool is_in_heap_range(byte* o)
+    {
+        return o >= GCCommon.g_gc_lowest_address && o < GCCommon.g_gc_highest_address;
+    }
+
+    public static byte* ref_from_slot(byte* r)
+    {
+        return (byte*)((nuint)r & ~(stolen | partial));
+    }
+
+    public static int stolen_p(byte* r)
+    {
+        return (((nuint)r & stolen) != 0 && ((nuint)r & partial) == 0) ? 1 : 0;
+    }
+
+    public static int partial_p(byte* r)
+    {
+        return (((nuint)r & partial) != 0 && ((nuint)r & stolen) == 0) ? 1 : 0;
+    }
+
+    public static int straight_ref_p(byte* r)
+    {
+        return stolen_p(r) == 0 && partial_p(r) == 0 ? 1 : 0;
+    }
+
+    public static int partial_object_p(byte* r)
+    {
+        return ((nuint)r & partial_object) == partial_object ? 1 : 0;
+    }
+
+    public static int ref_p(byte* r)
+    {
+        return straight_ref_p(r) != 0 || partial_object_p(r) != 0 ? 1 : 0;
+    }
+
+    public static void record_mark_stack_overflow(gc_heap* heap, byte* o)
+    {
+        if (o < heap->min_overflow_address)
+        {
+            heap->min_overflow_address = o;
+        }
+
+        if (o > heap->max_overflow_address)
+        {
+            heap->max_overflow_address = o;
+        }
+    }
+
+    public static void go_through_object(
+        MethodTable* mt,
+        byte* o,
+        nuint size,
+        void* context,
+        delegate*<byte**, void*, void> callback,
+        byte* start,
+        int start_useful)
+    {
+        CGCDesc* map = CGCDesc.GetCGCDescFromMT(mt);
+        CGCDescSeries* cur = map->GetHighestSeries();
+        nint cnt = (nint)map->GetNumSeries();
+
+        if (cnt >= 0)
+        {
+            CGCDescSeries* last = map->GetLowestSeries();
+            do
+            {
+                byte** parm = (byte**)unchecked((nuint)o + cur->GetSeriesOffset());
+                byte** ppstop = (byte**)unchecked((nuint)parm + cur->GetSeriesSize() + size);
+                if (start_useful == 0 || (byte*)ppstop > start)
+                {
+                    if (start_useful != 0 && (byte*)parm < start)
+                    {
+                        parm = (byte**)start;
+                    }
+
+                    while (parm < ppstop)
+                    {
+                        callback(parm, context);
+                        parm++;
+                    }
+                }
+
+                cur--;
+            }
+            while (cur >= last);
+        }
+        else
+        {
+            byte** parm = (byte**)unchecked((nuint)o + cur->startoffset);
+            if (start_useful != 0 && start > (byte*)parm)
+            {
+                nuint component_size = mt->RawGetComponentSize();
+                parm = (byte**)unchecked(
+                    (nuint)parm + (((nuint)start - (nuint)parm) / component_size) * component_size);
+            }
+
+            byte* object_end = (byte*)unchecked((nuint)o + size - (nuint)sizeof(nuint));
+            while ((byte*)parm < object_end)
+            {
+                for (nint index = 0; index > cnt; index--)
+                {
+                    val_serie_item* item = (val_serie_item*)((byte*)cur + (index * sizeof(val_serie_item)));
+                    byte** ppstop = (byte**)unchecked(
+                        (nuint)parm + ((nuint)item->nptrs * (nuint)sizeof(byte*)));
+                    if (start_useful == 0 || (byte*)ppstop > start)
+                    {
+                        if (start_useful != 0 && (byte*)parm < start)
+                        {
+                            parm = (byte**)start;
+                        }
+
+                        do
+                        {
+                            callback(parm, context);
+                            parm++;
+                        }
+                        while (parm < ppstop);
+                    }
+
+                    parm = (byte**)unchecked((nuint)ppstop + (nuint)item->skip);
+                }
+            }
+        }
+    }
+
     // This is the go_through_object_nostart expansion used by the short pinned-object paths.
     // The callback is a managed function pointer, so the collector calls another managed leaf
     // directly without introducing a delegate allocation or a reverse P/Invoke transition.
@@ -214,49 +474,7 @@ internal unsafe partial struct gc_heap
             return;
         }
 
-        CGCDesc* map = CGCDesc.GetCGCDescFromMT(mt);
-        CGCDescSeries* cur = map->GetHighestSeries();
-        nint cnt = (nint)map->GetNumSeries();
-
-        if (cnt >= 0)
-        {
-            CGCDescSeries* last = map->GetLowestSeries();
-            do
-            {
-                byte** parm = (byte**)unchecked((nuint)o + cur->GetSeriesOffset());
-                byte** ppstop = (byte**)unchecked((nuint)parm + cur->GetSeriesSize() + size);
-                while (parm < ppstop)
-                {
-                    callback(parm, context);
-                    parm++;
-                }
-
-                cur--;
-            }
-            while (cur >= last);
-        }
-        else
-        {
-            byte** parm = (byte**)unchecked((nuint)o + cur->startoffset);
-            byte* object_end = (byte*)unchecked((nuint)o + size - (nuint)sizeof(nuint));
-            while ((byte*)parm < object_end)
-            {
-                for (nint index = 0; index > cnt; index--)
-                {
-                    val_serie_item* item = (val_serie_item*)((byte*)cur + (index * sizeof(val_serie_item)));
-                    byte** ppstop = (byte**)unchecked(
-                        (nuint)parm + ((nuint)item->nptrs * (nuint)sizeof(byte*)));
-                    do
-                    {
-                        callback(parm, context);
-                        parm++;
-                    }
-                    while (parm < ppstop);
-
-                    parm = (byte**)unchecked((nuint)ppstop + (nuint)item->skip);
-                }
-            }
-        }
+        go_through_object(mt, o, size, context, callback, o, start_useful: 0);
     }
 
     // SHORT_PLUGS is unconditionally defined in gcpriv.h.

@@ -724,6 +724,17 @@ Translate the schema from `gcpriv.h` and related headers:
   `CGCDesc` size, initialization, backward series lookup, and MethodTable lookup. The
   short-object scanner consumes those descriptors with the native series and slot order; the
   MethodTable-dependent pointer-counting helper remains tied to later mark-stack capacity work.
+- The next foreground-marking prerequisites from `mark_phase.cpp` and `gcinternal.h`: native
+  `stolen`/`partial` tag predicates and untagging, the active WKS `USE_REGIONS` 16-slot
+  `MARK_PHASE_PREFETCH` `mark_queue_t` transitions, MethodTable/array object-size arithmetic,
+  resumable normal and repeating `GCDesc` traversal, and overflow-address extrema. Direct tests
+  cover tag values, queue fill/rotation, duplicate drain, verify-empty and region-generation
+  boundaries, traversal restart order, object-size target-width arithmetic, and overflow bounds.
+  The queue's non-region condemned-generation overload remains deferred with its required
+  `gc_low`/`gc_high` state; the native prefetch instruction is a performance-only gap because
+  there is no cross-platform managed primitive. The collection entrypoints remain deferred: they require the
+  collection-owned mark-list boundaries, `survived_per_region` promoted-byte accounting, and
+  complete active-collection heap state rather than adapters or a bootstrap route.
 - The first dependency-free `gcpriv.h` records: `static_data`,
   `recorded_generation_info`, and `etw_opt_info`. These establish the pointer-sized schema used
   by dynamic tuning, recorded GC information, and allocation diagnostics.

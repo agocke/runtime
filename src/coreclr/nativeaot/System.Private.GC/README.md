@@ -213,8 +213,17 @@ no native diagnostic storage to update. The `_DEBUG && VERIFY_HEAP`
 slice translates the foreground marking leaves: mark-bit query and covered-range clearing retain
 the biased region mark-array addressing and partial-first-word behavior, while `gc_mark1` and
 the active WKS `USE_REGIONS` `gc_mark` retain object-header marking, half-open bounds, and
-region-generation rejection. These leaves are not routed from collection entrypoints; scanning,
-mark-stack traversal, promoted-byte accounting, and background marking remain deferred.
+region-generation rejection. It also now carries the active WKS `USE_REGIONS` 16-slot
+`MARK_PHASE_PREFETCH` queue, mark-stack slot tags and untagging, object-size arithmetic,
+resumable `GCDesc` traversal, and overflow-address extrema. The queue preserves its native
+rotation and delayed marking; the native prefetch instruction remains a performance-only gap
+because no cross-platform managed primitive is available. Its condemned-generation overload is
+intentionally compiled only for `USE_REGIONS`; the non-region `gc_low`/`gc_high` branch remains
+deferred with that active-collection state. These leaves are not routed from collection entrypoints.
+`mark_object_simple1`, `mark_object`, `drain_mark_queue`, and `mark_through_object` remain
+blocked on the collection-owned mark-list boundaries, `survived_per_region` promoted-byte
+accounting, and the complete active-collection heap state (queue ownership and mark-stack setup);
+background marking remains deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.
