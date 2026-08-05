@@ -118,6 +118,24 @@ internal unsafe partial struct gc_heap
 #endif
     }
 
+    public static nuint unused_array_size(byte* p)
+    {
+        System.Diagnostics.Debug.Assert(*(void**)p == GCCommon.g_gc_pFreeObjectMethodTable);
+
+        return unchecked((nuint)GCInterfaceOffsets.min_obj_size + *(nuint*)(p + (nint)sizeof(nuint)));
+    }
+
+    // The WKS free-list fit paths own the allocation context but not the dynamic data,
+    // allocation quantum, generation table, or selected allocation-byte counter that a later
+    // try_allocate_more_space will provide. Keep that state explicit while preserving the native
+    // refill handoff through adjust_limit_clr.
+    public static void thread_free_item_front(generation* gen, byte* free_start, nuint free_size)
+    {
+        make_unused_array(free_start, free_size);
+        generation.generation_free_list_space(gen) = unchecked(generation.generation_free_list_space(gen) + free_size);
+        allocator.thread_item_front(generation.generation_allocator(gen), free_start, free_size);
+    }
+
     public static void make_free_obj(generation* gen, byte* free_start, nuint free_size)
     {
         make_unused_array(free_start, free_size);
@@ -166,6 +184,190 @@ internal unsafe partial struct gc_heap
     }
 
 #if USE_REGIONS
+    public static bool a_fit_free_list_p(
+        int gen_number,
+        nuint size,
+        gc_alloc_context* acontext,
+        uint flags,
+        int align_const,
+        dynamic_data* dd,
+        nuint allocation_quantum,
+        generation* generation_table,
+        ulong* total_alloc_bytes)
+    {
+        bool can_fit = false;
+        generation* gen = generation_of(generation_table, gen_number);
+        allocator* gen_allocator = generation.generation_allocator(gen);
+
+        for (uint a_l_idx = gen_allocator->first_suitable_bucket(size);
+             a_l_idx < gen_allocator->number_of_buckets();
+             a_l_idx++)
+        {
+            byte* free_list = allocator.alloc_list_head_of(gen_allocator, a_l_idx);
+            byte* prev_free_item = null;
+
+            while (free_list is not null)
+            {
+                nuint free_list_size = unused_array_size(free_list);
+                if (unchecked(size + Align((nuint)GCInterfaceOffsets.min_obj_size, align_const)) <= free_list_size)
+                {
+                    allocator.unlink_item(gen_allocator, a_l_idx, free_list, prev_free_item, false);
+
+                    nuint limit = limit_from_size(
+                        dd,
+                        allocation_quantum,
+                        size,
+                        flags,
+                        free_list_size,
+                        gen_number,
+                        align_const);
+                    dynamic_data.dd_new_allocation(dd) = unchecked(dynamic_data.dd_new_allocation(dd) - (nint)limit);
+
+                    byte* remain = (byte*)unchecked((nuint)free_list + limit);
+                    nuint remain_size = unchecked(free_list_size - limit);
+                    if (remain_size >= Align(unchecked((nuint)2 * (nuint)GCInterfaceOffsets.min_obj_size), align_const))
+                    {
+                        make_unused_array(remain, remain_size);
+                        allocator.thread_item_front(gen_allocator, remain, remain_size);
+                        System.Diagnostics.Debug.Assert(remain_size >= Align((nuint)GCInterfaceOffsets.min_obj_size, align_const));
+                    }
+                    else
+                    {
+                        limit = unchecked(limit + remain_size);
+                    }
+
+                    generation.generation_free_list_space(gen) = unchecked(generation.generation_free_list_space(gen) - limit);
+                    System.Diagnostics.Debug.Assert(unchecked((nint)generation.generation_free_list_space(gen)) >= 0);
+
+                    adjust_limit_clr(
+                        free_list,
+                        limit,
+                        acontext,
+                        null,
+                        align_const,
+                        gen_number,
+                        generation_table,
+                        null,
+                        null,
+                        total_alloc_bytes);
+
+                    can_fit = true;
+                    goto end;
+                }
+                else if (gen_allocator->discard_if_no_fit_p() != 0)
+                {
+                    generation.generation_free_obj_space(gen) = unchecked(generation.generation_free_obj_space(gen) + free_list_size);
+
+                    allocator.unlink_item(gen_allocator, a_l_idx, free_list, prev_free_item, false);
+                    generation.generation_free_list_space(gen) = unchecked(generation.generation_free_list_space(gen) - free_list_size);
+                    System.Diagnostics.Debug.Assert(unchecked((nint)generation.generation_free_list_space(gen)) >= 0);
+                }
+                else
+                {
+                    prev_free_item = free_list;
+                }
+
+                free_list = allocator.free_list_slot(free_list);
+            }
+        }
+
+    end:
+        return can_fit;
+    }
+
+    public static bool a_fit_free_list_uoh_p(
+        nuint size,
+        gc_alloc_context* acontext,
+        uint flags,
+        int align_const,
+        int gen_number,
+        dynamic_data* dd,
+        nuint allocation_quantum,
+        generation* generation_table,
+        ulong* total_alloc_bytes)
+    {
+        bool can_fit = false;
+        generation* gen = generation_of(generation_table, gen_number);
+        allocator* gen_allocator = generation.generation_allocator(gen);
+
+        for (uint a_l_idx = gen_allocator->first_suitable_bucket(size);
+             a_l_idx < gen_allocator->number_of_buckets();
+             a_l_idx++)
+        {
+            byte* free_list = allocator.alloc_list_head_of(gen_allocator, a_l_idx);
+            byte* prev_free_item = null;
+
+            while (free_list is not null)
+            {
+                nuint free_list_size = unused_array_size(free_list);
+                nint diff = unchecked((nint)(free_list_size - size));
+
+                if ((diff == 0) || (diff >= unchecked((nint)Align((nuint)GCInterfaceOffsets.min_obj_size, align_const))))
+                {
+                    allocator.unlink_item(gen_allocator, a_l_idx, free_list, prev_free_item, false);
+
+                    nuint limit = limit_from_size(
+                        dd,
+                        allocation_quantum,
+                        unchecked(size - Align((nuint)GCInterfaceOffsets.min_obj_size, align_const)),
+                        flags,
+                        free_list_size,
+                        gen_number,
+                        align_const);
+                    dynamic_data.dd_new_allocation(dd) = unchecked(dynamic_data.dd_new_allocation(dd) - (nint)limit);
+
+                    nuint saved_free_list_size = free_list_size;
+                    byte* remain = (byte*)unchecked((nuint)free_list + limit);
+                    nuint remain_size = unchecked(free_list_size - limit);
+                    if (remain_size != 0)
+                    {
+                        System.Diagnostics.Debug.Assert(remain_size >= Align((nuint)GCInterfaceOffsets.min_obj_size, align_const));
+                        make_unused_array(remain, remain_size);
+                    }
+
+                    if (remain_size >= Align(unchecked((nuint)2 * (nuint)GCInterfaceOffsets.min_obj_size), align_const))
+                    {
+                        generation.generation_free_list_space(gen) = unchecked(generation.generation_free_list_space(gen) + remain_size);
+                        allocator.thread_item_front(gen_allocator, remain, remain_size);
+                        System.Diagnostics.Debug.Assert(remain_size >= Align((nuint)GCInterfaceOffsets.min_obj_size, align_const));
+                    }
+                    else
+                    {
+                        generation.generation_free_obj_space(gen) = unchecked(generation.generation_free_obj_space(gen) + remain_size);
+                    }
+
+                    generation.generation_free_list_space(gen) = unchecked(generation.generation_free_list_space(gen) - saved_free_list_size);
+                    System.Diagnostics.Debug.Assert(unchecked((nint)generation.generation_free_list_space(gen)) >= 0);
+                    generation.generation_free_list_allocated(gen) = unchecked(generation.generation_free_list_allocated(gen) + limit);
+
+                    adjust_limit_clr(
+                        free_list,
+                        limit,
+                        acontext,
+                        null,
+                        align_const,
+                        gen_number,
+                        generation_table,
+                        null,
+                        null,
+                        total_alloc_bytes);
+
+                    // Fix the limit to compensate for adjust_limit_clr making it too short.
+                    acontext->alloc_limit = (byte*)unchecked(
+                        (nuint)acontext->alloc_limit + Align((nuint)GCInterfaceOffsets.min_obj_size, align_const));
+                    can_fit = true;
+                    goto exit;
+                }
+
+                prev_free_item = free_list;
+                free_list = allocator.free_list_slot(free_list);
+            }
+        }
+
+    exit:
+        return can_fit;
+    }
+
     // gcpriv.h defines plug_skew as sizeof(ObjHeader). NativeAOT's ObjHeader has the native
     // pointer width, so this preserves the native expression without a managed object header.
     private static nuint plug_skew => (nuint)sizeof(nuint);
@@ -470,7 +672,7 @@ internal unsafe partial struct gc_heap
 
         set_alloc_context_limit(acontext, start, limit_size, gen_number, align_const, total_alloc_bytes);
 
-        if (seg == ephemeral_heap_segment)
+        if (seg is not null && seg == ephemeral_heap_segment)
         {
             byte* allocated = (byte*)unchecked((nuint)alloc_allocated - plug_skew);
             if (heap_segment.heap_segment_used(seg) < allocated)

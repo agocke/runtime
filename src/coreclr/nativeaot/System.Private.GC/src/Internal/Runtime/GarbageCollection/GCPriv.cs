@@ -538,6 +538,14 @@ namespace Internal.Runtime.GarbageCollection
                 return &a->buckets[bn - 1];
         }
 
+        public static ref byte* free_list_slot(byte* item) => ref ((byte**)item)[2];
+
+        private static ref byte* free_list_undo(byte* item) => ref ((byte**)item)[-1];
+
+#if TARGET_64BIT && !TARGET_WASM
+        private static ref byte* free_list_prev(byte* item) => ref ((byte**)item)[3];
+#endif
+
         public static ref nuint alloc_list_damage_count_of(allocator* a, uint bn)
         {
             Debug.Assert(bn < a->num_buckets);
@@ -604,6 +612,90 @@ namespace Internal.Runtime.GarbageCollection
                 alloc_list_head_of(a, i) = null;
                 alloc_list_tail_of(a, i) = null;
             }
+        }
+
+        public static void unlink_item(allocator* a, uint bn, byte* item, byte* prev_item, bool use_undo_p)
+        {
+            alloc_list* al = alloc_list_of(a, bn);
+            byte* next_item = free_list_slot(item);
+
+#if TARGET_64BIT && !TARGET_WASM
+            bool repair_list = a->discard_if_no_fit_p() == 0;
+#endif
+
+            if (prev_item is not null)
+            {
+                if (use_undo_p && free_list_undo(prev_item) == (byte*)1)
+                {
+                    Debug.Assert(item == free_list_slot(prev_item));
+                    free_list_undo(prev_item) = item;
+                    alloc_list_damage_count_of(a, bn)++;
+                }
+
+                free_list_slot(prev_item) = next_item;
+            }
+            else
+            {
+                alloc_list.alloc_list_head(al) = next_item;
+            }
+
+            if (alloc_list.alloc_list_tail(al) == item)
+            {
+                alloc_list.alloc_list_tail(al) = prev_item;
+            }
+
+#if TARGET_64BIT && !TARGET_WASM
+            if (repair_list && !use_undo_p)
+            {
+                free_list_prev(item) = (byte*)1;
+            }
+#endif
+
+            if (alloc_list.alloc_list_head(al) is null)
+            {
+                Debug.Assert(alloc_list.alloc_list_tail(al) is null);
+            }
+        }
+
+        public static void thread_item_front(allocator* a, byte* item, nuint size)
+        {
+            uint a_l_number = a->first_suitable_bucket(size);
+            alloc_list* al = alloc_list_of(a, a_l_number);
+
+            if (alloc_list.alloc_list_head(al) is null)
+            {
+                Debug.Assert(alloc_list.alloc_list_tail(al) is null);
+            }
+
+            free_list_slot(item) = alloc_list.alloc_list_head(al);
+            free_list_undo(item) = (byte*)1;
+
+            if (alloc_list.alloc_list_tail(al) is null)
+            {
+                Debug.Assert(alloc_list.alloc_list_head(al) is null);
+                alloc_list.alloc_list_tail(al) = alloc_list.alloc_list_head(al);
+            }
+
+#if TARGET_64BIT && !TARGET_WASM
+            if (a->gen_number == (int)gc_generation_num.max_generation &&
+                alloc_list.alloc_list_head(al) is not null)
+            {
+                free_list_prev(alloc_list.alloc_list_head(al)) = item;
+            }
+#endif
+
+            alloc_list.alloc_list_head(al) = item;
+            if (alloc_list.alloc_list_tail(al) is null)
+            {
+                alloc_list.alloc_list_tail(al) = item;
+            }
+
+#if TARGET_64BIT && !TARGET_WASM
+            if (a->gen_number == (int)gc_generation_num.max_generation)
+            {
+                free_list_prev(item) = null;
+            }
+#endif
         }
 
         public int discard_if_no_fit_p()

@@ -93,7 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, segment-end fit/grow, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, free-list fitting, segment-end fit/grow, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |

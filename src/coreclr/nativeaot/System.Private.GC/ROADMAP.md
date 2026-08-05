@@ -1092,10 +1092,18 @@ updates `generation_end_seg_allocated`. They preserve the native free-object met
 array-length, free-list marker, unsigned arithmetic, and accounting updates. The heap-owned
 dynamic-data table, allocation quantum, generation table, selected SOH/UOH total,
 `alloc_allocated`, ephemeral segment, and heap number remain explicit unsafe inputs until the
-refill caller and heap state are translated. The BGC allocation cookie/tracking and
+refill caller and heap state are translated. The next WKS free-list slice adds
+`unused_array_size`, allocator front insertion and unlinking (including native undo bookkeeping),
+`thread_free_item_front`, `a_fit_free_list_p`, and `a_fit_free_list_uoh_p`. The SOH path scans
+the native bucket chains, discards no-fit entries only for the single-bucket allocator, splits
+only formatable remainders, transfers free-list/free-object accounting, and hands the acquired
+range to `adjust_limit_clr`. The UOH path retains its exact-or-formatable fit rule, restores the
+allocation-context limit after that handoff, and tracks the UOH free-list allocation and
+remainder accounting for both LOH and POH. The BGC allocation cookie/tracking and
 `heap_segment_flags_uoh_delete` branches, LOH-compaction padding, verification syncblock write,
-free-list routing, budget policy, `clearp`/`resetp` branches of `make_unused_array`, clearing,
-allocation-info/events, `try_allocate_more_space`, and `allocate_more_space` remain deferred.
+heap-owned free-list routing, budget policy, `clearp`/`resetp` branches of
+`make_unused_array`, clearing, allocation-info/events, `try_allocate_more_space`, and
+`allocate_more_space` remain deferred.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
 Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
 
@@ -1167,7 +1175,8 @@ inspection provide equivalent information for the managed and C++ collectors.
 
 Reimplement `vxsort` with `System.Runtime.Intrinsics` for AVX2, AVX-512, and NEON, preserving the
 scalar and platform fallback behavior. The native implementation may remain temporarily linked
-until the managed version matches its correctness and throughput.
+until the managed version matches its correctness and throughput. The initial implementation may
+be use a simpler sorting algorithm, to verify correctness at the cost of throughput.
 
 **Complete when:** differential sorting tests pass on all supported instruction sets and
 performance is comparable to the native implementation.

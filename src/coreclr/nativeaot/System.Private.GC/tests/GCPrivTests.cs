@@ -5685,6 +5685,381 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void SohFreeListExactFitHandsOffAllocationContextWithPadding()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        nuint freeSize = unchecked(size + pad);
+        byte* storage = stackalloc byte[128];
+        for (int i = 0; i < 128; i++)
+        {
+            storage[i] = 0;
+        }
+
+        byte* freeItem = storage + sizeof(nuint);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        dynamic_data data = default;
+        data.new_allocation = (nint)freeSize;
+        gc_alloc_context context = default;
+        ulong totalAllocatedBytesSoh = 0;
+        generation* gen = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0);
+        gc_heap.thread_free_item_front(gen, freeItem, freeSize);
+
+        Assert.True(gc_heap.a_fit_free_list_p(
+            (int)gc_generation_num.soh_gen0,
+            size,
+            &context,
+            0,
+            alignment,
+            &data,
+            0,
+            generations,
+            &totalAllocatedBytesSoh));
+
+        Assert.Equal((nuint)freeItem, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)(freeItem + (nint)size), (nuint)context.alloc_limit);
+        Assert.Equal((nuint)(context.alloc_limit + (nint)pad), (nuint)(freeItem + (nint)freeSize));
+        Assert.Equal((long)size, context.alloc_bytes);
+        Assert.Equal((ulong)size, totalAllocatedBytesSoh);
+        Assert.Equal((nint)0, data.new_allocation);
+        Assert.Equal((nuint)0, generation.generation_free_list_space(gen));
+        Assert.Equal((nuint)0, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(gen), 0));
+        Assert.Equal((nuint)0, (nuint)allocator.alloc_list_tail_of(generation.generation_allocator(gen), 0));
+    }
+
+#if TARGET_64BIT && !TARGET_WASM
+    [Fact]
+    public void AllocatorFrontThreadAndUnlinkPreserveDoublyLinkedMetadata()
+    {
+        byte* storage = stackalloc byte[256];
+        byte* first = storage + 32;
+        byte* second = storage + 128;
+        nuint freeSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size * 3);
+        alloc_list bucket = default;
+        allocator freeListAllocator = new(
+            num_b: 2,
+            fbb: 5,
+            b: &bucket,
+            gen: (int)gc_generation_num.max_generation);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            gc_heap.make_unused_array(first, freeSize);
+            gc_heap.make_unused_array(second, freeSize);
+
+            allocator.thread_item_front(&freeListAllocator, first, freeSize);
+            allocator.thread_item_front(&freeListAllocator, second, freeSize);
+
+            uint bucketIndex = freeListAllocator.first_suitable_bucket(freeSize);
+            Assert.Equal((nuint)second, (nuint)allocator.alloc_list_head_of(&freeListAllocator, bucketIndex));
+            Assert.Equal((nuint)first, (nuint)allocator.alloc_list_tail_of(&freeListAllocator, bucketIndex));
+            Assert.Equal((nuint)0, (nuint)((byte**)second)[3]);
+            Assert.Equal((nuint)second, (nuint)((byte**)first)[3]);
+
+            allocator.unlink_item(&freeListAllocator, bucketIndex, second, null, use_undo_p: false);
+
+            Assert.Equal((nuint)first, (nuint)allocator.alloc_list_head_of(&freeListAllocator, bucketIndex));
+            Assert.Equal((nuint)first, (nuint)allocator.alloc_list_tail_of(&freeListAllocator, bucketIndex));
+            Assert.Equal((nuint)1, (nuint)((byte**)second)[3]);
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+#endif
+
+    [Fact]
+    public void SohFreeListSplitRetainsMinimumRemainder()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        nuint limit = unchecked(size + pad);
+        nuint remainderSize = unchecked(2 * pad);
+        byte* storage = stackalloc byte[192];
+        for (int i = 0; i < 192; i++)
+        {
+            storage[i] = 0;
+        }
+
+        byte* freeItem = storage + sizeof(nuint);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        dynamic_data data = default;
+        data.new_allocation = (nint)limit;
+        gc_alloc_context context = default;
+        ulong totalAllocatedBytesSoh = 0;
+        generation* gen = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0);
+        gc_heap.thread_free_item_front(gen, freeItem, unchecked(limit + remainderSize));
+
+        Assert.True(gc_heap.a_fit_free_list_p(
+            (int)gc_generation_num.soh_gen0,
+            size,
+            &context,
+            0,
+            alignment,
+            &data,
+            0,
+            generations,
+            &totalAllocatedBytesSoh));
+
+        byte* remainder = freeItem + (nint)limit;
+        Assert.Equal((nuint)remainder, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(gen), 0));
+        Assert.Equal((nuint)remainder, (nuint)allocator.alloc_list_tail_of(generation.generation_allocator(gen), 0));
+        Assert.Equal(remainderSize, gc_heap.unused_array_size(remainder));
+        Assert.Equal(remainderSize, generation.generation_free_list_space(gen));
+        Assert.Equal((nuint)(freeItem + (nint)size), (nuint)context.alloc_limit);
+        Assert.Equal((long)size, context.alloc_bytes);
+        Assert.Equal((ulong)size, totalAllocatedBytesSoh);
+    }
+
+    [Fact]
+    public void SohFreeListAbsorbsTooSmallRemainder()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        nuint limit = unchecked(size + pad);
+        byte* storage = stackalloc byte[160];
+        for (int i = 0; i < 160; i++)
+        {
+            storage[i] = 0;
+        }
+
+        byte* freeItem = storage + sizeof(nuint);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        dynamic_data data = default;
+        data.new_allocation = (nint)limit;
+        gc_alloc_context context = default;
+        ulong totalAllocatedBytesSoh = 0;
+        generation* gen = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0);
+        gc_heap.thread_free_item_front(gen, freeItem, unchecked(limit + pad));
+
+        Assert.True(gc_heap.a_fit_free_list_p(
+            (int)gc_generation_num.soh_gen0,
+            size,
+            &context,
+            0,
+            alignment,
+            &data,
+            0,
+            generations,
+            &totalAllocatedBytesSoh));
+
+        Assert.Equal((nuint)0, generation.generation_free_list_space(gen));
+        Assert.Equal((nuint)0, generation.generation_free_obj_space(gen));
+        Assert.Equal((nuint)0, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(gen), 0));
+        Assert.Equal((nuint)(freeItem + (nint)(size + pad)), (nuint)context.alloc_limit);
+        Assert.Equal((long)(size + pad), context.alloc_bytes);
+        Assert.Equal((ulong)(size + pad), totalAllocatedBytesSoh);
+        Assert.Equal((nint)0, data.new_allocation);
+    }
+
+    [Fact]
+    public void SohFreeListTraversesBucketChainAndRemovesMatchedTail()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        byte* storage = stackalloc byte[512];
+        for (int i = 0; i < 512; i++)
+        {
+            storage[i] = 0;
+        }
+
+        alloc_list* buckets = stackalloc alloc_list[2];
+        for (int i = 0; i < 2; i++)
+        {
+            buckets[i] = default;
+        }
+
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        generation* gen = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0);
+        gen->free_list_allocator = new allocator(3, 6, buckets);
+        byte* fittingItem = storage + sizeof(nuint);
+        byte* tooSmallItem = storage + 256 + sizeof(nuint);
+        gc_heap.thread_free_item_front(gen, fittingItem, 192);
+        gc_heap.thread_free_item_front(gen, tooSmallItem, 128);
+
+        dynamic_data data = default;
+        data.new_allocation = 168;
+        gc_alloc_context context = default;
+        ulong totalAllocatedBytesSoh = 0;
+
+        Assert.True(gc_heap.a_fit_free_list_p(
+            (int)gc_generation_num.soh_gen0,
+            144,
+            &context,
+            0,
+            alignment,
+            &data,
+            0,
+            generations,
+            &totalAllocatedBytesSoh));
+
+        uint bucket = generation.generation_allocator(gen)->first_suitable_bucket(144);
+        Assert.Equal((nuint)tooSmallItem, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(gen), bucket));
+        Assert.Equal((nuint)tooSmallItem, (nuint)allocator.alloc_list_tail_of(generation.generation_allocator(gen), bucket));
+        Assert.Equal((nuint)0, (nuint)allocator.free_list_slot(tooSmallItem));
+        Assert.Equal((nuint)128, generation.generation_free_list_space(gen));
+        Assert.Equal((nuint)fittingItem, (nuint)context.alloc_ptr);
+        Assert.Equal((nint)0, data.new_allocation);
+    }
+
+    [Fact]
+    public void UohFreeListFitPreservesUohAccountingAndPadding()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: false);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        byte* storage = stackalloc byte[192];
+        for (int i = 0; i < 192; i++)
+        {
+            storage[i] = 0;
+        }
+
+        byte* freeItem = storage + sizeof(nuint);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        dynamic_data data = default;
+        data.new_allocation = (nint)size;
+        gc_alloc_context context = default;
+        context.alloc_bytes = 10;
+        context.alloc_bytes_uoh = 20;
+        ulong totalAllocatedBytesUoh = 30;
+        generation* gen = gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation);
+        gc_heap.thread_free_item_front(gen, freeItem, unchecked(2 * size));
+
+        Assert.True(gc_heap.a_fit_free_list_uoh_p(
+            size,
+            &context,
+            0,
+            alignment,
+            (int)gc_generation_num.loh_generation,
+            &data,
+            0,
+            generations,
+            &totalAllocatedBytesUoh));
+
+        byte* remainder = freeItem + (nint)size;
+        Assert.Equal((nuint)freeItem, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)(freeItem + (nint)size), (nuint)context.alloc_limit);
+        Assert.Equal((long)size + 10, context.alloc_bytes);
+        Assert.Equal(20, context.alloc_bytes_uoh);
+        Assert.Equal((ulong)size + 30, totalAllocatedBytesUoh);
+        Assert.Equal(size, generation.generation_free_list_allocated(gen));
+        Assert.Equal(size, generation.generation_free_list_space(gen));
+        Assert.Equal((nuint)remainder, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(gen), 0));
+        Assert.Equal(size, gc_heap.unused_array_size(remainder));
+        Assert.Equal((nint)0, data.new_allocation);
+    }
+
+    [Fact]
+    public void FreeListFitFailureLeavesSohAndUohStateUnchanged()
+    {
+        int sohAlignment = gc_heap.get_alignment_constant(small_object_p: true);
+        int uohAlignment = gc_heap.get_alignment_constant(small_object_p: false);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, sohAlignment);
+        byte* storage = stackalloc byte[512];
+        for (int i = 0; i < 512; i++)
+        {
+            storage[i] = 0;
+        }
+
+        alloc_list* buckets = stackalloc alloc_list[1];
+        buckets[0] = default;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        generation* sohGen = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0);
+        sohGen->free_list_allocator = new allocator(2, (sizeof(nuint) * 8) - 1, buckets);
+        byte* sohFreeItem = storage + sizeof(nuint);
+        gc_heap.thread_free_item_front(sohGen, sohFreeItem, unchecked(2 * pad));
+        dynamic_data sohData = default;
+        sohData.new_allocation = (nint)(2 * pad);
+        gc_alloc_context sohContext = default;
+        ulong totalAllocatedBytesSoh = 17;
+
+        Assert.False(gc_heap.a_fit_free_list_p(
+            (int)gc_generation_num.soh_gen0,
+            unchecked(2 * pad),
+            &sohContext,
+            0,
+            sohAlignment,
+            &sohData,
+            0,
+            generations,
+            &totalAllocatedBytesSoh));
+
+        Assert.Equal((nuint)sohFreeItem, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(sohGen), 0));
+        Assert.Equal((nuint)sohFreeItem, (nuint)allocator.alloc_list_tail_of(generation.generation_allocator(sohGen), 0));
+        Assert.Equal(unchecked(2 * pad), generation.generation_free_list_space(sohGen));
+        Assert.Equal((nint)(2 * pad), sohData.new_allocation);
+        Assert.Equal((nuint)0, (nuint)sohContext.alloc_ptr);
+        Assert.Equal((ulong)17, totalAllocatedBytesSoh);
+
+        generation* uohGen = gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation);
+        byte* uohFreeItem = storage + 256 + sizeof(nuint);
+        gc_heap.thread_free_item_front(uohGen, uohFreeItem, unchecked(2 * pad));
+        dynamic_data uohData = default;
+        uohData.new_allocation = (nint)(3 * pad);
+        gc_alloc_context uohContext = default;
+        ulong totalAllocatedBytesUoh = 19;
+
+        Assert.False(gc_heap.a_fit_free_list_uoh_p(
+            unchecked(3 * pad),
+            &uohContext,
+            0,
+            uohAlignment,
+            (int)gc_generation_num.loh_generation,
+            &uohData,
+            0,
+            generations,
+            &totalAllocatedBytesUoh));
+
+        Assert.Equal((nuint)uohFreeItem, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(uohGen), 0));
+        Assert.Equal((nuint)uohFreeItem, (nuint)allocator.alloc_list_tail_of(generation.generation_allocator(uohGen), 0));
+        Assert.Equal(unchecked(2 * pad), generation.generation_free_list_space(uohGen));
+        Assert.Equal((nint)(3 * pad), uohData.new_allocation);
+        Assert.Equal((nuint)0, (nuint)uohContext.alloc_ptr);
+        Assert.Equal((ulong)19, totalAllocatedBytesUoh);
+    }
+
+    [Fact]
     public void ResetAllocationPointersSelectsTheFirstWritableRegionAndChecksHalfOpenBounds()
     {
         heap_segment readOnly = default;
