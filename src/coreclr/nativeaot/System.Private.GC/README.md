@@ -196,9 +196,12 @@ is deferred until the compaction settings and diagnostics slices are available.
 queue reset/dequeue and boundary helpers, mark-stack setup, growth and overflow reset, saved
 post-plug recovery, and allocation-limit clipping at the oldest pin. Mark-stack growth keeps the
 native unmanaged ownership transfer: it copies the active entries only after allocating a
-replacement, then releases the old block. It does not scan objects, mark references, or run a
-collection; pinned-plug enqueue/save remains blocked on object-header special-bit handling and
-short-object reference scanning.
+replacement, then releases the old block. It also carries the NativeAOT `MethodTable`/
+`ObjectLayout` view of the object prefix: pointer flags/accessors, `CObjectHeader` marked and
+special-bit operations, and the `clear_special_bits`/`set_special_bits`, `method_table`, `contain_pointers`, and
+short-plug-size helpers that enqueue/save require. It does not scan objects, mark references, or
+run a collection; pinned-plug enqueue/save remains blocked on `go_through_object_nostart` and
+the descriptor-driven short-object reference scan.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.

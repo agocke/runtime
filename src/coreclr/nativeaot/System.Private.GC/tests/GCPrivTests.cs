@@ -594,6 +594,81 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(0, SyncImports.FreeCount);
     }
 
+    [Fact]
+    public void MarkPhaseObjectHeaderSpecialBitsPreserveMethodTable()
+    {
+        MethodTable methodTable = default;
+        CObjectHeader header = default;
+        MethodTable* pMethodTable = &methodTable;
+        CObjectHeader* pHeader = &header;
+
+        Assert.Equal((nuint)0, (nuint)pMethodTable & ((nuint)sizeof(nuint) - 1));
+
+        pHeader->RawSetMethodTable((MethodTable*)((nuint)pMethodTable | CObjectHeader.GC_MARKED));
+        Assert.True(pHeader->IsMarked() != 0);
+        Assert.Equal((nuint)pMethodTable, (nuint)pHeader->GetMethodTable());
+
+        nuint specialBits = gc_heap.clear_special_bits((byte*)pHeader);
+        Assert.Equal(CObjectHeader.GC_MARKED, specialBits);
+        Assert.Equal((nuint)pMethodTable, (nuint)pHeader->RawGetMethodTable());
+
+        gc_heap.set_special_bits((byte*)pHeader, specialBits);
+        Assert.Equal((nuint)pMethodTable | CObjectHeader.GC_MARKED, (nuint)pHeader->RawGetMethodTable());
+
+#if TARGET_64BIT && !TARGET_WASM
+        pHeader->SetBGCMarkBit();
+        pHeader->SetFreeObjInCompactBit();
+        Assert.True(pHeader->IsBGCMarkBitSet() != 0);
+        Assert.True(pHeader->IsFreeObjInCompactBitSet() != 0);
+
+        pHeader->ClearMarked();
+        Assert.Equal(
+            (nuint)pMethodTable | CObjectHeader.BGC_MARKED_BY_FGC | CObjectHeader.MAKE_FREE_OBJ_IN_COMPACT,
+            (nuint)pHeader->RawGetMethodTable());
+#else
+        pHeader->ClearMarked();
+        Assert.Equal((nuint)pMethodTable, (nuint)pHeader->RawGetMethodTable());
+#endif
+    }
+
+    [Fact]
+    public void MarkPhaseObjectHeaderReadsNativeMethodTableFlags()
+    {
+        MethodTable methodTable = default;
+        CObjectHeader header = default;
+        MethodTable* pMethodTable = &methodTable;
+        CObjectHeader* pHeader = &header;
+
+        Assert.Equal((nuint)sizeof(nuint), (nuint)sizeof(CObjectHeader));
+#if TARGET_64BIT
+        Assert.Equal((nuint)24, (nuint)sizeof(MethodTable));
+#else
+        Assert.Equal((nuint)20, (nuint)sizeof(MethodTable));
+#endif
+
+        pMethodTable->m_uFlags = MethodTable.HasPointersFlag;
+        pMethodTable->m_uBaseSize = 0x1234;
+        pHeader->RawSetMethodTable(pMethodTable);
+
+        Assert.Equal((uint)0x1234, pHeader->GetMethodTable()->GetBaseSize());
+        Assert.True(pHeader->ContainsGCPointers() != 0);
+        Assert.True(pHeader->ContainsGCPointersOrCollectible() != 0);
+        Assert.True(gc_heap.contain_pointers((byte*)pHeader) != 0);
+        Assert.True(gc_heap.contain_pointers_or_collectible((byte*)pHeader) != 0);
+        Assert.Equal((nuint)pMethodTable, (nuint)gc_heap.method_table((byte*)pHeader));
+
+        pMethodTable->m_uFlags = MethodTable.CollectibleFlag;
+        Assert.Equal(0, pHeader->ContainsGCPointers());
+        Assert.Equal(0, pHeader->ContainsGCPointersOrCollectible());
+        Assert.Equal(0, gc_heap.contain_pointers_or_collectible((byte*)pHeader));
+    }
+
+    [Fact]
+    public void MarkPhaseShortPlugSizeMatchesNativeFormula()
+    {
+        Assert.Equal(sizeof(nuint) == 8 ? (nuint)48 : (nuint)24, gc_heap.min_pre_pin_obj_size);
+    }
+
     private static gap_reloc_pair Pair(nuint gap, nuint reloc, short left, short right) =>
         new() { gap = gap, reloc = reloc, m_pair = new pair { left = left, right = right } };
 

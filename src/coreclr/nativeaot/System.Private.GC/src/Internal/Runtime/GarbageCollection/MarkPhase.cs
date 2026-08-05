@@ -5,11 +5,197 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection;
 
+// Ported from MethodTable.h, ObjectLayout.h, and gcinternal.h. This is the collector's view of
+// the object prefix, rather than a managed object representation.
+[StructLayout(LayoutKind.Explicit)]
+internal unsafe struct MethodTable
+{
+    public const uint CollectibleFlag = 0x00200000;
+    public const uint HasPointersFlag = 0x01000000;
+
+    [FieldOffset(0)]
+    public ushort m_usComponentSize;
+
+    [FieldOffset(0)]
+    public uint m_uFlags;
+
+    [FieldOffset(4)]
+    public uint m_uBaseSize;
+
+    [FieldOffset(8)]
+    public MethodTable* m_RelatedType;
+
+#if TARGET_64BIT
+    [FieldOffset(16)]
+    public ushort m_usNumVtableSlots;
+
+    [FieldOffset(18)]
+    public ushort m_usNumInterfaces;
+
+    [FieldOffset(20)]
+    public uint m_uHashCode;
+#else
+    [FieldOffset(12)]
+    public ushort m_usNumVtableSlots;
+
+    [FieldOffset(14)]
+    public ushort m_usNumInterfaces;
+
+    [FieldOffset(16)]
+    public uint m_uHashCode;
+#endif
+
+    public uint GetBaseSize() => m_uBaseSize;
+
+    public ushort RawGetComponentSize() => m_usComponentSize;
+
+    public int HasReferenceFields() => (m_uFlags & HasPointersFlag) != 0 ? 1 : 0;
+
+    public int ContainsGCPointers() => HasReferenceFields();
+
+    // NativeAOT's MethodTable does not support collectible types, so this is an alias of
+    // HasReferenceFields rather than a check of CollectibleFlag.
+    public int ContainsGCPointersOrCollectible() => HasReferenceFields();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct CObjectHeader
+{
+    public const nuint GC_MARKED = 0x1;
+
+#if TARGET_64BIT && !TARGET_WASM
+    public const nuint BGC_MARKED_BY_FGC = 0x2;
+    public const nuint MAKE_FREE_OBJ_IN_COMPACT = 0x4;
+    private const nuint ALLOWED_SPECIAL_HEADER_BITS =
+        GC_MARKED | BGC_MARKED_BY_FGC | MAKE_FREE_OBJ_IN_COMPACT;
+#else
+    private const nuint ALLOWED_SPECIAL_HEADER_BITS = GC_MARKED;
+#endif
+
+#if TARGET_64BIT
+    private const nuint SPECIAL_HEADER_BITS = 0x7;
+#else
+    private const nuint SPECIAL_HEADER_BITS = 0x3;
+#endif
+
+    private MethodTable* m_pEEType;
+
+    public MethodTable* RawGetMethodTable() => m_pEEType;
+
+    public void RawSetMethodTable(MethodTable* methodTable)
+    {
+        m_pEEType = methodTable;
+    }
+
+    public MethodTable* GetMethodTable() =>
+        (MethodTable*)((nuint)RawGetMethodTable() & ~SPECIAL_HEADER_BITS);
+
+    public void SetMarked()
+    {
+        Debug.Assert(RawGetMethodTable() is not null);
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | GC_MARKED));
+    }
+
+    public int IsMarked() => ((nuint)RawGetMethodTable() & GC_MARKED) != 0 ? 1 : 0;
+
+    public void ClearMarked()
+    {
+#if TARGET_64BIT && !TARGET_WASM
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() & ~GC_MARKED));
+#else
+        RawSetMethodTable(GetMethodTable());
+#endif
+    }
+
+#if TARGET_64BIT && !TARGET_WASM
+    public void SetBGCMarkBit()
+    {
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | BGC_MARKED_BY_FGC));
+    }
+
+    public int IsBGCMarkBitSet() =>
+        ((nuint)RawGetMethodTable() & BGC_MARKED_BY_FGC) != 0 ? 1 : 0;
+
+    public void ClearBGCMarkBit()
+    {
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() & ~BGC_MARKED_BY_FGC));
+    }
+
+    public void SetFreeObjInCompactBit()
+    {
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | MAKE_FREE_OBJ_IN_COMPACT));
+    }
+
+    public int IsFreeObjInCompactBitSet() =>
+        ((nuint)RawGetMethodTable() & MAKE_FREE_OBJ_IN_COMPACT) != 0 ? 1 : 0;
+
+    public void ClearFreeObjInCompactBit()
+    {
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() & ~MAKE_FREE_OBJ_IN_COMPACT));
+    }
+#endif
+
+    public nuint ClearSpecialBits()
+    {
+        nuint special_bits = (nuint)RawGetMethodTable() & SPECIAL_HEADER_BITS;
+        if (special_bits != 0)
+        {
+            Debug.Assert((special_bits & ~ALLOWED_SPECIAL_HEADER_BITS) == 0);
+            RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() & ~SPECIAL_HEADER_BITS));
+        }
+
+        return special_bits;
+    }
+
+    public void SetSpecialBits(nuint special_bits)
+    {
+        Debug.Assert((special_bits & ~ALLOWED_SPECIAL_HEADER_BITS) == 0);
+        if (special_bits != 0)
+        {
+            RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | special_bits));
+        }
+    }
+
+    public int ContainsGCPointers() => GetMethodTable()->ContainsGCPointers();
+
+    public int ContainsGCPointersOrCollectible() =>
+        GetMethodTable()->ContainsGCPointersOrCollectible();
+}
+
 internal unsafe partial struct gc_heap
 {
+    public static nuint min_pre_pin_obj_size =>
+        (nuint)sizeof(gap_reloc_pair) + (nuint)GCInterfaceOffsets.min_obj_size;
+
+    public static nuint clear_special_bits(byte* node)
+    {
+        return ((CObjectHeader*)node)->ClearSpecialBits();
+    }
+
+    public static void set_special_bits(byte* node, nuint special_bits)
+    {
+        ((CObjectHeader*)node)->SetSpecialBits(special_bits);
+    }
+
+    public static MethodTable* method_table(byte* o)
+    {
+        return ((CObjectHeader*)o)->GetMethodTable();
+    }
+
+    public static int contain_pointers(byte* o)
+    {
+        return ((CObjectHeader*)o)->ContainsGCPointers();
+    }
+
+    public static int contain_pointers_or_collectible(byte* o)
+    {
+        return ((CObjectHeader*)o)->ContainsGCPointersOrCollectible();
+    }
+
     public static void reset_pinned_queue(gc_heap* heap)
     {
         heap->mark_stack_tos = 0;
