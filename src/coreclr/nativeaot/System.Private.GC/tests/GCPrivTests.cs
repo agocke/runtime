@@ -34,6 +34,9 @@ public sealed unsafe class GCPrivTests
     private static oom_reason s_allocateMoreSpaceRetryOomReason;
     private static int s_allocateMoreSpaceGeneration;
     private static int s_allocateMoreSpaceAlignment;
+    private static heap_segment* s_adjustLimitSegment;
+    private static byte* s_adjustLimitExpectedUsed;
+    private static int s_adjustLimitUsedPublishedAtRelease;
 #endif
 
     [Fact]
@@ -5171,14 +5174,18 @@ public sealed unsafe class GCPrivTests
             gc_heap.adjust_limit_clr(
                 start,
                 64,
+                64,
                 &context,
+                0,
                 null,
                 alignment,
                 (int)gc_generation_num.soh_gen0,
                 generations,
                 &ephemeral,
                 null,
-                &totalAllocatedBytes);
+                &totalAllocatedBytes,
+                null,
+                null);
 
             Assert.Equal((nuint)start, (nuint)context.alloc_ptr);
             Assert.Equal((nuint)(start + (nint)((nuint)64 - alignedMinObjectSize)), (nuint)context.alloc_limit);
@@ -5221,14 +5228,18 @@ public sealed unsafe class GCPrivTests
         gc_heap.adjust_limit_clr(
             start,
             64,
+            64,
             &context,
+            0,
             &segment,
             alignment,
             (int)gc_generation_num.soh_gen0,
             generations,
             &segment,
             allocAllocated,
-            &totalAllocatedBytes);
+            &totalAllocatedBytes,
+            null,
+            null);
 
         Assert.Equal((nuint)start, (nuint)context.alloc_ptr);
         Assert.Equal((nuint)(start + (nint)((nuint)64 - alignedMinObjectSize)), (nuint)context.alloc_limit);
@@ -5239,6 +5250,152 @@ public sealed unsafe class GCPrivTests
         Assert.True(heap_segment.heap_segment_mem(&segment) <= heap_segment.heap_segment_used(&segment));
         Assert.True(heap_segment.heap_segment_used(&segment) <= heap_segment.heap_segment_committed(&segment));
         Assert.True(heap_segment.heap_segment_used(&segment) <= heap_segment.heap_segment_reserved(&segment));
+    }
+
+    [Fact]
+    public void AdjustLimitClrClearsFullyDirtyAndPartiallyUnusedSpans()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint limitSize = 64;
+        byte* storage = stackalloc byte[384];
+        for (int i = 0; i < 384; i++)
+        {
+            storage[i] = 0xcc;
+        }
+
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        InitializeAllocationGenerations(generations);
+        gc_alloc_context fullyDirtyContext = default;
+        byte* fullyDirtyStart = storage + 64;
+        fullyDirtyContext.alloc_limit = fullyDirtyStart;
+        heap_segment fullyDirtySegment = default;
+        heap_segment.heap_segment_used(&fullyDirtySegment) = fullyDirtyStart + (nint)(limitSize - (nuint)sizeof(nuint));
+        heap_segment.heap_segment_committed(&fullyDirtySegment) = storage + 384;
+        heap_segment.heap_segment_reserved(&fullyDirtySegment) = storage + 384;
+        ulong totalAllocatedBytes = 0;
+
+        gc_heap.adjust_limit_clr(
+            fullyDirtyStart,
+            limitSize,
+            limitSize,
+            &fullyDirtyContext,
+            0,
+            &fullyDirtySegment,
+            alignment,
+            (int)gc_generation_num.soh_gen0,
+            generations,
+            null,
+            null,
+            &totalAllocatedBytes,
+            null,
+            null);
+
+        byte* fullyDirtyLimit = fullyDirtyStart + (nint)(limitSize - (nuint)sizeof(nuint));
+        for (byte* p = fullyDirtyStart - sizeof(nuint); p < fullyDirtyLimit; p++)
+        {
+            Assert.Equal((byte)0, *p);
+        }
+
+        Assert.Equal((nuint)fullyDirtyLimit, (nuint)heap_segment.heap_segment_used(&fullyDirtySegment));
+
+        gc_alloc_context partiallyUnusedContext = default;
+        byte* partiallyUnusedStart = storage + 192;
+        partiallyUnusedContext.alloc_limit = partiallyUnusedStart;
+        heap_segment partiallyUnusedSegment = default;
+        byte* oldUsed = partiallyUnusedStart + 24;
+        heap_segment.heap_segment_used(&partiallyUnusedSegment) = oldUsed;
+        heap_segment.heap_segment_committed(&partiallyUnusedSegment) = storage + 384;
+        heap_segment.heap_segment_reserved(&partiallyUnusedSegment) = storage + 384;
+        try_allocate_more_space_context moreSpaceContext = default;
+        moreSpaceContext.state = allocation_state.a_state_can_allocate;
+        moreSpaceContext.more_space_lock_held_p = 1;
+        s_adjustLimitSegment = &partiallyUnusedSegment;
+        s_adjustLimitExpectedUsed = partiallyUnusedStart + (nint)(limitSize - (nuint)sizeof(nuint));
+        s_adjustLimitUsedPublishedAtRelease = 0;
+
+        gc_heap.adjust_limit_clr(
+            partiallyUnusedStart,
+            limitSize,
+            limitSize,
+            &partiallyUnusedContext,
+            0,
+            &partiallyUnusedSegment,
+            alignment,
+            (int)gc_generation_num.soh_gen0,
+            generations,
+            null,
+            null,
+            &totalAllocatedBytes,
+            &moreSpaceContext,
+            &AdjustLimitReleaseCallback);
+
+        byte* partiallyUnusedLimit = partiallyUnusedStart + (nint)(limitSize - (nuint)sizeof(nuint));
+        for (byte* p = partiallyUnusedStart - sizeof(nuint); p < oldUsed; p++)
+        {
+            Assert.Equal((byte)0, *p);
+        }
+
+        for (byte* p = oldUsed; p < partiallyUnusedLimit; p++)
+        {
+            Assert.Equal((byte)0xcc, *p);
+        }
+
+        Assert.Equal((nuint)partiallyUnusedLimit, (nuint)heap_segment.heap_segment_used(&partiallyUnusedSegment));
+        Assert.Equal(1, s_adjustLimitUsedPublishedAtRelease);
+        Assert.Equal((byte)0, moreSpaceContext.more_space_lock_held_p);
+    }
+
+    [Fact]
+    public void AdjustLimitClrZeroingOptionalClearsSyncBlockAndSkipsObject()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint size = 32;
+        nuint limitSize = 64;
+        byte* storage = stackalloc byte[192];
+        for (int i = 0; i < 192; i++)
+        {
+            storage[i] = 0xcc;
+        }
+
+        byte* start = storage + 64;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        InitializeAllocationGenerations(generations);
+        gc_alloc_context context = default;
+        context.alloc_limit = start;
+        heap_segment segment = default;
+        byte* clearLimit = start + (nint)(limitSize - (nuint)sizeof(nuint));
+        heap_segment.heap_segment_used(&segment) = clearLimit;
+        heap_segment.heap_segment_committed(&segment) = storage + 192;
+        heap_segment.heap_segment_reserved(&segment) = storage + 192;
+        ulong totalAllocatedBytes = 0;
+
+        gc_heap.adjust_limit_clr(
+            start,
+            limitSize,
+            size,
+            &context,
+            (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL,
+            &segment,
+            alignment,
+            (int)gc_generation_num.soh_gen0,
+            generations,
+            null,
+            null,
+            &totalAllocatedBytes,
+            null,
+            null);
+
+        byte* objectEnd = start + (nint)(size - (nuint)sizeof(nuint));
+        Assert.Equal((nuint)0, *(nuint*)(start - sizeof(nuint)));
+        for (byte* p = start; p < objectEnd; p++)
+        {
+            Assert.Equal((byte)0xcc, *p);
+        }
+
+        for (byte* p = objectEnd; p < clearLimit; p++)
+        {
+            Assert.Equal((byte)0, *p);
+        }
     }
 
     [Fact]
@@ -5268,20 +5425,24 @@ public sealed unsafe class GCPrivTests
             gc_heap.adjust_limit_clr(
                 start,
                 64,
+                64,
                 &context,
+                0,
                 null,
                 alignment,
                 (int)gc_generation_num.soh_gen0,
                 generations,
                 &ephemeral,
                 null,
-                &totalAllocatedBytes);
+                &totalAllocatedBytes,
+                null,
+                null);
 
             Assert.Equal((nuint)(start + (nint)alignedMinObjectSize), (nuint)context.alloc_ptr);
             Assert.Equal((nuint)(start + (nint)((nuint)64 - alignedMinObjectSize)), (nuint)context.alloc_limit);
             Assert.Equal(45, context.alloc_bytes);
             Assert.Equal(47ul, totalAllocatedBytes);
-            Assert.Equal((nuint)0x12345000, *(nuint*)start);
+            Assert.Equal((nuint)0, *(nuint*)start);
             Assert.Equal((nuint)0, *(nuint*)(start + (nint)sizeof(nuint)));
             Assert.Equal((nuint)0, generation.generation_free_obj_space(generations));
         }
@@ -5322,14 +5483,18 @@ public sealed unsafe class GCPrivTests
         gc_heap.adjust_limit_clr(
             start,
             64,
+            64,
             &context,
+            0,
             &segment,
             alignment,
             (int)gc_generation_num.loh_generation,
             generations,
             &ephemeral,
             null,
-            &totalAllocatedBytesUoh);
+            &totalAllocatedBytesUoh,
+            null,
+            null);
 
         Assert.Equal((nuint)start, (nuint)context.alloc_ptr);
         Assert.Equal((nuint)(start + (nint)((nuint)64 - alignedMinObjectSize)), (nuint)context.alloc_limit);
@@ -5337,7 +5502,7 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(200, context.alloc_bytes_uoh);
         Assert.Equal(364ul, totalAllocatedBytesUoh);
         Assert.Equal((nuint)(start + 64), (nuint)heap_segment.heap_segment_allocated(&segment));
-        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_used(&segment));
+        Assert.Equal((nuint)(start + (nint)((nuint)64 - (nuint)sizeof(nuint))), (nuint)heap_segment.heap_segment_used(&segment));
     }
 
     [Fact]
@@ -5633,7 +5798,7 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)(storage + 224), (nuint)allocAllocated);
         Assert.Equal((nuint)start, (nuint)context.alloc_ptr);
         Assert.Equal((nuint)(start + (nint)size), (nuint)context.alloc_limit);
-        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_used(&segment));
+        Assert.Equal((nuint)(start + (nint)(size + pad - (nuint)sizeof(nuint))), (nuint)heap_segment.heap_segment_used(&segment));
         Assert.Equal((long)(size + pad), context.alloc_bytes);
         Assert.Equal((ulong)(size + pad), totalAllocatedBytes);
     }
@@ -6550,6 +6715,61 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void AllocateMoreSpaceReleasesMoreSpaceLockBeforeClearingWithoutDoubleRelease()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        byte* storage = stackalloc byte[128];
+        for (int i = 0; i < 128; i++)
+        {
+            storage[i] = 0xcc;
+        }
+
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        InitializeAllocationGenerations(generations);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            byte* freeItem = storage + sizeof(nuint);
+            gc_heap.thread_free_item_front(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0),
+                freeItem,
+                unchecked(size + pad));
+
+            gc_alloc_context allocContext = default;
+            dynamic_data data = new() { new_allocation = unchecked((nint)(size + pad)) };
+            heap_segment* ephemeralHeapSegment = null;
+            byte* allocAllocated = null;
+            ulong totalAllocatedBytesSoh = 0;
+            ulong totalAllocatedBytesUoh = 0;
+            try_allocate_more_space_context allocation = CreateAllocationContext(
+                &allocContext,
+                &data,
+                generations,
+                &ephemeralHeapSegment,
+                &allocAllocated,
+                &totalAllocatedBytesSoh,
+                &totalAllocatedBytesUoh,
+                size,
+                (int)gc_generation_num.soh_gen0,
+                alignment);
+            ResetAllocateMoreSpaceRecorder();
+
+            Assert.True(gc_heap.allocate_more_space(&allocation, &AllocationClearCallback));
+            Assert.Equal(1, s_allocateMoreSpaceLeaveCount);
+            Assert.Equal((byte)0, allocation.more_space_lock_held_p);
+            Assert.Equal((nuint)0, *(nuint*)(freeItem - sizeof(nuint)));
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
     public void AllocateMoreSpaceSelectsSohAndUohGenerations()
     {
         int sohAlignment = gc_heap.get_alignment_constant(small_object_p: true);
@@ -6912,8 +7132,8 @@ public sealed unsafe class GCPrivTests
             delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
                 &NoFullEphemeralGcCallback;
             Assert.Equal(allocation_state.a_state_can_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
-            Assert.Equal(1, s_allocationCallbackCount);
-            Assert.Equal(allocation_deferred_operation.trigger_ephemeral_gc, s_lastAllocationDeferredOperation);
+            Assert.Equal(2, s_allocationCallbackCount);
+            Assert.Equal(allocation_deferred_operation.leave_more_space_lock, s_lastAllocationDeferredOperation);
             Assert.Equal((nuint)freeItem, (nuint)allocContext.alloc_ptr);
             Assert.Equal((nint)0, data.new_allocation);
         }
@@ -7139,6 +7359,22 @@ public sealed unsafe class GCPrivTests
     }
 
     [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void AdjustLimitReleaseCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        if (operation == allocation_deferred_operation.leave_more_space_lock)
+        {
+            s_adjustLimitUsedPublishedAtRelease =
+                heap_segment.heap_segment_used(s_adjustLimitSegment) == s_adjustLimitExpectedUsed ? 1 : 0;
+            result->kind = allocation_callback_result_kind.completed;
+        }
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void AllocateMoreSpaceRetryCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7204,6 +7440,34 @@ public sealed unsafe class GCPrivTests
         else if (operation == allocation_deferred_operation.leave_more_space_lock)
         {
             s_allocateMoreSpaceLeaveCount++;
+        }
+
+        *result = operation is allocation_deferred_operation.enter_more_space_lock or
+            allocation_deferred_operation.leave_more_space_lock
+            ? new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            }
+            : operation == allocation_deferred_operation.check_allocation_budget
+                ? new allocation_callback_result
+                {
+                    kind = allocation_callback_result_kind.allocation_allowed,
+                }
+                : default;
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void AllocationClearCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+
+        if (operation == allocation_deferred_operation.leave_more_space_lock)
+        {
+            s_allocateMoreSpaceLeaveCount++;
+            *(nuint*)(context->acontext->alloc_ptr - sizeof(nuint)) = nuint.MaxValue;
         }
 
         *result = operation is allocation_deferred_operation.enter_more_space_lock or
@@ -7332,7 +7596,12 @@ public sealed unsafe class GCPrivTests
             {
                 kind = allocation_callback_result_kind.no_full_compact_gc,
             }
-            : default;
+            : operation == allocation_deferred_operation.leave_more_space_lock
+                ? new allocation_callback_result
+                {
+                    kind = allocation_callback_result_kind.completed,
+                }
+                : default;
     }
 
     [System.Runtime.InteropServices.UnmanagedCallersOnly]

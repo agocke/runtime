@@ -1082,8 +1082,14 @@ The first dependency-closed WKS `USE_REGIONS` leaves are in `GCAllocation.cs`: `
 of `fix_allocation_context`; `make_unused_array`/`make_free_obj` and the `CObjectHeader::SetFree`
 memory writes they require; and `new_allocation_limit`/`limit_from_size` plus the
 allocation-context refill transition of `adjust_limit_clr`: the discontinuous-hole free object,
-the region-only null-context and contiguous-gen0 branches, limit/accounting update, and
-ephemeral used-boundary publication. `grow_heap_segment` and the non-background,
+the region-only null-context and contiguous-gen0 branches, limit/accounting update, ephemeral
+used-boundary publication, native right-edge clear-range selection, zeroing-optional syncblock
+clearing/object skipping, and the used-endpoint publication for a partially unused span. The
+selected more-space lock is released through the unmanaged callback before either potentially
+expensive clear, and the allocation wrapper observes the released ownership so it does not
+release the lock twice. BGC mark-bit tracking, allocation-info/event emission, brick updates,
+and verification stay explicit deferrals; this leaf does not claim that those collector-owned
+branches ran. `grow_heap_segment` and the non-background,
 non-LOH-compaction/verification portion of `a_fit_segment_end_p` now select committed or
 reserved segment-end space, choose `limit_from_size`, commit up to the native 16-page minimum
 through `virtual_commit`, preserve its hard-limit result, advance the selected SOH/UOH pointer,

@@ -193,7 +193,9 @@ internal unsafe partial struct gc_heap
         dynamic_data* dd,
         nuint allocation_quantum,
         generation* generation_table,
-        ulong* total_alloc_bytes)
+        ulong* total_alloc_bytes,
+        try_allocate_more_space_context* more_space_context = null,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback = null)
     {
         bool can_fit = false;
         generation* gen = generation_of(generation_table, gen_number);
@@ -242,14 +244,18 @@ internal unsafe partial struct gc_heap
                     adjust_limit_clr(
                         free_list,
                         limit,
+                        size,
                         acontext,
+                        flags,
                         null,
                         align_const,
                         gen_number,
                         generation_table,
                         null,
                         null,
-                        total_alloc_bytes);
+                        total_alloc_bytes,
+                        more_space_context,
+                        callback);
 
                     can_fit = true;
                     goto end;
@@ -284,7 +290,9 @@ internal unsafe partial struct gc_heap
         dynamic_data* dd,
         nuint allocation_quantum,
         generation* generation_table,
-        ulong* total_alloc_bytes)
+        ulong* total_alloc_bytes,
+        try_allocate_more_space_context* more_space_context = null,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback = null)
     {
         bool can_fit = false;
         generation* gen = generation_of(generation_table, gen_number);
@@ -343,14 +351,18 @@ internal unsafe partial struct gc_heap
                     adjust_limit_clr(
                         free_list,
                         limit,
+                        size,
                         acontext,
+                        flags,
                         null,
                         align_const,
                         gen_number,
                         generation_table,
                         null,
                         null,
-                        total_alloc_bytes);
+                        total_alloc_bytes,
+                        more_space_context,
+                        callback);
 
                     // Fix the limit to compensate for adjust_limit_clr making it too short.
                     acontext->alloc_limit = (byte*)unchecked(
@@ -468,7 +480,9 @@ internal unsafe partial struct gc_heap
         heap_segment* ephemeral_heap_segment,
         byte** alloc_allocated,
         ulong* total_alloc_bytes,
-        int heap_number)
+        int heap_number,
+        try_allocate_more_space_context* more_space_context = null,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback = null)
     {
         *commit_failed_p = false;
         nuint limit;
@@ -542,14 +556,18 @@ internal unsafe partial struct gc_heap
         adjust_limit_clr(
             old_alloc,
             limit,
+            size,
             acontext,
+            flags,
             seg,
             align_const,
             gen_number,
             generation_table,
             ephemeral_heap_segment,
             alloc_allocated is not null ? *alloc_allocated : null,
-            total_alloc_bytes);
+            total_alloc_bytes,
+            more_space_context,
+            callback);
 
         return true;
     }
@@ -568,7 +586,9 @@ internal unsafe partial struct gc_heap
         heap_segment* ephemeral_heap_segment,
         byte** alloc_allocated,
         ulong* total_alloc_bytes,
-        int heap_number)
+        int heap_number,
+        try_allocate_more_space_context* more_space_context = null,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback = null)
     {
         *commit_failed_p = false;
 
@@ -593,7 +613,9 @@ internal unsafe partial struct gc_heap
                 ephemeral_heap_segment,
                 alloc_allocated,
                 total_alloc_bytes,
-                heap_number))
+                heap_number,
+                more_space_context,
+                callback))
             {
                 acontext->alloc_limit = (byte*)unchecked((nuint)acontext->alloc_limit + pad);
                 can_allocate_p = true;
@@ -713,7 +735,9 @@ internal unsafe partial struct gc_heap
         byte** alloc_allocated,
         ulong* total_alloc_bytes_soh,
         int heap_number,
-        gc_heap* hp)
+        gc_heap* hp,
+        try_allocate_more_space_context* more_space_context = null,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback = null)
     {
         if (short_seg_end_p is not null)
         {
@@ -729,7 +753,9 @@ internal unsafe partial struct gc_heap
             dd,
             allocation_quantum,
             generation_table,
-            total_alloc_bytes_soh);
+            total_alloc_bytes_soh,
+            more_space_context,
+            callback);
 
         if (can_allocate)
         {
@@ -765,7 +791,9 @@ internal unsafe partial struct gc_heap
                 current_ephemeral_heap_segment,
                 alloc_allocated,
                 total_alloc_bytes_soh,
-                heap_number);
+                heap_number,
+                more_space_context,
+                callback);
             if (can_allocate)
             {
                 return true;
@@ -817,7 +845,9 @@ internal unsafe partial struct gc_heap
         heap_segment* ephemeral_heap_segment,
         byte** alloc_allocated,
         ulong* total_alloc_bytes,
-        int heap_number)
+        int heap_number,
+        try_allocate_more_space_context* more_space_context = null,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback = null)
     {
         if (a_fit_free_list_uoh_p(
             size,
@@ -828,7 +858,9 @@ internal unsafe partial struct gc_heap
             dd,
             allocation_quantum,
             generation_table,
-            total_alloc_bytes))
+            total_alloc_bytes,
+            more_space_context,
+            callback))
         {
             return true;
         }
@@ -847,7 +879,9 @@ internal unsafe partial struct gc_heap
             ephemeral_heap_segment,
             alloc_allocated,
             total_alloc_bytes,
-            heap_number);
+            heap_number,
+            more_space_context,
+            callback);
     }
 
     // `try_allocate_more_space` owns more-space locks, GC triggering, and dynamic allocation
@@ -1174,7 +1208,8 @@ internal unsafe partial struct gc_heap
 
     private static bool soh_try_fit(
         try_allocate_more_space_context* context,
-        bool report_short_seg_end_p)
+        bool report_short_seg_end_p,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback)
     {
         bool commit_failed_p = false;
         bool short_seg_end_p = false;
@@ -1195,14 +1230,18 @@ internal unsafe partial struct gc_heap
             context->alloc_allocated,
             context->total_alloc_bytes_soh,
             context->heap_number,
-            context->hp);
+            context->hp,
+            context,
+            callback);
 
         context->commit_failed_p = commit_failed_p ? (byte)1 : (byte)0;
         context->short_seg_end_p = short_seg_end_p ? (byte)1 : (byte)0;
         return can_allocate;
     }
 
-    private static bool uoh_try_fit(try_allocate_more_space_context* context)
+    private static bool uoh_try_fit(
+        try_allocate_more_space_context* context,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback)
     {
         bool commit_failed_p = false;
         heap_segment* ephemeral_heap_segment =
@@ -1222,7 +1261,9 @@ internal unsafe partial struct gc_heap
             ephemeral_heap_segment,
             context->alloc_allocated is null ? null : &alloc_allocated,
             context->total_alloc_bytes_uoh,
-            context->heap_number);
+            context->heap_number,
+            context,
+            callback);
 
         context->commit_failed_p = commit_failed_p ? (byte)1 : (byte)0;
         return can_allocate;
@@ -1254,7 +1295,7 @@ internal unsafe partial struct gc_heap
                     break;
 
                 case allocation_state.a_state_try_fit:
-                    context->state = soh_try_fit(context, report_short_seg_end_p: false)
+                    context->state = soh_try_fit(context, report_short_seg_end_p: false, callback)
                         ? allocation_state.a_state_can_allocate
                         : (context->commit_failed_p != 0
                             ? allocation_state.a_state_trigger_full_compact_gc
@@ -1262,7 +1303,7 @@ internal unsafe partial struct gc_heap
                     break;
 
                 case allocation_state.a_state_try_fit_after_bgc:
-                    if (soh_try_fit(context, report_short_seg_end_p: true))
+                    if (soh_try_fit(context, report_short_seg_end_p: true, callback))
                     {
                         context->state = allocation_state.a_state_can_allocate;
                     }
@@ -1276,7 +1317,7 @@ internal unsafe partial struct gc_heap
                     break;
 
                 case allocation_state.a_state_try_fit_after_cg:
-                    if (soh_try_fit(context, report_short_seg_end_p: true))
+                    if (soh_try_fit(context, report_short_seg_end_p: true, callback))
                     {
                         context->state = allocation_state.a_state_can_allocate;
                     }
@@ -1353,7 +1394,7 @@ internal unsafe partial struct gc_heap
                         return context->state;
                     }
 
-                    if (soh_try_fit(context, report_short_seg_end_p: true))
+                    if (soh_try_fit(context, report_short_seg_end_p: true, callback))
                     {
                         context->state = allocation_state.a_state_can_allocate;
                     }
@@ -1499,7 +1540,7 @@ internal unsafe partial struct gc_heap
                     break;
 
                 case allocation_state.a_state_try_fit:
-                    context->state = uoh_try_fit(context)
+                    context->state = uoh_try_fit(context, callback)
                         ? allocation_state.a_state_can_allocate
                         : (context->commit_failed_p != 0
                             ? allocation_state.a_state_trigger_full_compact_gc
@@ -1507,13 +1548,13 @@ internal unsafe partial struct gc_heap
                     break;
 
                 case allocation_state.a_state_try_fit_new_seg:
-                    context->state = uoh_try_fit(context)
+                    context->state = uoh_try_fit(context, callback)
                         ? allocation_state.a_state_can_allocate
                         : allocation_state.a_state_try_fit;
                     break;
 
                 case allocation_state.a_state_try_fit_after_cg:
-                    context->state = uoh_try_fit(context)
+                    context->state = uoh_try_fit(context, callback)
                         ? allocation_state.a_state_can_allocate
                         : (context->commit_failed_p != 0
                             ? allocation_state.a_state_cant_allocate
@@ -1521,7 +1562,7 @@ internal unsafe partial struct gc_heap
                     break;
 
                 case allocation_state.a_state_try_fit_after_bgc:
-                    context->state = uoh_try_fit(context)
+                    context->state = uoh_try_fit(context, callback)
                         ? allocation_state.a_state_can_allocate
                         : (context->commit_failed_p != 0
                             ? allocation_state.a_state_trigger_full_compact_gc
@@ -1911,21 +1952,24 @@ internal unsafe partial struct gc_heap
             context->deferred_operation == allocation_deferred_operation.none;
     }
 
-    // This is the dependency-closed refill-state portion of adjust_limit_clr. The deferred
-    // gc_heap owns generation_table, alloc_allocated, ephemeral_heap_segment, and the selected
-    // SOH/UOH total_alloc_bytes counter; they are explicit here until try_allocate_more_space
-    // supplies the locking, budget, clearing, and event paths that own the rest of the method.
+    // This is the dependency-closed WKS USE_REGIONS portion of adjust_limit_clr. The BGC mark
+    // bit, allocation event, brick update, and verification branches remain deferred with their
+    // owning collector states; this leaf must not report that they ran.
     public static void adjust_limit_clr(
         byte* start,
         nuint limit_size,
+        nuint size,
         gc_alloc_context* acontext,
+        uint flags,
         heap_segment* seg,
         int align_const,
         int gen_number,
         generation* generation_table,
         heap_segment* ephemeral_heap_segment,
         byte* alloc_allocated,
-        ulong* total_alloc_bytes)
+        ulong* total_alloc_bytes,
+        try_allocate_more_space_context* more_space_context,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback)
     {
         nuint aligned_min_obj_size = Align((nuint)GCInterfaceOffsets.min_obj_size, align_const);
 
@@ -1975,6 +2019,57 @@ internal unsafe partial struct gc_heap
                 System.Diagnostics.Debug.Assert(heap_segment.heap_segment_used(seg) <= heap_segment.heap_segment_reserved(seg));
             }
         }
+
+        // The size and limit_size include the sync block immediately before the object.
+        byte* clear_start = (byte*)unchecked((nuint)start - plug_skew);
+        byte* clear_limit = (byte*)unchecked((nuint)start + limit_size - plug_skew);
+
+        if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL) != 0)
+        {
+            byte* obj_start = acontext->alloc_ptr;
+            System.Diagnostics.Debug.Assert(start >= obj_start);
+            byte* obj_end = (byte*)unchecked((nuint)obj_start + size - plug_skew);
+            System.Diagnostics.Debug.Assert(obj_end >= clear_start);
+
+            if (obj_start == start)
+            {
+                *(nuint*)clear_start = 0;
+            }
+
+            clear_start = obj_end;
+        }
+
+        // Capture this while holding the lock, as the native code does. Brick-table maintenance
+        // that consumes it remains with the untranslated generation-0 collector state.
+        heap_segment* gen0_segment = ephemeral_heap_segment;
+
+        byte* clear_end;
+        if (seg is null || clear_limit <= heap_segment.heap_segment_used(seg))
+        {
+            clear_end = clear_limit;
+        }
+        else
+        {
+            byte* used = heap_segment.heap_segment_used(seg);
+            heap_segment.heap_segment_used(seg) = clear_limit;
+            clear_end = used;
+        }
+
+        // The clear span and used high-water mark are selected while holding the lock. Clearing
+        // can be expensive, so native releases the lock immediately before memclr.
+        if (more_space_context is not null && callback is not null)
+        {
+            leave_more_space_lock(more_space_context, callback);
+        }
+
+        if (clear_start < clear_end)
+        {
+            // A concrete more-space lock release is synchronous. If test or incomplete wiring
+            // defers it, clearing under the still-held lock is safer than publishing dirty memory.
+            memclr(clear_start, unchecked((nuint)(clear_end - clear_start)));
+        }
+
+        _ = gen0_segment;
     }
 
     public static void set_allocation_heap_segment(generation* gen)

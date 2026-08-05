@@ -998,7 +998,11 @@ deferred until the `allocation.cpp` dependency chain is ported.
 doubly-linked free-list marker for object gaps, carries the allocation-limit arithmetic leaves,
 and transitions a selected allocation context through a WKS region refill. The latter fills a
 discontinuous hole, pads a contiguous gen0 context, updates its limit/accounting, advances the
-selected SOH/UOH allocation pointer, and publishes the ephemeral segment's used boundary.
+selected SOH/UOH allocation pointer, computes and clears the native right-edge span, applies
+zeroing-optional syncblock/object rules, and publishes the segment's used boundary. It releases
+the selected more-space lock through the unmanaged callback before clearing, and the wrapper
+does not release it again. BGC mark-bit tracking, allocation events, brick updates, and
+verification remain explicit collector-owned deferrals.
 The segment-end leaf also selects the committed or reserved endpoint, derives the allocation
 limit, grows the segment through the accounted virtual-commit helper, propagates commit and
 hard-limit failures, and hands the range to that refill transition. Its UOH wrapper walks
