@@ -117,6 +117,12 @@ namespace Internal.Runtime.GarbageCollection
             *(((nint*)mem) - 1) = -(nint)NumSeries;
         }
 
+        public static CGCDesc* GetCGCDescFromMT(MethodTable* pMT)
+        {
+            Debug.Assert(pMT->ContainsGCPointers() != 0);
+            return (CGCDesc*)pMT;
+        }
+
         public nuint GetNumSeries()
         {
             CGCDesc* self = (CGCDesc*)Unsafe.AsPointer(ref this);

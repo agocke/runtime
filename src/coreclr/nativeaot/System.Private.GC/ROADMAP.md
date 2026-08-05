@@ -720,9 +720,10 @@ Translate the schema from `gcpriv.h` and related headers:
 - The remaining `gcinterface.dac.h` schema: `dac_generation` and `dac_gc_heap`, generated
   mechanically from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Their complete layouts
   are verified against the native classes and by the managed startup verifier.
-- The dependency-free `gcdesc.h` records and descriptor arithmetic: `val_serie_item`,
-  `CGCDescSeries`, and `CGCDesc` size, initialization, and backward series lookup. The
-  MethodTable-dependent pointer-counting helper remains tied to object scanning.
+- The `gcdesc.h` records and descriptor arithmetic: `val_serie_item`, `CGCDescSeries`, and
+  `CGCDesc` size, initialization, backward series lookup, and MethodTable lookup. The
+  short-object scanner consumes those descriptors with the native series and slot order; the
+  MethodTable-dependent pointer-counting helper remains tied to later mark-stack capacity work.
 - The first dependency-free `gcpriv.h` records: `static_data`,
   `recorded_generation_info`, and `etw_opt_info`. These establish the pointer-sized schema used
   by dynamic tuning, recorded GC information, and allocation diagnostics.
@@ -1159,15 +1160,17 @@ state match the C++ implementation across supported architectures.
 
 ### 9. Collection phases
 
-**Status: In progress -- pinned-plug queue and mark-stack growth/reset setup plus the
-object-header special-bit prerequisite are translated; collection marking is not**
+**Status: In progress -- pinned-plug queue and mark-stack growth/reset setup, object-header
+special-bit prerequisite, and short-object descriptor scan are translated; collection marking is
+not**
 
 Translate in dependency order:
 
 - `mark_phase.cpp` (the dependency-closed pinned-plug queue and mark-stack growth/reset setup,
-  plus the `CObjectHeader`/`MethodTable` special-bit, pointer-flag, and short-plug-size
-  prerequisites, are translated; enqueue/save remains blocked on
-  `go_through_object_nostart` and short-object reference scanning)
+  plus the `CObjectHeader`/`MethodTable` special-bit, pointer-flag, short-plug-size, and
+  `go_through_object_nostart` descriptor-scan prerequisites, are translated; enqueue/save remain
+  blocked on interesting-data-point diagnostics and padded-plug helpers from the later
+  planning/relocation slices)
 - `plan_phase.cpp`
 - `relocate_compact.cpp`
 - `sweep.cpp`

@@ -40,7 +40,7 @@ Ported so far:
 | `GCEvents.cs` | `gceventstatus.h`, expanded `gcevents.h` event helpers |
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
-| `GCDesc.cs` | dependency-free types and descriptor arithmetic from `gcdesc.h` |
+| `GCDesc.cs` | descriptor encoding and MethodTable lookup from `gcdesc.h` |
 | `GCPriv.cs` | dependency-free leaf records from `gcpriv.h` |
 | `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `gc_reason` from `gc.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
@@ -199,9 +199,12 @@ native unmanaged ownership transfer: it copies the active entries only after all
 replacement, then releases the old block. It also carries the NativeAOT `MethodTable`/
 `ObjectLayout` view of the object prefix: pointer flags/accessors, `CObjectHeader` marked and
 special-bit operations, and the `clear_special_bits`/`set_special_bits`, `method_table`, `contain_pointers`, and
-short-plug-size helpers that enqueue/save require. It does not scan objects, mark references, or
-run a collection; pinned-plug enqueue/save remains blocked on `go_through_object_nostart` and
-the descriptor-driven short-object reference scan.
+short-plug-size helpers that enqueue/save require. Its allocation-free
+`go_through_object_nostart` leaf reads normal and repeating `GCDesc` maps in the native order and
+passes each reference slot to a direct managed function pointer; it does not introduce a delegate,
+allocation, or reverse P/Invoke transition. It does not mark references or run a collection.
+Pinned-plug enqueue/save still need the interesting-data-point diagnostics and padded-plug
+helpers from the later planning/relocation work.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.
@@ -446,10 +449,11 @@ static helpers taking a `generation*`, preserving the native reference-return AP
 reference to collector state.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
-`val_serie_item`, the overlaid `CGCDescSeries` union, and the backward-growing `CGCDesc`
-descriptor's size, initialization, and series-address arithmetic. The MethodTable-dependent
-pointer-counting helper remains with object scanning. Native static assertions and direct tests
-cover both normal and negative-count repeating descriptors.
+`val_serie_item`, the overlaid `CGCDescSeries` union, the backward-growing `CGCDesc`
+descriptor's size, initialization, series-address arithmetic, and MethodTable lookup. The
+allocation-free short-object scan in `MarkPhase.cs` consumes normal and negative-count repeating
+maps with the native `go_through_object_nostart` order. Native static assertions and direct tests
+cover normal, component-array, no-pointer, and negative-count repeating descriptors.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

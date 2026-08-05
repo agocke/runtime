@@ -16,6 +16,7 @@ internal unsafe struct MethodTable
 {
     public const uint CollectibleFlag = 0x00200000;
     public const uint HasPointersFlag = 0x01000000;
+    public const uint HasComponentSizeFlag = 0x80000000;
 
     [FieldOffset(0)]
     public ushort m_usComponentSize;
@@ -52,6 +53,8 @@ internal unsafe struct MethodTable
     public uint GetBaseSize() => m_uBaseSize;
 
     public ushort RawGetComponentSize() => m_usComponentSize;
+
+    public int HasComponentSize() => (int)m_uFlags < 0 ? 1 : 0;
 
     public int HasReferenceFields() => (m_uFlags & HasPointersFlag) != 0 ? 1 : 0;
 
@@ -194,6 +197,66 @@ internal unsafe partial struct gc_heap
     public static int contain_pointers_or_collectible(byte* o)
     {
         return ((CObjectHeader*)o)->ContainsGCPointersOrCollectible();
+    }
+
+    // This is the go_through_object_nostart expansion used by the short pinned-object paths.
+    // The callback is a managed function pointer, so the collector calls another managed leaf
+    // directly without introducing a delegate allocation or a reverse P/Invoke transition.
+    public static void go_through_object_nostart(
+        MethodTable* mt,
+        byte* o,
+        nuint size,
+        void* context,
+        delegate*<byte**, void*, void> callback)
+    {
+        if (mt->ContainsGCPointers() == 0)
+        {
+            return;
+        }
+
+        CGCDesc* map = CGCDesc.GetCGCDescFromMT(mt);
+        CGCDescSeries* cur = map->GetHighestSeries();
+        nint cnt = (nint)map->GetNumSeries();
+
+        if (cnt >= 0)
+        {
+            CGCDescSeries* last = map->GetLowestSeries();
+            do
+            {
+                byte** parm = (byte**)unchecked((nuint)o + cur->GetSeriesOffset());
+                byte** ppstop = (byte**)unchecked((nuint)parm + cur->GetSeriesSize() + size);
+                while (parm < ppstop)
+                {
+                    callback(parm, context);
+                    parm++;
+                }
+
+                cur--;
+            }
+            while (cur >= last);
+        }
+        else
+        {
+            byte** parm = (byte**)unchecked((nuint)o + cur->startoffset);
+            byte* object_end = (byte*)unchecked((nuint)o + size - (nuint)sizeof(nuint));
+            while ((byte*)parm < object_end)
+            {
+                for (nint index = 0; index > cnt; index--)
+                {
+                    val_serie_item* item = (val_serie_item*)((byte*)cur + (index * sizeof(val_serie_item)));
+                    byte** ppstop = (byte**)unchecked(
+                        (nuint)parm + ((nuint)item->nptrs * (nuint)sizeof(byte*)));
+                    do
+                    {
+                        callback(parm, context);
+                        parm++;
+                    }
+                    while (parm < ppstop);
+
+                    parm = (byte**)unchecked((nuint)ppstop + (nuint)item->skip);
+                }
+            }
+        }
     }
 
     public static void reset_pinned_queue(gc_heap* heap)
