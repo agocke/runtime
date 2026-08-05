@@ -5985,6 +5985,322 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void SohTryFitUsesFreeListBeforeSegmentEnd()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        byte* storage = stackalloc byte[256];
+        for (int i = 0; i < 256; i++)
+        {
+            storage[i] = 0;
+        }
+
+        heap_segment segment = default;
+        byte* segmentStart = storage + 160;
+        heap_segment.heap_segment_mem(&segment) = segmentStart;
+        heap_segment.heap_segment_allocated(&segment) = segmentStart;
+        heap_segment.heap_segment_used(&segment) = segmentStart;
+        heap_segment.heap_segment_committed(&segment) = segmentStart + (nint)pad;
+        heap_segment.heap_segment_reserved(&segment) = heap_segment.heap_segment_committed(&segment);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        generation* gen0 = gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0);
+        byte* freeItem = storage + sizeof(nuint);
+        gc_heap.thread_free_item_front(gen0, freeItem, unchecked(size + pad));
+        dynamic_data data = default;
+        data.new_allocation = unchecked((nint)(size + pad));
+        gc_alloc_context context = default;
+        heap_segment* ephemeral = &segment;
+        byte* allocAllocated = segmentStart;
+        ulong totalAllocatedBytesSoh = 0;
+        bool commitFailed = false;
+        bool shortSegmentEnd = true;
+
+        Assert.True(gc_heap.soh_try_fit(
+            (int)gc_generation_num.soh_gen0,
+            size,
+            &context,
+            0,
+            alignment,
+            &commitFailed,
+            &shortSegmentEnd,
+            sufficient_space_regions_for_allocation_p: false,
+            sufficient_gen0_space_p: false,
+            &data,
+            0,
+            generations,
+            &ephemeral,
+            &allocAllocated,
+            &totalAllocatedBytesSoh,
+            0,
+            null));
+
+        Assert.False(commitFailed);
+        Assert.False(shortSegmentEnd);
+        Assert.Equal((nuint)freeItem, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)(freeItem + (nint)size), (nuint)context.alloc_limit);
+        Assert.Equal((nuint)segmentStart, (nuint)allocAllocated);
+        Assert.Equal((nuint)0, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(gen0), 0));
+        Assert.Equal((nint)0, data.new_allocation);
+    }
+
+    [Fact]
+    public void SohTryFitFallsBackToSegmentEnd()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        byte* storage = stackalloc byte[256];
+        byte* start = storage + 32;
+        heap_segment segment = default;
+        heap_segment.heap_segment_mem(&segment) = start;
+        heap_segment.heap_segment_allocated(&segment) = start;
+        heap_segment.heap_segment_used(&segment) = start;
+        heap_segment.heap_segment_committed(&segment) = start + (nint)(size + (2 * pad));
+        heap_segment.heap_segment_reserved(&segment) = heap_segment.heap_segment_committed(&segment);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        generation.generation_tail_region(gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0)) = &segment;
+        dynamic_data data = default;
+        data.new_allocation = unchecked((nint)(size + pad));
+        gc_alloc_context context = default;
+        heap_segment* ephemeral = &segment;
+        byte* allocAllocated = start;
+        ulong totalAllocatedBytesSoh = 0;
+        bool commitFailed = true;
+        bool shortSegmentEnd = true;
+
+        Assert.True(gc_heap.soh_try_fit(
+            (int)gc_generation_num.soh_gen0,
+            size,
+            &context,
+            0,
+            alignment,
+            &commitFailed,
+            &shortSegmentEnd,
+            sufficient_space_regions_for_allocation_p: true,
+            sufficient_gen0_space_p: false,
+            &data,
+            0,
+            generations,
+            &ephemeral,
+            &allocAllocated,
+            &totalAllocatedBytesSoh,
+            0,
+            null));
+
+        Assert.False(commitFailed);
+        Assert.False(shortSegmentEnd);
+        Assert.Equal((nuint)(start + (nint)(size + pad)), (nuint)allocAllocated);
+        Assert.Equal((nuint)start, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)(start + (nint)size), (nuint)context.alloc_limit);
+        Assert.Equal((nint)0, data.new_allocation);
+        Assert.Equal((ulong)size, totalAllocatedBytesSoh);
+    }
+
+    [Fact]
+    public void SohTryFitSuppressesShortEndWithoutChangingAllocationState()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        byte* storage = stackalloc byte[128];
+        byte* start = storage + 32;
+        heap_segment segment = default;
+        heap_segment.heap_segment_mem(&segment) = start;
+        heap_segment.heap_segment_allocated(&segment) = start;
+        heap_segment.heap_segment_used(&segment) = start;
+        heap_segment.heap_segment_committed(&segment) = start + (nint)(2 * pad);
+        heap_segment.heap_segment_reserved(&segment) = heap_segment.heap_segment_committed(&segment);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        dynamic_data data = default;
+        data.new_allocation = unchecked((nint)(3 * pad));
+        gc_alloc_context context = default;
+        heap_segment* ephemeral = &segment;
+        byte* allocAllocated = start;
+        ulong totalAllocatedBytesSoh = 17;
+        bool commitFailed = false;
+        bool shortSegmentEnd = false;
+
+        Assert.False(gc_heap.soh_try_fit(
+            (int)gc_generation_num.soh_gen0,
+            unchecked(2 * pad),
+            &context,
+            0,
+            alignment,
+            &commitFailed,
+            &shortSegmentEnd,
+            sufficient_space_regions_for_allocation_p: false,
+            sufficient_gen0_space_p: false,
+            &data,
+            0,
+            generations,
+            &ephemeral,
+            &allocAllocated,
+            &totalAllocatedBytesSoh,
+            0,
+            null));
+
+        Assert.False(commitFailed);
+        Assert.True(shortSegmentEnd);
+        Assert.Equal((nuint)(&segment), (nuint)ephemeral);
+        Assert.Equal((nuint)start, (nuint)allocAllocated);
+        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_allocated(&segment));
+        Assert.Equal((nuint)0, (nuint)context.alloc_ptr);
+        Assert.Equal((nint)(3 * pad), data.new_allocation);
+        Assert.Equal(17ul, totalAllocatedBytesSoh);
+    }
+
+    [Fact]
+    public void SohTryFitRollsToNextRegionAndFixesAllocationContext()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        byte* storage = stackalloc byte[512];
+        heap_segment* segments = stackalloc heap_segment[2];
+        segments[0] = default;
+        segments[1] = default;
+        byte* firstStart = storage + 32;
+        byte* secondStart = storage + 256;
+        heap_segment.heap_segment_mem(&segments[0]) = firstStart;
+        heap_segment.heap_segment_allocated(&segments[0]) = firstStart;
+        heap_segment.heap_segment_used(&segments[0]) = firstStart;
+        heap_segment.heap_segment_committed(&segments[0]) = firstStart + (nint)(6 * pad);
+        heap_segment.heap_segment_reserved(&segments[0]) = heap_segment.heap_segment_committed(&segments[0]);
+        heap_segment.heap_segment_next(&segments[0]) = &segments[1];
+        heap_segment.heap_segment_mem(&segments[1]) = secondStart;
+        heap_segment.heap_segment_allocated(&segments[1]) = secondStart;
+        heap_segment.heap_segment_used(&segments[1]) = secondStart;
+        heap_segment.heap_segment_committed(&segments[1]) = secondStart + (nint)(size + (2 * pad));
+        heap_segment.heap_segment_reserved(&segments[1]) = heap_segment.heap_segment_committed(&segments[1]);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        generation.generation_tail_region(gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0)) = &segments[1];
+        dynamic_data data = default;
+        data.new_allocation = unchecked((nint)(size + pad));
+        gc_alloc_context context = default;
+        context.alloc_ptr = firstStart + (nint)pad;
+        context.alloc_limit = firstStart + (nint)(2 * pad);
+        context.alloc_bytes = 100;
+        heap_segment* ephemeral = &segments[0];
+        byte* allocAllocated = firstStart + (nint)(3 * pad);
+        ulong totalAllocatedBytesSoh = 200;
+        bool commitFailed = false;
+        bool shortSegmentEnd = true;
+
+        Assert.True(gc_heap.soh_try_fit(
+            (int)gc_generation_num.soh_gen0,
+            size,
+            &context,
+            0,
+            alignment,
+            &commitFailed,
+            &shortSegmentEnd,
+            sufficient_space_regions_for_allocation_p: true,
+            sufficient_gen0_space_p: false,
+            &data,
+            0,
+            generations,
+            &ephemeral,
+            &allocAllocated,
+            &totalAllocatedBytesSoh,
+            0,
+            null));
+
+        Assert.False(commitFailed);
+        Assert.False(shortSegmentEnd);
+        Assert.Equal((nuint)(&segments[1]), (nuint)ephemeral);
+        Assert.Equal((nuint)(firstStart + (nint)pad), (nuint)heap_segment.heap_segment_allocated(&segments[0]));
+        Assert.Equal((nuint)(secondStart + (nint)(size + pad)), (nuint)allocAllocated);
+        Assert.Equal((nuint)secondStart, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)(secondStart + (nint)size), (nuint)context.alloc_limit);
+        Assert.Equal(100 - (long)pad + (long)size, context.alloc_bytes);
+        Assert.Equal((ulong)((nuint)200 - pad + size), totalAllocatedBytesSoh);
+        Assert.Equal((nint)0, data.new_allocation);
+    }
+
+    [Fact]
+    public void UohTryFitPropagatesCommitFailureAsOomWithoutChangingState()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        int alignment = gc_heap.get_alignment_constant(small_object_p: false);
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        byte* start = (byte*)0x2000;
+        heap_segment segment = default;
+        heap_segment.heap_segment_mem(&segment) = start;
+        heap_segment.heap_segment_allocated(&segment) = start;
+        heap_segment.heap_segment_used(&segment) = start;
+        heap_segment.heap_segment_committed(&segment) = start;
+        heap_segment.heap_segment_reserved(&segment) = start + (nint)(2 * pageSize);
+        gc_heap.heap_hard_limit = pageSize - 1;
+        gc_heap.heap_hard_limit_oh = default;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        generation* loh = gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation);
+        generation.generation_allocation_segment(loh) = &segment;
+        dynamic_data data = default;
+        data.new_allocation = unchecked((nint)(2 * pageSize));
+        gc_alloc_context context = default;
+        context.alloc_bytes = 17;
+        ulong totalAllocatedBytesUoh = 19;
+        bool commitFailed = false;
+        oom_reason oomReason = oom_reason.oom_no_failure;
+
+        Assert.False(gc_heap.uoh_try_fit(
+            (int)gc_generation_num.loh_generation,
+            pageSize,
+            &context,
+            0,
+            alignment,
+            &commitFailed,
+            &oomReason,
+            &data,
+            0,
+            generations,
+            null,
+            null,
+            &totalAllocatedBytesUoh,
+            0));
+
+        Assert.True(commitFailed);
+        Assert.Equal(oom_reason.oom_cant_commit, oomReason);
+        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_allocated(&segment));
+        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_used(&segment));
+        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_committed(&segment));
+        Assert.Equal((nuint)0, (nuint)context.alloc_ptr);
+        Assert.Equal(17, context.alloc_bytes);
+        Assert.Equal((ulong)19, totalAllocatedBytesUoh);
+        Assert.Equal((nint)(2 * pageSize), data.new_allocation);
+    }
+
+    [Fact]
     public void FreeListFitFailureLeavesSohAndUohStateUnchanged()
     {
         int sohAlignment = gc_heap.get_alignment_constant(small_object_p: true);

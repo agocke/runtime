@@ -618,6 +618,238 @@ internal unsafe partial struct gc_heap
         return can_allocate_p;
     }
 
+    // The dynamic plan computes sufficient_space_regions_for_allocation before this allocation
+    // path runs. Its inputs are explicit here because the heap fields and the planning policy
+    // that produces them are not translated yet.
+    public static bool short_on_end_of_seg(
+        bool sufficient_space_regions_for_allocation_p,
+        bool sufficient_gen0_space_p)
+    {
+        bool sufficient_p = sufficient_space_regions_for_allocation_p;
+        if (!sufficient_p)
+        {
+            sufficient_p = sufficient_gen0_space_p;
+        }
+
+        return !sufficient_p;
+    }
+
+    // This is precisely the for_gc_p == true, record_ac_p == false call made before an
+    // ephemeral-region rollover. The complete fix_allocation_context also handles concurrent
+    // verification and allocation-context statistics, which remain with the heap/collection
+    // slices that own those states.
+    public static void fix_allocation_context_for_region_rollover(
+        gc_alloc_context* acontext,
+        generation* generation_table,
+        heap_segment* ephemeral_heap_segment,
+        byte** alloc_allocated,
+        ulong* total_alloc_bytes_soh)
+    {
+        if (acontext->alloc_ptr is null)
+        {
+            return;
+        }
+
+        int align_const = get_alignment_constant(true);
+        nuint aligned_min_obj_size = Align((nuint)GCInterfaceOffsets.min_obj_size, align_const);
+        bool is_ephemeral_heap_segment =
+            in_range_for_segment(acontext->alloc_limit, ephemeral_heap_segment) != 0;
+
+        if (!is_ephemeral_heap_segment ||
+            unchecked((nuint)(*alloc_allocated - acontext->alloc_limit)) > aligned_min_obj_size)
+        {
+            byte* point = acontext->alloc_ptr;
+            nuint size = unchecked((nuint)(acontext->alloc_limit - acontext->alloc_ptr) + aligned_min_obj_size);
+            make_unused_array(point, size);
+            generation* gen0 = generation_of(generation_table, (int)gc_generation_num.soh_gen0);
+            generation.generation_free_obj_space(gen0) =
+                unchecked(generation.generation_free_obj_space(gen0) + size);
+        }
+        else
+        {
+            *alloc_allocated = acontext->alloc_ptr;
+            System.Diagnostics.Debug.Assert(
+                heap_segment.heap_segment_allocated(ephemeral_heap_segment) <=
+                heap_segment.heap_segment_committed(ephemeral_heap_segment));
+        }
+
+        retire_allocation_context(acontext, total_alloc_bytes_soh);
+    }
+
+    public static void fix_youngest_allocation_area(
+        generation* youngest_generation,
+        heap_segment* ephemeral_heap_segment,
+        byte* alloc_allocated)
+    {
+        System.Diagnostics.Debug.Assert(generation.generation_allocation_pointer(youngest_generation) is null);
+        System.Diagnostics.Debug.Assert(generation.generation_allocation_limit(youngest_generation) is null);
+
+        heap_segment.heap_segment_allocated(ephemeral_heap_segment) = alloc_allocated;
+        System.Diagnostics.Debug.Assert(
+            heap_segment.heap_segment_mem(ephemeral_heap_segment) <=
+            heap_segment.heap_segment_allocated(ephemeral_heap_segment));
+        System.Diagnostics.Debug.Assert(
+            heap_segment.heap_segment_allocated(ephemeral_heap_segment) <=
+            heap_segment.heap_segment_reserved(ephemeral_heap_segment));
+    }
+
+    // The heap-owned inputs stay explicit until try_allocate_more_space owns the allocation
+    // policy. Region acquisition uses the already-translated get_new_region helper; allocation
+    // diagnostics remain deferred with the diagnostics and production-routing slices.
+    public static bool soh_try_fit(
+        int gen_number,
+        nuint size,
+        gc_alloc_context* acontext,
+        uint flags,
+        int align_const,
+        bool* commit_failed_p,
+        bool* short_seg_end_p,
+        bool sufficient_space_regions_for_allocation_p,
+        bool sufficient_gen0_space_p,
+        dynamic_data* dd,
+        nuint allocation_quantum,
+        generation* generation_table,
+        heap_segment** ephemeral_heap_segment,
+        byte** alloc_allocated,
+        ulong* total_alloc_bytes_soh,
+        int heap_number,
+        gc_heap* hp)
+    {
+        if (short_seg_end_p is not null)
+        {
+            *short_seg_end_p = false;
+        }
+
+        bool can_allocate = a_fit_free_list_p(
+            gen_number,
+            size,
+            acontext,
+            flags,
+            align_const,
+            dd,
+            allocation_quantum,
+            generation_table,
+            total_alloc_bytes_soh);
+
+        if (can_allocate)
+        {
+            return true;
+        }
+
+        if (short_seg_end_p is not null)
+        {
+            *short_seg_end_p = short_on_end_of_seg(
+                sufficient_space_regions_for_allocation_p,
+                sufficient_gen0_space_p);
+        }
+
+        if (short_seg_end_p is not null && *short_seg_end_p)
+        {
+            return false;
+        }
+
+        while (*ephemeral_heap_segment is not null)
+        {
+            heap_segment* current_ephemeral_heap_segment = *ephemeral_heap_segment;
+            can_allocate = a_fit_segment_end_p(
+                gen_number,
+                current_ephemeral_heap_segment,
+                size,
+                acontext,
+                flags,
+                align_const,
+                commit_failed_p,
+                dd,
+                allocation_quantum,
+                generation_table,
+                current_ephemeral_heap_segment,
+                alloc_allocated,
+                total_alloc_bytes_soh,
+                heap_number);
+            if (can_allocate)
+            {
+                return true;
+            }
+
+            fix_allocation_context_for_region_rollover(
+                acontext,
+                generation_table,
+                current_ephemeral_heap_segment,
+                alloc_allocated,
+                total_alloc_bytes_soh);
+            fix_youngest_allocation_area(
+                generation_of(generation_table, (int)gc_generation_num.soh_gen0),
+                current_ephemeral_heap_segment,
+                *alloc_allocated);
+
+            heap_segment* next_seg = heap_segment.heap_segment_next(current_ephemeral_heap_segment);
+            if (next_seg is null)
+            {
+                generation* gen = generation_of(generation_table, gen_number);
+                System.Diagnostics.Debug.Assert(current_ephemeral_heap_segment == generation.generation_tail_region(gen));
+                next_seg = get_new_region(generation_table, hp, gen_number);
+            }
+
+            if (next_seg is null)
+            {
+                *commit_failed_p = true;
+                return false;
+            }
+
+            *ephemeral_heap_segment = next_seg;
+            *alloc_allocated = heap_segment.heap_segment_allocated(next_seg);
+        }
+
+        return false;
+    }
+
+    public static bool uoh_try_fit(
+        int gen_number,
+        nuint size,
+        gc_alloc_context* acontext,
+        uint flags,
+        int align_const,
+        bool* commit_failed_p,
+        oom_reason* oom_r,
+        dynamic_data* dd,
+        nuint allocation_quantum,
+        generation* generation_table,
+        heap_segment* ephemeral_heap_segment,
+        byte** alloc_allocated,
+        ulong* total_alloc_bytes,
+        int heap_number)
+    {
+        if (a_fit_free_list_uoh_p(
+            size,
+            acontext,
+            flags,
+            align_const,
+            gen_number,
+            dd,
+            allocation_quantum,
+            generation_table,
+            total_alloc_bytes))
+        {
+            return true;
+        }
+
+        return uoh_a_fit_segment_end_p(
+            gen_number,
+            size,
+            acontext,
+            flags,
+            align_const,
+            commit_failed_p,
+            oom_r,
+            dd,
+            allocation_quantum,
+            generation_table,
+            ephemeral_heap_segment,
+            alloc_allocated,
+            total_alloc_bytes,
+            heap_number);
+    }
+
     // This is the dependency-closed refill-state portion of adjust_limit_clr. The deferred
     // gc_heap owns generation_table, alloc_allocated, ephemeral_heap_segment, and the selected
     // SOH/UOH total_alloc_bytes counter; they are explicit here until try_allocate_more_space

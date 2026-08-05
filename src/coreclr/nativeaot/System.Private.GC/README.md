@@ -93,7 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, free-list fitting, segment-end fit/grow, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, free-list/segment-end orchestration and fitting, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
@@ -1006,6 +1006,19 @@ SOH/UOH total, and heap number are explicit unsafe parameters, rather than a par
 layout. These helpers are not routed into production allocation: `ManagedGCHeap.Alloc` still
 uses `GCHeapMemory` until the refill, free-list, and allocation-policy dependencies are
 translated.
+
+The next allocation orchestration leaf connects those fits in native order:
+`soh_try_fit` favors the SOH free list, honors the short-end result, tries the current
+ephemeral region, fixes its allocation context before advancing to an existing or newly acquired
+region, and preserves commit failure; `uoh_try_fit` takes the corresponding UOH free-list or
+writable-segment path and preserves its `oom_reason`. `short_on_end_of_seg` intentionally
+receives the two results of the unported planning policy as explicit booleans, rather than
+reimplementing dynamic space/budget decisions. Likewise,
+`fix_allocation_context_for_region_rollover` is only the native
+`for_gc_p == true, record_ac_p == false` rollover call: it formats or rewinds the context,
+retires SOH accounting, and `fix_youngest_allocation_area` publishes the old region's allocation
+pointer. Concurrent verification, allocation-context statistics, diagnostic region-added events,
+and all production allocation routing remain deferred.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real

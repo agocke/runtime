@@ -1099,9 +1099,17 @@ the native bucket chains, discards no-fit entries only for the single-bucket all
 only formatable remainders, transfers free-list/free-object accounting, and hands the acquired
 range to `adjust_limit_clr`. The UOH path retains its exact-or-formatable fit rule, restores the
 allocation-context limit after that handoff, and tracks the UOH free-list allocation and
-remainder accounting for both LOH and POH. The BGC allocation cookie/tracking and
-`heap_segment_flags_uoh_delete` branches, LOH-compaction padding, verification syncblock write,
-heap-owned free-list routing, budget policy, `clearp`/`resetp` branches of
+remainder accounting for both LOH and POH. The thin `soh_try_fit` / `uoh_try_fit` layer now
+orchestrates those leaves in native order: SOH tries the free list, applies short-end suppression,
+then walks/rolls over ephemeral regions; UOH tries its free list, then walks writable allocation
+segments and forwards a commit failure as `oom_cant_commit`. The SOH rollover uses the exact
+`fix_allocation_context` subset native calls there (`for_gc_p == true, record_ac_p == false`) and
+then publishes the old region's allocation pointer. The dynamic planning result consumed by
+`short_on_end_of_seg`, the heap-owned state it would normally read, and the subset's concurrent
+verification and allocation-context-statistics paths remain explicit deferrals rather than
+plausible replacements. The BGC allocation cookie/tracking and `heap_segment_flags_uoh_delete`
+branches, LOH-compaction padding, verification syncblock write, heap-owned free-list routing,
+budget policy, `clearp`/`resetp` branches of
 `make_unused_array`, clearing, allocation-info/events, `try_allocate_more_space`, and
 `allocate_more_space` remain deferred.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
