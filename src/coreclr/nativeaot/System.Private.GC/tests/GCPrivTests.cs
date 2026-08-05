@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Reflection;
 using System.Threading;
 #if USE_REGIONS
 using allocation_callback_result = Internal.Runtime.GarbageCollection.gc_heap.allocation_callback_result;
@@ -463,6 +464,7 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void MarkPhasePinnedQueuePreservesNativeStateTransitions()
     {
+        using MarkPhaseStateScope _ = new();
         byte* storage = stackalloc byte[128];
         mark* entries = stackalloc mark[2];
         generation generation = default;
@@ -479,16 +481,16 @@ public sealed unsafe class GCPrivTests
 
         gc_heap.make_mark_stack(pHeap, entries);
 
-        Assert.Equal((nuint)0, pHeap->mark_stack_tos);
-        Assert.Equal((nuint)0, pHeap->mark_stack_bos);
-        Assert.Equal(gc_rand.MARK_STACK_INITIAL_LENGTH, pHeap->mark_stack_array_length);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_tos);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
+        Assert.Equal(gc_rand.MARK_STACK_INITIAL_LENGTH, gc_heap.mark_stack_array_length);
         Assert.True(gc_heap.pinned_plug_que_empty_p(pHeap) != 0);
         Assert.True(gc_heap.before_oldest_pin(pHeap) is null);
 
         entries[0].first = storage + 64;
         gc_heap.set_pinned_info(pHeap, entries[0].first, 16, &generation);
 
-        Assert.Equal((nuint)1, pHeap->mark_stack_tos);
+        Assert.Equal((nuint)1, gc_heap.mark_stack_tos);
         Assert.Equal((nuint)16, gc_heap.pinned_len(&entries[0]));
         Assert.Equal((nuint)(storage + 64), (nuint)generation.generation_allocation_limit(&generation));
         Assert.True(gc_heap.oldest_pin(pHeap) == &entries[0]);
@@ -499,24 +501,24 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)(storage + 16), (nuint)entries[0].allocation_context_start_region);
 
         gc_heap.update_oldest_pinned_plug(pHeap);
-        Assert.Equal((nuint)(storage + 64), (nuint)pHeap->oldest_pinned_plug);
+        Assert.Equal((nuint)(storage + 64), (nuint)gc_heap.oldest_pinned_plug);
         Assert.Equal((nuint)0, gc_heap.deque_pinned_plug(pHeap));
         Assert.True(gc_heap.pinned_plug_que_empty_p(pHeap) != 0);
         Assert.True(gc_heap.before_oldest_pin(pHeap) == &entries[0]);
 
         gc_heap.reset_pinned_queue_bos(pHeap);
-        Assert.Equal((nuint)0, pHeap->mark_stack_bos);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
         gc_heap.reset_pinned_queue(pHeap);
-        Assert.Equal((nuint)0, pHeap->mark_stack_tos);
-        Assert.Equal((nuint)0, pHeap->mark_stack_bos);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_tos);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
 
-        pHeap->min_overflow_address = storage;
-        pHeap->max_overflow_address = storage + 96;
+        gc_heap.min_overflow_address = storage;
+        gc_heap.max_overflow_address = storage + 96;
         gc_heap.reset_mark_stack(pHeap);
-        Assert.Equal((nuint)0, pHeap->mark_stack_tos);
-        Assert.Equal((nuint)0, pHeap->mark_stack_bos);
-        Assert.Equal(nuint.MaxValue, (nuint)pHeap->min_overflow_address);
-        Assert.Equal((nuint)0, (nuint)pHeap->max_overflow_address);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_tos);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
+        Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+        Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
     }
 
     [Fact]
@@ -539,20 +541,115 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)pMethodTable, (nuint)pHeader->RawGetMethodTable());
     }
 
+    [Fact]
+    public void GcMechanismsUsesNativeLohCompactionRequestState()
+    {
+        using MarkPhaseStateScope _ = new();
+        FieldInfo configField = GetGCConfigField("s_LOHCompactionMode");
+        long savedConfig = (long)configField.GetValue(null);
+        int savedAlways = gc_heap.loh_compaction_always_p;
+        gc_loh_compaction_mode savedMode = gc_heap.loh_compaction_mode;
+
+        try
+        {
+            configField.SetValue(null, 1L);
+            gc_heap.initialize_loh_compaction_state();
+            Assert.Equal(1, gc_heap.loh_compaction_always_p);
+            Assert.Equal(gc_loh_compaction_mode.loh_compaction_default, gc_heap.loh_compaction_mode);
+
+            gc_heap.settings.init_mechanisms();
+            Assert.Equal(1, gc_heap.settings.loh_compaction);
+
+            configField.SetValue(null, 0L);
+            gc_heap.initialize_loh_compaction_state();
+            gc_heap.loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_once;
+            gc_heap.settings.init_mechanisms();
+            Assert.Equal(1, gc_heap.settings.loh_compaction);
+
+            gc_heap.loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_default;
+            gc_heap.settings.init_mechanisms();
+            Assert.Equal(0, gc_heap.settings.loh_compaction);
+        }
+        finally
+        {
+            configField.SetValue(null, savedConfig);
+            gc_heap.loh_compaction_always_p = savedAlways;
+            gc_heap.loh_compaction_mode = savedMode;
+        }
+    }
+
+    [Fact]
+    public void GcStaticStateInitializationPreservesNativeLohOrdering()
+    {
+        using MarkPhaseStateScope _ = new();
+        FieldInfo configField = GetGCConfigField("s_LOHCompactionMode");
+        long savedConfig = (long)configField.GetValue(null);
+        int savedAlways = gc_heap.loh_compaction_always_p;
+        gc_loh_compaction_mode savedMode = gc_heap.loh_compaction_mode;
+
+        try
+        {
+            configField.SetValue(null, 1L);
+            gc_heap.initialize_gc_static_state();
+
+            Assert.Equal(0, gc_heap.settings.loh_compaction);
+            Assert.Equal(1, gc_heap.loh_compaction_always_p);
+            Assert.Equal(gc_loh_compaction_mode.loh_compaction_default, gc_heap.loh_compaction_mode);
+            gc_heap.mark_queue.verify_empty();
+
+            gc_heap.settings.init_mechanisms();
+            Assert.Equal(1, gc_heap.settings.loh_compaction);
+
+            gc_heap.initialize_gc_static_state();
+            Assert.Equal(0, gc_heap.settings.loh_compaction);
+            Assert.Equal(1, gc_heap.loh_compaction_always_p);
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            configField.SetValue(null, savedConfig);
+            gc_heap.loh_compaction_always_p = savedAlways;
+            gc_heap.loh_compaction_mode = savedMode;
+        }
+    }
+
+#if DEBUG && BACKGROUND_GC
+    [Fact]
+    public void GcMechanismsFirstInitHonorsDebugLatencyMode()
+    {
+        using MarkPhaseStateScope _ = new();
+        FieldInfo configField = GetGCConfigField("s_LatencyMode");
+        long savedConfig = (long)configField.GetValue(null);
+
+        try
+        {
+            configField.SetValue(null, (long)gc_pause_mode.pause_sustained_low_latency);
+            gc_heap.settings.first_init();
+
+            Assert.Equal(gc_pause_mode.pause_sustained_low_latency, gc_heap.settings.pause_mode);
+        }
+        finally
+        {
+            configField.SetValue(null, savedConfig);
+        }
+    }
+#endif
+
 #if USE_REGIONS && !MULTIPLE_HEAPS
     [Fact]
     public void MarkPhaseBoundaryWritesThroughInclusiveEndAndStopsAtExhaustion()
     {
+        using MarkPhaseStateScope _ = new();
         byte** markList = stackalloc byte*[2];
         gc_heap heap = default;
         gc_heap* pHeap = &heap;
 
         markList[0] = (byte*)0xDEAD;
         markList[1] = (byte*)0xBEEF;
-        pHeap->mark_list = markList;
-        pHeap->mark_list_index = markList;
-        pHeap->mark_list_end = markList + 1;
-        pHeap->slow = (byte*)nuint.MaxValue;
+        gc_heap.mark_list = markList;
+        gc_heap.mark_list_index = markList;
+        gc_heap.mark_list_end = markList + 1;
+        gc_heap.slow = (byte*)nuint.MaxValue;
 
         gc_heap.m_boundary(pHeap, (byte*)0x2000);
         gc_heap.m_boundary(pHeap, (byte*)0x1000);
@@ -560,36 +657,149 @@ public sealed unsafe class GCPrivTests
 
         Assert.Equal((nuint)0x2000, (nuint)markList[0]);
         Assert.Equal((nuint)0x1000, (nuint)markList[1]);
-        Assert.Equal((nuint)(markList + 2), (nuint)pHeap->mark_list_index);
-        Assert.Equal((nuint)0x1000, (nuint)pHeap->slow);
-        Assert.Equal((nuint)0x3000, (nuint)pHeap->shigh);
+        Assert.Equal((nuint)(markList + 2), (nuint)gc_heap.mark_list_index);
+        Assert.Equal((nuint)0x1000, (nuint)gc_heap.slow);
+        Assert.Equal((nuint)0x3000, (nuint)gc_heap.shigh);
     }
 
     [Fact]
     public void MarkPhaseFullGcBoundarySuppressesListWritesAndTracksExtrema()
     {
+        using MarkPhaseStateScope _ = new();
         byte** markList = stackalloc byte*[1];
         gc_heap heap = default;
         gc_heap* pHeap = &heap;
 
         markList[0] = (byte*)0xDEAD;
-        pHeap->mark_list = markList;
-        pHeap->mark_list_index = markList;
-        pHeap->mark_list_end = markList;
-        pHeap->slow = (byte*)nuint.MaxValue;
+        gc_heap.mark_list = markList;
+        gc_heap.mark_list_index = markList;
+        gc_heap.mark_list_end = markList;
+        gc_heap.slow = (byte*)nuint.MaxValue;
 
         gc_heap.m_boundary_fullgc(pHeap, (byte*)0x3000);
         gc_heap.m_boundary_fullgc(pHeap, (byte*)0x1000);
 
         Assert.Equal((nuint)0xDEAD, (nuint)markList[0]);
-        Assert.Equal((nuint)markList, (nuint)pHeap->mark_list_index);
-        Assert.Equal((nuint)0x1000, (nuint)pHeap->slow);
-        Assert.Equal((nuint)0x3000, (nuint)pHeap->shigh);
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
+        Assert.Equal((nuint)0x1000, (nuint)gc_heap.slow);
+        Assert.Equal((nuint)0x3000, (nuint)gc_heap.shigh);
+    }
+
+    [Fact]
+    public void MarkPhaseCollectionSetupPreservesWksSettingsQueueAndCounterLifecycle()
+    {
+        using MarkPhaseStateScope _ = new();
+        byte** markList = stackalloc byte*[3];
+        nuint* survived = stackalloc nuint[3];
+        nuint* oldCardSurvived = stackalloc nuint[3];
+        MethodTable methodTable = default;
+        CObjectHeader header = default;
+
+        gc_heap.settings.gc_index = 17;
+        gc_heap.settings.card_bundles = 1;
+        gc_heap.settings.first_init();
+
+        Assert.Equal((nuint)0, gc_heap.settings.gc_index);
+        Assert.Equal(0, gc_heap.settings.condemned_generation);
+        Assert.Equal(0, gc_heap.settings.promotion);
+        Assert.Equal(1, gc_heap.settings.compaction);
+        Assert.Equal(0u, gc_heap.settings.concurrent);
+        Assert.Equal(1, gc_heap.settings.card_bundles);
+        Assert.Equal(gc_reason.reason_empty, gc_heap.settings.reason);
+
+        gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+        survived[0] = 1;
+        survived[1] = 2;
+        survived[2] = 3;
+        oldCardSurvived[0] = 4;
+        oldCardSurvived[1] = 5;
+        oldCardSurvived[2] = 6;
+        Assert.True(gc_heap.setup_mark_state_for_collection(markList, 3, survived, oldCardSurvived, 3));
+
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list);
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
+        Assert.Equal((nuint)(markList + 2), (nuint)gc_heap.mark_list_end);
+        Assert.Equal((nuint)survived, (nuint)gc_heap.survived_per_region);
+        Assert.Equal((nuint)oldCardSurvived, (nuint)gc_heap.old_card_survived_per_region);
+        Assert.Equal((nuint)0, survived[0]);
+        Assert.Equal((nuint)0, survived[1]);
+        Assert.Equal((nuint)0, survived[2]);
+        Assert.Equal((nuint)0, oldCardSurvived[0]);
+        Assert.Equal((nuint)0, oldCardSurvived[1]);
+        Assert.Equal((nuint)0, oldCardSurvived[2]);
+        Assert.Equal(nuint.MaxValue, (nuint)gc_heap.slow);
+        Assert.Equal((nuint)0, (nuint)gc_heap.shigh);
+
+        header.RawSetMethodTable(&methodTable);
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.queue_mark((byte*)&header));
+        gc_heap.initialize_mark_phase_state();
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list);
+        Assert.Equal((nuint)0, (nuint)gc_heap.survived_per_region);
+        Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+        Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+
+        gc_heap.settings.init_mechanisms();
+        gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+        survived[0] = 7;
+        oldCardSurvived[0] = 8;
+        Assert.True(gc_heap.setup_mark_state_for_collection(markList, 3, survived, oldCardSurvived, 3));
+
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_end);
+        Assert.Equal((nuint)0, survived[0]);
+        Assert.Equal((nuint)0, oldCardSurvived[0]);
+        gc_heap.m_boundary_fullgc(null, (byte*)0x2000);
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
+    }
+
+    [Fact]
+    public void MarkPhaseCollectionSetupRejectsUnavailableMarkListStorage()
+    {
+        using MarkPhaseStateScope _ = new();
+        nuint* survived = stackalloc nuint[1];
+        nuint* oldCardSurvived = stackalloc nuint[1];
+        byte** markList = stackalloc byte*[1];
+
+        Assert.False(gc_heap.setup_mark_state_for_collection(null, 1, survived, oldCardSurvived, 1));
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list);
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list_index);
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list_end);
+        Assert.Equal((nuint)0, (nuint)gc_heap.survived_per_region);
+        Assert.Equal((nuint)0, (nuint)gc_heap.old_card_survived_per_region);
+        Assert.Equal(nuint.MaxValue, (nuint)gc_heap.slow);
+        Assert.Equal((nuint)0, (nuint)gc_heap.shigh);
+
+        Assert.False(gc_heap.setup_mark_state_for_collection(markList, 0, survived, oldCardSurvived, 1));
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list);
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list_index);
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list_end);
+        Assert.Equal((nuint)0, (nuint)gc_heap.survived_per_region);
+        Assert.Equal((nuint)0, (nuint)gc_heap.old_card_survived_per_region);
+    }
+
+    [Fact]
+    public void MarkPhaseCollectionSetupUsesSingleEntryForFullGc()
+    {
+        using MarkPhaseStateScope _ = new();
+        byte** markList = stackalloc byte*[1];
+
+        markList[0] = (byte*)0xDEAD;
+        gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+        Assert.True(gc_heap.setup_mark_state_for_collection(markList, 1, null, null, 0));
+
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list);
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_end);
+        gc_heap.m_boundary_fullgc(null, (byte*)0x1000);
+        Assert.Equal((nuint)0xDEAD, (nuint)markList[0]);
+        Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
     }
 
     [Fact]
     public void MarkPhasePromotedBytesUseRegionIndexAndObjectSizeOverloads()
     {
+        using MarkPhaseStateScope _ = new();
         byte* storage = stackalloc byte[128];
         nuint* survived = stackalloc nuint[16];
         nuint* oldCardSurvived = stackalloc nuint[16];
@@ -614,8 +824,8 @@ public sealed unsafe class GCPrivTests
             GCCommon.g_gc_highest_address = storage + 128;
             gc_heap.min_segment_size_shr = 4;
             pHeap->heap_number = 12;
-            pHeap->survived_per_region = survived;
-            pHeap->old_card_survived_per_region = oldCardSurvived;
+            gc_heap.survived_per_region = survived;
+            gc_heap.old_card_survived_per_region = oldCardSurvived;
 
             nuint object1RegionIndex = gc_heap.get_basic_region_index_for_address(object1);
             nuint object2RegionIndex = gc_heap.get_basic_region_index_for_address(object2);
@@ -657,6 +867,7 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void MarkPhasePromotedBytesPreserveNativeUnsignedOverflow()
     {
+        using MarkPhaseStateScope _ = new();
         byte* storage = stackalloc byte[32];
         nuint* survived = stackalloc nuint[1];
         gc_heap heap = default;
@@ -673,7 +884,7 @@ public sealed unsafe class GCPrivTests
             GCCommon.g_gc_lowest_address = storage;
             GCCommon.g_gc_highest_address = storage + 32;
             gc_heap.min_segment_size_shr = 4;
-            pHeap->survived_per_region = survived;
+            gc_heap.survived_per_region = survived;
             survived[0] = nuint.MaxValue - 1;
 
 #if DEBUG
@@ -702,6 +913,7 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void MarkPhaseEnqueueAndSavePreserveShortPlugState()
     {
+        using MarkPhaseStateScope _ = new();
         byte* storage = stackalloc byte[7 * sizeof(plug_and_gap)];
         mark* entries = stackalloc mark[1];
         MethodTable methodTable = default;
@@ -726,7 +938,7 @@ public sealed unsafe class GCPrivTests
         postInfo->gap = 21;
         postInfo->reloc = 22;
         gc_heap.make_mark_stack(pHeap, entries);
-        pHeap->mark_stack_array_length = 1;
+        gc_heap.mark_stack_array_length = 1;
 
         gc_heap.enque_pinned_plug(pHeap, plug, 1, lastObjectBeforePlug);
 
@@ -744,7 +956,7 @@ public sealed unsafe class GCPrivTests
             (nuint)pMethodTable | CObjectHeader.GC_MARKED,
             (nuint)((CObjectHeader*)lastObjectBeforePlug)->RawGetMethodTable());
 
-        pHeap->mark_stack_tos = 1;
+        gc_heap.mark_stack_tos = 1;
         gc_heap.save_post_plug_info(pHeap, plug, lastObjectBeforePostPlug, postPlug);
 
         Assert.True(mark.post_short_p(&entries[0]) != 0);
@@ -769,6 +981,7 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void MarkPhaseEnqueueAndSaveRecordShortObjectReferenceBits()
     {
+        using MarkPhaseStateScope _ = new();
         const int GapOffset = 2;
         byte* storage = stackalloc byte[7 * sizeof(plug_and_gap)];
         byte* descriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
@@ -796,7 +1009,7 @@ public sealed unsafe class GCPrivTests
         gc_heap.set_plug_padded(lastObjectBeforePlug);
         gc_heap.set_plug_padded(lastObjectBeforePostPlug);
         gc_heap.make_mark_stack(pHeap, entries);
-        pHeap->mark_stack_array_length = 1;
+        gc_heap.mark_stack_array_length = 1;
 
         Assert.Equal(
             (nuint)GapOffset,
@@ -813,7 +1026,7 @@ public sealed unsafe class GCPrivTests
         Assert.True(mark.pre_short_bit_p(&entries[0], (nuint)GapOffset) != 0);
         Assert.True(gc_heap.is_plug_padded(lastObjectBeforePlug) != 0);
 
-        pHeap->mark_stack_tos = 1;
+        gc_heap.mark_stack_tos = 1;
         gc_heap.save_post_plug_info(pHeap, plug, lastObjectBeforePostPlug, postPlug);
 
         Assert.True(mark.post_short_p(&entries[0]) != 0);
@@ -824,6 +1037,7 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void MarkPhaseMergeRecoversSavedPostPlugBeforeExtending()
     {
+        using MarkPhaseStateScope _ = new();
         byte* storage = stackalloc byte[2 * sizeof(plug_and_gap)];
         mark* entries = stackalloc mark[1];
         gc_heap heap = default;
@@ -835,7 +1049,7 @@ public sealed unsafe class GCPrivTests
         entries[0].len = (nuint)sizeof(plug_and_gap);
         entries[0].saved_post_p = 1;
         entries[0].saved_post_plug = Pair(1, 2, 3, 4);
-        pHeap->mark_stack_tos = 1;
+        gc_heap.mark_stack_tos = 1;
 
         gc_heap.merge_with_last_pinned_plug(pHeap, entries[0].first, 16);
 
@@ -900,6 +1114,7 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void MarkPhaseEnqueueGrowthFailureReportsFatalErrorAndPreservesMarkStack()
     {
+        using MarkPhaseStateScope _ = new();
         SyncImports.ResetRecording();
         mark* stack = (mark*)SyncImports.ManagedGC_AllocZeroed((nuint)sizeof(mark));
         gc_heap heap = default;
@@ -908,9 +1123,9 @@ public sealed unsafe class GCPrivTests
         Assert.NotEqual((nuint)0, (nuint)stack);
         stack[0].first = (byte*)0x1000;
         stack[0].len = 11;
-        pHeap->mark_stack_array = stack;
-        pHeap->mark_stack_array_length = 1;
-        pHeap->mark_stack_tos = 1;
+        gc_heap.mark_stack_array = stack;
+        gc_heap.mark_stack_array_length = 1;
+        gc_heap.mark_stack_tos = 1;
 
         try
         {
@@ -925,9 +1140,9 @@ public sealed unsafe class GCPrivTests
                 gc_rand.MARK_STACK_INITIAL_LENGTH * (nuint)sizeof(mark),
                 SyncImports.LastAllocSize);
             Assert.Equal(0, SyncImports.FreeCount);
-            Assert.Equal((nuint)stack, (nuint)pHeap->mark_stack_array);
-            Assert.Equal((nuint)1, pHeap->mark_stack_array_length);
-            Assert.Equal((nuint)1, pHeap->mark_stack_tos);
+            Assert.Equal((nuint)stack, (nuint)gc_heap.mark_stack_array);
+            Assert.Equal((nuint)1, gc_heap.mark_stack_array_length);
+            Assert.Equal((nuint)1, gc_heap.mark_stack_tos);
             Assert.Equal((nuint)0x1000, (nuint)stack[0].first);
             Assert.Equal((nuint)11, stack[0].len);
         }
@@ -1163,6 +1378,7 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void MarkPhaseOverflowRangeTracksInclusiveExtrema()
     {
+        using MarkPhaseStateScope _ = new();
         gc_heap heap = default;
         gc_heap* pHeap = &heap;
 
@@ -1172,8 +1388,8 @@ public sealed unsafe class GCPrivTests
         gc_heap.record_mark_stack_overflow(pHeap, (byte*)0x500);
         gc_heap.record_mark_stack_overflow(pHeap, (byte*)0x300);
 
-        Assert.Equal((nuint)0x100, (nuint)pHeap->min_overflow_address);
-        Assert.Equal((nuint)0x500, (nuint)pHeap->max_overflow_address);
+        Assert.Equal((nuint)0x100, (nuint)gc_heap.min_overflow_address);
+        Assert.Equal((nuint)0x500, (nuint)gc_heap.max_overflow_address);
     }
 
     [Fact]
@@ -1329,6 +1545,13 @@ public sealed unsafe class GCPrivTests
         }
     }
 #endif
+
+    private static FieldInfo GetGCConfigField(string name)
+    {
+        FieldInfo field = typeof(GCConfig).GetField(name, BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.True(field is not null, $"GCConfig is missing {name}.");
+        return field;
+    }
 
     private static gap_reloc_pair Pair(nuint gap, nuint reloc, short left, short right) =>
         new() { gap = gap, reloc = reloc, m_pair = new pair { left = left, right = right } };
@@ -8909,6 +9132,75 @@ public sealed unsafe class GCPrivTests
     private static uint EncodedFreeRegionBlock(uint numUnits)
     {
         return unchecked((uint)region_allocator.region_alloc_free_bit) | numUnits;
+    }
+
+    private sealed unsafe class MarkPhaseStateScope : System.IDisposable
+    {
+        private readonly gc_mechanisms _settings;
+        private readonly mark_queue_t _markQueue;
+        private readonly nuint _markStackTos;
+        private readonly nuint _markStackBos;
+        private readonly byte* _oldestPinnedPlug;
+        private readonly mark* _markStackArray;
+        private readonly nuint _markStackArrayLength;
+        private readonly byte* _minOverflowAddress;
+        private readonly byte* _maxOverflowAddress;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+        private readonly byte** _markList;
+        private readonly byte** _markListEnd;
+        private readonly byte** _markListIndex;
+        private readonly byte* _slow;
+        private readonly byte* _shigh;
+        private readonly nuint* _survivedPerRegion;
+        private readonly nuint* _oldCardSurvivedPerRegion;
+#endif
+
+        public MarkPhaseStateScope()
+        {
+            _settings = gc_heap.settings;
+            _markQueue = gc_heap.mark_queue;
+            _markStackTos = gc_heap.mark_stack_tos;
+            _markStackBos = gc_heap.mark_stack_bos;
+            _oldestPinnedPlug = gc_heap.oldest_pinned_plug;
+            _markStackArray = gc_heap.mark_stack_array;
+            _markStackArrayLength = gc_heap.mark_stack_array_length;
+            _minOverflowAddress = gc_heap.min_overflow_address;
+            _maxOverflowAddress = gc_heap.max_overflow_address;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            _markList = gc_heap.mark_list;
+            _markListEnd = gc_heap.mark_list_end;
+            _markListIndex = gc_heap.mark_list_index;
+            _slow = gc_heap.slow;
+            _shigh = gc_heap.shigh;
+            _survivedPerRegion = gc_heap.survived_per_region;
+            _oldCardSurvivedPerRegion = gc_heap.old_card_survived_per_region;
+#endif
+
+            gc_heap.settings = default;
+            gc_heap.initialize_mark_phase_state();
+        }
+
+        public void Dispose()
+        {
+            gc_heap.settings = _settings;
+            gc_heap.mark_queue = _markQueue;
+            gc_heap.mark_stack_tos = _markStackTos;
+            gc_heap.mark_stack_bos = _markStackBos;
+            gc_heap.oldest_pinned_plug = _oldestPinnedPlug;
+            gc_heap.mark_stack_array = _markStackArray;
+            gc_heap.mark_stack_array_length = _markStackArrayLength;
+            gc_heap.min_overflow_address = _minOverflowAddress;
+            gc_heap.max_overflow_address = _maxOverflowAddress;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.mark_list = _markList;
+            gc_heap.mark_list_end = _markListEnd;
+            gc_heap.mark_list_index = _markListIndex;
+            gc_heap.slow = _slow;
+            gc_heap.shigh = _shigh;
+            gc_heap.survived_per_region = _survivedPerRegion;
+            gc_heap.old_card_survived_per_region = _oldCardSurvivedPerRegion;
+#endif
+        }
     }
 
     private sealed unsafe class RegionSegmentsStateScope : System.IDisposable

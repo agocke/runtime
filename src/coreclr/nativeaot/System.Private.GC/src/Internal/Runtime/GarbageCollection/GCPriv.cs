@@ -771,30 +771,62 @@ namespace Internal.Runtime.GarbageCollection
         public int heap_number;
 #endif
 
-        // These mark-phase-owned fields are intentionally separate from the allocation-owned
-        // subset above until the complete native gc_heap layout is translated.
-        public nuint mark_stack_tos;
-        public nuint mark_stack_bos;
-        public byte* oldest_pinned_plug;
+        // WKS makes these PER_HEAP_FIELD_SINGLE_GC fields static. They remain separate from
+        // the allocation-owned instance prefix until the complete native gc_heap layout is
+        // translated.
+        public static nuint mark_stack_tos;
+        public static nuint mark_stack_bos;
+        public static byte* oldest_pinned_plug;
+        public static mark_queue_t mark_queue;
 #if USE_REGIONS
-        // The active WKS USE_REGIONS m_boundary macros use this fixed-capacity list while
-        // marking. Its backing storage and per-collection setup remain collection-owned.
-        public byte** mark_list;
-        public byte** mark_list_end;
-        public byte** mark_list_index;
+        public static byte** mark_list;
+        public static byte** mark_list_end;
+        public static byte** mark_list_index;
 #if !MULTIPLE_HEAPS
-        public byte* shigh;
-        public byte* slow;
+        public static byte* shigh;
+        public static byte* slow;
 #endif
-        // The per-region counters share the native mark-list-piece lifetime: marking records
-        // into them and planning consumes them after marking has completed.
-        public nuint* survived_per_region;
-        public nuint* old_card_survived_per_region;
+        public static nuint* survived_per_region;
+        public static nuint* old_card_survived_per_region;
 #endif
-        public nuint mark_stack_array_length;
-        public mark* mark_stack_array;
-        public byte* min_overflow_address;
-        public byte* max_overflow_address;
+        public static nuint mark_stack_array_length;
+        public static mark* mark_stack_array;
+        public static byte* min_overflow_address;
+        public static byte* max_overflow_address;
+        public static int loh_compaction_always_p;
+        public static gc_loh_compaction_mode loh_compaction_mode;
+#if !USE_REGIONS
+        internal static bool gc_can_use_concurrent;
+#if BACKGROUND_GC
+        public static bool background_running_p() => false;
+#endif
+#endif
+
+        public static int loh_compaction_requested()
+        {
+            return loh_compaction_always_p != 0 ||
+                loh_compaction_mode != gc_loh_compaction_mode.loh_compaction_default
+                ? 1
+                : 0;
+        }
+
+        public static void initialize_loh_compaction_state()
+        {
+            loh_compaction_always_p = GCConfig.GetLOHCompactionMode() != 0 ? 1 : 0;
+            loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_default;
+        }
+
+        public static void initialize_gc_static_state()
+        {
+            // C# statics start zeroed, unlike gc_heap::loh_compaction_mode's native initializer.
+            // Establish its native default before first_init; initialize_gc applies the config
+            // value after first_init has reset the current collection mechanisms.
+            loh_compaction_always_p = 0;
+            loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_default;
+            settings.first_init();
+            initialize_loh_compaction_state();
+            initialize_mark_phase_state();
+        }
 
         public static heap_segment* heap_segment_in_range(heap_segment* segment)
         {
@@ -2500,6 +2532,50 @@ namespace Internal.Runtime.GarbageCollection
         public uint entry_memory_load;
         public ulong entry_available_physical_mem;
         public uint exit_memory_load;
+
+        public void init_mechanisms()
+        {
+            condemned_generation = 0;
+            promotion = 0;
+            compaction = 1;
+            loh_compaction = gc_heap.loh_compaction_requested();
+            heap_expansion = 0;
+            concurrent = 0;
+            demotion = 0;
+            elevation_reduced = 0;
+            found_finalizers = 0;
+#if BACKGROUND_GC
+            background_p = gc_heap.background_running_p() ? 1 : 0;
+#endif
+            entry_memory_load = 0;
+            entry_available_physical_mem = 0;
+            exit_memory_load = 0;
+        }
+
+        public void first_init()
+        {
+            gc_index = 0;
+            gen0_reduction_count = 0;
+            should_lock_elevation = 0;
+            elevation_locked_count = 0;
+            reason = gc_reason.reason_empty;
+#if BACKGROUND_GC
+            pause_mode = gc_heap.gc_can_use_concurrent
+                ? gc_pause_mode.pause_interactive
+                : gc_pause_mode.pause_batch;
+#if DEBUG
+            int debug_pause_mode = unchecked((int)GCConfig.GetLatencyMode());
+            if (debug_pause_mode >= 0)
+            {
+                Debug.Assert(debug_pause_mode <= (int)gc_pause_mode.pause_sustained_low_latency);
+                pause_mode = (gc_pause_mode)debug_pause_mode;
+            }
+#endif
+#else
+            pause_mode = gc_pause_mode.pause_batch;
+#endif
+            init_mechanisms();
+        }
     }
 
     internal enum gc_loh_compaction_mode

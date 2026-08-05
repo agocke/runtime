@@ -285,6 +285,8 @@ internal static unsafe class ManagedGCRegionBootstrap
             return;
         }
 
+        gc_heap.initialize_mark_phase_state();
+
         if (s_writeBarrierPublished)
         {
             GCWriteBarrier.stomp_write_barrier_ephemeral(

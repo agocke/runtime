@@ -225,11 +225,23 @@ The next active WKS `USE_REGIONS` prerequisites are present too: the fixed-capac
 list cursors, and `slow`/`shigh` extrema. The promoted-byte overloads record by the biased basic
 region index with native unsigned overflow, while the debug-only WKS global recording and reset
 remain guarded exactly as native. The `survived_per_region` and
-`old_card_survived_per_region` storage pointers are now part of the mark-phase heap subset.
-`mark_object_simple1`, `mark_object`, `drain_mark_queue`, and `mark_through_object` remain
-unrouted: `settings.condemned_generation` from the unported `gc_mechanisms` state, a
-collection-owned `mark_queue`, mark-list backing-storage setup, and per-collection
-survived-counter allocation/reset are still absent. Background marking remains deferred.
+`old_card_survived_per_region` storage pointers are now WKS static state, like their native
+`PER_HEAP_FIELD_SINGLE_GC` definitions. `gc_mechanisms.first_init` and
+`init_mechanisms` retain the condemned-generation defaults, debug latency-mode override, and
+full-GC decision input. Although the managed project does not define a C# `FEATURE_LOH_COMPACTION`
+symbol, native `gcpriv.h` enables that feature unconditionally; the managed lifecycle therefore
+also initializes the native LOH-compaction request state from `GCConfig`, preserves its
+default/once mode, and exposes it through the existing heap slots. Startup initializes this
+state and the static mark queue in the common `ManagedGCHeap.Initialize` path, before the
+region-specific branch, without routing collection. Collection setup accepts caller-owned
+mark-list and counter storage, preserves the full-versus-partial list-end rule, and clears both
+counter spans before resetting extrema. It rejects null or zero-length list storage with a false
+result after resetting all mark state (debug-asserting that disabled state), so it cannot publish
+a writable empty list. The native `g_mark_list`,
+`g_mark_list_piece`, sizing policy, and growth/allocation ownership remain unported because
+they depend on global planning and multi-heap state; this port deliberately does not allocate a
+substitute. `mark_object_simple1`, `mark_object`, `drain_mark_queue`, and `mark_through_object`
+remain unrouted. Background marking remains deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.

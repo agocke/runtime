@@ -377,14 +377,15 @@ internal unsafe partial struct gc_heap
 
     public static void record_mark_stack_overflow(gc_heap* heap, byte* o)
     {
-        if (o < heap->min_overflow_address)
+        _ = heap;
+        if (o < min_overflow_address)
         {
-            heap->min_overflow_address = o;
+            min_overflow_address = o;
         }
 
-        if (o > heap->max_overflow_address)
+        if (o > max_overflow_address)
         {
-            heap->max_overflow_address = o;
+            max_overflow_address = o;
         }
     }
 
@@ -564,39 +565,110 @@ internal unsafe partial struct gc_heap
     }
 #endif
 
+    public static void initialize_mark_phase_state()
+    {
+        fixed (mark_queue_t* queue = &mark_queue)
+        {
+            mark_queue_t.initialize(queue);
+        }
+        reset_mark_stack(null);
 #if USE_REGIONS && !MULTIPLE_HEAPS
+        mark_list = null;
+        mark_list_index = null;
+        mark_list_end = null;
+        survived_per_region = null;
+        old_card_survived_per_region = null;
+        shigh = null;
+        slow = (byte*)nuint.MaxValue;
+#endif
+    }
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    // The global mark-list allocation and its g_mark_list_piece backing are not ported yet.
+    // This setup consumes externally owned storage with the same WKS pointer layout, so no
+    // collection path can accidentally invent ownership or allocate while the world is stopped.
+    public static bool setup_mark_state_for_collection(
+        byte** mark_list_storage,
+        nuint mark_list_size,
+        nuint* survived_per_region_storage,
+        nuint* old_card_survived_per_region_storage,
+        nuint region_count)
+    {
+        mark_queue.verify_empty();
+
+        if (mark_list_storage is null || mark_list_size == 0)
+        {
+            initialize_mark_phase_state();
+            Debug.Assert(
+                mark_list is null &&
+                mark_list_index is null &&
+                mark_list_end is null &&
+                survived_per_region is null &&
+                old_card_survived_per_region is null);
+            return false;
+        }
+
+        mark_list = mark_list_storage;
+        mark_list_index = mark_list_storage;
+        mark_list_end = settings.condemned_generation < GCInterfaceOffsets.max_generation
+            ? mark_list_storage + (nint)(mark_list_size - 1)
+            : mark_list_storage;
+
+        if (survived_per_region_storage is not null &&
+            old_card_survived_per_region_storage is not null &&
+            region_count <= nuint.MaxValue / (nuint)sizeof(nuint))
+        {
+            survived_per_region = survived_per_region_storage;
+            old_card_survived_per_region = old_card_survived_per_region_storage;
+            nuint bytes = unchecked(region_count * (nuint)sizeof(nuint));
+            GCCommon.MemSet((byte*)survived_per_region, 0, bytes);
+            GCCommon.MemSet((byte*)old_card_survived_per_region, 0, bytes);
+        }
+        else
+        {
+            survived_per_region = null;
+            old_card_survived_per_region = null;
+        }
+
+        shigh = null;
+        slow = (byte*)nuint.MaxValue;
+        return true;
+    }
+
     // The WKS USE_REGIONS m_boundary macro owns a fixed-capacity list. Unlike the
     // GC_CONFIG_DRIVEN server branch, exhaustion leaves its cursor one past the final entry.
     public static void m_boundary(gc_heap* heap, byte* o)
     {
-        if (heap->mark_list_index <= heap->mark_list_end)
+        _ = heap;
+        if (mark_list_index <= mark_list_end)
         {
-            *heap->mark_list_index = o;
-            heap->mark_list_index++;
+            *mark_list_index = o;
+            mark_list_index++;
         }
 
-        if (heap->slow > o)
+        if (slow > o)
         {
-            heap->slow = o;
+            slow = o;
         }
 
-        if (heap->shigh < o)
+        if (shigh < o)
         {
-            heap->shigh = o;
+            shigh = o;
         }
     }
 
     // Full collections do not use the mark list, but WKS still tracks the marked-address range.
     public static void m_boundary_fullgc(gc_heap* heap, byte* o)
     {
-        if (heap->slow > o)
+        _ = heap;
+        if (slow > o)
         {
-            heap->slow = o;
+            slow = o;
         }
 
-        if (heap->shigh < o)
+        if (shigh < o)
         {
-            heap->shigh = o;
+            shigh = o;
         }
     }
 
@@ -622,11 +694,11 @@ internal unsafe partial struct gc_heap
     {
         Debug.Assert(thread == heap->heap_number);
 
-        if (heap->survived_per_region is not null)
+        if (survived_per_region is not null)
         {
             nuint region_index = get_basic_region_index_for_address(obj);
-            heap->survived_per_region[(nint)region_index] =
-                unchecked(heap->survived_per_region[(nint)region_index] + obj_size);
+            survived_per_region[(nint)region_index] =
+                unchecked(survived_per_region[(nint)region_index] + obj_size);
         }
 
 #if DEBUG
@@ -718,11 +790,12 @@ internal unsafe partial struct gc_heap
         int save_pre_plug_info_p,
         byte* last_object_in_last_plug)
     {
-        if (heap->mark_stack_array_length <= heap->mark_stack_tos)
+        _ = heap;
+        if (mark_stack_array_length <= mark_stack_tos)
         {
             if (grow_mark_stack(
-                    ref heap->mark_stack_array,
-                    ref heap->mark_stack_array_length,
+                    ref mark_stack_array,
+                    ref mark_stack_array_length,
                     gc_rand.MARK_STACK_INITIAL_LENGTH) == 0)
             {
                 // Continuing after this failure risks corrupting the mark stack.
@@ -730,7 +803,7 @@ internal unsafe partial struct gc_heap
             }
         }
 
-        mark* m = &heap->mark_stack_array[heap->mark_stack_tos];
+        mark* m = &mark_stack_array[mark_stack_tos];
         m->first = plug;
         m->saved_pre_p = save_pre_plug_info_p;
 
@@ -777,7 +850,8 @@ internal unsafe partial struct gc_heap
         byte* last_object_in_last_plug,
         byte* post_plug)
     {
-        mark* m = &heap->mark_stack_array[heap->mark_stack_tos - 1];
+        _ = heap;
+        mark* m = &mark_stack_array[mark_stack_tos - 1];
         Debug.Assert(last_pinned_plug == m->first);
         m->saved_post_plug_info_start = (byte*)(((plug_and_gap*)post_plug) - 1);
 
@@ -817,21 +891,24 @@ internal unsafe partial struct gc_heap
 
     public static void reset_pinned_queue(gc_heap* heap)
     {
-        heap->mark_stack_tos = 0;
-        heap->mark_stack_bos = 0;
+        _ = heap;
+        mark_stack_tos = 0;
+        mark_stack_bos = 0;
     }
 
     public static void reset_pinned_queue_bos(gc_heap* heap)
     {
-        heap->mark_stack_bos = 0;
+        _ = heap;
+        mark_stack_bos = 0;
     }
 
     // last_pinned_plug is only for asserting purpose.
     public static void merge_with_last_pinned_plug(gc_heap* heap, byte* last_pinned_plug, nuint plug_size)
     {
+        _ = heap;
         if (last_pinned_plug is not null)
         {
-            mark* last_m = &heap->mark_stack_array[heap->mark_stack_tos - 1];
+            mark* last_m = &mark_stack_array[mark_stack_tos - 1];
             Debug.Assert(last_pinned_plug == last_m->first);
             if (last_m->saved_post_p != 0)
             {
@@ -874,11 +951,12 @@ internal unsafe partial struct gc_heap
     // After we set the info, we increase tos.
     public static void set_pinned_info(gc_heap* heap, byte* last_pinned_plug, nuint plug_len, generation* gen)
     {
-        mark* m = &heap->mark_stack_array[heap->mark_stack_tos];
+        _ = heap;
+        mark* m = &mark_stack_array[mark_stack_tos];
         Debug.Assert(last_pinned_plug == m->first);
 
         m->len = plug_len;
-        heap->mark_stack_tos++;
+        mark_stack_tos++;
         Debug.Assert(gen is not null);
         // Why are we checking here? gen is never 0.
         if (gen is not null)
@@ -889,16 +967,18 @@ internal unsafe partial struct gc_heap
 
     public static nuint deque_pinned_plug(gc_heap* heap)
     {
-        nuint m = heap->mark_stack_bos;
-        heap->mark_stack_bos++;
+        _ = heap;
+        nuint m = mark_stack_bos;
+        mark_stack_bos++;
         return m;
     }
 
     public static mark* before_oldest_pin(gc_heap* heap)
     {
-        if (heap->mark_stack_bos >= 1)
+        _ = heap;
+        if (mark_stack_bos >= 1)
         {
-            return pinned_plug_of(heap, heap->mark_stack_bos - 1);
+            return pinned_plug_of(null, mark_stack_bos - 1);
         }
         else
         {
@@ -909,8 +989,8 @@ internal unsafe partial struct gc_heap
     public static void make_mark_stack(gc_heap* heap, mark* arr)
     {
         reset_pinned_queue(heap);
-        heap->mark_stack_array = arr;
-        heap->mark_stack_array_length = gc_rand.MARK_STACK_INITIAL_LENGTH;
+        mark_stack_array = arr;
+        mark_stack_array_length = gc_rand.MARK_STACK_INITIAL_LENGTH;
     }
 
     public static int grow_mark_stack(ref mark* m, ref nuint len, nuint init_len)
@@ -964,23 +1044,26 @@ internal unsafe partial struct gc_heap
     public static void reset_mark_stack(gc_heap* heap)
     {
         reset_pinned_queue(heap);
-        heap->max_overflow_address = null;
-        heap->min_overflow_address = (byte*)nuint.MaxValue;
+        max_overflow_address = null;
+        min_overflow_address = (byte*)nuint.MaxValue;
     }
 
     public static mark* pinned_plug_of(gc_heap* heap, nuint bos)
     {
-        return &heap->mark_stack_array[bos];
+        _ = heap;
+        return &mark_stack_array[bos];
     }
 
     public static mark* oldest_pin(gc_heap* heap)
     {
-        return pinned_plug_of(heap, heap->mark_stack_bos);
+        _ = heap;
+        return pinned_plug_of(null, mark_stack_bos);
     }
 
     public static int pinned_plug_que_empty_p(gc_heap* heap)
     {
-        return heap->mark_stack_bos == heap->mark_stack_tos ? 1 : 0;
+        _ = heap;
+        return mark_stack_bos == mark_stack_tos ? 1 : 0;
     }
 
     public static byte* pinned_plug(mark* m)
@@ -1001,6 +1084,7 @@ internal unsafe partial struct gc_heap
 
     public static void update_oldest_pinned_plug(gc_heap* heap)
     {
-        heap->oldest_pinned_plug = pinned_plug_que_empty_p(heap) != 0 ? null : pinned_plug(oldest_pin(heap));
+        _ = heap;
+        oldest_pinned_plug = pinned_plug_que_empty_p(null) != 0 ? null : pinned_plug(oldest_pin(null));
     }
 }

@@ -737,11 +737,21 @@ Translate the schema from `gcpriv.h` and related headers:
   its inclusive list end and stopped exhausted cursor, `m_boundary_fullgc` suppresses list writes
   while retaining WKS extrema, and the per-region survived-counter/object-size overloads preserve
   biased-index and unchecked native-size behavior. The WKS global promoted recording/reset stays
-  debug-only. Focused tests cover capacity/exhaustion, full versus partial boundaries, extrema,
-  region accumulation, both overloads, and debug reset behavior. Collection entrypoints remain
-  deferred without routing: `settings.condemned_generation` from unported `gc_mechanisms`
-  state, collection-owned `mark_queue`, mark-list storage setup, and survived-counter lifecycle
-  are not yet ported.
+  debug-only. The next dependency-closed lifecycle slice makes the WKS
+  `PER_HEAP_FIELD_SINGLE_GC` mark state static: `gc_mechanisms.first_init` /
+  `init_mechanisms` retain condemned-generation initialization and the debug latency override.
+  Native `gcpriv.h` enables `FEATURE_LOH_COMPACTION` unconditionally, so the managed port carries
+  the minimal default/once and config-forced LOH request state instead of treating it as
+  inactive. The common heap initialization path initializes that state and the static queue
+  before the region-specific branch. Collection setup verifies its empty invariant, selects the
+  full versus partial mark-list end, resets extrema, and assigns and
+  clears the two region-counter spans. Focused tests cover settings reset, debug latency and LOH
+  compaction behavior, queue reset, full and partial list setup, counter pointer/zeroing, extrema
+  sentinels, repeated lifecycle reset, and the non-publishing null/zero-list failure path. The
+  native global `g_mark_list` /
+  `g_mark_list_piece` backing allocation, size/growth policy, and ownership remain blocked on
+  unported planning and multi-heap globals, so setup intentionally accepts caller-owned storage
+  and collection entrypoints remain unrouted.
 - The first dependency-free `gcpriv.h` records: `static_data`,
   `recorded_generation_info`, and `etw_opt_info`. These establish the pointer-sized schema used
   by dynamic tuning, recorded GC information, and allocation diagnostics.

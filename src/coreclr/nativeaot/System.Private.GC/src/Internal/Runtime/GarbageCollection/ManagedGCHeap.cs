@@ -213,6 +213,8 @@ namespace Internal.Runtime.GarbageCollection
                 return E_OUTOFMEMORY;
             }
 
+            gc_heap.initialize_gc_static_state();
+
 #if USE_REGIONS
             if (!ManagedGCRegionBootstrap.Initialize())
             {
@@ -781,10 +783,11 @@ namespace Internal.Runtime.GarbageCollection
 
         private static int SetGcLatencyMode(void* thisPtr, int newLatencyMode) => S_OK;
 
-        private static int GetLOHCompactionMode(void* thisPtr) => 0;
+        private static int GetLOHCompactionMode(void* thisPtr) => (int)gc_heap.loh_compaction_mode;
 
         private static void SetLOHCompactionMode(void* thisPtr, int newLOHCompactionMode)
         {
+            gc_heap.loh_compaction_mode = (gc_loh_compaction_mode)newLOHCompactionMode;
         }
 
         private static int RefreshMemoryLimit(void* thisPtr) => S_OK;
