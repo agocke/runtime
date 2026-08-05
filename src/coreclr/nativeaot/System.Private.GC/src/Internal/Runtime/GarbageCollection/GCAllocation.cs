@@ -166,6 +166,92 @@ internal unsafe partial struct gc_heap
     }
 
 #if USE_REGIONS
+    // gcpriv.h defines plug_skew as sizeof(ObjHeader). NativeAOT's ObjHeader has the native
+    // pointer width, so this preserves the native expression without a managed object header.
+    private static nuint plug_skew => (nuint)sizeof(nuint);
+
+    // This is the `uint8_t*& allocated` selection and `allocated += limit` from
+    // a_fit_segment_end_p. alloc_allocated is a deferred gc_heap field, so it remains an
+    // explicit pointer for the SOH branch; UOH updates the supplied segment directly.
+    public static void advance_allocated(byte** alloc_allocated, heap_segment* seg, nuint limit, int gen_number)
+    {
+        if (gen_number == 0)
+        {
+            *alloc_allocated = (byte*)unchecked((nuint)(*alloc_allocated) + limit);
+        }
+        else
+        {
+            heap_segment.heap_segment_allocated(seg) =
+                (byte*)unchecked((nuint)heap_segment.heap_segment_allocated(seg) + limit);
+        }
+    }
+
+    // This is the dependency-closed refill-state portion of adjust_limit_clr. The deferred
+    // gc_heap owns generation_table, alloc_allocated, ephemeral_heap_segment, and the selected
+    // SOH/UOH total_alloc_bytes counter; they are explicit here until try_allocate_more_space
+    // supplies the locking, budget, clearing, and event paths that own the rest of the method.
+    public static void adjust_limit_clr(
+        byte* start,
+        nuint limit_size,
+        gc_alloc_context* acontext,
+        heap_segment* seg,
+        int align_const,
+        int gen_number,
+        generation* generation_table,
+        heap_segment* ephemeral_heap_segment,
+        byte* alloc_allocated,
+        ulong* total_alloc_bytes)
+    {
+        nuint aligned_min_obj_size = Align((nuint)GCInterfaceOffsets.min_obj_size, align_const);
+
+        if (seg is not null)
+        {
+            System.Diagnostics.Debug.Assert(heap_segment.heap_segment_used(seg) <= heap_segment.heap_segment_committed(seg));
+        }
+
+        if ((acontext->alloc_limit != start) &&
+            ((byte*)unchecked((nuint)acontext->alloc_limit + aligned_min_obj_size) != start))
+        {
+            byte* hole = acontext->alloc_ptr;
+            if (hole is not null)
+            {
+                nuint ac_size = unchecked((nuint)(acontext->alloc_limit - acontext->alloc_ptr));
+                acontext->alloc_bytes = unchecked(acontext->alloc_bytes - (long)ac_size);
+                *total_alloc_bytes = unchecked(*total_alloc_bytes - ac_size);
+
+                nuint free_obj_size = unchecked(ac_size + aligned_min_obj_size);
+                make_free_obj(generation_of(generation_table, gen_number), hole, free_obj_size);
+            }
+
+            acontext->alloc_ptr = start;
+        }
+        else if (gen_number == 0)
+        {
+            if (acontext->alloc_ptr is null)
+            {
+                acontext->alloc_ptr = start;
+            }
+            else
+            {
+                make_unused_array(acontext->alloc_ptr, aligned_min_obj_size);
+                acontext->alloc_ptr = (byte*)unchecked((nuint)acontext->alloc_ptr + aligned_min_obj_size);
+            }
+        }
+
+        set_alloc_context_limit(acontext, start, limit_size, gen_number, align_const, total_alloc_bytes);
+
+        if (seg == ephemeral_heap_segment)
+        {
+            byte* allocated = (byte*)unchecked((nuint)alloc_allocated - plug_skew);
+            if (heap_segment.heap_segment_used(seg) < allocated)
+            {
+                heap_segment.heap_segment_used(seg) = allocated;
+                System.Diagnostics.Debug.Assert(heap_segment.heap_segment_mem(seg) <= heap_segment.heap_segment_used(seg));
+                System.Diagnostics.Debug.Assert(heap_segment.heap_segment_used(seg) <= heap_segment.heap_segment_reserved(seg));
+            }
+        }
+    }
+
     public static void set_allocation_heap_segment(generation* gen)
     {
         generation.generation_allocation_segment(gen) =

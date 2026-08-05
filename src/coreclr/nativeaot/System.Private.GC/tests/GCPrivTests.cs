@@ -5123,6 +5123,203 @@ public sealed unsafe class GCPrivTests
 
 #if USE_REGIONS
     [Fact]
+    public void AdjustLimitClrFillsDiscontinuousContextHoleAndPreservesAccounting()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint alignedMinObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        byte* storage = stackalloc byte[256];
+        byte* hole = storage + 32;
+        byte* start = storage + 128;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation.initialize(&generations[i]);
+        }
+
+        heap_segment ephemeral = default;
+        gc_alloc_context context = default;
+        context.alloc_ptr = hole;
+        context.alloc_limit = hole + 32;
+        context.alloc_bytes = 100;
+        ulong totalAllocatedBytes = 200;
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            gc_heap.adjust_limit_clr(
+                start,
+                64,
+                &context,
+                null,
+                alignment,
+                (int)gc_generation_num.soh_gen0,
+                generations,
+                &ephemeral,
+                null,
+                &totalAllocatedBytes);
+
+            Assert.Equal((nuint)start, (nuint)context.alloc_ptr);
+            Assert.Equal((nuint)(start + (nint)((nuint)64 - alignedMinObjectSize)), (nuint)context.alloc_limit);
+            Assert.Equal(108, context.alloc_bytes);
+            Assert.Equal(208ul, totalAllocatedBytes);
+            Assert.Equal(32 + alignedMinObjectSize, generation.generation_free_obj_space(generations));
+            Assert.Equal((nuint)0x12345000, *(nuint*)hole);
+            Assert.Equal((nuint)32, *(nuint*)(hole + (nint)sizeof(nuint)));
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
+    public void AdjustLimitClrStartsNullRegionContextAndPublishesEphemeralUsed()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint alignedMinObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        byte* storage = stackalloc byte[256];
+        byte* start = storage + 32;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation.initialize(&generations[i]);
+        }
+
+        heap_segment segment = default;
+        heap_segment.heap_segment_mem(&segment) = start;
+        heap_segment.heap_segment_used(&segment) = start;
+        heap_segment.heap_segment_committed(&segment) = storage + 192;
+        heap_segment.heap_segment_reserved(&segment) = storage + 192;
+        gc_alloc_context context = default;
+        context.alloc_limit = start;
+        byte* allocAllocated = start;
+        ulong totalAllocatedBytes = 0;
+
+        gc_heap.advance_allocated(&allocAllocated, &segment, 64, (int)gc_generation_num.soh_gen0);
+        gc_heap.adjust_limit_clr(
+            start,
+            64,
+            &context,
+            &segment,
+            alignment,
+            (int)gc_generation_num.soh_gen0,
+            generations,
+            &segment,
+            allocAllocated,
+            &totalAllocatedBytes);
+
+        Assert.Equal((nuint)start, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)(start + (nint)((nuint)64 - alignedMinObjectSize)), (nuint)context.alloc_limit);
+        Assert.Equal((long)((nuint)64 - alignedMinObjectSize), context.alloc_bytes);
+        Assert.Equal((ulong)((nuint)64 - alignedMinObjectSize), totalAllocatedBytes);
+        Assert.Equal((nuint)(start + 64), (nuint)allocAllocated);
+        Assert.Equal((nuint)(allocAllocated - sizeof(nuint)), (nuint)heap_segment.heap_segment_used(&segment));
+        Assert.True(heap_segment.heap_segment_mem(&segment) <= heap_segment.heap_segment_used(&segment));
+        Assert.True(heap_segment.heap_segment_used(&segment) <= heap_segment.heap_segment_committed(&segment));
+        Assert.True(heap_segment.heap_segment_used(&segment) <= heap_segment.heap_segment_reserved(&segment));
+    }
+
+    [Fact]
+    public void AdjustLimitClrPadsContiguousGen0Context()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint alignedMinObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        byte* storage = stackalloc byte[256];
+        byte* start = storage + 64;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation.initialize(&generations[i]);
+        }
+
+        heap_segment ephemeral = default;
+        gc_alloc_context context = default;
+        context.alloc_ptr = start;
+        context.alloc_limit = start;
+        context.alloc_bytes = 5;
+        ulong totalAllocatedBytes = 7;
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            gc_heap.adjust_limit_clr(
+                start,
+                64,
+                &context,
+                null,
+                alignment,
+                (int)gc_generation_num.soh_gen0,
+                generations,
+                &ephemeral,
+                null,
+                &totalAllocatedBytes);
+
+            Assert.Equal((nuint)(start + (nint)alignedMinObjectSize), (nuint)context.alloc_ptr);
+            Assert.Equal((nuint)(start + (nint)((nuint)64 - alignedMinObjectSize)), (nuint)context.alloc_limit);
+            Assert.Equal(45, context.alloc_bytes);
+            Assert.Equal(47ul, totalAllocatedBytes);
+            Assert.Equal((nuint)0x12345000, *(nuint*)start);
+            Assert.Equal((nuint)0, *(nuint*)(start + (nint)sizeof(nuint)));
+            Assert.Equal((nuint)0, generation.generation_free_obj_space(generations));
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
+    public void AdjustLimitClrKeepsUohAccountingAndAdvancesSegmentAllocation()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: false);
+        nuint alignedMinObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        byte* storage = stackalloc byte[256];
+        byte* start = storage + 32;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation.initialize(&generations[i]);
+        }
+
+        heap_segment segment = default;
+        heap_segment ephemeral = default;
+        heap_segment.heap_segment_mem(&segment) = start;
+        heap_segment.heap_segment_used(&segment) = start;
+        heap_segment.heap_segment_allocated(&segment) = start;
+        heap_segment.heap_segment_committed(&segment) = storage + 192;
+        heap_segment.heap_segment_reserved(&segment) = storage + 192;
+        gc_alloc_context context = default;
+        context.alloc_ptr = start;
+        context.alloc_limit = start;
+        context.alloc_bytes = 100;
+        context.alloc_bytes_uoh = 200;
+        ulong totalAllocatedBytesUoh = 300;
+
+        gc_heap.advance_allocated(null, &segment, 64, (int)gc_generation_num.loh_generation);
+        gc_heap.adjust_limit_clr(
+            start,
+            64,
+            &context,
+            &segment,
+            alignment,
+            (int)gc_generation_num.loh_generation,
+            generations,
+            &ephemeral,
+            null,
+            &totalAllocatedBytesUoh);
+
+        Assert.Equal((nuint)start, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)(start + (nint)((nuint)64 - alignedMinObjectSize)), (nuint)context.alloc_limit);
+        Assert.Equal(164, context.alloc_bytes);
+        Assert.Equal(200, context.alloc_bytes_uoh);
+        Assert.Equal(364ul, totalAllocatedBytesUoh);
+        Assert.Equal((nuint)(start + 64), (nuint)heap_segment.heap_segment_allocated(&segment));
+        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_used(&segment));
+    }
+
+    [Fact]
     public void ResetAllocationPointersSelectsTheFirstWritableRegionAndChecksHalfOpenBounds()
     {
         heap_segment readOnly = default;

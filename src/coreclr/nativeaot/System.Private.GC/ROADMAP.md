@@ -1080,11 +1080,15 @@ The first dependency-closed WKS `USE_REGIONS` leaves are in `GCAllocation.cs`: `
 `get_alignment_constant`, `a_size_fit_p`, `void_allocation`, and the pointer/limit reset path
 of `fix_allocation_context`; `make_unused_array`/`make_free_obj` and the `CObjectHeader::SetFree`
 memory writes they require; and `new_allocation_limit`/`limit_from_size` plus the
-allocation-context limit/accounting tail of `adjust_limit_clr`. They preserve the native
-free-object method table, array-length, free-list marker, unsigned arithmetic, and accounting
-updates. The heap-owned dynamic data and allocation quantum are explicit inputs until the
-refill caller and heap state are translated. The `clearp`/`resetp` branches of
-`make_unused_array`, free-list routing, budget policy, and refill remain deferred.
+allocation-context refill transition of `adjust_limit_clr`: the discontinuous-hole free object,
+the region-only null-context and contiguous-gen0 branches, limit/accounting update, and
+ephemeral used-boundary publication. The adjacent `a_fit_segment_end_p` allocated-pointer
+advance is a dependency-closed helper too. They preserve the native free-object method table,
+array-length, free-list marker, unsigned arithmetic, and accounting updates. The heap-owned
+generation table, selected SOH/UOH total, `alloc_allocated`, and ephemeral segment remain
+explicit unsafe inputs until the refill caller and heap state are translated. The
+`clearp`/`resetp` branches of `make_unused_array`, free-list routing, budget policy, clearing,
+events, and `try_allocate_more_space`/`allocate_more_space` remain deferred.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
 Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
 
