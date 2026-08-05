@@ -778,6 +778,8 @@ namespace Internal.Runtime.GarbageCollection
         public byte* oldest_pinned_plug;
         public nuint mark_stack_array_length;
         public mark* mark_stack_array;
+        public byte* min_overflow_address;
+        public byte* max_overflow_address;
 
         public static heap_segment* heap_segment_in_range(heap_segment* segment)
         {

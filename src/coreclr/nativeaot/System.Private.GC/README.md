@@ -193,9 +193,12 @@ gap/relocation-pair swaps are present. `SHORT_PLUGS` is unconditional, while
 `COLLECTIBLE_CLASS` remains gated as it is natively (disabled for NativeAOT). `recover_plug_info`
 is deferred until the compaction settings and diagnostics slices are available.
 `MarkPhase.cs` begins `mark_phase.cpp` with the dependency-closed pinned-plug queue setup:
-queue reset/dequeue and boundary helpers, mark-stack setup, saved post-plug recovery, and
-allocation-limit clipping at the oldest pin. It does not scan objects, mark references, or run a
-collection.
+queue reset/dequeue and boundary helpers, mark-stack setup, growth and overflow reset, saved
+post-plug recovery, and allocation-limit clipping at the oldest pin. Mark-stack growth keeps the
+native unmanaged ownership transfer: it copies the active entries only after allocating a
+replacement, then releases the old block. It does not scan objects, mark references, or run a
+collection; pinned-plug enqueue/save remains blocked on object-header special-bit handling and
+short-object reference scanning.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.

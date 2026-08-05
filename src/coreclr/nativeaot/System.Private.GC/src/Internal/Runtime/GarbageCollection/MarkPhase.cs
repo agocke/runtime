@@ -1,8 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Ported from the dependency-closed pinned-plug queue helpers in mark_phase.cpp and gcinternal.h.
+// Ported from the dependency-closed pinned-plug queue and mark-stack helpers in mark_phase.cpp and gcinternal.h.
 
+using System;
 using System.Diagnostics;
 
 namespace Internal.Runtime.GarbageCollection;
@@ -105,6 +106,61 @@ internal unsafe partial struct gc_heap
         reset_pinned_queue(heap);
         heap->mark_stack_array = arr;
         heap->mark_stack_array_length = gc_rand.MARK_STACK_INITIAL_LENGTH;
+    }
+
+    public static int grow_mark_stack(ref mark* m, ref nuint len, nuint init_len)
+    {
+        if (len > nuint.MaxValue / 2)
+        {
+            return 0;
+        }
+
+        nuint new_size = 2 * len;
+        if (new_size < init_len)
+        {
+            new_size = init_len;
+        }
+
+        if (new_size > nuint.MaxValue / (nuint)sizeof(mark))
+        {
+            return 0;
+        }
+
+        nuint bytes = new_size * (nuint)sizeof(mark);
+        if (bytes > unchecked((nuint)long.MaxValue))
+        {
+            return 0;
+        }
+
+        mark* tmp = (mark*)SyncImports.ManagedGC_AllocZeroed(bytes);
+        if (tmp is not null)
+        {
+            nuint bytes_to_copy = len * (nuint)sizeof(mark);
+            if (bytes_to_copy != 0)
+            {
+                Buffer.MemoryCopy(m, tmp, (long)bytes, (long)bytes_to_copy);
+            }
+
+            if (m is not null)
+            {
+                SyncImports.ManagedGC_Free(m);
+            }
+
+            m = tmp;
+            len = new_size;
+            return 1;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+    public static void reset_mark_stack(gc_heap* heap)
+    {
+        reset_pinned_queue(heap);
+        heap->max_overflow_address = null;
+        heap->min_overflow_address = (byte*)nuint.MaxValue;
     }
 
     public static mark* pinned_plug_of(gc_heap* heap, nuint bos)

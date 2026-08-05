@@ -508,6 +508,14 @@ public sealed unsafe class GCPrivTests
         gc_heap.reset_pinned_queue(pHeap);
         Assert.Equal((nuint)0, pHeap->mark_stack_tos);
         Assert.Equal((nuint)0, pHeap->mark_stack_bos);
+
+        pHeap->min_overflow_address = storage;
+        pHeap->max_overflow_address = storage + 96;
+        gc_heap.reset_mark_stack(pHeap);
+        Assert.Equal((nuint)0, pHeap->mark_stack_tos);
+        Assert.Equal((nuint)0, pHeap->mark_stack_bos);
+        Assert.Equal(nuint.MaxValue, (nuint)pHeap->min_overflow_address);
+        Assert.Equal((nuint)0, (nuint)pHeap->max_overflow_address);
     }
 
     [Fact]
@@ -531,6 +539,59 @@ public sealed unsafe class GCPrivTests
         AssertPair(*(gap_reloc_pair*)(storage + sizeof(plug_and_gap)), 1, 2, 3, 4);
         Assert.Equal(0, entries[0].saved_post_p);
         Assert.Equal((nuint)(sizeof(plug_and_gap) + 16), entries[0].len);
+    }
+
+    [Fact]
+    public void MarkPhaseMarkStackGrowthCopiesEntriesAndReleasesOldStorage()
+    {
+        SyncImports.ResetRecording();
+        nuint length = 2;
+        mark* stack = (mark*)SyncImports.ManagedGC_AllocZeroed(length * (nuint)sizeof(mark));
+        Assert.NotEqual((nuint)0, (nuint)stack);
+        stack[0].first = (byte*)0x1000;
+        stack[0].len = 11;
+        stack[0].saved_pre_p = 1;
+        stack[1].first = (byte*)0x2000;
+        stack[1].len = 22;
+        stack[1].saved_post_p = 1;
+
+        try
+        {
+            Assert.Equal(1, gc_heap.grow_mark_stack(ref stack, ref length, 1));
+
+            Assert.Equal((nuint)4, length);
+            Assert.Equal(2, SyncImports.AllocCount);
+            Assert.Equal(1, SyncImports.FreeCount);
+            Assert.Equal(4 * (nuint)sizeof(mark), SyncImports.LastAllocSize);
+            Assert.Equal((nuint)0x1000, (nuint)stack[0].first);
+            Assert.Equal((nuint)11, stack[0].len);
+            Assert.Equal(1, stack[0].saved_pre_p);
+            Assert.Equal((nuint)0x2000, (nuint)stack[1].first);
+            Assert.Equal((nuint)22, stack[1].len);
+            Assert.Equal(1, stack[1].saved_post_p);
+        }
+        finally
+        {
+            SyncImports.ManagedGC_Free(stack);
+        }
+
+        Assert.Equal(2, SyncImports.FreeCount);
+    }
+
+    [Fact]
+    public void MarkPhaseMarkStackGrowthFailurePreservesOwnershipAndState()
+    {
+        SyncImports.ResetRecording();
+        mark* stack = (mark*)0x1000;
+        nuint length = 2;
+        SyncImports.FailNextAlloc = true;
+
+        Assert.Equal(0, gc_heap.grow_mark_stack(ref stack, ref length, 1));
+
+        Assert.Equal((nuint)0x1000, (nuint)stack);
+        Assert.Equal((nuint)2, length);
+        Assert.Equal(1, SyncImports.AllocCount);
+        Assert.Equal(0, SyncImports.FreeCount);
     }
 
     private static gap_reloc_pair Pair(nuint gap, nuint reloc, short left, short right) =>
