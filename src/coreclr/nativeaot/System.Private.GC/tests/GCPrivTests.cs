@@ -459,6 +459,80 @@ public sealed unsafe class GCPrivTests
         AssertPair(value.saved_post_plug, 25, 26, 27, 28);
     }
 
+    [Fact]
+    public void MarkPhasePinnedQueuePreservesNativeStateTransitions()
+    {
+        byte* storage = stackalloc byte[128];
+        mark* entries = stackalloc mark[2];
+        generation generation = default;
+        heap_segment segment = default;
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        entries[0] = default;
+        entries[1] = default;
+        segment.mem = storage;
+        generation.generation_allocation_segment(&generation) = &segment;
+        generation.generation_allocation_pointer(&generation) = storage;
+        generation.generation_allocation_limit(&generation) = storage + 96;
+
+        gc_heap.make_mark_stack(pHeap, entries);
+
+        Assert.Equal((nuint)0, pHeap->mark_stack_tos);
+        Assert.Equal((nuint)0, pHeap->mark_stack_bos);
+        Assert.Equal(gc_rand.MARK_STACK_INITIAL_LENGTH, pHeap->mark_stack_array_length);
+        Assert.True(gc_heap.pinned_plug_que_empty_p(pHeap) != 0);
+        Assert.True(gc_heap.before_oldest_pin(pHeap) is null);
+
+        entries[0].first = storage + 64;
+        gc_heap.set_pinned_info(pHeap, entries[0].first, 16, &generation);
+
+        Assert.Equal((nuint)1, pHeap->mark_stack_tos);
+        Assert.Equal((nuint)16, gc_heap.pinned_len(&entries[0]));
+        Assert.Equal((nuint)(storage + 64), (nuint)generation.generation_allocation_limit(&generation));
+        Assert.True(gc_heap.oldest_pin(pHeap) == &entries[0]);
+        Assert.Equal((nuint)(storage + 64), (nuint)gc_heap.pinned_plug(gc_heap.oldest_pin(pHeap)));
+
+        gc_heap.set_new_pin_info(&entries[0], storage + 16);
+        Assert.Equal((nuint)48, gc_heap.pinned_len(&entries[0]));
+        Assert.Equal((nuint)(storage + 16), (nuint)entries[0].allocation_context_start_region);
+
+        gc_heap.update_oldest_pinned_plug(pHeap);
+        Assert.Equal((nuint)(storage + 64), (nuint)pHeap->oldest_pinned_plug);
+        Assert.Equal((nuint)0, gc_heap.deque_pinned_plug(pHeap));
+        Assert.True(gc_heap.pinned_plug_que_empty_p(pHeap) != 0);
+        Assert.True(gc_heap.before_oldest_pin(pHeap) == &entries[0]);
+
+        gc_heap.reset_pinned_queue_bos(pHeap);
+        Assert.Equal((nuint)0, pHeap->mark_stack_bos);
+        gc_heap.reset_pinned_queue(pHeap);
+        Assert.Equal((nuint)0, pHeap->mark_stack_tos);
+        Assert.Equal((nuint)0, pHeap->mark_stack_bos);
+    }
+
+    [Fact]
+    public void MarkPhaseMergeRecoversSavedPostPlugBeforeExtending()
+    {
+        byte* storage = stackalloc byte[2 * sizeof(plug_and_gap)];
+        mark* entries = stackalloc mark[1];
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        entries[0] = default;
+        gc_heap.make_mark_stack(pHeap, entries);
+        entries[0].first = storage + sizeof(plug_and_gap);
+        entries[0].len = (nuint)sizeof(plug_and_gap);
+        entries[0].saved_post_p = 1;
+        entries[0].saved_post_plug = Pair(1, 2, 3, 4);
+        pHeap->mark_stack_tos = 1;
+
+        gc_heap.merge_with_last_pinned_plug(pHeap, entries[0].first, 16);
+
+        AssertPair(*(gap_reloc_pair*)(storage + sizeof(plug_and_gap)), 1, 2, 3, 4);
+        Assert.Equal(0, entries[0].saved_post_p);
+        Assert.Equal((nuint)(sizeof(plug_and_gap) + 16), entries[0].len);
+    }
+
     private static gap_reloc_pair Pair(nuint gap, nuint reloc, short left, short right) =>
         new() { gap = gap, reloc = reloc, m_pair = new pair { left = left, right = right } };
 

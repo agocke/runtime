@@ -1159,11 +1159,11 @@ state match the C++ implementation across supported architectures.
 
 ### 9. Collection phases
 
-**Status: Not started**
+**Status: In progress -- pinned-plug queue setup is translated; collection marking is not**
 
 Translate in dependency order:
 
-- `mark_phase.cpp`
+- `mark_phase.cpp` (the dependency-closed pinned-plug queue setup is translated)
 - `plan_phase.cpp`
 - `relocate_compact.cpp`
 - `sweep.cpp`

@@ -93,6 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
+| `MarkPhase.cs` | dependency-closed pinned-plug queue helpers from `mark_phase.cpp`, `gcinternal.h` |
 | `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
@@ -191,6 +192,10 @@ short-plug schema, native `BOOL` bit predicates, pointer accessors, and allocati
 gap/relocation-pair swaps are present. `SHORT_PLUGS` is unconditional, while
 `COLLECTIBLE_CLASS` remains gated as it is natively (disabled for NativeAOT). `recover_plug_info`
 is deferred until the compaction settings and diagnostics slices are available.
+`MarkPhase.cs` begins `mark_phase.cpp` with the dependency-closed pinned-plug queue setup:
+queue reset/dequeue and boundary helpers, mark-stack setup, saved post-plug recovery, and
+allocation-limit clipping at the oldest pin. It does not scan objects, mark references, or run a
+collection.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.

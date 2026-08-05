@@ -127,6 +127,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ObjectHandle.cs" Link="ObjectHandle.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCEntryPoints.cs" Link="ManagedGCEntryPoints.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCRegionBootstrap.cs" Link="ManagedGCRegionBootstrap.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/MarkPhase.cs" Link="MarkPhase.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/IntroSort.cs" Link="IntroSort.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceDac.cs" Link="Interface/GCInterfaceDac.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceEnums.cs" Link="Interface/GCInterfaceEnums.cs" />

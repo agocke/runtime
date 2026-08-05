@@ -771,6 +771,14 @@ namespace Internal.Runtime.GarbageCollection
         public int heap_number;
 #endif
 
+        // These mark-phase-owned fields are intentionally separate from the allocation-owned
+        // subset above until the complete native gc_heap layout is translated.
+        public nuint mark_stack_tos;
+        public nuint mark_stack_bos;
+        public byte* oldest_pinned_plug;
+        public nuint mark_stack_array_length;
+        public mark* mark_stack_array;
+
         public static heap_segment* heap_segment_in_range(heap_segment* segment)
         {
             if (segment is null || heap_segment.heap_segment_in_range_p(segment) != 0)
