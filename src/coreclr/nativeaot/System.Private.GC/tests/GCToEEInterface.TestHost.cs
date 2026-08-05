@@ -197,6 +197,8 @@ internal static unsafe class GCToEEInterface
         OutstandingStrings.Clear();
     }
 
+    internal static void HandleFatalError(uint exitCode) => throw new InvalidOperationException();
+
     public static void Initialize(void* theGCToCLR)
     {
         LastInitializedGCToCLR = theGCToCLR;

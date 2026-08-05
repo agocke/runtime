@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Threading;
 #if USE_REGIONS
@@ -519,6 +520,148 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void MarkPhasePaddedPlugUsesMarkedHeaderBit()
+    {
+        MethodTable methodTable = default;
+        CObjectHeader header = default;
+        MethodTable* pMethodTable = &methodTable;
+        CObjectHeader* pHeader = &header;
+
+        pHeader->RawSetMethodTable(pMethodTable);
+        gc_heap.set_plug_padded((byte*)pHeader);
+
+        Assert.True(gc_heap.is_plug_padded((byte*)pHeader) != 0);
+        Assert.Equal((nuint)pMethodTable | CObjectHeader.GC_MARKED, (nuint)pHeader->RawGetMethodTable());
+
+        gc_heap.clear_plug_padded((byte*)pHeader);
+
+        Assert.Equal(0, gc_heap.is_plug_padded((byte*)pHeader));
+        Assert.Equal((nuint)pMethodTable, (nuint)pHeader->RawGetMethodTable());
+    }
+
+    [Fact]
+    public void MarkPhaseEnqueueAndSavePreserveShortPlugState()
+    {
+        byte* storage = stackalloc byte[7 * sizeof(plug_and_gap)];
+        mark* entries = stackalloc mark[1];
+        MethodTable methodTable = default;
+        MethodTable* pMethodTable = &methodTable;
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        byte* plug = storage + (2 * sizeof(plug_and_gap));
+        byte* lastObjectBeforePlug = plug - (2 * sizeof(nuint));
+        byte* postPlug = storage + (6 * sizeof(plug_and_gap));
+        byte* lastObjectBeforePostPlug = postPlug - (2 * sizeof(nuint));
+        gap_reloc_pair* preInfo = (gap_reloc_pair*)(((plug_and_gap*)plug) - 1);
+        gap_reloc_pair* postInfo = (gap_reloc_pair*)(((plug_and_gap*)postPlug) - 1);
+
+        entries[0] = default;
+        methodTable.m_uFlags = 0;
+        ((CObjectHeader*)lastObjectBeforePlug)->RawSetMethodTable(pMethodTable);
+        ((CObjectHeader*)lastObjectBeforePostPlug)->RawSetMethodTable(pMethodTable);
+        gc_heap.set_plug_padded(lastObjectBeforePlug);
+        gc_heap.set_plug_padded(lastObjectBeforePostPlug);
+        preInfo->gap = 11;
+        preInfo->reloc = 12;
+        postInfo->gap = 21;
+        postInfo->reloc = 22;
+        gc_heap.make_mark_stack(pHeap, entries);
+        pHeap->mark_stack_array_length = 1;
+
+        gc_heap.enque_pinned_plug(pHeap, plug, 1, lastObjectBeforePlug);
+
+        Assert.True(mark.pre_short_p(&entries[0]) != 0);
+        Assert.Equal((nuint)11, entries[0].saved_pre_plug.gap);
+        Assert.Equal((nuint)12, entries[0].saved_pre_plug.reloc);
+        Assert.Equal((nuint)11, entries[0].saved_pre_plug_reloc.gap);
+        Assert.Equal((nuint)12, entries[0].saved_pre_plug_reloc.reloc);
+        Assert.Equal((nuint)pMethodTable, *(nuint*)&entries[0].saved_pre_plug.m_pair);
+        Assert.Equal(
+            (nuint)pMethodTable | CObjectHeader.GC_MARKED,
+            *(nuint*)&entries[0].saved_pre_plug_reloc.m_pair);
+        Assert.True(gc_heap.is_plug_padded(lastObjectBeforePlug) != 0);
+        Assert.Equal(
+            (nuint)pMethodTable | CObjectHeader.GC_MARKED,
+            (nuint)((CObjectHeader*)lastObjectBeforePlug)->RawGetMethodTable());
+
+        pHeap->mark_stack_tos = 1;
+        gc_heap.save_post_plug_info(pHeap, plug, lastObjectBeforePostPlug, postPlug);
+
+        Assert.True(mark.post_short_p(&entries[0]) != 0);
+        Assert.Equal((nuint)(postPlug - sizeof(plug_and_gap)), (nuint)entries[0].saved_post_plug_info_start);
+        Assert.Equal((nuint)21, entries[0].saved_post_plug.gap);
+        Assert.Equal((nuint)22, entries[0].saved_post_plug.reloc);
+        Assert.Equal((nuint)21, entries[0].saved_post_plug_reloc.gap);
+        Assert.Equal((nuint)22, entries[0].saved_post_plug_reloc.reloc);
+        Assert.Equal((nuint)pMethodTable, *(nuint*)&entries[0].saved_post_plug.m_pair);
+        Assert.Equal(
+            (nuint)pMethodTable | CObjectHeader.GC_MARKED,
+            *(nuint*)&entries[0].saved_post_plug_reloc.m_pair);
+        Assert.True(gc_heap.is_plug_padded(lastObjectBeforePostPlug) != 0);
+        Assert.Equal(
+            (nuint)pMethodTable | CObjectHeader.GC_MARKED,
+            (nuint)((CObjectHeader*)lastObjectBeforePostPlug)->RawGetMethodTable());
+#if DEBUG
+        Assert.Equal((nuint)1, entries[0].saved_post_plug_debug.gap);
+#endif
+    }
+
+    [Fact]
+    public void MarkPhaseEnqueueAndSaveRecordShortObjectReferenceBits()
+    {
+        const int GapOffset = 2;
+        byte* storage = stackalloc byte[7 * sizeof(plug_and_gap)];
+        byte* descriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        mark* entries = stackalloc mark[1];
+        int descriptorSize = sizeof(nuint) + sizeof(CGCDescSeries);
+        MethodTable* methodTable = (MethodTable*)(descriptorStorage + descriptorSize);
+        CGCDescSeries* series = (CGCDescSeries*)descriptorStorage;
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        byte* plug = storage + (2 * sizeof(plug_and_gap));
+        byte* lastObjectBeforePlug = plug - (3 * sizeof(nuint));
+        byte* postPlug = storage + (6 * sizeof(plug_and_gap));
+        byte* lastObjectBeforePostPlug = postPlug - (3 * sizeof(nuint));
+        byte** preReference = (byte**)(lastObjectBeforePlug + sizeof(nuint));
+        byte** postReference = (byte**)(lastObjectBeforePostPlug + sizeof(nuint));
+        nuint shortObjectSize = 3 * (nuint)sizeof(nuint);
+
+        entries[0] = default;
+        methodTable->m_uFlags = MethodTable.HasPointersFlag;
+        *((nuint*)methodTable - 1) = 1;
+        series->seriessize = unchecked((nuint)(-(nint)(shortObjectSize - (nuint)sizeof(nuint))));
+        series->startoffset = (nuint)sizeof(nuint);
+        ((CObjectHeader*)lastObjectBeforePlug)->RawSetMethodTable(methodTable);
+        ((CObjectHeader*)lastObjectBeforePostPlug)->RawSetMethodTable(methodTable);
+        gc_heap.set_plug_padded(lastObjectBeforePlug);
+        gc_heap.set_plug_padded(lastObjectBeforePostPlug);
+        gc_heap.make_mark_stack(pHeap, entries);
+        pHeap->mark_stack_array_length = 1;
+
+        Assert.Equal(
+            (nuint)GapOffset,
+            ((nuint)preReference - ((nuint)plug - (nuint)sizeof(gap_reloc_pair) - (nuint)sizeof(nuint)))
+            / (nuint)sizeof(byte*));
+        Assert.Equal(
+            (nuint)GapOffset,
+            ((nuint)postReference - ((nuint)postPlug - (nuint)sizeof(gap_reloc_pair) - (nuint)sizeof(nuint)))
+            / (nuint)sizeof(byte*));
+
+        gc_heap.enque_pinned_plug(pHeap, plug, 1, lastObjectBeforePlug);
+
+        Assert.True(mark.pre_short_p(&entries[0]) != 0);
+        Assert.True(mark.pre_short_bit_p(&entries[0], (nuint)GapOffset) != 0);
+        Assert.True(gc_heap.is_plug_padded(lastObjectBeforePlug) != 0);
+
+        pHeap->mark_stack_tos = 1;
+        gc_heap.save_post_plug_info(pHeap, plug, lastObjectBeforePostPlug, postPlug);
+
+        Assert.True(mark.post_short_p(&entries[0]) != 0);
+        Assert.True(mark.post_short_bit_p(&entries[0], (nuint)GapOffset) != 0);
+        Assert.True(gc_heap.is_plug_padded(lastObjectBeforePostPlug) != 0);
+    }
+
+    [Fact]
     public void MarkPhaseMergeRecoversSavedPostPlugBeforeExtending()
     {
         byte* storage = stackalloc byte[2 * sizeof(plug_and_gap)];
@@ -592,6 +735,49 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)2, length);
         Assert.Equal(1, SyncImports.AllocCount);
         Assert.Equal(0, SyncImports.FreeCount);
+    }
+
+    [Fact]
+    public void MarkPhaseEnqueueGrowthFailureReportsFatalErrorAndPreservesMarkStack()
+    {
+        SyncImports.ResetRecording();
+        mark* stack = (mark*)SyncImports.ManagedGC_AllocZeroed((nuint)sizeof(mark));
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        Assert.NotEqual((nuint)0, (nuint)stack);
+        stack[0].first = (byte*)0x1000;
+        stack[0].len = 11;
+        pHeap->mark_stack_array = stack;
+        pHeap->mark_stack_array_length = 1;
+        pHeap->mark_stack_tos = 1;
+
+        try
+        {
+            SyncImports.FailNextAlloc = true;
+
+            Assert.Throws<InvalidOperationException>(
+                () => gc_heap.enque_pinned_plug(pHeap, (byte*)0x2000, 0, null));
+
+            Assert.False(SyncImports.FailNextAlloc);
+            Assert.Equal(2, SyncImports.AllocCount);
+            Assert.Equal(
+                gc_rand.MARK_STACK_INITIAL_LENGTH * (nuint)sizeof(mark),
+                SyncImports.LastAllocSize);
+            Assert.Equal(0, SyncImports.FreeCount);
+            Assert.Equal((nuint)stack, (nuint)pHeap->mark_stack_array);
+            Assert.Equal((nuint)1, pHeap->mark_stack_array_length);
+            Assert.Equal((nuint)1, pHeap->mark_stack_tos);
+            Assert.Equal((nuint)0x1000, (nuint)stack[0].first);
+            Assert.Equal((nuint)11, stack[0].len);
+        }
+        finally
+        {
+            SyncImports.FailNextAlloc = false;
+            SyncImports.ManagedGC_Free(stack);
+        }
+
+        Assert.Equal(1, SyncImports.FreeCount);
     }
 
     [Fact]

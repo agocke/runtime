@@ -1160,17 +1160,19 @@ state match the C++ implementation across supported architectures.
 
 ### 9. Collection phases
 
-**Status: In progress -- pinned-plug queue and mark-stack growth/reset setup, object-header
-special-bit prerequisite, and short-object descriptor scan are translated; collection marking is
-not**
+**Status: In progress -- pinned-plug queue enqueue/save, mark-stack growth/reset setup,
+object-header special-bit and padded-plug prerequisites, and short-object descriptor scan are
+translated; collection marking is not**
 
 Translate in dependency order:
 
-- `mark_phase.cpp` (the dependency-closed pinned-plug queue and mark-stack growth/reset setup,
-  plus the `CObjectHeader`/`MethodTable` special-bit, pointer-flag, short-plug-size, and
-  `go_through_object_nostart` descriptor-scan prerequisites, are translated; enqueue/save remain
-  blocked on interesting-data-point diagnostics and padded-plug helpers from the later
-  planning/relocation slices)
+- `mark_phase.cpp` (the dependency-closed pinned-plug queue enqueue/save and mark-stack
+  growth/reset setup, plus the `CObjectHeader`/`MethodTable` special-bit, pointer-flag,
+  short-plug-size, padded-plug, and `go_through_object_nostart` descriptor-scan prerequisites,
+  are translated; `GC_CONFIG_DRIVEN` interesting-data-point updates are omitted because the
+  managed NativeAOT build defines neither that symbol nor its diagnostic storage; the
+  `_DEBUG && VERIFY_HEAP` `verify_pinned_queue_p` assignment remains deferred with
+  `verify_pins_with_post_plug_info` and relocate-compact verification state)
 - `plan_phase.cpp`
 - `relocate_compact.cpp`
 - `sweep.cpp`

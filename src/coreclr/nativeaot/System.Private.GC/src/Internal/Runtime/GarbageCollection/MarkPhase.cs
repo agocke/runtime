@@ -259,6 +259,152 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    // SHORT_PLUGS is unconditionally defined in gcpriv.h.
+    public static void clear_plug_padded(byte* node)
+    {
+        ((CObjectHeader*)node)->ClearMarked();
+    }
+
+    public static void set_plug_padded(byte* node)
+    {
+        ((CObjectHeader*)node)->SetMarked();
+    }
+
+    public static int is_plug_padded(byte* node)
+    {
+        return ((CObjectHeader*)node)->IsMarked();
+    }
+
+    private const uint CORINFO_EXCEPTION_GC = 0xE0004743;
+
+    private unsafe struct short_plug_context
+    {
+        public mark* m;
+        public byte* plug;
+        public int pre_p;
+    }
+
+    private static void set_short_plug_bit(byte** pval, void* context)
+    {
+        short_plug_context* short_context = (short_plug_context*)context;
+        nuint gap_offset = unchecked(
+            ((nuint)pval - ((nuint)short_context->plug - (nuint)sizeof(gap_reloc_pair) - plug_skew))
+            / (nuint)sizeof(byte*));
+
+        if (short_context->pre_p != 0)
+        {
+            mark.set_pre_short_bit(short_context->m, gap_offset);
+        }
+        else
+        {
+            mark.set_post_short_bit(short_context->m, gap_offset);
+        }
+    }
+
+    // This starts a plug. But mark_stack_tos isn't increased until set_pinned_info is called.
+    public static void enque_pinned_plug(
+        gc_heap* heap,
+        byte* plug,
+        int save_pre_plug_info_p,
+        byte* last_object_in_last_plug)
+    {
+        if (heap->mark_stack_array_length <= heap->mark_stack_tos)
+        {
+            if (grow_mark_stack(
+                    ref heap->mark_stack_array,
+                    ref heap->mark_stack_array_length,
+                    gc_rand.MARK_STACK_INITIAL_LENGTH) == 0)
+            {
+                // Continuing after this failure risks corrupting the mark stack.
+                GCToEEInterface.HandleFatalError(CORINFO_EXCEPTION_GC);
+            }
+        }
+
+        mark* m = &heap->mark_stack_array[heap->mark_stack_tos];
+        m->first = plug;
+        m->saved_pre_p = save_pre_plug_info_p;
+
+        if (save_pre_plug_info_p != 0)
+        {
+            nuint special_bits = clear_special_bits(last_object_in_last_plug);
+            m->saved_pre_plug = *(gap_reloc_pair*)(((plug_and_gap*)plug) - 1);
+            set_special_bits(last_object_in_last_plug, special_bits);
+
+            m->saved_pre_plug_reloc = *(gap_reloc_pair*)(((plug_and_gap*)plug) - 1);
+
+            nuint last_obj_size = (nuint)(plug - last_object_in_last_plug);
+            if (last_obj_size < min_pre_pin_obj_size)
+            {
+                // Runtime.ManagedGC does not compile mark_phase.cpp, and System.Private.GC
+                // does not define GC_CONFIG_DRIVEN, so the native diagnostic counter updates
+                // are compiled out for this managed collector.
+                mark.set_pre_short(m);
+
+                if (contain_pointers(last_object_in_last_plug) != 0)
+                {
+                    short_plug_context context = new()
+                    {
+                        m = m,
+                        plug = plug,
+                        pre_p = 1,
+                    };
+                    go_through_object_nostart(
+                        method_table(last_object_in_last_plug),
+                        last_object_in_last_plug,
+                        last_obj_size,
+                        &context,
+                        &set_short_plug_bit);
+                }
+            }
+        }
+
+        m->saved_post_p = 0;
+    }
+
+    public static void save_post_plug_info(
+        gc_heap* heap,
+        byte* last_pinned_plug,
+        byte* last_object_in_last_plug,
+        byte* post_plug)
+    {
+        mark* m = &heap->mark_stack_array[heap->mark_stack_tos - 1];
+        Debug.Assert(last_pinned_plug == m->first);
+        m->saved_post_plug_info_start = (byte*)(((plug_and_gap*)post_plug) - 1);
+
+        nuint special_bits = clear_special_bits(last_object_in_last_plug);
+        m->saved_post_plug = *(gap_reloc_pair*)m->saved_post_plug_info_start;
+        set_special_bits(last_object_in_last_plug, special_bits);
+
+        m->saved_post_plug_reloc = *(gap_reloc_pair*)m->saved_post_plug_info_start;
+        m->saved_post_p = 1;
+
+#if DEBUG
+        m->saved_post_plug_debug.gap = 1;
+#endif
+
+        nuint last_obj_size = (nuint)(post_plug - last_object_in_last_plug);
+        if (last_obj_size < min_pre_pin_obj_size)
+        {
+            mark.set_post_short(m);
+
+            if (contain_pointers(last_object_in_last_plug) != 0)
+            {
+                short_plug_context context = new()
+                {
+                    m = m,
+                    plug = post_plug,
+                    pre_p = 0,
+                };
+                go_through_object_nostart(
+                    method_table(last_object_in_last_plug),
+                    last_object_in_last_plug,
+                    last_obj_size,
+                    &context,
+                    &set_short_plug_bit);
+            }
+        }
+    }
+
     public static void reset_pinned_queue(gc_heap* heap)
     {
         heap->mark_stack_tos = 0;

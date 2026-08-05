@@ -203,8 +203,14 @@ short-plug-size helpers that enqueue/save require. Its allocation-free
 `go_through_object_nostart` leaf reads normal and repeating `GCDesc` maps in the native order and
 passes each reference slot to a direct managed function pointer; it does not introduce a delegate,
 allocation, or reverse P/Invoke transition. It does not mark references or run a collection.
-Pinned-plug enqueue/save still need the interesting-data-point diagnostics and padded-plug
-helpers from the later planning/relocation work.
+Pinned-plug enqueue/save now preserve both copies of the overwritten gap records, special header
+bits, short-object reference bits, and the unconditional `SHORT_PLUGS` padded-header helpers.
+`record_interesting_data_point` remains mechanically omitted: `Runtime.ManagedGC` does not
+compile the C++ mark phase and `System.Private.GC` does not define `GC_CONFIG_DRIVEN`, so it has
+no native diagnostic storage to update. The `_DEBUG && VERIFY_HEAP`
+`verify_pinned_queue_p = TRUE` assignment in `save_post_plug_info` remains deferred with
+`verify_pins_with_post_plug_info` and relocate-compact verification state. The next mark-phase
+work is collection marking.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.
