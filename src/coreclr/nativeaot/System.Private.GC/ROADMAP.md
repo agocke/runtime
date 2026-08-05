@@ -1082,13 +1082,20 @@ of `fix_allocation_context`; `make_unused_array`/`make_free_obj` and the `CObjec
 memory writes they require; and `new_allocation_limit`/`limit_from_size` plus the
 allocation-context refill transition of `adjust_limit_clr`: the discontinuous-hole free object,
 the region-only null-context and contiguous-gen0 branches, limit/accounting update, and
-ephemeral used-boundary publication. The adjacent `a_fit_segment_end_p` allocated-pointer
-advance is a dependency-closed helper too. They preserve the native free-object method table,
+ephemeral used-boundary publication. `grow_heap_segment` and the non-background,
+non-LOH-compaction/verification portion of `a_fit_segment_end_p` now select committed or
+reserved segment-end space, choose `limit_from_size`, commit up to the native 16-page minimum
+through `virtual_commit`, preserve its hard-limit result, advance the selected SOH/UOH pointer,
+and hand the range to `adjust_limit_clr`. `uoh_a_fit_segment_end_p` walks writable UOH segments,
+reports a failed commit as `oom_cant_commit`, restores the UOH allocation-context limit, and
+updates `generation_end_seg_allocated`. They preserve the native free-object method table,
 array-length, free-list marker, unsigned arithmetic, and accounting updates. The heap-owned
-generation table, selected SOH/UOH total, `alloc_allocated`, and ephemeral segment remain
-explicit unsafe inputs until the refill caller and heap state are translated. The
-`clearp`/`resetp` branches of `make_unused_array`, free-list routing, budget policy, clearing,
-events, and `try_allocate_more_space`/`allocate_more_space` remain deferred.
+dynamic-data table, allocation quantum, generation table, selected SOH/UOH total,
+`alloc_allocated`, ephemeral segment, and heap number remain explicit unsafe inputs until the
+refill caller and heap state are translated. The BGC allocation cookie/tracking and
+`heap_segment_flags_uoh_delete` branches, LOH-compaction padding, verification syncblock write,
+free-list routing, budget policy, `clearp`/`resetp` branches of `make_unused_array`, clearing,
+allocation-info/events, `try_allocate_more_space`, and `allocate_more_space` remain deferred.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
 Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
 

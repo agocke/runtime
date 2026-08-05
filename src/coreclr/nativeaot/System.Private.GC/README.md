@@ -93,7 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, segment-end fit/grow, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
@@ -996,11 +996,16 @@ deferred until the `allocation.cpp` dependency chain is ported.
 doubly-linked free-list marker for object gaps, carries the allocation-limit arithmetic leaves,
 and transitions a selected allocation context through a WKS region refill. The latter fills a
 discontinuous hole, pads a contiguous gen0 context, updates its limit/accounting, advances the
-selected SOH/UOH allocation pointer, and publishes the ephemeral segment's used boundary. The
-deferred heap-owned generation table, allocation pointer, ephemeral segment, and selected
-SOH/UOH total are explicit unsafe parameters, rather than a partial heap layout. These helpers
-are not routed into production allocation: `ManagedGCHeap.Alloc` still uses `GCHeapMemory` until
-the refill, free-list, and allocation-policy dependencies are translated.
+selected SOH/UOH allocation pointer, and publishes the ephemeral segment's used boundary.
+The segment-end leaf also selects the committed or reserved endpoint, derives the allocation
+limit, grows the segment through the accounted virtual-commit helper, propagates commit and
+hard-limit failures, and hands the range to that refill transition. Its UOH wrapper walks
+writable segments and records end-segment allocation. The deferred heap-owned dynamic-data
+table, allocation quantum, generation table, allocation pointer, ephemeral segment, selected
+SOH/UOH total, and heap number are explicit unsafe parameters, rather than a partial heap
+layout. These helpers are not routed into production allocation: `ManagedGCHeap.Alloc` still
+uses `GCHeapMemory` until the refill, free-list, and allocation-policy dependencies are
+translated.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real

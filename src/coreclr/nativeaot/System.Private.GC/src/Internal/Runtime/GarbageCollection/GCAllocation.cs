@@ -186,6 +186,236 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    private static nuint commit_min_th => unchecked((nuint)16 * GCToOSInterface.GetPageSize());
+
+    // The heap number remains explicit until the translated gc_heap owns the native heap_number
+    // field. The other state belongs to the segment and the existing commit accounting helpers.
+    public static bool grow_heap_segment(
+        heap_segment* seg,
+        byte* high_address,
+        int heap_number,
+        bool* hard_limit_exceeded_p = null)
+    {
+        System.Diagnostics.Debug.Assert(high_address <= heap_segment.heap_segment_reserved(seg));
+
+        if (hard_limit_exceeded_p is not null)
+        {
+            *hard_limit_exceeded_p = false;
+        }
+
+        if (align_on_page(high_address) > heap_segment.heap_segment_reserved(seg))
+        {
+            return false;
+        }
+
+        if (high_address <= heap_segment.heap_segment_committed(seg))
+        {
+            return true;
+        }
+
+        nuint c_size = align_on_page(unchecked((nuint)(high_address - heap_segment.heap_segment_committed(seg))));
+        if (c_size < commit_min_th)
+        {
+            c_size = commit_min_th;
+        }
+
+        nuint remaining_size = unchecked((nuint)(heap_segment.heap_segment_reserved(seg) - heap_segment.heap_segment_committed(seg)));
+        if (c_size > remaining_size)
+        {
+            c_size = remaining_size;
+        }
+
+        if (c_size == 0)
+        {
+            return false;
+        }
+
+        bool ret = virtual_commit(
+            heap_segment.heap_segment_committed(seg),
+            c_size,
+            (int)heap_segment.heap_segment_oh(seg),
+            heap_number,
+            hard_limit_exceeded_p);
+        if (ret)
+        {
+            heap_segment.heap_segment_committed(seg) =
+                (byte*)unchecked((nuint)heap_segment.heap_segment_committed(seg) + c_size);
+
+            System.Diagnostics.Debug.Assert(heap_segment.heap_segment_committed(seg) <= heap_segment.heap_segment_reserved(seg));
+            System.Diagnostics.Debug.Assert(high_address <= heap_segment.heap_segment_committed(seg));
+        }
+
+        return ret;
+    }
+
+    // The untranslated gc_heap layout owns dynamic_data_table, allocation_quantum,
+    // generation_table, alloc_allocated, ephemeral_heap_segment, the selected allocation-byte
+    // counter, and heap_number. They remain explicit so this leaf can preserve native state
+    // transitions without introducing a partial managed heap.
+    public static bool a_fit_segment_end_p(
+        int gen_number,
+        heap_segment* seg,
+        nuint size,
+        gc_alloc_context* acontext,
+        uint flags,
+        int align_const,
+        bool* commit_failed_p,
+        dynamic_data* dd,
+        nuint allocation_quantum,
+        generation* generation_table,
+        heap_segment* ephemeral_heap_segment,
+        byte** alloc_allocated,
+        ulong* total_alloc_bytes,
+        int heap_number)
+    {
+        *commit_failed_p = false;
+        nuint limit;
+        bool hard_limit_short_seg_end_p = false;
+
+        byte* allocated = gen_number == 0
+            ? *alloc_allocated
+            : heap_segment.heap_segment_allocated(seg);
+        nuint pad = Align((nuint)GCInterfaceOffsets.min_obj_size, align_const);
+
+        byte* end = (byte*)unchecked((nuint)heap_segment.heap_segment_committed(seg) - pad);
+        if (a_size_fit_p(size, allocated, end, align_const))
+        {
+            limit = limit_from_size(
+                dd,
+                allocation_quantum,
+                size,
+                flags,
+                unchecked((nuint)(end - allocated)),
+                gen_number,
+                align_const);
+        }
+        else
+        {
+            end = (byte*)unchecked((nuint)heap_segment.heap_segment_reserved(seg) - pad);
+            if ((heap_segment.heap_segment_reserved(seg) == heap_segment.heap_segment_committed(seg)) ||
+                !a_size_fit_p(size, allocated, end, align_const))
+            {
+                return false;
+            }
+
+            limit = limit_from_size(
+                dd,
+                allocation_quantum,
+                size,
+                flags,
+                unchecked((nuint)(end - allocated)),
+                gen_number,
+                align_const);
+
+            if (!grow_heap_segment(
+                seg,
+                (byte*)unchecked((nuint)allocated + limit),
+                heap_number,
+                &hard_limit_short_seg_end_p))
+            {
+                // The USE_REGIONS native branch reports every grow failure to its caller. The
+                // caller distinguishes it from a short segment through commit_failed_p.
+                *commit_failed_p = true;
+                return false;
+            }
+        }
+
+        dynamic_data.dd_new_allocation(dd) = unchecked(dynamic_data.dd_new_allocation(dd) - (nint)limit);
+
+        if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL) != 0 &&
+            ((allocated == acontext->alloc_limit) ||
+             (allocated == (byte*)unchecked((nuint)acontext->alloc_limit + pad))))
+        {
+            System.Diagnostics.Debug.Assert(gen_number == 0);
+            System.Diagnostics.Debug.Assert(allocated > acontext->alloc_ptr);
+
+            nuint extra = unchecked((nuint)(allocated - acontext->alloc_ptr));
+            limit = unchecked(limit - extra);
+            dynamic_data.dd_new_allocation(dd) = unchecked(dynamic_data.dd_new_allocation(dd) + (nint)extra);
+            limit = unchecked(limit + pad);
+        }
+
+        byte* old_alloc = allocated;
+        advance_allocated(alloc_allocated, seg, limit, gen_number);
+        adjust_limit_clr(
+            old_alloc,
+            limit,
+            acontext,
+            seg,
+            align_const,
+            gen_number,
+            generation_table,
+            ephemeral_heap_segment,
+            alloc_allocated is not null ? *alloc_allocated : null,
+            total_alloc_bytes);
+
+        return true;
+    }
+
+    public static bool uoh_a_fit_segment_end_p(
+        int gen_number,
+        nuint size,
+        gc_alloc_context* acontext,
+        uint flags,
+        int align_const,
+        bool* commit_failed_p,
+        oom_reason* oom_r,
+        dynamic_data* dd,
+        nuint allocation_quantum,
+        generation* generation_table,
+        heap_segment* ephemeral_heap_segment,
+        byte** alloc_allocated,
+        ulong* total_alloc_bytes,
+        int heap_number)
+    {
+        *commit_failed_p = false;
+
+        generation* gen = generation_of(generation_table, gen_number);
+        heap_segment* seg = generation.generation_allocation_segment(gen);
+        bool can_allocate_p = false;
+        nuint pad = Align((nuint)GCInterfaceOffsets.min_obj_size, align_const);
+
+        while (seg is not null)
+        {
+            if (a_fit_segment_end_p(
+                gen_number,
+                seg,
+                unchecked(size - pad),
+                acontext,
+                flags,
+                align_const,
+                commit_failed_p,
+                dd,
+                allocation_quantum,
+                generation_table,
+                ephemeral_heap_segment,
+                alloc_allocated,
+                total_alloc_bytes,
+                heap_number))
+            {
+                acontext->alloc_limit = (byte*)unchecked((nuint)acontext->alloc_limit + pad);
+                can_allocate_p = true;
+                break;
+            }
+
+            if (*commit_failed_p)
+            {
+                *oom_r = oom_reason.oom_cant_commit;
+                break;
+            }
+
+            seg = heap_segment_next_rw(seg);
+        }
+
+        if (can_allocate_p)
+        {
+            generation.generation_end_seg_allocated(gen) =
+                unchecked(generation.generation_end_seg_allocated(gen) + size);
+        }
+
+        return can_allocate_p;
+    }
+
     // This is the dependency-closed refill-state portion of adjust_limit_clr. The deferred
     // gc_heap owns generation_table, alloc_allocated, ephemeral_heap_segment, and the selected
     // SOH/UOH total_alloc_bytes counter; they are explicit here until try_allocate_more_space
