@@ -1161,15 +1161,20 @@ state match the C++ implementation across supported architectures.
 ### 9. Collection phases
 
 **Status: In progress -- pinned-plug queue enqueue/save, mark-stack growth/reset setup,
-object-header special-bit and padded-plug prerequisites, and short-object descriptor scan are
-translated; collection marking is not**
+object-header special-bit and padded-plug prerequisites, short-object descriptor scan, and the
+first foreground mark-bitmap/header-marking leaves are translated; collection marking is not
+routed**
 
 Translate in dependency order:
 
 - `mark_phase.cpp` (the dependency-closed pinned-plug queue enqueue/save and mark-stack
   growth/reset setup, plus the `CObjectHeader`/`MethodTable` special-bit, pointer-flag,
   short-plug-size, padded-plug, and `go_through_object_nostart` descriptor-scan prerequisites,
-  are translated; `GC_CONFIG_DRIVEN` interesting-data-point updates are omitted because the
+  `is_mark_bit_set`/`clear_mark_array`, and the active WKS `USE_REGIONS` `gc_mark1`/`gc_mark`
+  leaves are translated; mark-array indexing preserves the native absolute-address bias and
+  first partial-word clear; `gc_mark` preserves the half-open range and region-generation
+  tests, but has no collection entrypoint or mark-stack traversal yet; `GC_CONFIG_DRIVEN`
+  interesting-data-point updates are omitted because the
   managed NativeAOT build defines neither that symbol nor its diagnostic storage; the
   `_DEBUG && VERIFY_HEAP` `verify_pinned_queue_p` assignment remains deferred with
   `verify_pins_with_post_plug_info` and relocate-compact verification state)

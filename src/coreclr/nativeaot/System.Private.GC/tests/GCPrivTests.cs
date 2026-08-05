@@ -855,6 +855,154 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(sizeof(nuint) == 8 ? (nuint)48 : (nuint)24, gc_heap.min_pre_pin_obj_size);
     }
 
+#if BACKGROUND_GC
+    [Fact]
+    public void MarkPhaseMarkBitmapQueriesAndClearsNativePartialWordRange()
+    {
+        uint* markStorage = stackalloc uint[18];
+        uint* previousMarkArray = gc_heap.mark_array;
+        byte* previousLowestAddress = gc_heap.background_saved_lowest_address;
+        byte* previousHighestAddress = gc_heap.background_saved_highest_address;
+        bool previousCanUseConcurrent = gc_heap.gc_can_use_concurrent;
+        nuint wordSize = card_table_info.mark_word_size;
+        nuint wordsPerPage = card_table_info.GC_PAGE_SIZE / wordSize;
+        byte* start = (byte*)(64 * wordSize);
+        byte* end = start + (nint)(wordsPerPage * wordSize);
+        nuint firstMarkWord = ExpectedMarkWord(start);
+
+        try
+        {
+            gc_heap.mark_array = markStorage - (nint)firstMarkWord;
+            gc_heap.background_saved_lowest_address = start;
+            gc_heap.background_saved_highest_address = end;
+            gc_heap.gc_can_use_concurrent = true;
+
+            markStorage[0] =
+                ExpectedMarkMask(start)
+                | ExpectedMarkMask(start + (nint)card_table_info.mark_bit_pitch)
+                | ExpectedMarkMask(start + (nint)(31 * card_table_info.mark_bit_pitch));
+            markStorage[1] = uint.MaxValue;
+            markStorage[(int)wordsPerPage - 1] = uint.MaxValue;
+            markStorage[(int)wordsPerPage] = ExpectedMarkMask(end);
+
+            Assert.Equal(unchecked((int)ExpectedMarkMask(start)), gc_heap.is_mark_bit_set(start));
+            Assert.Equal(
+                unchecked((int)ExpectedMarkMask(start + (nint)card_table_info.mark_bit_pitch)),
+                gc_heap.is_mark_bit_set(start + (nint)card_table_info.mark_bit_pitch));
+            Assert.Equal(
+                unchecked((int)ExpectedMarkMask(start + (nint)(31 * card_table_info.mark_bit_pitch))),
+                gc_heap.is_mark_bit_set(start + (nint)(31 * card_table_info.mark_bit_pitch)));
+            Assert.Equal(unchecked((int)ExpectedMarkMask(end)), gc_heap.is_mark_bit_set(end));
+
+            gc_heap.clear_mark_array(
+                start + (nint)card_table_info.mark_bit_pitch,
+                end);
+
+            Assert.Equal(ExpectedMarkMask(start), markStorage[0]);
+            Assert.Equal(0u, markStorage[1]);
+            Assert.Equal(0u, markStorage[(int)wordsPerPage - 1]);
+            Assert.Equal(ExpectedMarkMask(end), markStorage[(int)wordsPerPage]);
+
+            gc_heap.clear_mark_array(
+                end,
+                end + (nint)card_table_info.GC_PAGE_SIZE);
+
+            Assert.Equal(ExpectedMarkMask(end), markStorage[(int)wordsPerPage]);
+        }
+        finally
+        {
+            gc_heap.mark_array = previousMarkArray;
+            gc_heap.background_saved_lowest_address = previousLowestAddress;
+            gc_heap.background_saved_highest_address = previousHighestAddress;
+            gc_heap.gc_can_use_concurrent = previousCanUseConcurrent;
+        }
+    }
+
+    private static nuint ExpectedMarkWord(byte* address)
+    {
+        return (nuint)address / ((nuint)sizeof(uint) * 8 * (sizeof(nuint) == 8 ? 16u : 8u));
+    }
+
+    private static uint ExpectedMarkMask(byte* address)
+    {
+        nuint pitch = sizeof(nuint) == 8 ? 16u : 8u;
+        return 1u << (int)(((nuint)address / pitch) % 32);
+    }
+#endif
+
+#if USE_REGIONS
+    [Fact]
+    public void MarkPhaseGcMarkIsIdempotentAndHonorsRangeAndRegionGeneration()
+    {
+        MethodTable methodTable = default;
+        CObjectHeader header = default;
+        MethodTable* methodTableAddress = &methodTable;
+        CObjectHeader* headerAddress = &header;
+        byte* objectAddress = (byte*)headerAddress;
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        region_info* generationMap = stackalloc region_info[1];
+        seg_mapping* segmentMap = stackalloc seg_mapping[1];
+
+        try
+        {
+            headerAddress->RawSetMethodTable(methodTableAddress);
+
+            const nuint RegionSizeShift = 4;
+            nuint regionIndex = (nuint)objectAddress >> (int)RegionSizeShift;
+            gc_heap.min_segment_size_shr = RegionSizeShift;
+            GCCommon.g_gc_lowest_address = objectAddress;
+            GCCommon.g_gc_highest_address = objectAddress + sizeof(CObjectHeader);
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)regionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)regionIndex;
+            generationMap[0] = region_info.RI_GEN_2;
+            segmentMap[0].region_info.gen_num = (byte)gc_generation_num.soh_gen2;
+
+            Assert.Equal(0, gc_heap.gc_mark(
+                objectAddress,
+                objectAddress,
+                objectAddress + sizeof(CObjectHeader),
+                (int)gc_generation_num.soh_gen1));
+            Assert.Equal(0, headerAddress->IsMarked());
+
+            Assert.Equal(1, gc_heap.gc_mark(
+                objectAddress,
+                objectAddress,
+                objectAddress + sizeof(CObjectHeader),
+                GCInterfaceOffsets.max_generation));
+            Assert.True(headerAddress->IsMarked() != 0);
+            Assert.Equal(0, gc_heap.gc_mark(
+                objectAddress,
+                objectAddress,
+                objectAddress + sizeof(CObjectHeader),
+                GCInterfaceOffsets.max_generation));
+            Assert.Equal(0, gc_heap.gc_mark(
+                objectAddress + sizeof(CObjectHeader),
+                objectAddress,
+                objectAddress + sizeof(CObjectHeader),
+                GCInterfaceOffsets.max_generation));
+
+            headerAddress->ClearMarked();
+            Assert.Equal(1, gc_heap.gc_mark1(objectAddress));
+            Assert.Equal(0, gc_heap.gc_mark1(objectAddress));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+        }
+    }
+#endif
+
     private static gap_reloc_pair Pair(nuint gap, nuint reloc, short left, short right) =>
         new() { gap = gap, reloc = reloc, m_pair = new pair { left = left, right = right } };
 

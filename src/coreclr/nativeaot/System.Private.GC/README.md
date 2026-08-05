@@ -210,7 +210,11 @@ compile the C++ mark phase and `System.Private.GC` does not define `GC_CONFIG_DR
 no native diagnostic storage to update. The `_DEBUG && VERIFY_HEAP`
 `verify_pinned_queue_p = TRUE` assignment in `save_post_plug_info` remains deferred with
 `verify_pins_with_post_plug_info` and relocate-compact verification state. The next mark-phase
-work is collection marking.
+slice translates the foreground marking leaves: mark-bit query and covered-range clearing retain
+the biased region mark-array addressing and partial-first-word behavior, while `gc_mark1` and
+the active WKS `USE_REGIONS` `gc_mark` retain object-header marking, half-open bounds, and
+region-generation rejection. These leaves are not routed from collection entrypoints; scanning,
+mark-stack traversal, promoted-byte accounting, and background marking remain deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.

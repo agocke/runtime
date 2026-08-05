@@ -1021,7 +1021,7 @@ internal unsafe partial struct gc_heap
     private static static_data static_data_table_balanced3;
     private static static_data static_data_table_balanced4;
     private static gc_latency_level latency_level;
-    private static bool gc_can_use_concurrent;
+    internal static bool gc_can_use_concurrent;
 
     private static static_data* static_data_of(gc_latency_level level, int gen_number)
     {

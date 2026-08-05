@@ -275,6 +275,121 @@ internal unsafe partial struct gc_heap
         return ((CObjectHeader*)node)->IsMarked();
     }
 
+#if BACKGROUND_GC
+    public static int is_mark_bit_set(byte* add)
+    {
+        return unchecked((int)(
+            mark_array[(nint)card_table_info.mark_word_of(add)]
+            & (1u << (int)card_table_info.mark_bit_bit_of(add))));
+    }
+
+    private static void mark_array_clear_marked(byte* add)
+    {
+        nuint index = card_table_info.mark_word_of(add);
+        uint val = 1u << (int)card_table_info.mark_bit_bit_of(add);
+        mark_array[(nint)index] &= ~val;
+    }
+
+    // end must be page aligned addresses.
+    public static void clear_mark_array(byte* from, byte* end)
+    {
+        Debug.Assert(gc_can_use_concurrent);
+        Debug.Assert(end == card_table_info.align_on_mark_word(end));
+
+        byte* current_lowest_address = background_saved_lowest_address;
+        byte* current_highest_address = background_saved_highest_address;
+
+        // There is a possibility of the addresses to be outside of the covered range because
+        // of a newly allocated large object segment.
+        if ((end <= current_highest_address) && (from >= current_lowest_address))
+        {
+            nuint beg_word = card_table_info.mark_word_of(card_table_info.align_on_mark_word(from));
+            nuint end_word = card_table_info.mark_word_of(card_table_info.align_on_mark_word(end));
+
+            byte* op = from;
+            while (op < card_table_info.mark_bit_address(beg_word * card_table_info.mark_word_width))
+            {
+                mark_array_clear_marked(op);
+                op += (nint)card_table_info.mark_bit_pitch;
+            }
+
+            GCCommon.MemSet(
+                (byte*)&mark_array[(nint)beg_word],
+                0,
+                (end_word - beg_word) * (nuint)sizeof(uint));
+
+#if DEBUG
+            // Beware, it is assumed that the mark array word straddling start has been cleared before.
+            // Verify that the array is empty.
+            nuint markw = card_table_info.mark_word_of(card_table_info.align_on_mark_word(from));
+            nuint markw_end = card_table_info.mark_word_of(card_table_info.align_on_mark_word(end));
+            while (markw < markw_end)
+            {
+                Debug.Assert(mark_array[(nint)markw] == 0);
+                markw++;
+            }
+
+            byte* p = card_table_info.mark_bit_address(markw_end * card_table_info.mark_word_width);
+            while (p < end)
+            {
+                Debug.Assert(is_mark_bit_set(p) == 0);
+                p++;
+            }
+#endif
+        }
+    }
+#endif
+
+    public static int gc_mark1(byte* o)
+    {
+        int marked = ((CObjectHeader*)o)->IsMarked() == 0 ? 1 : 0;
+        ((CObjectHeader*)o)->SetMarked();
+
+#if DEBUG && USE_REGIONS
+        if (try_get_region_segment(o, small_heap_only: false, out heap_segment* seg) &&
+            o > heap_segment.heap_segment_allocated(seg))
+        {
+            GCToOSInterface.DebugBreak();
+        }
+#endif
+
+        return marked;
+    }
+
+    public static int gc_mark(byte* o, byte* low, byte* high, int condemned_gen)
+    {
+#if USE_REGIONS
+        if ((o >= low) && (o < high))
+        {
+            if (condemned_gen != GCInterfaceOffsets.max_generation && get_region_gen_num(o) > condemned_gen)
+            {
+                return 0;
+            }
+
+            int already_marked = ((CObjectHeader*)o)->IsMarked();
+            if (already_marked != 0)
+            {
+                return 0;
+            }
+
+            ((CObjectHeader*)o)->SetMarked();
+            return 1;
+        }
+
+        return 0;
+#else
+        Debug.Assert(condemned_gen == -1);
+
+        int marked = 0;
+        if ((o >= low) && (o < high))
+        {
+            marked = gc_mark1(o);
+        }
+
+        return marked;
+#endif
+    }
+
     private const uint CORINFO_EXCEPTION_GC = 0xE0004743;
 
     private unsafe struct short_plug_context
