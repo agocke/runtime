@@ -1118,7 +1118,10 @@ and the existing budget mutations made by fitting. Its context makes the still-u
 heap fields explicit. GC/BGC waits and triggers, full compact collections, dynamic-budget
 decisions, locks, UOH acquisition, retry policy, and OOM handling cross an unmanaged function
 pointer boundary; without that callback it returns the exact pending native state and deferred
-operation. It is not routed into production allocation. `allocate_more_space` remains deferred.
+operation. The WKS `allocate_more_space` wrapper now initializes that explicit context for each
+native retry, clears transient state before re-entry, waits through the same callback protocol
+when a GC is already running, and returns whether the final state can allocate. It is not routed
+into production allocation.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
 Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
 

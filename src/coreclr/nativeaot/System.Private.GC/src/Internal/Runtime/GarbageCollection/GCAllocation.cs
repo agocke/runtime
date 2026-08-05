@@ -1723,6 +1723,65 @@ internal unsafe partial struct gc_heap
             : allocate_uoh(context, callback);
     }
 
+    private static void reset_allocate_more_space_state(try_allocate_more_space_context* context)
+    {
+        context->state = allocation_state.a_state_start;
+        context->oom_r = oom_reason.oom_no_failure;
+        context->deferred_operation = allocation_deferred_operation.none;
+        context->more_space_lock_held_p = 0;
+        context->full_gc_checked_p = 0;
+        context->budget_full_gc_checked_p = 0;
+        context->budget_checked_p = 0;
+        context->bgc_high_memory_waited_p = 0;
+        context->commit_failed_p = 0;
+        context->short_seg_end_p = 0;
+        context->oom_handled_p = 0;
+    }
+
+    // The native WKS wrapper retries try_allocate_more_space from its initial state. The
+    // context carries every deferred heap input explicitly until gc_heap owns those fields.
+    public static bool allocate_more_space(
+        try_allocate_more_space_context* context,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback = null)
+    {
+        allocation_state status;
+
+        do
+        {
+            reset_allocate_more_space_state(context);
+            status = try_allocate_more_space(context, callback);
+
+            if (status == allocation_state.a_state_retry_allocate &&
+                context->deferred_operation == allocation_deferred_operation.wait_for_gc_done)
+            {
+                context->gc_started_p = 0;
+                if (!invoke_allocation_callback(
+                    context,
+                    allocation_deferred_operation.wait_for_gc_done,
+                    callback,
+                    out allocation_callback_result waitResult) ||
+                    waitResult.kind != allocation_callback_result_kind.completed)
+                {
+                    return false;
+                }
+            }
+            else if (status == allocation_state.a_state_retry_allocate &&
+                context->deferred_operation != allocation_deferred_operation.none)
+            {
+                return false;
+            }
+        }
+        while (status == allocation_state.a_state_retry_allocate);
+
+        if (status != allocation_state.a_state_can_allocate)
+        {
+            return false;
+        }
+
+        return leave_more_space_lock(context, callback) == allocation_state.a_state_can_allocate &&
+            context->deferred_operation == allocation_deferred_operation.none;
+    }
+
     // This is the dependency-closed refill-state portion of adjust_limit_clr. The deferred
     // gc_heap owns generation_table, alloc_allocated, ephemeral_heap_segment, and the selected
     // SOH/UOH total_alloc_bytes counter; they are explicit here until try_allocate_more_space

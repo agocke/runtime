@@ -28,6 +28,12 @@ public sealed unsafe class GCPrivTests
     private static int s_highMemoryCallbackCount;
     private static int s_budgetTriggerCallbackCount;
     private static int s_fullGcCheckCallbackCount;
+    private static int s_allocateMoreSpaceEnterCount;
+    private static int s_allocateMoreSpaceLeaveCount;
+    private static allocation_state s_allocateMoreSpaceRetryState;
+    private static oom_reason s_allocateMoreSpaceRetryOomReason;
+    private static int s_allocateMoreSpaceGeneration;
+    private static int s_allocateMoreSpaceAlignment;
 #endif
 
     [Fact]
@@ -6483,6 +6489,187 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void AllocateMoreSpaceRetriesFromInitialStateAndUpdatesAllocationContext()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        byte* storage = stackalloc byte[128];
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        InitializeAllocationGenerations(generations);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            byte* freeItem = storage + sizeof(nuint);
+            gc_heap.thread_free_item_front(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0),
+                freeItem,
+                unchecked(size + pad));
+
+            gc_alloc_context allocContext = default;
+            dynamic_data data = new() { new_allocation = unchecked((nint)(size + pad)) };
+            heap_segment* ephemeralHeapSegment = null;
+            byte* allocAllocated = null;
+            ulong totalAllocatedBytesSoh = 0;
+            ulong totalAllocatedBytesUoh = 0;
+            try_allocate_more_space_context allocation = CreateAllocationContext(
+                &allocContext,
+                &data,
+                generations,
+                &ephemeralHeapSegment,
+                &allocAllocated,
+                &totalAllocatedBytesSoh,
+                &totalAllocatedBytesUoh,
+                size,
+                (int)gc_generation_num.soh_gen0,
+                alignment);
+            ResetAllocateMoreSpaceRecorder();
+            delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+                &AllocateMoreSpaceRetryCallback;
+
+            Assert.True(gc_heap.allocate_more_space(&allocation, callback));
+            Assert.Equal(2, s_allocateMoreSpaceEnterCount);
+            Assert.Equal(1, s_allocateMoreSpaceLeaveCount);
+            Assert.Equal(allocation_state.a_state_start, s_allocateMoreSpaceRetryState);
+            Assert.Equal(oom_reason.oom_no_failure, s_allocateMoreSpaceRetryOomReason);
+            Assert.Equal(allocation_state.a_state_can_allocate, allocation.state);
+            Assert.Equal(allocation_deferred_operation.none, allocation.deferred_operation);
+            Assert.Equal((byte)0, allocation.more_space_lock_held_p);
+            Assert.Equal((nuint)freeItem, (nuint)allocContext.alloc_ptr);
+            Assert.Equal((nuint)(freeItem + (nint)size), (nuint)allocContext.alloc_limit);
+            Assert.Equal((nint)0, data.new_allocation);
+            Assert.Equal((ulong)size, totalAllocatedBytesSoh);
+            Assert.Equal((ulong)0, totalAllocatedBytesUoh);
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
+    public void AllocateMoreSpaceSelectsSohAndUohGenerations()
+    {
+        int sohAlignment = gc_heap.get_alignment_constant(small_object_p: true);
+        int uohAlignment = gc_heap.get_alignment_constant(small_object_p: false);
+        nuint sohPad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, sohAlignment);
+        nuint uohPad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, uohAlignment);
+        nuint size = unchecked(2 * sohPad);
+        byte* storage = stackalloc byte[256];
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        InitializeAllocationGenerations(generations);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            byte* sohFreeItem = storage + sizeof(nuint);
+            gc_heap.thread_free_item_front(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0),
+                sohFreeItem,
+                unchecked(size + sohPad));
+            gc_alloc_context sohAllocContext = default;
+            dynamic_data sohData = new() { new_allocation = unchecked((nint)(size + sohPad)) };
+            heap_segment* sohEphemeralHeapSegment = null;
+            byte* sohAllocAllocated = null;
+            ulong totalAllocatedBytesSoh = 0;
+            ulong totalAllocatedBytesUoh = 0;
+            try_allocate_more_space_context sohAllocation = CreateAllocationContext(
+                &sohAllocContext,
+                &sohData,
+                generations,
+                &sohEphemeralHeapSegment,
+                &sohAllocAllocated,
+                &totalAllocatedBytesSoh,
+                &totalAllocatedBytesUoh,
+                size,
+                (int)gc_generation_num.soh_gen0,
+                sohAlignment);
+            ResetAllocateMoreSpaceRecorder();
+            delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+                &AllocateMoreSpaceFitCallback;
+
+            Assert.True(gc_heap.allocate_more_space(&sohAllocation, callback));
+            Assert.Equal((int)gc_generation_num.soh_gen0, s_allocateMoreSpaceGeneration);
+            Assert.Equal(sohAlignment, s_allocateMoreSpaceAlignment);
+            Assert.Equal(1, s_allocateMoreSpaceLeaveCount);
+            Assert.Equal((byte)0, sohAllocation.more_space_lock_held_p);
+            Assert.Equal((nuint)sohFreeItem, (nuint)sohAllocContext.alloc_ptr);
+            Assert.Equal((nuint)(sohFreeItem + (nint)size), (nuint)sohAllocContext.alloc_limit);
+            Assert.Equal((ulong)size, totalAllocatedBytesSoh);
+            Assert.Equal((ulong)0, totalAllocatedBytesUoh);
+
+            byte* uohFreeItem = storage + 128 + sizeof(nuint);
+            gc_heap.thread_free_item_front(
+                gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation),
+                uohFreeItem,
+                unchecked(size + uohPad));
+            gc_alloc_context uohAllocContext = default;
+            dynamic_data uohData = new() { new_allocation = unchecked((nint)size) };
+            heap_segment* uohEphemeralHeapSegment = null;
+            byte* uohAllocAllocated = null;
+            try_allocate_more_space_context uohAllocation = CreateAllocationContext(
+                &uohAllocContext,
+                &uohData,
+                generations,
+                &uohEphemeralHeapSegment,
+                &uohAllocAllocated,
+                &totalAllocatedBytesSoh,
+                &totalAllocatedBytesUoh,
+                size,
+                (int)gc_generation_num.loh_generation,
+                uohAlignment);
+            ResetAllocateMoreSpaceRecorder();
+
+            Assert.True(gc_heap.allocate_more_space(&uohAllocation, callback));
+            Assert.Equal((int)gc_generation_num.loh_generation, s_allocateMoreSpaceGeneration);
+            Assert.Equal(uohAlignment, s_allocateMoreSpaceAlignment);
+            Assert.Equal(1, s_allocateMoreSpaceLeaveCount);
+            Assert.Equal((byte)0, uohAllocation.more_space_lock_held_p);
+            Assert.Equal((nuint)uohFreeItem, (nuint)uohAllocContext.alloc_ptr);
+            Assert.Equal((nuint)(uohFreeItem + (nint)size), (nuint)uohAllocContext.alloc_limit);
+            Assert.Equal((ulong)size, totalAllocatedBytesSoh);
+            Assert.Equal((ulong)size, totalAllocatedBytesUoh);
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
+    public void AllocateMoreSpaceFailsWhenAnUntranslatedOperationHasNoCallback()
+    {
+        try_allocate_more_space_context allocation = default;
+        allocation.state = allocation_state.a_state_can_allocate;
+        allocation.oom_r = oom_reason.oom_loh;
+
+        Assert.False(gc_heap.allocate_more_space(&allocation));
+        Assert.Equal(allocation_state.a_state_start, allocation.state);
+        Assert.Equal(oom_reason.oom_no_failure, allocation.oom_r);
+        Assert.Equal(allocation_deferred_operation.enter_more_space_lock, allocation.deferred_operation);
+    }
+
+    [Fact]
+    public void AllocateMoreSpaceWaitsForRunningGcBeforeRetrying()
+    {
+        try_allocate_more_space_context allocation = default;
+        allocation.gc_started_p = 1;
+        ResetAllocationCallbackRecorder();
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            &WaitForGcThenDeferCallback;
+
+        Assert.False(gc_heap.allocate_more_space(&allocation, callback));
+        Assert.Equal((byte)0, allocation.gc_started_p);
+        Assert.Equal(3, s_allocationCallbackCount);
+        Assert.Equal(allocation_deferred_operation.enter_more_space_lock, s_lastAllocationDeferredOperation);
+        Assert.Equal(allocation_state.a_state_start, allocation.state);
+        Assert.Equal(allocation_deferred_operation.enter_more_space_lock, allocation.deferred_operation);
+    }
+
+    [Fact]
     public void TryAllocateMoreSpaceUohCommitFailureDefersFullCompactGcWithoutMutatingAllocation()
     {
         using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
@@ -6903,6 +7090,156 @@ public sealed unsafe class GCPrivTests
 
         Assert.Equal(allocation_state.a_state_trigger_2nd_ephemeral_gc, gc_heap.try_allocate_more_space(&allocation, callback));
         Assert.Equal(allocation_deferred_operation.trigger_2nd_ephemeral_gc, allocation.deferred_operation);
+    }
+
+    private static void InitializeAllocationGenerations(generation* generations)
+    {
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+    }
+
+    private static try_allocate_more_space_context CreateAllocationContext(
+        gc_alloc_context* allocContext,
+        dynamic_data* data,
+        generation* generations,
+        heap_segment** ephemeralHeapSegment,
+        byte** allocAllocated,
+        ulong* totalAllocatedBytesSoh,
+        ulong* totalAllocatedBytesUoh,
+        nuint size,
+        int generationNumber,
+        int alignment)
+    {
+        return new try_allocate_more_space_context
+        {
+            acontext = allocContext,
+            dd = data,
+            generation_table = generations,
+            ephemeral_heap_segment = ephemeralHeapSegment,
+            alloc_allocated = allocAllocated,
+            total_alloc_bytes_soh = totalAllocatedBytesSoh,
+            total_alloc_bytes_uoh = totalAllocatedBytesUoh,
+            size = size,
+            gen_number = generationNumber,
+            align_const = alignment,
+        };
+    }
+
+    private static void ResetAllocateMoreSpaceRecorder()
+    {
+        s_allocateMoreSpaceEnterCount = 0;
+        s_allocateMoreSpaceLeaveCount = 0;
+        s_allocateMoreSpaceRetryState = allocation_state.a_state_start;
+        s_allocateMoreSpaceRetryOomReason = oom_reason.oom_no_failure;
+        s_allocateMoreSpaceGeneration = -1;
+        s_allocateMoreSpaceAlignment = -1;
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void AllocateMoreSpaceRetryCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+
+        if (operation == allocation_deferred_operation.enter_more_space_lock)
+        {
+            s_allocateMoreSpaceEnterCount++;
+            if (s_allocateMoreSpaceEnterCount == 1)
+            {
+                context->oom_r = oom_reason.oom_loh;
+                *result = new allocation_callback_result
+                {
+                    kind = allocation_callback_result_kind.retry_allocate,
+                };
+            }
+            else
+            {
+                s_allocateMoreSpaceRetryState = context->state;
+                s_allocateMoreSpaceRetryOomReason = context->oom_r;
+                *result = new allocation_callback_result
+                {
+                    kind = allocation_callback_result_kind.completed,
+                };
+            }
+
+            return;
+        }
+
+        if (operation == allocation_deferred_operation.leave_more_space_lock)
+        {
+            s_allocateMoreSpaceLeaveCount++;
+            *result = new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            };
+            return;
+        }
+
+        *result = operation == allocation_deferred_operation.check_allocation_budget
+            ? new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.allocation_allowed,
+            }
+            : default;
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void AllocateMoreSpaceFitCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+
+        if (operation == allocation_deferred_operation.enter_more_space_lock)
+        {
+            s_allocateMoreSpaceGeneration = context->gen_number;
+            s_allocateMoreSpaceAlignment = context->align_const;
+        }
+        else if (operation == allocation_deferred_operation.leave_more_space_lock)
+        {
+            s_allocateMoreSpaceLeaveCount++;
+        }
+
+        *result = operation is allocation_deferred_operation.enter_more_space_lock or
+            allocation_deferred_operation.leave_more_space_lock
+            ? new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            }
+            : operation == allocation_deferred_operation.check_allocation_budget
+                ? new allocation_callback_result
+                {
+                    kind = allocation_callback_result_kind.allocation_allowed,
+                }
+                : default;
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void WaitForGcThenDeferCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+        if (operation == allocation_deferred_operation.wait_for_gc_done)
+        {
+            context->gc_started_p = s_allocationCallbackCount == 1 ? (byte)1 : (byte)0;
+        }
+
+        *result = operation == allocation_deferred_operation.wait_for_gc_done
+            ? new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            }
+            : default;
     }
 
     private static void ResetAllocationCallbackRecorder()

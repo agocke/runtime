@@ -93,7 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, free-list/segment-end orchestration and fitting, deferred `try_allocate_more_space` state machine, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
@@ -1029,6 +1029,11 @@ unmanaged heap inputs. GC/BGC waits and triggers, full-GC notifications, dynamic
 more-space locks, UOH acquisition, retry decisions, and OOM reporting are an unmanaged function
 pointer protocol; a null callback returns the exact state and deferred operation rather than
 claiming that such work succeeded. This core is deliberately not wired to `ManagedGCHeap.Alloc`.
+The WKS `allocate_more_space` wrapper now retries from the native initial state, clears transient
+retry/OOM/lock state before each re-entry, and returns whether the final state can allocate. Its
+context continues to carry all heap-owned inputs explicitly, and it uses the same unmanaged
+callback protocol to wait for a currently running GC. It remains independent of
+`ManagedGCHeap.Alloc` and `GCHeapMemory`.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real
