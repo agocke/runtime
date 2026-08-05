@@ -93,7 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context helpers from `allocation.cpp` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
@@ -991,6 +991,11 @@ SOH/LOH/POH generation state. This is staged coexistence: `ManagedGCHeap.Alloc` 
 `GCHeapMemory`'s non-collecting bump allocator, which subsequently publishes its own heap bounds
 and write-barrier tables. Region allocation, collection, and steady-state region lifecycle remain
 deferred until the `allocation.cpp` dependency chain is ported.
+
+`GCAllocation` now writes the native-shaped free-object method table, array length, and
+doubly-linked free-list marker for object gaps, and carries the allocation-limit arithmetic
+leaves. They are not routed into production allocation: `ManagedGCHeap.Alloc` still uses
+`GCHeapMemory` until the refill, free-list, and allocation-policy dependencies are translated.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real

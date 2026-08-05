@@ -50,6 +50,7 @@ internal static unsafe partial class GCCommon
     // softwarewritewatch.h does.
     internal static byte* g_gc_lowest_address;
     internal static byte* g_gc_highest_address;
+    internal static void* g_gc_pFreeObjectMethodTable;
 
 #if USE_REGIONS
     // gcinternal.h declares this as a global, not a gc_heap member. The entries are addressed

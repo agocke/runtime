@@ -205,6 +205,8 @@ namespace Internal.Runtime.GarbageCollection
             GCCommon.initialize();
 #endif
 
+            GCCommon.g_gc_pFreeObjectMethodTable = GCToEEInterface.GetFreeObjectMethodTable();
+
             if (!gc_heap.check_commit_cs.Initialize())
             {
                 return E_OUTOFMEMORY;

@@ -5046,6 +5046,81 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(324ul, totalAllocatedBytesSoh);
     }
 
+    [Fact]
+    public void AllocationContextLimitAndSizeHelpersPreservePolicyBoundariesAndOverflow()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint alignedMinObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        dynamic_data data = default;
+        data.new_allocation = 64;
+
+        Assert.Equal((nuint)48, gc_heap.new_allocation_limit(&data, 32, 48, (int)gc_generation_num.soh_gen0));
+        Assert.Equal((nuint)48, gc_heap.limit_from_size(&data, 48, 8, 0, 128, (int)gc_generation_num.soh_gen0, alignment));
+        Assert.Equal((nuint)32, gc_heap.limit_from_size(&data, 48, 8, (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL, 128, (int)gc_generation_num.soh_gen0, alignment));
+        Assert.Equal((nuint)48, gc_heap.limit_from_size(&data, 48, unchecked(nuint.MaxValue - alignedMinObjectSize + 1), 0, 64, (int)gc_generation_num.soh_gen0, alignment));
+
+        gc_alloc_context context = default;
+        context.alloc_ptr = (byte*)0x1000;
+        context.alloc_bytes = 100;
+        ulong totalAllocatedBytes = 200;
+
+        gc_heap.set_alloc_context_limit(&context, (byte*)0x1000, 64, (int)gc_generation_num.soh_gen0, alignment, &totalAllocatedBytes);
+
+        Assert.Equal((nuint)0x1028, (nuint)context.alloc_limit);
+        Assert.Equal(140, context.alloc_bytes);
+        Assert.Equal(240ul, totalAllocatedBytes);
+
+        context.alloc_bytes = 0;
+        totalAllocatedBytes = 0;
+        gc_heap.set_alloc_context_limit(&context, null, 0, (int)gc_generation_num.soh_gen0, alignment, &totalAllocatedBytes);
+
+        Assert.Equal(unchecked(nuint.MaxValue - alignedMinObjectSize + 1), (nuint)context.alloc_limit);
+        Assert.Equal(-(long)alignedMinObjectSize, context.alloc_bytes);
+        Assert.Equal(unchecked(0ul - (ulong)alignedMinObjectSize), totalAllocatedBytes);
+    }
+
+    [Fact]
+    public void MakeUnusedArrayAndFreeObjectWriteNativeObjectBytesAndAccounting()
+    {
+        byte* storage = stackalloc byte[128];
+        nuint minimumObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            for (int i = 0; i < 128; i++)
+            {
+                storage[i] = 0xcc;
+            }
+
+            gc_heap.make_unused_array(storage, minimumObjectSize);
+
+            Assert.Equal((nuint)0x12345000, *(nuint*)storage);
+            Assert.Equal((nuint)0, *(nuint*)(storage + (nint)sizeof(nuint)));
+            for (nint i = 2 * sizeof(nuint); i < (nint)minimumObjectSize; i++)
+            {
+                Assert.Equal((byte)0xcc, storage[i]);
+            }
+
+            generation gen = default;
+            nuint freeObjectSize = unchecked(2 * minimumObjectSize);
+            gc_heap.make_free_obj(&gen, storage, freeObjectSize);
+
+            Assert.Equal((nuint)0x12345000, *(nuint*)storage);
+            Assert.Equal(minimumObjectSize, *(nuint*)(storage + (nint)sizeof(nuint)));
+            Assert.Equal((byte)0xcc, storage[2 * sizeof(nuint)]);
+#if TARGET_64BIT && !TARGET_WASM
+            Assert.Equal((nuint)1, (nuint)((byte**)storage)[3]);
+#endif
+            Assert.Equal(freeObjectSize, generation.generation_free_obj_space(&gen));
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
 #if USE_REGIONS
     [Fact]
     public void ResetAllocationPointersSelectsTheFirstWritableRegionAndChecksHalfOpenBounds()

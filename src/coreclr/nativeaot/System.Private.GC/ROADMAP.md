@@ -1076,12 +1076,17 @@ Translate `allocation.cpp`, including:
 - Large, pinned, and small object paths
 - `card_table.cpp` interaction
 
-The first dependency-closed WKS `USE_REGIONS` leaf is `GCAllocation.cs`: `Align`,
+The first dependency-closed WKS `USE_REGIONS` leaves are in `GCAllocation.cs`: `Align`,
 `get_alignment_constant`, `a_size_fit_p`, `void_allocation`, and the pointer/limit reset path
-of `fix_allocation_context` are translated without object writes or allocation routing.
-It also carries the direct SOH refill/retirement and UOH object-counter arithmetic, plus
-`set_allocation_heap_segment`/`reset_allocation_pointers` for the region generation schema.
-The bootstrap allocator remains the production allocation owner.
+of `fix_allocation_context`; `make_unused_array`/`make_free_obj` and the `CObjectHeader::SetFree`
+memory writes they require; and `new_allocation_limit`/`limit_from_size` plus the
+allocation-context limit/accounting tail of `adjust_limit_clr`. They preserve the native
+free-object method table, array-length, free-list marker, unsigned arithmetic, and accounting
+updates. The heap-owned dynamic data and allocation quantum are explicit inputs until the
+refill caller and heap state are translated. The `clearp`/`resetp` branches of
+`make_unused_array`, free-list routing, budget policy, and refill remain deferred.
+`set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
+Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
 
 The fixed 256 MB bump allocator must be deleted as the translated allocator becomes usable.
 
