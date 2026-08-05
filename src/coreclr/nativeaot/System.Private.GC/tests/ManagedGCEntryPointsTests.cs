@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using Xunit;
 
@@ -22,6 +23,10 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
 
     private static readonly KeyValuePair<FieldInfo, object>[] s_declaredConfigValues = CaptureDeclaredConfigValues();
     private static readonly Dictionary<string, int> s_interfaceConstants = ReadInterfaceConstants();
+#if USE_REGIONS
+    private static int s_describedGenerationCount;
+    private static int s_describedGenerationFailure;
+#endif
 
     public ManagedGCEntryPointsTests()
     {
@@ -216,6 +221,28 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
                 generation.generation_allocation_segment(
                     gc_heap.generation_of(generations, (int)gc_generation_num.poh_generation))));
             Assert.True(GCToEEInterface.StompWriteBarrierCallCount > 0);
+            WriteBarrierParameters args = GCToEEInterface.LastStompWriteBarrier;
+            Assert.Equal(WriteBarrierOp.Initialize, args.operation);
+            Assert.Equal((nuint)gc_heap.card_table, (nuint)args.card_table);
+            Assert.Equal((nuint)gc_heap.card_bundle_table, (nuint)args.card_bundle_table);
+            Assert.Equal((nuint)GCCommon.g_gc_lowest_address, (nuint)args.lowest_address);
+            Assert.Equal((nuint)GCCommon.g_gc_highest_address, (nuint)args.highest_address);
+            Assert.Equal((nuint)gc_heap.ephemeral_low, (nuint)args.ephemeral_low);
+            Assert.Equal((nuint)gc_heap.ephemeral_high, (nuint)args.ephemeral_high);
+            Assert.Equal((nuint)gc_heap.map_region_to_generation_skewed, (nuint)args.region_to_generation_table);
+            Assert.Equal((byte)gc_heap.min_segment_size_shr, args.region_shr);
+            Assert.Equal(
+                (nuint)1 << (int)gc_heap.min_segment_size_shr,
+                ManagedGCRegionBootstrap.GetValidSegmentSize(largeSegment: false));
+            Assert.Equal(
+                (nuint)region_allocator.LARGE_REGION_FACTOR << (int)gc_heap.min_segment_size_shr,
+                ManagedGCRegionBootstrap.GetValidSegmentSize(largeSegment: true));
+
+            s_describedGenerationCount = 0;
+            s_describedGenerationFailure = 0;
+            ManagedGCRegionBootstrap.DescribeGenerations(&RecordDescribedGeneration, null);
+            Assert.Equal((int)gc_generation_num.total_generation_count, s_describedGenerationCount);
+            Assert.Equal(0, s_describedGenerationFailure);
         }
         finally
         {
@@ -231,6 +258,30 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         Assert.True(gc_heap.bookkeeping_start is null);
         Assert.Equal((nuint)0, gc_heap.current_total_committed);
         Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
+    }
+
+    [UnmanagedCallersOnly]
+    private static void RecordDescribedGeneration(
+        void* context,
+        int generationNumber,
+        byte* rangeStart,
+        byte* rangeEnd,
+        byte* rangeEndReserved)
+    {
+        generation* currentGeneration = gc_heap.generation_of(
+            ManagedGCRegionBootstrap.GenerationTable,
+            generationNumber);
+        heap_segment* segment = gc_heap.heap_segment_rw(
+            generation.generation_start_segment(currentGeneration));
+        if (segment is null ||
+            rangeStart != heap_segment.heap_segment_mem(segment) ||
+            rangeEnd != heap_segment.heap_segment_allocated(segment) ||
+            rangeEndReserved != heap_segment.heap_segment_reserved(segment))
+        {
+            s_describedGenerationFailure = 1;
+        }
+
+        s_describedGenerationCount++;
     }
 
     [Fact]
@@ -283,6 +334,7 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
                 &context);
             Assert.Equal((nuint)(&heap->dynamic_data_table3), (nuint)context.dd);
         }
+
         finally
         {
             ManagedGCRegionBootstrap.Shutdown();
@@ -408,7 +460,7 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
 
             gc_alloc_context allocationContext = default;
             gc_heap.try_allocate_more_space_context context = default;
-            delegate* unmanaged<gc_heap.try_allocate_more_space_context*, int, gc_heap.allocation_callback_result*, void> callback =
+            delegate*<gc_heap.try_allocate_more_space_context*, int, gc_heap.allocation_callback_result*, void> callback =
                 gc_heap.managed_allocation_callback();
 
             gc_heap.create_try_allocate_more_space_context(
@@ -456,6 +508,56 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
                 genNumber,
                 &context);
             Assert.False(gc_heap.allocate_more_space(&context, callback));
+        }
+        finally
+        {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Theory]
+    [InlineData((int)gc_generation_num.soh_gen0)]
+    [InlineData((int)gc_generation_num.loh_generation)]
+    [InlineData((int)gc_generation_num.poh_generation)]
+    public void NonCollectingBootstrapBudgetConsumesInitialRegionsWithoutClaimingCollection(int genNumber)
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            dynamic_data* dd = gc_heap.dynamic_data_of(heap, genNumber);
+            dynamic_data.dd_new_allocation(dd) = -unchecked((nint)gc_heap.Align(
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                gc_heap.get_alignment_constant(genNumber <= (int)gc_generation_num.max_generation)));
+            gc_alloc_context allocationContext = default;
+            gc_heap.try_allocate_more_space_context context = default;
+            gc_heap.create_try_allocate_more_space_context(
+                heap,
+                &allocationContext,
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                0,
+                genNumber,
+                &context);
+            gc_heap.enable_non_collecting_bootstrap_budget(&context);
+
+            Assert.True(gc_heap.allocate_more_space(&context, gc_heap.managed_allocation_callback()));
+            Assert.Equal((byte)1, context.non_collecting_bootstrap_budget_p);
+            Assert.True(dynamic_data.dd_new_allocation(dd) > 0);
+            Assert.Equal((nuint)0, dynamic_data.dd_collection_count(dd));
+            Assert.True(allocationContext.alloc_ptr is not null);
+            if (genNumber == (int)gc_generation_num.soh_gen0)
+            {
+                Assert.True(allocationContext.alloc_limit - allocationContext.alloc_ptr >
+                    GCInterfaceOffsets.min_obj_size);
+            }
         }
         finally
         {
@@ -525,7 +627,7 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
                 0,
                 (int)gc_generation_num.soh_gen0,
                 &context);
-            delegate* unmanaged<gc_heap.try_allocate_more_space_context*, int, gc_heap.allocation_callback_result*, void> callback =
+            delegate*<gc_heap.try_allocate_more_space_context*, int, gc_heap.allocation_callback_result*, void> callback =
                 gc_heap.managed_allocation_callback();
             gc_heap.allocation_callback_result result = default;
 

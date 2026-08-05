@@ -29,6 +29,7 @@ internal unsafe partial struct gc_heap
 {
 #if USE_REGIONS
     public static uint* card_table;
+    public static uint* card_bundle_table;
     public static short* brick_table;
     public static region_free_list_array free_regions;
     public static byte** initial_regions;
@@ -521,6 +522,9 @@ internal unsafe partial struct gc_heap
 
         uint* ct = &new_card_table[(nint)card_table_info.card_word(card_table_info.gcard_of(GCCommon.g_gc_lowest_address))];
         brick_table = card_table_info.card_table_brick_table(ct);
+        card_bundle_table = card_table_info.translate_card_bundle_table(
+            card_table_info.card_table_card_bundle_table(ct),
+            GCCommon.g_gc_lowest_address);
         lowest_address = card_table_info.card_table_lowest_address(ct);
         highest_address = card_table_info.card_table_highest_address(ct);
 #if BACKGROUND_GC
@@ -541,6 +545,7 @@ internal unsafe partial struct gc_heap
         }
 
         card_table = null;
+        card_bundle_table = null;
         brick_table = null;
         card_table_element_layout = default;
         bookkeeping_covered_committed = null;
@@ -1074,6 +1079,33 @@ internal unsafe partial struct gc_heap
         seg_mapping* entry = &GCCommon.seg_mapping_table[(nint)index];
 
         return (heap_segment*)entry;
+    }
+
+    // This is the USE_REGIONS branch of seg_mapping_table_segment_of. It rejects free basic
+    // regions before resolving a large-region continuation and verifies the final segment's
+    // half-open address range.
+    public static bool try_get_region_segment(byte* address, bool small_heap_only, out heap_segment* segment)
+    {
+        segment = null;
+        if (GCCommon.seg_mapping_table is null ||
+            gc_heap.bookkeeping_covered_committed is null ||
+            address < GCCommon.g_gc_lowest_address ||
+            address >= GCCommon.g_gc_highest_address ||
+            address >= gc_heap.bookkeeping_covered_committed)
+        {
+            return false;
+        }
+
+        heap_segment* mappedSegment = get_region_info_for_address(address);
+        if (heap_segment.heap_segment_allocated(mappedSegment) is null ||
+            in_range_for_segment(address, mappedSegment) == 0 ||
+            (small_heap_only && heap_segment.heap_segment_uoh_p(mappedSegment) != 0))
+        {
+            return false;
+        }
+
+        segment = mappedSegment;
+        return true;
     }
 
     public static heap_segment* get_region_at_index(nuint index)

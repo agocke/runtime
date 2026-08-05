@@ -15,9 +15,10 @@ namespace Internal.Runtime.GarbageCollection
     /// <para>
     /// This is the first heap of the port, and it exists to prove the bootstrapping story —
     /// that ILC can compile code the runtime is willing to call on the allocation path and with
-    /// the world suspended — before any of the collector is written. Allocation is a bump
-    /// pointer over <see cref="GCHeapMemory"/>; every method that would need marking, planning,
-    /// sweeping or a walkable heap either reports "nothing to do" or stops the process through
+    /// the world suspended — before any of the collector is written. Region targets refill SOH
+    /// and UOH allocation contexts through the translated WKS allocation state; the bootstrap
+    /// bump range remains for frozen metadata. Every method that would need marking,
+    /// planning, sweeping or a walkable heap either reports "nothing to do" or stops the process through
     /// <see cref="Unsupported"/> rather than returning a plausible-looking wrong answer.
     /// </para>
     /// <para>
@@ -42,12 +43,12 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         private const nuint LargeObjectSize = 85000;
 
-        /// <summary>
-        /// How much a thread's allocation context is refilled with. Must stay below
-        /// <see cref="LargeObjectSize"/>: <c>GcAllocInternal</c> asserts that an allocation
-        /// context never spans more than that.
-        /// </summary>
+#if !USE_REGIONS
+        // How much a thread's allocation context is refilled with. Must stay below
+        // LargeObjectSize: GcAllocInternal asserts that an allocation context never spans more
+        // than that.
         private const nuint AllocQuantum = 8 * 1024;
+#endif
 
         /// <summary>Frozen segments the EE can register. One per module, plus the frozen object heap.</summary>
         private const int MaxFrozenSegments = 64;
@@ -55,7 +56,7 @@ namespace Internal.Runtime.GarbageCollection
         private static IGCHeapInternalVtable s_vtable;
         private static nint s_vtablePtr;
 
-        private static long s_totalAllocatedBytes;
+        private static long s_totalAllocatedBytesBootstrap;
         private static int s_gcCount;
         private static int s_gcInProgress;
 
@@ -275,29 +276,31 @@ namespace Internal.Runtime.GarbageCollection
 
         private static byte* AllocCore(gc_alloc_context* acontext, nuint size, uint flags)
         {
-            size = (size + (nuint)sizeof(nuint) - 1) & ~((nuint)sizeof(nuint) - 1);
+            size = gc_heap.Align(size);
 
-            // Large objects are handed out whole rather than from the allocation context, both
-            // because they would not fit and because the EE expects a context to stay small.
-            if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_LARGE_OBJECT_HEAP) != 0 || size >= LargeObjectSize)
+            // Large objects are handed out whole rather than from an SOH allocation context.
+            if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_USER_OLD_HEAP) != 0 || size >= LargeObjectSize)
             {
+#if USE_REGIONS
+                return AllocateFromRegion(acontext, size, flags,
+                    (flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_PINNED_OBJECT_HEAP) != 0
+                        ? (int)gc_generation_num.poh_generation
+                        : (int)gc_generation_num.loh_generation);
+#else
                 byte* uoh = GCHeapMemory.Allocate(size);
                 if (uoh != null)
                 {
                     acontext->alloc_bytes_uoh += (long)size;
-                    Interlocked.ExchangeAdd64(ref s_totalAllocatedBytes, (long)size);
+                    Interlocked.ExchangeAdd64(ref s_totalAllocatedBytesBootstrap, (long)size);
                 }
 
                 return uoh;
+#endif
             }
 
-            byte* allocPtr = acontext->alloc_ptr;
-            if (allocPtr != null && size <= (nuint)(acontext->alloc_limit - allocPtr))
-            {
-                acontext->alloc_ptr = allocPtr + size;
-                return allocPtr;
-            }
-
+#if USE_REGIONS
+            return AllocateFromRegion(acontext, size, flags, (int)gc_generation_num.soh_gen0);
+#else
             // Whatever is left in the old context is abandoned. Nothing walks this heap and
             // nothing reclaims it, so no free object needs to be written over the gap.
             nuint quantum = size > AllocQuantum ? size : AllocQuantum;
@@ -310,20 +313,95 @@ namespace Internal.Runtime.GarbageCollection
             acontext->alloc_ptr = region + size;
             acontext->alloc_limit = region + quantum;
             acontext->alloc_bytes += (long)quantum;
-            acontext->alloc_count++;
-            Interlocked.ExchangeAdd64(ref s_totalAllocatedBytes, (long)quantum);
+            Interlocked.ExchangeAdd64(ref s_totalAllocatedBytesBootstrap, (long)quantum);
             return region;
+#endif
         }
 
+#if USE_REGIONS
+        private static byte* AllocateFromRegion(gc_alloc_context* acontext, nuint size, uint flags, int generation)
+        {
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            if (heap is null)
+            {
+                return null;
+            }
+
+            bool smallObject = generation == (int)gc_generation_num.soh_gen0;
+            byte* allocPtr = acontext->alloc_ptr;
+            if (smallObject &&
+                allocPtr is not null &&
+                size <= (nuint)(acontext->alloc_limit - allocPtr))
+            {
+                acontext->alloc_ptr = allocPtr + size;
+                return allocPtr;
+            }
+
+            gc_alloc_context uohContext = default;
+            gc_alloc_context* refillContext = smallObject ? acontext : &uohContext;
+            gc_heap.try_allocate_more_space_context context = default;
+            gc_heap.create_try_allocate_more_space_context(
+                heap,
+                refillContext,
+                size,
+                flags,
+                generation,
+                &context);
+            gc_heap.enable_non_collecting_bootstrap_budget(&context);
+            if (!gc_heap.allocate_more_space(&context, gc_heap.managed_allocation_callback()))
+            {
+                return null;
+            }
+
+            allocPtr = refillContext->alloc_ptr;
+            if (allocPtr is null)
+            {
+                return null;
+            }
+
+            nuint available = (nuint)(refillContext->alloc_limit - allocPtr);
+            if ((smallObject && size > available) || (!smallObject && size != available))
+            {
+                return null;
+            }
+
+            if (smallObject)
+            {
+                acontext->alloc_ptr = allocPtr + size;
+            }
+            else
+            {
+                acontext->alloc_bytes_uoh = unchecked(acontext->alloc_bytes_uoh + (long)size);
+            }
+
+            return allocPtr;
+        }
+#endif
+
         /// <summary>
-        /// Retires a thread's allocation context. The unused tail is abandoned rather than
-        /// returned to the heap, which is consistent with never reclaiming anything.
+        /// Retires a thread's allocation context. Region targets format its unused tail before
+        /// retiring the accounting; the bootstrap-only path retains its original no-reclamation
+        /// behavior.
         /// </summary>
         private static void FixAllocContext(void* thisPtr, gc_alloc_context* acontext, void* arg, void* heap)
         {
             GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+#if USE_REGIONS
+            gc_heap* regionHeap = ManagedGCRegionBootstrap.Heap;
+            if (regionHeap is not null)
+            {
+                gc_heap.fix_allocation_context(
+                    acontext,
+                    arg is not null,
+                    gc_heap.generation_table_of(regionHeap),
+                    regionHeap->ephemeral_heap_segment,
+                    &regionHeap->alloc_allocated,
+                    &regionHeap->total_alloc_bytes_soh);
+            }
+#else
             acontext->alloc_ptr = null;
             acontext->alloc_limit = null;
+#endif
             criticalRegion.Exit();
         }
 
@@ -472,23 +550,61 @@ namespace Internal.Runtime.GarbageCollection
         private static byte IsPromoted2(void* thisPtr, byte* obj, byte bVerifyNextHeader) => 1;
 
         private static byte IsHeapPointer(void* thisPtr, void* obj, byte small_heap_only) =>
-            GCHeapMemory.Contains(obj) || FindFrozenSegment((byte*)obj) != null ? (byte)1 : (byte)0;
+#if USE_REGIONS
+            ManagedGCRegionBootstrap.FindSegment((byte*)obj, small_heap_only != 0) is not null
+#else
+            GCHeapMemory.Contains(obj)
+#endif
+            || FindFrozenSegment((byte*)obj) != null ? (byte)1 : (byte)0;
 
-        private static byte IsEphemeral(void* thisPtr, byte* obj) => GCHeapMemory.Contains(obj) ? (byte)1 : (byte)0;
+        private static byte IsEphemeral(void* thisPtr, byte* obj) =>
+#if USE_REGIONS
+            ManagedGCRegionBootstrap.IsEphemeral(obj) ? (byte)1 : (byte)0;
+#else
+            GCHeapMemory.Contains(obj) ? (byte)1 : (byte)0;
+#endif
 
         /// <summary>
-        /// Everything this heap allocates stays in gen0 forever; anything else the EE asks
-        /// about is in a frozen segment, which the C++ GC reports as the oldest generation.
+        /// Region allocations report the generation of their containing segment. Anything else
+        /// the EE asks about is in a frozen segment, which the C++ GC reports as the oldest generation.
         /// </summary>
         private static uint WhichGeneration(void* thisPtr, byte* obj) => GenerationOf(obj);
 
-        internal static uint GenerationOf(byte* obj) => GCHeapMemory.Contains(obj) ? 0u : MaxGeneration;
+        internal static uint GenerationOf(byte* obj) =>
+#if USE_REGIONS
+            ManagedGCRegionBootstrap.FindSegment(obj, smallHeapOnly: false) is not null
+                ? ManagedGCRegionBootstrap.GenerationOf(obj)
+                : MaxGeneration;
+#else
+            GCHeapMemory.Contains(obj) ? 0u : MaxGeneration;
+#endif
 
         private static uint GetGenerationWithRange(void* thisPtr, byte* obj, byte** ppStart, byte** ppAllocated, byte** ppReserved)
         {
-            *ppStart = GCHeapMemory.HeapStart;
-            *ppAllocated = GCHeapMemory.HeapEnd;
-            *ppReserved = GCHeapMemory.HeapEnd;
+#if USE_REGIONS
+            uint regionGeneration;
+            if (ManagedGCRegionBootstrap.TryGetGenerationWithRange(
+                obj,
+                ppStart,
+                ppAllocated,
+                ppReserved,
+                &regionGeneration))
+            {
+                return regionGeneration;
+            }
+#endif
+            FrozenSegment* frozen = FindFrozenSegment(obj);
+            if (frozen is not null)
+            {
+                *ppStart = (byte*)Volatile.Read(ref frozen->Start);
+                *ppAllocated = (byte*)Volatile.Read(ref frozen->End);
+                *ppReserved = *ppAllocated;
+                return MaxGeneration;
+            }
+
+            *ppStart = null;
+            *ppAllocated = null;
+            *ppReserved = null;
             return GenerationOf(obj);
         }
 
@@ -576,9 +692,27 @@ namespace Internal.Runtime.GarbageCollection
         // Statistics and settings
         // ------------------------------------------------------------------------------------
 
-        private static nuint GetTotalBytesInUse(void* thisPtr) => GCHeapMemory.BytesInUse;
+        private static nuint GetTotalBytesInUse(void* thisPtr) =>
+#if USE_REGIONS
+            (ManagedGCRegionBootstrap.Heap is null
+                ? 0
+                : (nuint)(ManagedGCRegionBootstrap.Heap->total_alloc_bytes_soh +
+                    ManagedGCRegionBootstrap.Heap->total_alloc_bytes_uoh)) +
+            GCHeapMemory.BytesInUse;
+#else
+            GCHeapMemory.BytesInUse;
+#endif
 
-        private static ulong GetTotalAllocatedBytes(void* thisPtr) => (ulong)Volatile.Read(ref s_totalAllocatedBytes);
+        private static ulong GetTotalAllocatedBytes(void* thisPtr) =>
+#if USE_REGIONS
+            (ManagedGCRegionBootstrap.Heap is null
+                ? 0
+                : ManagedGCRegionBootstrap.Heap->total_alloc_bytes_soh +
+                    ManagedGCRegionBootstrap.Heap->total_alloc_bytes_uoh) +
+            (ulong)Volatile.Read(ref s_totalAllocatedBytesBootstrap);
+#else
+            (ulong)Volatile.Read(ref s_totalAllocatedBytesBootstrap);
+#endif
 
         private static void GetMemoryInfo(
             void* thisPtr,
@@ -603,9 +737,9 @@ namespace Internal.Runtime.GarbageCollection
             *highMemLoadThresholdBytes = 0;
             *totalAvailableMemoryBytes = 0;
             *lastRecordedMemLoadBytes = 0;
-            *lastRecordedHeapSizeBytes = GCHeapMemory.BytesInUse;
+            *lastRecordedHeapSizeBytes = GetTotalBytesInUse(thisPtr);
             *lastRecordedFragmentationBytes = 0;
-            *totalCommittedBytes = GCHeapMemory.BytesInUse;
+            *totalCommittedBytes = GetTotalBytesInUse(thisPtr);
             *promotedBytes = 0;
             *pinnedObjectCount = 0;
             *finalizationPendingCount = 0;
@@ -660,7 +794,11 @@ namespace Internal.Runtime.GarbageCollection
         private static byte IsValidGen0MaxSize(void* thisPtr, nuint size) => 1;
 
         private static nuint GetValidSegmentSize(void* thisPtr, byte large_seg) =>
+#if USE_REGIONS
+            ManagedGCRegionBootstrap.GetValidSegmentSize(large_seg != 0);
+#else
             (nuint)(GCHeapMemory.HeapEnd - GCHeapMemory.HeapStart);
+#endif
 
         private static void SetReservedVMLimit(void* thisPtr, nuint vmlimit)
         {
@@ -724,8 +862,14 @@ namespace Internal.Runtime.GarbageCollection
         {
         }
 
-        private static void DiagDescrGenerations(void* thisPtr, delegate* unmanaged<void*, int, byte*, byte*, byte*, void> fn, void* context) =>
+        private static void DiagDescrGenerations(void* thisPtr, delegate* unmanaged<void*, int, byte*, byte*, byte*, void> fn, void* context)
+        {
+#if USE_REGIONS
+            ManagedGCRegionBootstrap.DescribeGenerations(fn, context);
+#else
             fn(context, 0, GCHeapMemory.HeapStart, GCHeapMemory.HeapEnd, GCHeapMemory.HeapEnd);
+#endif
+        }
 
         private static void DiagTraceGCSegments(void* thisPtr)
         {

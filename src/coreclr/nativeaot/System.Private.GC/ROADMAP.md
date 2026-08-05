@@ -1050,8 +1050,12 @@ Done so far:
   `ManagedGCRegionBootstrap` now calls this sequence from production
   `IGCHeap::Initialize`, reserves the configured/default range, creates and extends
   bookkeeping coverage, and releases the range, maps, table and generation storage on every
-  failure or shutdown. The bump allocator remains the allocation owner until region allocation
-  dependencies are ported.
+  failure or shutdown. Production SOH/UOH allocation-context refills now create a
+  `try_allocate_more_space_context` over that heap and run its concrete managed lock/budget
+  callback; formatted-tail retirement preserves the native allocation counters. The explicit
+  non-collecting bootstrap budget policy may consume already-reserved initial regions after the
+  native budget is depleted, but it does not claim a collection. UOH retry and collection remain
+  deferred, so an exhausted initial UOH region returns null.
 - Still deferred from `memory.cpp`: `decommit_ephemeral_segment_pages` and
   `decommit_ephemeral_segment_pages_step`, because they pull in ephemeral generations,
   region/segment decommit targets, and the server-GC decommit-step branch.
@@ -1066,7 +1070,7 @@ lifecycle match the C++ collector.
 
 ### 8. Allocator and write-barrier interaction
 
-**Status: Bootstrap allocator plus allocation-context leaf**
+**Status: Production region allocation routed; collection exhaustion deferred**
 
 Translate `allocation.cpp`, including:
 
@@ -1140,11 +1144,15 @@ Every SOH/LOH/POH dynamic record therefore begins with its native minimum budget
 and desired-allocation policy. The dynamic post-collection tuning algorithms and the
 `initialize_gc` hard-limit computation that may further constrain those values remain deferred;
 this code neither fabricates a permissive budget nor reports an unported collection as successful.
-It is not routed into production allocation.
+Production allocation uses these records while an explicit non-collecting bootstrap policy
+rearms exhausted budgets without claiming that an unported collection ran.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
-Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
+Production SOH and initial-UOH allocation-context refills use the region heap. `GCHeapMemory`
+remains for unmanaged frozen-segment metadata; on region targets it does not replace region
+bounds or publish bootstrap card tables/write-barrier bounds.
 
-The fixed 256 MB bump allocator must be deleted as the translated allocator becomes usable.
+The former 256 MB bump allocator is now a 64 KiB metadata-only range for frozen-segment records.
+It can be removed when those records gain their final unmanaged owner.
 
 **Complete when:** allocation behavior, alignment, accounting, failure paths, and write-barrier
 state match the C++ implementation across supported architectures.

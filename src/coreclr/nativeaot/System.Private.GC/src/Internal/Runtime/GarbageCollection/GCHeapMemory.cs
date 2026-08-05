@@ -8,16 +8,14 @@ using System.Threading;
 namespace Internal.Runtime.GarbageCollection
 {
     /// <summary>
-    /// The memory the managed heap hands out, and the card tables the EE's write barrier needs
-    /// in order to write into it.
+    /// The bootstrap allocation range for frozen-segment metadata and, outside region builds,
+    /// managed heap allocations and their card tables.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is a bump allocator over a single contiguous region and it never reclaims anything:
-    /// the port has no marking, planning or sweeping yet (plan steps 9-10). An application runs
-    /// until it has allocated <see cref="HeapSize"/> bytes and then gets OOM. That is enough to
-    /// answer the question this milestone exists for — whether ILC can compile code that the
-    /// runtime is willing to call on the allocation path — without the collector being written.
+    /// This is a bump allocator over a single contiguous range and it never reclaims anything.
+    /// Region targets use it only for unmanaged frozen-segment metadata. Non-region targets use
+    /// it for all managed allocations.
     /// </para>
     /// <para>
     /// The whole region is committed up front. Lazy commit would need the allocation fast path
@@ -32,48 +30,46 @@ namespace Internal.Runtime.GarbageCollection
         /// Size of the one and only heap region. Because nothing is ever reclaimed this is also
         /// the total number of bytes the process can allocate.
         /// </summary>
+#if USE_REGIONS
+        private const nuint HeapSize = 64 * 1024;
+#else
         private const nuint HeapSize = 256 * 1024 * 1024;
+#endif
 
-        /// <summary>
-        /// Bytes covered by one card table byte. Must match <c>LOG2_CLUMP_SIZE</c> in
-        /// <c>GCMemoryHelpers.inl</c> and the <c>shr 0x0B</c> in the assembly write barriers.
-        /// That value is 11 only on 64-bit; 32-bit uses 10, which is why
-        /// <c>Microsoft.NETCore.Native.targets</c> rejects <c>IlcManagedGC</c> on x86, ARM32
-        /// and WASM.
-        /// </summary>
+#if !USE_REGIONS
+        // Bytes covered by one card table byte. Must match LOG2_CLUMP_SIZE in
+        // GCMemoryHelpers.inl and the shr 0x0B in the assembly write barriers.
         private const int LogCardSize = 11;
 
-        /// <summary>
-        /// Bytes covered by one card bundle table byte. Must match the additional
-        /// <c>shr 0x0A</c> the assembly write barriers apply on top of <see cref="LogCardSize"/>.
-        /// </summary>
+        // Bytes covered by one card bundle table byte. Must match the additional shr 0x0A the
+        // assembly write barriers apply on top of LogCardSize.
         private const int LogCardBundleSize = 21;
+#endif
 
         // Bump pointer, as nint so that Interlocked can operate on it.
         private static nint s_allocPtr;
+        private static byte* s_heapStart;
+        private static byte* s_heapEnd;
 
         /// <summary>
-        /// Low bound of the heap. Backed by <see cref="GCCommon.g_gc_lowest_address"/>, the same
-        /// global <c>gccommon.cpp</c> declares and <c>SoftwareWriteWatch::GetHeapStartAddress</c>
-        /// reads, so this is the one place the bound is set.
+        /// Low bound of this bootstrap allocation range.
         /// </summary>
-        public static byte* HeapStart => GCCommon.g_gc_lowest_address;
+        public static byte* HeapStart => s_heapStart;
 
         /// <summary>
-        /// High bound of the heap. Backed by <see cref="GCCommon.g_gc_highest_address"/>, the
-        /// same global <c>gccommon.cpp</c> declares and
-        /// <c>SoftwareWriteWatch::GetHeapEndAddress</c> reads.
+        /// High bound of this bootstrap allocation range.
         /// </summary>
-        public static byte* HeapEnd => GCCommon.g_gc_highest_address;
+        public static byte* HeapEnd => s_heapEnd;
 
         /// <summary>Bytes handed out so far. Never decreases, because nothing is ever freed.</summary>
-        public static nuint BytesInUse => (nuint)(Volatile.Read(ref s_allocPtr) - (nint)GCCommon.g_gc_lowest_address);
+        public static nuint BytesInUse => (nuint)(Volatile.Read(ref s_allocPtr) - (nint)s_heapStart);
 
-        public static bool Contains(void* address) => address >= GCCommon.g_gc_lowest_address && address < GCCommon.g_gc_highest_address;
+        public static bool Contains(void* address) => address >= s_heapStart && address < s_heapEnd;
 
         /// <summary>
-        /// Reserves and commits the heap, builds the card tables, and publishes both to the EE's
-        /// write barrier. Returns false if the memory could not be obtained.
+        /// Reserves and commits the bootstrap allocation range. Non-region configurations also
+        /// publish its card tables to the EE; region configurations leave that ownership with
+        /// <see cref="ManagedGCRegionBootstrap"/>.
         /// </summary>
         public static bool Initialize()
         {
@@ -83,9 +79,13 @@ namespace Internal.Runtime.GarbageCollection
                 return false;
             }
 
+            s_heapStart = heap;
+            s_heapEnd = heap + HeapSize;
+            s_allocPtr = (nint)heap;
+
+#if !USE_REGIONS
             GCCommon.g_gc_lowest_address = heap;
             GCCommon.g_gc_highest_address = heap + HeapSize;
-            s_allocPtr = (nint)heap;
 
             // The write barriers index the card tables by the absolute address of the location
             // being written, not by an offset from the start of the heap, so what is published
@@ -113,9 +113,11 @@ namespace Internal.Runtime.GarbageCollection
             args.ephemeral_high = GCCommon.g_gc_highest_address;
 
             GCToEEInterface.StompWriteBarrier(&args);
+#endif
             return true;
         }
 
+#if !USE_REGIONS
         /// <summary>
         /// Reserves and commits a zero-filled side table of the given size, rounded up so that
         /// the last byte of the heap has an entry.
@@ -126,6 +128,7 @@ namespace Internal.Runtime.GarbageCollection
             byte* table = GCToOSInterface.VirtualReserve(size, 0, (uint)VirtualReserveFlags.None);
             return table != null && GCToOSInterface.VirtualCommit(table, size) ? table : null;
         }
+#endif
 
         /// <summary>
         /// Carves <paramref name="size"/> zeroed bytes off the region. Returns null when the
@@ -137,7 +140,7 @@ namespace Internal.Runtime.GarbageCollection
         /// </remarks>
         public static byte* Allocate(nuint size)
         {
-            nint end = (nint)GCCommon.g_gc_highest_address;
+            nint end = (nint)s_heapEnd;
             nint current = Volatile.Read(ref s_allocPtr);
             while (true)
             {

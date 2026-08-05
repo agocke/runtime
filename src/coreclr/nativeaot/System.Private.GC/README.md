@@ -420,7 +420,10 @@ now runs that reservation, bookkeeping, initial-region and initial-generation se
 production `IGCHeap::Initialize`. Its unmanaged WKS `gc_heap` owns the generation table,
 dynamic allocation state, ephemeral segment, allocation counters, and SOH/UOH more-space locks;
 it also owns the range and initial-region state and unwinds every allocation and reservation on
-failure.
+failure. Production SOH/UOH allocation-context refills use this heap through
+`create_try_allocate_more_space_context` and `allocate_more_space`. Their plain managed callback
+owns the WKS lock and the explicit non-collecting bootstrap budget policy consumes initial
+regions without claiming an unported collection ran.
 The two trailing gen2 fields follow `DOUBLY_LINKED_FL` (`TARGET_64BIT && !TARGET_WASM`), and the
 diagnostic-only `FREE_USAGE_STATS` fields, never defined, are omitted. `USE_REGIONS` implies
 `HOST_64BIT`, so the 32-bit column of the region branch in the table is never evaluated. The class
@@ -989,10 +992,11 @@ temporarily while the corresponding environment modules are ported.
 
 On region targets, startup also reserves the configured `GCRegionRange` (or the current 256 MB
 bootstrap default), builds WKS bookkeeping, reserves initial regions, and constructs initial
-SOH/LOH/POH generation state. This is staged coexistence: `ManagedGCHeap.Alloc` continues to use
-`GCHeapMemory`'s non-collecting bump allocator, which subsequently publishes its own heap bounds
-and write-barrier tables. Region allocation, collection, and steady-state region lifecycle remain
-deferred until the `allocation.cpp` dependency chain is ported.
+SOH/LOH/POH generation state. `ManagedGCHeap.Alloc` uses that region heap for SOH and UOH
+allocation-context refills. `GCHeapMemory` remains a separate non-collecting bootstrap range for
+unmanaged frozen-segment metadata; it neither changes the region range nor publishes card tables
+or write-barrier bounds on region targets. Region collection and UOH segment retry policy remain
+deferred, so exhausted UOH routing returns null rather than reporting a collection.
 
 `GCAllocation` now writes the native-shaped free-object method table, array length, and
 doubly-linked free-list marker for object gaps, carries the allocation-limit arithmetic leaves,
@@ -1009,9 +1013,9 @@ hard-limit failures, and hands the range to that refill transition. Its UOH wrap
 writable segments and records end-segment allocation. The deferred heap-owned dynamic-data
 table, allocation quantum, generation table, allocation pointer, ephemeral segment, selected
 SOH/UOH total, and heap number are explicit unsafe parameters, rather than a partial heap
-layout. These helpers are not routed into production allocation: `ManagedGCHeap.Alloc` still
-uses `GCHeapMemory` until the refill, free-list, and allocation-policy dependencies are
-translated.
+layout. The dependency-closed SOH and initial-UOH refill paths are routed through these helpers.
+UOH segment retry and collection dependencies remain deferred, so allocation stops honestly when
+the initial region is exhausted.
 
 The next allocation orchestration leaf connects those fits in native order:
 `soh_try_fit` favors the SOH free list, honors the short-end result, tries the current
@@ -1048,8 +1052,9 @@ its unmanaged callback enters/leaves the selected SOH/UOH lock and performs the 
 `new_allocation_allowed` check, including the gen0 elapsed-time throttle. GC/BGC waits and triggers, full-GC notification,
 segment acquisition, retry policy, and OOM handling still return the exact deferred operation.
 When this terminal wrapper returns a deferred failure after acquiring a concrete lock, it releases
-that lock while preserving the pending operation for its caller.
-It remains independent of `ManagedGCHeap.Alloc` and `GCHeapMemory`.
+that lock while preserving the pending operation for its caller. `ManagedGCHeap.Alloc` uses it
+for SOH and initial-UOH refills; the managed allocation callback is a plain managed function
+pointer because this protocol never crosses a native boundary.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real

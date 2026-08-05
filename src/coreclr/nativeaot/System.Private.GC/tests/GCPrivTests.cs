@@ -1999,10 +1999,61 @@ public sealed unsafe class GCPrivTests
             Assert.Equal((nuint)(&table[4]), (nuint)gc_heap.get_region_info_for_address((byte*)0x6123));
             Assert.Equal((nuint)0x4ABC, (nuint)heap_segment.heap_segment_allocated(gc_heap.get_region_info_for_address((byte*)0x6FFF)));
         }
+
         finally
         {
             gc_heap.min_segment_size_shr = oldShift;
             GCCommon.seg_mapping_table = oldTable;
+        }
+    }
+
+    [Fact]
+    public void RegionSegmentLookupUsesMappedSegmentsAndRejectsFreeOrWrongHeapRegions()
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        seg_mapping* oldTable = GCCommon.seg_mapping_table;
+        byte* oldBookkeepingCoveredCommitted = gc_heap.bookkeeping_covered_committed;
+        seg_mapping* table = stackalloc seg_mapping[4];
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x9000;
+            GCCommon.seg_mapping_table = table - 5;
+            gc_heap.bookkeeping_covered_committed = (byte*)0x9000;
+
+            table[1].region_info.mem = (byte*)0x6000;
+            table[1].region_info.allocated = (byte*)0x6100;
+            table[1].region_info.reserved = (byte*)0x7000;
+            table[1].region_info.gen_num = (byte)gc_generation_num.soh_gen1;
+
+            table[2].region_info.mem = (byte*)0x7000;
+            table[2].region_info.allocated = (byte*)0x7100;
+            table[2].region_info.reserved = (byte*)0x8000;
+            table[2].region_info.flags = heap_segment.heap_segment_flags_loh;
+            table[2].region_info.gen_num = (byte)gc_generation_num.max_generation;
+
+            Assert.True(gc_heap.try_get_region_segment((byte*)0x6001, small_heap_only: false, out heap_segment* old));
+            Assert.Equal((nuint)(&table[1]), (nuint)old);
+            Assert.Equal((byte)gc_generation_num.soh_gen1, heap_segment.heap_segment_gen_num(old));
+
+            Assert.True(gc_heap.try_get_region_segment((byte*)0x7001, small_heap_only: false, out heap_segment* loh));
+            Assert.Equal((nuint)(&table[2]), (nuint)loh);
+            Assert.False(gc_heap.try_get_region_segment((byte*)0x7001, small_heap_only: true, out _));
+
+            Assert.False(gc_heap.try_get_region_segment((byte*)0x8001, small_heap_only: false, out _));
+            Assert.False(gc_heap.try_get_region_segment((byte*)0x9000, small_heap_only: false, out _));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            GCCommon.seg_mapping_table = oldTable;
+            gc_heap.bookkeeping_covered_committed = oldBookkeepingCoveredCommitted;
         }
     }
 
@@ -5054,6 +5105,92 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(468ul, totalAllocatedBytesSoh);
     }
 
+#if USE_REGIONS
+    [Fact]
+    public void FixAllocationContextFormatsTheTailAndRetiresOnlyForGc()
+    {
+        void* oldFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        byte* storage = stackalloc byte[128];
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        heap_segment segment = default;
+        gc_alloc_context context = default;
+        ulong totalAllocatedBytesSoh = 100;
+        byte* allocAllocated = storage + 128;
+        nuint alignedMinObjectSize = gc_heap.Align(
+            (nuint)GCInterfaceOffsets.min_obj_size,
+            gc_heap.get_alignment_constant(small_object_p: true));
+
+        try
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x1234;
+            segment.mem = storage;
+            segment.reserved = storage + 128;
+
+            context.alloc_ptr = storage + 32;
+            context.alloc_limit = storage + 96;
+            context.alloc_bytes = 100;
+            gc_heap.fix_allocation_context(
+                &context,
+                false,
+                generations,
+                &segment,
+                &allocAllocated,
+                &totalAllocatedBytesSoh);
+
+            Assert.Equal((nuint)(storage + 32), (nuint)context.alloc_ptr);
+            Assert.Equal((nuint)(storage + 96), (nuint)context.alloc_limit);
+            Assert.Equal(100L, context.alloc_bytes);
+            Assert.Equal(100UL, totalAllocatedBytesSoh);
+            Assert.Equal((nuint)GCCommon.g_gc_pFreeObjectMethodTable, *(nuint*)(storage + 32));
+
+            context.alloc_ptr = storage + 32;
+            context.alloc_limit = storage + 96;
+            context.alloc_bytes = 100;
+            gc_heap.fix_allocation_context(
+                &context,
+                true,
+                generations,
+                &segment,
+                &allocAllocated,
+                &totalAllocatedBytesSoh);
+
+            Assert.Equal((nuint)0, (nuint)context.alloc_ptr);
+            Assert.Equal((nuint)0, (nuint)context.alloc_limit);
+            Assert.Equal(36L, context.alloc_bytes);
+            Assert.Equal(36UL, totalAllocatedBytesSoh);
+            Assert.Equal((nuint)(64 + alignedMinObjectSize), generation.generation_free_obj_space(generations));
+            Assert.Equal((nuint)GCCommon.g_gc_pFreeObjectMethodTable, *(nuint*)(storage + 32));
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = oldFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
+    public void FixAllocationContextIgnoresAnEmptyContext()
+    {
+        gc_alloc_context context = default;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        heap_segment segment = default;
+        byte* allocAllocated = (byte*)0x1000;
+        ulong totalAllocatedBytesSoh = 17;
+
+        gc_heap.fix_allocation_context(
+            &context,
+            true,
+            generations,
+            &segment,
+            &allocAllocated,
+            &totalAllocatedBytesSoh);
+
+        Assert.Equal((nuint)0, (nuint)context.alloc_ptr);
+        Assert.Equal((nuint)0, (nuint)context.alloc_limit);
+        Assert.Equal((nuint)0x1000, (nuint)allocAllocated);
+        Assert.Equal(17UL, totalAllocatedBytesSoh);
+    }
+#endif
+
     [Fact]
     public void AllocationContextAccountingKeepsSohAndUohCountersDistinct()
     {
@@ -6691,7 +6828,7 @@ public sealed unsafe class GCPrivTests
                 (int)gc_generation_num.soh_gen0,
                 alignment);
             ResetAllocateMoreSpaceRecorder();
-            delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
                 &AllocateMoreSpaceRetryCallback;
 
             Assert.True(gc_heap.allocate_more_space(&allocation, callback));
@@ -6808,7 +6945,7 @@ public sealed unsafe class GCPrivTests
                 (int)gc_generation_num.soh_gen0,
                 sohAlignment);
             ResetAllocateMoreSpaceRecorder();
-            delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
                 &AllocateMoreSpaceFitCallback;
 
             Assert.True(gc_heap.allocate_more_space(&sohAllocation, callback));
@@ -6878,7 +7015,7 @@ public sealed unsafe class GCPrivTests
         try_allocate_more_space_context allocation = default;
         allocation.gc_started_p = 1;
         ResetAllocationCallbackRecorder();
-        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+        delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
             &WaitForGcThenDeferCallback;
 
         Assert.False(gc_heap.allocate_more_space(&allocation, callback));
@@ -7031,7 +7168,7 @@ public sealed unsafe class GCPrivTests
         allocation.more_space_lock_held_p = 1;
         allocation.budget_checked_p = 1;
         ResetAllocationCallbackRecorder();
-        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+        delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
             &UohOomCallback;
 
         Assert.Equal(allocation_state.a_state_cant_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
@@ -7063,7 +7200,7 @@ public sealed unsafe class GCPrivTests
         otherHeap.oom_r = oom_reason.oom_loh;
         otherHeap.more_space_lock_held_p = 1;
         ResetAllocationCallbackRecorder();
-        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+        delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
             &RetryOtherHeapCallback;
 
         Assert.Equal(allocation_state.a_state_retry_allocate, gc_heap.try_allocate_more_space(&otherHeap, callback));
@@ -7129,7 +7266,7 @@ public sealed unsafe class GCPrivTests
             Assert.Equal(allocation_deferred_operation.trigger_ephemeral_gc, allocation.deferred_operation);
 
             ResetAllocationCallbackRecorder();
-            delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
                 &NoFullEphemeralGcCallback;
             Assert.Equal(allocation_state.a_state_can_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
             Assert.Equal(2, s_allocationCallbackCount);
@@ -7186,7 +7323,7 @@ public sealed unsafe class GCPrivTests
         allocation.sufficient_space_regions_for_allocation_p = 0;
         allocation.sufficient_gen0_space_p = 0;
         ResetAllocationCallbackRecorder();
-        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+        delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
             &BackgroundQueryCallback;
 
         Assert.Equal(allocation_state.a_state_trigger_full_compact_gc, gc_heap.try_allocate_more_space(&allocation, callback));
@@ -7204,7 +7341,7 @@ public sealed unsafe class GCPrivTests
         allocation.more_space_lock_held_p = 1;
         allocation.budget_checked_p = 1;
         ResetAllocationCallbackRecorder();
-        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+        delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
             &UnproductiveFullGcCallback;
 
         Assert.Equal(allocation_state.a_state_cant_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
@@ -7243,7 +7380,7 @@ public sealed unsafe class GCPrivTests
         allocation.full_gc_notification_p = 1;
         allocation.state = allocation_state.a_state_start;
         ResetAllocationCallbackRecorder();
-        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+        delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
             &BudgetRecheckCallback;
 
         Assert.Equal(allocation_state.a_state_trigger_ephemeral_gc, gc_heap.try_allocate_more_space(&allocation, callback));
@@ -7267,7 +7404,7 @@ public sealed unsafe class GCPrivTests
         allocation.full_gc_checked_p = 1;
         allocation.bgc_high_memory_waited_p = 1;
         ResetAllocationCallbackRecorder();
-        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+        delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
             &BudgetRetryCallback;
 
         Assert.Equal(allocation_state.a_state_retry_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
@@ -7305,7 +7442,7 @@ public sealed unsafe class GCPrivTests
         allocation.more_space_lock_held_p = 1;
         allocation.budget_checked_p = 1;
         ResetAllocationCallbackRecorder();
-        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+        delegate*<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
             &NoBackgroundGcWaitCallback;
 
         Assert.Equal(allocation_state.a_state_trigger_2nd_ephemeral_gc, gc_heap.try_allocate_more_space(&allocation, callback));
@@ -7358,7 +7495,6 @@ public sealed unsafe class GCPrivTests
         s_allocateMoreSpaceAlignment = -1;
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void AdjustLimitReleaseCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7374,7 +7510,6 @@ public sealed unsafe class GCPrivTests
         }
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void AllocateMoreSpaceRetryCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7424,7 +7559,6 @@ public sealed unsafe class GCPrivTests
             : default;
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void AllocateMoreSpaceFitCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7456,7 +7590,6 @@ public sealed unsafe class GCPrivTests
                 : default;
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void AllocationClearCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7484,7 +7617,6 @@ public sealed unsafe class GCPrivTests
                 : default;
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void WaitForGcThenDeferCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7517,7 +7649,6 @@ public sealed unsafe class GCPrivTests
         s_fullGcCheckCallbackCount = 0;
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void UohOomCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7555,7 +7686,6 @@ public sealed unsafe class GCPrivTests
         };
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void RetryOtherHeapCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7580,7 +7710,6 @@ public sealed unsafe class GCPrivTests
         };
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void NoFullEphemeralGcCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7604,7 +7733,6 @@ public sealed unsafe class GCPrivTests
                 : default;
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void BackgroundQueryCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7634,7 +7762,6 @@ public sealed unsafe class GCPrivTests
         };
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void UnproductiveFullGcCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7667,7 +7794,6 @@ public sealed unsafe class GCPrivTests
         };
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void BudgetRecheckCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7692,7 +7818,6 @@ public sealed unsafe class GCPrivTests
         };
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void BudgetRetryCallback(
         try_allocate_more_space_context* context,
         int operationValue,
@@ -7717,7 +7842,6 @@ public sealed unsafe class GCPrivTests
         };
     }
 
-    [System.Runtime.InteropServices.UnmanagedCallersOnly]
     private static void NoBackgroundGcWaitCallback(
         try_allocate_more_space_context* context,
         int operationValue,

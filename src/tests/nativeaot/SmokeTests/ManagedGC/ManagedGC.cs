@@ -86,15 +86,18 @@ internal static class ManagedGCTest
 
     private static bool AllocationsAreDistinctAndZeroed()
     {
-        const int Count = 2048;
+        // This is substantially larger than the managed region allocator's allocation quantum,
+        // so retaining every object verifies many allocation-context refills as well as their
+        // zeroing and non-overlap.
+        const int Count = 8192;
         byte[][] arrays = new byte[Count][];
 
         for (int i = 0; i < Count; i++)
         {
             byte[] array = new byte[64];
 
-            // Fresh heap memory is handed out once and comes from a fresh commit, so it must
-            // already read as zero; the runtime relies on that rather than clearing it.
+            // Each allocation, including one at the beginning of a refilled context, must be
+            // zeroed before the EE installs its object header.
             foreach (byte b in array)
             {
                 if (b != 0)
@@ -157,6 +160,10 @@ internal static class ManagedGCTest
 
     private static bool LargeObjectsWork()
     {
+        byte[] smallBefore = new byte[32];
+        smallBefore[0] = 3;
+        long allocatedBefore = GC.GetTotalAllocatedBytes();
+
         // Past the 85000-byte threshold, so the heap allocates these outside the allocation
         // context rather than from it.
         byte[] large = new byte[200_000];
@@ -169,7 +176,22 @@ internal static class ManagedGCTest
         large[^1] = 2;
 
         byte[] second = new byte[200_000];
-        return second[0] == 0 && second[^1] == 0 && large[0] == 1 && large[^1] == 2;
+        byte[] pinned = GC.AllocateUninitializedArray<byte>(200_000, pinned: true);
+        pinned[0] = 5;
+        pinned[^1] = 6;
+        byte[] smallAfter = new byte[32];
+        smallAfter[0] = 4;
+        long allocatedAfter = GC.GetTotalAllocatedBytes();
+
+        return second[0] == 0 &&
+            second[^1] == 0 &&
+            pinned[0] == 5 &&
+            pinned[^1] == 6 &&
+            large[0] == 1 &&
+            large[^1] == 2 &&
+            smallBefore[0] == 3 &&
+            smallAfter[0] == 4 &&
+            allocatedAfter - allocatedBefore >= 600_000;
     }
 
     private static bool HandlesWork()

@@ -68,5 +68,24 @@ internal static unsafe class GCWriteBarrier
         region_write_barrier_settings(&args, map_region_to_generation_skewed, region_shr);
         GCToEEInterface.StompWriteBarrier(&args);
     }
+
+    public static void stomp_write_barrier_initialize(
+        byte* ephemeral_low,
+        byte* ephemeral_high,
+        region_info* map_region_to_generation_skewed,
+        byte region_shr)
+    {
+        WriteBarrierParameters args = default;
+        args.operation = WriteBarrierOp.Initialize;
+        args.is_runtime_suspended = 1;
+        args.card_table = gc_heap.card_table;
+        args.card_bundle_table = gc_heap.card_bundle_table;
+        args.lowest_address = GCCommon.g_gc_lowest_address;
+        args.highest_address = GCCommon.g_gc_highest_address;
+        args.ephemeral_low = ephemeral_low;
+        args.ephemeral_high = ephemeral_high;
+        region_write_barrier_settings(&args, map_region_to_generation_skewed, region_shr);
+        GCToEEInterface.StompWriteBarrier(&args);
+    }
 }
 #endif

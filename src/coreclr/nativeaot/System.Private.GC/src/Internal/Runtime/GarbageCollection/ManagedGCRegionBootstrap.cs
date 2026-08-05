@@ -4,9 +4,8 @@
 namespace Internal.Runtime.GarbageCollection;
 
 #if USE_REGIONS
-// The non-collecting bump allocator remains the allocation owner. This class owns a separately
-// reserved WKS region layout so that the region bootstrap can be exercised without routing
-// allocations through region_allocator before allocation.cpp's dependencies are available.
+// This class owns the WKS region layout and its write-barrier range. Managed allocations use
+// the dependency-closed region allocation path while it can allocate from the initial regions.
 internal static unsafe class ManagedGCRegionBootstrap
 {
     private const int S_OK = 0;
@@ -158,6 +157,12 @@ internal static unsafe class ManagedGCRegionBootstrap
         {
             goto Fail;
         }
+
+        GCWriteBarrier.stomp_write_barrier_initialize(
+            gc_heap.ephemeral_low,
+            gc_heap.ephemeral_high,
+            gc_heap.map_region_to_generation_skewed,
+            (byte)gc_heap.min_segment_size_shr);
         s_initialized = true;
         return true;
 
@@ -175,6 +180,92 @@ internal static unsafe class ManagedGCRegionBootstrap
     internal static byte* AllocAllocated => s_heap is null ? null : s_heap->alloc_allocated;
     internal static byte* ReservedRegionRange => s_reservedRegionRange;
     internal static nuint ReservedRegionRangeSize => s_reservedRegionRangeSize;
+
+    internal static nuint GetValidSegmentSize(bool largeSegment) =>
+        largeSegment
+            ? gc_heap.global_region_allocator.get_large_region_alignment()
+            : gc_heap.global_region_allocator.get_region_alignment();
+
+    internal static void DescribeGenerations(
+        delegate* unmanaged<void*, int, byte*, byte*, byte*, void> callback,
+        void* context)
+    {
+        if (!s_initialized)
+        {
+            return;
+        }
+
+        generation* generationTable = GenerationTable;
+        for (int generationNumber = (int)gc_generation_num.total_generation_count - 1;
+             generationNumber >= 0;
+             generationNumber--)
+        {
+            generation* currentGeneration = gc_heap.generation_of(generationTable, generationNumber);
+            heap_segment* segment = gc_heap.heap_segment_rw(
+                generation.generation_start_segment(currentGeneration));
+            while (segment is not null)
+            {
+                callback(
+                    context,
+                    generationNumber,
+                    heap_segment.heap_segment_mem(segment),
+                    heap_segment.heap_segment_allocated(segment),
+                    heap_segment.heap_segment_reserved(segment));
+                segment = gc_heap.heap_segment_next_rw(segment);
+            }
+        }
+    }
+
+    internal static heap_segment* FindSegment(byte* address, bool smallHeapOnly)
+    {
+        if (!s_initialized ||
+            address < GCCommon.g_gc_lowest_address ||
+            address >= GCCommon.g_gc_highest_address)
+        {
+            return null;
+        }
+
+        return gc_heap.try_get_region_segment(address, smallHeapOnly, out heap_segment* segment)
+            ? segment
+            : null;
+    }
+
+    internal static bool IsEphemeral(byte* address)
+    {
+        heap_segment* segment = FindSegment(address, smallHeapOnly: false);
+        return segment is not null &&
+            heap_segment.heap_segment_gen_num(segment) < GCInterfaceOffsets.max_generation;
+    }
+
+    internal static uint GenerationOf(byte* address)
+    {
+        heap_segment* segment = FindSegment(address, smallHeapOnly: false);
+        return segment is null ? ManagedGCHeap.MaxGeneration : (uint)heap_segment.heap_segment_gen_num(segment);
+    }
+
+    internal static bool TryGetGenerationWithRange(
+        byte* address,
+        byte** start,
+        byte** allocated,
+        byte** reserved,
+        uint* generation)
+    {
+        heap_segment* segment = FindSegment(address, smallHeapOnly: false);
+        if (segment is null)
+        {
+            return false;
+        }
+
+        *start = heap_segment.heap_segment_mem(segment);
+        *allocated = heap_segment.heap_segment_allocated(segment);
+        *reserved = heap_segment.heap_segment_reserved(segment);
+        *generation = heap_segment.heap_segment_loh_p(segment) != 0
+            ? (uint)gc_generation_num.loh_generation
+            : heap_segment.heap_segment_poh_p(segment) != 0
+                ? (uint)gc_generation_num.poh_generation
+                : (uint)heap_segment.heap_segment_gen_num(segment);
+        return true;
+    }
 
     private static void SaveState()
     {
