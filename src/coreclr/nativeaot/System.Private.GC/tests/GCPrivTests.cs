@@ -539,6 +539,166 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)pMethodTable, (nuint)pHeader->RawGetMethodTable());
     }
 
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    [Fact]
+    public void MarkPhaseBoundaryWritesThroughInclusiveEndAndStopsAtExhaustion()
+    {
+        byte** markList = stackalloc byte*[2];
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        markList[0] = (byte*)0xDEAD;
+        markList[1] = (byte*)0xBEEF;
+        pHeap->mark_list = markList;
+        pHeap->mark_list_index = markList;
+        pHeap->mark_list_end = markList + 1;
+        pHeap->slow = (byte*)nuint.MaxValue;
+
+        gc_heap.m_boundary(pHeap, (byte*)0x2000);
+        gc_heap.m_boundary(pHeap, (byte*)0x1000);
+        gc_heap.m_boundary(pHeap, (byte*)0x3000);
+
+        Assert.Equal((nuint)0x2000, (nuint)markList[0]);
+        Assert.Equal((nuint)0x1000, (nuint)markList[1]);
+        Assert.Equal((nuint)(markList + 2), (nuint)pHeap->mark_list_index);
+        Assert.Equal((nuint)0x1000, (nuint)pHeap->slow);
+        Assert.Equal((nuint)0x3000, (nuint)pHeap->shigh);
+    }
+
+    [Fact]
+    public void MarkPhaseFullGcBoundarySuppressesListWritesAndTracksExtrema()
+    {
+        byte** markList = stackalloc byte*[1];
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        markList[0] = (byte*)0xDEAD;
+        pHeap->mark_list = markList;
+        pHeap->mark_list_index = markList;
+        pHeap->mark_list_end = markList;
+        pHeap->slow = (byte*)nuint.MaxValue;
+
+        gc_heap.m_boundary_fullgc(pHeap, (byte*)0x3000);
+        gc_heap.m_boundary_fullgc(pHeap, (byte*)0x1000);
+
+        Assert.Equal((nuint)0xDEAD, (nuint)markList[0]);
+        Assert.Equal((nuint)markList, (nuint)pHeap->mark_list_index);
+        Assert.Equal((nuint)0x1000, (nuint)pHeap->slow);
+        Assert.Equal((nuint)0x3000, (nuint)pHeap->shigh);
+    }
+
+    [Fact]
+    public void MarkPhasePromotedBytesUseRegionIndexAndObjectSizeOverloads()
+    {
+        byte* storage = stackalloc byte[128];
+        nuint* survived = stackalloc nuint[16];
+        nuint* oldCardSurvived = stackalloc nuint[16];
+        MethodTable methodTable = default;
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        byte* object1 = storage + 16;
+        byte* object2 = storage + 48;
+        byte* savedLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* savedHighestAddress = GCCommon.g_gc_highest_address;
+        nuint savedMinSegmentSizeShr = gc_heap.min_segment_size_shr;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            methodTable.m_uBaseSize = 16;
+            ((CObjectHeader*)object1)->RawSetMethodTable(&methodTable);
+            ((CObjectHeader*)object2)->RawSetMethodTable(&methodTable);
+            GCCommon.g_gc_lowest_address = storage;
+            GCCommon.g_gc_highest_address = storage + 128;
+            gc_heap.min_segment_size_shr = 4;
+            pHeap->heap_number = 12;
+            pHeap->survived_per_region = survived;
+            pHeap->old_card_survived_per_region = oldCardSurvived;
+
+            nuint object1RegionIndex = gc_heap.get_basic_region_index_for_address(object1);
+            nuint object2RegionIndex = gc_heap.get_basic_region_index_for_address(object2);
+            Assert.Equal(object1RegionIndex + 2, object2RegionIndex);
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+            Assert.Equal((nuint)0, gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+
+            gc_heap.add_to_promoted_bytes(pHeap, object1, pHeap->heap_number);
+            gc_heap.add_to_promoted_bytes(pHeap, object1, 8, pHeap->heap_number);
+            gc_heap.add_to_promoted_bytes(pHeap, object2, 32, pHeap->heap_number);
+
+            Assert.Equal((nuint)24, survived[(nint)object1RegionIndex]);
+            Assert.Equal((nuint)32, survived[(nint)object2RegionIndex]);
+            Assert.Equal((nuint)0, oldCardSurvived[(nint)object1RegionIndex]);
+            Assert.Equal((nuint)0, oldCardSurvived[(nint)object2RegionIndex]);
+
+#if DEBUG
+            Assert.Equal((nuint)56, gc_heap.promoted_bytes(pHeap->heap_number));
+            gc_heap.init_promoted_bytes();
+            Assert.Equal((nuint)0, gc_heap.promoted_bytes(pHeap->heap_number));
+            Assert.Equal((nuint)24, survived[(nint)object1RegionIndex]);
+            Assert.Equal((nuint)32, survived[(nint)object2RegionIndex]);
+#endif
+        }
+        finally
+        {
+            GCCommon.g_gc_lowest_address = savedLowestAddress;
+            GCCommon.g_gc_highest_address = savedHighestAddress;
+            gc_heap.min_segment_size_shr = savedMinSegmentSizeShr;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhasePromotedBytesPreserveNativeUnsignedOverflow()
+    {
+        byte* storage = stackalloc byte[32];
+        nuint* survived = stackalloc nuint[1];
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        byte* savedLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* savedHighestAddress = GCCommon.g_gc_highest_address;
+        nuint savedMinSegmentSizeShr = gc_heap.min_segment_size_shr;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            GCCommon.g_gc_lowest_address = storage;
+            GCCommon.g_gc_highest_address = storage + 32;
+            gc_heap.min_segment_size_shr = 4;
+            pHeap->survived_per_region = survived;
+            survived[0] = nuint.MaxValue - 1;
+
+#if DEBUG
+            gc_heap.g_promoted = nuint.MaxValue - 1;
+#endif
+
+            gc_heap.add_to_promoted_bytes(pHeap, storage, 2, thread: 0);
+
+            Assert.Equal((nuint)0, survived[0]);
+#if DEBUG
+            Assert.Equal((nuint)0, gc_heap.g_promoted);
+#endif
+        }
+        finally
+        {
+            GCCommon.g_gc_lowest_address = savedLowestAddress;
+            GCCommon.g_gc_highest_address = savedHighestAddress;
+            gc_heap.min_segment_size_shr = savedMinSegmentSizeShr;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+#endif
+
     [Fact]
     public void MarkPhaseEnqueueAndSavePreserveShortPlugState()
     {

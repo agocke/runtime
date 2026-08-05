@@ -220,10 +220,16 @@ rotation and delayed marking; the native prefetch instruction remains a performa
 because no cross-platform managed primitive is available. Its condemned-generation overload is
 intentionally compiled only for `USE_REGIONS`; the non-region `gc_low`/`gc_high` branch remains
 deferred with that active-collection state. These leaves are not routed from collection entrypoints.
+The next active WKS `USE_REGIONS` prerequisites are present too: the fixed-capacity
+`m_boundary` and full-GC-only `m_boundary_fullgc` leaves preserve inclusive list ends, exhausted
+list cursors, and `slow`/`shigh` extrema. The promoted-byte overloads record by the biased basic
+region index with native unsigned overflow, while the debug-only WKS global recording and reset
+remain guarded exactly as native. The `survived_per_region` and
+`old_card_survived_per_region` storage pointers are now part of the mark-phase heap subset.
 `mark_object_simple1`, `mark_object`, `drain_mark_queue`, and `mark_through_object` remain
-blocked on the collection-owned mark-list boundaries, `survived_per_region` promoted-byte
-accounting, and the complete active-collection heap state (queue ownership and mark-stack setup);
-background marking remains deferred.
+unrouted: `settings.condemned_generation` from the unported `gc_mechanisms` state, a
+collection-owned `mark_queue`, mark-list backing-storage setup, and per-collection
+survived-counter allocation/reset are still absent. Background marking remains deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.

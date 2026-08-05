@@ -296,6 +296,12 @@ internal unsafe partial struct gc_heap
     public const nuint partial = 1;
     public const nuint partial_object = 3;
 
+#if USE_REGIONS && DEBUG
+    // The WKS global promoted-byte recording is diagnostic-only when regions are enabled.
+    // Release accounting is held exclusively in survived_per_region.
+    public static nuint g_promoted;
+#endif
+
     public static nuint min_pre_pin_obj_size =>
         (nuint)sizeof(gap_reloc_pair) + (nuint)GCInterfaceOffsets.min_obj_size;
 
@@ -555,6 +561,77 @@ internal unsafe partial struct gc_heap
             }
 #endif
         }
+    }
+#endif
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    // The WKS USE_REGIONS m_boundary macro owns a fixed-capacity list. Unlike the
+    // GC_CONFIG_DRIVEN server branch, exhaustion leaves its cursor one past the final entry.
+    public static void m_boundary(gc_heap* heap, byte* o)
+    {
+        if (heap->mark_list_index <= heap->mark_list_end)
+        {
+            *heap->mark_list_index = o;
+            heap->mark_list_index++;
+        }
+
+        if (heap->slow > o)
+        {
+            heap->slow = o;
+        }
+
+        if (heap->shigh < o)
+        {
+            heap->shigh = o;
+        }
+    }
+
+    // Full collections do not use the mark list, but WKS still tracks the marked-address range.
+    public static void m_boundary_fullgc(gc_heap* heap, byte* o)
+    {
+        if (heap->slow > o)
+        {
+            heap->slow = o;
+        }
+
+        if (heap->shigh < o)
+        {
+            heap->shigh = o;
+        }
+    }
+
+#if DEBUG
+    public static void init_promoted_bytes()
+    {
+        g_promoted = 0;
+    }
+
+    public static nuint promoted_bytes(int thread)
+    {
+        _ = thread;
+        return g_promoted;
+    }
+#endif
+
+    public static void add_to_promoted_bytes(gc_heap* heap, byte* obj, int thread)
+    {
+        add_to_promoted_bytes(heap, obj, size(obj), thread);
+    }
+
+    public static void add_to_promoted_bytes(gc_heap* heap, byte* obj, nuint obj_size, int thread)
+    {
+        Debug.Assert(thread == heap->heap_number);
+
+        if (heap->survived_per_region is not null)
+        {
+            nuint region_index = get_basic_region_index_for_address(obj);
+            heap->survived_per_region[(nint)region_index] =
+                unchecked(heap->survived_per_region[(nint)region_index] + obj_size);
+        }
+
+#if DEBUG
+        g_promoted = unchecked(g_promoted + obj_size);
+#endif
     }
 #endif
 

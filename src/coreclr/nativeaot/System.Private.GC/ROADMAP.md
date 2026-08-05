@@ -732,9 +732,16 @@ Translate the schema from `gcpriv.h` and related headers:
   boundaries, traversal restart order, object-size target-width arithmetic, and overflow bounds.
   The queue's non-region condemned-generation overload remains deferred with its required
   `gc_low`/`gc_high` state; the native prefetch instruction is a performance-only gap because
-  there is no cross-platform managed primitive. The collection entrypoints remain deferred: they require the
-  collection-owned mark-list boundaries, `survived_per_region` promoted-byte accounting, and
-  complete active-collection heap state rather than adapters or a bootstrap route.
+  there is no cross-platform managed primitive.
+- The active WKS `USE_REGIONS` mark-list and promoted-byte prerequisites: `m_boundary` preserves
+  its inclusive list end and stopped exhausted cursor, `m_boundary_fullgc` suppresses list writes
+  while retaining WKS extrema, and the per-region survived-counter/object-size overloads preserve
+  biased-index and unchecked native-size behavior. The WKS global promoted recording/reset stays
+  debug-only. Focused tests cover capacity/exhaustion, full versus partial boundaries, extrema,
+  region accumulation, both overloads, and debug reset behavior. Collection entrypoints remain
+  deferred without routing: `settings.condemned_generation` from unported `gc_mechanisms`
+  state, collection-owned `mark_queue`, mark-list storage setup, and survived-counter lifecycle
+  are not yet ported.
 - The first dependency-free `gcpriv.h` records: `static_data`,
   `recorded_generation_info`, and `etw_opt_info`. These establish the pointer-sized schema used
   by dynamic tuning, recorded GC information, and allocation diagnostics.

@@ -776,6 +776,21 @@ namespace Internal.Runtime.GarbageCollection
         public nuint mark_stack_tos;
         public nuint mark_stack_bos;
         public byte* oldest_pinned_plug;
+#if USE_REGIONS
+        // The active WKS USE_REGIONS m_boundary macros use this fixed-capacity list while
+        // marking. Its backing storage and per-collection setup remain collection-owned.
+        public byte** mark_list;
+        public byte** mark_list_end;
+        public byte** mark_list_index;
+#if !MULTIPLE_HEAPS
+        public byte* shigh;
+        public byte* slow;
+#endif
+        // The per-region counters share the native mark-list-piece lifetime: marking records
+        // into them and planning consumes them after marking has completed.
+        public nuint* survived_per_region;
+        public nuint* old_card_survived_per_region;
+#endif
         public nuint mark_stack_array_length;
         public mark* mark_stack_array;
         public byte* min_overflow_address;
