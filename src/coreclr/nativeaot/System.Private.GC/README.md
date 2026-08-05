@@ -93,7 +93,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, free-list/segment-end orchestration and fitting, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` allocation-context, free-list/segment-end orchestration and fitting, deferred `try_allocate_more_space` state machine, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
@@ -1019,6 +1019,16 @@ reimplementing dynamic space/budget decisions. Likewise,
 retires SOH accounting, and `fix_youngest_allocation_area` publishes the old region's allocation
 pointer. Concurrent verification, allocation-context statistics, diagnostic region-added events,
 and all production allocation routing remain deferred.
+
+The next `try_allocate_more_space` slice is an explicit unmanaged state-machine core. It preserves
+the WKS `allocation_state` transitions around the translated SOH/UOH fit paths, including the
+initial/after-BGC/after-compacting-GC branches, segment-acquisition retry states, commit failure,
+short-end, `oom_reason`, allocation flags, selected generation, free-list/segment budget
+mutations, retry-other-heap exit, and failure lock-release order. Its context holds only explicit
+unmanaged heap inputs. GC/BGC waits and triggers, full-GC notifications, dynamic budget policy,
+more-space locks, UOH acquisition, retry decisions, and OOM reporting are an unmanaged function
+pointer protocol; a null callback returns the exact state and deferred operation rather than
+claiming that such work succeeded. This core is deliberately not wired to `ManagedGCHeap.Alloc`.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real

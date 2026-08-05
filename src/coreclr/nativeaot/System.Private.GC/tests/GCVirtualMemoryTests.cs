@@ -1009,6 +1009,8 @@ public sealed unsafe class GCVirtualMemoryTests
     public void DecommitRegionWithNeverDecommitCountsDirectlyAndClearsOnlyUsedBytes()
     {
         using MemoryAccountingScope scope = new();
+        GCEventKeyword oldKeywords = GCEventStatus.GetEnabledKeywords(GCEventProvider.Default);
+        GCEventLevel oldLevel = GCEventStatus.GetEnabledLevel(GCEventProvider.Default);
         nuint pageSize = PageSize;
         byte* reservation = GCToOSInterface.VirtualReserve(pageSize, pageSize, (uint)VirtualReserveFlags.None);
         Assert.True(reservation != null);
@@ -1030,6 +1032,7 @@ public sealed unsafe class GCVirtualMemoryTests
             gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] = pageSize;
             gc_heap.current_total_committed = pageSize;
             GCToEEInterface.Reset();
+            GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.GC, GCEventLevel.Information);
             GCToOSInterface.ResetRecording();
 
             nuint decommitted = gc_heap.decommit_region(&region, gc_heap.recorded_committed_free_bucket, -1);
@@ -1047,6 +1050,7 @@ public sealed unsafe class GCVirtualMemoryTests
         finally
         {
             RestoreGlobalRegionAllocator(oldAllocator, map);
+            GCEventStatus.Set(GCEventProvider.Default, oldKeywords, oldLevel);
             gc_heap.never_decommit_p = false;
             GCToOSInterface.VirtualRelease(reservation, pageSize);
         }

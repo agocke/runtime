@@ -3,6 +3,12 @@
 
 using System.Diagnostics;
 using System.Threading;
+#if USE_REGIONS
+using allocation_callback_result = Internal.Runtime.GarbageCollection.gc_heap.allocation_callback_result;
+using allocation_callback_result_kind = Internal.Runtime.GarbageCollection.gc_heap.allocation_callback_result_kind;
+using allocation_deferred_operation = Internal.Runtime.GarbageCollection.gc_heap.allocation_deferred_operation;
+using try_allocate_more_space_context = Internal.Runtime.GarbageCollection.gc_heap.try_allocate_more_space_context;
+#endif
 using SysInterlocked = System.Threading.Interlocked;
 using SysVolatile = System.Threading.Volatile;
 using Xunit;
@@ -12,8 +18,17 @@ namespace Internal.Runtime.GarbageCollection;
 [Collection(SyncImportsCollection.Name)]
 public sealed unsafe class GCPrivTests
 {
+#if USE_REGIONS
     private static int s_regionAllocatorCallbackCount;
     private static nuint s_regionAllocatorCallbackLastLeftUsed;
+    private static int s_allocationCallbackCount;
+    private static allocation_deferred_operation s_lastAllocationDeferredOperation;
+    private static int s_backgroundQueryCallbackCount;
+    private static int s_budgetCheckCallbackCount;
+    private static int s_highMemoryCallbackCount;
+    private static int s_budgetTriggerCallbackCount;
+    private static int s_fullGcCheckCallbackCount;
+#endif
 
     [Fact]
     public void GcRandPreservesNativeSequence()
@@ -6398,6 +6413,757 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(1, gc_heap.in_range_for_segment(heap_segment.heap_segment_mem(&writable), &writable));
         Assert.Equal(1, gc_heap.in_range_for_segment(heap_segment.heap_segment_reserved(&writable) - 1, &writable));
         Assert.Equal(0, gc_heap.in_range_for_segment(heap_segment.heap_segment_reserved(&writable), &writable));
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceInitialSohFreeListFitReachesCanAllocate()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        byte* storage = stackalloc byte[128];
+        for (int i = 0; i < 128; i++)
+        {
+            storage[i] = 0;
+        }
+
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            byte* freeItem = storage + sizeof(nuint);
+            gc_heap.thread_free_item_front(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0),
+                freeItem,
+                unchecked(size + pad));
+
+            gc_alloc_context allocContext = default;
+            dynamic_data data = default;
+            data.new_allocation = unchecked((nint)(size + pad));
+            heap_segment segment = default;
+            heap_segment* ephemeralHeapSegment = &segment;
+            byte* allocAllocated = null;
+            ulong totalAllocatedBytesSoh = 0;
+            ulong totalAllocatedBytesUoh = 0;
+            try_allocate_more_space_context allocation = default;
+            allocation.acontext = &allocContext;
+            allocation.dd = &data;
+            allocation.generation_table = generations;
+            allocation.ephemeral_heap_segment = &ephemeralHeapSegment;
+            allocation.alloc_allocated = &allocAllocated;
+            allocation.total_alloc_bytes_soh = &totalAllocatedBytesSoh;
+            allocation.total_alloc_bytes_uoh = &totalAllocatedBytesUoh;
+            allocation.size = size;
+            allocation.gen_number = (int)gc_generation_num.soh_gen0;
+            allocation.align_const = alignment;
+            allocation.state = allocation_state.a_state_start;
+            allocation.more_space_lock_held_p = 1;
+            allocation.budget_checked_p = 1;
+
+            Assert.Equal(allocation_state.a_state_can_allocate, gc_heap.try_allocate_more_space(&allocation));
+            Assert.Equal(allocation_deferred_operation.none, allocation.deferred_operation);
+            Assert.Equal((nuint)freeItem, (nuint)allocContext.alloc_ptr);
+            Assert.Equal((nuint)(freeItem + (nint)size), (nuint)allocContext.alloc_limit);
+            Assert.Equal((nint)0, data.new_allocation);
+            Assert.Equal((ulong)size, totalAllocatedBytesSoh);
+            Assert.Equal((ulong)0, totalAllocatedBytesUoh);
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceUohCommitFailureDefersFullCompactGcWithoutMutatingAllocation()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        int alignment = gc_heap.get_alignment_constant(small_object_p: false);
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        byte* start = (byte*)0x2000;
+        heap_segment segment = default;
+        heap_segment.heap_segment_mem(&segment) = start;
+        heap_segment.heap_segment_allocated(&segment) = start;
+        heap_segment.heap_segment_used(&segment) = start;
+        heap_segment.heap_segment_committed(&segment) = start;
+        heap_segment.heap_segment_reserved(&segment) = start + (nint)(2 * pageSize);
+        gc_heap.heap_hard_limit = pageSize - 1;
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        generation.generation_allocation_segment(
+            gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation)) = &segment;
+        gc_alloc_context allocContext = default;
+        dynamic_data data = default;
+        data.new_allocation = unchecked((nint)(2 * pageSize));
+        heap_segment* ephemeralHeapSegment = null;
+        byte* allocAllocated = null;
+        ulong totalAllocatedBytesSoh = 17;
+        ulong totalAllocatedBytesUoh = 19;
+        try_allocate_more_space_context allocation = default;
+        allocation.acontext = &allocContext;
+        allocation.dd = &data;
+        allocation.generation_table = generations;
+        allocation.ephemeral_heap_segment = &ephemeralHeapSegment;
+        allocation.alloc_allocated = &allocAllocated;
+        allocation.total_alloc_bytes_soh = &totalAllocatedBytesSoh;
+        allocation.total_alloc_bytes_uoh = &totalAllocatedBytesUoh;
+        allocation.size = pageSize;
+        allocation.gen_number = (int)gc_generation_num.loh_generation;
+        allocation.align_const = alignment;
+        allocation.state = allocation_state.a_state_start;
+        allocation.more_space_lock_held_p = 1;
+        allocation.budget_checked_p = 1;
+
+        Assert.Equal(allocation_state.a_state_trigger_full_compact_gc, gc_heap.try_allocate_more_space(&allocation));
+        Assert.Equal(allocation_deferred_operation.trigger_full_compact_gc, allocation.deferred_operation);
+        Assert.Equal(oom_reason.oom_cant_commit, allocation.oom_r);
+        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_allocated(&segment));
+        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_used(&segment));
+        Assert.Equal((nuint)start, (nuint)heap_segment.heap_segment_committed(&segment));
+        Assert.Equal((nuint)0, (nuint)allocContext.alloc_ptr);
+        Assert.Equal((nint)(2 * pageSize), data.new_allocation);
+        Assert.Equal((ulong)17, totalAllocatedBytesSoh);
+        Assert.Equal((ulong)19, totalAllocatedBytesUoh);
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceSohShortEndAfterBgcDefersSecondEphemeralGc()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        heap_segment segment = default;
+        byte* start = (byte*)0x2000;
+        heap_segment.heap_segment_mem(&segment) = start;
+        heap_segment.heap_segment_allocated(&segment) = start;
+        heap_segment.heap_segment_used(&segment) = start;
+        heap_segment.heap_segment_committed(&segment) = start + (nint)(2 * pad);
+        heap_segment.heap_segment_reserved(&segment) = heap_segment.heap_segment_committed(&segment);
+        gc_alloc_context allocContext = default;
+        dynamic_data data = default;
+        data.new_allocation = unchecked((nint)(3 * pad));
+        heap_segment* ephemeralHeapSegment = &segment;
+        byte* allocAllocated = start;
+        ulong totalAllocatedBytesSoh = 23;
+        ulong totalAllocatedBytesUoh = 0;
+        try_allocate_more_space_context allocation = default;
+        allocation.acontext = &allocContext;
+        allocation.dd = &data;
+        allocation.generation_table = generations;
+        allocation.ephemeral_heap_segment = &ephemeralHeapSegment;
+        allocation.alloc_allocated = &allocAllocated;
+        allocation.total_alloc_bytes_soh = &totalAllocatedBytesSoh;
+        allocation.total_alloc_bytes_uoh = &totalAllocatedBytesUoh;
+        allocation.size = unchecked(2 * pad);
+        allocation.gen_number = (int)gc_generation_num.soh_gen0;
+        allocation.align_const = alignment;
+        allocation.state = allocation_state.a_state_try_fit_after_bgc;
+        allocation.more_space_lock_held_p = 1;
+        allocation.budget_checked_p = 1;
+        allocation.sufficient_space_regions_for_allocation_p = 0;
+        allocation.sufficient_gen0_space_p = 0;
+
+        Assert.Equal(allocation_state.a_state_trigger_2nd_ephemeral_gc, gc_heap.try_allocate_more_space(&allocation));
+        Assert.Equal(allocation_deferred_operation.trigger_2nd_ephemeral_gc, allocation.deferred_operation);
+        Assert.Equal((byte)1, allocation.short_seg_end_p);
+        Assert.Equal((byte)0, allocation.commit_failed_p);
+        Assert.Equal((nuint)start, (nuint)allocAllocated);
+        Assert.Equal((nuint)0, (nuint)allocContext.alloc_ptr);
+        Assert.Equal((nint)(3 * pad), data.new_allocation);
+        Assert.Equal((ulong)23, totalAllocatedBytesSoh);
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceUohOomRunsExplicitCallbacksAndPreservesAllocationState()
+    {
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        gc_alloc_context allocContext = default;
+        dynamic_data data = default;
+        data.new_allocation = 64;
+        heap_segment* ephemeralHeapSegment = null;
+        byte* allocAllocated = null;
+        ulong totalAllocatedBytesSoh = 29;
+        ulong totalAllocatedBytesUoh = 31;
+        try_allocate_more_space_context allocation = default;
+        allocation.acontext = &allocContext;
+        allocation.dd = &data;
+        allocation.generation_table = generations;
+        allocation.ephemeral_heap_segment = &ephemeralHeapSegment;
+        allocation.alloc_allocated = &allocAllocated;
+        allocation.total_alloc_bytes_soh = &totalAllocatedBytesSoh;
+        allocation.total_alloc_bytes_uoh = &totalAllocatedBytesUoh;
+        allocation.size = 32;
+        allocation.gen_number = (int)gc_generation_num.loh_generation;
+        allocation.align_const = gc_heap.get_alignment_constant(small_object_p: false);
+        allocation.state = allocation_state.a_state_try_fit_after_cg;
+        allocation.more_space_lock_held_p = 1;
+        allocation.budget_checked_p = 1;
+        ResetAllocationCallbackRecorder();
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            &UohOomCallback;
+
+        Assert.Equal(allocation_state.a_state_cant_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
+        Assert.Equal(oom_reason.oom_loh, allocation.oom_r);
+        Assert.Equal(allocation_deferred_operation.none, allocation.deferred_operation);
+        Assert.Equal((byte)1, allocation.oom_handled_p);
+        Assert.Equal((byte)0, allocation.more_space_lock_held_p);
+        Assert.Equal(5, s_allocationCallbackCount);
+        Assert.Equal(allocation_deferred_operation.leave_more_space_lock, s_lastAllocationDeferredOperation);
+        Assert.Equal((nuint)0, (nuint)allocContext.alloc_ptr);
+        Assert.Equal((nint)64, data.new_allocation);
+        Assert.Equal((ulong)29, totalAllocatedBytesSoh);
+        Assert.Equal((ulong)31, totalAllocatedBytesUoh);
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpacePreservesRetryStatesForGcAndOtherHeap()
+    {
+        try_allocate_more_space_context gcStarted = default;
+        gcStarted.state = allocation_state.a_state_start;
+        gcStarted.gc_started_p = 1;
+
+        Assert.Equal(allocation_state.a_state_retry_allocate, gc_heap.try_allocate_more_space(&gcStarted));
+        Assert.Equal(allocation_deferred_operation.wait_for_gc_done, gcStarted.deferred_operation);
+
+        try_allocate_more_space_context otherHeap = default;
+        otherHeap.state = allocation_state.a_state_cant_allocate;
+        otherHeap.gen_number = (int)gc_generation_num.loh_generation;
+        otherHeap.oom_r = oom_reason.oom_loh;
+        otherHeap.more_space_lock_held_p = 1;
+        ResetAllocationCallbackRecorder();
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            &RetryOtherHeapCallback;
+
+        Assert.Equal(allocation_state.a_state_retry_allocate, gc_heap.try_allocate_more_space(&otherHeap, callback));
+        Assert.Equal(allocation_deferred_operation.none, otherHeap.deferred_operation);
+        Assert.Equal((byte)0, otherHeap.more_space_lock_held_p);
+        Assert.Equal(2, s_allocationCallbackCount);
+        Assert.Equal(allocation_deferred_operation.leave_more_space_lock, s_lastAllocationDeferredOperation);
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceDefersAndResumesEphemeralGcAtTheNativeState()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        nuint size = unchecked(2 * pad);
+        byte* storage = stackalloc byte[128];
+        for (int i = 0; i < 128; i++)
+        {
+            storage[i] = 0;
+        }
+
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
+
+        try
+        {
+            byte* freeItem = storage + sizeof(nuint);
+            gc_heap.thread_free_item_front(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0),
+                freeItem,
+                unchecked(size + pad));
+
+            gc_alloc_context allocContext = default;
+            dynamic_data data = default;
+            data.new_allocation = unchecked((nint)(size + pad));
+            heap_segment* ephemeralHeapSegment = null;
+            byte* allocAllocated = null;
+            ulong totalAllocatedBytesSoh = 0;
+            ulong totalAllocatedBytesUoh = 0;
+            try_allocate_more_space_context allocation = default;
+            allocation.acontext = &allocContext;
+            allocation.dd = &data;
+            allocation.generation_table = generations;
+            allocation.ephemeral_heap_segment = &ephemeralHeapSegment;
+            allocation.alloc_allocated = &allocAllocated;
+            allocation.total_alloc_bytes_soh = &totalAllocatedBytesSoh;
+            allocation.total_alloc_bytes_uoh = &totalAllocatedBytesUoh;
+            allocation.size = size;
+            allocation.gen_number = (int)gc_generation_num.soh_gen0;
+            allocation.align_const = alignment;
+            allocation.state = allocation_state.a_state_trigger_ephemeral_gc;
+            allocation.more_space_lock_held_p = 1;
+            allocation.budget_checked_p = 1;
+
+            Assert.Equal(allocation_state.a_state_trigger_ephemeral_gc, gc_heap.try_allocate_more_space(&allocation));
+            Assert.Equal(allocation_deferred_operation.trigger_ephemeral_gc, allocation.deferred_operation);
+
+            ResetAllocationCallbackRecorder();
+            delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+                &NoFullEphemeralGcCallback;
+            Assert.Equal(allocation_state.a_state_can_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
+            Assert.Equal(1, s_allocationCallbackCount);
+            Assert.Equal(allocation_deferred_operation.trigger_ephemeral_gc, s_lastAllocationDeferredOperation);
+            Assert.Equal((nuint)freeItem, (nuint)allocContext.alloc_ptr);
+            Assert.Equal((nint)0, data.new_allocation);
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceUsesDistinctBackgroundQueryOperation()
+    {
+        int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+        nuint pad = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size, alignment);
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        heap_segment segment = default;
+        byte* start = (byte*)0x2000;
+        heap_segment.heap_segment_mem(&segment) = start;
+        heap_segment.heap_segment_allocated(&segment) = start;
+        heap_segment.heap_segment_used(&segment) = start;
+        heap_segment.heap_segment_committed(&segment) = start + (nint)(2 * pad);
+        heap_segment.heap_segment_reserved(&segment) = heap_segment.heap_segment_committed(&segment);
+        gc_alloc_context allocContext = default;
+        dynamic_data data = default;
+        data.new_allocation = unchecked((nint)(3 * pad));
+        heap_segment* ephemeralHeapSegment = &segment;
+        byte* allocAllocated = start;
+        ulong totalAllocatedBytesSoh = 0;
+        ulong totalAllocatedBytesUoh = 0;
+        try_allocate_more_space_context allocation = default;
+        allocation.acontext = &allocContext;
+        allocation.dd = &data;
+        allocation.generation_table = generations;
+        allocation.ephemeral_heap_segment = &ephemeralHeapSegment;
+        allocation.alloc_allocated = &allocAllocated;
+        allocation.total_alloc_bytes_soh = &totalAllocatedBytesSoh;
+        allocation.total_alloc_bytes_uoh = &totalAllocatedBytesUoh;
+        allocation.size = unchecked(2 * pad);
+        allocation.state = allocation_state.a_state_trigger_ephemeral_gc;
+        allocation.gen_number = (int)gc_generation_num.soh_gen0;
+        allocation.align_const = alignment;
+        allocation.more_space_lock_held_p = 1;
+        allocation.budget_checked_p = 1;
+        allocation.sufficient_space_regions_for_allocation_p = 0;
+        allocation.sufficient_gen0_space_p = 0;
+        ResetAllocationCallbackRecorder();
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            &BackgroundQueryCallback;
+
+        Assert.Equal(allocation_state.a_state_trigger_full_compact_gc, gc_heap.try_allocate_more_space(&allocation, callback));
+        Assert.Equal(allocation_deferred_operation.trigger_full_compact_gc, allocation.deferred_operation);
+        Assert.Equal(1, s_backgroundQueryCallbackCount);
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceOverwritesStaleOomReasonAfterUnproductiveFullGc()
+    {
+        try_allocate_more_space_context allocation = default;
+        allocation.state = allocation_state.a_state_trigger_full_compact_gc;
+        allocation.gen_number = (int)gc_generation_num.loh_generation;
+        allocation.oom_r = oom_reason.oom_cant_commit;
+        allocation.more_space_lock_held_p = 1;
+        allocation.budget_checked_p = 1;
+        ResetAllocationCallbackRecorder();
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            &UnproductiveFullGcCallback;
+
+        Assert.Equal(allocation_state.a_state_cant_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
+        Assert.Equal(oom_reason.oom_unproductive_full_gc, allocation.oom_r);
+        Assert.Equal((byte)1, allocation.oom_handled_p);
+        Assert.Equal((byte)0, allocation.more_space_lock_held_p);
+        Assert.Equal(4, s_allocationCallbackCount);
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceRechecksBudgetOnceAfterHighMemoryWait()
+    {
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        gc_alloc_context allocContext = default;
+        dynamic_data data = default;
+        heap_segment* ephemeralHeapSegment = null;
+        byte* allocAllocated = null;
+        ulong totalAllocatedBytesSoh = 0;
+        ulong totalAllocatedBytesUoh = 0;
+        try_allocate_more_space_context allocation = default;
+        allocation.acontext = &allocContext;
+        allocation.dd = &data;
+        allocation.generation_table = generations;
+        allocation.ephemeral_heap_segment = &ephemeralHeapSegment;
+        allocation.alloc_allocated = &allocAllocated;
+        allocation.total_alloc_bytes_soh = &totalAllocatedBytesSoh;
+        allocation.total_alloc_bytes_uoh = &totalAllocatedBytesUoh;
+        allocation.gen_number = (int)gc_generation_num.soh_gen0;
+        allocation.align_const = gc_heap.get_alignment_constant(small_object_p: true);
+        allocation.full_gc_notification_p = 1;
+        allocation.state = allocation_state.a_state_start;
+        ResetAllocationCallbackRecorder();
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            &BudgetRecheckCallback;
+
+        Assert.Equal(allocation_state.a_state_trigger_ephemeral_gc, gc_heap.try_allocate_more_space(&allocation, callback));
+        Assert.Equal(allocation_deferred_operation.trigger_ephemeral_gc, allocation.deferred_operation);
+        Assert.Equal(2, s_budgetCheckCallbackCount);
+        Assert.Equal(1, s_highMemoryCallbackCount);
+        Assert.Equal(1, s_budgetTriggerCallbackCount);
+        Assert.Equal(2, s_fullGcCheckCallbackCount);
+        Assert.Equal((byte)1, allocation.bgc_high_memory_waited_p);
+        Assert.Equal((byte)1, allocation.budget_full_gc_checked_p);
+        Assert.Equal((byte)1, allocation.budget_checked_p);
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceRetryReleasesMoreSpaceLockOwnership()
+    {
+        try_allocate_more_space_context allocation = default;
+        allocation.gen_number = (int)gc_generation_num.soh_gen0;
+        allocation.state = allocation_state.a_state_start;
+        allocation.more_space_lock_held_p = 1;
+        allocation.full_gc_checked_p = 1;
+        allocation.bgc_high_memory_waited_p = 1;
+        ResetAllocationCallbackRecorder();
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            &BudgetRetryCallback;
+
+        Assert.Equal(allocation_state.a_state_retry_allocate, gc_heap.try_allocate_more_space(&allocation, callback));
+        Assert.Equal(allocation_deferred_operation.none, allocation.deferred_operation);
+        Assert.Equal((byte)0, allocation.more_space_lock_held_p);
+        Assert.Equal(2, s_allocationCallbackCount);
+        Assert.Equal(allocation_deferred_operation.trigger_gc_for_budget, s_lastAllocationDeferredOperation);
+    }
+
+    [Fact]
+    public void TryAllocateMoreSpaceTreatsNoBackgroundGcAsCompletedSohWait()
+    {
+        generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generations[i] = default;
+            generation.initialize(&generations[i]);
+        }
+
+        gc_alloc_context allocContext = default;
+        dynamic_data data = default;
+        heap_segment* ephemeralHeapSegment = null;
+        byte* allocAllocated = null;
+        ulong totalAllocatedBytesSoh = 0;
+        try_allocate_more_space_context allocation = default;
+        allocation.acontext = &allocContext;
+        allocation.dd = &data;
+        allocation.generation_table = generations;
+        allocation.ephemeral_heap_segment = &ephemeralHeapSegment;
+        allocation.alloc_allocated = &allocAllocated;
+        allocation.total_alloc_bytes_soh = &totalAllocatedBytesSoh;
+        allocation.gen_number = (int)gc_generation_num.soh_gen0;
+        allocation.align_const = gc_heap.get_alignment_constant(small_object_p: true);
+        allocation.state = allocation_state.a_state_check_and_wait_for_bgc;
+        allocation.more_space_lock_held_p = 1;
+        allocation.budget_checked_p = 1;
+        ResetAllocationCallbackRecorder();
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback =
+            &NoBackgroundGcWaitCallback;
+
+        Assert.Equal(allocation_state.a_state_trigger_2nd_ephemeral_gc, gc_heap.try_allocate_more_space(&allocation, callback));
+        Assert.Equal(allocation_deferred_operation.trigger_2nd_ephemeral_gc, allocation.deferred_operation);
+    }
+
+    private static void ResetAllocationCallbackRecorder()
+    {
+        s_allocationCallbackCount = 0;
+        s_lastAllocationDeferredOperation = allocation_deferred_operation.none;
+        s_backgroundQueryCallbackCount = 0;
+        s_budgetCheckCallbackCount = 0;
+        s_highMemoryCallbackCount = 0;
+        s_budgetTriggerCallbackCount = 0;
+        s_fullGcCheckCallbackCount = 0;
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void UohOomCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+
+        *result = operation switch
+        {
+            allocation_deferred_operation.acquire_uoh_segment => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.segment_unavailable,
+                oom_r = oom_reason.oom_loh,
+            },
+            allocation_deferred_operation.check_retry_uoh_segment => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            allocation_deferred_operation.check_retry_other_heap => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            allocation_deferred_operation.handle_oom => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            allocation_deferred_operation.leave_more_space_lock => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            _ => default,
+        };
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void RetryOtherHeapCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+
+        *result = operation switch
+        {
+            allocation_deferred_operation.check_retry_other_heap => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.retry_other_heap,
+            },
+            allocation_deferred_operation.leave_more_space_lock => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            _ => default,
+        };
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void NoFullEphemeralGcCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+
+        *result = operation == allocation_deferred_operation.trigger_ephemeral_gc
+            ? new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.no_full_compact_gc,
+            }
+            : default;
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void BackgroundQueryCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+
+        if (operation == allocation_deferred_operation.query_background_running)
+        {
+            s_backgroundQueryCallbackCount++;
+        }
+
+        *result = operation switch
+        {
+            allocation_deferred_operation.trigger_ephemeral_gc => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.no_full_compact_gc,
+            },
+            allocation_deferred_operation.query_background_running => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.background_not_running,
+            },
+            _ => default,
+        };
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void UnproductiveFullGcCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+
+        *result = operation switch
+        {
+            allocation_deferred_operation.trigger_full_compact_gc => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.no_full_compact_gc,
+            },
+            allocation_deferred_operation.check_retry_other_heap => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            allocation_deferred_operation.handle_oom => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            allocation_deferred_operation.leave_more_space_lock => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            _ => default,
+        };
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void BudgetRecheckCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+
+        *result = operation switch
+        {
+            allocation_deferred_operation.enter_more_space_lock => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.completed,
+            },
+            allocation_deferred_operation.check_for_full_gc => FullGcCheckedResult(),
+            allocation_deferred_operation.check_allocation_budget => BudgetDisallowedResult(),
+            allocation_deferred_operation.wait_for_bgc_high_memory => HighMemoryWaitedResult(),
+            allocation_deferred_operation.trigger_gc_for_budget => BudgetTriggeredResult(),
+            _ => default,
+        };
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void BudgetRetryCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+
+        *result = operation switch
+        {
+            allocation_deferred_operation.check_allocation_budget => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.allocation_disallowed,
+            },
+            allocation_deferred_operation.trigger_gc_for_budget => new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.retry_allocate,
+            },
+            _ => default,
+        };
+    }
+
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static void NoBackgroundGcWaitCallback(
+        try_allocate_more_space_context* context,
+        int operationValue,
+        allocation_callback_result* result)
+    {
+        _ = context;
+        allocation_deferred_operation operation = (allocation_deferred_operation)operationValue;
+        s_allocationCallbackCount++;
+        s_lastAllocationDeferredOperation = operation;
+
+        *result = operation == allocation_deferred_operation.check_and_wait_for_bgc
+            ? new allocation_callback_result
+            {
+                kind = allocation_callback_result_kind.background_not_running,
+            }
+            : default;
+    }
+
+    private static allocation_callback_result BudgetDisallowedResult()
+    {
+        s_budgetCheckCallbackCount++;
+        return new allocation_callback_result
+        {
+            kind = allocation_callback_result_kind.allocation_disallowed,
+        };
+    }
+
+    private static allocation_callback_result HighMemoryWaitedResult()
+    {
+        s_highMemoryCallbackCount++;
+        return new allocation_callback_result
+        {
+            kind = allocation_callback_result_kind.background_running,
+        };
+    }
+
+    private static allocation_callback_result BudgetTriggeredResult()
+    {
+        s_budgetTriggerCallbackCount++;
+        return new allocation_callback_result
+        {
+            kind = allocation_callback_result_kind.completed,
+        };
+    }
+
+    private static allocation_callback_result FullGcCheckedResult()
+    {
+        s_fullGcCheckCallbackCount++;
+        return new allocation_callback_result
+        {
+            kind = allocation_callback_result_kind.completed,
+        };
     }
 #endif
 

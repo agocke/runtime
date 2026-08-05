@@ -850,6 +850,879 @@ internal unsafe partial struct gc_heap
             heap_number);
     }
 
+    // `try_allocate_more_space` owns more-space locks, GC triggering, and dynamic allocation
+    // policy in the native heap. Until those heap fields exist here, keep the complete mutable
+    // allocator state in this unmanaged record and make every such operation an explicit
+    // callback. A null callback returns the precise native state at which wiring must resume.
+    internal enum allocation_deferred_operation : byte
+    {
+        none,
+        wait_for_gc_done,
+        enter_more_space_lock,
+        check_for_full_gc,
+        check_allocation_budget,
+        wait_for_bgc_high_memory,
+        trigger_gc_for_budget,
+        query_background_running,
+        check_and_wait_for_bgc,
+        trigger_ephemeral_gc,
+        trigger_2nd_ephemeral_gc,
+        trigger_full_compact_gc,
+        acquire_uoh_segment,
+        check_retry_uoh_segment,
+        check_retry_other_heap,
+        handle_oom,
+        leave_more_space_lock,
+        invalid_allocation_state,
+    }
+
+    internal enum allocation_callback_result_kind : byte
+    {
+        unsupported,
+        completed,
+        retry_allocate,
+        allocation_allowed,
+        allocation_disallowed,
+        full_compact_gc,
+        no_full_compact_gc,
+        background_running,
+        background_not_running,
+        segment_acquired,
+        segment_unavailable,
+        retry_full_compact_gc,
+        retry_segment,
+        retry_other_heap,
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    internal struct allocation_callback_result
+    {
+        public allocation_callback_result_kind kind;
+        public oom_reason oom_r;
+        public byte did_full_compacting_gc_p;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    internal unsafe struct try_allocate_more_space_context
+    {
+        public gc_alloc_context* acontext;
+        public dynamic_data* dd;
+        public generation* generation_table;
+        public heap_segment** ephemeral_heap_segment;
+        public byte** alloc_allocated;
+        public ulong* total_alloc_bytes_soh;
+        public ulong* total_alloc_bytes_uoh;
+        public gc_heap* hp;
+        public nuint size;
+        public nuint allocation_quantum;
+        public uint flags;
+        public int gen_number;
+        public int align_const;
+        public int heap_number;
+        public allocation_state state;
+        public oom_reason oom_r;
+        public allocation_deferred_operation deferred_operation;
+        public byte gc_started_p;
+        public byte more_space_lock_held_p;
+        public byte full_gc_notification_p;
+        public byte full_gc_checked_p;
+        public byte budget_full_gc_checked_p;
+        public byte budget_checked_p;
+        public byte bgc_high_memory_waited_p;
+        public byte sufficient_space_regions_for_allocation_p;
+        public byte sufficient_gen0_space_p;
+        public byte commit_failed_p;
+        public byte short_seg_end_p;
+        public byte oom_handled_p;
+    }
+
+    private static bool invoke_allocation_callback(
+        try_allocate_more_space_context* context,
+        allocation_deferred_operation operation,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback,
+        out allocation_callback_result result)
+    {
+        context->deferred_operation = operation;
+        result = default;
+
+        if (callback is null)
+        {
+            return false;
+        }
+
+        allocation_callback_result callbackResult = default;
+        callback(context, (int)operation, &callbackResult);
+        result = callbackResult;
+        if (result.oom_r != oom_reason.oom_no_failure)
+        {
+            context->oom_r = result.oom_r;
+        }
+
+        if (result.kind == allocation_callback_result_kind.unsupported)
+        {
+            return false;
+        }
+
+        context->deferred_operation = allocation_deferred_operation.none;
+        return true;
+    }
+
+    private static bool retry_allocation(
+        try_allocate_more_space_context* context,
+        allocation_callback_result result)
+    {
+        if (result.kind != allocation_callback_result_kind.retry_allocate)
+        {
+            return false;
+        }
+
+        context->state = allocation_state.a_state_retry_allocate;
+        context->more_space_lock_held_p = 0;
+        return true;
+    }
+
+    private static allocation_state leave_more_space_lock(
+        try_allocate_more_space_context* context,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback)
+    {
+        if (context->more_space_lock_held_p == 0)
+        {
+            return context->state;
+        }
+
+        if (!invoke_allocation_callback(
+            context,
+            allocation_deferred_operation.leave_more_space_lock,
+            callback,
+            out allocation_callback_result result))
+        {
+            return context->state;
+        }
+
+        if (retry_allocation(context, result))
+        {
+            return context->state;
+        }
+
+        if (result.kind != allocation_callback_result_kind.completed)
+        {
+            context->deferred_operation = allocation_deferred_operation.leave_more_space_lock;
+            return context->state;
+        }
+
+        context->more_space_lock_held_p = 0;
+        return context->state;
+    }
+
+    private static allocation_state finish_allocation_failure(
+        try_allocate_more_space_context* context,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback)
+    {
+        if (context->oom_handled_p == 0)
+        {
+            if (!invoke_allocation_callback(
+                context,
+                allocation_deferred_operation.handle_oom,
+                callback,
+                out allocation_callback_result result))
+            {
+                return context->state;
+            }
+
+            if (retry_allocation(context, result))
+            {
+                return context->state;
+            }
+
+            if (result.kind != allocation_callback_result_kind.completed)
+            {
+                context->deferred_operation = allocation_deferred_operation.handle_oom;
+                return context->state;
+            }
+
+            context->oom_handled_p = 1;
+        }
+
+        return leave_more_space_lock(context, callback);
+    }
+
+    private static bool soh_try_fit(
+        try_allocate_more_space_context* context,
+        bool report_short_seg_end_p)
+    {
+        bool commit_failed_p = false;
+        bool short_seg_end_p = false;
+        bool can_allocate = soh_try_fit(
+            context->gen_number,
+            context->size,
+            context->acontext,
+            context->flags,
+            context->align_const,
+            &commit_failed_p,
+            report_short_seg_end_p ? &short_seg_end_p : null,
+            context->sufficient_space_regions_for_allocation_p != 0,
+            context->sufficient_gen0_space_p != 0,
+            context->dd,
+            context->allocation_quantum,
+            context->generation_table,
+            context->ephemeral_heap_segment,
+            context->alloc_allocated,
+            context->total_alloc_bytes_soh,
+            context->heap_number,
+            context->hp);
+
+        context->commit_failed_p = commit_failed_p ? (byte)1 : (byte)0;
+        context->short_seg_end_p = short_seg_end_p ? (byte)1 : (byte)0;
+        return can_allocate;
+    }
+
+    private static bool uoh_try_fit(try_allocate_more_space_context* context)
+    {
+        bool commit_failed_p = false;
+        heap_segment* ephemeral_heap_segment =
+            context->ephemeral_heap_segment is null ? null : *context->ephemeral_heap_segment;
+        byte* alloc_allocated = context->alloc_allocated is null ? null : *context->alloc_allocated;
+        bool can_allocate = uoh_try_fit(
+            context->gen_number,
+            context->size,
+            context->acontext,
+            context->flags,
+            context->align_const,
+            &commit_failed_p,
+            &context->oom_r,
+            context->dd,
+            context->allocation_quantum,
+            context->generation_table,
+            ephemeral_heap_segment,
+            context->alloc_allocated is null ? null : &alloc_allocated,
+            context->total_alloc_bytes_uoh,
+            context->heap_number);
+
+        context->commit_failed_p = commit_failed_p ? (byte)1 : (byte)0;
+        return can_allocate;
+    }
+
+    private static allocation_state allocate_soh(
+        try_allocate_more_space_context* context,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback)
+    {
+        while (true)
+        {
+            switch (context->state)
+            {
+                case allocation_state.a_state_can_allocate:
+                case allocation_state.a_state_retry_allocate:
+                    return context->state;
+
+                case allocation_state.a_state_cant_allocate:
+                    if (context->oom_r == oom_reason.oom_no_failure)
+                    {
+                        context->deferred_operation = allocation_deferred_operation.invalid_allocation_state;
+                        return context->state;
+                    }
+
+                    return finish_allocation_failure(context, callback);
+
+                case allocation_state.a_state_start:
+                    context->state = allocation_state.a_state_try_fit;
+                    break;
+
+                case allocation_state.a_state_try_fit:
+                    context->state = soh_try_fit(context, report_short_seg_end_p: false)
+                        ? allocation_state.a_state_can_allocate
+                        : (context->commit_failed_p != 0
+                            ? allocation_state.a_state_trigger_full_compact_gc
+                            : allocation_state.a_state_trigger_ephemeral_gc);
+                    break;
+
+                case allocation_state.a_state_try_fit_after_bgc:
+                    if (soh_try_fit(context, report_short_seg_end_p: true))
+                    {
+                        context->state = allocation_state.a_state_can_allocate;
+                    }
+                    else
+                    {
+                        context->state = context->short_seg_end_p != 0
+                            ? allocation_state.a_state_trigger_2nd_ephemeral_gc
+                            : allocation_state.a_state_trigger_full_compact_gc;
+                    }
+
+                    break;
+
+                case allocation_state.a_state_try_fit_after_cg:
+                    if (soh_try_fit(context, report_short_seg_end_p: true))
+                    {
+                        context->state = allocation_state.a_state_can_allocate;
+                    }
+                    else if (context->short_seg_end_p != 0)
+                    {
+                        context->oom_r = oom_reason.oom_budget;
+                        context->state = allocation_state.a_state_cant_allocate;
+                    }
+                    else
+                    {
+                        context->oom_r = oom_reason.oom_cant_commit;
+                        context->state = allocation_state.a_state_cant_allocate;
+                    }
+
+                    break;
+
+                case allocation_state.a_state_check_and_wait_for_bgc:
+                    if (!invoke_allocation_callback(
+                        context,
+                        allocation_deferred_operation.check_and_wait_for_bgc,
+                        callback,
+                        out allocation_callback_result waitResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (retry_allocation(context, waitResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (waitResult.kind == allocation_callback_result_kind.full_compact_gc)
+                    {
+                        context->state = allocation_state.a_state_try_fit_after_cg;
+                    }
+                    else if (waitResult.kind is allocation_callback_result_kind.no_full_compact_gc or
+                        allocation_callback_result_kind.background_not_running)
+                    {
+                        context->state = allocation_state.a_state_try_fit_after_bgc;
+                    }
+                    else
+                    {
+                        context->deferred_operation = allocation_deferred_operation.check_and_wait_for_bgc;
+                        return context->state;
+                    }
+
+                    break;
+
+                case allocation_state.a_state_trigger_ephemeral_gc:
+                case allocation_state.a_state_trigger_2nd_ephemeral_gc:
+                    allocation_deferred_operation ephemeralOperation =
+                        context->state == allocation_state.a_state_trigger_ephemeral_gc
+                            ? allocation_deferred_operation.trigger_ephemeral_gc
+                            : allocation_deferred_operation.trigger_2nd_ephemeral_gc;
+                    if (!invoke_allocation_callback(context, ephemeralOperation, callback, out allocation_callback_result ephemeralResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (retry_allocation(context, ephemeralResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (ephemeralResult.kind == allocation_callback_result_kind.full_compact_gc)
+                    {
+                        context->state = allocation_state.a_state_try_fit_after_cg;
+                        break;
+                    }
+
+                    if (ephemeralResult.kind != allocation_callback_result_kind.no_full_compact_gc)
+                    {
+                        context->deferred_operation = ephemeralOperation;
+                        return context->state;
+                    }
+
+                    if (soh_try_fit(context, report_short_seg_end_p: true))
+                    {
+                        context->state = allocation_state.a_state_can_allocate;
+                    }
+                    else if (context->state == allocation_state.a_state_trigger_2nd_ephemeral_gc)
+                    {
+                        context->state =
+                            (context->short_seg_end_p != 0 || context->commit_failed_p != 0)
+                                ? allocation_state.a_state_trigger_full_compact_gc
+                                : context->state;
+
+                        if (context->state == allocation_state.a_state_trigger_2nd_ephemeral_gc)
+                        {
+                            context->deferred_operation = allocation_deferred_operation.invalid_allocation_state;
+                            return context->state;
+                        }
+                    }
+                    else if (context->commit_failed_p != 0)
+                    {
+                        context->state = allocation_state.a_state_trigger_full_compact_gc;
+                    }
+                    else if (context->short_seg_end_p != 0)
+                    {
+                        if (!invoke_allocation_callback(
+                            context,
+                            allocation_deferred_operation.query_background_running,
+                            callback,
+                            out allocation_callback_result backgroundResult))
+                        {
+                            return context->state;
+                        }
+
+                        if (retry_allocation(context, backgroundResult))
+                        {
+                            return context->state;
+                        }
+
+                        context->state = backgroundResult.kind == allocation_callback_result_kind.background_running
+                            ? allocation_state.a_state_check_and_wait_for_bgc
+                            : backgroundResult.kind == allocation_callback_result_kind.background_not_running
+                                ? allocation_state.a_state_trigger_full_compact_gc
+                                : context->state;
+
+                        if (context->state == allocation_state.a_state_trigger_ephemeral_gc)
+                        {
+                            context->deferred_operation = allocation_deferred_operation.query_background_running;
+                            return context->state;
+                        }
+                    }
+                    else
+                    {
+                        context->deferred_operation = allocation_deferred_operation.invalid_allocation_state;
+                        return context->state;
+                    }
+
+                    break;
+
+                case allocation_state.a_state_trigger_full_compact_gc:
+                    if (!invoke_allocation_callback(
+                        context,
+                        allocation_deferred_operation.trigger_full_compact_gc,
+                        callback,
+                        out allocation_callback_result fullCompactResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (retry_allocation(context, fullCompactResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (fullCompactResult.kind == allocation_callback_result_kind.full_compact_gc)
+                    {
+                        context->state = allocation_state.a_state_try_fit_after_cg;
+                    }
+                    else if (fullCompactResult.kind == allocation_callback_result_kind.no_full_compact_gc)
+                    {
+                        context->oom_r = oom_reason.oom_unproductive_full_gc;
+                        context->state = allocation_state.a_state_cant_allocate;
+                    }
+                    else
+                    {
+                        context->deferred_operation = allocation_deferred_operation.trigger_full_compact_gc;
+                        return context->state;
+                    }
+
+                    break;
+
+                default:
+                    context->deferred_operation = allocation_deferred_operation.invalid_allocation_state;
+                    return context->state;
+            }
+        }
+    }
+
+    private static allocation_state allocate_uoh(
+        try_allocate_more_space_context* context,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback)
+    {
+        while (true)
+        {
+            switch (context->state)
+            {
+                case allocation_state.a_state_can_allocate:
+                case allocation_state.a_state_retry_allocate:
+                    return context->state;
+
+                case allocation_state.a_state_cant_allocate:
+                    if (context->oom_r == oom_reason.oom_no_failure)
+                    {
+                        context->deferred_operation = allocation_deferred_operation.invalid_allocation_state;
+                        return context->state;
+                    }
+
+                    if (context->oom_r != oom_reason.oom_cant_commit)
+                    {
+                        if (!invoke_allocation_callback(
+                            context,
+                            allocation_deferred_operation.check_retry_other_heap,
+                            callback,
+                            out allocation_callback_result retryOtherHeapResult))
+                        {
+                            return context->state;
+                        }
+
+                        if (retryOtherHeapResult.kind == allocation_callback_result_kind.retry_other_heap)
+                        {
+                            context->state = allocation_state.a_state_retry_allocate;
+                            return leave_more_space_lock(context, callback);
+                        }
+
+                        if (retryOtherHeapResult.kind != allocation_callback_result_kind.completed)
+                        {
+                            context->deferred_operation = allocation_deferred_operation.check_retry_other_heap;
+                            return context->state;
+                        }
+                    }
+
+                    return finish_allocation_failure(context, callback);
+
+                case allocation_state.a_state_start:
+                    context->state = allocation_state.a_state_try_fit;
+                    break;
+
+                case allocation_state.a_state_try_fit:
+                    context->state = uoh_try_fit(context)
+                        ? allocation_state.a_state_can_allocate
+                        : (context->commit_failed_p != 0
+                            ? allocation_state.a_state_trigger_full_compact_gc
+                            : allocation_state.a_state_acquire_seg);
+                    break;
+
+                case allocation_state.a_state_try_fit_new_seg:
+                    context->state = uoh_try_fit(context)
+                        ? allocation_state.a_state_can_allocate
+                        : allocation_state.a_state_try_fit;
+                    break;
+
+                case allocation_state.a_state_try_fit_after_cg:
+                    context->state = uoh_try_fit(context)
+                        ? allocation_state.a_state_can_allocate
+                        : (context->commit_failed_p != 0
+                            ? allocation_state.a_state_cant_allocate
+                            : allocation_state.a_state_acquire_seg_after_cg);
+                    break;
+
+                case allocation_state.a_state_try_fit_after_bgc:
+                    context->state = uoh_try_fit(context)
+                        ? allocation_state.a_state_can_allocate
+                        : (context->commit_failed_p != 0
+                            ? allocation_state.a_state_trigger_full_compact_gc
+                            : allocation_state.a_state_acquire_seg_after_bgc);
+                    break;
+
+                case allocation_state.a_state_acquire_seg:
+                case allocation_state.a_state_acquire_seg_after_cg:
+                case allocation_state.a_state_acquire_seg_after_bgc:
+                    if (!invoke_allocation_callback(
+                        context,
+                        allocation_deferred_operation.acquire_uoh_segment,
+                        callback,
+                        out allocation_callback_result acquireResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (retry_allocation(context, acquireResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (acquireResult.kind == allocation_callback_result_kind.segment_acquired)
+                    {
+                        context->state = context->state == allocation_state.a_state_acquire_seg_after_cg
+                            ? allocation_state.a_state_try_fit_after_cg
+                            : allocation_state.a_state_try_fit_new_seg;
+                    }
+                    else if (acquireResult.kind == allocation_callback_result_kind.segment_unavailable)
+                    {
+                        context->state = context->state == allocation_state.a_state_acquire_seg
+                            ? (acquireResult.did_full_compacting_gc_p != 0
+                                ? allocation_state.a_state_check_retry_seg
+                                : allocation_state.a_state_check_and_wait_for_bgc)
+                            : context->state == allocation_state.a_state_acquire_seg_after_cg
+                                ? allocation_state.a_state_check_retry_seg
+                                : acquireResult.did_full_compacting_gc_p != 0
+                                    ? allocation_state.a_state_check_retry_seg
+                                    : allocation_state.a_state_trigger_full_compact_gc;
+                    }
+                    else
+                    {
+                        context->deferred_operation = allocation_deferred_operation.acquire_uoh_segment;
+                        return context->state;
+                    }
+
+                    break;
+
+                case allocation_state.a_state_check_and_wait_for_bgc:
+                    if (!invoke_allocation_callback(
+                        context,
+                        allocation_deferred_operation.check_and_wait_for_bgc,
+                        callback,
+                        out allocation_callback_result waitResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (retry_allocation(context, waitResult))
+                    {
+                        return context->state;
+                    }
+
+                    context->state = waitResult.kind == allocation_callback_result_kind.background_not_running
+                        ? allocation_state.a_state_trigger_full_compact_gc
+                        : waitResult.kind == allocation_callback_result_kind.full_compact_gc
+                            ? allocation_state.a_state_try_fit_after_cg
+                            : waitResult.kind == allocation_callback_result_kind.no_full_compact_gc
+                                ? allocation_state.a_state_try_fit_after_bgc
+                                : context->state;
+
+                    if (context->state == allocation_state.a_state_check_and_wait_for_bgc)
+                    {
+                        context->deferred_operation = allocation_deferred_operation.check_and_wait_for_bgc;
+                        return context->state;
+                    }
+
+                    break;
+
+                case allocation_state.a_state_trigger_full_compact_gc:
+                    if (!invoke_allocation_callback(
+                        context,
+                        allocation_deferred_operation.trigger_full_compact_gc,
+                        callback,
+                        out allocation_callback_result fullCompactResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (retry_allocation(context, fullCompactResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (fullCompactResult.kind == allocation_callback_result_kind.full_compact_gc)
+                    {
+                        context->state = allocation_state.a_state_try_fit_after_cg;
+                    }
+                    else if (fullCompactResult.kind == allocation_callback_result_kind.no_full_compact_gc)
+                    {
+                        context->oom_r = oom_reason.oom_unproductive_full_gc;
+                        context->state = allocation_state.a_state_cant_allocate;
+                    }
+                    else
+                    {
+                        context->deferred_operation = allocation_deferred_operation.trigger_full_compact_gc;
+                        return context->state;
+                    }
+
+                    break;
+
+                case allocation_state.a_state_check_retry_seg:
+                    if (!invoke_allocation_callback(
+                        context,
+                        allocation_deferred_operation.check_retry_uoh_segment,
+                        callback,
+                        out allocation_callback_result retrySegmentResult))
+                    {
+                        return context->state;
+                    }
+
+                    if (retry_allocation(context, retrySegmentResult))
+                    {
+                        return context->state;
+                    }
+
+                    context->state = retrySegmentResult.kind == allocation_callback_result_kind.retry_full_compact_gc
+                        ? allocation_state.a_state_trigger_full_compact_gc
+                        : retrySegmentResult.kind == allocation_callback_result_kind.retry_segment
+                            ? allocation_state.a_state_try_fit_after_cg
+                            : retrySegmentResult.kind == allocation_callback_result_kind.completed
+                                ? allocation_state.a_state_cant_allocate
+                                : context->state;
+
+                    if (context->state == allocation_state.a_state_check_retry_seg)
+                    {
+                        context->deferred_operation = allocation_deferred_operation.check_retry_uoh_segment;
+                        return context->state;
+                    }
+
+                    break;
+
+                default:
+                    context->deferred_operation = allocation_deferred_operation.invalid_allocation_state;
+                    return context->state;
+            }
+        }
+    }
+
+    public static allocation_state try_allocate_more_space(
+        try_allocate_more_space_context* context,
+        delegate* unmanaged<try_allocate_more_space_context*, int, allocation_callback_result*, void> callback = null)
+    {
+        context->deferred_operation = allocation_deferred_operation.none;
+
+        if (context->state == allocation_state.a_state_start && context->gc_started_p != 0)
+        {
+            context->state = allocation_state.a_state_retry_allocate;
+            context->deferred_operation = allocation_deferred_operation.wait_for_gc_done;
+            return context->state;
+        }
+
+        if (context->state == allocation_state.a_state_start && context->more_space_lock_held_p == 0)
+        {
+            if (!invoke_allocation_callback(
+                context,
+                allocation_deferred_operation.enter_more_space_lock,
+                callback,
+                out allocation_callback_result lockResult))
+            {
+                return context->state;
+            }
+
+            if (retry_allocation(context, lockResult))
+            {
+                return context->state;
+            }
+
+            if (lockResult.kind != allocation_callback_result_kind.completed)
+            {
+                context->deferred_operation = allocation_deferred_operation.enter_more_space_lock;
+                return context->state;
+            }
+
+            context->more_space_lock_held_p = 1;
+        }
+
+        if (context->state == allocation_state.a_state_start &&
+            context->full_gc_notification_p != 0 &&
+            context->full_gc_checked_p == 0)
+        {
+            if (!invoke_allocation_callback(
+                context,
+                allocation_deferred_operation.check_for_full_gc,
+                callback,
+                out allocation_callback_result fullGcNotificationResult))
+            {
+                return context->state;
+            }
+
+            if (retry_allocation(context, fullGcNotificationResult))
+            {
+                return context->state;
+            }
+
+            if (fullGcNotificationResult.kind != allocation_callback_result_kind.completed)
+            {
+                context->deferred_operation = allocation_deferred_operation.check_for_full_gc;
+                return context->state;
+            }
+
+            context->full_gc_checked_p = 1;
+        }
+
+        while (context->state == allocation_state.a_state_start && context->budget_checked_p == 0)
+        {
+            if (!invoke_allocation_callback(
+                context,
+                allocation_deferred_operation.check_allocation_budget,
+                callback,
+                out allocation_callback_result budgetResult))
+            {
+                return context->state;
+            }
+
+            if (retry_allocation(context, budgetResult))
+            {
+                return context->state;
+            }
+
+            if (budgetResult.kind == allocation_callback_result_kind.allocation_allowed)
+            {
+                context->budget_checked_p = 1;
+                break;
+            }
+
+            if (budgetResult.kind != allocation_callback_result_kind.allocation_disallowed)
+            {
+                context->deferred_operation = allocation_deferred_operation.check_allocation_budget;
+                return context->state;
+            }
+
+            if (context->full_gc_notification_p != 0 &&
+                context->gen_number == (int)gc_generation_num.soh_gen0 &&
+                context->budget_full_gc_checked_p == 0)
+            {
+                if (!invoke_allocation_callback(
+                    context,
+                    allocation_deferred_operation.check_for_full_gc,
+                    callback,
+                    out allocation_callback_result budgetFullGcNotificationResult))
+                {
+                    return context->state;
+                }
+
+                if (retry_allocation(context, budgetFullGcNotificationResult))
+                {
+                    return context->state;
+                }
+
+                if (budgetFullGcNotificationResult.kind != allocation_callback_result_kind.completed)
+                {
+                    context->deferred_operation = allocation_deferred_operation.check_for_full_gc;
+                    return context->state;
+                }
+
+                context->budget_full_gc_checked_p = 1;
+            }
+
+            if (context->bgc_high_memory_waited_p == 0)
+            {
+                if (!invoke_allocation_callback(
+                    context,
+                    allocation_deferred_operation.wait_for_bgc_high_memory,
+                    callback,
+                    out allocation_callback_result highMemoryResult))
+                {
+                    return context->state;
+                }
+
+                if (retry_allocation(context, highMemoryResult))
+                {
+                    return context->state;
+                }
+
+                if (highMemoryResult.kind == allocation_callback_result_kind.background_running)
+                {
+                    context->bgc_high_memory_waited_p = 1;
+                    continue;
+                }
+
+                if (highMemoryResult.kind != allocation_callback_result_kind.background_not_running)
+                {
+                    context->deferred_operation = allocation_deferred_operation.wait_for_bgc_high_memory;
+                    return context->state;
+                }
+            }
+
+            if (!invoke_allocation_callback(
+                context,
+                allocation_deferred_operation.trigger_gc_for_budget,
+                callback,
+                out allocation_callback_result triggerBudgetResult))
+            {
+                return context->state;
+            }
+
+            if (retry_allocation(context, triggerBudgetResult))
+            {
+                return context->state;
+            }
+
+            if (triggerBudgetResult.kind != allocation_callback_result_kind.completed)
+            {
+                context->deferred_operation = allocation_deferred_operation.trigger_gc_for_budget;
+                return context->state;
+            }
+
+            context->budget_checked_p = 1;
+        }
+
+        return context->gen_number == (int)gc_generation_num.soh_gen0
+            ? allocate_soh(context, callback)
+            : allocate_uoh(context, callback);
+    }
+
     // This is the dependency-closed refill-state portion of adjust_limit_clr. The deferred
     // gc_heap owns generation_table, alloc_allocated, ephemeral_heap_segment, and the selected
     // SOH/UOH total_alloc_bytes counter; they are explicit here until try_allocate_more_space

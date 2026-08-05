@@ -1110,8 +1110,15 @@ verification and allocation-context-statistics paths remain explicit deferrals r
 plausible replacements. The BGC allocation cookie/tracking and `heap_segment_flags_uoh_delete`
 branches, LOH-compaction padding, verification syncblock write, heap-owned free-list routing,
 budget policy, `clearp`/`resetp` branches of
-`make_unused_array`, clearing, allocation-info/events, `try_allocate_more_space`, and
-`allocate_more_space` remain deferred.
+`make_unused_array`, clearing, and allocation-info/events remain deferred.
+`try_allocate_more_space` now has an explicit unmanaged state-machine core over the translated
+fit paths. It preserves the SOH/UOH `allocation_state` transitions, generation selection,
+allocation flags, commit-failure/short-end/OOM propagation, retry exits, UOH acquisition states,
+and the existing budget mutations made by fitting. Its context makes the still-untranslated
+heap fields explicit. GC/BGC waits and triggers, full compact collections, dynamic-budget
+decisions, locks, UOH acquisition, retry policy, and OOM handling cross an unmanaged function
+pointer boundary; without that callback it returns the exact pending native state and deferred
+operation. It is not routed into production allocation. `allocate_more_space` remains deferred.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
 Production allocation still uses `GCHeapMemory`'s bootstrap bump allocator.
 

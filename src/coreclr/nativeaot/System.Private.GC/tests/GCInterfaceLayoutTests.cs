@@ -191,6 +191,10 @@ public sealed class GCInterfaceLayoutTests
     {
         "HeapVerifyFlags",
         "WriteBarrierFlavor",
+        // These are managed-only callback protocol enums for the deferred allocation state
+        // machine. They have no native ABI or layout counterpart.
+        "allocation_deferred_operation",
+        "allocation_callback_result_kind",
     };
 
     public static IEnumerable<object[]> TranslatedEnums() =>
