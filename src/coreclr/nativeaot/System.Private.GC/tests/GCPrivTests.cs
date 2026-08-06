@@ -1544,6 +1544,884 @@ public sealed unsafe class GCPrivTests
             gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
         }
     }
+
+#if !MULTIPLE_HEAPS && !MH_SC_MARK
+    [Fact]
+    public void MarkPhaseMarkObjectSimple1ResumesLargeObjectTraversalAndLeavesPrefetchTail()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int FilteredChildren = 8;
+        const int ExpectedTailCount = 16;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint childObjectSize = 2 * pointerSize;
+        int slotsPerMark = MarkStackSlotsPerEntry();
+        int markStackEntryCount = (gc_heap.num_partial_refs + 3 + slotsPerMark - 1) / slotsPerMark;
+        int markStackSlotCapacity = MarkStackSlotCapacity((nuint)markStackEntryCount);
+        int validChildren = Math.Max(markStackSlotCapacity + 2, gc_heap.num_partial_refs + ExpectedTailCount + 1);
+        int totalChildren = FilteredChildren + validChildren;
+        int rootWords = Math.Max(gc_heap.partial_size_th, totalChildren + 1);
+        nuint rootObjectSize = (nuint)rootWords * pointerSize;
+        int expectedMarkedChildren = validChildren - ExpectedTailCount;
+
+        Assert.True(markStackSlotCapacity > gc_heap.num_partial_refs + 2);
+        Assert.True(validChildren > markStackSlotCapacity - 2);
+        Assert.True(expectedMarkedChildren > gc_heap.num_partial_refs);
+
+        byte* objectStorage = stackalloc byte[
+            checked((int)(rootObjectSize + ((nuint)totalChildren * childObjectSize) + pointerSize))];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* childStart = root + (nint)rootObjectSize;
+        byte** children = stackalloc byte*[totalChildren];
+        byte** rootReferences = (byte**)(root + sizeof(nuint));
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* childDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootObjectSize,
+            (nuint)sizeof(nuint),
+            (nuint)totalChildren,
+            hasPointers: 1);
+        MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+            childDescriptorStorage,
+            childObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: (nuint)1,
+            hasPointers: 1);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+
+            for (int index = 0; index < totalChildren; index++)
+            {
+                byte* child = childStart + (nint)((nuint)index * childObjectSize);
+                children[index] = child;
+                ((CObjectHeader*)child)->RawSetMethodTable(childMethodTable);
+                *(byte**)(child + sizeof(nuint)) = null;
+                rootReferences[index] = child;
+            }
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = childStart + (nint)((nuint)totalChildren * childObjectSize);
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                generationMap[(nint)offset] = region_info.RI_GEN_1;
+                segmentMap[(nint)offset] = default;
+                segmentMap[(nint)offset].region_info.gen_num = (byte)gc_generation_num.soh_gen1;
+            }
+
+            for (int index = 0; index < FilteredChildren; index++)
+            {
+                SetRegionGenerationForAddress(
+                    children[index],
+                    minRegionIndex,
+                    generationMap,
+                    segmentMap,
+                    (int)gc_generation_num.soh_gen2);
+            }
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            byte** markList = stackalloc byte*[totalChildren];
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(
+                gc_heap.setup_mark_state_for_collection(
+                    markList,
+                    (nuint)totalChildren,
+                    survived,
+                    oldCardSurvived,
+                    regionCount));
+
+            mark* markStack = stackalloc mark[markStackEntryCount];
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = (nuint)markStackEntryCount;
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            gc_heap.mark_object_simple1(pHeap, root, root);
+
+            Assert.Equal(expectedMarkedChildren, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.True(((CObjectHeader*)children[FilteredChildren + gc_heap.num_partial_refs])->IsMarked() != 0);
+
+            for (int index = 0; index < FilteredChildren; index++)
+            {
+                Assert.Equal(0, ((CObjectHeader*)children[index])->IsMarked());
+            }
+
+            for (int index = FilteredChildren; index < FilteredChildren + expectedMarkedChildren; index++)
+            {
+                Assert.True(((CObjectHeader*)children[index])->IsMarked() != 0);
+            }
+
+            for (int index = FilteredChildren + expectedMarkedChildren; index < totalChildren; index++)
+            {
+                Assert.Equal(0, ((CObjectHeader*)children[index])->IsMarked());
+            }
+
+            Assert.Equal((nuint)expectedMarkedChildren * childObjectSize, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+#if DEBUG
+            Assert.Equal(
+                (nuint)expectedMarkedChildren * childObjectSize,
+                gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+
+            for (int index = FilteredChildren + expectedMarkedChildren; index < totalChildren; index++)
+            {
+                Assert.Equal((nuint)children[index], (nuint)gc_heap.mark_queue.get_next_marked());
+            }
+
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseMarkObjectSimple1ResumesRepeatingDescriptorTraversalAndLeavesPrefetchTail()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int ComponentWords = 2;
+        const int BaseObjectWords = 2;
+        const int ExpectedTailCount = 16;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint childObjectSize = 2 * pointerSize;
+        nuint componentSize = (nuint)ComponentWords * pointerSize;
+        int slotsPerMark = MarkStackSlotsPerEntry();
+        int markStackEntryCount = (gc_heap.num_partial_refs + 3 + slotsPerMark - 1) / slotsPerMark;
+        int markStackSlotCapacity = MarkStackSlotCapacity((nuint)markStackEntryCount);
+        int minComponentsForLargeObject =
+            (gc_heap.partial_size_th - BaseObjectWords + (ComponentWords - 1)) / ComponentWords;
+        int totalChildren = Math.Max(
+            Math.Max(markStackSlotCapacity + 2, gc_heap.num_partial_refs + ExpectedTailCount + 1),
+            minComponentsForLargeObject);
+        nuint rootObjectSize = (nuint)(BaseObjectWords + (totalChildren * ComponentWords)) * pointerSize;
+        int expectedMarkedChildren = totalChildren - ExpectedTailCount;
+
+        Assert.True(markStackSlotCapacity > gc_heap.num_partial_refs + 2);
+        Assert.True(totalChildren > markStackSlotCapacity - 2);
+        Assert.True(expectedMarkedChildren > gc_heap.num_partial_refs);
+
+        byte* objectStorage = stackalloc byte[
+            checked((int)(rootObjectSize + ((nuint)totalChildren * childObjectSize) + pointerSize))];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* childStart = root + (nint)rootObjectSize;
+        byte** children = stackalloc byte*[totalChildren];
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* childDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeRepeatingSeriesMethodTable(
+            rootDescriptorStorage,
+            (nuint)BaseObjectWords * pointerSize,
+            componentSize,
+            (nuint)BaseObjectWords * pointerSize,
+            pointersPerComponent: 1,
+            skipBytes: pointerSize);
+        MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+            childDescriptorStorage,
+            childObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: (nuint)1,
+            hasPointers: 1);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            *(uint*)(root + sizeof(nuint)) = (uint)totalChildren;
+            byte* componentData = root + (nint)((nuint)BaseObjectWords * pointerSize);
+
+            for (int index = 0; index < totalChildren; index++)
+            {
+                byte* child = childStart + (nint)((nuint)index * childObjectSize);
+                children[index] = child;
+                ((CObjectHeader*)child)->RawSetMethodTable(childMethodTable);
+                *(byte**)(child + sizeof(nuint)) = null;
+
+                byte** componentSlots = (byte**)(componentData + (nint)((nuint)index * componentSize));
+                componentSlots[0] = child;
+                componentSlots[1] = null;
+            }
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = childStart + (nint)((nuint)totalChildren * childObjectSize);
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                generationMap[(nint)offset] = region_info.RI_GEN_1;
+                segmentMap[(nint)offset] = default;
+                segmentMap[(nint)offset].region_info.gen_num = (byte)gc_generation_num.soh_gen1;
+            }
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            byte** markList = stackalloc byte*[totalChildren];
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(
+                gc_heap.setup_mark_state_for_collection(
+                    markList,
+                    (nuint)totalChildren,
+                    survived,
+                    oldCardSurvived,
+                    regionCount));
+
+            mark* markStack = stackalloc mark[markStackEntryCount];
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = (nuint)markStackEntryCount;
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            gc_heap.mark_object_simple1(pHeap, root, root);
+
+            Assert.Equal(expectedMarkedChildren, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.True(((CObjectHeader*)children[gc_heap.num_partial_refs])->IsMarked() != 0);
+
+            for (int index = 0; index < expectedMarkedChildren; index++)
+            {
+                Assert.True(((CObjectHeader*)children[index])->IsMarked() != 0);
+            }
+
+            for (int index = expectedMarkedChildren; index < totalChildren; index++)
+            {
+                Assert.Equal(0, ((CObjectHeader*)children[index])->IsMarked());
+            }
+
+            Assert.Equal((nuint)expectedMarkedChildren * childObjectSize, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+#if DEBUG
+            Assert.Equal(
+                (nuint)expectedMarkedChildren * childObjectSize,
+                gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+
+            for (int index = expectedMarkedChildren; index < totalChildren; index++)
+            {
+                Assert.Equal((nuint)children[index], (nuint)gc_heap.mark_queue.get_next_marked());
+            }
+
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseMarkObjectSimple1FullGcUsesBoundaryWithoutMarkListWrites()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int TotalChildren = 20;
+        const int ExpectedTailCount = 16;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint rootObjectSize = 128 * pointerSize;
+        nuint childObjectSize = 2 * pointerSize;
+        byte* objectStorage = stackalloc byte[(int)(rootObjectSize + ((nuint)TotalChildren * childObjectSize) + pointerSize)];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* childStart = root + (nint)rootObjectSize;
+        byte** children = stackalloc byte*[TotalChildren];
+        byte** rootReferences = (byte**)(root + sizeof(nuint));
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* childDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootObjectSize,
+            (nuint)sizeof(nuint),
+            (nuint)TotalChildren,
+            hasPointers: 1);
+        MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+            childDescriptorStorage,
+            childObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: (nuint)1,
+            hasPointers: 1);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+
+            for (int index = 0; index < TotalChildren; index++)
+            {
+                byte* child = childStart + (nint)((nuint)index * childObjectSize);
+                children[index] = child;
+                ((CObjectHeader*)child)->RawSetMethodTable(childMethodTable);
+                *(byte**)(child + sizeof(nuint)) = null;
+                rootReferences[index] = child;
+            }
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = childStart + (nint)((nuint)TotalChildren * childObjectSize);
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                generationMap[(nint)offset] = region_info.RI_GEN_2;
+                segmentMap[(nint)offset] = default;
+                segmentMap[(nint)offset].region_info.gen_num = (byte)gc_generation_num.soh_gen2;
+            }
+
+            gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+            byte** markList = stackalloc byte*[2];
+            markList[0] = (byte*)0xDEAD;
+            markList[1] = (byte*)0xBEEF;
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 2, survived, oldCardSurvived, regionCount));
+
+            mark* markStack = stackalloc mark[8];
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = 8;
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            gc_heap.mark_object_simple1(pHeap, root, root);
+
+            int expectedMarkedChildren = TotalChildren - ExpectedTailCount;
+            Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
+            Assert.Equal((nuint)0xDEAD, (nuint)markList[0]);
+            Assert.Equal((nuint)0xBEEF, (nuint)markList[1]);
+            Assert.Equal((nuint)children[0], (nuint)gc_heap.slow);
+            Assert.Equal((nuint)children[expectedMarkedChildren - 1], (nuint)gc_heap.shigh);
+
+            for (int index = 0; index < expectedMarkedChildren; index++)
+            {
+                Assert.True(((CObjectHeader*)children[index])->IsMarked() != 0);
+            }
+
+            for (int index = expectedMarkedChildren; index < TotalChildren; index++)
+            {
+                Assert.Equal(0, ((CObjectHeader*)children[index])->IsMarked());
+            }
+
+            Assert.Equal((nuint)expectedMarkedChildren * childObjectSize, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+#if DEBUG
+            Assert.Equal(
+                (nuint)expectedMarkedChildren * childObjectSize,
+                gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseMarkObjectSimple1SmallObjectOverflowTracksExtrema()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        int pointerCount = (int)((nuint)sizeof(mark) / (nuint)sizeof(byte*)) + 4;
+        nuint objectSize = ((nuint)pointerCount + 1) * (nuint)sizeof(byte*);
+        byte* objectStorage = stackalloc byte[(int)(objectSize + (nuint)sizeof(byte*))];
+        byte* descriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* methodTable = InitializeSingleSeriesMethodTable(
+            descriptorStorage,
+            objectSize,
+            (nuint)sizeof(nuint),
+            (nuint)pointerCount,
+            hasPointers: 1);
+        byte* root = AlignUp(objectStorage, (nuint)sizeof(byte*));
+        byte** references = (byte**)(root + sizeof(nuint));
+
+        ((CObjectHeader*)root)->RawSetMethodTable(methodTable);
+        for (int index = 0; index < pointerCount; index++)
+        {
+            references[index] = null;
+        }
+
+        gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+        byte** markList = stackalloc byte*[4];
+        nuint* survived = stackalloc nuint[1];
+        nuint* oldCardSurvived = stackalloc nuint[1];
+        Assert.True(gc_heap.setup_mark_state_for_collection(markList, 4, survived, oldCardSurvived, 1));
+
+        mark* markStack = stackalloc mark[1];
+        gc_heap.mark_stack_array = markStack;
+        gc_heap.mark_stack_array_length = 1;
+        pHeap->heap_number = 0;
+
+        gc_heap.mark_object_simple1(pHeap, root, root);
+
+        Assert.Equal((nuint)root, (nuint)gc_heap.min_overflow_address);
+        Assert.Equal((nuint)root, (nuint)gc_heap.max_overflow_address);
+        Assert.Equal(0, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+        Assert.Equal((nuint)0, survived[0]);
+    }
+
+    [Fact]
+    public void MarkPhaseMarkObjectSimple1LargeObjectOverflowTracksExtremaAndSkipsTraversal()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int RootPointerCount = 2;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint rootObjectSize = (nuint)gc_heap.partial_size_th * pointerSize;
+        nuint childObjectSize = 2 * pointerSize;
+        byte* objectStorage = stackalloc byte[
+            checked((int)((2 * rootObjectSize) + (2 * childObjectSize) + pointerSize))];
+        byte* rootLow = AlignUp(objectStorage, pointerSize);
+        byte* rootHigh = rootLow + (nint)rootObjectSize;
+        byte* childLow = rootHigh + (nint)rootObjectSize;
+        byte* childHigh = childLow + (nint)childObjectSize;
+        byte** lowReferences = (byte**)(rootLow + sizeof(nuint));
+        byte** highReferences = (byte**)(rootHigh + sizeof(nuint));
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* childDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: RootPointerCount,
+            hasPointers: 1);
+        MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+            childDescriptorStorage,
+            childObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: (nuint)1,
+            hasPointers: 1);
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+
+        try
+        {
+            ((CObjectHeader*)rootLow)->RawSetMethodTable(rootMethodTable);
+            ((CObjectHeader*)rootHigh)->RawSetMethodTable(rootMethodTable);
+            ((CObjectHeader*)childLow)->RawSetMethodTable(childMethodTable);
+            ((CObjectHeader*)childHigh)->RawSetMethodTable(childMethodTable);
+            *(byte**)(childLow + sizeof(nuint)) = null;
+            *(byte**)(childHigh + sizeof(nuint)) = null;
+            lowReferences[0] = childLow;
+            lowReferences[1] = childHigh;
+            highReferences[0] = childLow;
+            highReferences[1] = childHigh;
+
+            GCCommon.g_gc_lowest_address = rootLow;
+            GCCommon.g_gc_highest_address = childHigh + (nint)childObjectSize;
+
+            gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+            byte** markList = stackalloc byte*[4];
+            nuint* survived = stackalloc nuint[1];
+            nuint* oldCardSurvived = stackalloc nuint[1];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 4, survived, oldCardSurvived, 1));
+
+            mark* markStack = stackalloc mark[1];
+            int slotsPerMark = MarkStackSlotsPerEntry();
+            nuint markStackLength = (nuint)((gc_heap.num_partial_refs + 2) / slotsPerMark);
+            Assert.True(MarkStackSlotCapacity(markStackLength) <= gc_heap.num_partial_refs + 2);
+
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = markStackLength;
+            pHeap->heap_number = 0;
+
+            gc_heap.mark_object_simple1(pHeap, rootHigh, rootHigh);
+            gc_heap.mark_object_simple1(pHeap, rootLow, rootLow);
+
+            Assert.Equal((nuint)rootLow, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)rootHigh, (nuint)gc_heap.max_overflow_address);
+            Assert.Equal(0, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.Equal((nuint)0, survived[0]);
+            Assert.Equal((nuint)0, oldCardSurvived[0]);
+            Assert.Equal(0, ((CObjectHeader*)childLow)->IsMarked());
+            Assert.Equal(0, ((CObjectHeader*)childHigh)->IsMarked());
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseMarkObjectSimple1SmallObjectUsesGetNumPointersSecondChance()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint childObjectSize = 2 * pointerSize;
+        nuint markStackLength = 1;
+        int markStackSlotCapacity = MarkStackSlotCapacity(markStackLength);
+        Assert.True(markStackSlotCapacity < gc_heap.partial_size_th);
+
+        nuint objectSize = (nuint)markStackSlotCapacity * pointerSize;
+        byte* objectStorage = stackalloc byte[
+            checked((int)(objectSize + childObjectSize + pointerSize))];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* child = root + (nint)objectSize;
+        byte** references = (byte**)(root + sizeof(nuint));
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            objectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: (nuint)1,
+            hasPointers: 1);
+        MethodTable childMethodTable = default;
+        childMethodTable.m_uBaseSize = (uint)childObjectSize;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            ((CObjectHeader*)child)->RawSetMethodTable(&childMethodTable);
+            references[0] = child;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = child + (nint)childObjectSize;
+
+            gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+            byte** markList = stackalloc byte*[2];
+            nuint* survived = stackalloc nuint[1];
+            nuint* oldCardSurvived = stackalloc nuint[1];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 2, survived, oldCardSurvived, 1));
+
+            mark* markStack = stackalloc mark[1];
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = markStackLength;
+            pHeap->heap_number = 0;
+
+            int conservativePointerSlots = (int)(objectSize / pointerSize);
+            int exactPointerSlots = (int)CGCDesc.GetNumPointers(rootMethodTable, objectSize, numComponents: 0);
+            Assert.True(conservativePointerSlots >= markStackSlotCapacity - 1);
+            Assert.True(exactPointerSlots < markStackSlotCapacity - 1);
+
+            gc_heap.mark_object_simple1(pHeap, root, root);
+
+            Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+            Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
+            Assert.Equal((nuint)0, survived[0]);
+            Assert.Equal((nuint)0, oldCardSurvived[0]);
+            Assert.Equal(0, ((CObjectHeader*)child)->IsMarked());
+            Assert.Equal((nuint)child, (nuint)gc_heap.mark_queue.get_next_marked());
+            Assert.True(((CObjectHeader*)child)->IsMarked() != 0);
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseMarkObjectSimple1SkipsAlreadyMarkedCycleReferences()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int RootReferenceCount = 17;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint rootObjectSize = 32 * pointerSize;
+        nuint childObjectSize = 2 * pointerSize;
+        byte* objectStorage = stackalloc byte[(int)(rootObjectSize + childObjectSize + pointerSize)];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* child = root + (nint)rootObjectSize;
+        byte** rootReferences = (byte**)(root + sizeof(nuint));
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* childDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootObjectSize,
+            (nuint)sizeof(nuint),
+            (nuint)RootReferenceCount,
+            hasPointers: 1);
+        MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+            childDescriptorStorage,
+            childObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: (nuint)1,
+            hasPointers: 1);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            ((CObjectHeader*)child)->RawSetMethodTable(childMethodTable);
+            *(byte**)(child + sizeof(nuint)) = child;
+
+            for (int index = 0; index < RootReferenceCount; index++)
+            {
+                rootReferences[index] = child;
+            }
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = child + (nint)childObjectSize;
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                generationMap[(nint)offset] = region_info.RI_GEN_1;
+                segmentMap[(nint)offset] = default;
+                segmentMap[(nint)offset].region_info.gen_num = (byte)gc_generation_num.soh_gen1;
+            }
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            byte** markList = stackalloc byte*[8];
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 8, survived, oldCardSurvived, regionCount));
+
+            mark* markStack = stackalloc mark[4];
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = 4;
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            gc_heap.mark_object_simple1(pHeap, root, root);
+
+            Assert.Equal(1, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.True(((CObjectHeader*)child)->IsMarked() != 0);
+            Assert.Equal(childObjectSize, SumRegionCounters(survived, regionCount));
+#if DEBUG
+            Assert.Equal(childObjectSize, gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    private static byte* AlignUp(byte* value, nuint alignment)
+    {
+        return (byte*)(((nuint)value + (alignment - 1)) & ~(alignment - 1));
+    }
+
+    private static MethodTable* InitializeSingleSeriesMethodTable(
+        byte* descriptorStorage,
+        nuint objectSize,
+        nuint startOffset,
+        nuint pointerCount,
+        int hasPointers)
+    {
+        int descriptorSize = sizeof(nuint) + sizeof(CGCDescSeries);
+        MethodTable* methodTable = (MethodTable*)(descriptorStorage + descriptorSize);
+        CGCDescSeries* series = (CGCDescSeries*)descriptorStorage;
+
+        *methodTable = default;
+        methodTable->m_uFlags = hasPointers != 0 ? MethodTable.HasPointersFlag : 0;
+        methodTable->m_uBaseSize = (uint)objectSize;
+        *((nuint*)methodTable - 1) = 1;
+
+        series->startoffset = startOffset;
+        series->seriessize = unchecked(
+            (nuint)((nint)(pointerCount * (nuint)sizeof(byte*)) - (nint)objectSize));
+        return methodTable;
+    }
+
+    private static MethodTable* InitializeRepeatingSeriesMethodTable(
+        byte* descriptorStorage,
+        nuint baseSize,
+        nuint componentSize,
+        nuint startOffset,
+        nuint pointersPerComponent,
+        nuint skipBytes)
+    {
+        int descriptorSize = sizeof(nuint) + sizeof(CGCDescSeries);
+        MethodTable* methodTable = (MethodTable*)(descriptorStorage + descriptorSize);
+        CGCDescSeries* series = (CGCDescSeries*)descriptorStorage;
+
+        *methodTable = default;
+        methodTable->m_uFlags = MethodTable.HasPointersFlag | MethodTable.HasComponentSizeFlag;
+        methodTable->m_uBaseSize = (uint)baseSize;
+        methodTable->m_usComponentSize = checked((ushort)componentSize);
+        *((nint*)methodTable - 1) = -1;
+
+        series->startoffset = startOffset;
+#if TARGET_64BIT
+        series->val_serie.set_val_serie_item((uint)pointersPerComponent, (uint)skipBytes);
+#else
+        series->val_serie.set_val_serie_item((ushort)pointersPerComponent, (ushort)skipBytes);
+#endif
+        return methodTable;
+    }
+
+    private static int MarkStackSlotsPerEntry()
+    {
+        return checked((int)((nuint)sizeof(mark) / (nuint)sizeof(byte*)));
+    }
+
+    private static int MarkStackSlotCapacity(nuint markStackLength)
+    {
+        return checked((int)(markStackLength * (nuint)MarkStackSlotsPerEntry()));
+    }
+
+    private static void SetRegionGenerationForAddress(
+        byte* address,
+        nuint minRegionIndex,
+        region_info* generationMap,
+        seg_mapping* segmentMap,
+        int generation)
+    {
+        nuint regionIndex = (nuint)address >> (int)gc_heap.min_segment_size_shr;
+        nint offset = (nint)(regionIndex - minRegionIndex);
+        generationMap[offset] = (region_info)generation;
+        segmentMap[offset].region_info.gen_num = (byte)generation;
+    }
+
+    private static nuint SumRegionCounters(nuint* counters, nuint count)
+    {
+        nuint total = 0;
+        for (nuint index = 0; index < count; index++)
+        {
+            total += counters[(nint)index];
+        }
+
+        return total;
+    }
+#endif
 #endif
 
     private static FieldInfo GetGCConfigField(string name)

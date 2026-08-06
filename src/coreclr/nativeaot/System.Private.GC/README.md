@@ -240,8 +240,12 @@ result after resetting all mark state (debug-asserting that disabled state), so 
 a writable empty list. The native `g_mark_list`,
 `g_mark_list_piece`, sizing policy, and growth/allocation ownership remain unported because
 they depend on global planning and multi-heap state; this port deliberately does not allocate a
-substitute. `mark_object_simple1`, `mark_object`, `drain_mark_queue`, and `mark_through_object`
-remain unrouted. Background marking remains deferred.
+substitute. The active WKS `USE_REGIONS` `mark_object_simple1` foreground helper is now
+translated, including the small-object capacity fallback through `CGCDesc.GetNumPointers`, the
+local `mark_stack_array` byte-slot traversal, partial-object continuation records, and queue-tail
+behavior that leaves the final prefetch slots pending for later drain. It remains unrouted from
+collection entrypoints, and `mark_object`, `drain_mark_queue`, and `mark_through_object` remain
+deferred. Background marking remains deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.
@@ -487,10 +491,12 @@ reference to collector state.
 
 `GCDesc.cs` translates the compact pointer-map records of `gcdesc.h`: the target-sized
 `val_serie_item`, the overlaid `CGCDescSeries` union, the backward-growing `CGCDesc`
-descriptor's size, initialization, series-address arithmetic, and MethodTable lookup. The
-allocation-free short-object scan in `MarkPhase.cs` consumes normal and negative-count repeating
-maps with the native `go_through_object_nostart` order. Native static assertions and direct tests
-cover normal, component-array, no-pointer, and negative-count repeating descriptors.
+descriptor's size, initialization, series-address arithmetic, MethodTable lookup, and
+`GetNumPointers` counting helper. The allocation-free short-object scan in `MarkPhase.cs`
+consumes normal and negative-count repeating maps with the native
+`go_through_object_nostart` order, and `mark_object_simple1` uses the same descriptor arithmetic
+for stack-capacity checks. Native static assertions and direct tests cover normal, component-array,
+no-pointer, and negative-count repeating descriptors.
 
 `gceventstatus.h`, `gcevent_serializers.h`, and the current `gcevents.h` table are translated.
 `GCEvents.cs` writes out the x-macro expansion in the native table's order: every known event

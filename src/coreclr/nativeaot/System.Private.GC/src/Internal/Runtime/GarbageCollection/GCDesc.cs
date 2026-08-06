@@ -123,6 +123,42 @@ namespace Internal.Runtime.GarbageCollection
             return (CGCDesc*)pMT;
         }
 
+        // Returns the number of immediate references this object has. The control flow and
+        // arithmetic intentionally mirror gcdesc.h so mark-stack capacity checks stay comparable.
+        public static nuint GetNumPointers(MethodTable* pMT, nuint objectSize, nuint numComponents)
+        {
+            nuint numOfPointers = 0;
+
+            if (pMT->ContainsGCPointers() != 0)
+            {
+                CGCDesc* map = GetCGCDescFromMT(pMT);
+                CGCDescSeries* cur = map->GetHighestSeries();
+                nint cnt = (nint)map->GetNumSeries();
+
+                if (cnt >= 0)
+                {
+                    CGCDescSeries* last = map->GetLowestSeries();
+                    do
+                    {
+                        numOfPointers += unchecked(cur->GetSeriesSize() + objectSize) / (nuint)sizeof(nuint);
+                        cur--;
+                    }
+                    while (cur >= last);
+                }
+                else
+                {
+                    for (nint index = 0; index > cnt; index--)
+                    {
+                        numOfPointers += ((val_serie_item*)cur + index)->nptrs;
+                    }
+
+                    numOfPointers *= numComponents;
+                }
+            }
+
+            return numOfPointers;
+        }
+
         public nuint GetNumSeries()
         {
             CGCDesc* self = (CGCDesc*)Unsafe.AsPointer(ref this);

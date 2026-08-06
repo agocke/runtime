@@ -74,6 +74,59 @@ public sealed unsafe class GCDescTests
     }
 
     [Fact]
+    public void GetNumPointersMatchesNormalDescriptorSeriesCount()
+    {
+        const int NumSeries = 2;
+        const int ObjectWords = 8;
+        int pointerSize = sizeof(nuint);
+        int objectSize = ObjectWords * pointerSize;
+        int descriptorSize = sizeof(nuint) + (NumSeries * sizeof(CGCDescSeries));
+        byte* storage = stackalloc byte[descriptorSize + sizeof(MethodTable)];
+        MethodTable* methodTable = (MethodTable*)(storage + descriptorSize);
+
+        methodTable->m_uFlags = MethodTable.HasPointersFlag;
+        *((nuint*)methodTable - 1) = NumSeries;
+
+        CGCDescSeries* lowest = (CGCDescSeries*)(storage);
+        lowest->seriessize = unchecked((nuint)(-(nint)(objectSize - pointerSize)));
+        lowest->startoffset = (nuint)pointerSize;
+
+        CGCDescSeries* highest = lowest + 1;
+        highest->seriessize = unchecked((nuint)(-(nint)(objectSize - (2 * pointerSize))));
+        highest->startoffset = (nuint)(4 * pointerSize);
+
+        Assert.Equal((nuint)3, CGCDesc.GetNumPointers(methodTable, (nuint)objectSize, numComponents: 0));
+
+        methodTable->m_uFlags = 0;
+        Assert.Equal((nuint)0, CGCDesc.GetNumPointers(methodTable, (nuint)objectSize, numComponents: 0));
+    }
+
+    [Fact]
+    public void GetNumPointersMatchesRepeatingDescriptorComponentScaling()
+    {
+        const int NumSeries = 2;
+        const int ComponentWords = 4;
+        const int ComponentCount = 3;
+        int descriptorSize = sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(val_serie_item);
+        int objectSize = sizeof(nuint) + (ComponentCount * ComponentWords * sizeof(nuint));
+        byte* storage = stackalloc byte[descriptorSize + sizeof(MethodTable)];
+        MethodTable* methodTable = (MethodTable*)(storage + descriptorSize);
+
+        methodTable->m_uFlags = MethodTable.HasPointersFlag | MethodTable.HasComponentSizeFlag;
+        methodTable->m_usComponentSize = (ushort)(ComponentWords * sizeof(nuint));
+        *((nint*)methodTable - 1) = -NumSeries;
+
+        CGCDescSeries* series = (CGCDescSeries*)(storage + sizeof(val_serie_item));
+        series->startoffset = (nuint)sizeof(nuint);
+        SetValueSeries((val_serie_item*)series, 0, sizeof(nuint), nptrs: 1);
+        SetValueSeries((val_serie_item*)series, -1, sizeof(nuint), nptrs: 2);
+
+        Assert.Equal(
+            (nuint)9,
+            CGCDesc.GetNumPointers(methodTable, (nuint)objectSize, ComponentCount));
+    }
+
+    [Fact]
     public void RecordLayoutsMatchNative()
     {
         Assert.Equal(IntPtr.Size, sizeof(val_serie_item));
@@ -283,12 +336,12 @@ public sealed unsafe class GCDescTests
         recorder->count++;
     }
 
-    private static void SetValueSeries(val_serie_item* series, int index, int skip)
+    private static void SetValueSeries(val_serie_item* series, int index, int skip, int nptrs = 1)
     {
 #if TARGET_64BIT
-        series[index].set_val_serie_item(1, (uint)skip);
+        series[index].set_val_serie_item((uint)nptrs, (uint)skip);
 #else
-        series[index].set_val_serie_item(1, (ushort)skip);
+        series[index].set_val_serie_item((ushort)nptrs, (ushort)skip);
 #endif
     }
 }

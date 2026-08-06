@@ -1,7 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Ported from the dependency-closed pinned-plug queue and mark-stack helpers in mark_phase.cpp and gcinternal.h.
+// Ported from dependency-closed pinned-plug queue/mark-stack helpers and the active WKS
+// USE_REGIONS mark_object_simple1 leaf in mark_phase.cpp and gcinternal.h.
 
 using System;
 using System.Diagnostics;
@@ -295,6 +296,12 @@ internal unsafe partial struct gc_heap
     public const nuint stolen = 2;
     public const nuint partial = 1;
     public const nuint partial_object = 3;
+    public const int partial_size_th = 100;
+#if MULTIPLE_HEAPS
+    public const int num_partial_refs = 64;
+#else
+    public const int num_partial_refs = 32;
+#endif
 
 #if USE_REGIONS && DEBUG
     // The WKS global promoted-byte recording is diagnostic-only when regions are enabled.
@@ -482,6 +489,93 @@ internal unsafe partial struct gc_heap
         }
 
         go_through_object(mt, o, size, context, callback, o, start_useful: 0);
+    }
+
+    private static int go_through_object_with_stop(
+        MethodTable* mt,
+        byte* o,
+        nuint size,
+        void* context,
+        delegate*<byte**, void*, int> callback,
+        byte* start,
+        int start_useful)
+    {
+        CGCDesc* map = CGCDesc.GetCGCDescFromMT(mt);
+        CGCDescSeries* cur = map->GetHighestSeries();
+        nint cnt = (nint)map->GetNumSeries();
+
+        if (cnt >= 0)
+        {
+            CGCDescSeries* last = map->GetLowestSeries();
+            do
+            {
+                byte** parm = (byte**)unchecked((nuint)o + cur->GetSeriesOffset());
+                byte** ppstop = (byte**)unchecked((nuint)parm + cur->GetSeriesSize() + size);
+                if (start_useful == 0 || (byte*)ppstop > start)
+                {
+                    if (start_useful != 0 && (byte*)parm < start)
+                    {
+                        parm = (byte**)start;
+                    }
+
+                    while (parm < ppstop)
+                    {
+                        if (callback(parm, context) == 0)
+                        {
+                            return 0;
+                        }
+
+                        parm++;
+                    }
+                }
+
+                cur--;
+            }
+            while (cur >= last);
+        }
+        else
+        {
+            byte** parm = (byte**)unchecked((nuint)o + cur->startoffset);
+            if (start_useful != 0 && start > (byte*)parm)
+            {
+                nuint component_size = mt->RawGetComponentSize();
+                parm = (byte**)unchecked(
+                    (nuint)parm + (((nuint)start - (nuint)parm) / component_size) * component_size);
+            }
+
+            byte* object_end = (byte*)unchecked((nuint)o + size - (nuint)sizeof(nuint));
+            while ((byte*)parm < object_end)
+            {
+                for (nint index = 0; index > cnt; index--)
+                {
+                    val_serie_item* item = (val_serie_item*)((byte*)cur + (index * sizeof(val_serie_item)));
+                    byte** ppstop = (byte**)unchecked(
+                        (nuint)parm + ((nuint)item->nptrs * (nuint)sizeof(byte*)));
+                    if (start_useful == 0 || (byte*)ppstop > start)
+                    {
+                        if (start_useful != 0 && (byte*)parm < start)
+                        {
+                            parm = (byte**)start;
+                        }
+
+                        do
+                        {
+                            if (callback(parm, context) == 0)
+                            {
+                                return 0;
+                            }
+
+                            parm++;
+                        }
+                        while (parm < ppstop);
+                    }
+
+                    parm = (byte**)unchecked((nuint)ppstop + (nuint)item->skip);
+                }
+            }
+        }
+
+        return 1;
     }
 
     // SHORT_PLUGS is unconditionally defined in gcpriv.h.
@@ -756,6 +850,210 @@ internal unsafe partial struct gc_heap
         return marked;
 #endif
     }
+
+#if USE_REGIONS && !MULTIPLE_HEAPS && !MH_SC_MARK
+    private unsafe struct mark_object_simple1_small_context
+    {
+        public gc_heap* heap;
+        public byte** mark_stack_tos;
+        public int full_p;
+        public int condemned_gen;
+        public int thread;
+    }
+
+    private unsafe struct mark_object_simple1_large_context
+    {
+        public gc_heap* heap;
+        public byte** mark_stack_tos;
+        public int full_p;
+        public int condemned_gen;
+        public int thread;
+        public int i;
+        public byte* ref_to_continue;
+    }
+
+    private static void mark_object_simple1_small_callback(byte** ppslot, void* context)
+    {
+        mark_object_simple1_small_context* mark_context = (mark_object_simple1_small_context*)context;
+        byte* o = mark_queue.queue_mark(*ppslot, mark_context->condemned_gen);
+        if (o is not null)
+        {
+            if (mark_context->full_p != 0)
+            {
+                m_boundary_fullgc(mark_context->heap, o);
+            }
+            else
+            {
+                m_boundary(mark_context->heap, o);
+            }
+
+            add_to_promoted_bytes(mark_context->heap, o, mark_context->thread);
+            if (contain_pointers_or_collectible(o) != 0)
+            {
+                *(mark_context->mark_stack_tos++) = o;
+            }
+        }
+    }
+
+    private static int mark_object_simple1_large_callback(byte** ppslot, void* context)
+    {
+        mark_object_simple1_large_context* mark_context = (mark_object_simple1_large_context*)context;
+        byte* o = mark_queue.queue_mark(*ppslot, mark_context->condemned_gen);
+        if (o is not null)
+        {
+            if (mark_context->full_p != 0)
+            {
+                m_boundary_fullgc(mark_context->heap, o);
+            }
+            else
+            {
+                m_boundary(mark_context->heap, o);
+            }
+
+            add_to_promoted_bytes(mark_context->heap, o, mark_context->thread);
+            if (contain_pointers_or_collectible(o) != 0)
+            {
+                *(mark_context->mark_stack_tos++) = o;
+                if (--mark_context->i == 0)
+                {
+                    mark_context->ref_to_continue = (byte*)((nuint)(ppslot + 1) | partial);
+                    return 0;
+                }
+            }
+        }
+
+        return 1;
+    }
+
+    public static void mark_object_simple1(gc_heap* heap, byte* oo, byte* start)
+    {
+        byte** mark_stack_tos = (byte**)mark_stack_array;
+        byte** mark_stack_limit = (byte**)&mark_stack_array[mark_stack_array_length];
+        byte** mark_stack_base = mark_stack_tos;
+
+        int full_p = settings.condemned_generation == GCInterfaceOffsets.max_generation ? 1 : 0;
+        int condemned_gen = settings.condemned_generation;
+        Debug.Assert((start >= oo) && (start < oo + size(oo)));
+
+        *mark_stack_tos = oo;
+
+        while (true)
+        {
+            const int thread = 0;
+
+            if (oo is not null && (nuint)oo != 4)
+            {
+                nuint s = 0;
+                if (stolen_p(oo) != 0)
+                {
+                    mark_stack_tos--;
+                    goto next_level;
+                }
+                else if (partial_p(oo) == 0 && ((s = size(oo)) < (partial_size_th * (nuint)sizeof(byte*))))
+                {
+                    int overflow_p = 0;
+
+                    if (mark_stack_tos + (nint)(s / (nuint)sizeof(byte*)) >= (mark_stack_limit - 1))
+                    {
+                        nuint num_components = method_table(oo)->HasComponentSize() != 0
+                            ? CObjectHeader.GetNumComponents((CObjectHeader*)oo)
+                            : 0;
+
+                        if (mark_stack_tos + (nint)CGCDesc.GetNumPointers(method_table(oo), s, num_components) >=
+                            (mark_stack_limit - 1))
+                        {
+                            overflow_p = 1;
+                        }
+                    }
+
+                    if (overflow_p == 0)
+                    {
+                        mark_object_simple1_small_context context = new()
+                        {
+                            heap = heap,
+                            mark_stack_tos = mark_stack_tos,
+                            full_p = full_p,
+                            condemned_gen = condemned_gen,
+                            thread = thread,
+                        };
+
+                        go_through_object_nostart(method_table(oo), oo, s, &context, &mark_object_simple1_small_callback);
+                        mark_stack_tos = context.mark_stack_tos;
+                    }
+                    else
+                    {
+                        record_mark_stack_overflow(heap, oo);
+                    }
+                }
+                else
+                {
+                    if (partial_p(oo) != 0)
+                    {
+                        start = ref_from_slot(oo);
+                        oo = ref_from_slot(*(--mark_stack_tos));
+                        Debug.Assert((oo < start) && (start < (oo + size(oo))));
+                    }
+
+                    s = size(oo);
+                    int overflow_p = 0;
+
+                    if (mark_stack_tos + (num_partial_refs + 2) >= mark_stack_limit)
+                    {
+                        overflow_p = 1;
+                    }
+
+                    if (overflow_p == 0)
+                    {
+                        byte** place = ++mark_stack_tos;
+                        mark_stack_tos++;
+                        mark_object_simple1_large_context context = new()
+                        {
+                            heap = heap,
+                            mark_stack_tos = mark_stack_tos,
+                            full_p = full_p,
+                            condemned_gen = condemned_gen,
+                            thread = thread,
+                            i = num_partial_refs,
+                            ref_to_continue = null,
+                        };
+
+                        go_through_object_with_stop(
+                            method_table(oo),
+                            oo,
+                            s,
+                            &context,
+                            &mark_object_simple1_large_callback,
+                            start,
+                            start_useful: 1);
+
+                        mark_stack_tos = context.mark_stack_tos;
+                        if (context.ref_to_continue is null)
+                        {
+                            *(place - 1) = null;
+                        }
+
+                        *place = context.ref_to_continue;
+                    }
+                    else
+                    {
+                        record_mark_stack_overflow(heap, oo);
+                    }
+                }
+            }
+
+        next_level:
+            if (mark_stack_base != mark_stack_tos)
+            {
+                oo = *(--mark_stack_tos);
+                start = oo;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+#endif
 
     private const uint CORINFO_EXCEPTION_GC = 0xE0004743;
 

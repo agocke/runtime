@@ -722,8 +722,9 @@ Translate the schema from `gcpriv.h` and related headers:
   are verified against the native classes and by the managed startup verifier.
 - The `gcdesc.h` records and descriptor arithmetic: `val_serie_item`, `CGCDescSeries`, and
   `CGCDesc` size, initialization, backward series lookup, and MethodTable lookup. The
-  short-object scanner consumes those descriptors with the native series and slot order; the
-  MethodTable-dependent pointer-counting helper remains tied to later mark-stack capacity work.
+  short-object scanner consumes those descriptors with the native series and slot order, and the
+  MethodTable-dependent `CGCDesc::GetNumPointers` helper is now translated for mark-stack
+  capacity checks.
 - The next foreground-marking prerequisites from `mark_phase.cpp` and `gcinternal.h`: native
   `stolen`/`partial` tag predicates and untagging, the active WKS `USE_REGIONS` 16-slot
   `MARK_PHASE_PREFETCH` `mark_queue_t` transitions, MethodTable/array object-size arithmetic,
@@ -752,6 +753,14 @@ Translate the schema from `gcpriv.h` and related headers:
   `g_mark_list_piece` backing allocation, size/growth policy, and ownership remain blocked on
   unported planning and multi-heap globals, so setup intentionally accepts caller-owned storage
   and collection entrypoints remain unrouted.
+- The active WKS `USE_REGIONS` `mark_object_simple1` body from `mark_phase.cpp`: the local
+  `mark_stack_array` byte-slot traversal starts at `(byte**)mark_stack_array`, preserves
+  small-object fallback capacity checks via `CGCDesc::GetNumPointers`, carries the native
+  `partial_size_th`/`num_partial_refs` split and continuation tags, and keeps prefetch-queue
+  behavior where the final 16 slots remain pending until a later drain. Focused tests cover
+  partial/full boundary accounting, generation filtering, continuation/resume over more than
+  32 pointer-bearing children, overflow extrema, already-marked cycles, and observable queue-tail
+  ordering.
 - The first dependency-free `gcpriv.h` records: `static_data`,
   `recorded_generation_info`, and `etw_opt_info`. These establish the pointer-sized schema used
   by dynamic tuning, recorded GC information, and allocation diagnostics.
@@ -1189,20 +1198,22 @@ state match the C++ implementation across supported architectures.
 ### 9. Collection phases
 
 **Status: In progress -- pinned-plug queue enqueue/save, mark-stack growth/reset setup,
-object-header special-bit and padded-plug prerequisites, short-object descriptor scan, and the
-first foreground mark-bitmap/header-marking leaves are translated; collection marking is not
-routed**
+object-header special-bit and padded-plug prerequisites, short-object descriptor scan, the
+foreground `gc_mark1`/`gc_mark` leaves, and the active WKS `USE_REGIONS` `mark_object_simple1`
+body are translated; collection entrypoints and draining remain unrouted**
 
 Translate in dependency order:
 
 - `mark_phase.cpp` (the dependency-closed pinned-plug queue enqueue/save and mark-stack
   growth/reset setup, plus the `CObjectHeader`/`MethodTable` special-bit, pointer-flag,
   short-plug-size, padded-plug, and `go_through_object_nostart` descriptor-scan prerequisites,
-  `is_mark_bit_set`/`clear_mark_array`, and the active WKS `USE_REGIONS` `gc_mark1`/`gc_mark`
-  leaves are translated; mark-array indexing preserves the native absolute-address bias and
-  first partial-word clear; `gc_mark` preserves the half-open range and region-generation
-  tests, but has no collection entrypoint or mark-stack traversal yet; `GC_CONFIG_DRIVEN`
-  interesting-data-point updates are omitted because the
+  `is_mark_bit_set`/`clear_mark_array`, the active WKS `USE_REGIONS` `gc_mark1`/`gc_mark`
+  leaves, and the active WKS `USE_REGIONS` `mark_object_simple1` traversal are translated;
+  mark-array indexing preserves the native absolute-address bias and first partial-word clear;
+  `gc_mark` preserves the half-open range and region-generation tests; `mark_object_simple1`
+  preserves local mark-stack aliasing, partial-object continuation, and queued-tail semantics;
+  `mark_object`, `drain_mark_queue`, root scanning, and lifecycle routing remain deferred;
+  `GC_CONFIG_DRIVEN` interesting-data-point updates are omitted because the
   managed NativeAOT build defines neither that symbol nor its diagnostic storage; the
   `_DEBUG && VERIFY_HEAP` `verify_pinned_queue_p` assignment remains deferred with
   `verify_pins_with_post_plug_info` and relocate-compact verification state)
