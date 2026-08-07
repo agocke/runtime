@@ -860,6 +860,14 @@ namespace Internal.Runtime.GarbageCollection
             private int _element0;
         }
 
+        private const int FullGcTypeCount = 3;
+
+        [InlineArray(FullGcTypeCount)]
+        internal struct full_gc_count_array
+        {
+            private nuint _element0;
+        }
+
         internal unsafe struct reserved_region_array
         {
             public heap_segment* element0;
@@ -987,6 +995,9 @@ namespace Internal.Runtime.GarbageCollection
         public static int loh_compaction_always_p;
         public static gc_loh_compaction_mode loh_compaction_mode;
         public static int loh_compacted_p;
+        public const int gc_type_compacting = 0;
+        public static full_gc_count_array full_gc_counts;
+        public static ulong loh_alloc_since_cg;
         public static gc_history_per_heap gc_data_per_heap;
         public static fgm_history fgm_result;
         public static gc_history_global gc_data_global;
@@ -1037,6 +1048,8 @@ namespace Internal.Runtime.GarbageCollection
             loh_compaction_always_p = 0;
             loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_default;
             loh_compacted_p = 0;
+            full_gc_counts = default;
+            loh_alloc_since_cg = 0;
             initialize_loh_pinned_queue_state();
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
@@ -4060,6 +4073,47 @@ namespace Internal.Runtime.GarbageCollection
                 for (byte** current = startIndex; current < stopIndex; current++)
                 {
                     gc_heap.relocate(current, &scanContext);
+                }
+            }
+        }
+
+        public void UpdatePromotedGenerations(int gen, int gen_0_empty_p)
+        {
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                if (gen_0_empty_p != 0)
+                {
+                    int oldestPromotedGeneration = gen + 1 < GCInterfaceOffsets.max_generation
+                        ? gen + 1
+                        : GCInterfaceOffsets.max_generation;
+                    for (int i = oldestPromotedGeneration; i > 0; i--)
+                    {
+                        fillPointers[gen_segment(i)] =
+                            fillPointers[gen_segment(i - 1)];
+                    }
+
+                    return;
+                }
+
+                for (int i = gen; i >= 0; i--)
+                {
+                    uint segment = gen_segment(i);
+                    byte** startIndex = seg_queue(fillPointers, m_Array, (int)segment);
+                    for (byte** current = startIndex;
+                         current < seg_queue_limit(fillPointers, m_EndArray, (int)segment);
+                         current++)
+                    {
+                        int newGeneration = (int)ManagedGCHeap.GenerationOf(*current);
+                        if (newGeneration != i)
+                        {
+                            Debug.Assert(newGeneration <= GCInterfaceOffsets.max_generation);
+                            MoveItem(current, segment, gen_segment(newGeneration));
+                            if (newGeneration < i)
+                            {
+                                current--;
+                            }
+                        }
+                    }
                 }
             }
         }

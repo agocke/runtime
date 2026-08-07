@@ -11,6 +11,8 @@ namespace Internal.Runtime.GarbageCollection;
 
 internal static unsafe class HandleTableScan
 {
+    private const byte MaxGenerationAge = 0x3f;
+
     public static void Ref_TracePinningRoots(
         int condemned,
         int max_gen,
@@ -252,6 +254,200 @@ internal static unsafe class HandleTableScan
             condemned,
             max_gen,
             HandleTableConstants.HNDGCF_EXTRAINFO);
+    }
+
+    public static void Ref_AgeHandles(int condemned, int max_gen, ScanContext* sc)
+    {
+        Debug.Assert(condemned >= max_gen);
+        Debug.Assert(sc->concurrent == 0);
+
+        ForEachAgedHandleBlock(&AgeFullGcBlock);
+    }
+
+    public static void Ref_RejuvenateHandles(int condemned, int max_gen, ScanContext* sc)
+    {
+        Debug.Assert(condemned >= max_gen);
+        Debug.Assert(sc->concurrent == 0);
+
+        ForEachAgedHandleBlock(&ResetFullGcAgeMapBlock);
+    }
+
+    private static void ForEachAgedHandleBlock(
+        delegate*<TableSegment*, uint, void> action)
+    {
+        HandleTableMap* walk =
+            (HandleTableMap*)Unsafe.AsPointer(ref ObjectHandle.g_HandleTableMap);
+        while (walk is not null)
+        {
+            HandleTableBucket** buckets = walk->pBuckets;
+            if (buckets is not null)
+            {
+                for (uint bucketIndex = 0;
+                     bucketIndex < HandleTableConstants.INITIAL_HANDLE_TABLE_ARRAY_SIZE;
+                     bucketIndex++)
+                {
+                    HandleTableBucket* bucket = buckets[bucketIndex];
+                    if (bucket is null || bucket->pTable is null)
+                    {
+                        continue;
+                    }
+
+                    int slotCount = ObjectHandle.getNumberOfSlots();
+                    for (int slotIndex = 0; slotIndex < slotCount; slotIndex++)
+                    {
+                        HandleTable* table = bucket->pTable[slotIndex];
+                        if (table is null)
+                        {
+                            continue;
+                        }
+
+                        using HandleTableCrstHolder holder =
+                            new(&table->Lock);
+                        for (TableSegment* segment = table->pSegmentList;
+                             segment is not null;
+                             segment = segment->Header.pNextSegment)
+                        {
+                            for (uint block = 0;
+                                 block < segment->Header.bEmptyLine;
+                                 block++)
+                            {
+                                if (HandleTypeNeedsAging(
+                                        segment->Header.rgBlockType[block]))
+                                {
+                                    action(segment, block);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            walk = walk->pNext;
+        }
+    }
+
+    private static bool HandleTypeNeedsAging(byte type)
+    {
+        if (type == (byte)HandleType.HNDTYPE_WEAK_SHORT ||
+            type == (byte)HandleType.HNDTYPE_WEAK_LONG ||
+            type == (byte)HandleType.HNDTYPE_STRONG ||
+            type == (byte)HandleType.HNDTYPE_PINNED ||
+            type == (byte)HandleType.HNDTYPE_DEPENDENT ||
+            type == (byte)HandleType.HNDTYPE_REFCOUNTED ||
+            type == (byte)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER)
+        {
+            return true;
+        }
+
+#if FEATURE_VARIABLE_HANDLES
+        if (type == (byte)HandleType.HNDTYPE_VARIABLE)
+        {
+            return true;
+        }
+#endif
+#if FEATURE_WEAK_NATIVE_COM_HANDLES
+        if (type == (byte)HandleType.HNDTYPE_WEAK_NATIVE_COM)
+        {
+            return true;
+        }
+#endif
+#if FEATURE_ASYNC_PINNED_HANDLES
+        if (type == (byte)HandleType.HNDTYPE_ASYNCPINNED)
+        {
+            return true;
+        }
+#endif
+#if FEATURE_SIZED_REF_HANDLES
+        if (type == (byte)HandleType.HNDTYPE_SIZEDREF)
+        {
+            return true;
+        }
+#endif
+#if FEATURE_JAVAMARSHAL
+        if (type == (byte)HandleType.HNDTYPE_CROSSREFERENCE)
+        {
+            return true;
+        }
+#endif
+
+        return false;
+    }
+
+    private static void AgeFullGcBlock(TableSegment* segment, uint block)
+    {
+        byte* ages =
+            segment->Header.rgGeneration +
+            (block * HandleTableConstants.HANDLE_CLUMPS_PER_BLOCK);
+        for (int clump = 0;
+             clump < HandleTableConstants.HANDLE_CLUMPS_PER_BLOCK;
+             clump++)
+        {
+            if (ages[clump] < MaxGenerationAge)
+            {
+                ages[clump]++;
+            }
+        }
+    }
+
+    private static void ResetFullGcAgeMapBlock(TableSegment* segment, uint block)
+    {
+        nuint* values =
+            (nuint*)segment->rgValue +
+            (block * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK);
+        nuint* userData = null;
+        if (segment->Header.rgBlockType[block] ==
+            (byte)HandleType.HNDTYPE_DEPENDENT)
+        {
+            byte userDataBlock = segment->Header.rgUserData[block];
+            Debug.Assert(userDataBlock != HandleTableConstants.BLOCK_INVALID);
+            userData =
+                (nuint*)segment->rgValue +
+                (userDataBlock * HandleTableConstants.HANDLE_HANDLES_PER_BLOCK);
+        }
+
+        byte* ages =
+            segment->Header.rgGeneration +
+            (block * HandleTableConstants.HANDLE_CLUMPS_PER_BLOCK);
+        for (int clump = 0;
+             clump < HandleTableConstants.HANDLE_CLUMPS_PER_BLOCK;
+             clump++)
+        {
+            if (ages[clump] >= MaxGenerationAge)
+            {
+                continue;
+            }
+
+            int minAge = MaxGenerationAge;
+            int firstHandle = clump * HandleTableConstants.HANDLE_HANDLES_PER_CLUMP;
+            int lastHandle = firstHandle + HandleTableConstants.HANDLE_HANDLES_PER_CLUMP;
+            for (int handleIndex = firstHandle;
+                 handleIndex < lastHandle;
+                 handleIndex++)
+            {
+                nuint value = values[handleIndex];
+                if (!HandleTableCore.HndIsNullOrDestroyedHandle(value))
+                {
+                    int generation = HandleTableManager.GetConvertedGeneration((byte*)value);
+                    if (generation < minAge)
+                    {
+                        minAge = generation;
+                    }
+
+                    if (userData is not null && userData[handleIndex] != 0)
+                    {
+                        int secondaryGeneration =
+                            HandleTableManager.GetConvertedGeneration(
+                                (byte*)userData[handleIndex]);
+                        if (secondaryGeneration < minAge)
+                        {
+                            minAge = secondaryGeneration;
+                        }
+                    }
+                }
+            }
+
+            ages[clump] = unchecked((byte)minAge);
+        }
     }
 
     private static void TraceHandleTables(

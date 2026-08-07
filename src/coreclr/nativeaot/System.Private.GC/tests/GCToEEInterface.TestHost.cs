@@ -217,6 +217,14 @@ internal static unsafe class GCToEEInterface
 
     internal static Action SyncBlockCacheWeakPtrScanObserver { get; set; }
 
+    internal static int SyncBlockCacheDemoteCallCount { get; private set; }
+
+    internal static int LastSyncBlockCacheDemoteGeneration { get; private set; }
+
+    internal static int SyncBlockCachePromotionsGrantedCallCount { get; private set; }
+
+    internal static int LastSyncBlockCachePromotionsGrantedGeneration { get; private set; }
+
     internal static int GetThreadCallCount { get; private set; }
 
     internal static void* CurrentThread { get; set; }
@@ -288,6 +296,10 @@ internal static unsafe class GCToEEInterface
         LastSyncBlockCacheWeakPtrScanParameter2 = 0;
         SyncBlockCacheWeakPtrScanSlot = null;
         SyncBlockCacheWeakPtrScanObserver = null;
+        SyncBlockCacheDemoteCallCount = 0;
+        LastSyncBlockCacheDemoteGeneration = 0;
+        SyncBlockCachePromotionsGrantedCallCount = 0;
+        LastSyncBlockCachePromotionsGrantedGeneration = 0;
         GetThreadCallCount = 0;
         CurrentThread = null;
         LastFiredEvent = FiredEvent.None;
@@ -315,6 +327,18 @@ internal static unsafe class GCToEEInterface
     }
 
     public static uint GetCurrentProcessCpuCount() => (uint)Environment.ProcessorCount;
+
+    public static void SyncBlockCacheDemote(int max_gen)
+    {
+        SyncBlockCacheDemoteCallCount++;
+        LastSyncBlockCacheDemoteGeneration = max_gen;
+    }
+
+    public static void SyncBlockCachePromotionsGranted(int max_gen)
+    {
+        SyncBlockCachePromotionsGrantedCallCount++;
+        LastSyncBlockCachePromotionsGrantedGeneration = max_gen;
+    }
 
     public static void BeforeGcScanRoots(int condemned, byte is_bgc, byte is_concurrent)
     {

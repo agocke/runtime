@@ -1277,13 +1277,27 @@ internal unsafe partial struct gc_heap
         int condemned_gen_number,
         byte* first_condemned_address)
     {
-        gc_heap* hp = ManagedGCRegionBootstrap.Heap;
+        if (settings.compaction == 0)
+        {
+            return false;
+        }
+
+        return relocate_phase(
+            ManagedGCRegionBootstrap.Heap,
+            condemned_gen_number,
+            first_condemned_address);
+    }
+
+    public static bool relocate_phase(
+        gc_heap* hp,
+        int condemned_gen_number,
+        byte* first_condemned_address)
+    {
         CFinalize* finalizeQueue = finalize_queue;
         if (hp is null ||
             finalizeQueue is null ||
             condemned_gen_number != GCInterfaceOffsets.max_generation ||
             settings.condemned_generation != condemned_gen_number ||
-            settings.compaction == 0 ||
             settings.concurrent != 0 ||
 #if BACKGROUND_GC
             settings.background_p != 0 ||
@@ -1340,11 +1354,27 @@ internal unsafe partial struct gc_heap
         byte* first_condemned_address,
         int clear_cards)
     {
-        gc_heap* hp = ManagedGCRegionBootstrap.Heap;
+        if (settings.compaction == 0)
+        {
+            return false;
+        }
+
+        return compact_phase(
+            ManagedGCRegionBootstrap.Heap,
+            condemned_gen_number,
+            first_condemned_address,
+            clear_cards);
+    }
+
+    public static bool compact_phase(
+        gc_heap* hp,
+        int condemned_gen_number,
+        byte* first_condemned_address,
+        int clear_cards)
+    {
         if (hp is null ||
             condemned_gen_number != GCInterfaceOffsets.max_generation ||
             settings.condemned_generation != condemned_gen_number ||
-            settings.compaction == 0 ||
             settings.concurrent != 0 ||
 #if BACKGROUND_GC
             settings.background_p != 0 ||

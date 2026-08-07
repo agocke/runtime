@@ -589,6 +589,92 @@ public sealed unsafe class HandleTableTests
     }
 
     [Fact]
+    public void FullGcHandleAgingAndRejuvenationIncludesDependentSecondaries()
+    {
+        SyncImports.ResetRecording();
+        GCToEEInterface.Reset();
+        ManagedGCHeap.Reset();
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+
+        try
+        {
+            byte* strongObject = (byte*)0x1000;
+            byte* dependentPrimary = (byte*)0x2000;
+            byte* dependentSecondary = (byte*)0x3000;
+            OBJECTHANDLE strong = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_STRONG,
+                strongObject,
+                0);
+            OBJECTHANDLE dependent = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                dependentPrimary,
+                (nuint)dependentSecondary);
+
+            TableSegment* strongSegment =
+                (TableSegment*)HandleTableCore.HandleFetchSegmentPointer(strong);
+            TableSegment* dependentSegment =
+                (TableSegment*)HandleTableCore.HandleFetchSegmentPointer(dependent);
+            nuint strongOrdinal =
+                (((nuint)strong.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK) -
+                 HandleTableConstants.HANDLE_HEADER_SIZE) /
+                (nuint)IntPtr.Size;
+            nuint dependentOrdinal =
+                (((nuint)dependent.Value & HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK) -
+                 HandleTableConstants.HANDLE_HEADER_SIZE) /
+                (nuint)IntPtr.Size;
+            int strongClump =
+                (int)(strongOrdinal / HandleTableConstants.HANDLE_HANDLES_PER_CLUMP);
+            int dependentClump =
+                (int)(dependentOrdinal / HandleTableConstants.HANDLE_HANDLES_PER_CLUMP);
+            int unusedDependentClump = dependentClump + 1;
+            strongSegment->Header.rgGeneration[strongClump] = 2;
+            dependentSegment->Header.rgGeneration[dependentClump] = 2;
+            dependentSegment->Header.rgGeneration[unusedDependentClump] = byte.MaxValue;
+
+            ScanContext scanContext = default;
+            scanContext.thread_count = 1;
+            GCScan.GcPromotionsGranted(
+                GCInterfaceOffsets.max_generation,
+                GCInterfaceOffsets.max_generation,
+                &scanContext);
+
+            Assert.Equal(3, strongSegment->Header.rgGeneration[strongClump]);
+            Assert.Equal(3, dependentSegment->Header.rgGeneration[dependentClump]);
+            Assert.Equal(
+                byte.MaxValue,
+                dependentSegment->Header.rgGeneration[unusedDependentClump]);
+            Assert.Equal(1, GCToEEInterface.SyncBlockCachePromotionsGrantedCallCount);
+
+            ManagedGCHeap.TestGeneration = 2;
+            ManagedGCHeap.TestGenerationObject = (nint)dependentSecondary;
+            ManagedGCHeap.TestGenerationForObject = 0;
+            GCScan.GcDemote(
+                GCInterfaceOffsets.max_generation,
+                GCInterfaceOffsets.max_generation,
+                &scanContext);
+
+            Assert.Equal(2, strongSegment->Header.rgGeneration[strongClump]);
+            Assert.Equal(0, dependentSegment->Header.rgGeneration[dependentClump]);
+            Assert.Equal(
+                byte.MaxValue,
+                dependentSegment->Header.rgGeneration[unusedDependentClump]);
+            Assert.Equal(1, GCToEEInterface.SyncBlockCacheDemoteCallCount);
+        }
+        finally
+        {
+            ManagedGCHeap.Reset();
+            GCToEEInterface.Reset();
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+            SyncImports.ResetRecording();
+        }
+    }
+
+    [Fact]
     public void CreateHandleReusesDestroyedDebugHandle()
     {
         uint* typeFlags = stackalloc uint[1];

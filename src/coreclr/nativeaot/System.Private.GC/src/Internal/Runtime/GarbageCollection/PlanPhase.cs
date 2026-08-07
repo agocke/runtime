@@ -1610,12 +1610,15 @@ internal unsafe partial struct gc_heap
     {
         if (hp is null ||
             settings.condemned_generation != GCInterfaceOffsets.max_generation ||
+            (settings.compaction != 0 && settings.compaction != 1) ||
             settings.concurrent != 0 ||
             (settings.promotion != 0 && settings.promotion != 1) ||
+            finalize_queue is null ||
             mark_stack_array is null ||
             mark_stack_array_length == 0 ||
             mark_stack_bos != 0 ||
             mark_stack_tos != 0 ||
+            card_table is null ||
             brick_table is null ||
             map_region_to_generation is null ||
             map_region_to_generation_skewed is null ||
@@ -1624,6 +1627,7 @@ internal unsafe partial struct gc_heap
             GCCommon.g_gc_highest_address <= GCCommon.g_gc_lowest_address ||
             bookkeeping_covered_committed is null ||
             lowest_address is null ||
+            highest_address <= lowest_address ||
             min_segment_size_shr == 0 ||
             region_count == 0 ||
             global_region_allocator.get_region_alignment() !=
@@ -1738,6 +1742,84 @@ internal unsafe partial struct gc_heap
 
                 tail = seg;
                 seg = heap_segment.heap_segment_next(seg);
+            }
+
+            if (tail != generation.generation_tail_region(gen))
+            {
+                return false;
+            }
+        }
+
+        for (int gen_num = (int)gc_generation_num.loh_generation;
+             gen_num <= (int)gc_generation_num.poh_generation;
+             gen_num++)
+        {
+            generation* gen = generation_of(generation_table, gen_num);
+            heap_segment* segment = generation.generation_start_segment(gen);
+            if (gen->gen_num != gen_num ||
+                segment is null ||
+                generation.generation_allocation_segment(gen) is null ||
+                generation.generation_tail_region(gen) is null)
+            {
+                return false;
+            }
+
+            nuint segmentCount = 0;
+            heap_segment* tail = null;
+            while (segment is not null)
+            {
+                bool readOnly = heap_segment.heap_segment_read_only_p(segment) != 0;
+                if (++segmentCount > region_count + 1 ||
+                    heap_segment.heap_segment_uoh_p(segment) == 0 ||
+                    heap_segment.heap_segment_gen_num(segment) != gen_num ||
+                    heap_segment.heap_segment_mem(segment) is null ||
+                    (!readOnly &&
+                     heap_segment.heap_segment_mem(segment) < lowest_address) ||
+                    heap_segment.heap_segment_mem(segment) >
+                        heap_segment.heap_segment_allocated(segment) ||
+                    heap_segment.heap_segment_allocated(segment) >
+                        heap_segment.heap_segment_committed(segment) ||
+                    heap_segment.heap_segment_committed(segment) >
+                        heap_segment.heap_segment_reserved(segment) ||
+                    (!readOnly &&
+                     heap_segment.heap_segment_reserved(segment) > highest_address))
+                {
+                    return false;
+                }
+
+                byte* objectAddress = heap_segment.heap_segment_mem(segment);
+                byte* allocated = heap_segment.heap_segment_allocated(segment);
+                while (objectAddress < allocated)
+                {
+                    CObjectHeader* header = (CObjectHeader*)objectAddress;
+                    if (header->GetMethodTable() is null)
+                    {
+                        return false;
+                    }
+
+                    nuint objectSize = size(objectAddress);
+                    nuint alignedSize = AlignQword(objectSize);
+                    if (objectSize == 0 ||
+                        alignedSize <
+                            Align(
+                                (nuint)GCInterfaceOffsets.min_obj_size,
+                                get_alignment_constant(small_object_p: false)) ||
+                        alignedSize > (nuint)(allocated - objectAddress) ||
+                        (header->IsPinned() != 0 && header->IsMarked() == 0))
+                    {
+                        return false;
+                    }
+
+                    objectAddress += (nint)alignedSize;
+                }
+
+                if (objectAddress != allocated)
+                {
+                    return false;
+                }
+
+                tail = segment;
+                segment = heap_segment.heap_segment_next(segment);
             }
 
             if (tail != generation.generation_tail_region(gen))
@@ -2236,7 +2318,234 @@ internal unsafe partial struct gc_heap
                 local_mark_list_index);
         }
 
+        nuint fragmentation = generation_fragmentation(
+            hp,
+            generation_of(generation_table, condemned_gen_number),
+            consing_gen,
+            heap_segment.heap_segment_allocated(hp->ephemeral_heap_segment));
+
+        bool shouldExpand = false;
+        bool shouldCompact = decide_on_compacting(
+            hp,
+            condemned_gen_number,
+            fragmentation,
+            ref shouldExpand);
+
+        if (settings.loh_compaction != 0)
+        {
+            shouldCompact = true;
+            gc_data_per_heap.set_mechanism(
+                gc_mechanism_per_heap.gc_heap_compact,
+                (uint)gc_heap_compact_reason.compact_loh_forced);
+        }
+        else
+        {
+            sweep_uoh_objects(hp, (int)gc_generation_num.loh_generation);
+        }
+
+        sweep_uoh_objects(hp, (int)gc_generation_num.poh_generation);
+
+        if (shouldCompact)
+        {
+            full_gc_counts[gc_type_compacting]++;
+            loh_alloc_since_cg = 0;
+        }
+
+        if (special_sweep_p)
+        {
+            shouldCompact = false;
+        }
+
+        loh_compacted_p = 0;
+        if (settings.loh_compaction != 0)
+        {
+            if (shouldCompact && plan_loh(hp))
+            {
+                loh_compacted_p = 1;
+            }
+            else
+            {
+                sweep_uoh_objects(hp, (int)gc_generation_num.loh_generation);
+            }
+        }
+        else if (loh_pinned_queue is not null)
+        {
+            decay_loh_pinned_queue();
+        }
+
+        _ = shouldExpand;
+        if (shouldCompact)
+        {
+            generation.generation_allocation_limit(condemned_gen1) =
+                generation.generation_allocation_pointer(condemned_gen1);
+
+            if (!relocate_phase(hp, condemned_gen_number, first_condemned_address) ||
+                !compact_phase(
+                    hp,
+                    condemned_gen_number,
+                    first_condemned_address,
+                    settings.demotion == 0 && settings.promotion != 0 ? 1 : 0))
+            {
+                return false;
+            }
+
+            fix_generation_bounds(hp, condemned_gen_number, consing_gen);
+            Debug.Assert(
+                generation.generation_allocation_limit(
+                    generation_of(generation_table, 0)) ==
+                generation.generation_allocation_pointer(
+                    generation_of(generation_table, 0)));
+
+            end_gen0_region_committed_space =
+                get_gen0_end_space(hp, memory_type.memory_type_committed);
+
+            finalize_queue->UpdatePromotedGenerations(
+                condemned_gen_number,
+                settings.demotion == 0 && settings.promotion != 0 ? 1 : 0);
+
+            ScanContext scanContext = default;
+            scanContext.init();
+            scanContext.thread_number = hp->heap_number;
+            scanContext.thread_count = 1;
+            scanContext.promotion = 0;
+            scanContext.concurrent = 0;
+            if (settings.promotion != 0 && settings.demotion == 0)
+            {
+                GCScan.GcPromotionsGranted(
+                    condemned_gen_number,
+                    GCInterfaceOffsets.max_generation,
+                    &scanContext);
+            }
+            else if (settings.demotion != 0)
+            {
+                GCScan.GcDemote(
+                    condemned_gen_number,
+                    GCInterfaceOffsets.max_generation,
+                    &scanContext);
+            }
+
+            thread_pinned_plug_gaps(hp);
+            clear_gen1_cards(hp);
+        }
+        else
+        {
+            settings.promotion = 1;
+            settings.compaction = 0;
+            settings.demotion = 0;
+
+            make_free_lists(hp, condemned_gen_number);
+            nuint totalRecoveredSweepSize = recover_saved_pinned_info();
+            if (totalRecoveredSweepSize > 0)
+            {
+                generation* maxGeneration =
+                    generation_of(generation_table, GCInterfaceOffsets.max_generation);
+                Debug.Assert(
+                    generation.generation_free_obj_space(maxGeneration) >=
+                    totalRecoveredSweepSize);
+                generation.generation_free_obj_space(maxGeneration) -=
+                    totalRecoveredSweepSize;
+            }
+
+            end_gen0_region_committed_space =
+                get_gen0_end_space(hp, memory_type.memory_type_committed);
+
+            if (!special_sweep_p)
+            {
+                ScanContext scanContext = default;
+                scanContext.init();
+                scanContext.thread_number = hp->heap_number;
+                scanContext.thread_count = 1;
+                scanContext.promotion = 0;
+                scanContext.concurrent = 0;
+                GCScan.GcPromotionsGranted(
+                    condemned_gen_number,
+                    GCInterfaceOffsets.max_generation,
+                    &scanContext);
+
+                finalize_queue->UpdatePromotedGenerations(
+                    condemned_gen_number,
+                    gen_0_empty_p: 1);
+                clear_gen1_cards(hp);
+            }
+        }
+
         return true;
+    }
+
+    public static void fix_generation_bounds(
+        gc_heap* hp,
+        int condemned_gen_number,
+        generation* consing_gen)
+    {
+        _ = consing_gen;
+        Debug.Assert(condemned_gen_number == GCInterfaceOffsets.max_generation);
+
+        thread_final_regions(hp, compact_p: true);
+
+        generation* youngestGeneration =
+            generation_of(generation_table_of(hp), 0);
+        hp->ephemeral_heap_segment =
+            generation.generation_start_segment(youngestGeneration);
+        hp->alloc_allocated =
+            heap_segment.heap_segment_plan_allocated(hp->ephemeral_heap_segment);
+        heap_segment.heap_segment_allocated(hp->ephemeral_heap_segment) =
+            heap_segment.heap_segment_plan_allocated(hp->ephemeral_heap_segment);
+    }
+
+    public static void clear_gen1_cards(gc_heap* hp)
+    {
+        if (settings.demotion == 0 && settings.promotion != 0)
+        {
+            generation* gen1 = generation_of(
+                generation_table_of(hp),
+                (int)gc_generation_num.soh_gen1);
+            heap_segment* region = generation.generation_start_segment(gen1);
+            while (region is not null)
+            {
+                clear_card_for_addresses(
+                    get_region_start(region),
+                    heap_segment.heap_segment_reserved(region));
+                region = heap_segment.heap_segment_next(region);
+            }
+        }
+    }
+
+    private static void thread_pinned_plug_gaps(gc_heap* hp)
+    {
+        reset_pinned_queue_bos(hp);
+        while (pinned_plug_que_empty_p(hp) == 0)
+        {
+            nuint entryIndex = deque_pinned_plug(hp);
+            mark* entry = pinned_plug_of(hp, entryIndex);
+            nuint length = pinned_len(entry);
+            byte* gap = pinned_plug(entry) - (nint)length;
+            if (length != 0)
+            {
+                Debug.Assert(
+                    length >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+                make_unused_array(gap, length);
+
+                nuint startBrick = brick_of(gap);
+                nuint endBrick = brick_of(gap + (nint)length);
+                if (endBrick != startBrick)
+                {
+                    set_brick(
+                        startBrick,
+                        unchecked((nint)(gap - brick_address(startBrick))));
+                    for (nuint brick = startBrick + 1; brick < endBrick; brick++)
+                    {
+                        set_brick(
+                            brick,
+                            unchecked((nint)startBrick - (nint)brick));
+                    }
+                }
+
+                int genNumber = object_gennum_plan(gap);
+                generation* gen =
+                    generation_of(generation_table_of(hp), genNumber);
+                thread_gap(gap, length, gen);
+            }
+        }
     }
 #endif
 

@@ -1215,16 +1215,17 @@ The synchronous full-GC condemned-generation allocation closure is now translate
 clipping, front/tail padding and large-plug suppression, plug-length heuristics, short-tail
 conversion to pinned, allocation/pinned/free accounting, generation promotion, segment
 growth/transition, and region plan-generation publication. The bounded WKS `USE_REGIONS`
-synchronous full-Gen2 SOH `plan_phase_synchronous_full_gen2` adapter and its native-named
+synchronous full-Gen2 `plan_phase_synchronous_full_gen2` adapter and its native-named
 dependency closure are translated too: pinned-plug conversion/gap metadata,
 `find_next_marked`, saved allocation bounds, remaining-pin/region planning, exact 6-MiB
 large-pin demotion and 90-percent SIP thresholds, SIP sweeping, marked/pinned clearing,
-relocation flags, brick trees/sentinels, and plan-generation publication preserve native order.
+relocation flags, brick trees/sentinels, plan-generation publication, compaction policy,
+LOH/POH handling, compact/sweep execution, final region bounds, finalizer fill pointers,
+handle ages, cards, and full-compaction accounting preserve native order.
 Unsupported heap/settings, active BGC, malformed generation/segment/mark-stack state, and
-inconsistent mark bounds are rejected before mutation. The boundary stops before non-region
-generation starts, post-planning compaction/sweep policy, UOH planning, plan finalization,
-collection routing, and configuration-driven diagnostics; `allocate_in_older_generation`
-remains deferred because this adapter accepts only full Gen2.
+inconsistent mark bounds are rejected before mutation. The boundary stops before non-region,
+server, background, partial-GC, collection-routing, and configuration-driven diagnostic paths;
+`allocate_in_older_generation` remains deferred because this adapter accepts only full Gen2.
 `try_allocate_more_space` now has an explicit unmanaged state-machine core over the translated
 fit paths. It preserves the SOH/UOH `allocation_state` transitions, generation selection,
 allocation flags, commit-failure/short-end/OOM propagation, retry exits, UOH acquisition states,
@@ -1320,20 +1321,21 @@ Translate in dependency order:
   prefix helpers; direct WKS brick-tree insertion and brick-table updates; plus the WKS
   `get_gen0_end_space`/`get_gen0_end_plan_space` accounting,
   direct/saved-plug padding bridge, region-survivor snapshot/delta helpers, and the bounded
-  `USE_REGIONS && !MULTIPLE_HEAPS` synchronous full-Gen2 SOH plan-construction and
-  compaction-policy closures are translated. Plan construction preserves pinned-plug
+  `USE_REGIONS && !MULTIPLE_HEAPS` synchronous full-Gen2 plan-phase and compaction-policy
+  closures are translated. Plan construction preserves pinned-plug
   conversion and saved gap records, remaining-pin/region demotion, SIP decisions/sweeping,
   marked/pinned clearing, allocation calls, relocation flags, brick trees/sentinels, and region
-  plan generations, with pre-mutation validation and a boundary before post-plan policy. The
+  plan generations with pre-mutation validation. The
   WKS full-GC LOH dependency closure adds the native pin queue state, growth/order/decay,
   allocation-limit clipping, padding-aware fit and condemned allocation, movable/pinned object
   planning, pinned-gap recording, relocation-distance metadata, segment fallback, and read-only
-  prefix handling. It remains a direct bounded leaf rather than adding plan-phase post-policy
-  orchestration. The
+  prefix handling. The bounded orchestration continues in native order through UOH sweeping,
+  special-sweep override, LOH fallback, SOH compact or sweep completion, region and ephemeral
+  bounds, finalizer fill pointers, handle aging/rejuvenation, pinned gaps, cards, and counters. The
   policy closure preserves region fragmentation and pinned-gap accounting, strict
   region-capacity and hard-limit comparisons, compaction-space/productivity decisions, reason
   precedence, high-memory thresholds, no-GC expansion signaling, and condemned/full-GC
-  ephemeral-fit boundaries. Both remain unrouted)
+  ephemeral-fit boundaries. The completed bounded plan phase remains unrouted)
 - `relocate_compact.cpp` (the allocation-free `memcopy` relocation primitive, card-copy/clear
   dispatch leaf, pinned-queue `get_next_pinned_entry` and `get_oldest_pinned_entry` handoffs, and
   dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`,

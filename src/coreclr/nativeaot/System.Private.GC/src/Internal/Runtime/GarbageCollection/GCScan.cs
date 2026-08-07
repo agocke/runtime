@@ -121,6 +121,18 @@ internal static unsafe class GCScan
         HandleTableScan.Ref_CheckAlive(condemned, max_gen, sc, &CheckPromoted);
     }
 
+    public static void GcDemote(int condemned, int max_gen, ScanContext* sc)
+    {
+        HandleTableScan.Ref_RejuvenateHandles(condemned, max_gen, sc);
+        GCToEEInterface.SyncBlockCacheDemote(max_gen);
+    }
+
+    public static void GcPromotionsGranted(int condemned, int max_gen, ScanContext* sc)
+    {
+        HandleTableScan.Ref_AgeHandles(condemned, max_gen, sc);
+        GCToEEInterface.SyncBlockCachePromotionsGranted(max_gen);
+    }
+
     internal static void CheckPromoted(byte** pObjRef, nuint* pExtraInfo, nuint lp1, nuint lp2)
     {
         _ = pExtraInfo;

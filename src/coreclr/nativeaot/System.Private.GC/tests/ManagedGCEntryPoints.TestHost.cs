@@ -106,13 +106,20 @@ internal static unsafe class ManagedGCHeap
 
     public static uint TestGeneration { get; set; }
 
+    public static nint TestGenerationObject { get; set; }
+
+    public static uint TestGenerationForObject { get; set; }
+
     public static void* Create()
     {
         CreateCallCount++;
         return (void*)s_createResult;
     }
 
-    internal static uint GenerationOf(byte* obj) => TestGeneration;
+    internal static uint GenerationOf(byte* obj) =>
+        (nint)obj == TestGenerationObject
+            ? TestGenerationForObject
+            : TestGeneration;
 
     internal static bool IsPromoted(byte* obj) =>
         obj is null || ((CObjectHeader*)obj)->IsMarked() != 0;
@@ -124,6 +131,8 @@ internal static unsafe class ManagedGCHeap
         s_createResult = 1;
         CreateCallCount = 0;
         TestGeneration = 0;
+        TestGenerationObject = 0;
+        TestGenerationForObject = 0;
     }
 }
 
