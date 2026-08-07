@@ -161,6 +161,8 @@ internal static unsafe class GCToEEInterface
 
     internal static ScanContext LastGcScanRootsContextValue { get; private set; }
 
+    internal static Action GcScanRootsObserver { get; set; }
+
     internal static byte** GcScanRootsSlot { get; set; }
 
     internal static uint GcScanRootsFlags { get; set; }
@@ -213,6 +215,8 @@ internal static unsafe class GCToEEInterface
 
     internal static byte** SyncBlockCacheWeakPtrScanSlot { get; set; }
 
+    internal static Action SyncBlockCacheWeakPtrScanObserver { get; set; }
+
     internal static int GetThreadCallCount { get; private set; }
 
     internal static void* CurrentThread { get; set; }
@@ -256,6 +260,7 @@ internal static unsafe class GCToEEInterface
         LastGcScanRootsMaxGeneration = 0;
         LastGcScanRootsContext = null;
         LastGcScanRootsContextValue = default;
+        GcScanRootsObserver = null;
         GcScanRootsSlot = null;
         GcScanRootsFlags = 0;
         GcScanRootsSlots.Clear();
@@ -282,6 +287,7 @@ internal static unsafe class GCToEEInterface
         LastSyncBlockCacheWeakPtrScanParameter1 = 0;
         LastSyncBlockCacheWeakPtrScanParameter2 = 0;
         SyncBlockCacheWeakPtrScanSlot = null;
+        SyncBlockCacheWeakPtrScanObserver = null;
         GetThreadCallCount = 0;
         CurrentThread = null;
         LastFiredEvent = FiredEvent.None;
@@ -361,6 +367,7 @@ internal static unsafe class GCToEEInterface
         LastGcScanRootsContext = sc;
         LastGcScanRootsContextValue = *sc;
         RootScanCallOrder.Add(RootScanCall.Scan);
+        GcScanRootsObserver?.Invoke();
 
         if (GcScanRootsSlots.Count != 0)
         {
@@ -413,6 +420,7 @@ internal static unsafe class GCToEEInterface
         LastSyncBlockCacheWeakPtrScanCallback = (nuint)scanProc;
         LastSyncBlockCacheWeakPtrScanParameter1 = lp1;
         LastSyncBlockCacheWeakPtrScanParameter2 = lp2;
+        SyncBlockCacheWeakPtrScanObserver?.Invoke();
 
         if (SyncBlockCacheWeakPtrScanSlot is not null)
         {

@@ -681,8 +681,9 @@ guarded Java cross-reference handles, applies the pinned flag, relocates both de
 and adjusts weak-interior pointers by the primary relocation delta. The full iterator also
 preserves chain resorting, page trimming, empty-segment removal, and sequence maintenance.
 Ephemeral filtering, asynchronous queues, variable handles, aging, standalone obsolete handle
-types, diagnostics/debug statistics, multi-heap scans, and collection/`relocate_phase` routing
-remain blocked on stages 6-10. The bounded scans are not routed from `IGCHeap.GarbageCollect`.
+types, diagnostics/debug statistics, multi-heap scans, and collection routing remain blocked on
+stages 6-10. The bounded scans and relocation orchestration are not routed from
+`IGCHeap.GarbageCollect`.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.
@@ -1253,7 +1254,8 @@ object-header special-bit and padded-plug prerequisites, short-object descriptor
 foreground `gc_mark1`/`gc_mark` leaves, the active WKS `USE_REGIONS`
 `mark_object_simple1`/`mark_object_simple`/`drain_mark_queue`/`mark_object`/
 `mark_through_object` bodies, `compute_gc_and_ephemeral_range`, and the synchronous WKS full-GC
-handle relocation branch are translated; collection entrypoints remain unrouted**
+handle relocation branch and bounded `relocate_phase` orchestration are translated; collection
+entrypoints remain unrouted**
 
 Translate in dependency order:
 
@@ -1278,8 +1280,7 @@ Translate in dependency order:
   interior offset. The bounded synchronous full-GC `GcScanHandles(relocate)` branch now routes
   that callback through sync-block weak pointers, the native physical-order multi-type
   weak/strong/ref-counted handle scan, pinned handles, dependent primary/secondary slots, and
-  weak-interior delta adjustment. Ephemeral/concurrent scans and `relocate_phase` remain
-  deliberately unrouted. The bounded
+  weak-interior delta adjustment. Ephemeral/concurrent scans remain deliberately unrouted. The bounded
   `mark_phase_stack_roots` lifecycle preserves the direct WKS root order over the owned mark-list
   and computed range: `BeforeGcScanRoots`, stack-root scanning, queue drain, finalizer-root
   scanning, queue drain, `GcScanHandles(promote)` (pinned before strong), queue drain, initial
@@ -1319,7 +1320,14 @@ Translate in dependency order:
   `relocate_advance_to_non_sip`, in-order `relocate_survivors_in_brick`, and
   generation/segment `relocate_survivors`, preserving plug boundaries, pinned-queue handoff,
   cross-brick state, swept-in-plan linear walking and empty-region transitions. `get_start_segment`,
-  `relocate_phase`, compaction, and collection routing remain deferred)
+  compaction, and collection routing remain deferred; the bounded synchronous WKS `USE_REGIONS`
+  full-GC `relocate_phase` slice preserves the native roots, non-compacting LOH, POH, SOH
+  survivors, finalization-data, and handle order with one initialized relocation `ScanContext`.
+  It rejects partial/card scans, settings mismatch, concurrent/background collection, missing
+  heap/finalizer state, and actual LOH compaction before mutation, while configured but
+  unperformed LOH compaction retains non-compacting LOH/POH traversal. Server/card stealing,
+  background roots, partial card scans, `relocate_in_loh_compact`, and debug-only region-map
+  verification remain deferred)
 - `sweep.cpp` (bounded WKS `USE_REGIONS` normal-plan SOH brick walk, including promotion
   target selection, swept-in-plan segment skipping, positive highest-plug rewrites, negative
   brick resets, and free-list threading; plus UOH marked-object sweep, writable-tail trim,

@@ -2,8 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Port of the allocation-free relocation copy primitive and dependency-closed WKS USE_REGIONS
-// helpers, including brick-tree reference and plug-level SOH relocation, from
-// relocate_compact.cpp.
+// helpers, including brick-tree reference and plug-level SOH relocation and the bounded
+// synchronous full-GC relocation orchestration, from relocate_compact.cpp.
 
 using System.Diagnostics;
 
@@ -827,6 +827,60 @@ internal unsafe partial struct gc_heap
             }
         }
     }
+
+#if !MULTIPLE_HEAPS
+    public static bool relocate_phase(
+        int condemned_gen_number,
+        byte* first_condemned_address)
+    {
+        gc_heap* hp = ManagedGCRegionBootstrap.Heap;
+        CFinalize* finalizeQueue = finalize_queue;
+        if (hp is null ||
+            finalizeQueue is null ||
+            condemned_gen_number != GCInterfaceOffsets.max_generation ||
+            settings.condemned_generation != condemned_gen_number ||
+            settings.compaction == 0 ||
+            settings.concurrent != 0 ||
+#if BACKGROUND_GC
+            settings.background_p != 0 ||
+            background_running_p() ||
+#endif
+            loh_compacted_p != 0)
+        {
+            return false;
+        }
+
+        ScanContext sc = default;
+        sc.init();
+        sc.thread_number = hp->heap_number;
+        sc.thread_count = 1;
+        sc.promotion = 0;
+        sc.concurrent = 0;
+
+        GCScan.GcScanRoots(
+            &relocate,
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+
+        relocate_in_uoh_objects(hp, (int)gc_generation_num.loh_generation);
+        relocate_in_uoh_objects(hp, (int)gc_generation_num.poh_generation);
+
+        relocate_survivors(
+            hp,
+            condemned_gen_number,
+            first_condemned_address);
+
+        finalizeQueue->RelocateFinalizationData(condemned_gen_number, hp);
+
+        GCScan.GcScanHandles(
+            &relocate,
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+        return true;
+    }
+#endif
 #endif
 }
 #pragma warning restore CS8981

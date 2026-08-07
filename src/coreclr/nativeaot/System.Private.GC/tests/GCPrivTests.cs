@@ -3868,6 +3868,448 @@ public sealed unsafe class GCPrivTests
             System.Runtime.InteropServices.NativeMemory.Free(storage);
         }
     }
+
+#if !MULTIPLE_HEAPS
+    [Fact]
+    public void RelocatePhaseUsesNativeFullGcOrderAndScanContext()
+    {
+        gc_mechanisms savedSettings = gc_heap.settings;
+        CFinalize* savedFinalizeQueue = gc_heap.finalize_queue;
+        int savedLohCompacted = gc_heap.loh_compacted_p;
+#if BACKGROUND_GC
+        int savedBackgroundRunning = gc_heap.gc_background_running;
+#endif
+        bool handlesInitialized = false;
+        CFinalize* finalizeQueue = null;
+        short savedRelocationBrick = 0;
+        short savedSohBrick = 0;
+        nuint relocationBrick = 0;
+        nuint sohBrick = 0;
+        bool bricksSaved = false;
+        heap_segment* gen0Segment = null;
+        heap_segment* gen1Segment = null;
+        heap_segment* gen2Segment = null;
+        heap_segment* lohSegment = null;
+        heap_segment* pohSegment = null;
+        byte* savedGen0Start = null;
+        byte* savedGen1Start = null;
+        byte* savedGen0Mem = null;
+        byte* savedGen2Mem = null;
+        byte* savedGen2Allocated = null;
+        byte* savedLohMem = null;
+        byte* savedLohAllocated = null;
+        byte* savedPohMem = null;
+        byte* savedPohAllocated = null;
+        byte* savedGcLow = gc_heap.gc_low;
+        byte* savedGcHigh = gc_heap.gc_high;
+
+        GCToOSInterface.ResetRecording();
+        SyncImports.ResetRecording();
+        GCToEEInterface.Reset();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(0, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            generation* generations = ManagedGCRegionBootstrap.GenerationTable;
+            Assert.True(heap is not null);
+            Assert.True(generations is not null);
+            gen0Segment = generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0));
+            gen1Segment = generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen1));
+            gen2Segment = generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen2));
+            lohSegment = generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.loh_generation));
+            pohSegment = generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.poh_generation));
+            Assert.True(gen0Segment is not null);
+            Assert.True(gen1Segment is not null);
+            Assert.True(gen2Segment is not null);
+            Assert.True(lohSegment is not null);
+            Assert.True(pohSegment is not null);
+
+            savedGen0Start = (byte*)gen0Segment;
+            savedGen1Start = (byte*)gen1Segment;
+            savedGen0Mem = heap_segment.heap_segment_mem(gen0Segment);
+            savedGen2Mem = heap_segment.heap_segment_mem(gen2Segment);
+            savedGen2Allocated = heap_segment.heap_segment_allocated(gen2Segment);
+            savedLohMem = heap_segment.heap_segment_mem(lohSegment);
+            savedLohAllocated = heap_segment.heap_segment_allocated(lohSegment);
+            savedPohMem = heap_segment.heap_segment_mem(pohSegment);
+            savedPohAllocated = heap_segment.heap_segment_allocated(pohSegment);
+            generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0)) = null;
+            generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen1)) = null;
+            nuint objectSize = (nuint)(3 * sizeof(byte*));
+            nuint alignedObjectSize = gc_heap.Align(objectSize);
+            byte* descriptorStorage =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            MethodTable* pointerMethodTable =
+                InitializePointerMethodTable(descriptorStorage, objectSize, pointerCount: 1);
+
+            byte* relocationNode = savedGen0Mem + 256;
+            byte* sohObject = savedGen2Mem + 256;
+            byte* oldRoot = relocationNode + 512;
+            byte* oldLohReference = relocationNode + 576;
+            byte* oldPohReference = relocationNode + 640;
+            byte* oldSohReference = relocationNode + 704;
+            byte* finalizableObject = relocationNode + 768;
+            byte* oldHandleReference = relocationNode + 832;
+
+            ((plug_and_reloc*)relocationNode)[-1].reloc = -64;
+            ((plug_and_pair*)relocationNode)[-1].m_pair = default;
+            ((plug_and_reloc*)sohObject)[-1].reloc = 0;
+            ((plug_and_pair*)sohObject)[-1].m_pair = default;
+            ((CObjectHeader*)sohObject)->RawSetMethodTable(pointerMethodTable);
+            *(byte**)(sohObject + sizeof(byte*)) = oldSohReference;
+            heap_segment.heap_segment_mem(gen2Segment) = sohObject;
+            heap_segment.heap_segment_allocated(gen2Segment) =
+                sohObject + (nint)alignedObjectSize;
+            relocationBrick = gc_heap.brick_of(relocationNode);
+            sohBrick = gc_heap.brick_of(sohObject);
+            savedRelocationBrick = gc_heap.brick_table[(nint)relocationBrick];
+            savedSohBrick = gc_heap.brick_table[(nint)sohBrick];
+            bricksSaved = true;
+            gc_heap.set_brick(
+                relocationBrick,
+                unchecked((nint)(relocationNode - gc_heap.brick_address(relocationBrick))));
+            gc_heap.set_brick(
+                sohBrick,
+                unchecked((nint)(sohObject - gc_heap.brick_address(sohBrick))));
+            byte* lohObject = savedLohMem;
+            ((CObjectHeader*)lohObject)->RawSetMethodTable(pointerMethodTable);
+            *(byte**)(lohObject + sizeof(byte*)) = oldLohReference;
+            heap_segment.heap_segment_allocated(lohSegment) =
+                lohObject + (nint)gc_heap.AlignQword(objectSize);
+
+            byte* pohObject = savedPohMem;
+            ((CObjectHeader*)pohObject)->RawSetMethodTable(pointerMethodTable);
+            *(byte**)(pohObject + sizeof(byte*)) = oldPohReference;
+            heap_segment.heap_segment_allocated(pohSegment) =
+                pohObject + (nint)gc_heap.AlignQword(objectSize);
+
+            MethodTable finalizableMethodTable = default;
+            finalizableMethodTable.m_uFlags = MethodTable.HasFinalizerFlag;
+            finalizableMethodTable.m_uBaseSize = (uint)GCInterfaceOffsets.min_obj_size;
+            ((CObjectHeader*)finalizableObject)->RawSetMethodTable(&finalizableMethodTable);
+            ((CObjectHeader*)(finalizableObject - 64))->RawSetMethodTable(
+                &finalizableMethodTable);
+            finalizeQueue = CFinalize.Allocate();
+            Assert.True(finalizeQueue is not null);
+            gc_heap.finalize_queue = finalizeQueue;
+            Assert.True(finalizeQueue->RegisterForFinalization(
+                (int)gc_generation_num.soh_gen2,
+                finalizableObject));
+
+            Assert.True(ObjectHandle.Ref_Initialize());
+            handlesInitialized = true;
+            HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+                ref ObjectHandle.g_GlobalHandleTableBucket);
+            OBJECTHANDLE handle = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_STRONG,
+                oldHandleReference,
+                0);
+
+            gc_heap.settings = default;
+            gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+            gc_heap.settings.compaction = 1;
+            gc_heap.settings.loh_compaction = 1;
+            gc_heap.loh_compacted_p = 0;
+            gc_heap.gc_low = GCCommon.g_gc_lowest_address;
+            gc_heap.gc_high = GCCommon.g_gc_highest_address;
+#if BACKGROUND_GC
+            gc_heap.settings.background_p = 0;
+            gc_heap.gc_background_running = 0;
+#endif
+
+            Assert.True(gc_heap.is_in_find_object_range(oldRoot));
+            Assert.True(gc_heap.is_in_gc_range(oldRoot));
+            Assert.True(gc_heap.should_check_brick_for_reloc(oldRoot));
+            Assert.NotEqual(0, gc_heap.brick_table[(nint)gc_heap.brick_of(oldRoot)]);
+            byte* probe = oldRoot;
+            gc_heap.relocate_address(&probe);
+            Assert.Equal((nuint)(oldRoot - 64), (nuint)probe);
+
+            byte** rootSlot = stackalloc byte*[1];
+            *rootSlot = oldRoot;
+            GCToEEInterface.GcScanRootsSlot = rootSlot;
+            int phaseBoundary = 0;
+            GCToEEInterface.GcScanRootsObserver = () =>
+            {
+                Assert.Equal(0, phaseBoundary);
+                phaseBoundary = 1;
+                Assert.Equal((nuint)oldRoot, (nuint)(*rootSlot));
+                Assert.Equal(
+                    (nuint)oldLohReference,
+                    (nuint)(*(byte**)(lohObject + sizeof(byte*))));
+                Assert.Equal(
+                    (nuint)oldPohReference,
+                    (nuint)(*(byte**)(pohObject + sizeof(byte*))));
+                Assert.Equal(
+                    (nuint)oldSohReference,
+                    (nuint)(*(byte**)(sohObject + sizeof(byte*))));
+                Assert.Equal((nuint)oldHandleReference, *(nuint*)handle.Value);
+            };
+            GCToEEInterface.SyncBlockCacheWeakPtrScanObserver = () =>
+            {
+                Assert.Equal(1, phaseBoundary);
+                phaseBoundary = 2;
+                Assert.Equal((nuint)(oldRoot - 64), (nuint)(*rootSlot));
+                Assert.Equal(
+                    (nuint)(oldLohReference - 64),
+                    (nuint)(*(byte**)(lohObject + sizeof(byte*))));
+                Assert.Equal(
+                    (nuint)(oldPohReference - 64),
+                    (nuint)(*(byte**)(pohObject + sizeof(byte*))));
+                Assert.Equal(
+                    (nuint)(oldSohReference - 64),
+                    (nuint)(*(byte**)(sohObject + sizeof(byte*))));
+                Assert.Equal((nuint)oldHandleReference, *(nuint*)handle.Value);
+            };
+
+            Assert.True(gc_heap.relocate_phase(
+                GCInterfaceOffsets.max_generation,
+                sohObject));
+
+            Assert.Equal(2, phaseBoundary);
+            Assert.Equal((nuint)(oldHandleReference - 64), *(nuint*)handle.Value);
+            Assert.Equal(1, GCToEEInterface.GcScanRootsCallCount);
+            Assert.Equal(
+                (nuint)(delegate*<byte**, ScanContext*, uint, void>)&gc_heap.relocate,
+                GCToEEInterface.LastGcScanRootsCallback);
+            Assert.True(
+                GCToEEInterface.LastGcScanRootsCallbackContext ==
+                GCToEEInterface.LastGcScanRootsContext);
+            Assert.Equal(0u, GCToEEInterface.LastGcScanRootsCallbackFlags);
+            Assert.Equal(
+                (nuint)GCToEEInterface.LastGcScanRootsContext,
+                GCToEEInterface.LastSyncBlockCacheWeakPtrScanParameter1);
+
+            ScanContext scanContext = GCToEEInterface.LastGcScanRootsContextValue;
+            Assert.True(scanContext.thread_under_crawl is null);
+            Assert.Equal(heap->heap_number, scanContext.thread_number);
+            Assert.Equal(1, scanContext.thread_count);
+            Assert.Equal((nuint)0, scanContext.stack_limit);
+            Assert.Equal((byte)0, scanContext.promotion);
+            Assert.Equal((byte)0, scanContext.concurrent);
+            Assert.True(scanContext.pMD is null);
+            Assert.Equal(EtwGCRootKind.kEtwGCRootKindOther, scanContext.dwEtwRootKind);
+
+            ResetFinalizationScanObservation();
+            Assert.True(finalizeQueue->ScanForFinalization(
+                &MarkFinalizable,
+                (int)gc_generation_num.soh_gen2,
+                heap));
+            Assert.Equal(1, s_finalizationScanCount);
+            Assert.Equal(
+                (nuint)(finalizableObject - 64),
+                (nuint)finalizeQueue->GetNextFinalizableObject());
+        }
+        finally
+        {
+            GCToEEInterface.Reset();
+            if (handlesInitialized)
+            {
+                HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+                    ref ObjectHandle.g_GlobalHandleTableBucket);
+                ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+                ObjectHandle.Ref_Shutdown();
+            }
+
+            gc_heap.finalize_queue = savedFinalizeQueue;
+            CFinalize.Free(finalizeQueue);
+
+            if (gen0Segment is not null)
+            {
+                generation.generation_start_segment(
+                    gc_heap.generation_of(
+                        ManagedGCRegionBootstrap.GenerationTable,
+                        (int)gc_generation_num.soh_gen0)) = (heap_segment*)savedGen0Start;
+            }
+
+            if (gen1Segment is not null)
+            {
+                generation.generation_start_segment(
+                    gc_heap.generation_of(
+                        ManagedGCRegionBootstrap.GenerationTable,
+                        (int)gc_generation_num.soh_gen1)) = (heap_segment*)savedGen1Start;
+            }
+
+            if (gen2Segment is not null)
+            {
+                heap_segment.heap_segment_mem(gen2Segment) = savedGen2Mem;
+                heap_segment.heap_segment_allocated(gen2Segment) = savedGen2Allocated;
+            }
+
+            if (lohSegment is not null)
+            {
+                heap_segment.heap_segment_mem(lohSegment) = savedLohMem;
+                heap_segment.heap_segment_allocated(lohSegment) = savedLohAllocated;
+            }
+
+            if (pohSegment is not null)
+            {
+                heap_segment.heap_segment_mem(pohSegment) = savedPohMem;
+                heap_segment.heap_segment_allocated(pohSegment) = savedPohAllocated;
+            }
+
+            if (bricksSaved)
+            {
+                gc_heap.brick_table[(nint)relocationBrick] = savedRelocationBrick;
+                gc_heap.brick_table[(nint)sohBrick] = savedSohBrick;
+            }
+
+            gc_heap.settings = savedSettings;
+            gc_heap.loh_compacted_p = savedLohCompacted;
+            gc_heap.gc_low = savedGcLow;
+            gc_heap.gc_high = savedGcHigh;
+#if BACKGROUND_GC
+            gc_heap.gc_background_running = savedBackgroundRunning;
+#endif
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+            GCToOSInterface.ResetRecording();
+            SyncImports.ResetRecording();
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    public void RelocatePhaseRejectsUnsupportedConfigurationsWithoutMutation(int unsupportedCase)
+    {
+        gc_mechanisms savedSettings = gc_heap.settings;
+        CFinalize* savedFinalizeQueue = gc_heap.finalize_queue;
+        byte* savedOldestPinnedPlug = gc_heap.oldest_pinned_plug;
+        int savedLohCompacted = gc_heap.loh_compacted_p;
+#if BACKGROUND_GC
+        int savedBackgroundRunning = gc_heap.gc_background_running;
+#endif
+        CFinalize* finalizeQueue = null;
+        bool commitLockInitialized = false;
+        bool bootstrapPrepared = false;
+
+        GCToOSInterface.ResetRecording();
+        SyncImports.ResetRecording();
+        GCToEEInterface.Reset();
+
+        try
+        {
+            if (unsupportedCase != 0)
+            {
+                GCConfig.Initialize();
+                GCCommon.initialize();
+                Assert.True(gc_heap.check_commit_cs.Initialize());
+                commitLockInitialized = true;
+                Assert.Equal(0, ManagedGCRegionBootstrap.Prepare());
+                bootstrapPrepared = true;
+                Assert.True(ManagedGCRegionBootstrap.Initialize());
+            }
+
+            if (unsupportedCase != 1)
+            {
+                finalizeQueue = CFinalize.Allocate();
+                Assert.True(finalizeQueue is not null);
+                gc_heap.finalize_queue = finalizeQueue;
+            }
+            else
+            {
+                gc_heap.finalize_queue = null;
+            }
+
+            gc_heap.settings = default;
+            gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+            gc_heap.settings.compaction = 1;
+            gc_heap.loh_compacted_p = 0;
+#if BACKGROUND_GC
+            gc_heap.settings.background_p = 0;
+            gc_heap.gc_background_running = 0;
+#endif
+
+            int condemned = GCInterfaceOffsets.max_generation;
+            switch (unsupportedCase)
+            {
+                case 0:
+                case 1:
+                    break;
+                case 2:
+                    condemned = (int)gc_generation_num.soh_gen1;
+                    break;
+                case 3:
+                    gc_heap.settings.condemned_generation =
+                        (int)gc_generation_num.soh_gen1;
+                    break;
+                case 4:
+                    gc_heap.settings.compaction = 0;
+                    break;
+                case 5:
+                    gc_heap.settings.concurrent = 1;
+                    break;
+#if BACKGROUND_GC
+                case 6:
+                    gc_heap.settings.background_p = 1;
+                    break;
+                case 7:
+                    gc_heap.gc_background_running = 1;
+                    break;
+#endif
+                case 8:
+                    gc_heap.loh_compacted_p = 1;
+                    break;
+            }
+
+            byte* root = (byte*)0x12345678;
+            GCToEEInterface.GcScanRootsSlot = &root;
+            gc_heap.oldest_pinned_plug = (byte*)0x87654321;
+
+            Assert.False(gc_heap.relocate_phase(condemned, first_condemned_address: null));
+            Assert.Equal((nuint)0x12345678, (nuint)root);
+            Assert.Equal((nuint)0x87654321, (nuint)gc_heap.oldest_pinned_plug);
+            Assert.Equal(0, GCToEEInterface.GcScanRootsCallCount);
+            Assert.Equal(0, GCToEEInterface.SyncBlockCacheWeakPtrScanCallCount);
+        }
+        finally
+        {
+            GCToEEInterface.Reset();
+            gc_heap.finalize_queue = savedFinalizeQueue;
+            CFinalize.Free(finalizeQueue);
+            gc_heap.oldest_pinned_plug = savedOldestPinnedPlug;
+            gc_heap.settings = savedSettings;
+            gc_heap.loh_compacted_p = savedLohCompacted;
+#if BACKGROUND_GC
+            gc_heap.gc_background_running = savedBackgroundRunning;
+#endif
+            if (bootstrapPrepared)
+            {
+                ManagedGCRegionBootstrap.Shutdown();
+            }
+
+            if (commitLockInitialized)
+            {
+                gc_heap.check_commit_cs.Destroy();
+            }
+
+            GCToOSInterface.ResetRecording();
+            SyncImports.ResetRecording();
+        }
+    }
+#endif
 #endif
 
     [Fact]
