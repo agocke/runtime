@@ -100,7 +100,7 @@ Ported so far:
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, the bounded WKS synchronous full-Gen2 plan-phase orchestration and SIP helpers, the WKS full-GC LOH pin queue/planning allocator, the bounded WKS synchronous full-GC compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
 | `RelocateCompact.cs` | allocation-free relocation/compaction copy primitives, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation and compaction, non-compacting UOH reference relocation, WKS full-GC LOH relocation/compaction, bounded synchronous WKS `USE_REGIONS` full-GC relocation/compaction orchestration, and dependency-closed helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | dependency-closed WKS `USE_REGIONS` SOH normal/special sweep brick walk and final region threading, SIP free-list handoff, empty-region replacement, UOH marked-object clearing, unused-array card clearing/reset, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp`, `plan_phase.cpp`, `allocation.cpp`, `regions_segments.cpp`, and `gcinternal.h` |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, the synchronous full-GC condemned-generation planning allocator, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, allocation-triggered synchronous full-Gen2 collection and retry, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, UOH region acquisition/retry, the synchronous full-GC condemned-generation planning allocator, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping, region-table, and deferred UOH free-region-return helpers from `collect.cpp`, `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp`, plus the direct brick repair and first-object lookup leaves from `card_table.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
@@ -1173,8 +1173,10 @@ bootstrap default), builds WKS bookkeeping, reserves initial regions, and constr
 SOH/LOH/POH generation state. `ManagedGCHeap.Alloc` uses that region heap for SOH and UOH
 allocation-context refills. `GCHeapMemory` remains a separate non-collecting bootstrap range for
 unmanaged frozen-segment metadata; it neither changes the region range nor publishes card tables
-or write-barrier bounds on region targets. Allocation-triggered collection and UOH segment retry policy remain deferred, so exhausted UOH
-routing returns null rather than initiating a partial or background collection.
+or write-barrier bounds on region targets. Allocation pressure now routes SOH budget/space
+exhaustion and UOH space/segment exhaustion through the supported synchronous blocking full-Gen2
+collector, then retries the native allocation state. Partial and background scheduling decisions
+are conservatively elevated to that full blocking collector rather than skipped.
 
 `GCAllocation` now writes the native-shaped free-object method table, array length, and
 doubly-linked free-list marker for object gaps, carries the allocation-limit arithmetic leaves,
@@ -1188,12 +1190,13 @@ verification remain explicit collector-owned deferrals.
 The segment-end leaf also selects the committed or reserved endpoint, derives the allocation
 limit, grows the segment through the accounted virtual-commit helper, propagates commit and
 hard-limit failures, and hands the range to that refill transition. Its UOH wrapper walks
-writable segments and records end-segment allocation. The deferred heap-owned dynamic-data
+writable segments and records end-segment allocation. The heap-owned dynamic-data
 table, allocation quantum, generation table, allocation pointer, ephemeral segment, selected
 SOH/UOH total, and heap number are explicit unsafe parameters, rather than a partial heap
-layout. The dependency-closed SOH and initial-UOH refill paths are routed through these helpers.
-UOH segment retry and collection dependencies remain deferred, so allocation stops honestly when
-the initial region is exhausted.
+layout. The dependency-closed SOH and UOH refill paths are routed through these helpers.
+UOH allocation now releases its more-space lock before taking the GC lock, acquires and threads
+LOH/POH regions with the native size policy, reacquires the lock, observes intervening compacting
+collections, and follows the native retry/full-GC/OOM state ordering.
 
 The synchronous WKS `USE_REGIONS` full-GC planning allocator is translated as a direct,
 non-routed leaf. `size_fit_p`, relocation-aware segment growth, SIP and cross-generation region
@@ -1231,7 +1234,7 @@ with the native callback ABI, records WKS allocation-context use, and then repub
 youngest boundary; no collection path invokes it yet. Concurrent verification, diagnostic
 region-added events, and all production allocation routing remain deferred.
 
-The next `try_allocate_more_space` slice is an explicit unmanaged state-machine core. It preserves
+The `try_allocate_more_space` slice is an explicit unmanaged state-machine core. It preserves
 the WKS `allocation_state` transitions around the translated SOH/UOH fit paths, including the
 initial/after-BGC/after-compacting-GC branches, segment-acquisition retry states, commit failure,
 short-end, `oom_reason`, allocation flags, selected generation, free-list/segment budget
@@ -1244,20 +1247,23 @@ are also translated, as are WKS `collect.cpp` `update_collection_counts`,
 `update_end_ngc_time`, and `update_end_gc_time_per_heap`. The latter records one end timestamp
 and updates elapsed times only for condemned generations. The native cache-, configured-segment-, Gen0/Gen1-budget-, latency-level-,
 write-watch/concurrent-budget-, and region-independent UOH rules are retained; collection-time
-retuning beyond those helpers and hard-limit computation remain deferred. GC/BGC waits and triggers, full-GC
-notifications, more-space locks, UOH acquisition, retry decisions, and OOM reporting are an
-unmanaged function-pointer protocol;
-a null callback returns the exact state and deferred operation rather than claiming that such work
-succeeded. This core is deliberately not wired to `ManagedGCHeap.Alloc`.
+retuning beyond those helpers and hard-limit computation remain deferred. The production callback
+owns SOH/UOH more-space locks, allocation-budget checks, UOH region acquisition, OOM/null exits,
+and synchronous full-Gen2 collection scheduling. Unsupported partial/background decisions map to
+the supported blocking full-Gen2 collector; inactive-background queries preserve the native
+state-machine ordering. Full-GC notification remains deferred because that hook is not yet
+available. A null callback still returns the exact state and deferred operation for Foundation
+testing.
 The WKS `allocate_more_space` wrapper now retries from the native initial state, clears transient
 retry/OOM/lock state before each re-entry, and returns whether the final state can allocate.
-`create_try_allocate_more_space_context` now supplies the translated WKS heap-owned fields, and
-its unmanaged callback enters/leaves the selected SOH/UOH lock and performs the WKS
-`new_allocation_allowed` check, including the gen0 elapsed-time throttle. GC/BGC waits and triggers, full-GC notification,
-segment acquisition, retry policy, and OOM handling still return the exact deferred operation.
+`create_try_allocate_more_space_context` supplies the translated WKS heap-owned fields and observes
+an already-started collection before lock acquisition. Allocation waits outside the managed-GC
+critical region, retries from the native initial state, and retains the native lock-release order.
+The callback enters/leaves the selected SOH/UOH lock and performs the WKS
+`new_allocation_allowed` check, including the gen0 elapsed-time throttle.
 When this terminal wrapper returns a deferred failure after acquiring a concrete lock, it releases
 that lock while preserving the pending operation for its caller. `ManagedGCHeap.Alloc` uses it
-for SOH and initial-UOH refills; the managed allocation callback is a plain managed function
+for SOH and UOH refills; the managed allocation callback is a plain managed function
 pointer because this protocol never crosses a native boundary.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast

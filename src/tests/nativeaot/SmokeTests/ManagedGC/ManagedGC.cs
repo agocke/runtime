@@ -18,33 +18,123 @@ internal static unsafe class ManagedGCTest
 {
     private static int Main()
     {
-        if (!FullCollectionReclaimsRelocatesAndPreservesRoots())
+        if (!AutomaticSohCollectionReclaimsAndPreservesRoots())
         {
             return 1;
         }
 
-        if (!AllocationsAreDistinctAndZeroed())
+        if (!AutomaticUohCollectionReclaimsAndPreservesRoots())
         {
             return 2;
         }
 
-        if (!ReferenceWritesWork())
+        if (!FullCollectionReclaimsRelocatesAndPreservesRoots())
         {
             return 3;
         }
 
-        if (!LargeObjectsWork())
+        if (!AllocationsAreDistinctAndZeroed())
         {
             return 4;
         }
 
-        if (!HandlesWork())
+        if (!ReferenceWritesWork())
         {
             return 5;
         }
 
+        if (!LargeObjectsWork())
+        {
+            return 6;
+        }
+
+        if (!HandlesWork())
+        {
+            return 7;
+        }
+
         Console.WriteLine("ManagedGC smoke test passed.");
         return 100;
+    }
+
+    private static bool AutomaticSohCollectionReclaimsAndPreservesRoots()
+    {
+        const int MaximumAllocations = 8192;
+        const int AllocationSize = 32 * 1024;
+        byte[] survivor = new byte[1024];
+        survivor[0] = 0x31;
+        survivor[^1] = 0x13;
+        WeakReference weak = CreateCollectibleSmallObject();
+        int collectionCount = GC.CollectionCount(GC.MaxGeneration);
+
+        for (int i = 0;
+             i < MaximumAllocations &&
+             (GC.CollectionCount(GC.MaxGeneration) == collectionCount || weak.IsAlive);
+             i++)
+        {
+            byte[] garbage = new byte[AllocationSize];
+            garbage[0] = (byte)i;
+        }
+
+        byte[] subsequent = new byte[2048];
+        subsequent[0] = 0x5a;
+        bool result =
+            GC.CollectionCount(GC.MaxGeneration) > collectionCount &&
+            !weak.IsAlive &&
+            survivor[0] == 0x31 &&
+            survivor[^1] == 0x13 &&
+            subsequent[0] == 0x5a;
+        if (!result)
+        {
+            Console.WriteLine(
+                $"Automatic SOH collection failed: before={collectionCount}, " +
+                $"after={GC.CollectionCount(GC.MaxGeneration)}, weak={weak.IsAlive}");
+        }
+
+        GC.KeepAlive(survivor);
+        GC.KeepAlive(weak);
+        GC.KeepAlive(subsequent);
+        return result;
+    }
+
+    private static bool AutomaticUohCollectionReclaimsAndPreservesRoots()
+    {
+        const int MaximumAllocations = 2048;
+        const int AllocationSize = 256 * 1024;
+        byte[] survivor = new byte[128 * 1024];
+        survivor[0] = 0x42;
+        survivor[^1] = 0x24;
+        WeakReference weak = CreateCollectibleObject();
+        int collectionCount = GC.CollectionCount(GC.MaxGeneration);
+
+        for (int i = 0;
+             i < MaximumAllocations &&
+             (GC.CollectionCount(GC.MaxGeneration) == collectionCount || weak.IsAlive);
+             i++)
+        {
+            byte[] garbage = new byte[AllocationSize];
+            garbage[0] = (byte)i;
+        }
+
+        byte[] subsequent = new byte[200_000];
+        subsequent[0] = 0x6b;
+        bool result =
+            GC.CollectionCount(GC.MaxGeneration) > collectionCount &&
+            !weak.IsAlive &&
+            survivor[0] == 0x42 &&
+            survivor[^1] == 0x24 &&
+            subsequent[0] == 0x6b;
+        if (!result)
+        {
+            Console.WriteLine(
+                $"Automatic UOH collection failed: before={collectionCount}, " +
+                $"after={GC.CollectionCount(GC.MaxGeneration)}, weak={weak.IsAlive}");
+        }
+
+        GC.KeepAlive(survivor);
+        GC.KeepAlive(weak);
+        GC.KeepAlive(subsequent);
+        return result;
     }
 
     private static bool FullCollectionReclaimsRelocatesAndPreservesRoots()
@@ -160,6 +250,13 @@ internal static unsafe class ManagedGCTest
     private static WeakReference CreateCollectibleObject()
     {
         object target = new byte[512 * 1024];
+        return new WeakReference(target);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateCollectibleSmallObject()
+    {
+        object target = new Node { Value = 91, Next = new Node { Value = 92 } };
         return new WeakReference(target);
     }
 

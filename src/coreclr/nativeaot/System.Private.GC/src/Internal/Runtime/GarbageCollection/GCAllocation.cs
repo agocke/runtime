@@ -1488,6 +1488,7 @@ internal unsafe partial struct gc_heap
         public byte commit_failed_p;
         public byte short_seg_end_p;
         public byte oom_handled_p;
+        public nuint full_compact_gc_count_before_uoh_acquire;
         // This is set only by the non-collecting managed-GC bootstrap. It permits consumption
         // of already-reserved regions after the native dynamic budget is depleted, without
         // reporting a collection that has not happened.
@@ -1887,6 +1888,8 @@ internal unsafe partial struct gc_heap
         context->align_const = get_alignment_constant(gen_number <= (int)gc_generation_num.max_generation);
         context->heap_number = hp->heap_number;
         context->state = allocation_state.a_state_start;
+        context->gc_started_p =
+            ManagedGCHeap.CollectionStartedForAllocation() ? (byte)1 : (byte)0;
     }
 
     public static void enable_non_collecting_bootstrap_budget(try_allocate_more_space_context* context)
@@ -1951,7 +1954,170 @@ internal unsafe partial struct gc_heap
 
                 result->kind = allocation_callback_result_kind.allocation_allowed;
                 return;
+
+            case allocation_deferred_operation.wait_for_gc_done:
+                return;
+
+            case allocation_deferred_operation.wait_for_bgc_high_memory:
+            case allocation_deferred_operation.query_background_running:
+            case allocation_deferred_operation.check_and_wait_for_bgc:
+                result->kind = allocation_callback_result_kind.background_not_running;
+                return;
+
+            case allocation_deferred_operation.trigger_gc_for_budget:
+                result->kind = run_allocation_full_collection(
+                    context,
+                    context->gen_number == (int)gc_generation_num.soh_gen0
+                        ? gc_reason.reason_alloc_soh
+                        : gc_reason.reason_alloc_loh,
+                    out _)
+                    ? allocation_callback_result_kind.completed
+                    : allocation_callback_result_kind.unsupported;
+                return;
+
+            case allocation_deferred_operation.trigger_ephemeral_gc:
+            case allocation_deferred_operation.trigger_2nd_ephemeral_gc:
+                bool ephemeralCollectionCompleted = run_allocation_full_collection(
+                    context,
+                    gc_reason.reason_oos_soh,
+                    out bool ephemeralCompacted);
+                result->kind =
+                    ephemeralCollectionCompleted && ephemeralCompacted
+                        ? allocation_callback_result_kind.full_compact_gc
+                        : allocation_callback_result_kind.no_full_compact_gc;
+                return;
+
+            case allocation_deferred_operation.trigger_full_compact_gc:
+                last_gc_before_oom = 1;
+                bool fullCollectionCompleted = run_allocation_full_collection(
+                    context,
+                    context->gen_number == (int)gc_generation_num.soh_gen0
+                        ? gc_reason.reason_oos_soh
+                        : gc_reason.reason_oos_loh,
+                    out bool fullCompacted);
+                result->kind =
+                    fullCollectionCompleted && fullCompacted
+                        ? allocation_callback_result_kind.full_compact_gc
+                        : allocation_callback_result_kind.no_full_compact_gc;
+                return;
+
+            case allocation_deferred_operation.acquire_uoh_segment:
+                acquire_uoh_segment(context, result);
+                return;
+
+            case allocation_deferred_operation.check_retry_uoh_segment:
+                if (retry_full_compact_gc(context->size))
+                {
+                    result->kind = allocation_callback_result_kind.retry_full_compact_gc;
+                }
+                else if (full_gc_counts[gc_type_compacting] >
+                    context->full_compact_gc_count_before_uoh_acquire)
+                {
+                    result->kind = allocation_callback_result_kind.retry_segment;
+                }
+                else
+                {
+                    result->kind = allocation_callback_result_kind.completed;
+                }
+
+                return;
+
+            case allocation_deferred_operation.check_retry_other_heap:
+            case allocation_deferred_operation.handle_oom:
+                result->kind = allocation_callback_result_kind.completed;
+                return;
         }
+    }
+
+    private static bool run_allocation_full_collection(
+        try_allocate_more_space_context* context,
+        gc_reason reason,
+        out bool compacted_p)
+    {
+        bool uoh_p = context->gen_number != (int)gc_generation_num.soh_gen0;
+        GCSpinLock* more_space_lock = more_space_lock_of(context->hp, context->gen_number);
+        if (uoh_p)
+        {
+            GCSpinLock.leave(more_space_lock);
+            context->more_space_lock_held_p = 0;
+        }
+
+        nuint full_compact_gc_count = full_gc_counts[gc_type_compacting];
+        int collection_result = garbage_collect_synchronous_full_gen2_for_allocation(reason);
+
+        if (uoh_p)
+        {
+            GCSpinLock.enter(more_space_lock);
+            context->more_space_lock_held_p = 1;
+        }
+
+        compacted_p = full_gc_counts[gc_type_compacting] > full_compact_gc_count;
+        return collection_result == collection_s_ok;
+    }
+
+    private static nuint get_uoh_seg_size(nuint size)
+    {
+        nuint default_seg_size = global_region_allocator.get_large_region_alignment();
+        nuint align_size = default_seg_size;
+        int align_const = get_alignment_constant(small_object_p: false);
+        nuint required_size = unchecked(
+            size +
+            2 * Align((nuint)GCInterfaceOffsets.min_obj_size, align_const) +
+            GCToOSInterface.GetPageSize() +
+            align_size);
+        nuint large_seg_size = unchecked(required_size / align_size * align_size);
+        return align_on_page(
+            large_seg_size > default_seg_size ? large_seg_size : default_seg_size);
+    }
+
+    private static void acquire_uoh_segment(
+        try_allocate_more_space_context* context,
+        allocation_callback_result* result)
+    {
+        nuint seg_size = get_uoh_seg_size(context->size);
+        context->full_compact_gc_count_before_uoh_acquire =
+            full_gc_counts[gc_type_compacting];
+
+        GCSpinLock* more_space_lock = more_space_lock_of(context->hp, context->gen_number);
+        GCSpinLock.leave(more_space_lock);
+        context->more_space_lock_held_p = 0;
+
+        enter_gc_lock();
+        nuint current_full_compact_gc_count = full_gc_counts[gc_type_compacting];
+        heap_segment* new_segment = get_new_region(
+            context->generation_table,
+            context->hp,
+            context->gen_number,
+            seg_size);
+        leave_gc_lock();
+
+        GCSpinLock.enter(more_space_lock);
+        context->more_space_lock_held_p = 1;
+
+        result->did_full_compacting_gc_p =
+            current_full_compact_gc_count >
+                context->full_compact_gc_count_before_uoh_acquire
+                ? (byte)1
+                : (byte)0;
+        if (new_segment is not null)
+        {
+            if (context->gen_number == (int)gc_generation_num.loh_generation)
+            {
+                loh_alloc_since_cg = unchecked(loh_alloc_since_cg + seg_size);
+            }
+
+            result->kind = allocation_callback_result_kind.segment_acquired;
+            return;
+        }
+
+        result->kind = allocation_callback_result_kind.segment_unavailable;
+        result->oom_r = oom_reason.oom_loh;
+    }
+
+    private static bool retry_full_compact_gc(nuint size)
+    {
+        nuint seg_size = get_uoh_seg_size(size);
+        return loh_alloc_since_cg >= unchecked(2 * (ulong)seg_size);
     }
 #endif
 

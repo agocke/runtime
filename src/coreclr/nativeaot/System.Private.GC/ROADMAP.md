@@ -1158,7 +1158,7 @@ lifecycle match the C++ collector.
 
 ### 8. Allocator and write-barrier interaction
 
-**Status: Production region allocation routed; collection exhaustion deferred**
+**Status: Production region allocation and synchronous full-Gen2 exhaustion retry routed**
 
 Translate `allocation.cpp`, including:
 
@@ -1234,13 +1234,18 @@ allocation flags, commit-failure/short-end/OOM propagation, retry exits, UOH acq
 and the existing budget mutations made by fitting. `create_try_allocate_more_space_context`
 now reads the concrete WKS heap-owned fields rather than requiring callers to hand-build those
 inputs. Its unmanaged callback enters/leaves the selected SOH/UOH lock and implements WKS
-`new_allocation_allowed`, including the gen0 elapsed-time throttle. GC/BGC waits and triggers, full
-compact collections, full-GC notification, UOH acquisition, retry policy, and OOM handling
-remain an unmanaged function-pointer protocol: unsupported operations return the exact pending
-state and deferred operation rather than a plausible success. The WKS `allocate_more_space`
-wrapper still retries from the native initial state and clears transient state before re-entry;
-when a deferred failure follows a concrete lock acquisition, it releases that lock without
-discarding the deferred operation. The heap bootstrap now also ports the allocation-owned
+`new_allocation_allowed`, including the gen0 elapsed-time throttle. The production unmanaged callback now owns the WKS SOH/UOH more-space locks, allocation-budget
+checks, UOH region acquisition, retry decisions, synchronous full-Gen2 triggers, and OOM/null
+completion. Unsupported ephemeral/background scheduling decisions are conservatively mapped to
+the supported blocking full-Gen2 collector. UOH acquisition preserves the native
+more-space-lock release, GC-lock acquisition, intervening-full-GC observation, region sizing and
+threading, lock reacquisition, LOH accounting, and retry ordering for both LOH and POH.
+Full-GC notification remains deferred because its event hook is not translated. A null callback
+continues to return the exact pending state for dependency tests. The WKS `allocate_more_space`
+wrapper retries from the native initial state and clears transient state before re-entry; when a
+deferred failure follows a concrete lock acquisition, it releases that lock without discarding
+the deferred operation. An allocation that observes a started collection leaves the managed-GC
+critical region, waits, and retries in native order. The heap bootstrap now also ports the allocation-owned
 `dynamic_tuning.cpp` initialization subset: the literal WKS `static_data_table`, latency-level
 selection, write-watch/concurrent capability budget selection, configured/default workstation
 segment sizing, cache/physical-memory Gen0 minimum, configured Gen0/Gen1 maxima, and
@@ -1254,10 +1259,10 @@ and updates elapsed times only for condemned generations.
 The remaining dynamic post-collection tuning algorithms and the
 `initialize_gc` hard-limit computation that may further constrain those values remain deferred;
 this code neither fabricates a permissive budget nor reports an unported collection as successful.
-Production allocation uses these records while an explicit non-collecting bootstrap policy
-rearms exhausted budgets without claiming that an unported collection ran.
+Production allocation uses these records and invokes the bounded collector when their budgets or
+available regions are exhausted.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
-Production SOH and initial-UOH allocation-context refills use the region heap. `GCHeapMemory`
+Production SOH and UOH allocation-context refills use the region heap. `GCHeapMemory`
 remains for unmanaged frozen-segment metadata; on region targets it does not replace region
 bounds or publish bootstrap card tables/write-barrier bounds.
 

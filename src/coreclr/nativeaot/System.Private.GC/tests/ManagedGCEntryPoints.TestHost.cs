@@ -101,6 +101,7 @@ internal static unsafe class ManagedGCHeap
     internal const uint MaxGeneration = 2;
 
     private static nint s_createResult = 1;
+    private static int s_gcStarted;
 
     public static int CreateCallCount { get; private set; }
 
@@ -124,6 +125,17 @@ internal static unsafe class ManagedGCHeap
     internal static bool IsPromoted(byte* obj) =>
         obj is null || ((CObjectHeader*)obj)->IsMarked() != 0;
 
+    internal static bool CollectionStartedForAllocation() => s_gcStarted != 0;
+
+    internal static void NotifyCollectionStarted() => s_gcStarted++;
+
+    internal static void NotifyCollectionEnded() => s_gcStarted--;
+
+    internal static void RecordCollectionCount(int collectionCount)
+    {
+        _ = collectionCount;
+    }
+
     public static void SetCreateResult(void* createResult) => s_createResult = (nint)createResult;
 
     public static void Reset()
@@ -133,6 +145,7 @@ internal static unsafe class ManagedGCHeap
         TestGeneration = 0;
         TestGenerationObject = 0;
         TestGenerationForObject = 0;
+        s_gcStarted = 0;
     }
 }
 

@@ -765,7 +765,7 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
     }
 
     [Fact]
-    public void WksAllocationCallbackUsesOwnedLocksAndDefersUnportedOperations()
+    public void WksAllocationCallbackUsesOwnedLocksAndDefersUnavailableNotifications()
     {
         GCToOSInterface.ResetRecording();
         GCConfig.Initialize();
@@ -818,6 +818,18 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
             callback(&context, (int)gc_heap.allocation_deferred_operation.check_allocation_budget, &result);
             Assert.Equal(gc_heap.allocation_callback_result_kind.allocation_allowed, result.kind);
             Assert.Equal((nuint)0, heap->allocation_running_amount);
+
+            callback(&context, (int)gc_heap.allocation_deferred_operation.wait_for_bgc_high_memory, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.background_not_running, result.kind);
+
+            callback(&context, (int)gc_heap.allocation_deferred_operation.check_and_wait_for_bgc, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.background_not_running, result.kind);
+
+            callback(&context, (int)gc_heap.allocation_deferred_operation.check_retry_other_heap, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.completed, result.kind);
+
+            callback(&context, (int)gc_heap.allocation_deferred_operation.handle_oom, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.completed, result.kind);
 
             context.full_gc_notification_p = 1;
             Assert.False(gc_heap.allocate_more_space(&context, callback));

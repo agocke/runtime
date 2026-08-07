@@ -54,6 +54,7 @@ namespace Internal.Runtime.GarbageCollection
         private static long s_totalAllocatedBytesBootstrap;
         private static int s_gcCount;
         private static int s_gcInProgress;
+        private static int s_gcStarted;
 
         private static FrozenSegment* s_frozenSegments;
         private static int s_frozenSegmentCount;
@@ -309,26 +310,39 @@ namespace Internal.Runtime.GarbageCollection
         /// </remarks>
         private static byte* Alloc(void* thisPtr, gc_alloc_context* acontext, nuint size, uint flags)
         {
-            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
-            nuint alignedSize = gc_heap.Align(size);
-            byte* result = AllocCore(acontext, alignedSize, flags);
-            if (result is not null &&
-                (flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_FINALIZE) != 0 &&
-                (gc_heap.finalize_queue is null ||
-                 !gc_heap.finalize_queue->RegisterForFinalization(
-                    (int)gc_generation_num.soh_gen0,
-                    result,
-                    alignedSize)))
+            while (true)
             {
-                result = null;
-            }
+                GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+                nuint alignedSize = gc_heap.Align(size);
+                byte* result = AllocCore(acontext, alignedSize, flags, out bool waitForGc);
+                if (result is not null &&
+                    (flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_FINALIZE) != 0 &&
+                    (gc_heap.finalize_queue is null ||
+                     !gc_heap.finalize_queue->RegisterForFinalization(
+                        (int)gc_generation_num.soh_gen0,
+                        result,
+                        alignedSize)))
+                {
+                    result = null;
+                }
 
-            criticalRegion.Exit();
-            return result;
+                criticalRegion.Exit();
+                if (!waitForGc)
+                {
+                    return result;
+                }
+
+                WaitUntilGCCompleteCore(considerGcStart: true);
+            }
         }
 
-        private static byte* AllocCore(gc_alloc_context* acontext, nuint size, uint flags)
+        private static byte* AllocCore(
+            gc_alloc_context* acontext,
+            nuint size,
+            uint flags,
+            out bool waitForGc)
         {
+            waitForGc = false;
             size = gc_heap.Align(size);
 
             // Large objects are handed out whole rather than from an SOH allocation context.
@@ -338,7 +352,8 @@ namespace Internal.Runtime.GarbageCollection
                 return AllocateFromRegion(acontext, size, flags,
                     (flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_PINNED_OBJECT_HEAP) != 0
                         ? (int)gc_generation_num.poh_generation
-                        : (int)gc_generation_num.loh_generation);
+                        : (int)gc_generation_num.loh_generation,
+                    out waitForGc);
 #else
                 byte* uoh = GCHeapMemory.Allocate(size);
                 if (uoh != null)
@@ -352,7 +367,12 @@ namespace Internal.Runtime.GarbageCollection
             }
 
 #if USE_REGIONS
-            return AllocateFromRegion(acontext, size, flags, (int)gc_generation_num.soh_gen0);
+            return AllocateFromRegion(
+                acontext,
+                size,
+                flags,
+                (int)gc_generation_num.soh_gen0,
+                out waitForGc);
 #else
             // Whatever is left in the old context is abandoned. Nothing walks this heap and
             // nothing reclaims it, so no free object needs to be written over the gap.
@@ -372,8 +392,14 @@ namespace Internal.Runtime.GarbageCollection
         }
 
 #if USE_REGIONS
-        private static byte* AllocateFromRegion(gc_alloc_context* acontext, nuint size, uint flags, int generation)
+        private static byte* AllocateFromRegion(
+            gc_alloc_context* acontext,
+            nuint size,
+            uint flags,
+            int generation,
+            out bool waitForGc)
         {
+            waitForGc = false;
             gc_heap* heap = ManagedGCRegionBootstrap.Heap;
             if (heap is null)
             {
@@ -400,9 +426,10 @@ namespace Internal.Runtime.GarbageCollection
                 flags,
                 generation,
                 &context);
-            gc_heap.enable_non_collecting_bootstrap_budget(&context);
             if (!gc_heap.allocate_more_space(&context, gc_heap.managed_allocation_callback()))
             {
+                waitForGc =
+                    context.deferred_operation == gc_heap.allocation_deferred_operation.wait_for_gc_done;
                 return null;
             }
 
@@ -518,14 +545,44 @@ namespace Internal.Runtime.GarbageCollection
         private static uint GetGcCount(void* thisPtr) => (uint)Volatile.Read(ref s_gcCount);
 
         private static byte IsGCInProgressHelper(void* thisPtr, byte bConsiderGCStart) =>
-            Volatile.Read(ref s_gcInProgress) != 0 ? (byte)1 : (byte)0;
+            Volatile.Read(ref s_gcInProgress) != 0 ||
+            (bConsiderGCStart != 0 && Volatile.Read(ref s_gcStarted) != 0)
+                ? (byte)1
+                : (byte)0;
 
         private static void SetGCInProgress(void* thisPtr, byte fInProgress)
         {
             Volatile.Write(ref s_gcInProgress, fInProgress);
         }
 
-        private static uint WaitUntilGCComplete(void* thisPtr, byte bConsiderGCStart) => 0;
+        private static uint WaitUntilGCComplete(void* thisPtr, byte bConsiderGCStart)
+        {
+            WaitUntilGCCompleteCore(bConsiderGCStart != 0);
+            return 0;
+        }
+
+        internal static bool CollectionStartedForAllocation() =>
+            Volatile.Read(ref s_gcStarted) != 0 ||
+            Volatile.Read(ref s_gcInProgress) != 0;
+
+        internal static void NotifyCollectionStarted() =>
+            Interlocked.Increment(ref s_gcStarted);
+
+        internal static void NotifyCollectionEnded() =>
+            Interlocked.Decrement(ref s_gcStarted);
+
+        internal static void RecordCollectionCount(int collectionCount) =>
+            Volatile.Write(ref s_gcCount, collectionCount);
+
+        private static void WaitUntilGCCompleteCore(bool considerGcStart)
+        {
+            uint switchCount = 0;
+            while (Volatile.Read(ref s_gcInProgress) != 0 ||
+                (considerGcStart && Volatile.Read(ref s_gcStarted) != 0))
+            {
+                GCToOSInterface.YieldThread(switchCount++);
+            }
+        }
 
         private static void SetWaitForGCEvent(void* thisPtr)
         {

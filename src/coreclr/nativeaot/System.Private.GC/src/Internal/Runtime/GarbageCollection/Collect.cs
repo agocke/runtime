@@ -60,6 +60,37 @@ internal unsafe partial struct gc_heap
         byte low_memory_p,
         int mode)
     {
+        return garbage_collect_synchronous_full_gen2(
+            generation,
+            low_memory_p,
+            mode,
+            gc_reason.reason_empty,
+            allocation_triggered_p: false);
+    }
+
+    public static int garbage_collect_synchronous_full_gen2_for_allocation(gc_reason reason)
+    {
+        Debug.Assert(reason is
+            gc_reason.reason_alloc_soh or
+            gc_reason.reason_alloc_loh or
+            gc_reason.reason_oos_soh or
+            gc_reason.reason_oos_loh);
+
+        return garbage_collect_synchronous_full_gen2(
+            GCInterfaceOffsets.max_generation,
+            low_memory_p: 0,
+            (int)collection_mode.collection_blocking,
+            reason,
+            allocation_triggered_p: true);
+    }
+
+    private static int garbage_collect_synchronous_full_gen2(
+        int generation,
+        byte low_memory_p,
+        int mode,
+        gc_reason reason,
+        bool allocation_triggered_p)
+    {
         bool survivor_analysis_requested =
             GCToEEInterface.AnalyzeSurvivorsRequested(GCInterfaceOffsets.max_generation) != 0;
         if (!synchronous_full_gen2_collection_supported(
@@ -79,10 +110,12 @@ internal unsafe partial struct gc_heap
         dynamic_data* dd = dynamic_data_of(hp, GCInterfaceOffsets.max_generation);
         nuint collection_count_at_entry = dynamic_data.dd_collection_count(dd);
 
+        ManagedGCHeap.NotifyCollectionStarted();
         enter_gc_lock();
         if (collection_count_at_entry != dynamic_data.dd_collection_count(dd))
         {
             leave_gc_lock();
+            ManagedGCHeap.NotifyCollectionEnded();
             return collection_s_ok;
         }
 
@@ -92,7 +125,7 @@ internal unsafe partial struct gc_heap
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
 
         settings.init_mechanisms();
-        if (garbage_collect(hp, low_memory_p, mode))
+        if (garbage_collect(hp, low_memory_p, mode, reason, allocation_triggered_p))
         {
             collection_completed = true;
             result = collection_s_ok;
@@ -101,9 +134,11 @@ internal unsafe partial struct gc_heap
         GCToEEInterface.RestartEE(collection_completed ? (byte)1 : (byte)0);
 
         leave_gc_lock();
+        ManagedGCHeap.NotifyCollectionEnded();
 
         if (collection_completed)
         {
+            ManagedGCHeap.RecordCollectionCount(unchecked((int)settings.gc_index));
             GCToEEInterface.EnableFinalization(
                 settings.found_finalizers != 0 ? (byte)1 : (byte)0);
         }
@@ -111,18 +146,26 @@ internal unsafe partial struct gc_heap
         return result;
     }
 
-    public static bool garbage_collect(gc_heap* hp, byte low_memory_p, int mode)
+    public static bool garbage_collect(
+        gc_heap* hp,
+        byte low_memory_p,
+        int mode,
+        gc_reason reason,
+        bool allocation_triggered_p)
     {
         alloc_contexts_used = 0;
         fix_allocation_contexts(hp, for_gc_p: true);
         init_records(hp);
 
-        collection_mode collectionMode = (collection_mode)mode;
-        if (low_memory_p != 0)
+        if (allocation_triggered_p)
+        {
+            settings.reason = reason;
+        }
+        else if (low_memory_p != 0)
         {
             settings.reason = gc_reason.reason_lowmemory_blocking;
         }
-        else if ((collectionMode & collection_mode.collection_compacting) != 0)
+        else if (((collection_mode)mode & collection_mode.collection_compacting) != 0)
         {
             settings.reason = gc_reason.reason_induced_compacting;
         }
