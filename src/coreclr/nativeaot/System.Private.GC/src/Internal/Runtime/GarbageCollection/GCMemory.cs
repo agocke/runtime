@@ -39,6 +39,7 @@ internal unsafe partial struct gc_heap
     }
 
     public static nuint reserved_memory;
+    public static nuint reserved_memory_limit;
     public static CLRCriticalSection check_commit_cs;
     public static nuint current_total_committed;
     public static recorded_committed_bucket_array committed_by_oh;

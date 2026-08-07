@@ -1257,9 +1257,10 @@ and desired-allocation policy. The pure scalar survival-growth and linear-alloca
 helpers are translated, along with WKS `collect.cpp` `update_collection_counts`,
 `update_end_ngc_time`, and `update_end_gc_time_per_heap`. The latter records one end timestamp
 and updates elapsed times only for condemned generations.
-The remaining dynamic post-collection tuning algorithms and the
-`initialize_gc` hard-limit computation that may further constrain those values remain deferred;
-this code neither fabricates a permissive budget nor reports an unported collection as successful.
+The WKS `USE_REGIONS` post-collection policy now retunes those records from survival,
+fragmentation, elapsed time, incoming promotion, finalization promotion, memory load, and latency
+mode. Initialization and runtime refresh compute explicit, percentage, per-object-heap, and
+restricted-container hard limits before those budgets are consumed.
 Production allocation uses these records and invokes the bounded collector when their budgets or
 available regions are exhausted.
 `set_allocation_heap_segment`/`reset_allocation_pointers` cover the region generation schema.
@@ -1393,7 +1394,7 @@ Translate in dependency order:
   initialization, requested/budget-elevated condemnation, mark/plan completion,
   pinned-allocation adjustment, post-GC accounting, full-GC UOH cleanup,
   range/write-barrier publication, timestamps, and `GcStartWork`/`GcDone`; server, background,
-  diagnostics, and the remaining dynamic tuning rules remain deferred)
+  diagnostics, BGC servo tuning, and dynamic heap count remain deferred)
 - `no_gc.cpp`
 
 Beyond its translated dependency-free prefix helpers, `plan_phase.cpp` is the largest and
@@ -1410,13 +1411,17 @@ after collection, and entrypoint suspension ownership. Full-plan validation deri
 marked-address range from SOH, LOH, and POH objects; omitting UOH marks previously rejected a
 valid full collection before relocation. The bounded post-GC accounting now records the
 full-blocking finalizable promoted count rather than reporting the concurrently draining live
-finalizer queue through `GC.GetGCMemoryInfo()`.
+finalizer queue through `GC.GetGCMemoryInfo()`. The API smoke also validates accurate heap,
+fragmentation, promotion, finalization, generation, memory-load, collection-count, and pause
+snapshots; latency-mode round trips; runtime hard-limit refresh; and repeated allocation and
+collection after those queries.
 
 ### 10. Concurrency and tuning
 
 **Status: In progress -- the WKS software-write-watch revisit, native mark-array final closure,
-concurrent region sweep, foreground Gen0/Gen1 coordination, allocation trigger, and reusable
-native-event worker are routed**
+concurrent region sweep, foreground Gen0/Gen1 coordination, allocation and memory-pressure
+triggers, reusable native-event worker, dynamic budget retuning, hard-limit refresh, and public
+memory/pause/latency reporting are routed**
 
 Translate:
 
@@ -1450,15 +1455,27 @@ concurrent sweep and returned through the deferred region path at the next colle
 generation/history data remains separate from intervening foreground records until post-sweep
 publication.
 
+The WKS `USE_REGIONS` tuning closure now ports `desired_new_allocation`,
+`compute_new_dynamic_data`, incoming-budget adjustment, low-latency young-generation budgets,
+memory-load sampling, explicit/percentage/per-object-heap/container hard limits, and refresh
+rollback. Collection history records ephemeral, full-blocking, and double-buffered background
+snapshots with before/after generation size and fragmentation, promoted/pinned/finalization
+counts, memory load, both pause intervals, pause percentage, and cumulative suspension time.
+The `IGCHeap` memory-load, generation-budget, latency-mode, reserved-VM, memory-info, pause,
+last-GC timing, and current-object-size slots consume that state. This also closes the heap-side
+timing dependency used by NativeAOT `GC.AddMemoryPressure`.
+
 Foundation coverage pins every routed state, the foreground/BGC settings handoff, mark-range and
-sweep-cursor state, allocation-triggered scheduling, and reuse of one worker for successive
-cycles. The dedicated NativeAOT smoke mutates and allocates during background work, runs blocking
+sweep-cursor state, allocation-triggered scheduling, budget retuning, hard-limit validation,
+metric snapshots, latency effects, and reuse of one worker for successive cycles. The dedicated
+NativeAOT smoke mutates and allocates during background work, runs blocking
 Gen0/Gen1 collections across active BGC cycles, checks a pre-existing-to-new card edge,
 strong/pinned handles and finalization, recycles empty UOH regions, runs successive explicit BGC
-cycles through the same worker, and forces an allocation-triggered cycle.
+cycles through the same worker, forces allocation- and memory-pressure-triggered cycles, and
+checks memory/pause APIs and active-BGC latency changes.
 
-Production blockers remain in broader dynamic tuning, diagnostic `saved_changed_segs`
-publication, and server `MULTIPLE_HEAPS` closure.
+Production blockers remain in BGC servo tuning, dynamic heap count, diagnostic
+`saved_changed_segs` publication, and server `MULTIPLE_HEAPS` closure.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.

@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -120,6 +121,62 @@ internal static class ManagedGCBgcTest
             byte[][] recycledAllocations = AllocateLargeGarbage(8);
             byte[] subsequent = new byte[2048];
             subsequent[0] = 0x6d;
+            int metricsCollectionCount = GC.CollectionCount(GC.MaxGeneration);
+            TimeSpan pauseBeforeMetrics = GC.GetTotalPauseDuration();
+            GCLatencyMode originalLatency = System.Runtime.GCSettings.LatencyMode;
+            System.Runtime.GCSettings.LatencyMode =
+                GCLatencyMode.SustainedLowLatency;
+            bool latencyRoundTrip =
+                System.Runtime.GCSettings.LatencyMode ==
+                GCLatencyMode.SustainedLowLatency;
+            GC.Collect(
+                GC.MaxGeneration,
+                GCCollectionMode.Forced,
+                blocking: false,
+                compacting: false);
+            System.Runtime.GCSettings.LatencyMode = GCLatencyMode.Interactive;
+            latencyRoundTrip &=
+                System.Runtime.GCSettings.LatencyMode ==
+                GCLatencyMode.Interactive;
+            GC.Collect(
+                GC.MaxGeneration,
+                GCCollectionMode.Forced,
+                blocking: true,
+                compacting: false);
+            GCMemoryInfo memoryInfo = GC.GetGCMemoryInfo();
+            TimeSpan pauseAfterMetrics = GC.GetTotalPauseDuration();
+            GC.RefreshMemoryLimit();
+            System.Runtime.GCSettings.LatencyMode = originalLatency;
+            const long PressureIncrement = 16L * 1024 * 1024;
+            long totalPressure = 0;
+            int beforeMemoryPressure = GC.CollectionCount(GC.MaxGeneration);
+            for (int i = 0;
+                 i < 20 &&
+                 GC.CollectionCount(GC.MaxGeneration) == beforeMemoryPressure;
+                 i++)
+            {
+                Thread.Sleep(20);
+                GC.AddMemoryPressure(PressureIncrement);
+                totalPressure += PressureIncrement;
+            }
+            bool memoryPressureTriggered =
+                GC.CollectionCount(GC.MaxGeneration) > beforeMemoryPressure;
+            GC.RemoveMemoryPressure(totalPressure);
+            bool metricsValid =
+                memoryInfo.Index > 0 &&
+                memoryInfo.HeapSizeBytes > 0 &&
+                memoryInfo.FragmentedBytes <= memoryInfo.HeapSizeBytes &&
+                memoryInfo.PromotedBytes > 0 &&
+                memoryInfo.MemoryLoadBytes > 0 &&
+                memoryInfo.HighMemoryLoadThresholdBytes > 0 &&
+                memoryInfo.TotalAvailableMemoryBytes > 0 &&
+                memoryInfo.GenerationInfo.Length == 5 &&
+                memoryInfo.PauseDurations.Length == 2 &&
+                pauseAfterMetrics >= pauseBeforeMetrics &&
+                pauseAfterMetrics > TimeSpan.Zero &&
+                GC.CollectionCount(GC.MaxGeneration) > metricsCollectionCount &&
+                latencyRoundTrip &&
+                memoryPressureTriggered;
             bool result =
                 returnedBeforeCompletion &&
                 mutations != 0 &&
@@ -138,7 +195,8 @@ internal static class ManagedGCBgcTest
                 !recycledRegionObject.IsAlive &&
                 recycledAllocations[0][0] == 0x7b &&
                 allocationSurvivor[0] == 0x2c &&
-                subsequent[0] == 0x6d;
+                subsequent[0] == 0x6d &&
+                metricsValid;
 
             GC.KeepAlive(root);
             GC.KeepAlive(tail);
@@ -163,7 +221,11 @@ internal static class ManagedGCBgcTest
                     $"allocationTriggered={allocationTriggered}, card={ReferenceEquals(oldTail.Next, cardChild)}, " +
                     $"weak={weak.IsAlive}, recycled={recycledRegionObject.IsAlive}, " +
                     $"foreground={foregroundCollections}, " +
-                    $"finalizers={Volatile.Read(ref Finalizable.Count)}");
+                    $"finalizers={Volatile.Read(ref Finalizable.Count)}, " +
+                    $"heap={memoryInfo.HeapSizeBytes}, frag={memoryInfo.FragmentedBytes}, " +
+                    $"promoted={memoryInfo.PromotedBytes}, load={memoryInfo.MemoryLoadBytes}, " +
+                    $"pause={pauseAfterMetrics}, latency={latencyRoundTrip}, " +
+                    $"pressure={memoryPressureTriggered}");
             }
             return result ? 100 : 1;
         }

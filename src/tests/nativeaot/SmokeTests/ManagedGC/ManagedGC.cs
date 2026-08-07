@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -68,8 +69,113 @@ internal static unsafe class ManagedGCTest
             return 10;
         }
 
+        if (!PublicGcMetricsAndSettingsWork())
+        {
+            return 11;
+        }
+
         Console.WriteLine("ManagedGC smoke test passed.");
         return 100;
+    }
+
+    private static bool PublicGcMetricsAndSettingsWork()
+    {
+        int gen0Count = GC.CollectionCount(0);
+        int gen1Count = GC.CollectionCount(1);
+        int gen2Count = GC.CollectionCount(2);
+        TimeSpan pauseBefore = GC.GetTotalPauseDuration();
+        byte[][] survivors = new byte[8][];
+        for (int i = 0; i < survivors.Length; i++)
+        {
+            survivors[i] = new byte[32 * 1024];
+            survivors[i][0] = (byte)(0x20 + i);
+        }
+
+        Finalizable.Reset();
+        WeakReference finalizable = CreateFinalizableObject();
+        ForceFullCollection();
+
+        GCMemoryInfo info = GC.GetGCMemoryInfo(GCKind.FullBlocking);
+        TimeSpan pauseAfter = GC.GetTotalPauseDuration();
+        bool generationInfoValid = info.GenerationInfo.Length == 5;
+        bool generationHasSize = false;
+        for (int i = 0; i < info.GenerationInfo.Length; i++)
+        {
+            generationHasSize |= info.GenerationInfo[i].SizeAfterBytes > 0;
+        }
+        generationInfoValid &= generationHasSize;
+        bool metricsValid =
+            info.Index > 0 &&
+            info.Generation == GC.MaxGeneration &&
+            info.HeapSizeBytes > 0 &&
+            info.FragmentedBytes <= info.HeapSizeBytes &&
+            info.PromotedBytes > 0 &&
+            info.FinalizationPendingCount > 0 &&
+            info.MemoryLoadBytes > 0 &&
+            info.HighMemoryLoadThresholdBytes > 0 &&
+            info.TotalAvailableMemoryBytes > 0 &&
+            info.PauseDurations.Length == 2 &&
+            info.PauseDurations[0] > TimeSpan.Zero &&
+            pauseAfter >= pauseBefore &&
+            pauseAfter > TimeSpan.Zero &&
+            GC.CollectionCount(0) > gen0Count &&
+            GC.CollectionCount(1) > gen1Count &&
+            GC.CollectionCount(2) > gen2Count &&
+            generationInfoValid;
+
+        GCLatencyMode originalLatency = System.Runtime.GCSettings.LatencyMode;
+        System.Runtime.GCSettings.LatencyMode = GCLatencyMode.LowLatency;
+        bool latencyRoundTrip =
+            System.Runtime.GCSettings.LatencyMode == GCLatencyMode.LowLatency;
+        System.Runtime.GCSettings.LatencyMode = GCLatencyMode.Interactive;
+        latencyRoundTrip &=
+            System.Runtime.GCSettings.LatencyMode == GCLatencyMode.Interactive;
+        System.Runtime.GCSettings.LatencyMode = originalLatency;
+
+        const ulong RefreshedHeapLimit = 512UL * 1024 * 1024;
+        AppContext.SetData("GCHeapHardLimit", RefreshedHeapLimit);
+        GC.RefreshMemoryLimit();
+        bool refreshedLimit =
+            (ulong)GC.GetGCMemoryInfo().TotalAvailableMemoryBytes ==
+            RefreshedHeapLimit;
+        AppContext.SetData("GCHeapHardLimit", 0UL);
+        GC.RefreshMemoryLimit();
+        for (int iteration = 0; iteration < 3; iteration++)
+        {
+            byte[] allocation = new byte[64 * 1024];
+            allocation[0] = (byte)iteration;
+            ForceCollection(iteration % 3);
+            if (allocation[0] != (byte)iteration)
+            {
+                return false;
+            }
+
+            GC.KeepAlive(allocation);
+        }
+
+        GC.WaitForPendingFinalizers();
+        bool result =
+            metricsValid &&
+            latencyRoundTrip &&
+            refreshedLimit &&
+            Volatile.Read(ref Finalizable.Count) == 1 &&
+            survivors[0][0] == 0x20 &&
+            survivors[^1][0] == 0x27;
+        if (!result)
+        {
+            Console.WriteLine(
+                $"GC metrics failed: index={info.Index}, gen={info.Generation}, " +
+                $"heap={info.HeapSizeBytes}, frag={info.FragmentedBytes}, " +
+                $"promoted={info.PromotedBytes}, finalization={info.FinalizationPendingCount}, " +
+                $"load={info.MemoryLoadBytes}, threshold={info.HighMemoryLoadThresholdBytes}, " +
+                $"available={info.TotalAvailableMemoryBytes}, pause={pauseAfter}, " +
+                $"latency={latencyRoundTrip}, refresh={refreshedLimit}, " +
+                $"finalized={Volatile.Read(ref Finalizable.Count)}");
+        }
+
+        GC.KeepAlive(finalizable);
+        GC.KeepAlive(survivors);
+        return result;
     }
 
     private static bool AutomaticSohCollectionReclaimsAndPreservesRoots()

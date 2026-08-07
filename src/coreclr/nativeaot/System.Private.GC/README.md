@@ -41,7 +41,7 @@ Ported so far:
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `GCDesc.cs` | descriptor encoding and MethodTable lookup from `gcdesc.h` |
-| `DynamicTuning.cs` | WKS total-heap-size, collection-count, and collection-end accounting, plus pure scalar tuning helpers from `dynamic_tuning.cpp` and `collect.cpp` |
+| `DynamicTuning.cs` | WKS `USE_REGIONS` dynamic allocation-budget retuning, memory/hard-limit policy, collection timing and public metric snapshots from `dynamic_tuning.cpp`, `collect.cpp`, `init.cpp`, and `interface.cpp` |
 | `GCPriv.cs` | dependency-free leaf records from `gcpriv.h`, bounded WKS `init_records`, and the WKS `CFinalize` queue and relocation closure |
 | `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `fgm_history` and `gc_reason` from `gc.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h`, GC scan flags from `handletable.h` |
@@ -105,7 +105,7 @@ Ported so far:
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping, region-table, deferred UOH free-region-return, card-bundle enable/search/clear, and dirty-card range helpers from `collect.cpp`, `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, `gc.cpp`, and `card_table.cpp`, plus direct brick repair and first-object lookup |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
-| `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
+| `ManagedGCHeap.cs` | WKS `gcinterface.h` `IGCHeap`, including allocation, collection, finalization, memory metrics, limits, and latency settings |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
 For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed
@@ -1275,12 +1275,27 @@ mutations, retry-other-heap exit, and failure lock-release order. Its context ho
 unmanaged heap inputs. Its WKS heap now initializes the native `static_data_table` values and
 each generation's `dynamic_data` pointer, min-size, clocks, current/promoted/collection/
 fragmentation counters, and initial SOH/LOH/POH allocation budgets from
-`dynamic_tuning.cpp`. Its pure scalar survival-growth and linear-allocation correction helpers
-are also translated, as are WKS `collect.cpp` `update_collection_counts`,
-`update_end_ngc_time`, and `update_end_gc_time_per_heap`. The latter records one end timestamp
-and updates elapsed times only for condemned generations. The native cache-, configured-segment-, Gen0/Gen1-budget-, latency-level-,
-write-watch/concurrent-budget-, and region-independent UOH rules are retained; collection-time
-retuning beyond those helpers and hard-limit computation remain deferred. The production callback
+`dynamic_tuning.cpp`. Its survival-growth and linear-allocation correction feed the routed
+post-collection `desired_new_allocation` / `compute_new_dynamic_data` policy for Gen0, Gen1,
+Gen2, LOH, and POH. Incoming promotion is deducted from older budgets, finalization-only
+promotion is excluded from Gen0 growth, fragmentation and early-collection corrections are
+retained, and low-latency mode applies the native fixed young-generation budget. WKS
+`collect.cpp` collection counts and start/end clocks now back allocation-pressure timing and the
+public collection counters.
+
+The WKS `USE_REGIONS` initialization and refresh path computes explicit, percentage, per-object-
+heap, and restricted-container hard limits, rejects invalid or already-exceeded limits, and
+refreshes the high-memory thresholds while the EE is suspended. `GetMemoryLoad`,
+`GetGenerationBudget`, `Get/SetGcLatencyMode`, `SetReservedVMLimit`, `GetMemoryInfo`, and
+`GetTotalPauseDuration` now report the same heap-owned state as the native interface. The
+snapshot includes ephemeral, full-blocking, and double-buffered background records; per-generation
+before/after size and fragmentation; promoted, pinned, and finalization counts; memory load;
+both BGC pauses; and cumulative suspension time. NativeAOT's refresh bridge returns the GC's
+status instead of discarding it, and the `GetCurrentObjSize`/last-GC timing dependencies make
+`GC.AddMemoryPressure` able to schedule a background collection.
+
+The native cache-, configured-segment-, Gen0/Gen1-budget-, latency-level-,
+write-watch/concurrent-budget-, and region-independent UOH rules are retained. The production callback
 owns SOH/UOH more-space locks, allocation-budget checks, UOH region acquisition, OOM/null exits,
 and synchronous foreground collection scheduling. SOH budget exhaustion starts with Gen0,
 ephemeral out-of-space retry starts with Gen1, and older/UOH budget dependencies elevate to

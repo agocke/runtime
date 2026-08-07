@@ -886,6 +886,256 @@ public sealed unsafe class GCPrivTests
     }
 #endif
 
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    [Fact]
+    public void DynamicTuningRetunesBudgetsAndAccountsForIncomingObjects()
+    {
+        gc_mechanisms savedSettings = gc_heap.settings;
+        gc_history_per_heap savedHistory = gc_heap.gc_data_per_heap;
+        try
+        {
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generation.initialize(generations + i);
+                (generations + i)->gen_num = i;
+            }
+
+            static_data staticData = default;
+            staticData.min_size = 256;
+            staticData.max_size = 4096;
+            staticData.limit = 2;
+            staticData.max_limit = 4;
+
+            dynamic_data* gen0 = gc_heap.dynamic_data_of(
+                &heap,
+                (int)gc_generation_num.soh_gen0);
+            gen0->sdata = &staticData;
+            dynamic_data.dd_min_size(gen0) = 256;
+            dynamic_data.dd_begin_data_size(gen0) = 1000;
+            dynamic_data.dd_survived_size(gen0) = 200;
+            dynamic_data.dd_desired_allocation(gen0) = 1024;
+            dynamic_data.dd_gc_new_allocation(gen0) = 0;
+            dynamic_data.dd_time_clock(gen0) = 1_000_000;
+            dynamic_data.dd_previous_time_clock(gen0) = 0;
+
+            gc_heap.settings = default;
+            gc_heap.settings.condemned_generation =
+                (int)gc_generation_num.soh_gen0;
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_interactive;
+            gc_heap.gc_data_per_heap = default;
+
+            gc_heap.compute_new_dynamic_data(
+                &heap,
+                (int)gc_generation_num.soh_gen0);
+
+            Assert.Equal((nuint)536, dynamic_data.dd_desired_allocation(gen0));
+            Assert.Equal((nint)536, dynamic_data.dd_gc_new_allocation(gen0));
+            Assert.Equal((nint)536, dynamic_data.dd_new_allocation(gen0));
+            Assert.Equal((nuint)536, gc_heap.gc_data_per_heap.gen_data0.new_allocation);
+            Assert.Equal((nuint)200, dynamic_data.dd_promoted_size(gen0));
+
+            dynamic_data* gen1 = gc_heap.dynamic_data_of(
+                &heap,
+                (int)gc_generation_num.soh_gen1);
+            gen1->sdata = &staticData;
+            dynamic_data.dd_desired_allocation(gen1) = 2048;
+            dynamic_data.dd_gc_new_allocation(gen1) = 2048;
+            generation.generation_allocation_size(generations + 1) = 384;
+
+            Assert.Equal(
+                (nuint)384,
+                gc_heap.compute_in(&heap, (int)gc_generation_num.soh_gen1));
+            Assert.Equal((nint)1664, dynamic_data.dd_gc_new_allocation(gen1));
+            Assert.Equal((nint)1664, dynamic_data.dd_new_allocation(gen1));
+            Assert.Equal((nuint)384, gc_heap.gc_data_per_heap.gen_data1.@in);
+            Assert.Equal(
+                (nuint)0,
+                generation.generation_allocation_size(generations + 1));
+
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_low_latency;
+            dynamic_data.dd_survived_size(gen0) = 1;
+            gc_heap.compute_new_dynamic_data(
+                &heap,
+                (int)gc_generation_num.soh_gen0);
+            Assert.Equal(
+                (nuint)(256 * 1024),
+                dynamic_data.dd_desired_allocation(gen0));
+        }
+        finally
+        {
+            gc_heap.settings = savedSettings;
+            gc_heap.gc_data_per_heap = savedHistory;
+        }
+    }
+
+    [Fact]
+    public void PublicMetricsExposeBudgetsMemoryLoadLatencyAndPauseSnapshots()
+    {
+        gc_mechanisms savedSettings = gc_heap.settings;
+        gc_history_per_heap savedHistory = gc_heap.gc_data_per_heap;
+        last_recorded_gc_info savedEphemeral = gc_heap.last_ephemeral_gc_info;
+        ulong savedEnd = gc_heap.end_gc_time;
+        ulong savedProcessStart = gc_heap.process_start_time;
+        ulong savedSuspendedStart = gc_heap.suspended_start_time;
+        ulong savedTotalSuspended = gc_heap.total_suspended_time;
+        nuint savedCommitted = gc_heap.current_total_committed;
+#if BACKGROUND_GC
+        bool savedConcurrent = gc_heap.gc_can_use_concurrent;
+#endif
+
+        try
+        {
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generation.initialize(generations + i);
+                (generations + i)->gen_num = i;
+            }
+
+            heap_segment gen0Region = default;
+            heap_segment.heap_segment_mem(&gen0Region) = (byte*)1000;
+            heap_segment.heap_segment_allocated(&gen0Region) = (byte*)1500;
+            generation.generation_start_segment(generations) = &gen0Region;
+            generation.generation_free_list_space(generations) = 7;
+            generation.generation_free_obj_space(generations) = 3;
+
+            dynamic_data* gen0 = gc_heap.dynamic_data_of(
+                &heap,
+                (int)gc_generation_num.soh_gen0);
+            dynamic_data.dd_desired_allocation(gen0) = 4096;
+            dynamic_data.dd_promoted_size(gen0) = 123;
+            dynamic_data.dd_time_clock(gen0) = 1200;
+
+            gc_heap.gc_data_per_heap = default;
+            gc_heap.gc_data_per_heap.gen_data0.size_before = 600;
+            gc_heap.gc_data_per_heap.gen_data0.free_list_space_before = 11;
+            gc_heap.gc_data_per_heap.gen_data0.free_obj_space_before = 13;
+            gc_heap.gc_data_per_heap.gen_data0.size_after = 500;
+            gc_heap.gc_data_per_heap.gen_data0.free_list_space_after = 7;
+            gc_heap.gc_data_per_heap.gen_data0.free_obj_space_after = 3;
+            gc_heap.settings = default;
+            gc_heap.settings.gc_index = 9;
+            gc_heap.settings.condemned_generation =
+                (int)gc_generation_num.soh_gen0;
+            gc_heap.settings.entry_memory_load = 41;
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_interactive;
+            gc_heap.current_total_committed = 8192;
+            gc_heap.process_start_time = 0;
+            gc_heap.suspended_start_time = 1000;
+            gc_heap.end_gc_time = 2000;
+            gc_heap.total_suspended_time = 0;
+            gc_heap.last_ephemeral_gc_info = default;
+
+            Assert.Equal(41U, gc_heap.get_memory_load());
+            gc_heap.settings.exit_memory_load = 52;
+            Assert.Equal(52U, gc_heap.get_memory_load());
+            gc_heap.settings.exit_memory_load = 0;
+            Assert.Equal(4096UL, gc_heap.get_generation_budget(&heap, 0));
+
+#if BACKGROUND_GC
+            gc_heap.gc_can_use_concurrent = true;
+#endif
+            Assert.Equal(
+                (int)set_pause_mode_status.set_pause_mode_success,
+                gc_heap.set_gc_latency_mode(
+                    (int)gc_pause_mode.pause_low_latency));
+            Assert.Equal(
+                (int)gc_pause_mode.pause_low_latency,
+                gc_heap.get_gc_latency_mode());
+            Assert.Equal(
+                (int)set_pause_mode_status.set_pause_mode_success,
+                gc_heap.set_gc_latency_mode(
+                    (int)gc_pause_mode.pause_sustained_low_latency));
+            Assert.Equal(
+                (int)gc_pause_mode.pause_sustained_low_latency,
+                gc_heap.get_gc_latency_mode());
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_no_gc;
+            Assert.Equal(
+                (int)set_pause_mode_status.set_pause_mode_no_gc,
+                gc_heap.set_gc_latency_mode(
+                    (int)gc_pause_mode.pause_interactive));
+            Assert.Equal(
+                (int)gc_pause_mode.pause_no_gc,
+                gc_heap.get_gc_latency_mode());
+
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_interactive;
+            gc_heap.record_gc_info(&heap);
+
+            Assert.Equal((nuint)9, gc_heap.last_ephemeral_gc_info.index);
+            Assert.Equal((nuint)8192, gc_heap.last_ephemeral_gc_info.total_committed);
+            Assert.Equal((nuint)123, gc_heap.last_ephemeral_gc_info.promoted);
+            Assert.Equal((nuint)1000, gc_heap.last_ephemeral_gc_info.pause_durations0);
+            Assert.Equal(50.0f, gc_heap.last_ephemeral_gc_info.pause_percentage);
+            Assert.Equal((nuint)500, gc_heap.last_ephemeral_gc_info.heap_size);
+            Assert.Equal((nuint)10, gc_heap.last_ephemeral_gc_info.fragmentation);
+            Assert.Equal(41U, gc_heap.last_ephemeral_gc_info.memory_load);
+            Assert.Equal((nuint)600, gc_heap.last_ephemeral_gc_info.gen_info0.size_before);
+            Assert.Equal((nuint)24, gc_heap.last_ephemeral_gc_info.gen_info0.fragmentation_before);
+            Assert.Equal((nuint)500, gc_heap.last_ephemeral_gc_info.gen_info0.size_after);
+            Assert.Equal((nuint)10, gc_heap.last_ephemeral_gc_info.gen_info0.fragmentation_after);
+            Assert.Equal(1000UL, gc_heap.total_suspended_time);
+        }
+        finally
+        {
+            gc_heap.settings = savedSettings;
+            gc_heap.gc_data_per_heap = savedHistory;
+            gc_heap.last_ephemeral_gc_info = savedEphemeral;
+            gc_heap.end_gc_time = savedEnd;
+            gc_heap.process_start_time = savedProcessStart;
+            gc_heap.suspended_start_time = savedSuspendedStart;
+            gc_heap.total_suspended_time = savedTotalSuspended;
+            gc_heap.current_total_committed = savedCommitted;
+#if BACKGROUND_GC
+            gc_heap.gc_can_use_concurrent = savedConcurrent;
+#endif
+        }
+    }
+
+    [Fact]
+    public void HardLimitSettingsAcceptCompleteLimitsAndRejectPartialObjectHeapLimits()
+    {
+        ulong savedPhysicalMemory = gc_heap.total_physical_mem;
+        nuint savedHardLimit = gc_heap.heap_hard_limit;
+        gc_heap.object_heap_array savedObjectHeapLimits =
+            gc_heap.heap_hard_limit_oh;
+        long savedHardLimitConfig = GetGcConfigValue("s_GCHeapHardLimit");
+        long savedSohLimit = GetGcConfigValue("s_GCHeapHardLimitSOH");
+        long savedLohLimit = GetGcConfigValue("s_GCHeapHardLimitLOH");
+        long savedPohLimit = GetGcConfigValue("s_GCHeapHardLimitPOH");
+        try
+        {
+            gc_heap.total_physical_mem = 1024UL * 1024 * 1024;
+            SetGcConfigValue("s_GCHeapHardLimit", 512L * 1024 * 1024);
+            SetGcConfigValue("s_GCHeapHardLimitSOH", 0);
+            SetGcConfigValue("s_GCHeapHardLimitLOH", 0);
+            SetGcConfigValue("s_GCHeapHardLimitPOH", 0);
+
+            Assert.True(ComputeHardLimit());
+            Assert.Equal((nuint)(512 * 1024 * 1024), gc_heap.heap_hard_limit);
+
+            SetGcConfigValue("s_GCHeapHardLimit", 0);
+            SetGcConfigValue("s_GCHeapHardLimitSOH", 256L * 1024 * 1024);
+            SetGcConfigValue("s_GCHeapHardLimitLOH", 128L * 1024 * 1024);
+            SetGcConfigValue("s_GCHeapHardLimitPOH", 0);
+
+            Assert.False(ComputeHardLimit());
+        }
+        finally
+        {
+            gc_heap.total_physical_mem = savedPhysicalMemory;
+            gc_heap.heap_hard_limit = savedHardLimit;
+            gc_heap.heap_hard_limit_oh = savedObjectHeapLimits;
+            SetGcConfigValue("s_GCHeapHardLimit", savedHardLimitConfig);
+            SetGcConfigValue("s_GCHeapHardLimitSOH", savedSohLimit);
+            SetGcConfigValue("s_GCHeapHardLimitLOH", savedLohLimit);
+            SetGcConfigValue("s_GCHeapHardLimitPOH", savedPohLimit);
+        }
+    }
+#endif
+
     [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
@@ -1607,6 +1857,30 @@ public sealed unsafe class GCPrivTests
                 previousDesiredAllocation,
                 timeSincePreviousCollectionSecs,
             }));
+    }
+
+    private static bool ComputeHardLimit()
+    {
+        MethodInfo method = Assert.IsAssignableFrom<MethodInfo>(typeof(gc_heap).GetMethod(
+            "compute_hard_limit",
+            BindingFlags.NonPublic | BindingFlags.Static));
+        return Assert.IsType<bool>(method.Invoke(null, null));
+    }
+
+    private static long GetGcConfigValue(string fieldName)
+    {
+        FieldInfo field = Assert.IsAssignableFrom<FieldInfo>(typeof(GCConfig).GetField(
+            fieldName,
+            BindingFlags.NonPublic | BindingFlags.Static));
+        return Assert.IsType<long>(field.GetValue(null));
+    }
+
+    private static void SetGcConfigValue(string fieldName, long value)
+    {
+        FieldInfo field = Assert.IsAssignableFrom<FieldInfo>(typeof(GCConfig).GetField(
+            fieldName,
+            BindingFlags.NonPublic | BindingFlags.Static));
+        field.SetValue(null, value);
     }
 
 #if USE_REGIONS

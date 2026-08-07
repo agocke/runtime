@@ -215,15 +215,11 @@ namespace Internal.Runtime.GarbageCollection
 
 #if USE_REGIONS
 #if !MULTIPLE_HEAPS
-            ulong totalPhysicalMemory = unchecked((ulong)GCConfig.GetGCTotalPhysicalMemory());
-            if (totalPhysicalMemory == 0)
+            if (!gc_heap.initialize_memory_settings())
             {
-                totalPhysicalMemory = GCToOSInterface.GetPhysicalMemoryLimit();
+                gc_heap.check_commit_cs.Destroy();
+                return E_FAIL;
             }
-
-            gc_heap.initialize_compaction_policy(
-                totalPhysicalMemory,
-                GCToOSInterface.GetTotalProcessorCount());
 #endif
 
             if (!gc_heap.initialize_mark_list())
@@ -518,7 +514,22 @@ namespace Internal.Runtime.GarbageCollection
             0;
 #endif
 
-        private static nuint GetCurrentObjSize(void* thisPtr) => 0;
+        private static nuint GetCurrentObjSize(void* thisPtr)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            if (heap is null)
+            {
+                return 0;
+            }
+
+            nuint heapSize = gc_heap.get_total_heap_size(heap);
+            nuint fragmentation = gc_heap.get_total_fragmentation(heap);
+            return fragmentation <= heapSize ? heapSize - fragmentation : 0;
+#else
+            return GCHeapMemory.BytesInUse;
+#endif
+        }
 
         // ------------------------------------------------------------------------------------
         // Collection
@@ -962,8 +973,13 @@ namespace Internal.Runtime.GarbageCollection
             last_recorded_gc_info* fullBlockingInfo =
                 (last_recorded_gc_info*)Unsafe.AsPointer(
                     ref gc_heap.last_full_blocking_gc_info);
+            last_recorded_gc_info* ephemeralInfo =
+                (last_recorded_gc_info*)Unsafe.AsPointer(
+                    ref gc_heap.last_ephemeral_gc_info);
             last_recorded_gc_info* lastGcInfo = (gc_kind)kind switch
             {
+                gc_kind.gc_kind_ephemeral => ephemeralInfo,
+                gc_kind.gc_kind_full_blocking => fullBlockingInfo,
 #if BACKGROUND_GC
                 gc_kind.gc_kind_background =>
                     (last_recorded_gc_info*)Unsafe.AsPointer(
@@ -974,12 +990,20 @@ namespace Internal.Runtime.GarbageCollection
                         ref gc_heap.background_gc_info(
                             gc_heap.completed_background_gc_info_index())),
 #endif
-                _ => fullBlockingInfo,
+                _ => ephemeralInfo->index > fullBlockingInfo->index
+                    ? ephemeralInfo
+                    : fullBlockingInfo,
             };
 
-            *highMemLoadThresholdBytes = 0;
-            *totalAvailableMemoryBytes = 0;
-            *lastRecordedMemLoadBytes = 0;
+            *highMemLoadThresholdBytes = unchecked((ulong)(
+                (double)gc_heap.high_memory_load_th / 100 *
+                gc_heap.total_physical_mem));
+            *totalAvailableMemoryBytes = gc_heap.heap_hard_limit != 0
+                ? gc_heap.heap_hard_limit
+                : gc_heap.total_physical_mem;
+            *lastRecordedMemLoadBytes = unchecked((ulong)(
+                (double)lastGcInfo->memory_load / 100 *
+                gc_heap.total_physical_mem));
             *lastRecordedHeapSizeBytes = lastGcInfo->heap_size;
             *lastRecordedFragmentationBytes =
                 lastGcInfo->fragmentation;
@@ -990,41 +1014,122 @@ namespace Internal.Runtime.GarbageCollection
                 lastGcInfo->finalize_promoted_objects;
             *index = lastGcInfo->index;
             *generation = lastGcInfo->condemned_generation;
-            *pauseTimePct = 0;
+            *pauseTimePct = unchecked((uint)(lastGcInfo->pause_percentage * 100));
             *isCompaction = lastGcInfo->compaction;
             *isConcurrent = lastGcInfo->concurrent;
 
             // Both are fixed-size arrays in the caller: RH_GH_MEMORY_INFO holds five
             // RH_GC_GENERATION_INFO (gen0-2, LOH, POH) of four ulongs each, and two pause
             // times. Matches the total_generation_count loop in GCHeap::GetMemoryInfo.
-            for (int i = 0; i < 5 * 4; i++)
+            recorded_generation_info* generationInfo =
+                (recorded_generation_info*)Unsafe.AsPointer(
+                    ref lastGcInfo->gen_info0);
+            int rawIndex = 0;
+            for (int i = 0;
+                 i < (int)gc_generation_num.total_generation_count;
+                 i++)
             {
-                genInfoRaw[i] = 0;
+                genInfoRaw[rawIndex++] = generationInfo[i].size_before;
+                genInfoRaw[rawIndex++] = generationInfo[i].fragmentation_before;
+                genInfoRaw[rawIndex++] = generationInfo[i].size_after;
+                genInfoRaw[rawIndex++] = generationInfo[i].fragmentation_after;
             }
 
-            pauseInfoRaw[0] = 0;
-            pauseInfoRaw[1] = 0;
+            pauseInfoRaw[0] = unchecked((ulong)lastGcInfo->pause_durations0 * 10);
+            pauseInfoRaw[1] = unchecked((ulong)lastGcInfo->pause_durations1 * 10);
         }
 
-        private static uint GetMemoryLoad(void* thisPtr) => 0;
+        private static uint GetMemoryLoad(void* thisPtr) =>
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.get_memory_load();
+#else
+            gc_heap.settings.exit_memory_load != 0
+                ? gc_heap.settings.exit_memory_load
+                : gc_heap.settings.entry_memory_load;
+#endif
 
-        private static long GetTotalPauseDuration(void* thisPtr) => 0;
+        private static long GetTotalPauseDuration(void* thisPtr) =>
+            unchecked((long)gc_heap.total_suspended_time * 10);
 
-        private static int GetLastGCPercentTimeInGC(void* thisPtr) => 0;
+        private static int GetLastGCPercentTimeInGC(void* thisPtr)
+        {
+            last_recorded_gc_info* info = GetLatestBlockingGcInfo();
+            return unchecked((int)info->pause_percentage);
+        }
 
-        private static nuint GetLastGCGenerationSize(void* thisPtr, int gen) => 0;
+        private static nuint GetLastGCGenerationSize(void* thisPtr, int gen)
+        {
+            if ((uint)gen >= (uint)gc_generation_num.total_generation_count)
+            {
+                return 0;
+            }
 
-        private static nuint GetLastGCStartTime(void* thisPtr, int generation) => 0;
+            last_recorded_gc_info* info = GetLatestBlockingGcInfo();
+            recorded_generation_info* generationInfo =
+                (recorded_generation_info*)Unsafe.AsPointer(
+                    ref info->gen_info0);
+            return generationInfo[gen].size_after;
+        }
 
-        private static nuint GetLastGCDuration(void* thisPtr, int generation) => 0;
+        private static nuint GetLastGCStartTime(void* thisPtr, int generation)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            if (heap is not null &&
+                (uint)generation < (uint)gc_generation_num.total_generation_count)
+            {
+                return unchecked((nuint)(
+                    dynamic_data.dd_time_clock(
+                        gc_heap.dynamic_data_of(heap, generation)) / 1000));
+            }
+#endif
+            return 0;
+        }
 
-        private static nuint GetNow(void* thisPtr) => 0;
+        private static nuint GetLastGCDuration(void* thisPtr, int generation)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            if (heap is not null &&
+                (uint)generation < (uint)gc_generation_num.total_generation_count)
+            {
+                return unchecked((nuint)(
+                    dynamic_data.dd_gc_elapsed_time(
+                        gc_heap.dynamic_data_of(heap, generation)) / 1000));
+            }
+#endif
+            return 0;
+        }
 
-        private static ulong GetGenerationBudget(void* thisPtr, int generation) => 0;
+        private static nuint GetNow(void* thisPtr) =>
+            unchecked((nuint)(GCCommon.GetHighPrecisionTimeStamp() / 1000));
 
-        private static int GetGcLatencyMode(void* thisPtr) => 1;
+        private static ulong GetGenerationBudget(void* thisPtr, int generation)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            if (heap is not null &&
+                (uint)generation < (uint)gc_generation_num.total_generation_count)
+            {
+                return gc_heap.get_generation_budget(heap, generation);
+            }
+#endif
+            return 0;
+        }
 
-        private static int SetGcLatencyMode(void* thisPtr, int newLatencyMode) => S_OK;
+        private static int GetGcLatencyMode(void* thisPtr) =>
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.get_gc_latency_mode();
+#else
+            (int)gc_heap.settings.pause_mode;
+#endif
+
+        private static int SetGcLatencyMode(void* thisPtr, int newLatencyMode) =>
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.set_gc_latency_mode(newLatencyMode);
+#else
+            S_OK;
+#endif
 
         private static int GetLOHCompactionMode(void* thisPtr) => (int)gc_heap.loh_compaction_mode;
 
@@ -1033,7 +1138,17 @@ namespace Internal.Runtime.GarbageCollection
             gc_heap.loh_compaction_mode = (gc_loh_compaction_mode)newLOHCompactionMode;
         }
 
-        private static int RefreshMemoryLimit(void* thisPtr) => S_OK;
+        private static int RefreshMemoryLimit(void* thisPtr)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+            int result = gc_heap.refresh_memory_limit();
+            criticalRegion.Exit();
+            return result;
+#else
+            return S_OK;
+#endif
+        }
 
         private static byte IsValidSegmentSize(void* thisPtr, nuint size) => 1;
 
@@ -1048,6 +1163,20 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void SetReservedVMLimit(void* thisPtr, nuint vmlimit)
         {
+            gc_heap.reserved_memory_limit = vmlimit;
+        }
+
+        private static last_recorded_gc_info* GetLatestBlockingGcInfo()
+        {
+            last_recorded_gc_info* ephemeralInfo =
+                (last_recorded_gc_info*)Unsafe.AsPointer(
+                    ref gc_heap.last_ephemeral_gc_info);
+            last_recorded_gc_info* fullBlockingInfo =
+                (last_recorded_gc_info*)Unsafe.AsPointer(
+                    ref gc_heap.last_full_blocking_gc_info);
+            return ephemeralInfo->index > fullBlockingInfo->index
+                ? ephemeralInfo
+                : fullBlockingInfo;
         }
 
         /// <summary>

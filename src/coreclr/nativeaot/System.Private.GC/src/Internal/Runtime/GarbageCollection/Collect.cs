@@ -156,6 +156,7 @@ internal unsafe partial struct gc_heap
         int found_finalizers = 0;
         int result = collection_e_fail;
 
+        suspended_start_time = GCCommon.GetHighPrecisionTimeStamp();
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
 
         settings.init_mechanisms();
@@ -179,6 +180,7 @@ internal unsafe partial struct gc_heap
 #if MANAGED_GC_TEST_HOST
             record_foreground_during_bgc_for_test();
 #endif
+            add_bgc_pause_duration_0();
         }
 
         GCToEEInterface.RestartEE(collection_completed ? (byte)1 : (byte)0);
@@ -226,6 +228,7 @@ internal unsafe partial struct gc_heap
             settings.reason = gc_reason.reason_induced;
         }
 
+        record_entry_memory_load();
         num_pinned_objects = 0;
         rearrange_uoh_segments();
 
@@ -308,8 +311,27 @@ internal unsafe partial struct gc_heap
             condemned_generation = GCInterfaceOffsets.max_generation;
         }
 
+        if (settings.pause_mode == gc_pause_mode.pause_low_latency &&
+            !is_induced(settings.reason))
+        {
+            condemned_generation = Math.Min(
+                condemned_generation,
+                GCInterfaceOffsets.max_generation - 1);
+        }
+
         return condemned_generation;
     }
+
+    private static bool is_induced(gc_reason reason) =>
+        reason is
+            gc_reason.reason_induced or
+            gc_reason.reason_induced_noforce or
+            gc_reason.reason_lowmemory or
+            gc_reason.reason_lowmemory_blocking or
+            gc_reason.reason_induced_compacting or
+            gc_reason.reason_induced_aggressive or
+            gc_reason.reason_lowmemory_host or
+            gc_reason.reason_lowmemory_host_blocking;
 
     public static bool gc1(gc_heap* hp)
     {
@@ -353,32 +375,33 @@ internal unsafe partial struct gc_heap
              gen_number <= n;
              gen_number++)
         {
-            compute_new_dynamic_data_minimal(hp, gen_number);
+            compute_new_dynamic_data(hp, gen_number);
         }
 
-        if (n == GCInterfaceOffsets.max_generation)
+        if (n != GCInterfaceOffsets.max_generation)
         {
-            compute_new_dynamic_data_minimal(
-                hp,
-                (int)gc_generation_num.loh_generation);
-            compute_new_dynamic_data_minimal(
-                hp,
-                (int)gc_generation_num.poh_generation);
-        }
-        else
-        {
-            for (int gen_number = n + 1;
-                 gen_number <= GCInterfaceOffsets.max_generation;
-                 gen_number++)
-            {
-                update_older_dynamic_data_minimal(hp, gen_number);
-            }
-
             for (int gen_number = n + 1;
                  gen_number < (int)gc_generation_num.total_generation_count;
                  gen_number++)
             {
                 record_generation_size_after(hp, gen_number);
+            }
+
+            for (int gen_number = n + 1;
+                 gen_number <= GCInterfaceOffsets.max_generation;
+                 gen_number++)
+            {
+                compute_in(hp, gen_number);
+                if (settings.promotion != 0)
+                {
+                    generation* gen = generation_of(
+                        generation_table_of(hp),
+                        gen_number);
+                    dynamic_data.dd_fragmentation(
+                        dynamic_data_of(hp, gen_number)) = unchecked(
+                            generation.generation_free_list_space(gen) +
+                            generation.generation_free_obj_space(gen));
+                }
             }
         }
 
@@ -392,91 +415,10 @@ internal unsafe partial struct gc_heap
 
         update_end_ngc_time();
         update_end_gc_time_per_heap(hp);
-        if (n == GCInterfaceOffsets.max_generation)
-        {
-            record_full_blocking_gc_info_minimal(hp);
-        }
+        record_gc_info(hp);
         last_gc_before_oom = 0;
         GCToEEInterface.GcDone(n);
         return true;
-    }
-
-    public static void record_full_blocking_gc_info_minimal(gc_heap* hp)
-    {
-#if BACKGROUND_GC
-        is_last_recorded_bgc = 0;
-#endif
-        last_full_blocking_gc_info = default;
-        last_full_blocking_gc_info.index = settings.gc_index;
-        last_full_blocking_gc_info.total_committed = current_total_committed;
-        last_full_blocking_gc_info.promoted = get_total_promoted(hp);
-        last_full_blocking_gc_info.pinned_objects = num_pinned_objects;
-        last_full_blocking_gc_info.finalize_promoted_objects =
-            finalize_queue is null ? 0 : finalize_queue->GetPromotedCount();
-        last_full_blocking_gc_info.heap_size = get_total_heap_size(hp);
-        last_full_blocking_gc_info.condemned_generation =
-            unchecked((byte)settings.condemned_generation);
-        last_full_blocking_gc_info.compaction =
-            settings.compaction != 0 ? (byte)1 : (byte)0;
-        last_full_blocking_gc_info.concurrent =
-            settings.concurrent != 0 ? (byte)1 : (byte)0;
-    }
-
-    private static void compute_new_dynamic_data_minimal(gc_heap* hp, int gen_number)
-    {
-        dynamic_data* dd = dynamic_data_of(hp, gen_number);
-        generation* gen = generation_of(generation_table_of(hp), gen_number);
-        nuint total_gen_size = generation_sizes(hp, gen);
-        nuint fragmentation = unchecked(
-            generation.generation_free_list_space(gen) +
-            generation.generation_free_obj_space(gen));
-
-        dynamic_data.dd_fragmentation(dd) = fragmentation;
-        dynamic_data.dd_current_size(dd) =
-            fragmentation <= total_gen_size
-                ? total_gen_size - fragmentation
-                : 0;
-        dynamic_data.dd_promoted_size(dd) = dynamic_data.dd_survived_size(dd);
-        generation.generation_condemned_allocated(gen) = 0;
-        generation.generation_free_list_allocated(gen) = 0;
-        generation.generation_end_seg_allocated(gen) = 0;
-
-        nuint desired_allocation = dynamic_data.dd_desired_allocation(dd);
-        if (desired_allocation < dynamic_data.dd_min_size(dd))
-        {
-            desired_allocation = dynamic_data.dd_min_size(dd);
-            dynamic_data.dd_desired_allocation(dd) = desired_allocation;
-        }
-
-        dynamic_data.dd_gc_new_allocation(dd) = unchecked((nint)desired_allocation);
-        dynamic_data.dd_new_allocation(dd) = unchecked((nint)desired_allocation);
-
-        gc_history_per_heap* history =
-            (gc_history_per_heap*)System.Runtime.CompilerServices.Unsafe.AsPointer(
-                ref gc_data_per_heap);
-        ref gc_generation_data gen_data =
-            ref gc_history_per_heap.gen_data(history, gen_number);
-        gen_data.size_after = total_gen_size;
-        gen_data.free_list_space_after = generation.generation_free_list_space(gen);
-        gen_data.free_obj_space_after = generation.generation_free_obj_space(gen);
-        gen_data.pinned_surv = dynamic_data.dd_pinned_survived_size(dd);
-        gen_data.npinned_surv = unchecked(
-            dynamic_data.dd_survived_size(dd) -
-            dynamic_data.dd_pinned_survived_size(dd));
-    }
-
-    private static void update_older_dynamic_data_minimal(
-        gc_heap* hp,
-        int gen_number)
-    {
-        if (settings.promotion != 0)
-        {
-            generation* gen = generation_of(generation_table_of(hp), gen_number);
-            dynamic_data.dd_fragmentation(dynamic_data_of(hp, gen_number)) =
-                unchecked(
-                    generation.generation_free_list_space(gen) +
-                    generation.generation_free_obj_space(gen));
-        }
     }
 
     private static void record_generation_size_after(

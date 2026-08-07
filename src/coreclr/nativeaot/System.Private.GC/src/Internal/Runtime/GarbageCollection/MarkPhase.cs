@@ -1104,12 +1104,17 @@ internal unsafe partial struct gc_heap
             GCInterfaceOffsets.max_generation,
             &sc);
 
+        nuint promotedBytesLive = get_promoted_bytes(heap);
         if (finalizeQueue is not null)
         {
             finalizeQueue->ScanForFinalization(&promote, condemned_gen_number, heap);
         }
 
         drain_mark_queue(heap);
+        nuint promotedBytesWithFinalization = get_promoted_bytes(heap);
+        finalization_promoted_bytes = promotedBytesWithFinalization >= promotedBytesLive
+            ? promotedBytesWithFinalization - promotedBytesLive
+            : 0;
         GCToEEInterface.DiagWalkFReachableObjects(heap);
 
         if (ObjectHandle.DependentHandleContextsInitialized)

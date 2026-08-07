@@ -2301,7 +2301,7 @@ internal unsafe partial struct gc_heap
     // This is the WRITE_WATCH / BACKGROUND_GC initialization branch of initialize_gc. It only
     // establishes the capability value consumed by init_static_data; it does not start or claim
     // to implement background collection.
-    private static void initialize_concurrent_gc()
+    internal static void initialize_concurrent_gc()
     {
 #if BACKGROUND_GC
         // FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP is enabled on every architecture that
@@ -2314,8 +2314,7 @@ internal unsafe partial struct gc_heap
 #endif
     }
 
-    // set_static_data and init_dynamic_data from dynamic_tuning.cpp. This initializes only the
-    // data allocator policy consumes; collection-time tuning remains deferred.
+    // set_static_data and init_dynamic_data from dynamic_tuning.cpp.
     private static void set_static_data(gc_heap* hp)
     {
         for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
@@ -2344,6 +2343,10 @@ internal unsafe partial struct gc_heap
         set_static_data(hp);
 
         ulong now = GCCommon.GetHighPrecisionTimeStamp();
+        process_start_time = now;
+#if TARGET_64BIT
+        youngest_gen_desired_th = unchecked((nuint)mem_one_percent);
+#endif
         for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
         {
             dynamic_data* dd = dynamic_data_of(hp, i);

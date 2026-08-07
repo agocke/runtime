@@ -266,6 +266,7 @@ internal unsafe partial struct gc_heap
 #endif
         set_background_state(bgc_state.bgc_initialized);
 
+        suspended_start_time = GCCommon.GetHighPrecisionTimeStamp();
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
         settings.init_mechanisms();
         settings.reason = low_memory_p != 0
@@ -277,6 +278,7 @@ internal unsafe partial struct gc_heap
         settings.loh_compaction = 0;
         settings.concurrent = 1;
         settings.background_p = 1;
+        record_entry_memory_load();
         settings.gc_index = dynamic_data.dd_collection_count(
             dynamic_data_of(hp, (int)gc_generation_num.soh_gen0)) + 1;
         last_background_gc_info_index = 1 - last_background_gc_info_index;
@@ -320,6 +322,7 @@ internal unsafe partial struct gc_heap
             SoftwareWriteWatch.EnableForGCHeap();
         }
         reset_background_allocation_budgets(hp);
+        add_bgc_pause_duration_0();
         GCToEEInterface.RestartEE(0);
         leave_gc_lock();
         ManagedGC_SignalBackgroundThread((void*)bgc_thread_context);
@@ -450,6 +453,7 @@ internal unsafe partial struct gc_heap
         }
 
         enter_gc_lock();
+        suspended_start_time = GCCommon.GetHighPrecisionTimeStamp();
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
         set_background_state(bgc_state.bgc_final_marking);
         GCEvents.GCEventFireBGC2ndNonConBegin();
@@ -472,6 +476,7 @@ internal unsafe partial struct gc_heap
 
         prepare_background_sweep(hp);
         GCEvents.GCEventFireBGC2ndNonConEnd();
+        add_bgc_pause_duration_1();
         GCToEEInterface.RestartEE(1);
         GCEvents.GCEventFireBGC2ndConBegin();
 
@@ -592,11 +597,16 @@ internal unsafe partial struct gc_heap
             GCInterfaceOffsets.max_generation,
             GCInterfaceOffsets.max_generation,
             &sc);
+        nuint promotedBytesLive = get_promoted_bytes(hp);
         finalize_queue->ScanForFinalization(
             &background_promote,
             GCInterfaceOffsets.max_generation,
             hp);
         drain_background_mark_stack(hp);
+        nuint promotedBytesWithFinalization = get_promoted_bytes(hp);
+        finalization_promoted_bytes = promotedBytesWithFinalization >= promotedBytesLive
+            ? promotedBytesWithFinalization - promotedBytesLive
+            : 0;
         GCToEEInterface.DiagWalkFReachableObjects(hp);
 
         if (ObjectHandle.DependentHandleContextsInitialized)
@@ -1350,11 +1360,23 @@ internal unsafe partial struct gc_heap
 
     private static void finish_background_collection_accounting(gc_heap* hp)
     {
+        compute_new_dynamic_data(hp, GCInterfaceOffsets.max_generation);
+
+        gc_history_per_heap* history =
+            (gc_history_per_heap*)Unsafe.AsPointer(ref bgc_data_per_heap);
         for (int genNumber = 0;
-             genNumber < (int)gc_generation_num.total_generation_count;
+             genNumber < GCInterfaceOffsets.max_generation;
              genNumber++)
         {
-            compute_new_dynamic_data_background(hp, genNumber);
+            generation* gen =
+                generation_of(generation_table_of(hp), genNumber);
+            ref gc_generation_data genData =
+                ref gc_history_per_heap.gen_data(history, genNumber);
+            genData.size_after = generation_size(hp, genNumber);
+            genData.free_list_space_after =
+                generation.generation_free_list_space(gen);
+            genData.free_obj_space_after =
+                generation.generation_free_obj_space(gen);
         }
 
         rearrange_uoh_segments();
@@ -1371,68 +1393,8 @@ internal unsafe partial struct gc_heap
         update_end_gc_time_per_heap(hp);
         full_gc_counts[gc_type_background]++;
         last_gc_before_oom = 0;
-        record_background_gc_info_minimal(hp);
+        record_gc_info(hp);
         GCToEEInterface.GcDone(GCInterfaceOffsets.max_generation);
-    }
-
-    private static void compute_new_dynamic_data_background(gc_heap* hp, int genNumber)
-    {
-        dynamic_data* dd = dynamic_data_of(hp, genNumber);
-        generation* gen = generation_of(generation_table_of(hp), genNumber);
-        nuint totalGenSize = generation_sizes(hp, gen);
-        nuint fragmentation = unchecked(
-            generation.generation_free_list_space(gen) +
-            generation.generation_free_obj_space(gen));
-
-        dynamic_data.dd_fragmentation(dd) = fragmentation;
-        dynamic_data.dd_current_size(dd) =
-            fragmentation <= totalGenSize ? totalGenSize - fragmentation : 0;
-        dynamic_data.dd_promoted_size(dd) = dynamic_data.dd_survived_size(dd);
-        generation.generation_condemned_allocated(gen) = 0;
-        generation.generation_free_list_allocated(gen) = 0;
-        generation.generation_end_seg_allocated(gen) = 0;
-
-        nuint desiredAllocation = dynamic_data.dd_desired_allocation(dd);
-        if (desiredAllocation < dynamic_data.dd_min_size(dd))
-        {
-            desiredAllocation = dynamic_data.dd_min_size(dd);
-            dynamic_data.dd_desired_allocation(dd) = desiredAllocation;
-        }
-
-        dynamic_data.dd_gc_new_allocation(dd) = unchecked((nint)desiredAllocation);
-        dynamic_data.dd_new_allocation(dd) = unchecked((nint)desiredAllocation);
-
-        gc_history_per_heap* history =
-            (gc_history_per_heap*)Unsafe.AsPointer(ref bgc_data_per_heap);
-        ref gc_generation_data genData =
-            ref gc_history_per_heap.gen_data(history, genNumber);
-        genData.size_after = totalGenSize;
-        genData.free_list_space_after =
-            generation.generation_free_list_space(gen);
-        genData.free_obj_space_after =
-            generation.generation_free_obj_space(gen);
-        genData.pinned_surv = dynamic_data.dd_pinned_survived_size(dd);
-        genData.npinned_surv = unchecked(
-            dynamic_data.dd_survived_size(dd) -
-            dynamic_data.dd_pinned_survived_size(dd));
-    }
-
-    private static void record_background_gc_info_minimal(gc_heap* hp)
-    {
-        ref last_recorded_gc_info info =
-            ref background_gc_info(last_background_gc_info_index);
-        info.total_committed = current_total_committed;
-        info.promoted = get_total_promoted(hp);
-        info.pinned_objects = num_pinned_objects;
-        info.finalize_promoted_objects =
-            finalize_queue is null ? 0 : finalize_queue->GetPromotedCount();
-        info.heap_size = get_total_heap_size(hp);
-        info.fragmentation = get_total_fragmentation(hp);
-        info.condemned_generation =
-            unchecked((byte)GCInterfaceOffsets.max_generation);
-        info.compaction = 0;
-        info.concurrent = 1;
-        is_last_recorded_bgc = 1;
     }
 
     private static void complete_background_gc(bool collectionCompleted)

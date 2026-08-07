@@ -1267,6 +1267,7 @@ namespace Internal.Runtime.GarbageCollection
         public const int gc_type_blocking = 1;
         public static full_gc_count_array full_gc_counts;
         public static ulong loh_alloc_since_cg;
+        public static nuint finalization_promoted_bytes;
         public static gc_history_per_heap gc_data_per_heap;
 #if BACKGROUND_GC
         public static gc_history_per_heap bgc_data_per_heap;
@@ -1283,13 +1284,23 @@ namespace Internal.Runtime.GarbageCollection
         public static int last_background_gc_info_index;
         public static int is_last_recorded_bgc;
 #endif
+        public static last_recorded_gc_info last_ephemeral_gc_info;
         public static last_recorded_gc_info last_full_blocking_gc_info;
+        public static ulong suspended_start_time;
         public static ulong end_gc_time;
+        public static ulong total_suspended_time;
+        public static ulong process_start_time;
         public static ulong last_alloc_reset_suspended_end_time;
+        public static ulong total_physical_mem;
+        public static byte is_restricted_physical_mem;
+        public static bool hard_limit_config_p;
         public static int g_low_memory_status;
         public static uint high_memory_load_th;
         public static uint v_high_memory_load_th;
         public static ulong mem_one_percent;
+#if TARGET_64BIT
+        public static nuint youngest_gen_desired_th;
+#endif
         public static int last_gc_before_oom;
         public static bool provisional_mode_triggered;
         public static nuint soh_allocation_no_gc;
@@ -1353,7 +1364,18 @@ namespace Internal.Runtime.GarbageCollection
             loh_compacted_p = 0;
             full_gc_counts = default;
             loh_alloc_since_cg = 0;
+            finalization_promoted_bytes = 0;
+            last_ephemeral_gc_info = default;
             last_full_blocking_gc_info = default;
+            suspended_start_time = 0;
+            end_gc_time = 0;
+            total_suspended_time = 0;
+            process_start_time = 0;
+            last_alloc_reset_suspended_end_time = 0;
+            total_physical_mem = 0;
+            is_restricted_physical_mem = 0;
+            hard_limit_config_p = false;
+            reserved_memory_limit = 0;
             initialize_loh_pinned_queue_state();
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
@@ -1389,6 +1411,9 @@ namespace Internal.Runtime.GarbageCollection
             new_gen0_regions_in_plns = 0;
             new_regions_in_prr = 0;
             new_regions_in_threading = 0;
+#endif
+#if USE_REGIONS
+            initialize_concurrent_gc();
 #endif
             settings.first_init();
             initialize_loh_compaction_state();
