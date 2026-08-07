@@ -3064,6 +3064,120 @@ public sealed unsafe class GCPrivTests
             System.Runtime.InteropServices.NativeMemory.Free(reservationBacking);
         }
     }
+
+    [Theory]
+    [InlineData((int)gc_generation_num.loh_generation)]
+    [InlineData((int)gc_generation_num.poh_generation)]
+    public void RelocateInUohObjectsRelocatesWritableReferencesAndSkipsReadOnlyAndPointerFreeObjects(int genNumber)
+    {
+        int storageSize = checked((int)(8 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+        seg_mapping* segmentMap = stackalloc seg_mapping[4];
+        seg_mapping* oldSegmentMap = GCCommon.seg_mapping_table;
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(6 * card_table_info.brick_size),
+                bricks,
+                generationMap);
+
+            nuint firstRegionIndex = (nuint)firstBrick >> (int)gc_heap.min_segment_size_shr;
+            GCCommon.seg_mapping_table = segmentMap - (nint)firstRegionIndex;
+            for (int i = 0; i < 4; i++)
+            {
+                segmentMap[i] = default;
+                heap_segment.heap_segment_gen_num(&segmentMap[i].region_info) =
+                    (byte)gc_generation_num.soh_gen0;
+                heap_segment.heap_segment_plan_gen_num(&segmentMap[i].region_info) =
+                    (int)gc_generation_num.soh_gen0;
+            }
+
+            byte* node = firstBrick + 512;
+            ((plug_and_reloc*)node)[-1].reloc = -64;
+            ((plug_and_pair*)node)[-1].m_pair = default;
+            gc_heap.set_brick(0, (nint)(node - firstBrick));
+            byte* oldAddress = firstBrick + 768;
+            byte* newAddress = oldAddress - 64;
+
+            const int NumSeries = 1;
+            int pointerSize = sizeof(nuint);
+            nuint objectSize = (nuint)(3 * pointerSize);
+            int descriptorSize = sizeof(nuint) + (NumSeries * sizeof(CGCDescSeries));
+            byte* descriptorStorage = stackalloc byte[descriptorSize + sizeof(MethodTable)];
+            MethodTable* pointerMethodTable = (MethodTable*)(descriptorStorage + descriptorSize);
+            pointerMethodTable->m_uFlags = MethodTable.HasPointersFlag;
+            pointerMethodTable->m_uBaseSize = (uint)objectSize;
+            *((nuint*)pointerMethodTable - 1) = NumSeries;
+            CGCDescSeries* series = (CGCDescSeries*)descriptorStorage;
+            series->seriessize = unchecked((nuint)(-(nint)(objectSize - (nuint)pointerSize)));
+            series->startoffset = (nuint)pointerSize;
+
+            MethodTable pointerFreeMethodTable = default;
+            pointerFreeMethodTable.m_uBaseSize = (uint)objectSize;
+
+            byte* readOnlyPrefixObject = firstBrick + (nint)(2 * card_table_info.brick_size) + 128;
+            byte* writableFirstObject = firstBrick + (nint)(3 * card_table_info.brick_size) + 128;
+            byte* readOnlyMiddleObject = firstBrick + (nint)(4 * card_table_info.brick_size) + 128;
+            byte* writableSecondObject = firstBrick + (nint)(5 * card_table_info.brick_size) + 128;
+            byte* writablePointerObject = writableSecondObject + (nint)objectSize;
+
+            ((CObjectHeader*)readOnlyPrefixObject)->RawSetMethodTable(pointerMethodTable);
+            ((CObjectHeader*)writableFirstObject)->RawSetMethodTable(pointerMethodTable);
+            ((CObjectHeader*)readOnlyMiddleObject)->RawSetMethodTable(pointerMethodTable);
+            ((CObjectHeader*)writableSecondObject)->RawSetMethodTable(&pointerFreeMethodTable);
+            ((CObjectHeader*)writablePointerObject)->RawSetMethodTable(pointerMethodTable);
+            *(byte**)(readOnlyPrefixObject + pointerSize) = oldAddress;
+            *(byte**)(writableFirstObject + pointerSize) = oldAddress;
+            *(byte**)(readOnlyMiddleObject + pointerSize) = oldAddress;
+            *(byte**)(writableSecondObject + pointerSize) = oldAddress;
+            *(byte**)(writablePointerObject + pointerSize) = oldAddress;
+
+            nuint uohFlag = genNumber == (int)gc_generation_num.loh_generation
+                ? heap_segment.heap_segment_flags_loh
+                : heap_segment.heap_segment_flags_poh;
+            heap_segment readOnlyPrefix = default;
+            heap_segment writableFirst = default;
+            heap_segment readOnlyMiddle = default;
+            heap_segment writableSecond = default;
+            readOnlyPrefix.flags = uohFlag | heap_segment.heap_segment_flags_readonly;
+            writableFirst.flags = uohFlag;
+            readOnlyMiddle.flags = uohFlag | heap_segment.heap_segment_flags_readonly;
+            writableSecond.flags = uohFlag;
+            heap_segment.heap_segment_mem(&readOnlyPrefix) = readOnlyPrefixObject;
+            heap_segment.heap_segment_allocated(&readOnlyPrefix) = readOnlyPrefixObject + (nint)objectSize;
+            heap_segment.heap_segment_mem(&writableFirst) = writableFirstObject;
+            heap_segment.heap_segment_allocated(&writableFirst) = writableFirstObject + (nint)objectSize;
+            heap_segment.heap_segment_mem(&readOnlyMiddle) = readOnlyMiddleObject;
+            heap_segment.heap_segment_allocated(&readOnlyMiddle) = readOnlyMiddleObject + (nint)objectSize;
+            heap_segment.heap_segment_mem(&writableSecond) = writableSecondObject;
+            heap_segment.heap_segment_allocated(&writableSecond) = writablePointerObject + (nint)objectSize;
+            heap_segment.heap_segment_next(&readOnlyPrefix) = &writableFirst;
+            heap_segment.heap_segment_next(&writableFirst) = &readOnlyMiddle;
+            heap_segment.heap_segment_next(&readOnlyMiddle) = &writableSecond;
+
+            gc_heap heap = default;
+            generation* gen = gc_heap.generation_of(gc_heap.generation_table_of(&heap), genNumber);
+            generation.generation_start_segment(gen) = &readOnlyPrefix;
+
+            gc_heap.relocate_in_uoh_objects(&heap, genNumber);
+
+            Assert.Equal((nuint)oldAddress, (nuint)(*(byte**)(readOnlyPrefixObject + pointerSize)));
+            Assert.Equal((nuint)newAddress, (nuint)(*(byte**)(writableFirstObject + pointerSize)));
+            Assert.Equal((nuint)oldAddress, (nuint)(*(byte**)(readOnlyMiddleObject + pointerSize)));
+            Assert.Equal((nuint)oldAddress, (nuint)(*(byte**)(writableSecondObject + pointerSize)));
+            Assert.Equal((nuint)newAddress, (nuint)(*(byte**)(writablePointerObject + pointerSize)));
+        }
+        finally
+        {
+            GCCommon.seg_mapping_table = oldSegmentMap;
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
 #endif
 
     [Fact]
@@ -3272,6 +3386,69 @@ public sealed unsafe class GCPrivTests
             gc_heap.map_region_to_generation = oldGenerationMap;
             gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
             gc_heap.card_table = oldCardTable;
+        }
+    }
+
+    [Fact]
+    public void RelocateSurvivorHelperRelocatesAndMarksTheCardForADemotedChild()
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+        seg_mapping* segmentMap = stackalloc seg_mapping[4];
+        uint* cardTable = stackalloc uint[1];
+        cardTable[0] = 0;
+        seg_mapping* oldSegmentMap = GCCommon.seg_mapping_table;
+        uint* oldCardTable = gc_heap.card_table;
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap);
+
+            nuint firstRegionIndex = (nuint)firstBrick >> (int)gc_heap.min_segment_size_shr;
+            GCCommon.seg_mapping_table = segmentMap - (nint)firstRegionIndex;
+            for (int i = 0; i < 4; i++)
+            {
+                segmentMap[i] = default;
+                heap_segment.heap_segment_gen_num(&segmentMap[i].region_info) =
+                    (byte)gc_generation_num.soh_gen0;
+                heap_segment.heap_segment_plan_gen_num(&segmentMap[i].region_info) =
+                    (int)gc_generation_num.soh_gen0;
+            }
+
+            generationMap[0] = region_info.RI_GEN_0 | region_info.RI_DEMOTED;
+            segmentMap[0].region_info.flags = heap_segment.heap_segment_flags_demoted;
+
+            byte* node = firstBrick + 512;
+            ((plug_and_reloc*)node)[-1].reloc = -64;
+            ((plug_and_pair*)node)[-1].m_pair = default;
+            gc_heap.set_brick(0, (nint)(node - firstBrick));
+
+            byte* oldAddress = firstBrick + 768;
+            byte* child = oldAddress;
+            byte** pval = &child;
+            nuint parentCard = gc_heap.card_of((byte*)pval);
+            nuint parentCardWord = card_table_info.card_word(parentCard);
+            uint parentCardMask = 1u << (int)card_table_info.card_bit(parentCard);
+            gc_heap.card_table = cardTable - (nint)parentCardWord;
+
+            gc_heap heap = default;
+            gc_heap.reloc_survivor_helper(&heap, pval);
+
+            Assert.Equal((nuint)(oldAddress - 64), (nuint)child);
+            Assert.Equal(parentCardMask, cardTable[0]);
+        }
+        finally
+        {
+            GCCommon.seg_mapping_table = oldSegmentMap;
+            gc_heap.card_table = oldCardTable;
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
         }
     }
 
@@ -11158,6 +11335,18 @@ public sealed unsafe class GCPrivTests
         Assert.True(gc_heap.a_size_fit_p(nuint.MaxValue, context.alloc_ptr, overflowLimit, sohAlignment));
         Assert.Equal((nuint)originalPointer, (nuint)context.alloc_ptr);
         Assert.Equal((nuint)originalLimit, (nuint)context.alloc_limit);
+    }
+
+    [Theory]
+    [InlineData(0UL, 0UL)]
+    [InlineData(1UL, 8UL)]
+    [InlineData(7UL, 8UL)]
+    [InlineData(8UL, 8UL)]
+    [InlineData(9UL, 16UL)]
+    [InlineData(ulong.MaxValue, 0UL)]
+    public void AlignQwordPreservesEightByteBoundariesAndUncheckedOverflow(ulong value, ulong expected)
+    {
+        Assert.Equal((nuint)expected, gc_heap.AlignQword((nuint)value));
     }
 
     [Fact]

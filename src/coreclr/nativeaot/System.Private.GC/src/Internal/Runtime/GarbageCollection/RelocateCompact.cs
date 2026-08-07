@@ -161,6 +161,19 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    public static void check_class_object_demotion(gc_heap* hp, byte* obj)
+    {
+#if COLLECTIBLE_CLASS
+        if (is_collectible(obj) != 0)
+        {
+            check_class_object_demotion_internal(hp, obj);
+        }
+#else
+        _ = hp;
+        _ = obj;
+#endif // COLLECTIBLE_CLASS
+    }
+
     public static void check_demotion_helper(byte** pval, byte* parent_obj)
     {
         byte* child_object = *pval;
@@ -249,6 +262,62 @@ internal unsafe partial struct gc_heap
                     new_address = old_address + loh_node_relocation_distance(old_address);
                     *pold_address = new_address;
                 }
+            }
+        }
+    }
+
+    public static void reloc_survivor_helper(gc_heap* hp, byte** pval)
+    {
+        _ = hp;
+        relocate_address(pval);
+
+        check_demotion_helper(pval, (byte*)pval);
+    }
+
+    private static void reloc_survivor_helper_callback(byte** pval, void* context)
+    {
+        reloc_survivor_helper((gc_heap*)context, pval);
+    }
+
+    public static void relocate_in_uoh_objects(gc_heap* hp, int gen_num)
+    {
+        generation* gen = generation_of(generation_table_of(hp), gen_num);
+
+        heap_segment* seg = heap_segment_rw(generation.generation_start_segment(gen));
+
+        Debug.Assert(seg is not null);
+
+        byte* o = get_uoh_start_object(seg, gen);
+
+        while (true)
+        {
+            if (o >= heap_segment.heap_segment_allocated(seg))
+            {
+                seg = heap_segment_next_rw(seg);
+                if (seg is null)
+                {
+                    break;
+                }
+                else
+                {
+                    o = heap_segment.heap_segment_mem(seg);
+                }
+            }
+
+            while (o < heap_segment.heap_segment_allocated(seg))
+            {
+                check_class_object_demotion(hp, o);
+                if (contain_pointers(o) != 0)
+                {
+                    go_through_object_nostart(
+                        method_table(o),
+                        o,
+                        size(o),
+                        hp,
+                        &reloc_survivor_helper_callback);
+                }
+
+                o = (byte*)unchecked((nuint)o + AlignQword(size(o)));
             }
         }
     }

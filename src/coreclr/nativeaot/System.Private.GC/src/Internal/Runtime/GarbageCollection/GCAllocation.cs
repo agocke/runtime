@@ -21,6 +21,20 @@ internal unsafe partial struct gc_heap
         return Align(nbytes, get_alignment_constant(true));
     }
 
+    public static nuint AlignQword(nuint nbytes)
+    {
+#if FEATURE_STRUCTALIGN
+        // This function is used to align everything on the large object
+        // heap to an 8-byte boundary, to reduce the number of unaligned
+        // accesses to (say) arrays of doubles.  With FEATURE_STRUCTALIGN,
+        // the compiler dictates the optimal alignment instead of having
+        // a heuristic in the GC.
+        return Align(nbytes);
+#else // FEATURE_STRUCTALIGN
+        return unchecked((nbytes + 7) & ~(nuint)7);
+#endif // FEATURE_STRUCTALIGN
+    }
+
     public static int get_alignment_constant(bool small_object_p)
     {
         return small_object_p ? GCEnv.DATA_ALIGNMENT - 1 : 7;
