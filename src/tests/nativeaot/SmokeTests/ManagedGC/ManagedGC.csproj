@@ -12,5 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ManagedGC.cs" />
+    <!-- GC integer environment values are hexadecimal: 0x10000000 = 256 MB. -->
+    <CLRTestEnvironmentVariable Include="DOTNET_GCRegionRange" Value="10000000" />
   </ItemGroup>
 </Project>
