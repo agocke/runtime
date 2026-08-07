@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Port of the allocation-free relocation copy primitive and dependency-closed WKS USE_REGIONS
-// helpers from relocate_compact.cpp.
+// helpers, including brick-tree reference relocation, from relocate_compact.cpp.
 
 using System.Diagnostics;
 
@@ -175,6 +175,81 @@ internal unsafe partial struct gc_heap
         if (child_obj_demoted_p)
         {
             set_card(card_of(parent_obj));
+        }
+    }
+
+    public static void relocate_address(byte** pold_address)
+    {
+        byte* old_address = *pold_address;
+        if (!is_in_gc_range(old_address) || !should_check_brick_for_reloc(old_address))
+        {
+            return;
+        }
+
+        // delta translates old_address into address_gc (old_address);
+        nuint brick = brick_of(old_address);
+        int brick_entry = brick_table[(nint)brick];
+        byte* new_address = old_address;
+        if (brick_entry != 0)
+        {
+        retry:
+            {
+                while (brick_entry < 0)
+                {
+                    brick = unchecked(brick + (nuint)brick_entry);
+                    brick_entry = brick_table[(nint)brick];
+                }
+
+                byte* old_loc = old_address;
+
+                byte* node = tree_search(
+                    brick_address(brick) + brick_entry - 1,
+                    old_loc);
+                if (node <= old_loc)
+                {
+                    new_address = old_address + node_relocation_distance(node);
+                }
+                else
+                {
+                    if (node_left_p(node) != 0)
+                    {
+                        new_address = old_address +
+                            (node_relocation_distance(node) + (nint)node_gap_size(node));
+                    }
+                    else
+                    {
+                        brick--;
+                        brick_entry = brick_table[(nint)brick];
+                        goto retry;
+                    }
+                }
+            }
+
+            *pold_address = new_address;
+            return;
+        }
+
+        // FEATURE_LOH_COMPACTION is enabled unconditionally by gcpriv.h for this collector.
+        if (settings.loh_compaction != 0)
+        {
+            _ = try_get_region_segment(old_address, small_heap_only: false, out heap_segment* pSegment);
+
+            // pSegment could be 0 for regions, see comment for is_in_condemned.
+            if (pSegment is null)
+            {
+                return;
+            }
+
+            if (loh_compacted_p != 0)
+            {
+                nuint flags = pSegment->flags;
+                if ((flags & heap_segment.heap_segment_flags_loh) != 0 &&
+                    (flags & heap_segment.heap_segment_flags_readonly) == 0)
+                {
+                    new_address = old_address + loh_node_relocation_distance(old_address);
+                    *pold_address = new_address;
+                }
+            }
         }
     }
 #endif

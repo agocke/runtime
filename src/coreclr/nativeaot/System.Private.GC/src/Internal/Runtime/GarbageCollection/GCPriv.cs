@@ -878,6 +878,7 @@ namespace Internal.Runtime.GarbageCollection
         public static int sufficient_gen0_space_p;
         public static int loh_compaction_always_p;
         public static gc_loh_compaction_mode loh_compaction_mode;
+        public static int loh_compacted_p;
         public static gc_history_per_heap gc_data_per_heap;
         public static fgm_history fgm_result;
         public static gc_history_global gc_data_global;
@@ -911,6 +912,7 @@ namespace Internal.Runtime.GarbageCollection
             // value after first_init has reset the current collection mechanisms.
             loh_compaction_always_p = 0;
             loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_default;
+            loh_compacted_p = 0;
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
 #if USE_REGIONS && !MULTIPLE_HEAPS
@@ -3418,6 +3420,77 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint node_gap_size(byte* node)
         {
             return unchecked((nuint)((plug_and_gap*)node)[-1].gap);
+        }
+
+        public static nint loh_node_relocation_distance(byte* node)
+        {
+            return ((loh_obj_and_pad*)node)[-1].reloc;
+        }
+
+        public static nint node_relocation_distance(byte* node)
+        {
+            return ((plug_and_reloc*)node)[-1].reloc & ~(nint)3;
+        }
+
+        public static nint node_left_p(byte* node)
+        {
+            return ((plug_and_reloc*)node)[-1].reloc & 2;
+        }
+
+        public static byte* tree_search(byte* tree, byte* old_address)
+        {
+            byte* candidate = null;
+            int cn;
+            while (true)
+            {
+                if (tree < old_address)
+                {
+                    if ((cn = node_right_child(tree)) != 0)
+                    {
+                        Debug.Assert(candidate < tree);
+                        candidate = tree;
+                        tree += cn;
+                        // The native Prefetch of the next node's left child is a performance hint
+                        // with no cross-platform managed equivalent.
+                        continue;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                else if (tree > old_address)
+                {
+                    if ((cn = node_left_child(tree)) != 0)
+                    {
+                        tree += cn;
+                        // The native Prefetch of the next node's left child is a performance hint
+                        // with no cross-platform managed equivalent.
+                        continue;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (tree <= old_address)
+            {
+                return tree;
+            }
+            else if (candidate is not null)
+            {
+                return candidate;
+            }
+            else
+            {
+                return tree;
+            }
         }
     }
 

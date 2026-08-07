@@ -13817,7 +13817,165 @@ public sealed unsafe class GCPrivTests
             : default;
     }
 
+    [Theory]
+    [InlineData(-128L, 0, 0)]
+    [InlineData(-128L, 1, 0)]
+    [InlineData(-128L, 2, 2)]
+    [InlineData(-128L, 3, 2)]
+    public void NodeRelocationDistanceMasksFlagsAndNodeLeftPreservesItsBit(
+        long distance,
+        int flags,
+        int expectedNodeLeft)
+    {
+        byte* storage = stackalloc byte[128];
+        byte* node = storage + 64;
+        ((plug_and_reloc*)node)[-1].reloc = (nint)distance | flags;
+
+        Assert.Equal((nint)distance, gc_heap.node_relocation_distance(node));
+        Assert.Equal((nint)expectedNodeLeft, gc_heap.node_left_p(node));
+    }
+
+    [Theory]
+    [InlineData(256, 256)]
+    [InlineData(512, 512)]
+    [InlineData(700, 512)]
+    [InlineData(900, 768)]
+    public void TreeSearchReturnsExactNodeOrPredecessor(int addressOffset, int expectedOffset)
+    {
+        byte* storage = stackalloc byte[1024];
+        byte* left = storage + 256;
+        byte* root = storage + 512;
+        byte* right = storage + 768;
+
+        ((plug_and_pair*)left)[-1].m_pair = default;
+        ((plug_and_pair*)root)[-1].m_pair = new pair
+        {
+            left = (short)(left - root),
+            right = (short)(right - root),
+        };
+        ((plug_and_pair*)right)[-1].m_pair = default;
+
+        Assert.Equal(
+            (nuint)(storage + expectedOffset),
+            (nuint)gc_heap.tree_search(root, storage + addressOffset));
+    }
+
 #if USE_REGIONS
+    [Fact]
+    public void RelocateAddressFollowsBrickBacklink()
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap);
+
+            byte* node = firstBrick + 512;
+            ((plug_and_reloc*)node)[-1].reloc = -64;
+            ((plug_and_pair*)node)[-1].m_pair = default;
+            gc_heap.set_brick(0, (nint)(node - firstBrick));
+            gc_heap.set_brick(1, -1);
+            gc_heap.set_brick(2, -2);
+
+            byte* oldAddress = firstBrick + (nint)(2 * card_table_info.brick_size) + 128;
+            byte* relocatedAddress = oldAddress;
+
+            gc_heap.relocate_address(&relocatedAddress);
+
+            Assert.Equal((nuint)(oldAddress - 64), (nuint)relocatedAddress);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void RelocateAddressUsesLeftNodeGap()
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap);
+
+            byte* brick = firstBrick + (nint)card_table_info.brick_size;
+            byte* node = brick + 512;
+            ((plug_and_gap*)node)[-1].gap = 64;
+            ((plug_and_gap*)node)[-1].reloc = -128 | 2;
+            ((plug_and_gap*)node)[-1].m_pair = default;
+            gc_heap.set_brick(1, (nint)(node - brick));
+
+            byte* oldAddress = brick + 256;
+            byte* relocatedAddress = oldAddress;
+
+            gc_heap.relocate_address(&relocatedAddress);
+
+            Assert.Equal((nuint)(oldAddress - 64), (nuint)relocatedAddress);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 2)]
+    public void RelocateAddressLeavesOutOfRangeOrUncondemnedReferenceUnchanged(
+        bool inGcRange,
+        int generation)
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap);
+
+            byte* node = firstBrick + 512;
+            ((plug_and_gap*)node)[-1].gap = 64;
+            ((plug_and_gap*)node)[-1].reloc = -128 | 2;
+            ((plug_and_gap*)node)[-1].m_pair = default;
+            gc_heap.set_brick(0, (nint)(node - firstBrick));
+            generationMap[0] = generation == 2 ? region_info.RI_GEN_2 : region_info.RI_GEN_0;
+
+            byte* oldAddress = inGcRange ? firstBrick + 256 : firstBrick - 8;
+            byte* relocatedAddress = oldAddress;
+
+            gc_heap.relocate_address(&relocatedAddress);
+
+            Assert.Equal((nuint)oldAddress, (nuint)relocatedAddress);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
     [Fact]
     public void PlanPhaseInsertNodeBuildsNativeBrickTreeAtSequenceBoundaries()
     {
@@ -14721,6 +14879,71 @@ public sealed unsafe class GCPrivTests
 #endif
 
 #if USE_REGIONS
+    private sealed unsafe class RelocateAddressStateScope : System.IDisposable
+    {
+        private readonly nuint _minSegmentSizeShr;
+        private readonly region_info* _mapRegionToGenerationSkewed;
+        private readonly byte* _gcLow;
+        private readonly byte* _gcHigh;
+        private readonly byte* _lowestAddress;
+        private readonly short* _brickTable;
+        private readonly byte* _globalLowestAddress;
+        private readonly byte* _globalHighestAddress;
+        private readonly gc_mechanisms _settings;
+        private readonly int _lohCompacted;
+
+        public RelocateAddressStateScope(
+            byte* lowestAddress,
+            byte* highestAddress,
+            short* brickTable,
+            region_info* generationMap)
+        {
+            _minSegmentSizeShr = gc_heap.min_segment_size_shr;
+            _mapRegionToGenerationSkewed = gc_heap.map_region_to_generation_skewed;
+            _gcLow = gc_heap.gc_low;
+            _gcHigh = gc_heap.gc_high;
+            _lowestAddress = gc_heap.lowest_address;
+            _brickTable = gc_heap.brick_table;
+            _globalLowestAddress = GCCommon.g_gc_lowest_address;
+            _globalHighestAddress = GCCommon.g_gc_highest_address;
+            _settings = gc_heap.settings;
+            _lohCompacted = gc_heap.loh_compacted_p;
+
+            gc_heap.min_segment_size_shr = 12;
+            gc_heap.map_region_to_generation_skewed =
+                generationMap - (nint)((nuint)lowestAddress >> (int)gc_heap.min_segment_size_shr);
+            gc_heap.gc_low = lowestAddress;
+            gc_heap.gc_high = highestAddress;
+            gc_heap.lowest_address = lowestAddress;
+            gc_heap.brick_table = brickTable;
+            GCCommon.g_gc_lowest_address = lowestAddress;
+            GCCommon.g_gc_highest_address = highestAddress;
+            gc_heap.settings = default;
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            gc_heap.loh_compacted_p = 0;
+
+            for (int i = 0; i < 4; i++)
+            {
+                brickTable[i] = 0;
+                generationMap[i] = region_info.RI_GEN_0;
+            }
+        }
+
+        public void Dispose()
+        {
+            gc_heap.min_segment_size_shr = _minSegmentSizeShr;
+            gc_heap.map_region_to_generation_skewed = _mapRegionToGenerationSkewed;
+            gc_heap.gc_low = _gcLow;
+            gc_heap.gc_high = _gcHigh;
+            gc_heap.lowest_address = _lowestAddress;
+            gc_heap.brick_table = _brickTable;
+            GCCommon.g_gc_lowest_address = _globalLowestAddress;
+            GCCommon.g_gc_highest_address = _globalHighestAddress;
+            gc_heap.settings = _settings;
+            gc_heap.loh_compacted_p = _lohCompacted;
+        }
+    }
+
     private sealed class PlanPhaseStateScope : System.IDisposable
     {
         private readonly gc_mechanisms _settings;

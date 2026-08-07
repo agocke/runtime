@@ -1295,8 +1295,8 @@ Translate in dependency order:
 - `relocate_compact.cpp` (the allocation-free `memcopy` relocation primitive, card-copy/clear
   dispatch leaf, pinned-queue `get_next_pinned_entry` and `get_oldest_pinned_entry` handoffs, and
   dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`,
-  `check_demotion_helper_sip`, and
-  `check_demotion_helper` leaves are translated without relocation routing)
+  `check_demotion_helper_sip`, `check_demotion_helper`, brick-tree `tree_search`, and
+  `relocate_address` leaves are translated without relocation routing)
 - `sweep.cpp` (bounded WKS `USE_REGIONS` normal-plan SOH brick walk, including promotion
   target selection, swept-in-plan segment skipping, positive highest-plug rewrites, negative
   brick resets, and free-list threading; plus UOH marked-object sweep, writable-tail trim,

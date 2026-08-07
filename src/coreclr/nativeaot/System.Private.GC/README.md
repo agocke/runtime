@@ -97,7 +97,7 @@ Ported so far:
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, and overflow-recovery helpers from `mark_phase.cpp`, `gcinternal.h` |
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, and UOH region start/tail unlinking from `plan_phase.cpp` |
-| `RelocateCompact.cs` | allocation-free `memcopy` relocation primitive, pinned-queue handoffs, and dependency-closed WKS `USE_REGIONS` helpers from `relocate_compact.cpp` |
+| `RelocateCompact.cs` | allocation-free `memcopy` relocation primitive, pinned-queue handoffs, brick-tree reference relocation, and dependency-closed WKS `USE_REGIONS` helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | bounded WKS `USE_REGIONS` normal-plan SOH brick walk, brick-tree sweep leaves, UOH marked-object clearing, unused-array clearing, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp` and `gcinternal.h` |
 | `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
@@ -284,12 +284,14 @@ drain, dependent-handle initial scan/fixed-point rescan, and `AfterGcScanRoots`.
 intentionally non-routed from `IGCHeap.GarbageCollect`; weak clearing and the remainder of the
 full mark phase remain deferred.
 The allocation-free `memcopy` relocation primitive, card copying/clearing leaves, the pinned-queue `get_next_pinned_entry`
-and `get_oldest_pinned_entry` handoffs, and the dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`,
-`check_demotion_helper_sip`, and `check_demotion_helper` leaves from
+and `get_oldest_pinned_entry` handoffs, brick-tree `tree_search` and `relocate_address`, and the
+dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`, `check_demotion_helper_sip`,
+and `check_demotion_helper` leaves from
 `relocate_compact.cpp` are translated without relocation routing. They preserve skewed
 region-map indexing, pointer-word copy grouping, card-boundary semantics, pinned-entry flag
 snapshots before dequeue and oldest-plug publication, demotion card marking for younger planned
-and demoted children, and the native in-heap check.
+and demoted children, brick backlinks, predecessor-node relocation, left-node gap adjustment,
+LOH relocation-distance lookup, and the native in-heap check.
 Background marking remains deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
