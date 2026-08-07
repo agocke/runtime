@@ -61,6 +61,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Internal\Runtime\GarbageCollection\GCAllocation.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Collect.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCCommon.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCConfig.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCDesc.cs" />

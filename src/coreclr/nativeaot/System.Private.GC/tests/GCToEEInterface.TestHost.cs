@@ -59,6 +59,18 @@ internal static class RootScanCall
     public const string After = nameof(After);
 }
 
+internal static class CollectionLifecycleCall
+{
+    public const string Suspend = nameof(Suspend);
+    public const string StartWork = nameof(StartWork);
+    public const string BeforeRoots = nameof(BeforeRoots);
+    public const string ScanRoots = nameof(ScanRoots);
+    public const string AfterRoots = nameof(AfterRoots);
+    public const string Done = nameof(Done);
+    public const string Restart = nameof(Restart);
+    public const string EnableFinalization = nameof(EnableFinalization);
+}
+
 internal static unsafe class GCToEEInterface
 {
     internal static class FiredEvent
@@ -181,6 +193,28 @@ internal static unsafe class GCToEEInterface
 
     internal static byte LastEnableFinalizationHasWork { get; private set; }
 
+    internal static List<string> CollectionLifecycleCallOrder { get; } = new();
+
+    internal static byte AnalyzeSurvivorsRequestedResult { get; set; }
+
+    internal static int SuspendEECallCount { get; private set; }
+
+    internal static SUSPEND_REASON LastSuspendReason { get; private set; }
+
+    internal static int RestartEECallCount { get; private set; }
+
+    internal static byte LastRestartFinishedGC { get; private set; }
+
+    internal static int GcStartWorkCallCount { get; private set; }
+
+    internal static int LastGcStartWorkCondemned { get; private set; }
+
+    internal static int LastGcStartWorkMaxGeneration { get; private set; }
+
+    internal static int GcDoneCallCount { get; private set; }
+
+    internal static int LastGcDoneCondemned { get; private set; }
+
     internal static int BeforeGcScanRootsCallCount { get; private set; }
 
     internal static int LastBeforeGcScanRootsCondemned { get; private set; }
@@ -278,6 +312,17 @@ internal static unsafe class GCToEEInterface
         EagerFinalizedObject = null;
         EnableFinalizationCallCount = 0;
         LastEnableFinalizationHasWork = 0;
+        CollectionLifecycleCallOrder.Clear();
+        AnalyzeSurvivorsRequestedResult = 0;
+        SuspendEECallCount = 0;
+        LastSuspendReason = default;
+        RestartEECallCount = 0;
+        LastRestartFinishedGC = 0;
+        GcStartWorkCallCount = 0;
+        LastGcStartWorkCondemned = 0;
+        LastGcStartWorkMaxGeneration = 0;
+        GcDoneCallCount = 0;
+        LastGcDoneCondemned = 0;
         BeforeGcScanRootsCallCount = 0;
         LastBeforeGcScanRootsCondemned = 0;
         LastBeforeGcScanRootsIsBackground = 0;
@@ -347,6 +392,42 @@ internal static unsafe class GCToEEInterface
         LastBeforeGcScanRootsIsBackground = is_bgc;
         LastBeforeGcScanRootsIsConcurrent = is_concurrent;
         RootScanCallOrder.Add(RootScanCall.Before);
+        CollectionLifecycleCallOrder.Add(CollectionLifecycleCall.BeforeRoots);
+    }
+
+    public static byte AnalyzeSurvivorsRequested(int condemnedGeneration)
+    {
+        _ = condemnedGeneration;
+        return AnalyzeSurvivorsRequestedResult;
+    }
+
+    public static void SuspendEE(SUSPEND_REASON reason)
+    {
+        SuspendEECallCount++;
+        LastSuspendReason = reason;
+        CollectionLifecycleCallOrder.Add(CollectionLifecycleCall.Suspend);
+    }
+
+    public static void RestartEE(byte finishedGC)
+    {
+        RestartEECallCount++;
+        LastRestartFinishedGC = finishedGC;
+        CollectionLifecycleCallOrder.Add(CollectionLifecycleCall.Restart);
+    }
+
+    public static void GcStartWork(int condemned, int max_gen)
+    {
+        GcStartWorkCallCount++;
+        LastGcStartWorkCondemned = condemned;
+        LastGcStartWorkMaxGeneration = max_gen;
+        CollectionLifecycleCallOrder.Add(CollectionLifecycleCall.StartWork);
+    }
+
+    public static void GcDone(int condemned)
+    {
+        GcDoneCallCount++;
+        LastGcDoneCondemned = condemned;
+        CollectionLifecycleCallOrder.Add(CollectionLifecycleCall.Done);
     }
 
     /// <summary>
@@ -391,6 +472,7 @@ internal static unsafe class GCToEEInterface
         LastGcScanRootsContext = sc;
         LastGcScanRootsContextValue = *sc;
         RootScanCallOrder.Add(RootScanCall.Scan);
+        CollectionLifecycleCallOrder.Add(CollectionLifecycleCall.ScanRoots);
         GcScanRootsObserver?.Invoke();
 
         if (GcScanRootsSlots.Count != 0)
@@ -418,6 +500,7 @@ internal static unsafe class GCToEEInterface
         LastAfterGcScanRootsContext = sc;
         LastAfterGcScanRootsContextValue = *sc;
         RootScanCallOrder.Add(RootScanCall.After);
+        CollectionLifecycleCallOrder.Add(CollectionLifecycleCall.AfterRoots);
         AfterGcScanRootsObserver?.Invoke();
     }
 
@@ -425,6 +508,7 @@ internal static unsafe class GCToEEInterface
     {
         EnableFinalizationCallCount++;
         LastEnableFinalizationHasWork = gcHasWorkForFinalizerThread;
+        CollectionLifecycleCallOrder.Add(CollectionLifecycleCall.EnableFinalization);
     }
 
     public static byte EagerFinalized(byte* obj) => obj == EagerFinalizedObject ? (byte)1 : (byte)0;

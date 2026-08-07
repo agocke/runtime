@@ -7,18 +7,13 @@ using System.Threading;
 
 namespace Internal.Runtime.GarbageCollection
 {
-    /// <summary>
-    /// The managed implementation of <c>gcinterface.h</c>'s <c>IGCHeap</c>: a heap that
-    /// allocates but never collects.
-    /// </summary>
+    /// <summary>The managed implementation of <c>gcinterface.h</c>'s <c>IGCHeap</c>.</summary>
     /// <remarks>
     /// <para>
-    /// This is the first heap of the port, and it exists to prove the bootstrapping story —
-    /// that ILC can compile code the runtime is willing to call on the allocation path and with
-    /// the world suspended — before any of the collector is written. Region targets refill SOH
-    /// and UOH allocation contexts through the translated WKS allocation state; the bootstrap
-    /// bump range remains for frozen metadata. Every method that would need marking,
-    /// planning, sweeping or a walkable heap either reports "nothing to do" or stops the process through
+    /// Region targets refill SOH and UOH allocation contexts through the translated WKS
+    /// allocation state and route the bounded synchronous full-Gen2 collection lifecycle. The
+    /// bootstrap bump range remains for frozen metadata. Methods outside that bounded collector
+    /// either report their explicitly supported subset or stop the process through
     /// <see cref="Unsupported"/> rather than returning a plausible-looking wrong answer.
     /// </para>
     /// <para>
@@ -234,6 +229,13 @@ namespace Internal.Runtime.GarbageCollection
                 return E_OUTOFMEMORY;
             }
 
+            if (!gc_heap.initialize_mark_stack())
+            {
+                gc_heap.destroy_semi_shared();
+                gc_heap.check_commit_cs.Destroy();
+                return E_OUTOFMEMORY;
+            }
+
             if (!ManagedGCRegionBootstrap.Initialize())
             {
                 gc_heap.destroy_semi_shared();
@@ -308,7 +310,19 @@ namespace Internal.Runtime.GarbageCollection
         private static byte* Alloc(void* thisPtr, gc_alloc_context* acontext, nuint size, uint flags)
         {
             GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
-            byte* result = AllocCore(acontext, size, flags);
+            nuint alignedSize = gc_heap.Align(size);
+            byte* result = AllocCore(acontext, alignedSize, flags);
+            if (result is not null &&
+                (flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_FINALIZE) != 0 &&
+                (gc_heap.finalize_queue is null ||
+                 !gc_heap.finalize_queue->RegisterForFinalization(
+                    (int)gc_generation_num.soh_gen0,
+                    result,
+                    alignedSize)))
+            {
+                result = null;
+            }
+
             criticalRegion.Exit();
             return result;
         }
@@ -463,32 +477,41 @@ namespace Internal.Runtime.GarbageCollection
 
         private static int GetHomeHeapNumber(void* thisPtr) => 0;
 
-        /// <summary>Nothing is ever marked, so nothing has ever been promoted by a collection.</summary>
-        private static nuint GetPromotedBytes(void* thisPtr, int heap_index) => 0;
+        private static nuint GetPromotedBytes(void* thisPtr, int heap_index) =>
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            ManagedGCRegionBootstrap.Heap is null
+                ? 0
+                : gc_heap.get_promoted_bytes(ManagedGCRegionBootstrap.Heap);
+#else
+            0;
+#endif
 
         private static nuint GetCurrentObjSize(void* thisPtr) => 0;
 
         // ------------------------------------------------------------------------------------
-        // Collection - there isn't one
+        // Collection
         // ------------------------------------------------------------------------------------
 
-        /// <summary>
-        /// Port of <c>IGCHeap::GarbageCollect</c>. The EE is suspended and restarted so the
-        /// managed heap exercises the real stop-the-world protocol, but nothing is reclaimed.
-        /// </summary>
         private static int GarbageCollect(void* thisPtr, int generation, byte low_memory_p, int mode)
         {
             GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
-            GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
-            Interlocked.Increment(ref s_gcCount);
-            GCToEEInterface.RestartEE(1);
+            int result = gc_heap.garbage_collect_synchronous_full_gen2(
+                generation,
+                low_memory_p,
+                mode);
+            if (result == gc_heap.collection_s_ok)
+            {
+                Volatile.Write(ref s_gcCount, unchecked((int)gc_heap.settings.gc_index));
+            }
+
             criticalRegion.Exit();
-            return S_OK;
+            return result;
         }
 
         private static uint GetMaxGeneration(void* thisPtr) => MaxGeneration;
 
-        private static uint GetCondemnedGeneration(void* thisPtr) => 0;
+        private static uint GetCondemnedGeneration(void* thisPtr) =>
+            unchecked((uint)gc_heap.settings.condemned_generation);
 
         private static int CollectionCount(void* thisPtr, int generation, int get_bgc_fgc_count) => Volatile.Read(ref s_gcCount);
 
@@ -557,18 +580,34 @@ namespace Internal.Runtime.GarbageCollection
         private static nuint GetNumberOfFinalizable(void* thisPtr) =>
             gc_heap.finalize_queue is null ? 0 : gc_heap.finalize_queue->GetNumberFinalizableObjects();
 
-        private static byte* GetNextFinalizable(void* thisPtr) =>
-            gc_heap.finalize_queue is null ? null : gc_heap.finalize_queue->GetNextFinalizableObject();
+        private static byte* GetNextFinalizable(void* thisPtr)
+            => gc_heap.finalize_queue is null
+                ? null
+                : gc_heap.finalize_queue->GetNextFinalizableObject();
 
         private static void SetFinalizationRun(void* thisPtr, byte* obj)
         {
             ((CObjectHeader*)obj)->GetHeader()->SetFinalizerRun();
         }
 
-        private static byte RegisterForFinalization(void* thisPtr, int gen, byte* obj) =>
-            gc_heap.finalize_queue is not null && gc_heap.finalize_queue->RegisterForFinalization(gen, obj)
-                ? (byte)1
-                : (byte)0;
+        private static byte RegisterForFinalization(void* thisPtr, int gen, byte* obj)
+        {
+            if (gen == -1)
+            {
+                gen = 0;
+            }
+
+            if ((((CObjectHeader*)obj)->GetHeader()->GetBits() & ObjHeader.BIT_SBLK_FINALIZER_RUN) != 0)
+            {
+                ((CObjectHeader*)obj)->GetHeader()->ClrFinalizerRun();
+                return 1;
+            }
+
+            return gc_heap.finalize_queue is not null &&
+                gc_heap.finalize_queue->RegisterForFinalization(gen, obj)
+                    ? (byte)1
+                    : (byte)0;
+        }
 
         private static FinalizerWorkItem* GetExtraWorkForFinalization(void* thisPtr) => null;
 
@@ -747,8 +786,7 @@ namespace Internal.Runtime.GarbageCollection
 #if USE_REGIONS
             (ManagedGCRegionBootstrap.Heap is null
                 ? 0
-                : (nuint)(ManagedGCRegionBootstrap.Heap->total_alloc_bytes_soh +
-                    ManagedGCRegionBootstrap.Heap->total_alloc_bytes_uoh)) +
+                : gc_heap.get_total_heap_size(ManagedGCRegionBootstrap.Heap)) +
             GCHeapMemory.BytesInUse;
 #else
             GCHeapMemory.BytesInUse;
@@ -788,17 +826,19 @@ namespace Internal.Runtime.GarbageCollection
             *highMemLoadThresholdBytes = 0;
             *totalAvailableMemoryBytes = 0;
             *lastRecordedMemLoadBytes = 0;
-            *lastRecordedHeapSizeBytes = GetTotalBytesInUse(thisPtr);
-            *lastRecordedFragmentationBytes = 0;
-            *totalCommittedBytes = GetTotalBytesInUse(thisPtr);
-            *promotedBytes = 0;
-            *pinnedObjectCount = 0;
-            *finalizationPendingCount = GetNumberOfFinalizable(thisPtr);
-            *index = 0;
-            *generation = 0;
+            *lastRecordedHeapSizeBytes = gc_heap.last_full_blocking_gc_info.heap_size;
+            *lastRecordedFragmentationBytes =
+                gc_heap.last_full_blocking_gc_info.fragmentation;
+            *totalCommittedBytes = gc_heap.last_full_blocking_gc_info.total_committed;
+            *promotedBytes = gc_heap.last_full_blocking_gc_info.promoted;
+            *pinnedObjectCount = gc_heap.last_full_blocking_gc_info.pinned_objects;
+            *finalizationPendingCount =
+                gc_heap.last_full_blocking_gc_info.finalize_promoted_objects;
+            *index = gc_heap.last_full_blocking_gc_info.index;
+            *generation = gc_heap.last_full_blocking_gc_info.condemned_generation;
             *pauseTimePct = 0;
-            *isCompaction = 0;
-            *isConcurrent = 0;
+            *isCompaction = gc_heap.last_full_blocking_gc_info.compaction;
+            *isConcurrent = gc_heap.last_full_blocking_gc_info.concurrent;
 
             // Both are fixed-size arrays in the caller: RH_GH_MEMORY_INFO holds five
             // RH_GC_GENERATION_INFO (gen0-2, LOH, POH) of four ulongs each, and two pause

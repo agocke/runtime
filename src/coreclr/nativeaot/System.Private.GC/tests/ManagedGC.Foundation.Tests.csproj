@@ -112,6 +112,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventSerializer.cs" Link="GCEventSerializer.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCAllocation.cs" Link="GCAllocation.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Collect.cs" Link="Collect.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCDesc.cs" Link="GCDesc.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/DynamicTuning.cs" Link="DynamicTuning.cs" />

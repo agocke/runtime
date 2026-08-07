@@ -42,14 +42,16 @@ The following prerequisites are already working:
   layer has not taken over itself are reached through the documented `ManagedGC_*` forwarders of
   `nativeaot/Runtime/gcenv.managed.cpp`. Virtual memory, write watch, events, locks, sleep and
   yield, and the memory limits and cache sizing are no longer among them.
-- The current heap is a fixed-size, non-collecting bump allocator with one translated handle
-  table.
+- The current heap allocates from translated WKS regions with one translated handle table and
+  routes an explicitly requested synchronous full-Gen2 collection.
 - The managed GC reads its own configuration: `GCConfig` is translated in full, initialized from
   `ManagedGC_Initialize`, and reported to `GC.GetConfigurationVariables()` through the heap's
   `EnumerateConfigurationValues` slot.
 - Write-barrier globals and frozen segments are initialized sufficiently for application
   startup.
-- `GC.Collect` exercises a real `SuspendEE` / `RestartEE` cycle but does not scan or reclaim.
+- `GC.Collect` routes the bounded WKS `USE_REGIONS` full-Gen2 lifecycle. Unsupported partial,
+  server, background, non-blocking/optimized/aggressive, heap-verification, survivor-analysis,
+  and collection-event diagnostic modes are rejected before collector mutation.
 - Managed GC mutations use suspension-safe critical regions.
 - GC/EE structure layouts, enum values and sizes, and all six vtable slot lists -- with their
   signatures and calling conventions -- are verified against the native headers.
@@ -1267,13 +1269,14 @@ state match the C++ implementation across supported architectures.
 
 ### 9. Collection phases
 
-**Status: In progress -- pinned-plug queue enqueue/save/dequeue handoff, mark-stack growth/reset setup,
+**Status: In progress -- the bounded WKS `USE_REGIONS` synchronous full-Gen2 lifecycle is routed;
+pinned-plug queue enqueue/save/dequeue handoff, mark-stack growth/reset setup,
 object-header special-bit and padded-plug prerequisites, short-object descriptor scan, the
 foreground `gc_mark1`/`gc_mark` leaves, the active WKS `USE_REGIONS`
 `mark_object_simple1`/`mark_object_simple`/`drain_mark_queue`/`mark_object`/
 `mark_through_object` bodies, `compute_gc_and_ephemeral_range`, and the synchronous WKS full-GC
 compaction-policy closure, handle relocation branch, and bounded `relocate_phase` orchestration
-are translated; collection entrypoints remain unrouted**
+are translated; a NativeAOT strong-handle relocation integration blocker remains**
 
 Translate in dependency order:
 
@@ -1304,8 +1307,8 @@ Translate in dependency order:
   scanning, queue drain, `GcScanHandles(promote)` (pinned before strong), queue drain, initial
   dependent fixed-point scanning, `AfterGcScanRoots`, short weak clearing, finalization and
   drain, a dependent fixed-point rescan, long weak/dead-dependent clearing, and the
-  single-threaded sync-block weak callback. It remains non-routed from
-  `IGCHeap::GarbageCollect`; no full mark phase is routed; the WKS overflow-recovery leaves and
+  single-threaded sync-block weak callback. It is routed only by the bounded synchronous
+  full-Gen2 entrypoint; the WKS overflow-recovery leaves and
   their
   generation-size, total-heap-size, and promoted-byte accounting closure are translated without
   routing. The bounded WKS `CFinalize` storage, registration/dequeue, F-reachable scan, direct
@@ -1335,7 +1338,8 @@ Translate in dependency order:
   policy closure preserves region fragmentation and pinned-gap accounting, strict
   region-capacity and hard-limit comparisons, compaction-space/productivity decisions, reason
   precedence, high-memory thresholds, no-GC expansion signaling, and condemned/full-GC
-  ephemeral-fit boundaries. The completed bounded plan phase remains unrouted)
+  ephemeral-fit boundaries. The completed bounded plan phase is routed only for the supported
+  synchronous full-Gen2 lifecycle)
 - `relocate_compact.cpp` (the allocation-free `memcopy` relocation primitive, card-copy/clear
   dispatch leaf, pinned-queue `get_next_pinned_entry` and `get_oldest_pinned_entry` handoffs, and
   dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`,
@@ -1376,8 +1380,12 @@ Translate in dependency order:
   card clearing and Gen2 reset policy. UOH marked-object sweep, writable-tail trim, non-start
   empty-region unlink, and deferred return through the existing region free-list path remain
   translated too. Planning and collection routing remain deferred)
-- `collect.cpp` (the unrouted WKS `compute_gc_and_ephemeral_range` helper is translated; the
-  collection driver remains deferred)
+- `collect.cpp` (the bounded WKS `USE_REGIONS` synchronous full-Gen2 `garbage_collect` and `gc1`
+  driver is translated and routed, including allocation-context fixing, record/mechanism
+  initialization, full condemnation, mark/plan completion, pinned-allocation adjustment,
+  minimal post-GC accounting, UOH cleanup, range/write-barrier publication, timestamps, and
+  `GcStartWork`/`GcDone`; partial, server, background, diagnostics, full dynamic tuning, and
+  allocation-triggered routing remain deferred)
 - `no_gc.cpp`
 
 Beyond its translated dependency-free prefix helpers, `plan_phase.cpp` is the largest and
@@ -1386,6 +1394,14 @@ reviews can compare the two implementations directly.
 
 **Complete when:** foreground collections mark, plan, relocate or sweep, reclaim memory, and
 preserve all heap invariants under checked-build verification.
+
+The routed NativeAOT smoke now confirms stack- and handle-only-root survival, strong-handle and
+GC-static spine relocation, weak reclamation, pinned-handle stability, finalization, allocation
+after collection, and entrypoint suspension ownership. Full-plan validation derives the WKS
+marked-address range from SOH, LOH, and POH objects; omitting UOH marks previously rejected a
+valid full collection before relocation. The bounded post-GC accounting now records the
+full-blocking finalizable promoted count rather than reporting the concurrently draining live
+finalizer queue through `GC.GetGCMemoryInfo()`.
 
 ### 10. Concurrency and tuning
 

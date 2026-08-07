@@ -94,6 +94,7 @@ Ported so far:
 | `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` and `<psapi.h>` entry points the above call |
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
+| `Collect.cs` | bounded WKS `USE_REGIONS` synchronous full-Gen2 `garbage_collect` / `gc1` lifecycle from `collect.cpp` and `interface.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, the bounded WKS synchronous full-Gen2 plan-phase orchestration and SIP helpers, the WKS full-GC LOH pin queue/planning allocator, the bounded WKS synchronous full-GC compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
@@ -1137,17 +1138,30 @@ depth-limited recursion terminates. Reaching `heapsort` at all needs input that 
 `max_depth`, which no natural input does, so the test carries a vector produced by McIlroy's
 quicksort adversary.
 
-### The heap is a bump allocator that never collects
+### The heap routes a bounded full Gen2 collector
 
-`ManagedGCHeap` implements enough of `IGCHeap` to boot and run an application, and no more. It
-reserves one 256 MB region up front and hands it out with an interlocked bump pointer. It never
-frees anything, so:
+`ManagedGCHeap.GarbageCollect` now routes the bounded workstation `USE_REGIONS` synchronous
+full-Gen2 lifecycle. The supported path rejects server, partial, non-blocking, optimized,
+aggressive, active-background, heap-verification, survivor-analysis, and collection-event
+diagnostic modes before mutating collector state. It then owns suspension/restart, fixes
+allocation contexts, initializes records and mechanisms, condemns Gen2, calls `GcStartWork`,
+runs mark and the completed plan/relocate/compact-or-sweep closure, performs minimal
+post-collection accounting and range/write-barrier publication, calls `GcDone`, restarts the
+runtime, and schedules finalization.
 
-* An application that allocates more than 256 MB gets `OutOfMemoryException`, permanently.
-* Finalizers never run. `GC.Collect` performs a real suspend/restart cycle and increments a
-  counter, but does not scan roots or reclaim memory.
-* `GC.GetTotalMemory` only ever grows -- which is what the smoke test uses to prove that the
-  process is running on the current non-collecting managed heap.
+Allocation now also performs the native `GC_ALLOC_FINALIZE` registration before returning an
+uninitialized finalizable object to the EE, including the allocation-failure free-object
+fallback. Explicit `RegisterForFinalization(-1, ...)` normalizes to Gen0 and preserves the
+native finalizer-run-bit behavior.
+
+The lifecycle itself is covered by Foundation tests, including exact EE callback ordering and
+pre-mutation rejection. The NativeAOT smoke now allocates garbage plus stack and handle-only
+roots, requests compacting full collections, and verifies relocation, weak reclamation,
+finalization, pinned handles, and allocation afterward. Full-plan validation includes marked
+SOH, LOH, and POH objects when checking the WKS `slow`/`shigh` range, so UOH roots no longer
+reject the collection before handle and GC-static spine relocation. The minimal recorded
+full-blocking-GC snapshot also captures the finalizable promoted count before the finalizer
+thread can dequeue it, matching `GC.GetGCMemoryInfo()`'s native last-GC semantics.
 
 `IlcManagedGC` is fail-closed: if `ManagedGC_Initialize` or the later `IGCHeap::Initialize`
 fails, runtime startup fails. The selector never falls back to the C++ GC. The native collector
@@ -1159,8 +1173,8 @@ bootstrap default), builds WKS bookkeeping, reserves initial regions, and constr
 SOH/LOH/POH generation state. `ManagedGCHeap.Alloc` uses that region heap for SOH and UOH
 allocation-context refills. `GCHeapMemory` remains a separate non-collecting bootstrap range for
 unmanaged frozen-segment metadata; it neither changes the region range nor publishes card tables
-or write-barrier bounds on region targets. Region collection and UOH segment retry policy remain
-deferred, so exhausted UOH routing returns null rather than reporting a collection.
+or write-barrier bounds on region targets. Allocation-triggered collection and UOH segment retry policy remain deferred, so exhausted UOH
+routing returns null rather than initiating a partial or background collection.
 
 `GCAllocation` now writes the native-shaped free-object method table, array length, and
 doubly-linked free-list marker for object gaps, carries the allocation-limit arithmetic leaves,
@@ -1199,8 +1213,8 @@ region plan generations. It then preserves native full-Gen2 ordering through fra
 compaction policy, forced or fallback LOH compaction, normal LOH/POH sweeping, special-sweep
 override, SOH relocation/compaction or free-list sweeping, final region threading, generation
 bounds, finalizer fill pointers, handle aging or rejuvenation, pinned-gap recovery, gen1 card
-clearing, and compacting-GC accounting. Non-region, server, background, partial-GC, diagnostics,
-and collection routing remain outside this bounded adapter.
+clearing, and compacting-GC accounting. Non-region, server, background, partial-GC, and diagnostic paths remain outside this bounded
+adapter. The synchronous full-Gen2 path is routed by `Collect.cs`.
 
 The next allocation orchestration leaf connects those fits in native order:
 `soh_try_fit` favors the SOH free list, honors the short-end result, tries the current
@@ -1290,13 +1304,10 @@ mode, and preserving cooperative mode is also required while a critical region h
 
 The thread that actually suspends the EE is excluded from `ThreadStore::SuspendAllThreads`, and GC
 worker threads are marked GC-special and are never hijacked. `GarbageCollect` still uses a critical
-region: after `SuspendEE` sets the global trap, an explicit poll in the remaining managed method
-must not make the suspending thread wait for the collection that only it can finish. Other critical
-regions protect mutators that can run on ordinary application threads. The managed-GC smoke test
-repeatedly performs the null collector's real suspend/restart cycle while other threads allocate,
-covering the integration path and detecting deadlocks or post-suspension allocation corruption. A
-future collector that scans allocation contexts while stopped will directly validate their
-invariants.
+region. NativeAOT's `RhpWaitForGC2` also recognizes the managed-GC suspending thread and returns
+from an explicit poll after the global trap is set, because that thread owns the collection and is
+the only thread that can restart the runtime. Other critical regions protect mutators that can run
+on ordinary application threads.
 
 ## Building an application against the managed GC
 

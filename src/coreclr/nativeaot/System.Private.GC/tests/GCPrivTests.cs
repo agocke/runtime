@@ -17989,6 +17989,8 @@ public sealed unsafe class GCPrivTests
         gc_heap.full_gc_count_array savedFullGcCounts = gc_heap.full_gc_counts;
         ulong savedLohAllocatedSinceCompacting = gc_heap.loh_alloc_since_cg;
         CFinalize* finalizeQueue = null;
+        HandleTableBucket* handleBucket = null;
+        OBJECTHANDLE strongHandle = default;
         byte* rawStorage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(
             TotalRegionCount * RegionSize + RegionSize);
 
@@ -18262,11 +18264,20 @@ public sealed unsafe class GCPrivTests
             heap_segment.heap_segment_allocated(gen0Region) =
                 gen0Object + (nint)objectSize;
             gc_heap.slow = liveObject;
-            gc_heap.shigh = gen0Object;
+            gc_heap.shigh = mode is 3 or 4 or 7 ? lohObject : gen0Object;
             gc_heap.mark_stack_array = markStack;
             gc_heap.mark_stack_array_length = 8;
             gc_heap.mark_stack_bos = 0;
             gc_heap.mark_stack_tos = 0;
+            Assert.True(ObjectHandle.Ref_Initialize());
+            handleBucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+                ref ObjectHandle.g_GlobalHandleTableBucket);
+            strongHandle = HandleTableManager.HndCreateHandle(
+                handleBucket->pTable[0],
+                (uint)HandleType.HNDTYPE_STRONG,
+                liveObject,
+                0);
+            Assert.False(strongHandle.IsNull);
             finalizeQueue = CFinalize.Allocate();
             Assert.True(finalizeQueue is not null);
             gc_heap.finalize_queue = finalizeQueue;
@@ -18317,6 +18328,11 @@ public sealed unsafe class GCPrivTests
                 Assert.Equal(
                     (nuint)(&methodTable),
                     (nuint)gc_heap.method_table(destination));
+                Assert.Equal((nuint)destination, *(nuint*)strongHandle.Value);
+            }
+            else
+            {
+                Assert.Equal((nuint)liveObject, *(nuint*)strongHandle.Value);
             }
 
             Assert.Equal(
@@ -18391,6 +18407,11 @@ public sealed unsafe class GCPrivTests
             gc_heap.finalize_queue = savedFinalizeQueue;
             gc_heap.full_gc_counts = savedFullGcCounts;
             gc_heap.loh_alloc_since_cg = savedLohAllocatedSinceCompacting;
+            if (handleBucket is not null)
+            {
+                ObjectHandle.Ref_DestroyHandleTableBucket(handleBucket);
+                ObjectHandle.Ref_Shutdown();
+            }
             CFinalize.Free(finalizeQueue);
             GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
             System.Runtime.InteropServices.NativeMemory.Free(rawStorage);

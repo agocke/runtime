@@ -1771,7 +1771,9 @@ internal unsafe partial struct gc_heap
                 bool readOnly = heap_segment.heap_segment_read_only_p(segment) != 0;
                 if (++segmentCount > region_count + 1 ||
                     heap_segment.heap_segment_uoh_p(segment) == 0 ||
-                    heap_segment.heap_segment_gen_num(segment) != gen_num ||
+                    (heap_segment.heap_segment_gen_num(segment) !=
+                        GCInterfaceOffsets.max_generation &&
+                     heap_segment.heap_segment_gen_num(segment) != gen_num) ||
                     heap_segment.heap_segment_mem(segment) is null ||
                     (!readOnly &&
                      heap_segment.heap_segment_mem(segment) < lowest_address) ||
@@ -1808,6 +1810,19 @@ internal unsafe partial struct gc_heap
                         (header->IsPinned() != 0 && header->IsMarked() == 0))
                     {
                         return false;
+                    }
+
+                    if (header->IsMarked() != 0)
+                    {
+                        if (first_marked is null || objectAddress < first_marked)
+                        {
+                            first_marked = objectAddress;
+                        }
+
+                        if (last_marked is null || objectAddress > last_marked)
+                        {
+                            last_marked = objectAddress;
+                        }
                     }
 
                     objectAddress += (nint)alignedSize;

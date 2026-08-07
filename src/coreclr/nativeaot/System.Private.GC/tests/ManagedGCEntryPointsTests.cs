@@ -188,6 +188,166 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
     }
 
 #if USE_REGIONS
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    public void FullGen2CollectionRejectsUnsupportedStateBeforeMutation(int guard)
+    {
+        GCConfig.Initialize();
+        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+        GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
+        gc_heap.settings = default;
+        gc_heap.settings.gc_index = 37;
+        gc_heap.settings.condemned_generation = 1;
+        gc_heap.current_bgc_state = bgc_state.bgc_not_in_process;
+        gc_heap.gc_background_running = 0;
+
+        int generation = GCInterfaceOffsets.max_generation;
+        int mode = (int)collection_mode.collection_blocking;
+        switch (guard)
+        {
+            case 0:
+                generation = (int)gc_generation_num.soh_gen0;
+                break;
+            case 1:
+                mode = (int)collection_mode.collection_non_blocking;
+                break;
+            case 2:
+                mode = (int)collection_mode.collection_optimized;
+                break;
+            case 3:
+                mode = (int)collection_mode.collection_aggressive;
+                break;
+            case 4:
+                SetConfigByte("s_ServerGC", 1);
+                break;
+            case 5:
+                SetConfigValue("s_HeapVerifyLevel", 1);
+                break;
+            case 6:
+                GCToEEInterface.AnalyzeSurvivorsRequestedResult = 1;
+                break;
+            case 7:
+                GCEventStatus.Set(
+                    GCEventProvider.Default,
+                    GCEventKeyword.GC,
+                    GCEventLevel.Information);
+                break;
+            case 8:
+                gc_heap.gc_background_running = 1;
+                break;
+        }
+
+        int result = gc_heap.garbage_collect_synchronous_full_gen2(
+            generation,
+            low_memory_p: 0,
+            mode);
+
+        Assert.Equal(gc_heap.collection_e_notimpl, result);
+        Assert.Equal((nuint)37, gc_heap.settings.gc_index);
+        Assert.Equal(1, gc_heap.settings.condemned_generation);
+        Assert.Empty(GCToEEInterface.CollectionLifecycleCallOrder);
+        Assert.Equal(0, GCToEEInterface.SuspendEECallCount);
+        Assert.Equal(0, GCToEEInterface.RestartEECallCount);
+    }
+
+    [Fact]
+    public void FullGen2CollectionOwnsNativeLifecycleOrder()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+        GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        gc_heap.initialize_gc_static_state();
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+        Assert.True(gc_heap.initialize_mark_list());
+        Assert.True(gc_heap.initialize_mark_stack());
+        Assert.True(ManagedGCRegionBootstrap.Initialize());
+        gc_heap.finalize_queue = CFinalize.Allocate();
+        Assert.True(gc_heap.finalize_queue is not null);
+
+        try
+        {
+            int result = gc_heap.garbage_collect_synchronous_full_gen2(
+                GCInterfaceOffsets.max_generation,
+                low_memory_p: 0,
+                (int)collection_mode.collection_blocking |
+                    (int)collection_mode.collection_compacting);
+
+            Assert.True(
+                result == S_OK,
+                string.Join(", ", GCToEEInterface.CollectionLifecycleCallOrder));
+            Assert.Equal(1, GCToEEInterface.SuspendEECallCount);
+            Assert.Equal(SUSPEND_REASON.SUSPEND_FOR_GC, GCToEEInterface.LastSuspendReason);
+            Assert.Equal(1, GCToEEInterface.GcStartWorkCallCount);
+            Assert.Equal(GCInterfaceOffsets.max_generation, GCToEEInterface.LastGcStartWorkCondemned);
+            Assert.Equal(GCInterfaceOffsets.max_generation, GCToEEInterface.LastGcStartWorkMaxGeneration);
+            Assert.Equal(1, GCToEEInterface.GcDoneCallCount);
+            Assert.Equal(GCInterfaceOffsets.max_generation, GCToEEInterface.LastGcDoneCondemned);
+            Assert.Equal(1, GCToEEInterface.RestartEECallCount);
+            Assert.Equal((byte)1, GCToEEInterface.LastRestartFinishedGC);
+            Assert.Equal(1, GCToEEInterface.EnableFinalizationCallCount);
+            Assert.Equal(
+                new[]
+                {
+                    CollectionLifecycleCall.Suspend,
+                    CollectionLifecycleCall.StartWork,
+                    CollectionLifecycleCall.BeforeRoots,
+                    CollectionLifecycleCall.ScanRoots,
+                    CollectionLifecycleCall.AfterRoots,
+                    CollectionLifecycleCall.ScanRoots,
+                    CollectionLifecycleCall.Done,
+                    CollectionLifecycleCall.Restart,
+                    CollectionLifecycleCall.EnableFinalization,
+                },
+                GCToEEInterface.CollectionLifecycleCallOrder);
+            Assert.Equal((nuint)1, dynamic_data.dd_collection_count(
+                gc_heap.dynamic_data_of(
+                    ManagedGCRegionBootstrap.Heap,
+                    (int)gc_generation_num.soh_gen0)));
+            Assert.Equal((nuint)1, gc_heap.settings.gc_index);
+            Assert.Equal((nuint)1, gc_heap.full_gc_counts[gc_heap.gc_type_blocking]);
+            Assert.Equal((nuint)1, gc_heap.last_full_blocking_gc_info.index);
+            Assert.Equal(
+                (byte)GCInterfaceOffsets.max_generation,
+                gc_heap.last_full_blocking_gc_info.condemned_generation);
+            Assert.Equal((byte)1, gc_heap.last_full_blocking_gc_info.compaction);
+            Assert.Equal((byte)0, gc_heap.last_full_blocking_gc_info.concurrent);
+            Assert.Equal(
+                gc_heap.current_total_committed,
+                gc_heap.last_full_blocking_gc_info.total_committed);
+            Assert.Equal(
+                gc_heap.get_total_heap_size(ManagedGCRegionBootstrap.Heap),
+                gc_heap.last_full_blocking_gc_info.heap_size);
+            Assert.Equal(
+                gc_heap.get_total_promoted(ManagedGCRegionBootstrap.Heap),
+                gc_heap.last_full_blocking_gc_info.promoted);
+            Assert.Equal(
+                (nuint)gc_heap.num_pinned_objects,
+                gc_heap.last_full_blocking_gc_info.pinned_objects);
+            Assert.Equal(
+                gc_heap.finalize_queue->GetPromotedCount(),
+                gc_heap.last_full_blocking_gc_info.finalize_promoted_objects);
+        }
+        finally
+        {
+            CFinalize.Free(gc_heap.finalize_queue);
+            gc_heap.finalize_queue = null;
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.destroy_semi_shared();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
     [Fact]
     public void RegionBootstrapConstructsInitialGenerationsWithoutReplacingTheBumpAllocator()
     {
@@ -754,6 +914,13 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
     }
 
     private static void SetConfigValue(string fieldName, long value)
+    {
+        FieldInfo field = typeof(GCConfig).GetField(fieldName, BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field.SetValue(null, value);
+    }
+
+    private static void SetConfigByte(string fieldName, byte value)
     {
         FieldInfo field = typeof(GCConfig).GetField(fieldName, BindingFlags.Static | BindingFlags.NonPublic);
         Assert.NotNull(field);

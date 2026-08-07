@@ -996,11 +996,13 @@ namespace Internal.Runtime.GarbageCollection
         public static gc_loh_compaction_mode loh_compaction_mode;
         public static int loh_compacted_p;
         public const int gc_type_compacting = 0;
+        public const int gc_type_blocking = 1;
         public static full_gc_count_array full_gc_counts;
         public static ulong loh_alloc_since_cg;
         public static gc_history_per_heap gc_data_per_heap;
         public static fgm_history fgm_result;
         public static gc_history_global gc_data_global;
+        public static last_recorded_gc_info last_full_blocking_gc_info;
         public static ulong end_gc_time;
         public static ulong last_alloc_reset_suspended_end_time;
         public static int g_low_memory_status;
@@ -1050,6 +1052,7 @@ namespace Internal.Runtime.GarbageCollection
             loh_compacted_p = 0;
             full_gc_counts = default;
             loh_alloc_since_cg = 0;
+            last_full_blocking_gc_info = default;
             initialize_loh_pinned_queue_state();
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
@@ -1151,6 +1154,25 @@ namespace Internal.Runtime.GarbageCollection
             return true;
         }
 
+        public static bool initialize_mark_stack()
+        {
+            if (gc_rand.MARK_STACK_INITIAL_LENGTH >
+                nuint.MaxValue / (nuint)sizeof(mark))
+            {
+                return false;
+            }
+
+            mark* stack = (mark*)SyncImports.ManagedGC_AllocZeroed(
+                gc_rand.MARK_STACK_INITIAL_LENGTH * (nuint)sizeof(mark));
+            if (stack is null)
+            {
+                return false;
+            }
+
+            make_mark_stack(null, stack);
+            return true;
+        }
+
         public static void destroy_semi_shared()
         {
             if (g_mark_list is not null)
@@ -1158,6 +1180,26 @@ namespace Internal.Runtime.GarbageCollection
                 SyncImports.ManagedGC_Free(g_mark_list);
                 g_mark_list = null;
             }
+            mark_list_size = 0;
+            g_mark_list_total_size = 0;
+
+            if (g_mark_list_piece is not null)
+            {
+                SyncImports.ManagedGC_Free(g_mark_list_piece);
+                g_mark_list_piece = null;
+            }
+            g_mark_list_piece_size = 0;
+            g_mark_list_piece_total_size = 0;
+
+            if (mark_stack_array is not null)
+            {
+                SyncImports.ManagedGC_Free(mark_stack_array);
+                mark_stack_array = null;
+            }
+
+            mark_stack_array_length = 0;
+            mark_stack_tos = 0;
+            mark_stack_bos = 0;
         }
 #endif
 
@@ -3860,7 +3902,7 @@ namespace Internal.Runtime.GarbageCollection
             }
         }
 
-        public bool RegisterForFinalization(int gen, byte* obj)
+        public bool RegisterForFinalization(int gen, byte* obj, nuint size = 0)
         {
             EnterFinalizeLock();
 
@@ -3873,6 +3915,12 @@ namespace Internal.Runtime.GarbageCollection
                     if (!GrowArray(fillPointers))
                     {
                         LeaveFinalizeLock();
+                        if (((CObjectHeader*)obj)->GetMethodTable() is null)
+                        {
+                            Debug.Assert(size >= gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size));
+                            gc_heap.make_unused_array(obj, size);
+                        }
+
                         return false;
                     }
 
