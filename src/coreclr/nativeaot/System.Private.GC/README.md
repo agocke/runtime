@@ -97,7 +97,7 @@ Ported so far:
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, and overflow-recovery helpers from `mark_phase.cpp`, `gcinternal.h` |
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, and UOH region start/tail unlinking from `plan_phase.cpp` |
-| `RelocateCompact.cs` | allocation-free `memcopy` relocation primitive, pinned-queue handoffs, brick-tree and non-compacting UOH reference relocation, and dependency-closed WKS `USE_REGIONS` helpers from `relocate_compact.cpp` |
+| `RelocateCompact.cs` | allocation-free `memcopy` relocation primitive, pinned-queue handoffs, brick-tree, plug-level SOH, and non-compacting UOH reference relocation, and dependency-closed WKS `USE_REGIONS` helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | bounded WKS `USE_REGIONS` normal-plan SOH brick walk, brick-tree sweep leaves, UOH marked-object clearing, unused-array clearing, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp` and `gcinternal.h` |
 | `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
@@ -222,8 +222,9 @@ callers.
 `record_interesting_data_point` remains mechanically omitted: `Runtime.ManagedGC` does not
 compile the C++ mark phase and `System.Private.GC` does not define `GC_CONFIG_DRIVEN`, so it has
 no native diagnostic storage to update. The `_DEBUG && VERIFY_HEAP`
-`verify_pinned_queue_p = TRUE` assignment in `save_post_plug_info` remains deferred with
-`verify_pins_with_post_plug_info` and relocate-compact verification state. The next mark-phase
+`verify_pinned_queue_p = TRUE` assignment in `save_post_plug_info` and its verification-only
+state remain deferred; `verify_pins_with_post_plug_info` is present under the same native guard
+as a no-op because NativeAOT does not build that state. The next mark-phase
 slice translates the foreground marking leaves: mark-bit query and covered-range clearing retain
 the biased region mark-array addressing and partial-first-word behavior, while `gc_mark1` and
 the active WKS `USE_REGIONS` `gc_mark` retain object-header marking, half-open bounds, and
@@ -287,14 +288,17 @@ The allocation-free `memcopy` relocation primitive, card copying/clearing leaves
 and `get_oldest_pinned_entry` handoffs, brick-tree `tree_search` and `relocate_address`, and the
 dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`, `check_demotion_helper_sip`,
 `check_demotion_helper`, NativeAOT-disabled collectible-class demotion check,
-`reloc_survivor_helper`, and non-compacting `relocate_in_uoh_objects` leaves from
+`reloc_survivor_helper`, the dependency-closed plug-level SOH relocation helpers, and
+non-compacting `relocate_in_uoh_objects` leaves from
 `relocate_compact.cpp` are translated without relocation routing. They preserve skewed
 region-map indexing, pointer-word copy grouping, card-boundary semantics, pinned-entry flag
 snapshots before dequeue and oldest-plug publication, demotion card marking for younger planned
 and demoted children, brick backlinks, predecessor-node relocation, left-node gap adjustment,
-LOH relocation-distance lookup, the native in-heap check, writable LOH/POH segment traversal,
-read-only segment skipping, pointer-free-object skipping, qword object stepping, and an
-allocation-free managed function-pointer adapter for the descriptor walk.
+LOH relocation-distance lookup, the native in-heap check, normal multi-object plug walking,
+pre/post shortened-object saved-reference replay, truncated-last-object short-bit replay, the
+pre-plug one-pointer relocation lookup adjustment, writable LOH/POH segment traversal, read-only
+segment skipping, pointer-free-object skipping, qword object stepping, and allocation-free
+managed function-pointer adapters for descriptor walks.
 Background marking remains deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and

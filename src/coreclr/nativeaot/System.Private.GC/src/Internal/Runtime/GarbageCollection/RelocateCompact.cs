@@ -2,7 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Port of the allocation-free relocation copy primitive and dependency-closed WKS USE_REGIONS
-// helpers, including brick-tree reference relocation, from relocate_compact.cpp.
+// helpers, including brick-tree reference and plug-level SOH relocation, from
+// relocate_compact.cpp.
 
 using System.Diagnostics;
 
@@ -277,6 +278,284 @@ internal unsafe partial struct gc_heap
     private static void reloc_survivor_helper_callback(byte** pval, void* context)
     {
         reloc_survivor_helper((gc_heap*)context, pval);
+    }
+
+    public static void relocate_obj_helper(gc_heap* hp, byte* x, nuint s)
+    {
+        if (contain_pointers(x) != 0)
+        {
+            go_through_object_nostart(
+                method_table(x),
+                x,
+                s,
+                hp,
+                &reloc_survivor_helper_callback);
+        }
+
+        check_class_object_demotion(hp, x);
+    }
+
+    public static void reloc_ref_in_shortened_obj(byte** address_to_set_card, byte** address_to_reloc)
+    {
+        relocate_address(address_to_reloc);
+
+        check_demotion_helper(address_to_reloc, (byte*)address_to_set_card);
+    }
+
+    public static void relocate_pre_plug_info(mark* pinned_plug_entry)
+    {
+        byte* plug = pinned_plug(pinned_plug_entry);
+        byte* pre_plug_start = plug - sizeof(plug_and_gap);
+        // Note that we need to add one ptr size here otherwise we may not be able to find the
+        // relocated address. Consider this scenario:
+        // gen1 start | 3-ptr sized NP | PP
+        // 0          | 0x18           | 0x30
+        // If we are asking for the reloc address of 0x10 we will AV in relocate_address because
+        // the first plug we saw in the brick is 0x18 which means 0x10 will cause us to go back a
+        // brick which is 0, and then we'll AV in tree_search when we try to do
+        // node_right_child(tree).
+        pre_plug_start += sizeof(byte*);
+        byte** old_address = &pre_plug_start;
+
+        relocate_address(old_address);
+
+        mark.set_pre_plug_info_reloc_start(
+            pinned_plug_entry,
+            pre_plug_start - sizeof(byte*));
+    }
+
+    private struct relocate_shortened_obj_context
+    {
+        public gc_heap* heap;
+        public byte* end;
+        public byte* saved_plug_info_start;
+        public byte** saved_info_to_relocate;
+    }
+
+    private static void relocate_shortened_obj_callback(byte** pval, void* contextPointer)
+    {
+        relocate_shortened_obj_context* context =
+            (relocate_shortened_obj_context*)contextPointer;
+
+        if ((byte*)pval >= context->end)
+        {
+            nint savedIndex = (nint)(
+                ((byte*)pval - context->saved_plug_info_start) / sizeof(byte**));
+            byte** current_saved_info_to_relocate =
+                context->saved_info_to_relocate + savedIndex;
+            reloc_ref_in_shortened_obj(pval, current_saved_info_to_relocate);
+        }
+        else
+        {
+            reloc_survivor_helper(context->heap, pval);
+        }
+    }
+
+    public static void relocate_shortened_obj_helper(
+        gc_heap* hp,
+        byte* x,
+        nuint s,
+        byte* end,
+        mark* pinned_plug_entry,
+        int is_pinned)
+    {
+        byte* plug = pinned_plug(pinned_plug_entry);
+
+        if (is_pinned == 0)
+        {
+            relocate_pre_plug_info(pinned_plug_entry);
+        }
+
+        verify_pins_with_post_plug_info();
+
+        byte* saved_plug_info_start;
+        byte** saved_info_to_relocate;
+
+        if (is_pinned != 0)
+        {
+            saved_plug_info_start = mark.get_post_plug_info_start(pinned_plug_entry);
+            saved_info_to_relocate =
+                (byte**)mark.get_post_plug_reloc_info(pinned_plug_entry);
+        }
+        else
+        {
+            saved_plug_info_start = plug - sizeof(plug_and_gap);
+            saved_info_to_relocate =
+                (byte**)mark.get_pre_plug_reloc_info(pinned_plug_entry);
+        }
+
+        if (contain_pointers(x) != 0)
+        {
+            relocate_shortened_obj_context context = new()
+            {
+                heap = hp,
+                end = end,
+                saved_plug_info_start = saved_plug_info_start,
+                saved_info_to_relocate = saved_info_to_relocate,
+            };
+
+            go_through_object_nostart(
+                method_table(x),
+                x,
+                s,
+                &context,
+                &relocate_shortened_obj_callback);
+        }
+
+        check_class_object_demotion(hp, x);
+    }
+
+    public static void relocate_survivor_helper(gc_heap* hp, byte* plug, byte* plug_end)
+    {
+        byte* x = plug;
+        while (x < plug_end)
+        {
+            nuint s = size(x);
+            byte* next_obj = x + (nint)Align(s);
+            relocate_obj_helper(hp, x, s);
+            Debug.Assert(s > 0);
+            x = next_obj;
+        }
+    }
+
+    // The native body is guarded by _DEBUG && VERIFY_HEAP. NativeAOT does not currently build
+    // the verification-only pinned-queue state that body consumes, so this is its guarded no-op.
+    public static void verify_pins_with_post_plug_info()
+    {
+#if DEBUG && VERIFY_HEAP
+#endif
+    }
+
+#if COLLECTIBLE_CLASS
+    // We don't want to burn another ptr size space for pinned plugs to record this so just
+    // set the card unconditionally for collectible objects if we are demoting.
+    public static void unconditional_set_card_collectible(byte* obj)
+    {
+        if (settings.demotion != 0)
+        {
+            set_card(card_of(obj));
+        }
+    }
+#endif
+
+    public static void relocate_shortened_survivor_helper(
+        gc_heap* hp,
+        byte* plug,
+        byte* plug_end,
+        mark* pinned_plug_entry)
+    {
+        byte* x = plug;
+        byte* p_plug = pinned_plug(pinned_plug_entry);
+        int is_pinned = plug == p_plug ? 1 : 0;
+        int check_short_obj_p = is_pinned != 0
+            ? mark.post_short_p(pinned_plug_entry)
+            : mark.pre_short_p(pinned_plug_entry);
+
+        plug_end += sizeof(gap_reloc_pair);
+
+        verify_pins_with_post_plug_info();
+
+        while (x < plug_end)
+        {
+            if (check_short_obj_p != 0 &&
+                (uint)(plug_end - x) < (uint)min_pre_pin_obj_size)
+            {
+                if (is_pinned != 0)
+                {
+#if COLLECTIBLE_CLASS
+                    if (mark.post_short_collectible_p(pinned_plug_entry) != 0)
+                    {
+                        unconditional_set_card_collectible(x);
+                    }
+#endif
+
+                    // Relocate the saved references based on bits set.
+                    byte** saved_plug_info_start =
+                        (byte**)mark.get_post_plug_info_start(pinned_plug_entry);
+                    byte** saved_info_to_relocate =
+                        (byte**)mark.get_post_plug_reloc_info(pinned_plug_entry);
+                    for (nuint i = 0; i < mark.get_max_short_bits(); i++)
+                    {
+                        if (mark.post_short_bit_p(pinned_plug_entry, i) != 0)
+                        {
+                            reloc_ref_in_shortened_obj(
+                                saved_plug_info_start + (nint)i,
+                                saved_info_to_relocate + (nint)i);
+                        }
+                    }
+                }
+                else
+                {
+#if COLLECTIBLE_CLASS
+                    if (mark.pre_short_collectible_p(pinned_plug_entry) != 0)
+                    {
+                        unconditional_set_card_collectible(x);
+                    }
+#endif
+
+                    relocate_pre_plug_info(pinned_plug_entry);
+
+                    // Relocate the saved references based on bits set.
+                    byte** saved_plug_info_start =
+                        (byte**)(p_plug - sizeof(plug_and_gap));
+                    byte** saved_info_to_relocate =
+                        (byte**)mark.get_pre_plug_reloc_info(pinned_plug_entry);
+                    for (nuint i = 0; i < mark.get_max_short_bits(); i++)
+                    {
+                        if (mark.pre_short_bit_p(pinned_plug_entry, i) != 0)
+                        {
+                            reloc_ref_in_shortened_obj(
+                                saved_plug_info_start + (nint)i,
+                                saved_info_to_relocate + (nint)i);
+                        }
+                    }
+                }
+
+                break;
+            }
+
+            nuint s = size(x);
+            byte* next_obj = x + (nint)Align(s);
+
+            if (next_obj >= plug_end)
+            {
+                verify_pins_with_post_plug_info();
+
+                relocate_shortened_obj_helper(
+                    hp,
+                    x,
+                    s,
+                    x + (nint)Align(s) - sizeof(plug_and_gap),
+                    pinned_plug_entry,
+                    is_pinned);
+            }
+            else
+            {
+                relocate_obj_helper(hp, x, s);
+            }
+
+            Debug.Assert(s > 0);
+            x = next_obj;
+        }
+
+        verify_pins_with_post_plug_info();
+    }
+
+    public static void relocate_survivors_in_plug(
+        gc_heap* hp,
+        byte* plug,
+        byte* plug_end,
+        int check_last_object_p,
+        mark* pinned_plug_entry)
+    {
+        if (check_last_object_p != 0)
+        {
+            relocate_shortened_survivor_helper(hp, plug, plug_end, pinned_plug_entry);
+        }
+        else
+        {
+            relocate_survivor_helper(hp, plug, plug_end);
+        }
     }
 
     public static void relocate_in_uoh_objects(gc_heap* hp, int gen_num)

@@ -1284,8 +1284,9 @@ Translate in dependency order:
   prefix; finalizer scheduling remains deferred;
   `GC_CONFIG_DRIVEN` interesting-data-point updates are omitted because the
   managed NativeAOT build defines neither that symbol nor its diagnostic storage; the
-  `_DEBUG && VERIFY_HEAP` `verify_pinned_queue_p` assignment remains deferred with
-  `verify_pins_with_post_plug_info` and relocate-compact verification state)
+  `_DEBUG && VERIFY_HEAP` `verify_pinned_queue_p` assignment and verification-only state remain
+  deferred; `verify_pins_with_post_plug_info` is present under the native guard as a no-op
+  because NativeAOT does not build that state)
 - `plan_phase.cpp` (the dependency-free `is_induced_blocking`,
   `relative_index_power2_plug`, `relative_index_power2_free_space`, `oddp`, and `logcount`
   prefix helpers; direct WKS brick-tree insertion and brick-table updates; plus the WKS
@@ -1300,7 +1301,10 @@ Translate in dependency order:
   non-compacting UOH slice adds `AlignQword`, the NativeAOT-disabled collectible-class demotion
   check, `reloc_survivor_helper`, its allocation-free descriptor callback, and
   `relocate_in_uoh_objects` for writable LOH/POH segments while preserving read-only and
-  pointer-free-object skips)
+  pointer-free-object skips; the dependency-closed plug-level SOH slice adds normal multi-object
+  walking, pre/post shortened-object saved-reference replay, truncated-last-object short-bit
+  replay, the pre-plug one-pointer relocation lookup adjustment, and the direct captured-lambda
+  context adapter, without brick/phase routing)
 - `sweep.cpp` (bounded WKS `USE_REGIONS` normal-plan SOH brick walk, including promotion
   target selection, swept-in-plan segment skipping, positive highest-plug rewrites, negative
   brick resets, and free-list threading; plus UOH marked-object sweep, writable-tail trim,

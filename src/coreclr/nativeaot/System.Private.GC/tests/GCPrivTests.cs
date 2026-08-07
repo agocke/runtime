@@ -3065,6 +3065,242 @@ public sealed unsafe class GCPrivTests
         }
     }
 
+    [Fact]
+    public void RelocateSurvivorsInPlugRelocatesReferencesInEveryObject()
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+        seg_mapping* segmentMap = stackalloc seg_mapping[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            byte* node = firstBrick + 512;
+            ((plug_and_reloc*)node)[-1].reloc = -64;
+            ((plug_and_pair*)node)[-1].m_pair = default;
+            gc_heap.set_brick(0, (nint)(node - firstBrick));
+
+            byte* firstOldAddress = firstBrick + 768;
+            byte* secondOldAddress = firstBrick + 896;
+            nuint objectSize = (nuint)(3 * sizeof(byte*));
+            byte* descriptorStorage =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            MethodTable* methodTable =
+                InitializePointerMethodTable(descriptorStorage, objectSize, pointerCount: 1);
+
+            byte* firstObject = firstBrick + 1024;
+            byte* secondObject = firstObject + (nint)gc_heap.Align(objectSize);
+            ((CObjectHeader*)firstObject)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)secondObject)->RawSetMethodTable(methodTable);
+            *(byte**)(firstObject + sizeof(byte*)) = firstOldAddress;
+            *(byte**)(secondObject + sizeof(byte*)) = secondOldAddress;
+
+            gc_heap heap = default;
+            gc_heap.relocate_survivors_in_plug(
+                &heap,
+                firstObject,
+                secondObject + (nint)gc_heap.Align(objectSize),
+                check_last_object_p: 0,
+                pinned_plug_entry: null);
+
+            Assert.Equal(
+                (nuint)(firstOldAddress - 64),
+                (nuint)(*(byte**)(firstObject + sizeof(byte*))));
+            Assert.Equal(
+                (nuint)(secondOldAddress - 64),
+                (nuint)(*(byte**)(secondObject + sizeof(byte*))));
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RelocateShortenedPlugRelocatesPreAndPostSavedReferences(bool isPinned)
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+        seg_mapping* segmentMap = stackalloc seg_mapping[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            byte* node = firstBrick + 512;
+            ((plug_and_reloc*)node)[-1].reloc = -64;
+            ((plug_and_pair*)node)[-1].m_pair = default;
+            gc_heap.set_brick(0, (nint)(node - firstBrick));
+
+            nuint objectSize = (nuint)(6 * sizeof(byte*));
+            byte* descriptorStorage =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            MethodTable* methodTable =
+                InitializePointerMethodTable(descriptorStorage, objectSize, pointerCount: 4);
+            byte* obj = firstBrick + 1024;
+            ((CObjectHeader*)obj)->RawSetMethodTable(methodTable);
+
+            byte* directOldAddress = firstBrick + 768;
+            *(byte**)(obj + sizeof(byte*)) = directOldAddress;
+
+            mark entry = default;
+            entry.first = isPinned ? obj : obj + (nint)objectSize;
+            byte** savedReferences = isPinned
+                ? (byte**)&entry.saved_post_plug_reloc
+                : (byte**)&entry.saved_pre_plug_reloc;
+            for (nint i = 0; i < (nint)mark.get_max_short_bits(); i++)
+            {
+                savedReferences[i] = firstBrick + 800 + (i * 16);
+            }
+
+            if (isPinned)
+            {
+                entry.saved_post_p = 1;
+                entry.saved_post_plug_info_start = obj + (2 * sizeof(byte*));
+            }
+            else
+            {
+                entry.saved_pre_p = 1;
+            }
+
+            byte* fourthSavedReference = savedReferences[3];
+            gc_heap heap = default;
+            gc_heap.relocate_survivors_in_plug(
+                &heap,
+                obj,
+                obj + (2 * sizeof(byte*)),
+                check_last_object_p: 1,
+                &entry);
+
+            Assert.Equal(
+                (nuint)(directOldAddress - 64),
+                (nuint)(*(byte**)(obj + sizeof(byte*))));
+            Assert.Equal((nuint)(firstBrick + 800 - 64), (nuint)savedReferences[0]);
+            Assert.Equal((nuint)(firstBrick + 816 - 64), (nuint)savedReferences[1]);
+            Assert.Equal((nuint)(firstBrick + 832 - 64), (nuint)savedReferences[2]);
+            Assert.Equal((nuint)fourthSavedReference, (nuint)savedReferences[3]);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void RelocateShortenedPlugReplaysOnlyTruncatedLastObjectShortBits()
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+        seg_mapping* segmentMap = stackalloc seg_mapping[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            byte* node = firstBrick + 512;
+            ((plug_and_reloc*)node)[-1].reloc = -64;
+            ((plug_and_pair*)node)[-1].m_pair = default;
+            gc_heap.set_brick(0, (nint)(node - firstBrick));
+
+            byte* plug = firstBrick + 1024;
+            mark entry = default;
+            entry.first = plug;
+            entry.saved_post_plug_info_start = plug + (2 * sizeof(byte*));
+            mark.set_post_short(&entry);
+            mark.set_post_short_bit(&entry, 0);
+            mark.set_post_short_bit(&entry, 2);
+
+            byte** savedReferences = (byte**)&entry.saved_post_plug_reloc;
+            for (nint i = 0; i < (nint)mark.get_max_short_bits(); i++)
+            {
+                savedReferences[i] = firstBrick + 800 + (i * 16);
+            }
+
+            byte* untouchedFirst = savedReferences[1];
+            byte* untouchedSecond = savedReferences[3];
+            gc_heap heap = default;
+            gc_heap.relocate_survivors_in_plug(
+                &heap,
+                plug,
+                plug + (2 * sizeof(byte*)),
+                check_last_object_p: 1,
+                &entry);
+
+            Assert.Equal((nuint)(firstBrick + 800 - 64), (nuint)savedReferences[0]);
+            Assert.Equal((nuint)untouchedFirst, (nuint)savedReferences[1]);
+            Assert.Equal((nuint)(firstBrick + 832 - 64), (nuint)savedReferences[2]);
+            Assert.Equal((nuint)untouchedSecond, (nuint)savedReferences[3]);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void RelocatePrePlugInfoAdjustsRelocationLookupByOnePointer()
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap);
+
+            byte* node = firstBrick + 512;
+            ((plug_and_reloc*)node)[-1].reloc = -64;
+            ((plug_and_pair*)node)[-1].m_pair = default;
+            gc_heap.set_brick(0, (nint)(node - firstBrick));
+
+            mark entry = default;
+            entry.first = node + sizeof(plug_and_gap) - sizeof(byte*);
+
+            gc_heap.relocate_pre_plug_info(&entry);
+
+            Assert.Equal(
+                (nuint)(node - 64 - sizeof(byte*)),
+                (nuint)entry.saved_pre_plug_info_reloc_start);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
     [Theory]
     [InlineData((int)gc_generation_num.loh_generation)]
     [InlineData((int)gc_generation_num.poh_generation)]
@@ -15072,6 +15308,7 @@ public sealed unsafe class GCPrivTests
     {
         private readonly nuint _minSegmentSizeShr;
         private readonly region_info* _mapRegionToGenerationSkewed;
+        private readonly seg_mapping* _segMappingTable;
         private readonly byte* _gcLow;
         private readonly byte* _gcHigh;
         private readonly byte* _lowestAddress;
@@ -15085,10 +15322,12 @@ public sealed unsafe class GCPrivTests
             byte* lowestAddress,
             byte* highestAddress,
             short* brickTable,
-            region_info* generationMap)
+            region_info* generationMap,
+            seg_mapping* segmentMap = null)
         {
             _minSegmentSizeShr = gc_heap.min_segment_size_shr;
             _mapRegionToGenerationSkewed = gc_heap.map_region_to_generation_skewed;
+            _segMappingTable = GCCommon.seg_mapping_table;
             _gcLow = gc_heap.gc_low;
             _gcHigh = gc_heap.gc_high;
             _lowestAddress = gc_heap.lowest_address;
@@ -15116,12 +15355,28 @@ public sealed unsafe class GCPrivTests
                 brickTable[i] = 0;
                 generationMap[i] = region_info.RI_GEN_0;
             }
+
+            if (segmentMap is not null)
+            {
+                nuint firstRegionIndex =
+                    (nuint)lowestAddress >> (int)gc_heap.min_segment_size_shr;
+                GCCommon.seg_mapping_table = segmentMap - (nint)firstRegionIndex;
+                for (int i = 0; i < 4; i++)
+                {
+                    segmentMap[i] = default;
+                    heap_segment.heap_segment_gen_num(&segmentMap[i].region_info) =
+                        (byte)gc_generation_num.soh_gen0;
+                    heap_segment.heap_segment_plan_gen_num(&segmentMap[i].region_info) =
+                        (int)gc_generation_num.soh_gen0;
+                }
+            }
         }
 
         public void Dispose()
         {
             gc_heap.min_segment_size_shr = _minSegmentSizeShr;
             gc_heap.map_region_to_generation_skewed = _mapRegionToGenerationSkewed;
+            GCCommon.seg_mapping_table = _segMappingTable;
             gc_heap.gc_low = _gcLow;
             gc_heap.gc_high = _gcHigh;
             gc_heap.lowest_address = _lowestAddress;
@@ -15131,6 +15386,24 @@ public sealed unsafe class GCPrivTests
             gc_heap.settings = _settings;
             gc_heap.loh_compacted_p = _lohCompacted;
         }
+    }
+
+    private static MethodTable* InitializePointerMethodTable(
+        byte* descriptorStorage,
+        nuint objectSize,
+        nuint pointerCount)
+    {
+        int descriptorSize = sizeof(nuint) + sizeof(CGCDescSeries);
+        MethodTable* methodTable = (MethodTable*)(descriptorStorage + descriptorSize);
+        methodTable->m_uFlags = MethodTable.HasPointersFlag;
+        methodTable->m_uBaseSize = (uint)objectSize;
+        *((nuint*)methodTable - 1) = 1;
+
+        CGCDescSeries* series = (CGCDescSeries*)descriptorStorage;
+        series->seriessize = unchecked(
+            (nuint)(-(nint)(objectSize - (pointerCount * (nuint)sizeof(byte*)))));
+        series->startoffset = (nuint)sizeof(byte*);
+        return methodTable;
     }
 
     private sealed class PlanPhaseStateScope : System.IDisposable
