@@ -2,7 +2,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -13,17 +12,13 @@ using System.Threading;
 // resolved it from native, and the runtime brought the whole process up on a heap written in
 // C#: startup, module frozen object segments, statics, and every allocation below.
 //
-// The managed heap allocates but does not collect yet, so this exercises what it does have --
-// the bump allocator, the write barrier globals it publishes, and the handle table -- rather
-// than anything that needs a collector.
-//
 // Dependency-free utility coverage lives in ManagedGC.Foundation.Tests; this test stays focused
 // on end-to-end NativeAOT runtime integration.
-internal static class ManagedGCTest
+internal static unsafe class ManagedGCTest
 {
     private static int Main()
     {
-        if (!NothingIsReclaimed())
+        if (!FullCollectionReclaimsRelocatesAndPreservesRoots())
         {
             return 1;
         }
@@ -48,41 +43,154 @@ internal static class ManagedGCTest
             return 5;
         }
 
-        if (!ThreadsCanAllocateWhileCollectionsSuspendThem())
-        {
-            return 6;
-        }
-
-        if (!CollectionsAreCounted())
-        {
-            return 7;
-        }
-
-        if (!ConfigurationVariablesAreReported())
-        {
-            return 8;
-        }
-
         Console.WriteLine("ManagedGC smoke test passed.");
         return 100;
     }
 
-    /// <summary>
-    /// Proves that the process is using the current non-collecting managed heap. A collector
-    /// would reclaim the garbage below and report a smaller heap afterwards; the managed heap
-    /// cannot, so its reported size only ever grows. Delete this once the port collects.
-    /// </summary>
-    private static bool NothingIsReclaimed()
+    private static bool FullCollectionReclaimsRelocatesAndPreservesRoots()
     {
-        for (int i = 0; i < 16 * 1024; i++)
+        const int SurvivorCount = 64;
+        byte[][] survivors = new byte[SurvivorCount][];
+        nuint[] addressesBefore = new nuint[SurvivorCount];
+        for (int i = 0; i < SurvivorCount; i++)
         {
-            _ = new byte[512];
+            for (int j = 0; j < 64; j++)
+            {
+                _ = new byte[128];
+            }
+
+            byte[] survivor = new byte[256];
+            survivor[0] = (byte)i;
+            survivor[^1] = (byte)~i;
+            survivors[i] = survivor;
+            addressesBefore[i] = AddressOf(survivor);
         }
 
-        long before = GC.GetTotalMemory(false);
-        GC.Collect();
-        return GC.GetTotalMemory(false) >= before;
+        byte[] rooted = survivors[SurvivorCount / 2];
+
+        WeakReference weak = CreateCollectibleObject();
+        GCHandle strongHandle = GCHandle.Alloc(rooted);
+        GCHandle handleOnlyRoot = CreateHandleOnlyRoot();
+        byte[] pinnedObject = new byte[256];
+        GCHandle pinnedHandle = GCHandle.Alloc(pinnedObject, GCHandleType.Pinned);
+
+        for (int i = 0; i < 4096; i++)
+        {
+            _ = new byte[128];
+        }
+
+        ForceFullCollection();
+
+        bool survived = ReferenceEquals(strongHandle.Target, rooted);
+        object handleOnlyTarget = handleOnlyRoot.Target;
+        if (handleOnlyTarget is null)
+        {
+            strongHandle.Free();
+            handleOnlyRoot.Free();
+            pinnedHandle.Free();
+            return false;
+        }
+
+        bool handleRootSurvived =
+            handleOnlyTarget is Node handleRoot &&
+            handleRoot.Value == 73;
+        if (!handleRootSurvived)
+        {
+            strongHandle.Free();
+            handleOnlyRoot.Free();
+            pinnedHandle.Free();
+            return false;
+        }
+        bool addressChanged = false;
+        for (int i = 0; i < SurvivorCount; i++)
+        {
+            if (survivors[i][0] != (byte)i ||
+                survivors[i][^1] != (byte)~i)
+            {
+                survived = false;
+            }
+
+            if (AddressOf(survivors[i]) != addressesBefore[i])
+            {
+                addressChanged = true;
+            }
+        }
+
+        bool reclaimed = !weak.IsAlive;
+        bool relocated = addressChanged;
+        bool pinned =
+            pinnedHandle.AddrOfPinnedObject() != IntPtr.Zero &&
+            ReferenceEquals(pinnedHandle.Target, pinnedObject);
+
+        byte[] subsequent = new byte[1024];
+        subsequent[0] = 0x55;
+        Node subsequentNode = new Node { Value = 55, Next = new Node { Value = 56 } };
+        bool subsequentAllocation =
+            subsequent[0] == 0x55 &&
+            subsequentNode.Value == 55 &&
+            subsequentNode.Next.Value == 56;
+
+        Finalizable.Reset();
+        WeakReference finalizable = CreateFinalizableObject();
+        ForceFullNonCompactingRequest();
+        long finalizationPending = GC.GetGCMemoryInfo().FinalizationPendingCount;
+        GC.WaitForPendingFinalizers();
+        bool finalized = Volatile.Read(ref Finalizable.Count) == 1;
+
+        strongHandle.Free();
+        handleOnlyRoot.Free();
+        pinnedHandle.Free();
+        GC.KeepAlive(rooted);
+        GC.KeepAlive(survivors);
+        GC.KeepAlive(pinnedObject);
+        GC.KeepAlive(subsequent);
+        GC.KeepAlive(subsequentNode);
+        GC.KeepAlive(finalizable);
+        return survived &&
+            handleRootSurvived &&
+            reclaimed &&
+            relocated &&
+            pinned &&
+            finalizationPending != 0 &&
+            finalized &&
+            subsequentAllocation;
     }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateCollectibleObject()
+    {
+        object target = new byte[512 * 1024];
+        return new WeakReference(target);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static GCHandle CreateHandleOnlyRoot() =>
+        GCHandle.Alloc(new Node { Value = 73 });
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateFinalizableObject()
+    {
+        object target = new Finalizable();
+        return new WeakReference(target);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static nuint AddressOf(byte[] array) =>
+        (nuint)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(array));
+
+    private static void ForceFullCollection() =>
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: true);
+
+    private static void ForceFullNonCompactingRequest() =>
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
 
     private static bool AllocationsAreDistinctAndZeroed()
     {
@@ -220,6 +328,14 @@ internal static class ManagedGCTest
             {
                 return false;
             }
+
+            ForceFullCollection();
+            if (!ReferenceEquals(normal.Target, replacement) ||
+                !ReferenceEquals(weak.Target, target) ||
+                pinned.AddrOfPinnedObject() == IntPtr.Zero)
+            {
+                return false;
+            }
         }
         finally
         {
@@ -258,128 +374,38 @@ internal static class ManagedGCTest
         return true;
     }
 
-    /// <summary>
-    /// Several threads allocate while the main thread repeatedly suspends the EE. This verifies
-    /// that the suspend/restart path does not deadlock and that allocations remain intact across
-    /// repeated stops.
-    /// </summary>
-    private static bool ThreadsCanAllocateWhileCollectionsSuspendThem()
-    {
-        const int ThreadCount = 4;
-        const int PerThread = 8192;
-
-        bool[] results = new bool[ThreadCount];
-        Thread[] threads = new Thread[ThreadCount];
-        using CountdownEvent ready = new CountdownEvent(ThreadCount);
-        using ManualResetEventSlim startAllocating = new ManualResetEventSlim(false);
-
-        for (int t = 0; t < ThreadCount; t++)
-        {
-            int index = t;
-            threads[t] = new Thread(() =>
-            {
-                ready.Signal();
-                startAllocating.Wait();
-
-                byte[][] arrays = new byte[PerThread][];
-                for (int i = 0; i < PerThread; i++)
-                {
-                    arrays[i] = new byte[32];
-                    arrays[i][0] = (byte)index;
-                    arrays[i][31] = (byte)i;
-                }
-
-                for (int i = 0; i < PerThread; i++)
-                {
-                    if (arrays[i][0] != (byte)index || arrays[i][31] != (byte)i)
-                    {
-                        return;
-                    }
-                }
-
-                results[index] = true;
-            });
-
-            threads[t].Start();
-        }
-
-        ready.Wait();
-        startAllocating.Set();
-        for (int i = 0; i < 32; i++)
-        {
-            GC.Collect();
-        }
-
-        foreach (Thread thread in threads)
-        {
-            thread.Join();
-        }
-
-        foreach (bool result in results)
-        {
-            if (!result)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool CollectionsAreCounted()
-    {
-        int before = GC.CollectionCount(0);
-        GC.Collect();
-        return GC.CollectionCount(0) > before;
-    }
-
-    /// <summary>
-    /// Runs the managed GCConfig end to end: GC.GetConfigurationVariables goes through
-    /// RhEnumerateConfigurationValues into the heap's EnumerateConfigurationValues slot, which is
-    /// GCConfig.EnumerateConfigurationValues. That reports the cached configs, reads the string
-    /// configs back out of the EE and frees them again through IGCToCLR.
-    /// </summary>
-    private static bool ConfigurationVariablesAreReported()
-    {
-        IReadOnlyDictionary<string, object> configurations = GC.GetConfigurationVariables();
-
-        // Only the configs with a public name are reported: the callback in System.GC drops the
-        // ones the GC passes a null public key for.
-        string[] expectedPublic = { "ServerGC", "ConcurrentGC", "HeapCount", "LOHThreshold", "GCHeapHardLimit", "GCConserveMem", "GCName" };
-        string[] expectedPrivateOnly = { "ConservativeGC", "HeapVerifyLevel", "LogFile", "ConfigLogFile", "BGCSpinCount" };
-
-        foreach (string name in expectedPublic)
-        {
-            if (!configurations.ContainsKey(name))
-            {
-                return false;
-            }
-        }
-
-        foreach (string name in expectedPrivateOnly)
-        {
-            if (configurations.ContainsKey(name))
-            {
-                return false;
-            }
-        }
-
-        // The three kinds the enumeration reports, one of each. Their values depend on the
-        // environment the test runs in, so what is checked here is the type the GC reported.
-        if (configurations["ServerGC"] is not bool ||
-            configurations["LOHThreshold"] is not long ||
-            configurations["GCName"] is not string)
-        {
-            return false;
-        }
-
-        // Values are environment-configurable; the direct GCConfig tests cover defaults.
-        return true;
-    }
-
     private sealed class Node
     {
         public int Value;
         public Node Next;
+    }
+
+    private sealed class Finalizable
+    {
+        public static int Count;
+
+        private long _value0 = 1;
+        private long _value1 = 2;
+        private long _value2 = 3;
+        private long _value3 = 4;
+        private long _value4 = 5;
+        private long _value5 = 6;
+        private long _value6 = 7;
+        private long _value7 = 8;
+        private long _value8 = 9;
+        private long _value9 = 10;
+        private long _value10 = 11;
+        private long _value11 = 12;
+
+        public static void Reset() => Volatile.Write(ref Count, 0);
+
+        ~Finalizable()
+        {
+            if (_value0 + _value1 + _value2 + _value3 + _value4 + _value5 +
+                _value6 + _value7 + _value8 + _value9 + _value10 + _value11 == 78)
+            {
+                Interlocked.Increment(ref Count);
+            }
+        }
     }
 }

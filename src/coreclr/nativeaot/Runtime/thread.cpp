@@ -1068,6 +1068,14 @@ EXTERN_C void FASTCALL RhpUnsuppressGcStress()
 EXTERN_C NOINLINE void FASTCALL RhpWaitForGC2(PInvokeTransitionFrame * pFrame)
 {
     Thread * pThread = pFrame->m_pThread;
+#ifdef FEATURE_MANAGED_GC
+    // The managed collector can reach a poll after it has suspended the runtime. The native
+    // collector cannot because it remains in native code. Never make the thread that owns the
+    // suspension wait for the collection that only it can finish.
+    if (pThread == ThreadStore::GetSuspendingThread())
+        return;
+#endif // FEATURE_MANAGED_GC
+
     if (pThread->IsDoNotTriggerGcSet())
         return;
 
