@@ -310,7 +310,7 @@ FCIMPL1(int32_t, RhWaitForFullGCApproach, int32_t millisecondsTimeout)
     ASSERT(ThreadStore::GetCurrentThread()->IsCurrentThreadInCooperativeMode());
 
     int timeout = millisecondsTimeout == -1 ? INFINITE : millisecondsTimeout;
-    return GCHeapUtilities::GetGCHeap()->WaitForFullGCApproach(millisecondsTimeout);
+    return GCHeapUtilities::GetGCHeap()->WaitForFullGCApproach(timeout);
 }
 FCIMPLEND
 
@@ -320,7 +320,7 @@ FCIMPL1(int32_t, RhWaitForFullGCComplete, int32_t millisecondsTimeout)
     ASSERT(ThreadStore::GetCurrentThread()->IsCurrentThreadInCooperativeMode());
 
     int timeout = millisecondsTimeout == -1 ? INFINITE : millisecondsTimeout;
-    return GCHeapUtilities::GetGCHeap()->WaitForFullGCComplete(millisecondsTimeout);
+    return GCHeapUtilities::GetGCHeap()->WaitForFullGCComplete(timeout);
 }
 FCIMPLEND
 
@@ -458,10 +458,10 @@ EXTERN_C uint64_t QCALLTYPE RhGetGenerationBudget(int generation)
     return pHeap->GetGenerationBudget(generation);
 }
 
-EXTERN_C void QCALLTYPE RhEnableNoGCRegionCallback(NoGCRegionCallbackFinalizerWorkItem* pCallback, int64_t totalSize)
+EXTERN_C int32_t QCALLTYPE RhEnableNoGCRegionCallback(NoGCRegionCallbackFinalizerWorkItem* pCallback, int64_t totalSize)
 {
     IGCHeap* pHeap = GCHeapUtilities::GetGCHeap();
-    pHeap->EnableNoGCRegionCallback(pCallback, totalSize);
+    return static_cast<int32_t>(pHeap->EnableNoGCRegionCallback(pCallback, totalSize));
 }
 
 EXTERN_C int64_t QCALLTYPE RhGetTotalAllocatedBytesPrecise()

@@ -1394,6 +1394,9 @@ internal unsafe partial struct gc_heap
         full_gc_counts[gc_type_background]++;
         last_gc_before_oom = 0;
         record_gc_info(hp);
+        update_full_gc_notification_after_gc(hp);
+        fgn_last_alloc = unchecked((nuint)dynamic_data.dd_new_allocation(
+            dynamic_data_of(hp, (int)gc_generation_num.soh_gen0)));
         GCToEEInterface.GcDone(GCInterfaceOffsets.max_generation);
     }
 

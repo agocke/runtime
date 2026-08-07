@@ -11,6 +11,11 @@ internal static class ManagedGCBgcTest
 {
     private static int Main()
     {
+        if (!FullGCNotificationCancellationIsStable())
+        {
+            return 2;
+        }
+
         const int NodeCount = 65_536;
         Node root = new Node { Value = 1 };
         Node tail = root;
@@ -19,6 +24,7 @@ internal static class ManagedGCBgcTest
             tail.Next = new Node { Value = i + 2 };
             tail = tail.Next;
         }
+
         WeakReference weak = CreateCollectibleObject();
         GCHandle strongHandle = GCHandle.Alloc(root);
         byte[] pinnedObject = new byte[512];
@@ -234,6 +240,32 @@ internal static class ManagedGCBgcTest
             strongHandle.Free();
             pinnedHandle.Free();
         }
+    }
+
+    private static bool FullGCNotificationCancellationIsStable()
+    {
+        GC.RegisterForFullGCNotification(10, 10);
+
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: false,
+            compacting: false);
+        GCNotificationStatus waitStatus = GC.WaitForFullGCApproach(100);
+        GC.CancelFullGCNotification();
+        bool result =
+            waitStatus is (
+                GCNotificationStatus.Timeout or
+                GCNotificationStatus.NotApplicable) &&
+            GC.WaitForFullGCComplete(0) ==
+                GCNotificationStatus.NotApplicable;
+        if (!result)
+        {
+            Console.WriteLine(
+                $"BGC notification cancellation failed: status={waitStatus}");
+        }
+
+        return result;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

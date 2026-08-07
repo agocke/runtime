@@ -1304,6 +1304,20 @@ namespace Internal.Runtime.GarbageCollection
         public static int last_gc_before_oom;
         public static bool provisional_mode_triggered;
         public static nuint soh_allocation_no_gc;
+        public static nuint loh_allocation_no_gc;
+        public static bool no_gc_oom_p;
+        public static heap_segment* saved_loh_segment_no_gc;
+        public static no_gc_region_info current_no_gc_region_info;
+        public static FinalizerWorkItem* finalizer_work;
+        public static GCEvent full_gc_approach_event;
+        public static GCEvent full_gc_end_event;
+        public static uint fgn_maxgen_percent;
+        public static nuint fgn_last_alloc;
+        public static uint fgn_loh_percent;
+        public static bool full_gc_approach_event_set;
+#if BACKGROUND_GC
+        public static int fgn_last_gc_was_concurrent;
+#endif
         public static int reset_mm_p;
 #if !USE_REGIONS
         internal static bool gc_can_use_concurrent;
@@ -1394,6 +1408,18 @@ namespace Internal.Runtime.GarbageCollection
             last_gc_before_oom = 0;
             provisional_mode_triggered = false;
             soh_allocation_no_gc = 0;
+            loh_allocation_no_gc = 0;
+            no_gc_oom_p = false;
+            saved_loh_segment_no_gc = null;
+            current_no_gc_region_info = default;
+            finalizer_work = null;
+            fgn_maxgen_percent = 0;
+            fgn_last_alloc = 0;
+            fgn_loh_percent = 0;
+            full_gc_approach_event_set = false;
+#if BACKGROUND_GC
+            fgn_last_gc_was_concurrent = 0;
+#endif
             reset_mm_p = 1;
 #if USE_REGIONS && !MULTIPLE_HEAPS
             gen0_bricks_cleared = 0;

@@ -32,6 +32,7 @@
 // not clear m_impl: the C++ leaves both alone, so IsValid() keeps reporting true afterwards.
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using static Internal.Runtime.GarbageCollection.SyncImports;
 
 namespace Internal.Runtime.GarbageCollection
@@ -285,6 +286,19 @@ namespace Internal.Runtime.GarbageCollection
                 return waitStatus;
             }
 
+            public uint UserThreadWait(uint milliseconds)
+            {
+                fixed (Impl* self = &this)
+                {
+                    return ManagedGC_PthreadEventWait(
+                        &self->m_condition,
+                        &self->m_mutex,
+                        (byte*)&self->m_state,
+                        self->m_manualReset ? (byte)1 : (byte)0,
+                        milliseconds);
+                }
+            }
+
             public void Set()
             {
                 fixed (Impl* self = &this)
@@ -331,6 +345,20 @@ namespace Internal.Runtime.GarbageCollection
             Debug.Assert(m_impl != null);
             return ((Impl*)m_impl)->Wait(timeout, alertable);
         }
+
+        public partial uint UserThreadWait(uint timeout)
+        {
+            Debug.Assert(m_impl != null);
+            return ((Impl*)m_impl)->UserThreadWait(timeout);
+        }
+
+        [DllImport("*")]
+        private static extern uint ManagedGC_PthreadEventWait(
+            pthread_cond_t* condition,
+            pthread_mutex_t* mutex,
+            byte* state,
+            byte manualReset,
+            uint milliseconds);
 
         public partial bool CreateAutoEventNoThrow(bool initialState)
         {

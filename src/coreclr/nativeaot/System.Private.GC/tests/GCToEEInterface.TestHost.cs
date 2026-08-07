@@ -522,6 +522,10 @@ internal static unsafe class GCToEEInterface
 
     public static byte EagerFinalized(byte* obj) => obj == EagerFinalizedObject ? (byte)1 : (byte)0;
 
+    public static void DiagAddNewRegion(int generation, byte* rangeStart, byte* rangeEnd, byte* rangeEndReserved)
+    {
+    }
+
     public static void DiagWalkFReachableObjects(void* gcContext)
     {
         DiagWalkFReachableObjectsCallCount++;

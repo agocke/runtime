@@ -120,6 +120,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCDesc.cs" Link="GCDesc.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/DynamicTuning.cs" Link="DynamicTuning.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/FullGCNotification.cs" Link="FullGCNotification.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCMemory.cs" Link="GCMemory.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCPriv.cs" Link="GCPriv.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCRecord.cs" Link="GCRecord.cs" />
@@ -136,6 +137,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCEntryPoints.cs" Link="ManagedGCEntryPoints.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCRegionBootstrap.cs" Link="ManagedGCRegionBootstrap.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/MarkPhase.cs" Link="MarkPhase.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/NoGC.cs" Link="NoGC.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/PlanPhase.cs" Link="PlanPhase.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/RelocateCompact.cs" Link="RelocateCompact.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/IntroSort.cs" Link="IntroSort.cs" />

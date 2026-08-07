@@ -2458,6 +2458,8 @@ internal unsafe partial struct gc_heap
         context->state = allocation_state.a_state_start;
         context->gc_started_p =
             ManagedGCHeap.CollectionStartedForAllocation() ? (byte)1 : (byte)0;
+        context->full_gc_notification_p =
+            fgn_maxgen_percent != 0 ? (byte)1 : (byte)0;
     }
 
     public static void enable_non_collecting_bootstrap_budget(try_allocate_more_space_context* context)
@@ -2490,6 +2492,11 @@ internal unsafe partial struct gc_heap
 
             case allocation_deferred_operation.leave_more_space_lock:
                 GCSpinLock.leave(more_space_lock_of(hp, context->gen_number));
+                result->kind = allocation_callback_result_kind.completed;
+                return;
+
+            case allocation_deferred_operation.check_for_full_gc:
+                check_for_full_gc(hp, context->gen_number, context->size);
                 result->kind = allocation_callback_result_kind.completed;
                 return;
 
@@ -2578,6 +2585,13 @@ internal unsafe partial struct gc_heap
 
             case allocation_deferred_operation.trigger_full_compact_gc:
                 last_gc_before_oom = 1;
+                if (fgn_maxgen_percent != 0)
+                {
+                    send_full_gc_notification(
+                        GCInterfaceOffsets.max_generation,
+                        due_to_alloc_p: false);
+                }
+
                 bool fullCollectionCompleted = run_allocation_full_collection(
                     context,
                     GCInterfaceOffsets.max_generation,

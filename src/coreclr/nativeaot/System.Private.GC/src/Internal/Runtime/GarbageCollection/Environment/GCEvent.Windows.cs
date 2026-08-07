@@ -29,6 +29,7 @@
 // is owned by the Impl* local until it is stored in m_impl.
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using static Internal.Runtime.GarbageCollection.SyncImports;
 
 namespace Internal.Runtime.GarbageCollection
@@ -128,6 +129,19 @@ namespace Internal.Runtime.GarbageCollection
             Debug.Assert(m_impl != null);
             return ((Impl*)m_impl)->Wait(timeout, alertable);
         }
+
+        public partial uint UserThreadWait(uint timeout)
+        {
+            Debug.Assert(m_impl != null);
+            return WaitForSingleObjectUserThread(
+                ((Impl*)m_impl)->m_hEvent,
+                timeout);
+        }
+
+        [DllImport("kernel32", EntryPoint = "WaitForSingleObject")]
+        private static extern uint WaitForSingleObjectUserThread(
+            void* handle,
+            uint timeout);
 
         public partial bool CreateAutoEventNoThrow(bool initialState)
         {

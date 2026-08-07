@@ -1022,7 +1022,7 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
     }
 
     [Fact]
-    public void WksAllocationCallbackUsesOwnedLocksAndDefersUnavailableNotifications()
+    public void WksAllocationCallbackUsesOwnedLocksAndChecksNotifications()
     {
         GCToOSInterface.ResetRecording();
         GCConfig.Initialize();
@@ -1089,13 +1089,183 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
             Assert.Equal(gc_heap.allocation_callback_result_kind.completed, result.kind);
 
             context.full_gc_notification_p = 1;
-            Assert.False(gc_heap.allocate_more_space(&context, callback));
-            Assert.Equal(gc_heap.allocation_deferred_operation.check_for_full_gc, context.deferred_operation);
-            Assert.Equal((byte)0, context.more_space_lock_held_p);
-            Assert.Equal(GCSpinLock.lock_free, heap->more_space_lock_soh.@lock);
+            callback(&context, (int)gc_heap.allocation_deferred_operation.check_for_full_gc, &result);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.completed, result.kind);
         }
         finally
         {
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Fact]
+    public void WksNoGCRegionPreservesBudgetsStatusesAndCallbackCleanup()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+        gc_heap.initialize_gc_static_state();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_interactive;
+
+            Assert.Equal(
+                enable_no_gc_region_callback_status.not_started,
+                gc_heap.enable_no_gc_callback(heap, null, 1));
+
+            Assert.Equal(
+                start_no_gc_region_status.start_no_gc_success,
+                gc_heap.prepare_for_no_gc_region(
+                    256 * 1024,
+                    loh_size_known: true,
+                    64 * 1024,
+                    disallow_full_blocking: true));
+            Assert.Equal(gc_pause_mode.pause_no_gc, gc_heap.settings.pause_mode);
+            Assert.False(gc_heap.should_proceed_with_gc(heap));
+            Assert.Equal((nuint)1, gc_heap.current_no_gc_region_info.started);
+            Assert.True(gc_heap.soh_allocation_no_gc >= 192 * 1024);
+            Assert.True(gc_heap.loh_allocation_no_gc >= 64 * 1024);
+            Assert.Equal(
+                (nint)gc_heap.soh_allocation_no_gc,
+                dynamic_data.dd_new_allocation(gc_heap.dynamic_data_of(
+                    heap,
+                    (int)gc_generation_num.soh_gen0)));
+            Assert.Equal(
+                (nint)gc_heap.loh_allocation_no_gc,
+                dynamic_data.dd_new_allocation(gc_heap.dynamic_data_of(
+                    heap,
+                    (int)gc_generation_num.loh_generation)));
+
+            NoGCRegionCallbackFinalizerWorkItem callback = default;
+            Assert.Equal(
+                enable_no_gc_region_callback_status.succeed,
+                gc_heap.enable_no_gc_callback(heap, &callback, 64 * 1024));
+            Assert.Equal(2, GCToEEInterface.SuspendEECallCount);
+            Assert.Equal(2, GCToEEInterface.RestartEECallCount);
+            Assert.Equal(
+                enable_no_gc_region_callback_status.already_registered,
+                gc_heap.enable_no_gc_callback(heap, &callback, 32 * 1024));
+
+            Assert.Equal(
+                end_no_gc_region_status.end_no_gc_success,
+                gc_heap.end_no_gc_region());
+            Assert.Equal(gc_pause_mode.pause_interactive, gc_heap.settings.pause_mode);
+            Assert.Equal((byte)1, callback.scheduled);
+            Assert.Equal((byte)1, callback.abandoned);
+            Assert.Equal(1, GCToEEInterface.EnableFinalizationCallCount);
+            Assert.Equal(
+                (nint)(&callback),
+                (nint)gc_heap.get_extra_work_for_finalization());
+
+            Assert.Equal(
+                end_no_gc_region_status.end_no_gc_not_in_progress,
+                gc_heap.end_no_gc_region());
+
+            gc_heap.current_no_gc_region_info.started = 1;
+            gc_heap.current_no_gc_region_info.num_gcs = 1;
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_interactive;
+            Assert.Equal(
+                end_no_gc_region_status.end_no_gc_alloc_exceeded,
+                gc_heap.end_no_gc_region());
+
+            gc_heap.current_no_gc_region_info.started = 1;
+            gc_heap.current_no_gc_region_info.num_gcs = 1;
+            gc_heap.current_no_gc_region_info.num_gcs_induced = 1;
+            Assert.Equal(
+                end_no_gc_region_status.end_no_gc_induced,
+                gc_heap.end_no_gc_region());
+
+            gc_heap.settings.pause_mode = gc_pause_mode.pause_interactive;
+            Assert.Equal(
+                start_no_gc_region_status.start_no_gc_too_large,
+                gc_heap.prepare_for_no_gc_region(
+                    ulong.MaxValue,
+                    loh_size_known: false,
+                    0,
+                    disallow_full_blocking: false));
+            Assert.Equal(gc_pause_mode.pause_interactive, gc_heap.settings.pause_mode);
+            gc_heap.handle_failure_for_no_gc();
+        }
+        finally
+        {
+            gc_heap.finalizer_work = null;
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Fact]
+    public void WksFullGCNotificationPreservesWaitCancelAndBackgroundStates()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+        gc_heap.initialize_gc_static_state();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+
+        try
+        {
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+            Assert.True(gc_heap.initialize_full_gc_notification());
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+
+            Assert.True(gc_heap.register_for_full_gc_notification(heap, 10, 10));
+            fixed (GCEvent* approach = &gc_heap.full_gc_approach_event)
+            fixed (GCEvent* complete = &gc_heap.full_gc_end_event)
+            {
+                Assert.Equal(
+                    wait_full_gc_status.wait_full_gc_timeout,
+                    gc_heap.full_gc_wait(approach, 0));
+
+                gc_heap.send_full_gc_notification(
+                    (int)gc_generation_num.soh_gen0,
+                    due_to_alloc_p: true);
+                Assert.True(gc_heap.full_gc_approach_event_set);
+                Assert.Equal(
+                    wait_full_gc_status.wait_full_gc_success,
+                    gc_heap.full_gc_wait(approach, 0));
+
+                gc_heap.settings.condemned_generation =
+                    GCInterfaceOffsets.max_generation;
+                gc_heap.settings.concurrent = 0;
+                gc_heap.update_full_gc_notification_after_gc(heap);
+                Assert.False(gc_heap.full_gc_approach_event_set);
+                Assert.Equal(
+                    wait_full_gc_status.wait_full_gc_success,
+                    gc_heap.full_gc_wait(complete, 0));
+
+                Assert.True(gc_heap.register_for_full_gc_notification(heap, 10, 10));
+                gc_heap.send_full_gc_notification(
+                    (int)gc_generation_num.loh_generation,
+                    due_to_alloc_p: false);
+                gc_heap.settings.condemned_generation =
+                    GCInterfaceOffsets.max_generation;
+                gc_heap.settings.concurrent = 1;
+                gc_heap.update_full_gc_notification_after_gc(heap);
+                Assert.Equal(
+                    wait_full_gc_status.wait_full_gc_na,
+                    gc_heap.full_gc_wait(complete, 0));
+                Assert.Equal(0, gc_heap.fgn_last_gc_was_concurrent);
+
+                Assert.True(gc_heap.cancel_full_gc_notification());
+                Assert.Equal(
+                    wait_full_gc_status.wait_full_gc_na,
+                    gc_heap.full_gc_wait(approach, 0));
+                Assert.Equal(
+                    wait_full_gc_status.wait_full_gc_na,
+                    gc_heap.full_gc_wait(complete, 0));
+            }
+        }
+        finally
+        {
+            gc_heap.destroy_full_gc_notification();
             ManagedGCRegionBootstrap.Shutdown();
             gc_heap.check_commit_cs.Destroy();
         }

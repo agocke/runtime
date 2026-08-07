@@ -57,6 +57,7 @@ namespace Internal.Runtime.GarbageCollection
         private static int s_gcCount;
         private static int s_gcInProgress;
         private static int s_gcStarted;
+        private static GCSpinLock s_noGcRegionLock;
 
         private static FrozenSegment* s_frozenSegments;
         private static int s_frozenSegmentCount;
@@ -212,6 +213,7 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             gc_heap.initialize_gc_static_state();
+            GCSpinLock.initialize(ref s_noGcRegionLock);
 
 #if USE_REGIONS
 #if !MULTIPLE_HEAPS
@@ -242,8 +244,17 @@ namespace Internal.Runtime.GarbageCollection
                 return E_OUTOFMEMORY;
             }
 
+            if (!gc_heap.initialize_full_gc_notification())
+            {
+                ManagedGCRegionBootstrap.Shutdown();
+                gc_heap.destroy_semi_shared();
+                gc_heap.check_commit_cs.Destroy();
+                return E_OUTOFMEMORY;
+            }
+
             if (!gc_heap.initialize_background_gc())
             {
+                gc_heap.destroy_full_gc_notification();
                 ManagedGCRegionBootstrap.Shutdown();
                 gc_heap.destroy_semi_shared();
                 gc_heap.check_commit_cs.Destroy();
@@ -255,6 +266,7 @@ namespace Internal.Runtime.GarbageCollection
             {
 #if USE_REGIONS
                 gc_heap.destroy_background_gc();
+                gc_heap.destroy_full_gc_notification();
                 ManagedGCRegionBootstrap.Shutdown();
                 gc_heap.destroy_semi_shared();
 #endif
@@ -267,6 +279,7 @@ namespace Internal.Runtime.GarbageCollection
             {
 #if USE_REGIONS
                 gc_heap.destroy_background_gc();
+                gc_heap.destroy_full_gc_notification();
                 ManagedGCRegionBootstrap.Shutdown();
                 gc_heap.destroy_semi_shared();
 #endif
@@ -287,6 +300,7 @@ namespace Internal.Runtime.GarbageCollection
             gc_heap.finalize_queue = null;
 #if USE_REGIONS
             gc_heap.destroy_background_gc();
+            gc_heap.destroy_full_gc_notification();
             ManagedGCRegionBootstrap.Shutdown();
             gc_heap.destroy_semi_shared();
 #endif
@@ -298,6 +312,7 @@ namespace Internal.Runtime.GarbageCollection
         {
 #if USE_REGIONS
             gc_heap.destroy_background_gc();
+            gc_heap.destroy_full_gc_notification();
 #endif
             CFinalize.Free(gc_heap.finalize_queue);
             gc_heap.finalize_queue = null;
@@ -748,7 +763,12 @@ namespace Internal.Runtime.GarbageCollection
             return result;
         }
 
-        private static FinalizerWorkItem* GetExtraWorkForFinalization(void* thisPtr) => null;
+        private static FinalizerWorkItem* GetExtraWorkForFinalization(void* thisPtr) =>
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.get_extra_work_for_finalization();
+#else
+            null;
+#endif
 
         private static void NullBridgeObjectsWeakRefs(void* thisPtr, nuint length, void* unreachableObjectHandles)
         {
@@ -1191,25 +1211,121 @@ namespace Internal.Runtime.GarbageCollection
         // Full GC notifications and no-GC regions
         // ------------------------------------------------------------------------------------
 
-        private static byte RegisterForFullGCNotification(void* thisPtr, uint gen2Percentage, uint lohPercentage) => 0;
+        private static byte RegisterForFullGCNotification(void* thisPtr, uint gen2Percentage, uint lohPercentage)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            return heap is not null &&
+                gc_heap.register_for_full_gc_notification(
+                    heap,
+                    gen2Percentage,
+                    lohPercentage)
+                ? (byte)1
+                : (byte)0;
+#else
+            return 0;
+#endif
+        }
 
-        private static byte CancelFullGCNotification(void* thisPtr) => 0;
+        private static byte CancelFullGCNotification(void* thisPtr) =>
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.cancel_full_gc_notification() ? (byte)1 : (byte)0;
+#else
+            0;
+#endif
 
-        private static int WaitForFullGCApproach(void* thisPtr, int millisecondsTimeout) => 0;
+        private static int WaitForFullGCApproach(void* thisPtr, int millisecondsTimeout)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            fixed (GCEvent* @event = &gc_heap.full_gc_approach_event)
+            {
+                return (int)gc_heap.full_gc_wait(@event, millisecondsTimeout);
+            }
+#else
+            return (int)wait_full_gc_status.wait_full_gc_na;
+#endif
+        }
 
-        private static int WaitForFullGCComplete(void* thisPtr, int millisecondsTimeout) => 0;
+        private static int WaitForFullGCComplete(void* thisPtr, int millisecondsTimeout)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            fixed (GCEvent* @event = &gc_heap.full_gc_end_event)
+            {
+                return (int)gc_heap.full_gc_wait(@event, millisecondsTimeout);
+            }
+#else
+            return (int)wait_full_gc_status.wait_full_gc_na;
+#endif
+        }
 
-        /// <summary>
-        /// The whole heap is a no-GC region, so entering one always succeeds and leaving one
-        /// always finds it intact.
-        /// </summary>
-        private static int StartNoGCRegion(void* thisPtr, ulong totalSize, byte lohSizeKnown, ulong lohSize, byte disallowFullBlockingGC) =>
-            (int)start_no_gc_region_status.start_no_gc_success;
+        private static int StartNoGCRegion(void* thisPtr, ulong totalSize, byte lohSizeKnown, ulong lohSize, byte disallowFullBlockingGC)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            fixed (GCSpinLock* noGcRegionLock = &s_noGcRegionLock)
+            {
+                GCSpinLock.enter(noGcRegionLock);
+                gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+                start_no_gc_region_status status = heap is null
+                    ? start_no_gc_region_status.start_no_gc_no_memory
+                    : gc_heap.prepare_for_no_gc_region(
+                        totalSize,
+                        lohSizeKnown != 0,
+                        lohSize,
+                        disallowFullBlockingGC != 0);
+                if (status == start_no_gc_region_status.start_no_gc_success)
+                {
+                    int collectionResult = GarbageCollect(
+                        thisPtr,
+                        GCInterfaceOffsets.max_generation,
+                        0,
+                        (int)collection_mode.collection_blocking);
+                    status = collectionResult == S_OK
+                        ? gc_heap.get_start_no_gc_region_status()
+                        : start_no_gc_region_status.start_no_gc_no_memory;
+                }
 
-        private static int EndNoGCRegion(void* thisPtr) => (int)end_no_gc_region_status.end_no_gc_success;
+                if (status != start_no_gc_region_status.start_no_gc_success)
+                {
+                    gc_heap.handle_failure_for_no_gc();
+                }
 
-        private static enable_no_gc_region_callback_status EnableNoGCRegionCallback(void* thisPtr, NoGCRegionCallbackFinalizerWorkItem* callback, ulong callbackThreshold) =>
-            enable_no_gc_region_callback_status.not_started;
+                GCSpinLock.leave(noGcRegionLock);
+                return (int)status;
+            }
+#else
+            return (int)start_no_gc_region_status.start_no_gc_no_memory;
+#endif
+        }
+
+        private static int EndNoGCRegion(void* thisPtr)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            fixed (GCSpinLock* noGcRegionLock = &s_noGcRegionLock)
+            {
+                GCSpinLock.enter(noGcRegionLock);
+                end_no_gc_region_status status = gc_heap.end_no_gc_region();
+                GCSpinLock.leave(noGcRegionLock);
+                return (int)status;
+            }
+#else
+            return (int)end_no_gc_region_status.end_no_gc_not_in_progress;
+#endif
+        }
+
+        private static enable_no_gc_region_callback_status EnableNoGCRegionCallback(void* thisPtr, NoGCRegionCallbackFinalizerWorkItem* callback, ulong callbackThreshold)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            return heap is null
+                ? enable_no_gc_region_callback_status.not_started
+                : gc_heap.enable_no_gc_callback(
+                    heap,
+                    callback,
+                    callbackThreshold);
+#else
+            return enable_no_gc_region_callback_status.not_started;
+#endif
+        }
 
         // ------------------------------------------------------------------------------------
         // Diagnostics

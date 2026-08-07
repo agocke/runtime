@@ -74,8 +74,162 @@ internal static unsafe class ManagedGCTest
             return 11;
         }
 
+        if (!PublicNoGCRegionApisWork())
+        {
+            return 12;
+        }
+
+        if (!PublicFullGCNotificationApisWork())
+        {
+            return 13;
+        }
+
         Console.WriteLine("ManagedGC smoke test passed.");
         return 100;
+    }
+
+    private static int s_noGCRegionCallbackCount;
+
+    private static bool PublicNoGCRegionApisWork()
+    {
+        const int TotalSize = 24 * 1024 * 1024;
+        const int LohSize = 8 * 1024 * 1024;
+        const int CallbackThreshold = 4 * 1024 * 1024;
+
+        if (!GC.TryStartNoGCRegion(
+            TotalSize,
+            LohSize,
+            disallowFullBlockingGC: true))
+        {
+            Console.WriteLine("TryStartNoGCRegion returned false.");
+            return false;
+        }
+
+        try
+        {
+            Volatile.Write(ref s_noGCRegionCallbackCount, 0);
+            GC.RegisterNoGCRegionCallback(
+                CallbackThreshold,
+                NoGCRegionCallback);
+
+            for (int i = 0;
+                 i < 128 && Volatile.Read(ref s_noGCRegionCallbackCount) == 0;
+                 i++)
+            {
+                byte[] allocation = new byte[(i & 1) == 0 ? 64 * 1024 : 128 * 1024];
+                allocation[0] = (byte)i;
+                Thread.Yield();
+            }
+
+            for (int i = 0;
+                 i < 200 && Volatile.Read(ref s_noGCRegionCallbackCount) == 0;
+                 i++)
+            {
+                Thread.Sleep(10);
+            }
+
+            bool callbackRan =
+                Volatile.Read(ref s_noGCRegionCallbackCount) == 1;
+            GC.EndNoGCRegion();
+            if (!callbackRan)
+            {
+                Console.WriteLine("No-GC region callback did not run.");
+            }
+
+            return callbackRan;
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"No-GC region API failed: {exception}");
+            try
+            {
+                GC.EndNoGCRegion();
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+    }
+
+    private static void NoGCRegionCallback()
+    {
+        Interlocked.Increment(ref s_noGCRegionCallbackCount);
+    }
+
+    private static GCNotificationStatus s_approachStatus;
+    private static GCNotificationStatus s_completeStatus;
+    private static GCNotificationStatus s_cancelStatus;
+
+    private static bool PublicFullGCNotificationApisWork()
+    {
+        GC.RegisterForFullGCNotification(10, 10);
+        s_approachStatus = GCNotificationStatus.NotApplicable;
+        s_completeStatus = GCNotificationStatus.NotApplicable;
+        Thread waiter = new(WaitForFullGC);
+        waiter.Start();
+
+        int gen2Count = GC.CollectionCount(GC.MaxGeneration);
+        for (int i = 0;
+             i < 8192 && (waiter.IsAlive ||
+                          GC.CollectionCount(GC.MaxGeneration) == gen2Count);
+             i++)
+        {
+            byte[] allocation = new byte[256 * 1024];
+            allocation[0] = (byte)i;
+            if ((i & 31) == 0)
+            {
+                Thread.Yield();
+            }
+        }
+
+        bool completed = waiter.Join(20_000);
+        GC.CancelFullGCNotification();
+        if (!completed ||
+            s_approachStatus != GCNotificationStatus.Succeeded ||
+            s_completeStatus != GCNotificationStatus.Succeeded)
+        {
+            Console.WriteLine(
+                $"Full-GC notification failed: joined={completed}, " +
+                $"approach={s_approachStatus}, complete={s_completeStatus}");
+            return false;
+        }
+
+        GC.RegisterForFullGCNotification(10, 10);
+        s_cancelStatus = GCNotificationStatus.NotApplicable;
+        Thread cancelWaiter = new(WaitForFullGCCancel);
+        cancelWaiter.Start();
+        Thread.Sleep(50);
+        GC.CancelFullGCNotification();
+        bool cancelled = cancelWaiter.Join(5_000);
+        bool result =
+            cancelled &&
+            s_cancelStatus == GCNotificationStatus.Canceled &&
+            GC.WaitForFullGCApproach(0) ==
+                GCNotificationStatus.NotApplicable;
+        if (!result)
+        {
+            Console.WriteLine(
+                $"Full-GC cancellation failed: joined={cancelled}, " +
+                $"status={s_cancelStatus}");
+        }
+
+        return result;
+    }
+
+    private static void WaitForFullGC()
+    {
+        s_approachStatus = GC.WaitForFullGCApproach(15_000);
+        if (s_approachStatus == GCNotificationStatus.Succeeded)
+        {
+            s_completeStatus = GC.WaitForFullGCComplete(15_000);
+        }
+    }
+
+    private static void WaitForFullGCCancel()
+    {
+        s_cancelStatus = GC.WaitForFullGCApproach(10_000);
     }
 
     private static bool PublicGcMetricsAndSettingsWork()

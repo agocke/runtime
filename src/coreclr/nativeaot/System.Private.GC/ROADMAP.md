@@ -1241,8 +1241,13 @@ completion. SOH budget pressure begins with Gen0, out-of-space SOH retry begins 
 exhausted older/UOH budgets elevate to Gen2. UOH acquisition preserves the native
 more-space-lock release, GC-lock acquisition, intervening-full-GC observation, region sizing and
 threading, lock reacquisition, LOH accounting, and retry ordering for both LOH and POH.
-Full-GC notification remains deferred because its event hook is not translated. A null callback
-continues to return the exact pending state for dependency tests. The WKS `allocate_more_space`
+Full-GC notification is now translated for WKS. Allocation refills perform the native
+pre-budget and exhausted-budget checks, blocking full-compaction retries publish an approach,
+and foreground/background Gen2 completion resets the approach event and signals the completion
+event with the concurrent-GC `NotApplicable` state. Registration, cancellation, timeout, and
+cancel races preserve the native percentage and manual-reset-event protocol. User-thread waits
+cross one ordinary P/Invoke for the complete OS wait so the runtime can suspend the waiter
+without exposing a held event mutex. The WKS `allocate_more_space`
 wrapper retries from the native initial state and clears transient state before re-entry; when a
 deferred failure follows a concrete lock acquisition, it releases that lock without discarding
 the deferred operation. An allocation that observes a started collection leaves the managed-GC
@@ -1464,6 +1469,13 @@ counts, memory load, both pause intervals, pause percentage, and cumulative susp
 The `IGCHeap` memory-load, generation-budget, latency-mode, reserved-VM, memory-info, pause,
 last-GC timing, and current-object-size slots consume that state. This also closes the heap-side
 timing dependency used by NativeAOT `GC.AddMemoryPressure`.
+
+The WKS `USE_REGIONS` no-GC-region production APIs are translated from `no_gc.cpp`.
+Preparation serializes start/end calls, scales and aligns SOH/LOH budgets, reserves committed
+region space, honors `disallowFullBlockingGC`, and either skips the initiating collection with
+native counter updates or restores budgets after it. Allocation exhaustion, induced/automatic
+collection accounting, exact start/end statuses, callback budget withholding, abandoned
+callback cleanup, and lock-free finalizer-work publication preserve native state transitions.
 
 Foundation coverage pins every routed state, the foreground/BGC settings handoff, mark-range and
 sweep-cursor state, allocation-triggered scheduling, budget retuning, hard-limit validation,

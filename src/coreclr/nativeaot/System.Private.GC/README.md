@@ -42,6 +42,7 @@ Ported so far:
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `GCDesc.cs` | descriptor encoding and MethodTable lookup from `gcdesc.h` |
 | `DynamicTuning.cs` | WKS `USE_REGIONS` dynamic allocation-budget retuning, memory/hard-limit policy, collection timing and public metric snapshots from `dynamic_tuning.cpp`, `collect.cpp`, `init.cpp`, and `interface.cpp` |
+| `FullGCNotification.cs` | WKS full-GC notification registration, cancellation, approach/complete waits, allocation prediction, and foreground/background completion transitions from `allocation.cpp`, `collect.cpp`, and `interface.cpp` |
 | `GCPriv.cs` | dependency-free leaf records from `gcpriv.h`, bounded WKS `init_records`, and the WKS `CFinalize` queue and relocation closure |
 | `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `fgm_history` and `gc_reason` from `gc.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h`, GC scan flags from `handletable.h` |
@@ -98,6 +99,7 @@ Ported so far:
 | `BackgroundGC.cs` | WKS `USE_REGIONS` persistent background-thread creation/wakeup/completion, non-blocking Gen2 routing, initial/final background-mark closure, software-write-watch/card revisit, concurrent region sweep, foreground Gen0/Gen1 coordination, and foreground/allocation waits from `background.cpp`, `collect.cpp`, `gcee.cpp`, and `allocation.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle, partial dirty-card scanning for older SOH/LOH/POH objects, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
+| `NoGC.cs` | WKS `USE_REGIONS` no-GC-region preparation, SOH/LOH reservation, allocation budgets, disallow-full-blocking behavior, callback scheduling, exact status cleanup, and post-collection restoration from `no_gc.cpp` and `finalization.cpp` |
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, bounded WKS synchronous foreground plan-phase orchestration and SIP helpers, the WKS full-GC LOH pin queue/planning allocator, the bounded WKS synchronous compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
 | `RelocateCompact.cs` | allocation-free relocation/compaction copy primitives, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation and compaction, partial-GC card relocation, non-compacting UOH reference relocation, WKS full-GC LOH relocation/compaction, bounded synchronous WKS `USE_REGIONS` foreground relocation/compaction orchestration, and dependency-closed helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | dependency-closed WKS `USE_REGIONS` SOH normal/special sweep brick walk and final region threading, SIP free-list handoff, empty-region replacement, UOH marked-object clearing, unused-array card clearing/reset, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp`, `plan_phase.cpp`, `allocation.cpp`, `regions_segments.cpp`, and `gcinternal.h` |
@@ -1300,9 +1302,10 @@ owns SOH/UOH more-space locks, allocation-budget checks, UOH region acquisition,
 and synchronous foreground collection scheduling. SOH budget exhaustion starts with Gen0,
 ephemeral out-of-space retry starts with Gen1, and older/UOH budget dependencies elevate to
 Gen2; inactive-background queries preserve the native state-machine ordering. Full-GC
-notification remains deferred because that hook is not yet
-available. A null callback still returns the exact state and deferred operation for Foundation
-testing.
+notification checks now run at the native pre-budget and exhausted-budget points, signal
+allocation- and compaction-triggered approaches, and publish blocking/background completion
+states through manual-reset events. User waits use an ordinary P/Invoke transition around the
+whole OS-event wait so a suspended runtime never observes a waiter holding the event mutex.
 The WKS `allocate_more_space` wrapper now retries from the native initial state, clears transient
 retry/OOM/lock state before each re-entry, and returns whether the final state can allocate.
 `create_try_allocate_more_space_context` supplies the translated WKS heap-owned fields and observes
@@ -1314,6 +1317,14 @@ When this terminal wrapper returns a deferred failure after acquiring a concrete
 that lock while preserving the pending operation for its caller. `ManagedGCHeap.Alloc` uses it
 for SOH and UOH refills; the managed allocation callback is a plain managed function
 pointer because this protocol never crosses a native boundary.
+
+The WKS `USE_REGIONS` no-GC-region production surface is routed through `IGCHeap`.
+`TryStartNoGCRegion` preserves the native serialized preparation/collection handshake, 1.05
+budget scaling, SOH/LOH reservation, minimal-GC refusal, post-GC allocation budgets, collection
+counters, and start/end status cleanup. `RegisterNoGCRegionCallback` withholds proportional
+budgets while the EE is suspended and schedules or abandons the unmanaged finalizer work item
+with the native lock-free handoff. Foundation tests pin the status and event state machines;
+the NativeAOT smokes exercise the public no-GC callback and full-GC wait/cancel APIs.
 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real

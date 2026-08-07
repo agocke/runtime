@@ -64,6 +64,12 @@ namespace Internal.Runtime.GarbageCollection
         public partial uint Wait(uint timeout, bool alertable);
 
         /// <summary>
+        /// Waits from a managed user thread through ordinary P/Invoke transitions, so the
+        /// runtime can suspend that thread while it is blocked.
+        /// </summary>
+        public partial uint UserThreadWait(uint timeout);
+
+        /// <summary>
         /// Determines whether the event has an implementation. As in C++, closing an event does
         /// not clear the implementation pointer, so this continues to return true after
         /// <see cref="CloseEvent"/>.

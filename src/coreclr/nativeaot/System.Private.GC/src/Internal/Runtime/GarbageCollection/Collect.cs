@@ -159,7 +159,22 @@ internal unsafe partial struct gc_heap
         suspended_start_time = GCCommon.GetHighPrecisionTimeStamp();
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
 
+        if (!should_proceed_with_gc(hp))
+        {
+            update_collection_counts_for_no_gc(hp);
+            collection_completed = true;
+            completed_gc_index = dynamic_data.dd_collection_count(
+                dynamic_data_of(hp, (int)gc_generation_num.soh_gen0));
+            result = collection_s_ok;
+            GCToEEInterface.RestartEE(1);
+            ManagedGCHeap.RecordCollectionCount(unchecked((int)completed_gc_index));
+            leave_gc_lock();
+            ManagedGCHeap.NotifyCollectionEnded();
+            return result;
+        }
+
         settings.init_mechanisms();
+        gc_pause_mode saved_settings_pause_mode = settings.pause_mode;
         if (garbage_collect(
             hp,
             requested_generation,
@@ -173,6 +188,14 @@ internal unsafe partial struct gc_heap
             found_finalizers = settings.found_finalizers;
             result = collection_s_ok;
         }
+
+        if (saved_settings_pause_mode == gc_pause_mode.pause_no_gc)
+        {
+            allocate_for_no_gc_after_gc(hp);
+        }
+
+        fgn_last_alloc = unchecked((nuint)dynamic_data.dd_new_allocation(
+            dynamic_data_of(hp, (int)gc_generation_num.soh_gen0)));
 
         if (foreground_during_bgc)
         {
@@ -249,6 +272,7 @@ internal unsafe partial struct gc_heap
 #endif
         settings.gc_index = dynamic_data.dd_collection_count(
             dynamic_data_of(hp, (int)gc_generation_num.soh_gen0)) + 1;
+        record_gcs_during_no_gc();
 
         GCToEEInterface.GcStartWork(
             settings.condemned_generation,
@@ -416,6 +440,7 @@ internal unsafe partial struct gc_heap
         update_end_ngc_time();
         update_end_gc_time_per_heap(hp);
         record_gc_info(hp);
+        update_full_gc_notification_after_gc(hp);
         last_gc_before_oom = 0;
         GCToEEInterface.GcDone(n);
         return true;

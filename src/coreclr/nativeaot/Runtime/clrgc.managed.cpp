@@ -27,6 +27,12 @@
 
 #include "gctoeeinterface.standalone.inl"
 
+#ifdef TARGET_UNIX
+#include <errno.h>
+#include <pthread.h>
+#include <time.h>
+#endif
+
 // Emitted by ILC from System.Private.GC's ManagedGCEntryPoints. See
 // Microsoft.NETCore.Native.targets, which only passes the assembly to
 // --generateunmanagedentrypoints when IlcManagedGC is set.
@@ -90,6 +96,103 @@ extern "C" void ManagedGC_WaitUntilGCComplete(
         thread->DisablePreemptiveMode();
     }
 }
+
+#ifdef TARGET_UNIX
+extern "C" uint32_t QCALLTYPE ManagedGC_PthreadEventWait(
+    pthread_cond_t* condition,
+    pthread_mutex_t* mutex,
+    uint8_t* state,
+    uint8_t manualReset,
+    uint32_t milliseconds)
+{
+    constexpr uint64_t NanosecondsPerSecond = 1000000000;
+    constexpr uint64_t NanosecondsPerMillisecond = 1000000;
+
+    timespec endTime{};
+#ifdef TARGET_APPLE
+    uint64_t endMachTime = 0;
+    if (milliseconds != INFINITE)
+    {
+        uint64_t nanoseconds =
+            static_cast<uint64_t>(milliseconds) * NanosecondsPerMillisecond;
+        endTime.tv_sec = static_cast<time_t>(
+            nanoseconds / NanosecondsPerSecond);
+        endTime.tv_nsec = static_cast<long>(
+            nanoseconds % NanosecondsPerSecond);
+        endMachTime = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) + nanoseconds;
+    }
+#else
+    if (milliseconds != INFINITE)
+    {
+        clock_gettime(CLOCK_MONOTONIC, &endTime);
+        uint64_t nanoseconds =
+            static_cast<uint64_t>(endTime.tv_nsec) +
+            static_cast<uint64_t>(milliseconds) *
+                NanosecondsPerMillisecond;
+        endTime.tv_sec += static_cast<time_t>(
+            nanoseconds / NanosecondsPerSecond);
+        endTime.tv_nsec = static_cast<long>(
+            nanoseconds % NanosecondsPerSecond);
+    }
+#endif
+
+    int status = 0;
+    pthread_mutex_lock(mutex);
+    while (*state == 0)
+    {
+        if (milliseconds == INFINITE)
+        {
+            status = pthread_cond_wait(condition, mutex);
+        }
+        else
+        {
+#ifdef TARGET_APPLE
+            status = pthread_cond_timedwait_relative_np(
+                condition,
+                mutex,
+                &endTime);
+            if ((status == 0) && (*state == 0))
+            {
+                uint64_t machTime = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+                if (machTime < endMachTime)
+                {
+                    uint64_t remainingNanoseconds = endMachTime - machTime;
+                    endTime.tv_sec = static_cast<time_t>(
+                        remainingNanoseconds / NanosecondsPerSecond);
+                    endTime.tv_nsec = static_cast<long>(
+                        remainingNanoseconds % NanosecondsPerSecond);
+                }
+                else
+                {
+                    status = ETIMEDOUT;
+                }
+            }
+#else
+            status = pthread_cond_timedwait(condition, mutex, &endTime);
+#endif
+        }
+
+        if (status != 0)
+        {
+            break;
+        }
+    }
+
+    if ((status == 0) && (manualReset == 0))
+    {
+        *state = 0;
+    }
+
+    pthread_mutex_unlock(mutex);
+
+    if (status == 0)
+    {
+        return WAIT_OBJECT_0;
+    }
+
+    return status == ETIMEDOUT ? WAIT_TIMEOUT : WAIT_FAILED;
+}
+#endif
 
 extern "C" void ManagedGC_AllowForegroundGC()
 {
