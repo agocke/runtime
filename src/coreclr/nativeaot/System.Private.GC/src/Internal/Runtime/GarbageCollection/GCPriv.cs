@@ -825,6 +825,23 @@ namespace Internal.Runtime.GarbageCollection
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
     internal unsafe partial struct gc_heap
     {
+        public const int DESIRED_PLUG_LENGTH = 1000;
+        public const int USE_PADDING_FRONT = 1;
+        public const int USE_PADDING_TAIL = 2;
+
+        // Returns true if two pointers have the same large (double than normal) alignment.
+        public static bool same_large_alignment_p(byte* p1, byte* p2)
+        {
+#if TARGET_ARM || TARGET_WASM
+            const nuint LargeAlignmentMask = 2 * GCEnv.DATA_ALIGNMENT - 1;
+            return ((((nuint)p1 ^ (nuint)p2) & LargeAlignmentMask) == 0);
+#else
+            _ = p1;
+            _ = p2;
+            return true;
+#endif
+        }
+
         // For the WKS bestfit algorithm when relocating ephemeral generations into an existing
         // gen2 segment. Sizes are recorded from 2^6 through 2^28 on 64-bit targets, or 2^24 on
         // 32-bit targets.
@@ -981,6 +998,14 @@ namespace Internal.Runtime.GarbageCollection
                 loh_compaction_mode != gc_loh_compaction_mode.loh_compaction_default
                 ? 1
                 : 0;
+        }
+
+        public static void init_alloc_info(generation* gen, heap_segment* seg)
+        {
+            generation.generation_allocation_segment(gen) = seg;
+            generation.generation_allocation_pointer(gen) = heap_segment.heap_segment_mem(seg);
+            generation.generation_allocation_limit(gen) = generation.generation_allocation_pointer(gen);
+            generation.generation_allocation_context_start_region(gen) = generation.generation_allocation_pointer(gen);
         }
 
         public static void initialize_loh_compaction_state()
@@ -3549,6 +3574,11 @@ namespace Internal.Runtime.GarbageCollection
         public static nint node_realigned(byte* node)
         {
             return ((plug_and_reloc*)node)[-1].reloc & 1;
+        }
+
+        public static void set_node_realigned(byte* node)
+        {
+            ((plug_and_reloc*)node)[-1].reloc |= 1;
         }
 
         public static nint node_left_p(byte* node)

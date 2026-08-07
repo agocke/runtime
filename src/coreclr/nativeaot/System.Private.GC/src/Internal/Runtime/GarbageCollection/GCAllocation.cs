@@ -72,6 +72,46 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    public static bool size_fit_p(
+        nuint size,
+        byte* alloc_pointer,
+        byte* alloc_limit,
+        byte* old_loc = null,
+        int use_padding = USE_PADDING_TAIL)
+    {
+        int already_padded = 0;
+        if (old_loc is not null && (use_padding & USE_PADDING_FRONT) != 0)
+        {
+            alloc_pointer += (nint)Align((nuint)GCInterfaceOffsets.min_obj_size);
+            already_padded = 1;
+        }
+
+        if (old_loc is not null && !same_large_alignment_p(old_loc, alloc_pointer))
+        {
+            size = unchecked(size + switch_alignment_size(already_padded));
+        }
+
+        // In allocate_in_condemned_generations this can happen when alloc_limit is set to
+        // plan_allocated, which can be less than alloc_pointer.
+        if (alloc_limit < alloc_pointer)
+        {
+            return false;
+        }
+
+        if (old_loc is not null)
+        {
+            nuint tail_padding = (use_padding & USE_PADDING_TAIL) != 0
+                ? Align((nuint)GCInterfaceOffsets.min_obj_size)
+                : 0;
+            return (nuint)(alloc_limit - alloc_pointer) >= unchecked(size + tail_padding) ||
+                ((use_padding & USE_PADDING_FRONT) == 0 &&
+                 (byte*)unchecked((nuint)alloc_pointer + size) == alloc_limit);
+        }
+
+        System.Diagnostics.Debug.Assert(size == Align((nuint)GCInterfaceOffsets.min_obj_size));
+        return (nuint)(alloc_limit - alloc_pointer) >= size;
+    }
+
     public static bool a_size_fit_p(nuint size, byte* alloc_pointer, byte* alloc_limit, int align_const)
     {
         if (alloc_limit < alloc_pointer)
@@ -525,6 +565,357 @@ internal unsafe partial struct gc_heap
 
         return ret;
     }
+
+    public static bool grow_heap_segment(
+        gc_heap* hp,
+        heap_segment* seg,
+        byte* allocated,
+        byte* old_loc,
+        nuint size,
+        int pad_front_p)
+    {
+        int already_padded = 0;
+        if (old_loc is not null && pad_front_p != 0)
+        {
+            allocated += (nint)Align((nuint)GCInterfaceOffsets.min_obj_size);
+            already_padded = 1;
+        }
+
+        if (old_loc is not null && !same_large_alignment_p(old_loc, allocated))
+        {
+            size = unchecked(size + switch_alignment_size(already_padded));
+        }
+
+        return grow_heap_segment(
+            seg,
+            (byte*)unchecked((nuint)allocated + size),
+            hp->heap_number);
+    }
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    public static heap_segment* get_next_alloc_seg(gc_heap* hp, generation* gen)
+    {
+        heap_segment* saved_region = generation.generation_allocation_segment(gen);
+        int gen_num = heap_segment.heap_segment_gen_num(saved_region);
+        heap_segment* region = saved_region;
+
+        while (true)
+        {
+            region = heap_segment_non_sip(region);
+
+            if (region is not null)
+            {
+                break;
+            }
+
+            if (gen_num > 0)
+            {
+                gen_num--;
+                region = generation.generation_start_segment(
+                    generation_of(generation_table_of(hp), gen_num));
+            }
+            else
+            {
+                System.Diagnostics.Debug.Fail("ran out regions when getting the next alloc seg!");
+            }
+        }
+
+        if (region != saved_region)
+        {
+            init_alloc_info(gen, region);
+        }
+
+        return region;
+    }
+
+    public static bool decide_on_gen1_pin_promotion(float pin_frag_ratio, float pin_surv_ratio)
+    {
+        return pin_frag_ratio > 0.15f && pin_surv_ratio > 0.30f;
+    }
+
+    public static void attribute_pin_higher_gen_alloc(
+        gc_heap* hp,
+        heap_segment* seg,
+        int to_gen_number,
+        byte* plug,
+        nuint len)
+    {
+        int frgn = object_gennum(plug);
+        if (frgn != GCInterfaceOffsets.max_generation && settings.promotion != 0)
+        {
+            generation.generation_pinned_allocation_sweep_size(
+                generation_of(generation_table_of(hp), frgn + 1)) += len;
+
+            // plan_gen_num is not set until a region is planned. For a pin in the region being
+            // planned, use the destination generation supplied by the caller.
+            int togn = in_range_for_segment(plug, seg) != 0
+                ? to_gen_number
+                : object_gennum_plan(plug);
+            if (frgn < togn)
+            {
+                generation.generation_pinned_allocation_compact_size(
+                    generation_of(generation_table_of(hp), togn)) += len;
+            }
+        }
+    }
+
+    public static void attribute_pin_higher_gen_alloc(
+        gc_heap* hp,
+        int frgn,
+        int togn,
+        nuint len)
+    {
+        if (frgn != GCInterfaceOffsets.max_generation && settings.promotion != 0)
+        {
+            generation.generation_pinned_allocation_sweep_size(
+                generation_of(generation_table_of(hp), frgn + 1)) += len;
+
+            if (frgn < togn)
+            {
+                generation.generation_pinned_allocation_compact_size(
+                    generation_of(generation_table_of(hp), togn)) += len;
+            }
+        }
+    }
+
+    public static byte* allocate_in_condemned_generations(
+        gc_heap* hp,
+        generation* gen,
+        nuint size,
+        int from_gen_number,
+        int* convert_to_pinned_p,
+        byte* next_pinned_plug,
+        heap_segment* current_seg,
+        byte* old_loc)
+    {
+        size = Align(size);
+        System.Diagnostics.Debug.Assert(size >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+        int to_gen_number = from_gen_number;
+        if (from_gen_number != GCInterfaceOffsets.max_generation)
+        {
+            to_gen_number = from_gen_number + (settings.promotion != 0 ? 1 : 0);
+        }
+
+        int pad_in_front =
+            old_loc is not null && to_gen_number != GCInterfaceOffsets.max_generation
+                ? USE_PADDING_FRONT
+                : 0;
+
+        // A near-region-sized plug cannot fit with front padding even in an empty region.
+        if ((pad_in_front & USE_PADDING_FRONT) != 0 &&
+            unchecked(size + Align((nuint)GCInterfaceOffsets.min_obj_size)) >
+            unchecked(((nuint)1 << (int)min_segment_size_shr) - (nuint)sizeof(aligned_plug_and_gap)))
+        {
+            pad_in_front = 0;
+        }
+
+        if (from_gen_number != -1 &&
+            from_gen_number != GCInterfaceOffsets.max_generation &&
+            settings.promotion != 0)
+        {
+            generation* to_gen = generation_of(
+                generation_table_of(hp),
+                from_gen_number + (settings.promotion != 0 ? 1 : 0));
+            generation.generation_condemned_allocated(to_gen) += size;
+            generation.generation_allocation_size(to_gen) += size;
+        }
+
+    retry:
+        heap_segment* seg = get_next_alloc_seg(hp, gen);
+        if (!size_fit_p(
+                size,
+                generation.generation_allocation_pointer(gen),
+                generation.generation_allocation_limit(gen),
+                old_loc,
+                (generation.generation_allocation_limit(gen) !=
+                    heap_segment.heap_segment_plan_allocated(seg)
+                        ? USE_PADDING_TAIL
+                        : 0) |
+                    pad_in_front))
+        {
+            if (pinned_plug_que_empty_p(hp) == 0 &&
+                generation.generation_allocation_limit(gen) == pinned_plug(oldest_pin(hp)))
+            {
+                nuint entry = deque_pinned_plug(hp);
+                mark* pinned_plug_entry = pinned_plug_of(hp, entry);
+                nuint len = pinned_len(pinned_plug_entry);
+                byte* plug = pinned_plug(pinned_plug_entry);
+                set_new_pin_info(pinned_plug_entry, generation.generation_allocation_pointer(gen));
+
+                if (to_gen_number == 0)
+                {
+                    update_planned_gen0_free_space(pinned_len(pinned_plug_entry), plug);
+                }
+
+                System.Diagnostics.Debug.Assert(
+                    mark_stack_array[entry].len == 0 ||
+                    mark_stack_array[entry].len >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+                generation.generation_allocation_pointer(gen) =
+                    (byte*)unchecked((nuint)plug + len);
+                generation.generation_allocation_context_start_region(gen) =
+                    generation.generation_allocation_pointer(gen);
+                generation.generation_allocation_limit(gen) =
+                    heap_segment.heap_segment_plan_allocated(seg);
+                set_allocator_next_pin(hp, gen);
+                attribute_pin_higher_gen_alloc(hp, seg, to_gen_number, plug, len);
+                goto retry;
+            }
+
+            if (generation.generation_allocation_limit(gen) !=
+                heap_segment.heap_segment_plan_allocated(seg))
+            {
+                generation.generation_allocation_limit(gen) =
+                    heap_segment.heap_segment_plan_allocated(seg);
+            }
+            else if (heap_segment.heap_segment_plan_allocated(seg) !=
+                heap_segment.heap_segment_committed(seg))
+            {
+                heap_segment.heap_segment_plan_allocated(seg) =
+                    heap_segment.heap_segment_committed(seg);
+                generation.generation_allocation_limit(gen) =
+                    heap_segment.heap_segment_plan_allocated(seg);
+            }
+            else if (size_fit_p(
+                         size,
+                         generation.generation_allocation_pointer(gen),
+                         heap_segment.heap_segment_reserved(seg),
+                         old_loc,
+                         USE_PADDING_TAIL | pad_in_front) &&
+                     grow_heap_segment(
+                         hp,
+                         seg,
+                         generation.generation_allocation_pointer(gen),
+                         old_loc,
+                         size,
+                         pad_in_front))
+            {
+                heap_segment.heap_segment_plan_allocated(seg) =
+                    heap_segment.heap_segment_committed(seg);
+                generation.generation_allocation_limit(gen) =
+                    heap_segment.heap_segment_plan_allocated(seg);
+            }
+            else
+            {
+                heap_segment* next_seg = heap_segment.heap_segment_next(seg);
+                System.Diagnostics.Debug.Assert(
+                    generation.generation_allocation_pointer(gen) >=
+                    heap_segment.heap_segment_mem(seg));
+
+                if (pinned_plug_que_empty_p(hp) == 0 &&
+                    pinned_plug(oldest_pin(hp)) < heap_segment.heap_segment_allocated(seg) &&
+                    pinned_plug(oldest_pin(hp)) >= generation.generation_allocation_pointer(gen))
+                {
+                    GCToEEInterface.HandleFatalError(CORINFO_EXCEPTION_GC);
+                }
+
+                System.Diagnostics.Debug.Assert(
+                    generation.generation_allocation_pointer(gen) >=
+                    heap_segment.heap_segment_mem(seg));
+                System.Diagnostics.Debug.Assert(
+                    generation.generation_allocation_pointer(gen) <=
+                    heap_segment.heap_segment_committed(seg));
+                heap_segment.heap_segment_plan_allocated(seg) =
+                    generation.generation_allocation_pointer(gen);
+
+                set_region_plan_gen_num(seg, to_gen_number);
+                if (next_seg is null && heap_segment.heap_segment_gen_num(seg) > 0)
+                {
+                    next_seg = generation.generation_start_segment(
+                        generation_of(
+                            generation_table_of(hp),
+                            heap_segment.heap_segment_gen_num(seg) - 1));
+                }
+
+                if (next_seg is not null)
+                {
+                    init_alloc_info(gen, next_seg);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.Fail("should not happen for regions!");
+                }
+            }
+
+            set_allocator_next_pin(hp, gen);
+            goto retry;
+        }
+
+        System.Diagnostics.Debug.Assert(
+            generation.generation_allocation_pointer(gen) >=
+            heap_segment.heap_segment_mem(generation.generation_allocation_segment(gen)));
+        byte* result = generation.generation_allocation_pointer(gen);
+        nuint pad = 0;
+        if ((pad_in_front & USE_PADDING_FRONT) != 0 &&
+            (generation.generation_allocation_pointer(gen) -
+                 generation.generation_allocation_context_start_region(gen) ==
+             0 ||
+             generation.generation_allocation_pointer(gen) -
+                 generation.generation_allocation_context_start_region(gen) >=
+             DESIRED_PLUG_LENGTH))
+        {
+            nint dist = unchecked((nint)(old_loc - result));
+            if (dist != 0)
+            {
+                if (dist > 0 && dist < (nint)Align((nuint)GCInterfaceOffsets.min_obj_size))
+                {
+                    GCToEEInterface.HandleFatalError(CORINFO_EXCEPTION_GC);
+                }
+
+                pad = Align((nuint)GCInterfaceOffsets.min_obj_size);
+                set_plug_padded(old_loc);
+            }
+        }
+
+        if (old_loc is not null && !same_large_alignment_p(old_loc, result + (nint)pad))
+        {
+            pad = unchecked(pad + switch_alignment_size(pad != 0 ? 1 : 0));
+            set_node_realigned(old_loc);
+            System.Diagnostics.Debug.Assert(same_large_alignment_p(result + (nint)pad, old_loc));
+        }
+
+        if (next_pinned_plug is not null &&
+            pad != 0 &&
+            generation.generation_allocation_segment(gen) == current_seg)
+        {
+            System.Diagnostics.Debug.Assert(old_loc is not null);
+            nint dist_to_next_pin = unchecked(
+                (nint)(next_pinned_plug -
+                    (generation.generation_allocation_pointer(gen) + (nint)size + (nint)pad)));
+            System.Diagnostics.Debug.Assert(dist_to_next_pin >= 0);
+
+            if (dist_to_next_pin >= 0 &&
+                dist_to_next_pin < (nint)Align((nuint)GCInterfaceOffsets.min_obj_size))
+            {
+                clear_plug_padded(old_loc);
+                pad = 0;
+                *convert_to_pinned_p = 1;
+                return null;
+            }
+        }
+
+        if (old_loc is null || pad != 0)
+        {
+            generation.generation_allocation_context_start_region(gen) =
+                generation.generation_allocation_pointer(gen);
+        }
+
+        generation.generation_allocation_pointer(gen) =
+            (byte*)unchecked(
+                (nuint)generation.generation_allocation_pointer(gen) + size + pad);
+        System.Diagnostics.Debug.Assert(
+            generation.generation_allocation_pointer(gen) <=
+            generation.generation_allocation_limit(gen));
+
+        if (pad > 0 && to_gen_number >= 0)
+        {
+            generation.generation_free_obj_space(
+                generation_of(generation_table_of(hp), to_gen_number)) += pad;
+        }
+
+        System.Diagnostics.Debug.Assert(result + (nint)pad is not null);
+        return result + (nint)pad;
+    }
+#endif
 
     // The untranslated gc_heap layout owns dynamic_data_table, allocation_quantum,
     // generation_table, alloc_allocated, ephemeral_heap_segment, the selected allocation-byte

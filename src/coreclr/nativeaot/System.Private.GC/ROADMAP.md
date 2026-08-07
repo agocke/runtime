@@ -1208,6 +1208,15 @@ plausible replacements. The BGC allocation cookie/tracking and `heap_segment_fla
 branches, LOH-compaction padding, verification syncblock write, heap-owned free-list routing,
 budget policy, `clearp`/`resetp` branches of
 `make_unused_array`, clearing, and allocation-info/events remain deferred.
+The synchronous full-GC condemned-generation allocation closure is now translated for WKS
+`USE_REGIONS`: `size_fit_p`, relocation-aware `grow_heap_segment`, SIP/cross-generation
+`get_next_alloc_seg`, pin-promotion policy and attribution, `init_alloc_info`, and
+`allocate_in_condemned_generations`. It preserves pinned-queue consumption, planned-limit
+clipping, front/tail padding and large-plug suppression, plug-length heuristics, short-tail
+conversion to pinned, allocation/pinned/free accounting, generation promotion, segment
+growth/transition, and region plan-generation publication. It remains a direct planning leaf;
+`allocate_in_older_generation`, plan traversal, collection-phase routing, and configuration-driven
+diagnostics remain deferred.
 `try_allocate_more_space` now has an explicit unmanaged state-machine core over the translated
 fit paths. It preserves the SOH/UOH `allocation_state` transitions, generation selection,
 allocation flags, commit-failure/short-end/OOM propagation, retry exits, UOH acquisition states,

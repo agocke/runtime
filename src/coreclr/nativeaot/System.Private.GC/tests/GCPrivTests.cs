@@ -13519,6 +13519,546 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)originalLimit, (nuint)context.alloc_limit);
     }
 
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    [Fact]
+    public void CondemnedGenerationSizeFitPreservesFrontAndTailPaddingBoundaries()
+    {
+        nuint minimumObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+        byte* allocationPointer = (byte*)0x1000;
+        byte* oldLocation = (byte*)0x4000;
+
+        Assert.True(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer + (nint)minimumObjectSize));
+        Assert.False(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer - 1));
+
+        Assert.True(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer + (nint)minimumObjectSize,
+            oldLocation,
+            gc_heap.USE_PADDING_TAIL));
+        Assert.False(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer + (nint)(2 * minimumObjectSize - 1),
+            oldLocation,
+            gc_heap.USE_PADDING_TAIL));
+        Assert.True(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer + (nint)(2 * minimumObjectSize),
+            oldLocation,
+            gc_heap.USE_PADDING_TAIL));
+
+        Assert.False(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer + (nint)(2 * minimumObjectSize - 1),
+            oldLocation,
+            gc_heap.USE_PADDING_FRONT));
+        Assert.True(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer + (nint)(2 * minimumObjectSize),
+            oldLocation,
+            gc_heap.USE_PADDING_FRONT));
+
+        Assert.False(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer + (nint)(3 * minimumObjectSize - 1),
+            oldLocation,
+            gc_heap.USE_PADDING_FRONT | gc_heap.USE_PADDING_TAIL));
+        Assert.True(gc_heap.size_fit_p(
+            minimumObjectSize,
+            allocationPointer,
+            allocationPointer + (nint)(3 * minimumObjectSize),
+            oldLocation,
+            gc_heap.USE_PADDING_FRONT | gc_heap.USE_PADDING_TAIL));
+    }
+
+    [Fact]
+    public void NextCondemnedAllocationSegmentSkipsSipAndCrossesGenerationBoundary()
+    {
+        gc_heap heap = default;
+        generation* generations = gc_heap.generation_table_of(&heap);
+        for (int i = 0; i <= GCInterfaceOffsets.max_generation; i++)
+        {
+            generation.initialize(&generations[i]);
+            generations[i].gen_num = i;
+        }
+
+        heap_segment sip = default;
+        heap_segment sameGeneration = default;
+        heap_segment youngerGeneration = default;
+        sip.gen_num = (byte)gc_generation_num.soh_gen2;
+        sip.swept_in_plan_p = 1;
+        sip.next = &sameGeneration;
+        sameGeneration.gen_num = (byte)gc_generation_num.soh_gen2;
+        sameGeneration.mem = (byte*)0x2000;
+
+        generation* allocatorGeneration = &generations[(int)gc_generation_num.soh_gen2];
+        generation.generation_allocation_segment(allocatorGeneration) = &sip;
+
+        Assert.Equal(
+            (nuint)(void*)&sameGeneration,
+            (nuint)(void*)gc_heap.get_next_alloc_seg(&heap, allocatorGeneration));
+        Assert.Equal(
+            (nuint)(void*)&sameGeneration,
+            (nuint)(void*)generation.generation_allocation_segment(allocatorGeneration));
+        Assert.Equal(
+            (nuint)sameGeneration.mem,
+            (nuint)generation.generation_allocation_pointer(allocatorGeneration));
+        Assert.Equal(
+            (nuint)sameGeneration.mem,
+            (nuint)generation.generation_allocation_limit(allocatorGeneration));
+
+        sip.next = null;
+        youngerGeneration.gen_num = (byte)gc_generation_num.soh_gen1;
+        youngerGeneration.mem = (byte*)0x3000;
+        generation.generation_start_segment(&generations[(int)gc_generation_num.soh_gen1]) =
+            &youngerGeneration;
+        generation.generation_allocation_segment(allocatorGeneration) = &sip;
+
+        Assert.Equal(
+            (nuint)(void*)&youngerGeneration,
+            (nuint)(void*)gc_heap.get_next_alloc_seg(&heap, allocatorGeneration));
+        Assert.Equal(
+            (nuint)youngerGeneration.mem,
+            (nuint)generation.generation_allocation_context_start_region(allocatorGeneration));
+    }
+
+    [Fact]
+    public void CondemnedGenerationPinnedConsumptionClipsLimitsAndAccountsFreeSpace()
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        try
+        {
+            using MarkPhaseStateScope _ = new();
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            short* bricks = stackalloc short[4];
+            region_info* generationMap = stackalloc region_info[4];
+            seg_mapping* segmentMap = stackalloc seg_mapping[4];
+            using RelocateAddressStateScope __ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            nuint minimumObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+            heap_segment* region = &segmentMap[0].region_info;
+            byte* regionStart = firstBrick + sizeof(aligned_plug_and_gap);
+            byte* regionEnd = firstBrick + (nint)card_table_info.brick_size;
+            heap_segment.heap_segment_mem(region) = regionStart;
+            heap_segment.heap_segment_allocated(region) = regionEnd;
+            heap_segment.heap_segment_committed(region) = regionEnd;
+            heap_segment.heap_segment_reserved(region) = regionEnd;
+            heap_segment.heap_segment_plan_allocated(region) = regionEnd;
+            heap_segment.heap_segment_gen_num(region) = (byte)gc_generation_num.soh_gen0;
+            heap_segment.heap_segment_plan_gen_num(region) = (int)gc_generation_num.soh_gen0;
+            generationMap[0] =
+                region_info.RI_GEN_0 | region_info.RI_PLAN_GEN_0;
+
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            generation* gen0 = &generations[(int)gc_generation_num.soh_gen0];
+            generation.initialize(gen0);
+            gen0->gen_num = (int)gc_generation_num.soh_gen0;
+            generation.generation_allocation_segment(gen0) = region;
+            generation.generation_allocation_pointer(gen0) = regionStart;
+            generation.generation_allocation_context_start_region(gen0) = regionStart;
+
+            byte* pinnedPlug = regionStart + (nint)minimumObjectSize;
+            nuint pinnedPlugLength = minimumObjectSize;
+            generation.generation_allocation_limit(gen0) = pinnedPlug;
+
+            mark* pinnedEntries = stackalloc mark[1];
+            pinnedEntries[0] = default;
+            pinnedEntries[0].first = pinnedPlug;
+            pinnedEntries[0].len = pinnedPlugLength;
+            gc_heap.mark_stack_array = pinnedEntries;
+            gc_heap.mark_stack_array_length = 1;
+            gc_heap.mark_stack_bos = 0;
+            gc_heap.mark_stack_tos = 1;
+            gc_heap.settings.promotion = 0;
+            gc_heap.gen0_pinned_free_space = 0;
+            gc_heap.gen0_large_chunk_found = false;
+
+            int convertToPinned = 0;
+            byte* result = gc_heap.allocate_in_condemned_generations(
+                &heap,
+                gen0,
+                2 * minimumObjectSize,
+                (int)gc_generation_num.soh_gen0,
+                &convertToPinned,
+                null,
+                region,
+                pinnedPlug + (nint)pinnedPlugLength);
+
+            Assert.Equal((nuint)(pinnedPlug + (nint)pinnedPlugLength), (nuint)result);
+            Assert.Equal((nuint)1, gc_heap.mark_stack_bos);
+            Assert.Equal(minimumObjectSize, pinnedEntries[0].len);
+            Assert.Equal(minimumObjectSize, gc_heap.gen0_pinned_free_space);
+            Assert.Equal(
+                (nuint)(result + (nint)(2 * minimumObjectSize)),
+                (nuint)generation.generation_allocation_pointer(gen0));
+            Assert.Equal((nuint)regionEnd, (nuint)generation.generation_allocation_limit(gen0));
+            Assert.Equal(0, convertToPinned);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void CondemnedGenerationAllocationGrowsAndTransitionsSegments()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        using MarkPhaseStateScope __ = new();
+        nuint minimumObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        byte* reservation = GCToOSInterface.VirtualReserve(
+            4 * pageSize,
+            pageSize,
+            (uint)VirtualReserveFlags.None);
+        Assert.True(reservation is not null);
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(reservation, pageSize));
+
+            gc_heap heap = default;
+            heap_segment growingRegion = default;
+            byte* originalCommitted = reservation + (nint)pageSize;
+            byte* allocationStart = originalCommitted - (nint)minimumObjectSize;
+            growingRegion.mem = reservation + sizeof(aligned_plug_and_gap);
+            growingRegion.allocated = originalCommitted;
+            growingRegion.committed = originalCommitted;
+            growingRegion.reserved = reservation + (nint)(4 * pageSize);
+            growingRegion.plan_allocated = originalCommitted;
+            growingRegion.gen_num = (byte)gc_generation_num.soh_gen2;
+
+            generation* generations = gc_heap.generation_table_of(&heap);
+            generation* allocatorGeneration = &generations[(int)gc_generation_num.soh_gen2];
+            generation.initialize(allocatorGeneration);
+            allocatorGeneration->gen_num = (int)gc_generation_num.soh_gen2;
+            generation.generation_allocation_segment(allocatorGeneration) = &growingRegion;
+            generation.generation_allocation_pointer(allocatorGeneration) = allocationStart;
+            generation.generation_allocation_limit(allocatorGeneration) = originalCommitted;
+            generation.generation_allocation_context_start_region(allocatorGeneration) =
+                allocationStart;
+
+            int convertToPinned = 0;
+            byte* result = gc_heap.allocate_in_condemned_generations(
+                &heap,
+                allocatorGeneration,
+                2 * minimumObjectSize,
+                (int)gc_generation_num.soh_gen2,
+                &convertToPinned,
+                null,
+                &growingRegion,
+                allocationStart);
+
+            Assert.Equal((nuint)allocationStart, (nuint)result);
+            Assert.Equal(
+                (nuint)(allocationStart + (nint)(2 * minimumObjectSize)),
+                (nuint)generation.generation_allocation_pointer(allocatorGeneration));
+            Assert.Equal((nuint)growingRegion.reserved, (nuint)growingRegion.committed);
+            Assert.Equal(3 * pageSize, gc_heap.current_total_committed);
+            Assert.Equal(3 * pageSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+            Assert.Equal(0, convertToPinned);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 4 * pageSize);
+        }
+
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            short* bricks = stackalloc short[4];
+            region_info* generationMap = stackalloc region_info[4];
+            seg_mapping* segmentMap = stackalloc seg_mapping[4];
+            using RelocateAddressStateScope ___ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            heap_segment* first = &segmentMap[0].region_info;
+            heap_segment* second = &segmentMap[1].region_info;
+            byte* firstEnd = firstBrick + (nint)card_table_info.brick_size;
+            byte* secondStart = firstEnd;
+            byte* secondEnd = secondStart + (nint)(4 * minimumObjectSize);
+            first->mem = firstBrick + sizeof(aligned_plug_and_gap);
+            first->allocated = firstEnd;
+            first->committed = firstEnd;
+            first->reserved = firstEnd;
+            first->plan_allocated = firstEnd;
+            first->next = second;
+            first->gen_num = (byte)gc_generation_num.soh_gen2;
+            second->mem = secondStart;
+            second->allocated = secondEnd;
+            second->committed = secondEnd;
+            second->reserved = secondEnd;
+            second->plan_allocated = secondEnd;
+            second->gen_num = (byte)gc_generation_num.soh_gen1;
+            generationMap[0] =
+                region_info.RI_GEN_2 | region_info.RI_PLAN_GEN_0;
+            generationMap[1] =
+                region_info.RI_GEN_1 | region_info.RI_PLAN_GEN_1;
+            gc_heap.map_region_to_generation = generationMap;
+
+            gc_heap transitionHeap = default;
+            generation* transitionGenerations = gc_heap.generation_table_of(&transitionHeap);
+            generation* transitionGeneration =
+                &transitionGenerations[(int)gc_generation_num.soh_gen2];
+            generation.initialize(transitionGeneration);
+            transitionGeneration->gen_num = (int)gc_generation_num.soh_gen2;
+            byte* firstAllocationPointer = firstEnd - (nint)minimumObjectSize;
+            generation.generation_allocation_segment(transitionGeneration) = first;
+            generation.generation_allocation_pointer(transitionGeneration) =
+                firstAllocationPointer;
+            generation.generation_allocation_limit(transitionGeneration) = firstEnd;
+            generation.generation_allocation_context_start_region(transitionGeneration) =
+                firstAllocationPointer;
+
+            int transitionConvertToPinned = 0;
+            byte* transitionResult = gc_heap.allocate_in_condemned_generations(
+                &transitionHeap,
+                transitionGeneration,
+                2 * minimumObjectSize,
+                (int)gc_generation_num.soh_gen2,
+                &transitionConvertToPinned,
+                null,
+                first,
+                secondStart);
+
+            Assert.Equal((nuint)secondStart, (nuint)transitionResult);
+            Assert.Equal(
+                (nuint)(void*)second,
+                (nuint)(void*)generation.generation_allocation_segment(transitionGeneration));
+            Assert.Equal(
+                (nuint)(secondStart + (nint)(2 * minimumObjectSize)),
+                (nuint)generation.generation_allocation_pointer(transitionGeneration));
+            Assert.Equal((nuint)firstAllocationPointer, (nuint)first->plan_allocated);
+            Assert.Equal((int)gc_generation_num.soh_gen2, first->plan_gen_num);
+            Assert.Equal(
+                region_info.RI_GEN_2 | region_info.RI_PLAN_GEN_2,
+                generationMap[0]);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void PinnedAllocationAttributionHonorsPromotionAndCurrentRegionDestination()
+    {
+        int storageSize = checked((int)(5 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            short* bricks = stackalloc short[4];
+            region_info* generationMap = stackalloc region_info[4];
+            seg_mapping* segmentMap = stackalloc seg_mapping[4];
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            for (int i = 0; i <= GCInterfaceOffsets.max_generation; i++)
+            {
+                generation.initialize(&generations[i]);
+                generations[i].gen_num = i;
+            }
+
+            gc_heap.settings.promotion = 0;
+            gc_heap.attribute_pin_higher_gen_alloc(&heap, 1, 2, 8);
+            Assert.Equal((nuint)0, generations[2].pinned_allocation_sweep_size);
+            Assert.Equal((nuint)0, generations[2].pinned_allocation_compact_size);
+
+            gc_heap.settings.promotion = 1;
+            gc_heap.attribute_pin_higher_gen_alloc(&heap, 1, 1, 16);
+            gc_heap.attribute_pin_higher_gen_alloc(&heap, 1, 2, 24);
+            Assert.Equal((nuint)40, generations[2].pinned_allocation_sweep_size);
+            Assert.Equal((nuint)24, generations[2].pinned_allocation_compact_size);
+
+            heap_segment* currentRegion = &segmentMap[0].region_info;
+            currentRegion->mem = firstBrick;
+            currentRegion->reserved = firstBrick + (nint)card_table_info.brick_size;
+            currentRegion->gen_num = (byte)gc_generation_num.soh_gen1;
+            currentRegion->plan_gen_num = (int)gc_generation_num.soh_gen0;
+            generationMap[0] =
+                region_info.RI_GEN_1 | region_info.RI_PLAN_GEN_0;
+            byte* plug = firstBrick + 128;
+
+            gc_heap.attribute_pin_higher_gen_alloc(
+                &heap,
+                currentRegion,
+                (int)gc_generation_num.soh_gen2,
+                plug,
+                32);
+
+            Assert.Equal((nuint)72, generations[2].pinned_allocation_sweep_size);
+            Assert.Equal((nuint)56, generations[2].pinned_allocation_compact_size);
+            Assert.False(gc_heap.decide_on_gen1_pin_promotion(0.15f, 0.31f));
+            Assert.False(gc_heap.decide_on_gen1_pin_promotion(0.16f, 0.30f));
+            Assert.True(gc_heap.decide_on_gen1_pin_promotion(0.16f, 0.31f));
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void NearRegionSizedPlugSuppressesFrontPadding()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        using MarkPhaseStateScope __ = new();
+        const nuint RegionSize = 0x1000;
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(2 * RegionSize);
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            gc_heap.settings.promotion = 1;
+            nuint minimumObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+            nuint size = gc_heap.Align(RegionSize - (nuint)sizeof(aligned_plug_and_gap));
+            Assert.True(
+                size + minimumObjectSize >
+                RegionSize - (nuint)sizeof(aligned_plug_and_gap));
+
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            generation* gen0 = &generations[(int)gc_generation_num.soh_gen0];
+            generation* gen1 = &generations[(int)gc_generation_num.soh_gen1];
+            generation.initialize(gen0);
+            generation.initialize(gen1);
+            gen0->gen_num = (int)gc_generation_num.soh_gen0;
+            gen1->gen_num = (int)gc_generation_num.soh_gen1;
+
+            heap_segment region = default;
+            region.mem = storage;
+            region.allocated = storage + (nint)RegionSize;
+            region.committed = region.allocated;
+            region.reserved = region.allocated;
+            region.plan_allocated = region.allocated;
+            region.gen_num = (byte)gc_generation_num.soh_gen0;
+            generation.generation_allocation_segment(gen0) = &region;
+            generation.generation_allocation_pointer(gen0) = storage;
+            generation.generation_allocation_limit(gen0) = region.plan_allocated;
+            generation.generation_allocation_context_start_region(gen0) = storage;
+
+            byte* oldLocation = storage + (nint)RegionSize + 128;
+            int convertToPinned = 0;
+            byte* result = gc_heap.allocate_in_condemned_generations(
+                &heap,
+                gen0,
+                size,
+                (int)gc_generation_num.soh_gen0,
+                &convertToPinned,
+                null,
+                &region,
+                oldLocation);
+
+            Assert.Equal((nuint)storage, (nuint)result);
+            Assert.Equal((nuint)(storage + (nint)size), (nuint)generation.generation_allocation_pointer(gen0));
+            Assert.Equal(0, gc_heap.is_plug_padded(oldLocation));
+            Assert.Equal(size, generation.generation_condemned_allocated(gen1));
+            Assert.Equal(size, generation.generation_allocation_size(gen1));
+            Assert.Equal((nuint)0, generation.generation_free_obj_space(gen1));
+            Assert.Equal(0, convertToPinned);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void SubMinimumTailConvertsFrontPaddedPlugToPinned()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        using MarkPhaseStateScope __ = new();
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(512);
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            gc_heap.settings.promotion = 1;
+            nuint minimumObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+            byte* allocationStart = storage + 64;
+            byte* allocationLimit = storage + 256;
+            byte* oldLocation = storage + 384;
+            MethodTable methodTable = default;
+            ((CObjectHeader*)oldLocation)->RawSetMethodTable(&methodTable);
+
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            generation* gen0 = &generations[(int)gc_generation_num.soh_gen0];
+            generation* gen1 = &generations[(int)gc_generation_num.soh_gen1];
+            generation.initialize(gen0);
+            generation.initialize(gen1);
+            gen0->gen_num = (int)gc_generation_num.soh_gen0;
+            gen1->gen_num = (int)gc_generation_num.soh_gen1;
+
+            heap_segment region = default;
+            region.mem = storage;
+            region.allocated = allocationLimit;
+            region.committed = allocationLimit;
+            region.reserved = allocationLimit;
+            region.plan_allocated = allocationLimit;
+            region.gen_num = (byte)gc_generation_num.soh_gen0;
+            generation.generation_allocation_segment(gen0) = &region;
+            generation.generation_allocation_pointer(gen0) = allocationStart;
+            generation.generation_allocation_limit(gen0) = allocationLimit;
+            generation.generation_allocation_context_start_region(gen0) = allocationStart;
+
+            byte* nextPinnedPlug = allocationStart +
+                (nint)(2 * minimumObjectSize + minimumObjectSize - 1);
+            int convertToPinned = 0;
+            byte* result = gc_heap.allocate_in_condemned_generations(
+                &heap,
+                gen0,
+                minimumObjectSize,
+                (int)gc_generation_num.soh_gen0,
+                &convertToPinned,
+                nextPinnedPlug,
+                &region,
+                oldLocation);
+
+            Assert.Equal((nuint)0, (nuint)result);
+            Assert.Equal(1, convertToPinned);
+            Assert.Equal((nuint)allocationStart, (nuint)generation.generation_allocation_pointer(gen0));
+            Assert.Equal(0, gc_heap.is_plug_padded(oldLocation));
+            Assert.Equal(minimumObjectSize, generation.generation_condemned_allocated(gen1));
+            Assert.Equal(minimumObjectSize, generation.generation_allocation_size(gen1));
+            Assert.Equal((nuint)0, generation.generation_free_obj_space(gen1));
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+#endif
+
     [Theory]
     [InlineData(0UL, 0UL)]
     [InlineData(1UL, 8UL)]
@@ -16204,6 +16744,19 @@ public sealed unsafe class GCPrivTests
 
         Assert.Equal((nint)distance, gc_heap.node_relocation_distance(node));
         Assert.Equal((nint)expectedNodeLeft, gc_heap.node_left_p(node));
+    }
+
+    [Fact]
+    public void SetNodeRealignedPublishesFlagWithoutChangingRelocationDistance()
+    {
+        byte* storage = stackalloc byte[128];
+        byte* node = storage + 64;
+        ((plug_and_reloc*)node)[-1].reloc = -128;
+
+        gc_heap.set_node_realigned(node);
+
+        Assert.Equal((nint)(-128), gc_heap.node_relocation_distance(node));
+        Assert.Equal((nint)1, gc_heap.node_realigned(node));
     }
 
     [Theory]

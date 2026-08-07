@@ -99,7 +99,7 @@ Ported so far:
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, the bounded WKS synchronous full-GC compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
 | `RelocateCompact.cs` | allocation-free relocation/compaction copy primitives, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation and compaction, non-compacting UOH reference relocation, bounded synchronous WKS `USE_REGIONS` full-GC relocation/compaction orchestration, and dependency-closed helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | dependency-closed WKS `USE_REGIONS` SOH normal/special sweep brick walk and final region threading, SIP free-list handoff, empty-region replacement, UOH marked-object clearing, unused-array card clearing/reset, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp`, `plan_phase.cpp`, `allocation.cpp`, `regions_segments.cpp`, and `gcinternal.h` |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, the synchronous full-GC condemned-generation planning allocator, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping, region-table, and deferred UOH free-region-return helpers from `collect.cpp`, `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp`, plus the direct brick repair and first-object lookup leaves from `card_table.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
@@ -1176,6 +1176,15 @@ SOH/UOH total, and heap number are explicit unsafe parameters, rather than a par
 layout. The dependency-closed SOH and initial-UOH refill paths are routed through these helpers.
 UOH segment retry and collection dependencies remain deferred, so allocation stops honestly when
 the initial region is exhausted.
+
+The synchronous WKS `USE_REGIONS` full-GC planning allocator is translated as a direct,
+non-routed leaf. `size_fit_p`, relocation-aware segment growth, SIP and cross-generation region
+selection, both pinned-allocation attribution forms, and
+`allocate_in_condemned_generations` preserve pinned-queue consumption and limit clipping,
+front/tail padding, short-plug conversion, plan/commit growth and segment transition, generation
+allocation/free accounting, and region plan-generation publication. The large-plug exception
+suppresses front padding only when the native region-size threshold requires it. Planning
+traversal and collection routing remain deferred.
 
 The next allocation orchestration leaf connects those fits in native order:
 `soh_try_fit` favors the SOH free list, honors the short-end result, tries the current
