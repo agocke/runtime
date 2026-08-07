@@ -143,6 +143,62 @@ public sealed unsafe class SoftwareWriteWatchTests : IDisposable
         }
     }
 
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+    [Fact]
+    public void GcMemCopyMarksOnlyTheCopiedDestinationRegionWhenWriteWatchIsEnabled()
+    {
+        using SyntheticHeap heap = new(pageCount: 6);
+        uint* savedCardTable = gc_heap.card_table;
+
+        try
+        {
+            const nuint Length = 64;
+            nuint copiedDestinationSize = Length - (nuint)sizeof(nuint);
+            byte* dest = heap.Page(1) - (nint)copiedDestinationSize;
+            byte* src = heap.Page(4) - (nint)copiedDestinationSize;
+
+            for (nint offset = -(nint)sizeof(nuint);
+                 offset < (nint)Length - sizeof(nuint);
+                 offset++)
+            {
+                src[offset] = unchecked((byte)(offset + 0x40));
+            }
+
+            nuint firstCard = gc_heap.card_of(heap.HeapStart);
+            nuint lastCard = gc_heap.card_of(heap.HeapEnd - 1);
+            nuint firstCardWord = card_table_info.card_word(firstCard);
+            nuint lastCardWord = card_table_info.card_word(lastCard);
+            int cardWordCount = checked((int)(lastCardWord - firstCardWord + 1));
+            uint* cardWords = stackalloc uint[cardWordCount];
+            for (int i = 0; i < cardWordCount; i++)
+            {
+                cardWords[i] = 0;
+            }
+
+            gc_heap.card_table = cardWords - (nint)firstCardWord;
+
+            gc_heap.gcmemcopy(dest, src, Length, copy_cards_p: 1);
+            for (int i = 0; i < 6; i++)
+            {
+                Assert.Equal((byte)0, heap.UntranslatedTable[i]);
+            }
+
+            SoftwareWriteWatch.EnableForGCHeap();
+            gc_heap.gcmemcopy(dest, src, Length, copy_cards_p: 1);
+
+            Assert.Equal((byte)0xff, heap.UntranslatedTable[0]);
+            for (int i = 1; i < 6; i++)
+            {
+                Assert.Equal((byte)0, heap.UntranslatedTable[i]);
+            }
+        }
+        finally
+        {
+            gc_heap.card_table = savedCardTable;
+        }
+    }
+#endif
+
     //
     // Initialize/resize preserving old bytes.
     //

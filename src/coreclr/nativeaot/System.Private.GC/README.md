@@ -97,7 +97,7 @@ Ported so far:
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, and UOH region start/tail unlinking from `plan_phase.cpp` |
-| `RelocateCompact.cs` | allocation-free `memcopy` relocation primitive, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation, non-compacting UOH reference relocation, bounded synchronous WKS `USE_REGIONS` full-GC relocation orchestration, and dependency-closed helpers from `relocate_compact.cpp` |
+| `RelocateCompact.cs` | allocation-free relocation/compaction copy primitives, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation and compaction, non-compacting UOH reference relocation, bounded synchronous WKS `USE_REGIONS` full-GC relocation/compaction orchestration, and dependency-closed helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | bounded WKS `USE_REGIONS` normal-plan SOH brick walk, brick-tree sweep leaves, UOH marked-object clearing, unused-array clearing, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp` and `gcinternal.h` |
 | `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
@@ -317,12 +317,22 @@ segment skipping, pointer-free-object skipping, qword object stepping, and alloc
 managed function-pointer adapters for descriptor walks. The bounded WKS `USE_REGIONS`
 `relocate_phase` slice preserves the native full-GC order: EE roots, non-compacting LOH, POH,
 SOH survivors, finalization data, then handles, with one initialized relocation `ScanContext`.
-It rejects null heap/finalizer state, partial/card-scan collections, mismatched or non-compacting
-settings, concurrent/background collection, and an actually compacted LOH before mutation.
-Configured LOH compaction still uses the non-compacting LOH/POH traversal when
-`loh_compacted_p` is zero. Server/card stealing, background roots, partial card scans,
-`relocate_in_loh_compact`, debug-only region-map verification, `get_start_segment`, compaction,
-and collection routing remain deferred.
+The adjacent bounded `compact_phase` preserves the WKS `USE_REGIONS` full-Gen2 plug order,
+header/payload/card copying, shortened pinned pre/post record swaps, in-order brick traversal,
+SIP-region skipping, generation/segment transitions, final brick publication, pinned-record
+recovery, and `plan_allocated`-to-`used` publication. `gcmemcopy` also retains the active
+`DOUBLY_LINKED_FL` BGC-mark and small-free-object state around the copy and marks the exact
+`len - plug_skew` destination range dirty when software write watch is enabled. The bounded
+entrypoint cannot produce the BGC-mark state because the older-generation allocation path that
+sets it requires an in-progress background sweep, which this slice rejects, but the direct copy
+leaf preserves the native behavior rather than silently dropping that state. Both reject
+unsupported partial, mismatched, non-compacting, concurrent/background, and actually
+compacted-LOH modes before mutation, and are compiled only for WKS `USE_REGIONS`. Configured LOH
+compaction still uses the non-compacting LOH/POH traversal when `loh_compacted_p` is zero.
+Server/card stealing,
+background roots, partial card scans,
+`relocate_in_loh_compact`, debug-only region-map verification, actual LOH compaction, and
+collection routing remain deferred.
 The bounded WKS `CFinalize` queue now relocates the native half-open generation-to-free-list
 range through the same root bridge; server merge/split and scheduling remain deferred.
 Background marking remains deferred.

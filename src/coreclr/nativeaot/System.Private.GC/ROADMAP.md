@@ -1319,8 +1319,14 @@ Translate in dependency order:
   `relocate_args`, allocation-free SIP descriptor-walk context/adapters,
   `relocate_advance_to_non_sip`, in-order `relocate_survivors_in_brick`, and
   generation/segment `relocate_survivors`, preserving plug boundaries, pinned-queue handoff,
-  cross-brick state, swept-in-plan linear walking and empty-region transitions. `get_start_segment`,
-  compaction, and collection routing remain deferred; the bounded synchronous WKS `USE_REGIONS`
+  cross-brick state, swept-in-plan linear walking and empty-region transitions. The next bounded
+  synchronous WKS `USE_REGIONS` full-GC slice adds `compact_args`, `get_start_segment`,
+  `expand_reused_seg_p`, `gcmemcopy`, `compact_plug`, `compact_in_brick`, and `compact_phase`.
+  It preserves header/payload/card copying, shortened pinned pre/post state swaps, in-order
+  cross-brick traversal, SIP skipping, generation/segment boundaries, final brick publication,
+  saved-pin recovery, and `plan_allocated`-to-`used` transitions. It rejects unsupported modes
+  before mutation and excludes actual LOH compaction. Collection routing remains deferred; the
+  bounded synchronous WKS `USE_REGIONS`
   full-GC `relocate_phase` slice preserves the native roots, non-compacting LOH, POH, SOH
   survivors, finalization-data, and handle order with one initialized relocation `ScanContext`.
   It rejects partial/card scans, settings mismatch, concurrent/background collection, missing

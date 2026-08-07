@@ -693,7 +693,59 @@ internal unsafe partial struct gc_heap
         return ((CObjectHeader*)node)->IsMarked();
     }
 
+#if TARGET_64BIT && !TARGET_WASM
+    public static int is_plug_bgc_mark_bit_set(byte* node)
+    {
+        return ((CObjectHeader*)node)->IsBGCMarkBitSet();
+    }
+
+    public static void clear_plug_bgc_mark_bit(byte* node)
+    {
+        ((CObjectHeader*)node)->ClearBGCMarkBit();
+    }
+
+    public static int is_free_obj_in_compact_bit_set(byte* node)
+    {
+        return ((CObjectHeader*)node)->IsFreeObjInCompactBitSet();
+    }
+
+    public static void clear_free_obj_in_compact_bit(byte* node)
+    {
+        ((CObjectHeader*)node)->ClearFreeObjInCompactBit();
+    }
+#endif
+
 #if BACKGROUND_GC
+    public static void mark_array_set_marked(byte* add)
+    {
+        nuint index = card_table_info.mark_word_of(add);
+        uint val = 1u << (int)card_table_info.mark_bit_bit_of(add);
+        mark_array[(nint)index] |= val;
+    }
+
+    public static int background_mark1(byte* o)
+    {
+        int to_mark = mark_array_marked(o) == 0 ? 1 : 0;
+        if (to_mark != 0)
+        {
+            mark_array_set_marked(o);
+            return 1;
+        }
+
+        return 0;
+    }
+
+    public static int background_mark(byte* o, byte* low, byte* high)
+    {
+        int marked = 0;
+        if ((o >= low) && (o < high))
+        {
+            marked = background_mark1(o);
+        }
+
+        return marked;
+    }
+
     public static int is_mark_bit_set(byte* add)
     {
         return unchecked((int)(

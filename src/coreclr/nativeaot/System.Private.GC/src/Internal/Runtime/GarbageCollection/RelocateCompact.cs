@@ -1,9 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Port of the allocation-free relocation copy primitive and dependency-closed WKS USE_REGIONS
-// helpers, including brick-tree reference and plug-level SOH relocation and the bounded
-// synchronous full-GC relocation orchestration, from relocate_compact.cpp.
+// Port of the allocation-free relocation and compaction copy primitives and dependency-closed
+// WKS USE_REGIONS helpers, including brick-tree reference relocation, plug-level SOH relocation
+// and compaction, and the bounded synchronous full-GC relocation and compaction orchestration,
+// from relocate_compact.cpp.
 
 using System.Diagnostics;
 
@@ -207,6 +208,269 @@ internal unsafe partial struct gc_heap
         else
         {
             clear_card_for_addresses(dest, dest + len);
+        }
+    }
+
+    public static void gcmemcopy(byte* dest, byte* src, nuint len, int copy_cards_p)
+    {
+        if (dest != src)
+        {
+#if TARGET_64BIT && !TARGET_WASM
+            int set_bgc_mark_bits_p = is_plug_bgc_mark_bit_set(src);
+            if (set_bgc_mark_bits_p != 0)
+            {
+                clear_plug_bgc_mark_bit(src);
+            }
+
+            int make_free_obj_p = 0;
+            if (len <= min_free_item_no_prev)
+            {
+                make_free_obj_p = is_free_obj_in_compact_bit_set(src);
+
+                if (make_free_obj_p != 0)
+                {
+                    clear_free_obj_in_compact_bit(src);
+                }
+            }
+#endif
+
+            memcopy(
+                dest - (nint)plug_skew,
+                src - (nint)plug_skew,
+                len);
+
+#if TARGET_64BIT && !TARGET_WASM
+            if (set_bgc_mark_bits_p != 0)
+            {
+                byte* dest_o = dest;
+                byte* dest_end_o = dest + (nint)len;
+                while (dest_o < dest_end_o)
+                {
+                    byte* next_o = dest_o + (nint)Align(size(dest_o));
+                    background_mark(
+                        dest_o,
+                        background_saved_lowest_address,
+                        background_saved_highest_address);
+
+                    dest_o = next_o;
+                }
+            }
+
+            if (make_free_obj_p != 0)
+            {
+                nuint* filler_free_obj_size_location =
+                    (nuint*)(dest + (nint)min_free_item_no_prev);
+                nuint filler_free_obj_size = *filler_free_obj_size_location;
+                make_unused_array(dest + (nint)len, filler_free_obj_size);
+            }
+#endif
+
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+            if (SoftwareWriteWatch.IsEnabledForGCHeap())
+            {
+                SoftwareWriteWatch.SetDirtyRegion(dest, len - plug_skew);
+            }
+#endif
+            copy_cards_range(dest, src, len, copy_cards_p != 0);
+        }
+    }
+
+    public static void compact_plug(
+        byte* plug,
+        nuint size,
+        int check_last_object_p,
+        compact_args* args)
+    {
+        byte* reloc_plug = plug + args->last_plug_relocation;
+
+        if (check_last_object_p != 0)
+        {
+            size += (nuint)sizeof(gap_reloc_pair);
+            mark* entry = args->pinned_plug_entry;
+
+            if (args->is_shortened != 0)
+            {
+                Debug.Assert(mark.has_post_plug_info(entry) != 0);
+                mark.swap_post_plug_and_saved(entry);
+            }
+            else
+            {
+                Debug.Assert(mark.has_pre_plug_info(entry) != 0);
+                mark.swap_pre_plug_and_saved(entry);
+            }
+        }
+
+        int old_brick_entry = brick_table[(nint)brick_of(plug)];
+        _ = old_brick_entry;
+
+        Debug.Assert(node_relocation_distance(plug) == args->last_plug_relocation);
+
+        nuint unused_arr_size = 0;
+        int already_padded_p = 0;
+        if (is_plug_padded(plug) != 0)
+        {
+            already_padded_p = 1;
+            clear_plug_padded(plug);
+            unused_arr_size = Align((nuint)GCInterfaceOffsets.min_obj_size);
+        }
+
+        if (node_realigned(plug) != 0)
+        {
+            unused_arr_size += switch_alignment_size(already_padded_p);
+        }
+
+        if (unused_arr_size != 0)
+        {
+            make_unused_array(reloc_plug - (nint)unused_arr_size, unused_arr_size);
+
+            if (brick_of(reloc_plug - (nint)unused_arr_size) != brick_of(reloc_plug))
+            {
+                fix_brick_to_highest(reloc_plug - (nint)unused_arr_size, reloc_plug);
+            }
+        }
+
+        if (is_plug_padded(plug) != 0)
+        {
+            nuint aligned_min_obj_size = Align((nuint)GCInterfaceOffsets.min_obj_size);
+            make_unused_array(reloc_plug - (nint)aligned_min_obj_size, aligned_min_obj_size);
+
+            if (brick_of(reloc_plug - (nint)aligned_min_obj_size) != brick_of(reloc_plug))
+            {
+                fix_brick_to_highest(reloc_plug - (nint)aligned_min_obj_size, reloc_plug);
+            }
+        }
+
+        gcmemcopy(reloc_plug, plug, size, args->copy_cards_p);
+
+        if (args->check_gennum_p != 0)
+        {
+            int src_gennum = args->src_gennum;
+            if (src_gennum == -1)
+            {
+                src_gennum = object_gennum(plug);
+            }
+
+            int dest_gennum = object_gennum_plan(reloc_plug);
+
+            if (src_gennum < dest_gennum)
+            {
+                generation.generation_allocation_size(
+                    generation_of(generation_table_of(ManagedGCRegionBootstrap.Heap), dest_gennum)) += size;
+            }
+        }
+
+        nuint current_reloc_brick = args->current_compacted_brick;
+
+        if (brick_of(reloc_plug) != current_reloc_brick)
+        {
+            if (args->before_last_plug is not null)
+            {
+                set_brick(
+                    current_reloc_brick,
+                    (nint)(args->before_last_plug -
+                        brick_address(current_reloc_brick)));
+            }
+
+            current_reloc_brick = brick_of(reloc_plug);
+        }
+
+        nuint end_brick = brick_of(reloc_plug + (nint)size - 1);
+        if (end_brick != current_reloc_brick)
+        {
+            set_brick(
+                current_reloc_brick,
+                (nint)(reloc_plug - brick_address(current_reloc_brick)));
+
+            nuint brick = current_reloc_brick + 1;
+            while (brick < end_brick)
+            {
+                set_brick(brick, -1);
+                brick++;
+            }
+
+            args->before_last_plug = brick_address(end_brick) - 1;
+            current_reloc_brick = end_brick;
+        }
+        else
+        {
+            args->before_last_plug = reloc_plug;
+        }
+
+        args->current_compacted_brick = current_reloc_brick;
+
+        if (check_last_object_p != 0)
+        {
+            mark* entry = args->pinned_plug_entry;
+
+            if (args->is_shortened != 0)
+            {
+                mark.swap_post_plug_and_saved(entry);
+            }
+            else
+            {
+                mark.swap_pre_plug_and_saved(entry);
+            }
+        }
+    }
+
+    public static void compact_in_brick(byte* tree, compact_args* args)
+    {
+        Debug.Assert(tree is not null);
+        int left_node = node_left_child(tree);
+        int right_node = node_right_child(tree);
+        nint relocation = node_relocation_distance(tree);
+
+        if (left_node != 0)
+        {
+            compact_in_brick(tree + left_node, args);
+        }
+
+        byte* plug = tree;
+        int has_pre_plug_info_p = 0;
+        int has_post_plug_info_p = 0;
+
+        if (tree == oldest_pinned_plug)
+        {
+            args->pinned_plug_entry = get_oldest_pinned_entry(
+                ManagedGCRegionBootstrap.Heap,
+                &has_pre_plug_info_p,
+                &has_post_plug_info_p);
+            Debug.Assert(tree == pinned_plug(args->pinned_plug_entry));
+        }
+
+        if (args->last_plug is not null)
+        {
+            nuint gap_size = node_gap_size(tree);
+            byte* gap = plug - (nint)gap_size;
+            byte* last_plug_end = gap;
+            nuint last_plug_size = (nuint)(last_plug_end - args->last_plug);
+            Debug.Assert((last_plug_size & ((nuint)sizeof(byte*) - 1)) == 0);
+
+            int check_last_object_p =
+                args->is_shortened != 0 || has_pre_plug_info_p != 0 ? 1 : 0;
+            if (check_last_object_p == 0)
+            {
+                Debug.Assert(last_plug_size >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+            }
+
+            compact_plug(
+                args->last_plug,
+                last_plug_size,
+                check_last_object_p,
+                args);
+        }
+        else
+        {
+            Debug.Assert(has_pre_plug_info_p == 0);
+        }
+
+        args->last_plug = plug;
+        args->last_plug_relocation = relocation;
+        args->is_shortened = has_post_plug_info_p;
+
+        if (right_node != 0)
+        {
+            compact_in_brick(tree + right_node, args);
         }
     }
 
@@ -697,6 +961,14 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    public static heap_segment* get_start_segment(generation* gen)
+    {
+        heap_segment* start_heap_segment =
+            heap_segment_rw(generation.generation_start_segment(gen));
+        start_heap_segment = heap_segment_non_sip(start_heap_segment);
+        return start_heap_segment;
+    }
+
     public static void relocate_survivors(
         gc_heap* hp,
         int condemned_gen_number,
@@ -878,6 +1150,149 @@ internal unsafe partial struct gc_heap
             condemned_gen_number,
             GCInterfaceOffsets.max_generation,
             &sc);
+        return true;
+    }
+
+    public static bool compact_phase(
+        int condemned_gen_number,
+        byte* first_condemned_address,
+        int clear_cards)
+    {
+        gc_heap* hp = ManagedGCRegionBootstrap.Heap;
+        if (hp is null ||
+            condemned_gen_number != GCInterfaceOffsets.max_generation ||
+            settings.condemned_generation != condemned_gen_number ||
+            settings.compaction == 0 ||
+            settings.concurrent != 0 ||
+#if BACKGROUND_GC
+            settings.background_p != 0 ||
+            background_running_p() ||
+#endif
+            loh_compacted_p != 0)
+        {
+            return false;
+        }
+
+        _ = first_condemned_address;
+
+        reset_pinned_queue_bos(hp);
+        update_oldest_pinned_plug(hp);
+        bool reused_seg = expand_reused_seg_p();
+        if (reused_seg)
+        {
+            generation* generation_table = generation_table_of(hp);
+            for (int i = 1; i <= GCInterfaceOffsets.max_generation; i++)
+            {
+                generation.generation_allocation_size(generation_of(generation_table, i)) = 0;
+            }
+        }
+
+        int stop_gen_idx = get_stop_generation_index(condemned_gen_number);
+        generation* generations = generation_table_of(hp);
+        for (int i = condemned_gen_number; i >= stop_gen_idx; i--)
+        {
+            generation* condemned_gen = generation_of(generations, i);
+            heap_segment* current_heap_segment = get_start_segment(condemned_gen);
+            if (current_heap_segment is null)
+            {
+                continue;
+            }
+
+            nuint current_brick = brick_of(heap_segment.heap_segment_mem(current_heap_segment));
+            byte* end_address = heap_segment.heap_segment_allocated(current_heap_segment);
+            nuint end_brick = brick_of(end_address - 1);
+            compact_args args = default;
+            args.last_plug = null;
+            args.before_last_plug = null;
+            args.current_compacted_brick = ~(nuint)1;
+            args.is_shortened = 0;
+            args.pinned_plug_entry = null;
+            args.copy_cards_p = condemned_gen_number >= 1 || clear_cards == 0 ? 1 : 0;
+            args.check_gennum_p = reused_seg ? 1 : 0;
+            if (args.check_gennum_p != 0)
+            {
+                args.src_gennum = 2;
+            }
+
+            Debug.Assert(args.check_gennum_p == 0);
+
+            while (true)
+            {
+                if (current_brick > end_brick)
+                {
+                    if (args.last_plug is not null)
+                    {
+                        compact_plug(
+                            args.last_plug,
+                            (nuint)(heap_segment.heap_segment_allocated(current_heap_segment) -
+                                args.last_plug),
+                            args.is_shortened,
+                            &args);
+                    }
+
+                    heap_segment* next_heap_segment =
+                        heap_segment_next_non_sip(current_heap_segment);
+                    if (next_heap_segment is not null)
+                    {
+                        current_heap_segment = next_heap_segment;
+                        current_brick = brick_of(
+                            heap_segment.heap_segment_mem(current_heap_segment));
+                        end_brick = brick_of(
+                            heap_segment.heap_segment_allocated(current_heap_segment) - 1);
+                        args.last_plug = null;
+                        if (args.check_gennum_p != 0)
+                        {
+                            args.src_gennum = 2;
+                        }
+
+                        continue;
+                    }
+
+                    if (args.before_last_plug is not null)
+                    {
+                        Debug.Assert(
+                            args.current_compacted_brick != unchecked((nuint)~1u));
+                        set_brick(
+                            args.current_compacted_brick,
+                            (nint)(args.before_last_plug -
+                                brick_address(args.current_compacted_brick)));
+                    }
+
+                    break;
+                }
+
+                int brick_entry = brick_table[(nint)current_brick];
+                if (brick_entry >= 0)
+                {
+                    compact_in_brick(
+                        brick_address(current_brick) + brick_entry - 1,
+                        &args);
+                }
+
+                current_brick++;
+            }
+        }
+
+        recover_saved_pinned_info();
+
+        int gen_limit = condemned_gen_number + 1 < GCInterfaceOffsets.max_generation
+            ? condemned_gen_number + 1
+            : GCInterfaceOffsets.max_generation;
+        for (int i = 0; i <= gen_limit; i++)
+        {
+            generation* gen = generation_of(generations, i);
+            for (heap_segment* region = generation.generation_start_segment_rw(gen);
+                 region is not null;
+                 region = heap_segment.heap_segment_next(region))
+            {
+                byte* plan_allocated = heap_segment.heap_segment_plan_allocated(region);
+                if (plan_allocated > heap_segment.heap_segment_used(region))
+                {
+                    heap_segment.heap_segment_used(region) = plan_allocated;
+                }
+            }
+        }
+
         return true;
     }
 #endif

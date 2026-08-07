@@ -3394,6 +3394,19 @@ namespace Internal.Runtime.GarbageCollection
             public int is_shortened;
             public mark* pinned_plug_entry;
         }
+
+        internal struct compact_args
+        {
+            public int copy_cards_p;
+            public byte* last_plug;
+            public nint last_plug_relocation;
+            public byte* before_last_plug;
+            public nuint current_compacted_brick;
+            public int is_shortened;
+            public mark* pinned_plug_entry;
+            public int check_gennum_p;
+            public int src_gennum;
+        }
 #endif
 
         public static short node_left_child(byte* node)
@@ -3437,6 +3450,11 @@ namespace Internal.Runtime.GarbageCollection
         public static nint node_relocation_distance(byte* node)
         {
             return ((plug_and_reloc*)node)[-1].reloc & ~(nint)3;
+        }
+
+        public static nint node_realigned(byte* node)
+        {
+            return ((plug_and_reloc*)node)[-1].reloc & 1;
         }
 
         public static nint node_left_p(byte* node)

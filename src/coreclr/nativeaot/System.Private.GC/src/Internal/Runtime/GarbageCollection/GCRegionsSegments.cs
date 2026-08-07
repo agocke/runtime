@@ -996,17 +996,32 @@ internal unsafe partial struct gc_heap
         return heap_segment_rw(ns);
     }
 
+    public static heap_segment* heap_segment_non_sip(heap_segment* ns)
+    {
+#if USE_REGIONS
+        if (ns is null || heap_segment.heap_segment_swept_in_plan(ns) == 0)
+        {
+            return ns;
+        }
+        else
+        {
+            do
+            {
+                ns = heap_segment.heap_segment_next(ns);
+            }
+            while (ns is not null && heap_segment.heap_segment_swept_in_plan(ns) != 0);
+
+            return ns;
+        }
+#else
+        return ns;
+#endif
+    }
+
     public static heap_segment* heap_segment_next_non_sip(heap_segment* seg)
     {
         heap_segment* ns = heap_segment.heap_segment_next(seg);
-#if USE_REGIONS
-        while (ns is not null && heap_segment.heap_segment_swept_in_plan(ns) != 0)
-        {
-            ns = heap_segment.heap_segment_next(ns);
-        }
-#endif
-
-        return ns;
+        return heap_segment_non_sip(ns);
     }
 
     public static void thread_uoh_segment(generation* generation_table, int gen_number, heap_segment* new_seg)

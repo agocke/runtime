@@ -35,6 +35,23 @@ internal unsafe partial struct gc_heap
 #endif // FEATURE_STRUCTALIGN
     }
 
+    public static nuint switch_alignment_size(int already_padded_p)
+    {
+#if !TARGET_ARM && !TARGET_WASM
+        System.Diagnostics.Debug.Fail("Should not be called");
+#endif
+
+        if (already_padded_p != 0)
+        {
+            return (nuint)GCEnv.DATA_ALIGNMENT;
+        }
+        else
+        {
+            return Align((nuint)GCInterfaceOffsets.min_obj_size) |
+                (nuint)GCEnv.DATA_ALIGNMENT;
+        }
+    }
+
     public static int get_alignment_constant(bool small_object_p)
     {
         return small_object_p ? GCEnv.DATA_ALIGNMENT - 1 : 7;
@@ -415,6 +432,11 @@ internal unsafe partial struct gc_heap
     // gcpriv.h defines plug_skew as sizeof(ObjHeader). NativeAOT's ObjHeader has the native
     // pointer width, so this preserves the native expression without a managed object header.
     private static nuint plug_skew => (nuint)sizeof(nuint);
+
+#if TARGET_64BIT && !TARGET_WASM
+    private static nuint min_free_item_no_prev =>
+        (nuint)GCInterfaceOffsets.min_obj_size + (nuint)sizeof(byte*);
+#endif
 
     // This is the `uint8_t*& allocated` selection and `allocated += limit` from
     // a_fit_segment_end_p. alloc_allocated is a deferred gc_heap field, so it remains an

@@ -217,14 +217,14 @@ internal unsafe partial struct gc_heap
                     }
 
 #if TARGET_64BIT && !TARGET_WASM
-                    if (((CObjectHeader*)plug)->IsBGCMarkBitSet() != 0)
+                    if (is_plug_bgc_mark_bit_set(plug) != 0)
                     {
-                        ((CObjectHeader*)plug)->ClearBGCMarkBit();
+                        clear_plug_bgc_mark_bit(plug);
                     }
 
-                    if (((CObjectHeader*)plug)->IsFreeObjInCompactBitSet() != 0)
+                    if (is_free_obj_in_compact_bit_set(plug) != 0)
                     {
-                        ((CObjectHeader*)plug)->ClearFreeObjInCompactBit();
+                        clear_free_obj_in_compact_bit(plug);
                     }
 #endif
 

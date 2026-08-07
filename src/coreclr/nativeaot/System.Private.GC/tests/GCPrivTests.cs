@@ -9,6 +9,7 @@ using System.Threading;
 using allocation_callback_result = Internal.Runtime.GarbageCollection.gc_heap.allocation_callback_result;
 using allocation_callback_result_kind = Internal.Runtime.GarbageCollection.gc_heap.allocation_callback_result_kind;
 using allocation_deferred_operation = Internal.Runtime.GarbageCollection.gc_heap.allocation_deferred_operation;
+using compact_args = Internal.Runtime.GarbageCollection.gc_heap.compact_args;
 using try_allocate_more_space_context = Internal.Runtime.GarbageCollection.gc_heap.try_allocate_more_space_context;
 #endif
 using SysInterlocked = System.Threading.Interlocked;
@@ -4289,6 +4290,678 @@ public sealed unsafe class GCPrivTests
             GCToEEInterface.Reset();
             gc_heap.finalize_queue = savedFinalizeQueue;
             CFinalize.Free(finalizeQueue);
+            gc_heap.oldest_pinned_plug = savedOldestPinnedPlug;
+            gc_heap.settings = savedSettings;
+            gc_heap.loh_compacted_p = savedLohCompacted;
+#if BACKGROUND_GC
+            gc_heap.gc_background_running = savedBackgroundRunning;
+#endif
+            if (bootstrapPrepared)
+            {
+                ManagedGCRegionBootstrap.Shutdown();
+            }
+
+            if (commitLockInitialized)
+            {
+                gc_heap.check_commit_cs.Destroy();
+            }
+
+            GCToOSInterface.ResetRecording();
+            SyncImports.ResetRecording();
+        }
+    }
+
+    [Fact]
+    public void GcMemCopyCopiesHeaderPayloadAndCards()
+    {
+        nuint cardSize = card_table_info.card_size;
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(4 * cardSize);
+
+        try
+        {
+            byte* firstCard = AlignUp(storage, cardSize);
+            byte* dest = firstCard + 16;
+            byte* src = firstCard + (nint)(2 * cardSize) + 16;
+            const nuint Length = 64;
+            const byte DestinationGuard = 0x5A;
+
+            for (nint offset = -(nint)sizeof(nuint);
+                 offset < (nint)Length - sizeof(nuint);
+                 offset++)
+            {
+                src[offset] = unchecked((byte)(offset + 0x40));
+                dest[offset] = 0xCC;
+            }
+
+            dest[(nint)Length - sizeof(nuint)] = DestinationGuard;
+
+            nuint sourceCard = gc_heap.card_of(src);
+            nuint destinationCard = gc_heap.card_of(dest);
+            nuint firstCardWord = card_table_info.card_word(destinationCard);
+            nuint lastCardWord = card_table_info.card_word(sourceCard);
+            int cardWordCount = checked((int)(lastCardWord - firstCardWord + 1));
+            uint* cardWords = stackalloc uint[cardWordCount];
+            for (int i = 0; i < cardWordCount; i++)
+            {
+                cardWords[i] = 0;
+            }
+
+            using CardTableStateScope _ = new();
+            gc_heap.card_table = cardWords - (nint)firstCardWord;
+            gc_heap.set_card(sourceCard);
+
+            gc_heap.gcmemcopy(dest, src, Length, copy_cards_p: 1);
+
+            for (nint offset = -(nint)sizeof(nuint);
+                 offset < (nint)Length - sizeof(nuint);
+                 offset++)
+            {
+                Assert.Equal(src[offset], dest[offset]);
+            }
+
+            Assert.Equal(DestinationGuard, dest[(nint)Length - sizeof(nuint)]);
+            Assert.True(gc_heap.card_set_p(sourceCard));
+            Assert.True(gc_heap.card_set_p(destinationCard));
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void GcMemCopyPreservesOverlappingCompactionAndCardRanges()
+    {
+        nuint cardSize = card_table_info.card_size;
+        nuint length = 2 * cardSize;
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(5 * cardSize);
+
+        try
+        {
+            byte* firstCard = AlignUp(storage, cardSize);
+            byte* dest = firstCard + 16;
+            byte* src = dest + (nint)cardSize;
+
+            for (nint offset = -(nint)sizeof(nuint);
+                 offset < (nint)length - sizeof(nuint);
+                 offset++)
+            {
+                src[offset] = unchecked((byte)((offset * 17) + 3));
+            }
+#if TARGET_64BIT && !TARGET_WASM
+            const byte DoublyLinkedFreeListBits =
+                (byte)(CObjectHeader.BGC_MARKED_BY_FGC | CObjectHeader.MAKE_FREE_OBJ_IN_COMPACT);
+            src[0] &= unchecked((byte)~DoublyLinkedFreeListBits);
+#endif
+
+            nuint sourceCard = gc_heap.card_of(src);
+            nuint destinationCard = gc_heap.card_of(dest);
+            nuint firstCardWord = card_table_info.card_word(destinationCard);
+            nuint lastCardWord = card_table_info.card_word(sourceCard + 2);
+            int cardWordCount = checked((int)(lastCardWord - firstCardWord + 1));
+            uint* cardWords = stackalloc uint[cardWordCount];
+            for (int i = 0; i < cardWordCount; i++)
+            {
+                cardWords[i] = 0;
+            }
+
+            using CardTableStateScope _ = new();
+            gc_heap.card_table = cardWords - (nint)firstCardWord;
+            gc_heap.set_card(sourceCard);
+            gc_heap.set_card(sourceCard + 2);
+
+            gc_heap.gcmemcopy(dest, src, length, copy_cards_p: 1);
+
+            for (nint offset = -(nint)sizeof(nuint);
+                 offset < (nint)length - sizeof(nuint);
+                 offset++)
+            {
+                byte expected = unchecked((byte)((offset * 17) + 3));
+#if TARGET_64BIT && !TARGET_WASM
+                if (offset == 0)
+                {
+                    expected &= unchecked((byte)~DoublyLinkedFreeListBits);
+                }
+#endif
+
+                Assert.Equal(
+                    expected,
+                    dest[offset]);
+            }
+
+            Assert.True(gc_heap.card_set_p(destinationCard));
+            Assert.False(gc_heap.card_set_p(destinationCard + 1));
+            Assert.True(gc_heap.card_set_p(destinationCard + 2));
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+#if TARGET_64BIT && !TARGET_WASM
+    [Fact]
+    public void GcMemCopyPreservesDoublyLinkedFreeListCompactionState()
+    {
+        nuint cardSize = card_table_info.card_size;
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(4 * cardSize);
+        uint* savedMarkArray = gc_heap.mark_array;
+        byte* savedBackgroundLowestAddress = gc_heap.background_saved_lowest_address;
+        byte* savedBackgroundHighestAddress = gc_heap.background_saved_highest_address;
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+
+        try
+        {
+            byte* firstCard = AlignUp(storage, cardSize);
+            byte* dest = firstCard + 128;
+            byte* src = firstCard + (nint)(2 * cardSize) + 128;
+            nuint length =
+                (nuint)GCInterfaceOffsets.min_obj_size + (nuint)sizeof(byte*);
+            nuint fillerFreeObjectSize = gc_heap.Align(
+                (nuint)GCInterfaceOffsets.min_obj_size);
+            MethodTable methodTable = default;
+            MethodTable freeObjectMethodTable = default;
+            methodTable.m_uBaseSize = checked((uint)length);
+            ((CObjectHeader*)src)->RawSetMethodTable(&methodTable);
+            ((CObjectHeader*)src)->SetBGCMarkBit();
+            ((CObjectHeader*)src)->SetFreeObjInCompactBit();
+            GCCommon.g_gc_pFreeObjectMethodTable = &freeObjectMethodTable;
+
+            *(nuint*)(dest + (nint)length) = fillerFreeObjectSize;
+
+            nuint firstMarkWord = card_table_info.mark_word_of(dest);
+            nuint lastMarkWord = card_table_info.mark_word_of(dest + (nint)length - 1);
+            int markWordCount = checked((int)(lastMarkWord - firstMarkWord + 1));
+            uint* markWords = stackalloc uint[markWordCount];
+            for (int i = 0; i < markWordCount; i++)
+            {
+                markWords[i] = 0;
+            }
+
+            gc_heap.mark_array = markWords - (nint)firstMarkWord;
+            gc_heap.background_saved_lowest_address = dest;
+            gc_heap.background_saved_highest_address = dest + (nint)length;
+
+            nuint sourceCard = gc_heap.card_of(src);
+            nuint destinationCard = gc_heap.card_of(dest);
+            nuint firstCardWord = card_table_info.card_word(destinationCard);
+            nuint lastCardWord = card_table_info.card_word(sourceCard);
+            int cardWordCount = checked((int)(lastCardWord - firstCardWord + 1));
+            uint* cardWords = stackalloc uint[cardWordCount];
+            for (int i = 0; i < cardWordCount; i++)
+            {
+                cardWords[i] = 0;
+            }
+
+            using CardTableStateScope _ = new();
+            gc_heap.card_table = cardWords - (nint)firstCardWord;
+
+            gc_heap.gcmemcopy(dest, src, length, copy_cards_p: 1);
+
+            Assert.Equal(0, gc_heap.is_plug_bgc_mark_bit_set(src));
+            Assert.Equal(0, gc_heap.is_free_obj_in_compact_bit_set(src));
+            Assert.Equal(0, gc_heap.is_plug_bgc_mark_bit_set(dest));
+            Assert.Equal(0, gc_heap.is_free_obj_in_compact_bit_set(dest));
+            Assert.Equal(
+                unchecked((int)(1u << (int)card_table_info.mark_bit_bit_of(dest))),
+                gc_heap.is_mark_bit_set(dest));
+            Assert.True(*(MethodTable**)(dest + (nint)length) == &freeObjectMethodTable);
+            Assert.Equal(
+                fillerFreeObjectSize,
+                gc_heap.unused_array_size(dest + (nint)length));
+        }
+        finally
+        {
+            gc_heap.mark_array = savedMarkArray;
+            gc_heap.background_saved_lowest_address = savedBackgroundLowestAddress;
+            gc_heap.background_saved_highest_address = savedBackgroundHighestAddress;
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+#endif
+
+    [Fact]
+    public void CompactInBrickPreservesInOrderStateAcrossBricks()
+    {
+        nuint brickSize = card_table_info.brick_size;
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(9 * brickSize);
+        short* bricks = stackalloc short[8];
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(6 * brickSize),
+                bricks,
+                generationMap);
+            using CardTableStateScope __ = new();
+
+            nuint firstCardWord = card_table_info.card_word(gc_heap.card_of(firstBrick));
+            nuint lastCardWord = card_table_info.card_word(
+                gc_heap.card_of(firstBrick + (nint)(6 * brickSize) - 1));
+            int cardWordCount = checked((int)(lastCardWord - firstCardWord + 1));
+            uint* cardWords = stackalloc uint[cardWordCount];
+            for (int i = 0; i < cardWordCount; i++)
+            {
+                cardWords[i] = 0;
+            }
+
+            gc_heap.card_table = cardWords - (nint)firstCardWord;
+
+            const nuint PlugSize = 64;
+            byte* firstPlug = firstBrick + (nint)(2 * brickSize) + 256;
+            byte* secondPlug = firstPlug + 128;
+            byte* thirdPlug = firstBrick + (nint)(3 * brickSize) + 256;
+            byte* firstDestination = firstBrick + 256;
+            byte* secondDestination = firstDestination + (nint)PlugSize;
+            byte* thirdDestination = secondDestination + (nint)PlugSize;
+            byte** plugs = stackalloc byte*[3] { firstPlug, secondPlug, thirdPlug };
+            byte** destinations = stackalloc byte*[3]
+            {
+                firstDestination,
+                secondDestination,
+                thirdDestination,
+            };
+
+            for (int i = 0; i < 3; i++)
+            {
+                *(plug_and_gap*)(plugs[i] - sizeof(plug_and_gap)) = default;
+                ((plug_and_reloc*)plugs[i])[-1].reloc =
+                    (nint)(destinations[i] - plugs[i]);
+                ((CObjectHeader*)plugs[i])->RawSetMethodTable(
+                    (MethodTable*)(nuint)(0x1000 + (i * 0x100)));
+                for (nint offset = sizeof(nuint);
+                     offset < (nint)PlugSize - sizeof(nuint);
+                     offset++)
+                {
+                    plugs[i][offset] = (byte)(0x20 + (i * 0x20) + offset);
+                }
+            }
+
+            ((plug_and_gap*)secondPlug)[-1].gap =
+                (nint)(secondPlug - (firstPlug + (nint)PlugSize));
+            ((plug_and_gap*)thirdPlug)[-1].gap =
+                (nint)(thirdPlug - (secondPlug + (nint)PlugSize));
+            gc_heap.set_node_left_child(
+                secondPlug,
+                (nint)(firstPlug - secondPlug));
+
+            compact_args args = default;
+            args.current_compacted_brick = ~(nuint)1;
+            args.copy_cards_p = 1;
+
+            gc_heap.compact_in_brick(secondPlug, &args);
+            Assert.True(args.last_plug == secondPlug);
+            Assert.Equal(
+                (nuint)((CObjectHeader*)firstPlug)->RawGetMethodTable(),
+                (nuint)((CObjectHeader*)firstDestination)->RawGetMethodTable());
+
+            gc_heap.compact_in_brick(thirdPlug, &args);
+            Assert.True(args.last_plug == thirdPlug);
+            Assert.Equal(
+                (nuint)((CObjectHeader*)secondPlug)->RawGetMethodTable(),
+                (nuint)((CObjectHeader*)secondDestination)->RawGetMethodTable());
+
+            gc_heap.compact_plug(
+                args.last_plug,
+                PlugSize,
+                check_last_object_p: 0,
+                &args);
+
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.Equal(
+                    (nuint)((CObjectHeader*)plugs[i])->RawGetMethodTable(),
+                    (nuint)((CObjectHeader*)destinations[i])->RawGetMethodTable());
+                for (nint offset = sizeof(nuint);
+                     offset < (nint)PlugSize - sizeof(nuint);
+                     offset++)
+                {
+                    Assert.Equal(plugs[i][offset], destinations[i][offset]);
+                }
+            }
+
+            Assert.True(args.before_last_plug == thirdDestination);
+            Assert.Equal(gc_heap.brick_of(thirdDestination), args.current_compacted_brick);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CompactPlugTemporarilyRestoresShortenedPinnedPreAndPostState(bool postPlug)
+    {
+        nuint brickSize = card_table_info.brick_size;
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(3 * brickSize);
+        short* bricks = stackalloc short[4];
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(2 * brickSize),
+                bricks,
+                generationMap);
+            using CardTableStateScope __ = new();
+
+            nuint firstCardWord = card_table_info.card_word(gc_heap.card_of(firstBrick));
+            nuint lastCardWord = card_table_info.card_word(
+                gc_heap.card_of(firstBrick + (nint)(2 * brickSize) - 1));
+            int cardWordCount = checked((int)(lastCardWord - firstCardWord + 1));
+            uint* cardWords = stackalloc uint[cardWordCount];
+            for (int i = 0; i < cardWordCount; i++)
+            {
+                cardWords[i] = 0;
+            }
+
+            gc_heap.card_table = cardWords - (nint)firstCardWord;
+
+            const nuint PlugSize = 64;
+            byte* source = firstBrick + 512;
+            byte* destination = firstBrick + 256;
+            byte* savedInfoStart = source + (nint)PlugSize;
+            gap_reloc_pair live = Pair(1, 2, 3, 4);
+            gap_reloc_pair saved = Pair(5, 6, 7, 8);
+            *(gap_reloc_pair*)savedInfoStart = live;
+            *(plug_and_gap*)(source - sizeof(plug_and_gap)) = default;
+            ((plug_and_reloc*)source)[-1].reloc =
+                (nint)(destination - source);
+            ((CObjectHeader*)source)->RawSetMethodTable((MethodTable*)0x1000);
+
+            mark entry = default;
+            if (postPlug)
+            {
+                entry.first = source;
+                entry.saved_post_p = 1;
+                entry.saved_post_plug_info_start = savedInfoStart;
+                entry.saved_post_plug_reloc = saved;
+            }
+            else
+            {
+                entry.first = savedInfoStart + sizeof(plug_and_gap);
+                entry.saved_pre_p = 1;
+                entry.saved_pre_plug_reloc = saved;
+            }
+
+            compact_args args = default;
+            args.last_plug_relocation = (nint)(destination - source);
+            args.current_compacted_brick = ~(nuint)1;
+            args.copy_cards_p = 1;
+            args.is_shortened = postPlug ? 1 : 0;
+            args.pinned_plug_entry = &entry;
+
+            gc_heap.compact_plug(
+                source,
+                PlugSize,
+                check_last_object_p: 1,
+                &args);
+
+            AssertPair(*(gap_reloc_pair*)savedInfoStart, 1, 2, 3, 4);
+            if (postPlug)
+            {
+                AssertPair(entry.saved_post_plug_reloc, 5, 6, 7, 8);
+            }
+            else
+            {
+                AssertPair(entry.saved_pre_plug_reloc, 5, 6, 7, 8);
+            }
+
+            gap_reloc_pair* relocatedSavedInfo =
+                (gap_reloc_pair*)(destination + (nint)PlugSize);
+            Assert.Equal((nuint)5, relocatedSavedInfo->gap);
+            Assert.Equal((nuint)6, relocatedSavedInfo->reloc);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void GetStartSegmentSkipsReadOnlyAndSIPRegions()
+    {
+        heap_segment readOnly = default;
+        heap_segment firstSip = default;
+        heap_segment secondSip = default;
+        heap_segment normal = default;
+        generation gen = default;
+
+        readOnly.flags = heap_segment.heap_segment_flags_readonly;
+        heap_segment.heap_segment_swept_in_plan(&firstSip) = 1;
+        heap_segment.heap_segment_swept_in_plan(&secondSip) = 1;
+        heap_segment.heap_segment_next(&readOnly) = &firstSip;
+        heap_segment.heap_segment_next(&firstSip) = &secondSip;
+        heap_segment.heap_segment_next(&secondSip) = &normal;
+        generation.generation_start_segment(&gen) = &readOnly;
+
+        Assert.True(gc_heap.heap_segment_non_sip(&firstSip) == &normal);
+        Assert.True(gc_heap.get_start_segment(&gen) == &normal);
+    }
+
+    [Fact]
+    public void CompactPhasePublishesPlanAllocatedAsUsedForCollectedGenerations()
+    {
+        gc_mechanisms savedSettings = gc_heap.settings;
+        int savedLohCompacted = gc_heap.loh_compacted_p;
+#if BACKGROUND_GC
+        int savedBackgroundRunning = gc_heap.gc_background_running;
+#endif
+        bool commitLockInitialized = false;
+        bool bootstrapPrepared = false;
+        generation* generations = null;
+        generation** collectedGenerations = stackalloc generation*[3];
+        heap_segment** savedStarts = stackalloc heap_segment*[3];
+        heap_segment** savedReadOnlyTails = stackalloc heap_segment*[3];
+
+        GCToOSInterface.ResetRecording();
+        SyncImports.ResetRecording();
+        GCConfig.Initialize();
+        GCCommon.initialize();
+
+        try
+        {
+            Assert.True(gc_heap.check_commit_cs.Initialize());
+            commitLockInitialized = true;
+            Assert.Equal(0, ManagedGCRegionBootstrap.Prepare());
+            bootstrapPrepared = true;
+            Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            generations = ManagedGCRegionBootstrap.GenerationTable;
+            Assert.True(heap is not null);
+            Assert.True(generations is not null);
+
+            heap_segment* regions = stackalloc heap_segment[3];
+            byte* regionStorage = stackalloc byte[512];
+            for (int i = 0; i < 3; i++)
+            {
+                collectedGenerations[i] = gc_heap.generation_of(generations, i);
+                savedStarts[i] =
+                    generation.generation_start_segment(collectedGenerations[i]);
+                savedReadOnlyTails[i] =
+                    generation.generation_tail_ro_region(collectedGenerations[i]);
+                generation.generation_start_segment(collectedGenerations[i]) = &regions[i];
+                generation.generation_tail_ro_region(collectedGenerations[i]) = null;
+
+                regions[i] = default;
+                byte* start = regionStorage + (i * 128);
+                heap_segment.heap_segment_mem(&regions[i]) = start;
+                heap_segment.heap_segment_allocated(&regions[i]) = start;
+                heap_segment.heap_segment_plan_allocated(&regions[i]) = start + 64;
+                heap_segment.heap_segment_used(&regions[i]) =
+                    i == 1 ? start + 96 : start + 16;
+                heap_segment.heap_segment_swept_in_plan(&regions[i]) = 1;
+            }
+
+            using (MarkPhaseStateScope _ = new())
+            {
+                gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+                gc_heap.settings.compaction = 1;
+                gc_heap.loh_compacted_p = 0;
+#if BACKGROUND_GC
+                gc_heap.settings.background_p = 0;
+                gc_heap.gc_background_running = 0;
+#endif
+
+                Assert.False(gc_heap.expand_reused_seg_p());
+                Assert.True(gc_heap.compact_phase(
+                    GCInterfaceOffsets.max_generation,
+                    first_condemned_address: null,
+                    clear_cards: 1));
+            }
+
+            Assert.Equal(
+                (nuint)heap_segment.heap_segment_plan_allocated(&regions[0]),
+                (nuint)heap_segment.heap_segment_used(&regions[0]));
+            Assert.Equal(
+                (nuint)(heap_segment.heap_segment_mem(&regions[1]) + 96),
+                (nuint)heap_segment.heap_segment_used(&regions[1]));
+            Assert.Equal(
+                (nuint)heap_segment.heap_segment_plan_allocated(&regions[2]),
+                (nuint)heap_segment.heap_segment_used(&regions[2]));
+        }
+        finally
+        {
+            if (generations is not null)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    generation.generation_start_segment(collectedGenerations[i]) =
+                        savedStarts[i];
+                    generation.generation_tail_ro_region(collectedGenerations[i]) =
+                        savedReadOnlyTails[i];
+                }
+            }
+
+            gc_heap.settings = savedSettings;
+            gc_heap.loh_compacted_p = savedLohCompacted;
+#if BACKGROUND_GC
+            gc_heap.gc_background_running = savedBackgroundRunning;
+#endif
+            if (bootstrapPrepared)
+            {
+                ManagedGCRegionBootstrap.Shutdown();
+            }
+
+            if (commitLockInitialized)
+            {
+                gc_heap.check_commit_cs.Destroy();
+            }
+
+            GCToOSInterface.ResetRecording();
+            SyncImports.ResetRecording();
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    public void CompactPhaseRejectsUnsupportedConfigurationsWithoutMutation(int unsupportedCase)
+    {
+        gc_mechanisms savedSettings = gc_heap.settings;
+        byte* savedOldestPinnedPlug = gc_heap.oldest_pinned_plug;
+        int savedLohCompacted = gc_heap.loh_compacted_p;
+#if BACKGROUND_GC
+        int savedBackgroundRunning = gc_heap.gc_background_running;
+#endif
+        bool commitLockInitialized = false;
+        bool bootstrapPrepared = false;
+        heap_segment* gen2Segment = null;
+        byte* savedUsed = null;
+
+        GCToOSInterface.ResetRecording();
+        SyncImports.ResetRecording();
+
+        try
+        {
+            if (unsupportedCase != 0)
+            {
+                GCConfig.Initialize();
+                GCCommon.initialize();
+                Assert.True(gc_heap.check_commit_cs.Initialize());
+                commitLockInitialized = true;
+                Assert.Equal(0, ManagedGCRegionBootstrap.Prepare());
+                bootstrapPrepared = true;
+                Assert.True(ManagedGCRegionBootstrap.Initialize());
+
+                generation* gen2 = gc_heap.generation_of(
+                    ManagedGCRegionBootstrap.GenerationTable,
+                    (int)gc_generation_num.soh_gen2);
+                gen2Segment = generation.generation_start_segment(gen2);
+                savedUsed = heap_segment.heap_segment_used(gen2Segment);
+            }
+
+            gc_heap.settings = default;
+            gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+            gc_heap.settings.compaction = 1;
+            gc_heap.loh_compacted_p = 0;
+#if BACKGROUND_GC
+            gc_heap.settings.background_p = 0;
+            gc_heap.gc_background_running = 0;
+#endif
+
+            int condemned = GCInterfaceOffsets.max_generation;
+            switch (unsupportedCase)
+            {
+                case 0:
+                    break;
+                case 1:
+                    condemned = (int)gc_generation_num.soh_gen1;
+                    break;
+                case 2:
+                    gc_heap.settings.condemned_generation =
+                        (int)gc_generation_num.soh_gen1;
+                    break;
+                case 3:
+                    gc_heap.settings.compaction = 0;
+                    break;
+                case 4:
+                    gc_heap.settings.concurrent = 1;
+                    break;
+#if BACKGROUND_GC
+                case 5:
+                    gc_heap.settings.background_p = 1;
+                    break;
+                case 6:
+                    gc_heap.gc_background_running = 1;
+                    break;
+#endif
+                case 7:
+                    gc_heap.loh_compacted_p = 1;
+                    break;
+            }
+
+            gc_heap.oldest_pinned_plug = (byte*)0x87654321;
+
+            Assert.False(gc_heap.compact_phase(
+                condemned,
+                first_condemned_address: null,
+                clear_cards: 1));
+            Assert.Equal((nuint)0x87654321, (nuint)gc_heap.oldest_pinned_plug);
+            if (gen2Segment is not null)
+            {
+                Assert.Equal(
+                    (nuint)savedUsed,
+                    (nuint)heap_segment.heap_segment_used(gen2Segment));
+            }
+        }
+        finally
+        {
             gc_heap.oldest_pinned_plug = savedOldestPinnedPlug;
             gc_heap.settings = savedSettings;
             gc_heap.loh_compacted_p = savedLohCompacted;

@@ -149,6 +149,11 @@ internal unsafe partial struct gc_heap
 #endif
 
 #if USE_REGIONS && !MULTIPLE_HEAPS
+    public static bool expand_reused_seg_p()
+    {
+        return false;
+    }
+
     public static nuint generation_plan_size(gc_heap* hp, int gen_number)
     {
         nuint result = 0;
