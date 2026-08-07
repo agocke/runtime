@@ -28,29 +28,39 @@ internal static unsafe class ManagedGCTest
             return 2;
         }
 
-        if (!FullCollectionReclaimsRelocatesAndPreservesRoots())
+        if (!PartialCollectionsPreserveRootsHandlesAndAllocation())
         {
             return 3;
         }
 
-        if (!AllocationsAreDistinctAndZeroed())
+        if (!PartialFullTransitionsResetCollectionState())
         {
             return 4;
         }
 
-        if (!ReferenceWritesWork())
+        if (!FullCollectionReclaimsRelocatesAndPreservesRoots())
         {
             return 5;
         }
 
-        if (!LargeObjectsWork())
+        if (!AllocationsAreDistinctAndZeroed())
         {
             return 6;
         }
 
-        if (!HandlesWork())
+        if (!ReferenceWritesWork())
         {
             return 7;
+        }
+
+        if (!LargeObjectsWork())
+        {
+            return 8;
+        }
+
+        if (!HandlesWork())
+        {
+            return 9;
         }
 
         Console.WriteLine("ManagedGC smoke test passed.");
@@ -65,11 +75,11 @@ internal static unsafe class ManagedGCTest
         survivor[0] = 0x31;
         survivor[^1] = 0x13;
         WeakReference weak = CreateCollectibleSmallObject();
-        int collectionCount = GC.CollectionCount(GC.MaxGeneration);
+        int collectionCount = GC.CollectionCount(0);
 
         for (int i = 0;
              i < MaximumAllocations &&
-             (GC.CollectionCount(GC.MaxGeneration) == collectionCount || weak.IsAlive);
+             (GC.CollectionCount(0) == collectionCount || weak.IsAlive);
              i++)
         {
             byte[] garbage = new byte[AllocationSize];
@@ -79,7 +89,7 @@ internal static unsafe class ManagedGCTest
         byte[] subsequent = new byte[2048];
         subsequent[0] = 0x5a;
         bool result =
-            GC.CollectionCount(GC.MaxGeneration) > collectionCount &&
+            GC.CollectionCount(0) > collectionCount &&
             !weak.IsAlive &&
             survivor[0] == 0x31 &&
             survivor[^1] == 0x13 &&
@@ -88,13 +98,217 @@ internal static unsafe class ManagedGCTest
         {
             Console.WriteLine(
                 $"Automatic SOH collection failed: before={collectionCount}, " +
-                $"after={GC.CollectionCount(GC.MaxGeneration)}, weak={weak.IsAlive}");
+                $"after={GC.CollectionCount(0)}, weak={weak.IsAlive}");
         }
 
         GC.KeepAlive(survivor);
         GC.KeepAlive(weak);
         GC.KeepAlive(subsequent);
         return result;
+    }
+
+    private static bool PartialCollectionsPreserveRootsHandlesAndAllocation()
+    {
+        Node oldRoot = new Node { Value = 10 };
+        ForceFullCollection();
+
+        if (!RunForcedPartialCollection(oldRoot, generation: 0, value: 20))
+        {
+            return false;
+        }
+
+        PartialCollectionRoots gen1Roots = CreateGen1Roots(oldRoot);
+        try
+        {
+            int collectionCount = GC.CollectionCount(1);
+            ForceCollection(1);
+
+            byte[] subsequent = new byte[4096];
+            subsequent[0] = 0x71;
+            object handleTarget = gen1Roots.HandleOnlyRoot.Target;
+            bool dependentAlive = gen1Roots.DependentHandles.TryGetValue(
+                gen1Roots.DependentPrimary,
+                out Node dependentSecondary);
+            bool result =
+                GC.CollectionCount(1) > collectionCount &&
+                oldRoot.Next is not null &&
+                oldRoot.Next.Value == 31 &&
+                gen1Roots.YoungRoot.Value == 32 &&
+                !gen1Roots.Weak.IsAlive &&
+                handleTarget is Node handleNode &&
+                handleNode.Value == 33 &&
+                ReferenceEquals(gen1Roots.PinnedHandle.Target, gen1Roots.PinnedObject) &&
+                gen1Roots.PinnedHandle.AddrOfPinnedObject() != IntPtr.Zero &&
+                dependentAlive &&
+                dependentSecondary.Value == 37 &&
+                subsequent[0] == 0x71;
+
+            GC.KeepAlive(oldRoot);
+            GC.KeepAlive(gen1Roots.YoungRoot);
+            GC.KeepAlive(gen1Roots.Weak);
+            GC.KeepAlive(handleTarget);
+            GC.KeepAlive(gen1Roots.PinnedObject);
+            GC.KeepAlive(gen1Roots.DependentPrimary);
+            GC.KeepAlive(gen1Roots.DependentHandles);
+            GC.KeepAlive(dependentSecondary);
+            GC.KeepAlive(subsequent);
+            return result;
+        }
+        finally
+        {
+            gen1Roots.HandleOnlyRoot.Free();
+            gen1Roots.PinnedHandle.Free();
+        }
+    }
+
+    private static bool RunForcedPartialCollection(
+        Node oldRoot,
+        int generation,
+        int value)
+    {
+        Node youngRoot = new Node { Value = value };
+        oldRoot.Next = youngRoot;
+        WeakReference weak = CreateCollectibleSmallObject();
+        GCHandle handleOnlyRoot = GCHandle.Alloc(new Node { Value = value + 1 });
+        byte[] pinnedObject = new byte[256];
+        pinnedObject[0] = (byte)value;
+        GCHandle pinnedHandle = GCHandle.Alloc(pinnedObject, GCHandleType.Pinned);
+        Node dependentPrimary = new Node { Value = value + 2 };
+        ConditionalWeakTable<Node, Node> dependentHandles =
+            CreateDependentHandles(dependentPrimary, value + 3);
+
+        try
+        {
+            int collectionCount = GC.CollectionCount(generation);
+            ForceCollection(generation);
+
+            byte[] subsequent = new byte[2048];
+            subsequent[0] = 0x61;
+            object handleTarget = handleOnlyRoot.Target;
+            bool dependentAlive = dependentHandles.TryGetValue(
+                dependentPrimary,
+                out Node dependentSecondary);
+            bool result =
+                GC.CollectionCount(generation) > collectionCount &&
+                ReferenceEquals(oldRoot.Next, youngRoot) &&
+                oldRoot.Next.Value == value &&
+                !weak.IsAlive &&
+                handleTarget is Node handleNode &&
+                handleNode.Value == value + 1 &&
+                ReferenceEquals(pinnedHandle.Target, pinnedObject) &&
+                pinnedHandle.AddrOfPinnedObject() != IntPtr.Zero &&
+                pinnedObject[0] == (byte)value &&
+                dependentAlive &&
+                dependentSecondary.Value == value + 3 &&
+                subsequent[0] == 0x61;
+
+            GC.KeepAlive(oldRoot);
+            GC.KeepAlive(youngRoot);
+            GC.KeepAlive(weak);
+            GC.KeepAlive(handleTarget);
+            GC.KeepAlive(pinnedObject);
+            GC.KeepAlive(dependentPrimary);
+            GC.KeepAlive(dependentHandles);
+            GC.KeepAlive(dependentSecondary);
+            GC.KeepAlive(subsequent);
+            return result;
+        }
+        finally
+        {
+            handleOnlyRoot.Free();
+            pinnedHandle.Free();
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static PartialCollectionRoots CreateGen1Roots(Node oldRoot)
+    {
+        Node youngRoot = new Node { Value = 32 };
+        oldRoot.Next = new Node { Value = 31, Next = youngRoot };
+        object weakTarget = new Node { Value = 34 };
+        WeakReference weak = new WeakReference(weakTarget);
+        GCHandle handleOnlyRoot = GCHandle.Alloc(new Node { Value = 33 });
+        byte[] pinnedObject = new byte[256];
+        pinnedObject[0] = 35;
+        GCHandle pinnedHandle = GCHandle.Alloc(pinnedObject, GCHandleType.Pinned);
+        Node dependentPrimary = new Node { Value = 36 };
+        ConditionalWeakTable<Node, Node> dependentHandles =
+            CreateDependentHandles(dependentPrimary, 37);
+
+        ForceCollection(0);
+        GC.KeepAlive(weakTarget);
+        return new PartialCollectionRoots(
+            youngRoot,
+            weak,
+            handleOnlyRoot,
+            pinnedObject,
+            pinnedHandle,
+            dependentPrimary,
+            dependentHandles);
+    }
+
+    private static bool PartialFullTransitionsResetCollectionState()
+    {
+        for (int iteration = 0; iteration < 2; iteration++)
+        {
+            Node oldRoot = new Node { Value = 100 + iteration };
+            ForceFullCollection();
+
+            oldRoot.Next = new Node { Value = 110 + iteration };
+            ForceCollection(0);
+            oldRoot.Next.Next = new Node { Value = 120 + iteration };
+            ForceCollection(1);
+            ForceFullCollection();
+
+            object[] loh = new object[16 * 1024];
+            Node lohChild = new Node { Value = 130 + iteration };
+            loh[loh.Length / 2] = lohChild;
+            byte[] poh = GC.AllocateUninitializedArray<byte>(4096, pinned: true);
+            poh[0] = (byte)(140 + iteration);
+            poh[^1] = (byte)(150 + iteration);
+
+            Finalizable.Reset();
+            WeakReference finalizable = CreateFinalizableObject();
+            ForceCollection(0);
+            ForceCollection(1);
+            ForceFullCollection();
+            GC.WaitForPendingFinalizers();
+
+            ForceCollection(0);
+            ForceCollection(1);
+            ForceFullCollection();
+
+            if (oldRoot.Next is null ||
+                oldRoot.Next.Value != 110 + iteration ||
+                oldRoot.Next.Next is null ||
+                oldRoot.Next.Next.Value != 120 + iteration ||
+                !ReferenceEquals(loh[loh.Length / 2], lohChild) ||
+                lohChild.Value != 130 + iteration ||
+                poh[0] != (byte)(140 + iteration) ||
+                poh[^1] != (byte)(150 + iteration) ||
+                Volatile.Read(ref Finalizable.Count) != 1)
+            {
+                return false;
+            }
+
+            GC.KeepAlive(oldRoot);
+            GC.KeepAlive(loh);
+            GC.KeepAlive(lohChild);
+            GC.KeepAlive(poh);
+            GC.KeepAlive(finalizable);
+        }
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ConditionalWeakTable<Node, Node> CreateDependentHandles(
+        Node primary,
+        int secondaryValue)
+    {
+        ConditionalWeakTable<Node, Node> handles = new();
+        handles.Add(primary, new Node { Value = secondaryValue });
+        return handles;
     }
 
     private static bool AutomaticUohCollectionReclaimsAndPreservesRoots()
@@ -278,6 +492,13 @@ internal static unsafe class ManagedGCTest
     private static void ForceFullCollection() =>
         GC.Collect(
             GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: true);
+
+    private static void ForceCollection(int generation) =>
+        GC.Collect(
+            generation,
             GCCollectionMode.Forced,
             blocking: true,
             compacting: true);
@@ -475,6 +696,35 @@ internal static unsafe class ManagedGCTest
     {
         public int Value;
         public Node Next;
+    }
+
+    private readonly struct PartialCollectionRoots
+    {
+        public PartialCollectionRoots(
+            Node youngRoot,
+            WeakReference weak,
+            GCHandle handleOnlyRoot,
+            byte[] pinnedObject,
+            GCHandle pinnedHandle,
+            Node dependentPrimary,
+            ConditionalWeakTable<Node, Node> dependentHandles)
+        {
+            YoungRoot = youngRoot;
+            Weak = weak;
+            HandleOnlyRoot = handleOnlyRoot;
+            PinnedObject = pinnedObject;
+            PinnedHandle = pinnedHandle;
+            DependentPrimary = dependentPrimary;
+            DependentHandles = dependentHandles;
+        }
+
+        public Node YoungRoot { get; }
+        public WeakReference Weak { get; }
+        public GCHandle HandleOnlyRoot { get; }
+        public byte[] PinnedObject { get; }
+        public GCHandle PinnedHandle { get; }
+        public Node DependentPrimary { get; }
+        public ConditionalWeakTable<Node, Node> DependentHandles { get; }
     }
 
     private sealed class Finalizable

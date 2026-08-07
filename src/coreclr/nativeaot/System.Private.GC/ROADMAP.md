@@ -43,15 +43,15 @@ The following prerequisites are already working:
   `nativeaot/Runtime/gcenv.managed.cpp`. Virtual memory, write watch, events, locks, sleep and
   yield, and the memory limits and cache sizing are no longer among them.
 - The current heap allocates from translated WKS regions with one translated handle table and
-  routes an explicitly requested synchronous full-Gen2 collection.
+  routes explicitly requested synchronous foreground Gen0, Gen1, and Gen2 collections.
 - The managed GC reads its own configuration: `GCConfig` is translated in full, initialized from
   `ManagedGC_Initialize`, and reported to `GC.GetConfigurationVariables()` through the heap's
   `EnumerateConfigurationValues` slot.
 - Write-barrier globals and frozen segments are initialized sufficiently for application
   startup.
-- `GC.Collect` routes the bounded WKS `USE_REGIONS` full-Gen2 lifecycle. Unsupported partial,
-  server, background, non-blocking/optimized/aggressive, heap-verification, survivor-analysis,
-  and collection-event diagnostic modes are rejected before collector mutation.
+- `GC.Collect` routes the bounded WKS `USE_REGIONS` synchronous foreground lifecycle. Server,
+  background, non-blocking/optimized/aggressive, heap-verification, survivor-analysis, and
+  collection-event diagnostic modes are rejected before collector mutation.
 - Managed GC mutations use suspension-safe critical regions.
 - GC/EE structure layouts, enum values and sizes, and all six vtable slot lists -- with their
   signatures and calling conventions -- are verified against the native headers.
@@ -674,18 +674,16 @@ by `handletableconstants.h`.
 
 #### Remaining
 
-The bounded synchronous full-GC scans walk the existing global table map. Promotion follows each
-per-type circular block chain, promotes pinned handles before strong handles, and completes the
-dependent primary/secondary fixed point, including rescan after mark-stack overflow recovery.
-Relocation preserves the native sync-block-first pass order, builds the native multi-type
-inclusion map, walks included blocks in physical order, relocates weak/strong/ref-counted and
-guarded Java cross-reference handles, applies the pinned flag, relocates both dependent slots,
-and adjusts weak-interior pointers by the primary relocation delta. The full iterator also
-preserves chain resorting, page trimming, empty-segment removal, and sequence maintenance.
-Ephemeral filtering, asynchronous queues, variable handles, aging, standalone obsolete handle
-types, diagnostics/debug statistics, multi-heap scans, and collection routing remain blocked on
-stages 6-10. The bounded scans and relocation orchestration are not routed from
-`IGCHeap.GarbageCollect`.
+The bounded synchronous generational scans walk the existing global table map. Promotion follows
+each per-type circular block chain, promotes pinned handles before strong handles, includes
+sized-ref roots during ephemeral collections, and completes the dependent primary/secondary
+fixed point. Gen0 uses the quick segment iterator, while Gen1 uses the standard iterator and both
+filter clumps through the native age mask. Relocation preserves the native sync-block-first pass
+order and generation-scoped weak/strong/ref-counted/sized-ref, pinned, dependent, and
+weak-interior handling. Handle aging and demotion-driven rejuvenation use the corresponding
+ephemeral block algorithms; the full iterator and full-GC behavior retain their existing
+maintenance. Asynchronous queues, variable handles, standalone obsolete handle types,
+diagnostics/debug statistics, and multi-heap scans remain blocked.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.
@@ -1158,7 +1156,7 @@ lifecycle match the C++ collector.
 
 ### 8. Allocator and write-barrier interaction
 
-**Status: Production region allocation and synchronous full-Gen2 exhaustion retry routed**
+**Status: Production region allocation and synchronous foreground exhaustion retry routed**
 
 Translate `allocation.cpp`, including:
 
@@ -1217,7 +1215,7 @@ The synchronous full-GC condemned-generation allocation closure is now translate
 clipping, front/tail padding and large-plug suppression, plug-length heuristics, short-tail
 conversion to pinned, allocation/pinned/free accounting, generation promotion, segment
 growth/transition, and region plan-generation publication. The bounded WKS `USE_REGIONS`
-synchronous full-Gen2 `plan_phase_synchronous_full_gen2` adapter and its native-named
+synchronous foreground `plan_phase_synchronous_foreground` adapter and its native-named
 dependency closure are translated too: pinned-plug conversion/gap metadata,
 `find_next_marked`, saved allocation bounds, remaining-pin/region planning, exact 6-MiB
 large-pin demotion and 90-percent SIP thresholds, SIP sweeping, marked/pinned clearing,
@@ -1225,9 +1223,11 @@ relocation flags, brick trees/sentinels, plan-generation publication, compaction
 LOH/POH handling, compact/sweep execution, final region bounds, finalizer fill pointers,
 handle ages, cards, and full-compaction accounting preserve native order.
 Unsupported heap/settings, active BGC, malformed generation/segment/mark-stack state, and
-inconsistent mark bounds are rejected before mutation. The boundary stops before non-region,
-server, background, partial-GC, collection-routing, and configuration-driven diagnostic paths;
-`allocate_in_older_generation` remains deferred because this adapter accepts only full Gen2.
+inconsistent mark bounds are rejected before mutation. Partial collections preserve the older
+generation allocator snapshot, condemned allocation, promotion/demotion, dirty-card marking and
+relocation, compact-or-sweep execution, generation bounds, finalization, handles, and card
+clearing. The boundary stops before non-region, server, background, and configuration-driven
+diagnostic paths.
 `try_allocate_more_space` now has an explicit unmanaged state-machine core over the translated
 fit paths. It preserves the SOH/UOH `allocation_state` transitions, generation selection,
 allocation flags, commit-failure/short-end/OOM propagation, retry exits, UOH acquisition states,
@@ -1235,9 +1235,9 @@ and the existing budget mutations made by fitting. `create_try_allocate_more_spa
 now reads the concrete WKS heap-owned fields rather than requiring callers to hand-build those
 inputs. Its unmanaged callback enters/leaves the selected SOH/UOH lock and implements WKS
 `new_allocation_allowed`, including the gen0 elapsed-time throttle. The production unmanaged callback now owns the WKS SOH/UOH more-space locks, allocation-budget
-checks, UOH region acquisition, retry decisions, synchronous full-Gen2 triggers, and OOM/null
-completion. Unsupported ephemeral/background scheduling decisions are conservatively mapped to
-the supported blocking full-Gen2 collector. UOH acquisition preserves the native
+checks, UOH region acquisition, retry decisions, synchronous foreground triggers, and OOM/null
+completion. SOH budget pressure begins with Gen0, out-of-space SOH retry begins with Gen1, and
+exhausted older/UOH budgets elevate to Gen2. UOH acquisition preserves the native
 more-space-lock release, GC-lock acquisition, intervening-full-GC observation, region sizing and
 threading, lock reacquisition, LOH accounting, and retry ordering for both LOH and POH.
 Full-GC notification remains deferred because its event hook is not translated. A null callback
@@ -1274,14 +1274,14 @@ state match the C++ implementation across supported architectures.
 
 ### 9. Collection phases
 
-**Status: In progress -- the bounded WKS `USE_REGIONS` synchronous full-Gen2 lifecycle is routed;
+**Status: In progress -- the bounded WKS `USE_REGIONS` synchronous foreground Gen0/Gen1/Gen2 lifecycle is routed;
 pinned-plug queue enqueue/save/dequeue handoff, mark-stack growth/reset setup,
 object-header special-bit and padded-plug prerequisites, short-object descriptor scan, the
 foreground `gc_mark1`/`gc_mark` leaves, the active WKS `USE_REGIONS`
 `mark_object_simple1`/`mark_object_simple`/`drain_mark_queue`/`mark_object`/
-`mark_through_object` bodies, `compute_gc_and_ephemeral_range`, and the synchronous WKS full-GC
-compaction-policy closure, handle relocation branch, and bounded `relocate_phase` orchestration
-are translated; a NativeAOT strong-handle relocation integration blocker remains**
+`mark_through_object` bodies, dirty-card marking/relocation, `compute_gc_and_ephemeral_range`,
+and the synchronous WKS compaction-policy closure, handle relocation branch, and bounded
+`relocate_phase` orchestration are translated**
 
 Translate in dependency order:
 
@@ -1303,17 +1303,19 @@ Translate in dependency order:
   resetting that counter at the bounded root lifecycle; ETW and GC statistics publication remain
   deferred. The adjacent WKS `GCHeap::Relocate` bridge and `is_in_find_object_range` preserve the
   bookkeeping-covered gate, condemned-range rejection, exact SOH relocation, and compacting-LOH
-  interior offset. The bounded synchronous full-GC `GcScanHandles(relocate)` branch now routes
+  interior offset. The bounded synchronous `GcScanHandles(relocate)` branch now routes
   that callback through sync-block weak pointers, the native physical-order multi-type
-  weak/strong/ref-counted handle scan, pinned handles, dependent primary/secondary slots, and
-  weak-interior delta adjustment. Ephemeral/concurrent scans remain deliberately unrouted. The bounded
+  weak/strong/ref-counted/sized-ref handle scan, pinned handles, dependent primary/secondary
+  slots, and weak-interior delta adjustment, with native age-mask filtering for Gen0/Gen1.
+  Concurrent scans remain deliberately unrouted. The bounded
   `mark_phase_stack_roots` lifecycle preserves the direct WKS root order over the owned mark-list
   and computed range: `BeforeGcScanRoots`, stack-root scanning, queue drain, finalizer-root
   scanning, queue drain, `GcScanHandles(promote)` (pinned before strong), queue drain, initial
   dependent fixed-point scanning, `AfterGcScanRoots`, short weak clearing, finalization and
   drain, a dependent fixed-point rescan, long weak/dead-dependent clearing, and the
-  single-threaded sync-block weak callback. It is routed only by the bounded synchronous
-  full-Gen2 entrypoint; the WKS overflow-recovery leaves and
+  single-threaded sync-block weak callback. Partial collections also snapshot region survival,
+  mark dirty cards in older SOH, LOH, and POH regions, drain the resulting queue, and retain cards
+  that still contain cross-generation references. The WKS overflow-recovery leaves and
   their
   generation-size, total-heap-size, and promoted-byte accounting closure are translated without
   routing. The bounded WKS `CFinalize` storage, registration/dequeue, F-reachable scan, direct
@@ -1329,7 +1331,7 @@ Translate in dependency order:
   prefix helpers; direct WKS brick-tree insertion and brick-table updates; plus the WKS
   `get_gen0_end_space`/`get_gen0_end_plan_space` accounting,
   direct/saved-plug padding bridge, region-survivor snapshot/delta helpers, and the bounded
-  `USE_REGIONS && !MULTIPLE_HEAPS` synchronous full-Gen2 plan-phase and compaction-policy
+  `USE_REGIONS && !MULTIPLE_HEAPS` synchronous foreground plan-phase and compaction-policy
   closures are translated. Plan construction preserves pinned-plug
   conversion and saved gap records, remaining-pin/region demotion, SIP decisions/sweeping,
   marked/pinned clearing, allocation calls, relocation flags, brick trees/sentinels, and region
@@ -1337,14 +1339,15 @@ Translate in dependency order:
   WKS full-GC LOH dependency closure adds the native pin queue state, growth/order/decay,
   allocation-limit clipping, padding-aware fit and condemned allocation, movable/pinned object
   planning, pinned-gap recording, relocation-distance metadata, segment fallback, and read-only
-  prefix handling. The bounded orchestration continues in native order through UOH sweeping,
-  special-sweep override, LOH fallback, SOH compact or sweep completion, region and ephemeral
-  bounds, finalizer fill pointers, handle aging/rejuvenation, pinned gaps, cards, and counters. The
+  prefix handling. Partial planning adds older-generation allocator snapshot/commit-or-restore,
+  promotion/demotion and condemned allocation. The bounded orchestration continues in native
+  order through partial or full SOH compact/sweep completion, full-GC UOH handling, region and
+  ephemeral bounds, finalizer fill pointers, handle aging/rejuvenation, pinned gaps, cards, and counters. The
   policy closure preserves region fragmentation and pinned-gap accounting, strict
   region-capacity and hard-limit comparisons, compaction-space/productivity decisions, reason
   precedence, high-memory thresholds, no-GC expansion signaling, and condemned/full-GC
-  ephemeral-fit boundaries. The completed bounded plan phase is routed only for the supported
-  synchronous full-Gen2 lifecycle)
+  ephemeral-fit boundaries. The completed bounded plan phase is routed for synchronous Gen0,
+  Gen1, and Gen2 collections)
 - `relocate_compact.cpp` (the allocation-free `memcopy` relocation primitive, card-copy/clear
   dispatch leaf, pinned-queue `get_next_pinned_entry` and `get_oldest_pinned_entry` handoffs, and
   dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`,
@@ -1361,21 +1364,20 @@ Translate in dependency order:
   `relocate_advance_to_non_sip`, in-order `relocate_survivors_in_brick`, and
   generation/segment `relocate_survivors`, preserving plug boundaries, pinned-queue handoff,
   cross-brick state, swept-in-plan linear walking and empty-region transitions. The next bounded
-  synchronous WKS `USE_REGIONS` full-GC slice adds `compact_args`, `get_start_segment`,
+  synchronous WKS `USE_REGIONS` foreground slice adds `compact_args`, `get_start_segment`,
   `expand_reused_seg_p`, `gcmemcopy`, `compact_plug`, `compact_in_brick`, and `compact_phase`.
   It preserves header/payload/card copying, shortened pinned pre/post state swaps, in-order
   cross-brick traversal, SIP skipping, generation/segment boundaries, final brick publication,
   saved-pin recovery, and `plan_allocated`-to-`used` transitions. The LOH closure adds marked
   object reference relocation and compaction with native padding, pinned-object order, payload,
   card and write-watch copying, free-gap threading, segment trimming/unlinking, and read-only
-  handling. It rejects unsupported modes before mutation. Collection routing remains deferred; the
-  bounded synchronous WKS `USE_REGIONS`
-  full-GC `relocate_phase` slice preserves the native roots, compacting or non-compacting LOH, POH, SOH
-  survivors, finalization-data, and handle order with one initialized relocation `ScanContext`.
-  It rejects partial/card scans, settings mismatch, concurrent/background collection, missing
-  heap/finalizer state, and malformed LOH compaction state before mutation, while configured but
-  unperformed LOH compaction retains non-compacting LOH/POH traversal. Server/card stealing,
-  background roots, partial card scans, and debug-only region-map verification remain deferred)
+  handling. The bounded synchronous WKS `USE_REGIONS` `relocate_phase` slice preserves roots,
+  dirty-card relocation for older SOH/LOH objects during partial collections, compacting or
+  non-compacting LOH/POH handling during full collections, SOH survivors, finalization data,
+  and handle order with one initialized relocation `ScanContext`. It rejects settings mismatch,
+  concurrent/background collection, missing heap/finalizer state, and malformed LOH compaction
+  state before mutation. Server/card stealing, background roots, and debug-only region-map
+  verification remain deferred)
 - `sweep.cpp` (the dependency-closed WKS `USE_REGIONS` SOH sweep closure is translated:
   normal-plan promotion and special-sweep retention, swept-in-plan segment skipping during the
   brick walk, positive highest-plug rewrites, negative brick resets, generation free-list
@@ -1385,12 +1387,12 @@ Translate in dependency order:
   card clearing and Gen2 reset policy. UOH marked-object sweep, writable-tail trim, non-start
   empty-region unlink, and deferred return through the existing region free-list path remain
   translated too. Planning and collection routing remain deferred)
-- `collect.cpp` (the bounded WKS `USE_REGIONS` synchronous full-Gen2 `garbage_collect` and `gc1`
+- `collect.cpp` (the bounded WKS `USE_REGIONS` synchronous foreground `garbage_collect` and `gc1`
   driver is translated and routed, including allocation-context fixing, record/mechanism
-  initialization, full condemnation, mark/plan completion, pinned-allocation adjustment,
-  minimal post-GC accounting, UOH cleanup, range/write-barrier publication, timestamps, and
-  `GcStartWork`/`GcDone`; partial, server, background, diagnostics, full dynamic tuning, and
-  allocation-triggered routing remain deferred)
+  initialization, requested/budget-elevated condemnation, mark/plan completion,
+  pinned-allocation adjustment, post-GC accounting, full-GC UOH cleanup,
+  range/write-barrier publication, timestamps, and `GcStartWork`/`GcDone`; server, background,
+  diagnostics, and the remaining dynamic tuning rules remain deferred)
 - `no_gc.cpp`
 
 Beyond its translated dependency-free prefix helpers, `plan_phase.cpp` is the largest and
@@ -1400,8 +1402,9 @@ reviews can compare the two implementations directly.
 **Complete when:** foreground collections mark, plan, relocate or sweep, reclaim memory, and
 preserve all heap invariants under checked-build verification.
 
-The routed NativeAOT smoke now confirms stack- and handle-only-root survival, strong-handle and
-GC-static spine relocation, weak reclamation, pinned-handle stability, finalization, allocation
+The routed NativeAOT smoke now confirms forced Gen0/Gen1/Gen2 collection, old-to-young card
+roots, stack- and handle-only-root survival, strong-handle and GC-static spine relocation, weak
+reclamation, pinned-handle stability, dependent-secondary survival, finalization, allocation
 after collection, and entrypoint suspension ownership. Full-plan validation derives the WKS
 marked-address range from SOH, LOH, and POH objects; omitting UOH marks previously rejected a
 valid full collection before relocation. The bounded post-GC accounting now records the

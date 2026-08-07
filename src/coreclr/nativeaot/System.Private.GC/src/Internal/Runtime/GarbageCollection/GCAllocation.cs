@@ -4,6 +4,7 @@
 // Port of the dependency-closed WKS USE_REGIONS allocation-context helpers from allocation.cpp,
 // sweep.cpp, gcinternal.h, and dynamic_tuning.cpp.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -1235,6 +1236,56 @@ internal unsafe partial struct gc_heap
             heap_segment.heap_segment_reserved(ephemeral_heap_segment));
     }
 
+    public static void fix_older_allocation_area(generation* older_gen)
+    {
+        heap_segment* older_gen_segment =
+            generation.generation_allocation_segment(older_gen);
+        if (generation.generation_allocation_limit(older_gen) !=
+            heap_segment.heap_segment_plan_allocated(older_gen_segment))
+        {
+            byte* point = generation.generation_allocation_pointer(older_gen);
+            nuint free_size = (nuint)(
+                generation.generation_allocation_limit(older_gen) -
+                generation.generation_allocation_pointer(older_gen));
+            if (free_size != 0)
+            {
+                Debug.Assert(
+                    free_size >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+                make_unused_array(point, free_size);
+                if (free_size >=
+                    2 * (nuint)GCInterfaceOffsets.min_obj_size)
+                {
+                    allocator.thread_item_front(
+                        generation.generation_allocator(older_gen),
+                        point,
+                        free_size);
+                    generation.generation_free_list_space(older_gen) = unchecked(
+                        generation.generation_free_list_space(older_gen) +
+                        free_size);
+                }
+                else
+                {
+                    generation.generation_free_obj_space(older_gen) = unchecked(
+                        generation.generation_free_obj_space(older_gen) +
+                        free_size);
+                }
+            }
+        }
+        else
+        {
+            Debug.Assert(
+                older_gen_segment !=
+                ManagedGCRegionBootstrap.Heap->ephemeral_heap_segment);
+            heap_segment.heap_segment_plan_allocated(older_gen_segment) =
+                generation.generation_allocation_pointer(older_gen);
+            generation.generation_allocation_limit(older_gen) =
+                generation.generation_allocation_pointer(older_gen);
+        }
+
+        generation.generation_allocation_pointer(older_gen) = null;
+        generation.generation_allocation_limit(older_gen) = null;
+    }
+
     // The heap-owned inputs stay explicit until try_allocate_more_space owns the allocation
     // policy. Region acquisition uses the already-translated get_new_region helper; allocation
     // diagnostics remain deferred with the diagnostics and production-routing slices.
@@ -1968,6 +2019,9 @@ internal unsafe partial struct gc_heap
                 result->kind = run_allocation_full_collection(
                     context,
                     context->gen_number == (int)gc_generation_num.soh_gen0
+                        ? (int)gc_generation_num.soh_gen0
+                        : GCInterfaceOffsets.max_generation,
+                    context->gen_number == (int)gc_generation_num.soh_gen0
                         ? gc_reason.reason_alloc_soh
                         : gc_reason.reason_alloc_loh,
                     out _)
@@ -1979,6 +2033,7 @@ internal unsafe partial struct gc_heap
             case allocation_deferred_operation.trigger_2nd_ephemeral_gc:
                 bool ephemeralCollectionCompleted = run_allocation_full_collection(
                     context,
+                    (int)gc_generation_num.soh_gen1,
                     gc_reason.reason_oos_soh,
                     out bool ephemeralCompacted);
                 result->kind =
@@ -1991,6 +2046,7 @@ internal unsafe partial struct gc_heap
                 last_gc_before_oom = 1;
                 bool fullCollectionCompleted = run_allocation_full_collection(
                     context,
+                    GCInterfaceOffsets.max_generation,
                     context->gen_number == (int)gc_generation_num.soh_gen0
                         ? gc_reason.reason_oos_soh
                         : gc_reason.reason_oos_loh,
@@ -2031,6 +2087,7 @@ internal unsafe partial struct gc_heap
 
     private static bool run_allocation_full_collection(
         try_allocate_more_space_context* context,
+        int generation,
         gc_reason reason,
         out bool compacted_p)
     {
@@ -2043,7 +2100,10 @@ internal unsafe partial struct gc_heap
         }
 
         nuint full_compact_gc_count = full_gc_counts[gc_type_compacting];
-        int collection_result = garbage_collect_synchronous_full_gen2_for_allocation(reason);
+        int collection_result =
+            garbage_collect_synchronous_foreground_for_allocation(
+                generation,
+                reason);
 
         if (uoh_p)
         {

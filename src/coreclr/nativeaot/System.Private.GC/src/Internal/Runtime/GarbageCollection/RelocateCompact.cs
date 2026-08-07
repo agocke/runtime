@@ -1296,7 +1296,7 @@ internal unsafe partial struct gc_heap
         CFinalize* finalizeQueue = finalize_queue;
         if (hp is null ||
             finalizeQueue is null ||
-            condemned_gen_number != GCInterfaceOffsets.max_generation ||
+            (uint)condemned_gen_number > (uint)GCInterfaceOffsets.max_generation ||
             settings.condemned_generation != condemned_gen_number ||
             settings.concurrent != 0 ||
 #if BACKGROUND_GC
@@ -1322,7 +1322,19 @@ internal unsafe partial struct gc_heap
             GCInterfaceOffsets.max_generation,
             &sc);
 
-        if (loh_compacted_p != 0)
+        if (condemned_gen_number != GCInterfaceOffsets.max_generation)
+        {
+            mark_through_cards_for_segments(hp, relocating: true);
+            mark_through_cards_for_uoh_objects(
+                hp,
+                (int)gc_generation_num.loh_generation,
+                relocating: true);
+            mark_through_cards_for_uoh_objects(
+                hp,
+                (int)gc_generation_num.poh_generation,
+                relocating: true);
+        }
+        else if (loh_compacted_p != 0)
         {
             Debug.Assert(settings.condemned_generation == GCInterfaceOffsets.max_generation);
             relocate_in_loh_compact(hp);
@@ -1332,7 +1344,10 @@ internal unsafe partial struct gc_heap
             relocate_in_uoh_objects(hp, (int)gc_generation_num.loh_generation);
         }
 
-        relocate_in_uoh_objects(hp, (int)gc_generation_num.poh_generation);
+        if (condemned_gen_number == GCInterfaceOffsets.max_generation)
+        {
+            relocate_in_uoh_objects(hp, (int)gc_generation_num.poh_generation);
+        }
 
         relocate_survivors(
             hp,
@@ -1373,7 +1388,7 @@ internal unsafe partial struct gc_heap
         int clear_cards)
     {
         if (hp is null ||
-            condemned_gen_number != GCInterfaceOffsets.max_generation ||
+            (uint)condemned_gen_number > (uint)GCInterfaceOffsets.max_generation ||
             settings.condemned_generation != condemned_gen_number ||
             settings.concurrent != 0 ||
 #if BACKGROUND_GC

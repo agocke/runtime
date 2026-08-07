@@ -563,6 +563,87 @@ public sealed unsafe class GCPrivTests
     }
 
 #if !MULTIPLE_HEAPS
+    [Theory]
+    [InlineData(0, -1, 0)]
+    [InlineData(1, -1, 1)]
+    [InlineData(0, 1, 1)]
+    [InlineData(1, 2, 2)]
+    [InlineData(0, 3, 2)]
+    [InlineData(0, 4, 2)]
+    public void GenerationToCondemnUsesRequestedGenerationAndExhaustedBudgets(
+        int requestedGeneration,
+        int exhaustedGeneration,
+        int expectedGeneration)
+    {
+        int savedLastGcBeforeOom = gc_heap.last_gc_before_oom;
+        try
+        {
+            gc_heap heap = default;
+            for (int genNumber = 0;
+                 genNumber < (int)gc_generation_num.total_generation_count;
+                 genNumber++)
+            {
+                dynamic_data* data = gc_heap.dynamic_data_of(&heap, genNumber);
+                dynamic_data.dd_new_allocation(data) = 1024;
+                dynamic_data.dd_gc_new_allocation(data) = 2048;
+            }
+
+            if (exhaustedGeneration >= 0)
+            {
+                dynamic_data.dd_new_allocation(
+                    gc_heap.dynamic_data_of(&heap, exhaustedGeneration)) = 0;
+            }
+
+            gc_heap.last_gc_before_oom = 0;
+            int actual = gc_heap.generation_to_condemn_minimal(
+                &heap,
+                requestedGeneration);
+
+            Assert.Equal(expectedGeneration, actual);
+            for (int genNumber = 0;
+                 genNumber < (int)gc_generation_num.total_generation_count;
+                 genNumber++)
+            {
+                dynamic_data* data = gc_heap.dynamic_data_of(&heap, genNumber);
+                Assert.Equal(
+                    dynamic_data.dd_new_allocation(data),
+                    dynamic_data.dd_gc_new_allocation(data));
+            }
+        }
+        finally
+        {
+            gc_heap.last_gc_before_oom = savedLastGcBeforeOom;
+        }
+    }
+
+    [Fact]
+    public void GenerationToCondemnElevatesBeforeOom()
+    {
+        int savedLastGcBeforeOom = gc_heap.last_gc_before_oom;
+        try
+        {
+            gc_heap heap = default;
+            for (int genNumber = 0;
+                 genNumber < (int)gc_generation_num.total_generation_count;
+                 genNumber++)
+            {
+                dynamic_data.dd_new_allocation(
+                    gc_heap.dynamic_data_of(&heap, genNumber)) = 1024;
+            }
+
+            gc_heap.last_gc_before_oom = 1;
+            Assert.Equal(
+                GCInterfaceOffsets.max_generation,
+                gc_heap.generation_to_condemn_minimal(
+                    &heap,
+                    (int)gc_generation_num.soh_gen0));
+        }
+        finally
+        {
+            gc_heap.last_gc_before_oom = savedLastGcBeforeOom;
+        }
+    }
+
     [Fact]
     public void DynamicTuningUpdateCollectionCountsPreservesWksAccounting()
     {
@@ -4772,7 +4853,7 @@ public sealed unsafe class GCPrivTests
             }
 
             using CardTableStateScope _ = new();
-            gc_heap.card_table = cardWords - (nint)firstCardWord;
+            _.Initialize(cardWords, firstCardWord, (nuint)cardWordCount);
             gc_heap.set_card(sourceCard);
 
             gc_heap.gcmemcopy(dest, src, Length, copy_cards_p: 1);
@@ -4831,7 +4912,7 @@ public sealed unsafe class GCPrivTests
             }
 
             using CardTableStateScope _ = new();
-            gc_heap.card_table = cardWords - (nint)firstCardWord;
+            _.Initialize(cardWords, firstCardWord, (nuint)cardWordCount);
             gc_heap.set_card(sourceCard);
             gc_heap.set_card(sourceCard + 2);
 
@@ -4919,7 +5000,7 @@ public sealed unsafe class GCPrivTests
             }
 
             using CardTableStateScope _ = new();
-            gc_heap.card_table = cardWords - (nint)firstCardWord;
+            _.Initialize(cardWords, firstCardWord, (nuint)cardWordCount);
 
             gc_heap.gcmemcopy(dest, src, length, copy_cards_p: 1);
 
@@ -4974,7 +5055,7 @@ public sealed unsafe class GCPrivTests
                 cardWords[i] = 0;
             }
 
-            gc_heap.card_table = cardWords - (nint)firstCardWord;
+            __.Initialize(cardWords, firstCardWord, (nuint)cardWordCount);
 
             const nuint PlugSize = 64;
             byte* firstPlug = firstBrick + (nint)(2 * brickSize) + 256;
@@ -5088,7 +5169,7 @@ public sealed unsafe class GCPrivTests
                 cardWords[i] = 0;
             }
 
-            gc_heap.card_table = cardWords - (nint)firstCardWord;
+            __.Initialize(cardWords, firstCardWord, (nuint)cardWordCount);
 
             const nuint PlugSize = 64;
             byte* source = firstBrick + 512;
@@ -5623,6 +5704,7 @@ public sealed unsafe class GCPrivTests
         bool childInHeap,
         bool childDemoted)
     {
+        using CardTableStateScope _ = new();
         const nuint RegionSizeShift = 12;
         byte* parent = (byte*)0x1080;
         byte* child = childInHeap ? (byte*)0x1000 : (byte*)0x2000;
@@ -5637,7 +5719,6 @@ public sealed unsafe class GCPrivTests
         seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
         region_info* oldGenerationMap = gc_heap.map_region_to_generation;
         region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
-        uint* oldCardTable = gc_heap.card_table;
         region_info* generationMap = stackalloc region_info[1];
         seg_mapping* segmentMap = stackalloc seg_mapping[1];
         uint* cardTable = stackalloc uint[1];
@@ -5650,7 +5731,7 @@ public sealed unsafe class GCPrivTests
             gc_heap.map_region_to_generation = generationMap;
             gc_heap.map_region_to_generation_skewed = generationMap - (nint)regionIndex;
             GCCommon.seg_mapping_table = segmentMap - (nint)regionIndex;
-            gc_heap.card_table = cardTable - (nint)parentCardWord;
+            _.Initialize(cardTable, parentCardWord, 1);
             generationMap[0] = childDemoted ? region_info.RI_DEMOTED : default;
             heap_segment.heap_segment_plan_gen_num(&segmentMap[0].region_info) =
                 (int)gc_generation_num.soh_gen0;
@@ -5670,7 +5751,163 @@ public sealed unsafe class GCPrivTests
             GCCommon.seg_mapping_table = oldSegMappingTable;
             gc_heap.map_region_to_generation = oldGenerationMap;
             gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
-            gc_heap.card_table = oldCardTable;
+        }
+    }
+
+    [Theory]
+    [InlineData((int)gc_generation_num.soh_gen0)]
+    [InlineData((int)gc_generation_num.soh_gen1)]
+    public void DemotionCardSetsBundleAndNextPartialScanMarksYoungReference(
+        int condemnedGeneration)
+    {
+        const nuint RegionSize = 4096;
+        using MarkPhaseStateScope _ = new();
+        using RegionSegmentsStateScope __ = new(initializeCommitLock: false);
+        byte* rawStorage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(
+            3 * RegionSize);
+        uint* savedCardBundleTable = gc_heap.card_bundle_table;
+
+        try
+        {
+            byte* regionBase = AlignUp(rawStorage, RegionSize);
+            byte* parent = regionBase + 256;
+            byte* child = regionBase + (nint)RegionSize + 256;
+            nuint objectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+            byte* parentDescriptor =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            byte* childDescriptor =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            MethodTable* parentMethodTable = InitializeSingleSeriesMethodTable(
+                parentDescriptor,
+                objectSize,
+                (nuint)sizeof(byte*),
+                pointerCount: 1,
+                hasPointers: 1);
+            MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+                childDescriptor,
+                objectSize,
+                startOffset: 0,
+                pointerCount: 0,
+                hasPointers: 0);
+            ((CObjectHeader*)parent)->RawSetMethodTable(parentMethodTable);
+            ((CObjectHeader*)child)->RawSetMethodTable(childMethodTable);
+            byte** parentReference = (byte**)(parent + sizeof(byte*));
+            *parentReference = child;
+
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generation* gen = gc_heap.generation_of(generations, i);
+                generation.initialize(gen);
+                gen->gen_num = i;
+            }
+
+            nuint firstRegionIndex = (nuint)regionBase >> 12;
+            seg_mapping* segmentMap = stackalloc seg_mapping[2];
+            region_info* generationMap = stackalloc region_info[2];
+            segmentMap[0] = default;
+            segmentMap[1] = default;
+            generationMap[0] = region_info.RI_GEN_2;
+            generationMap[1] = condemnedGeneration ==
+                (int)gc_generation_num.soh_gen0
+                    ? region_info.RI_GEN_0 | region_info.RI_PLAN_GEN_0 |
+                        region_info.RI_DEMOTED
+                    : region_info.RI_GEN_1 | region_info.RI_PLAN_GEN_1 |
+                        region_info.RI_DEMOTED;
+            heap_segment* parentSegment = &segmentMap[0].region_info;
+            heap_segment* childSegment = &segmentMap[1].region_info;
+            heap_segment.heap_segment_mem(parentSegment) = parent;
+            heap_segment.heap_segment_allocated(parentSegment) =
+                parent + (nint)objectSize;
+            heap_segment.heap_segment_reserved(parentSegment) =
+                regionBase + (nint)RegionSize;
+            heap_segment.heap_segment_gen_num(parentSegment) =
+                (byte)gc_generation_num.soh_gen2;
+            heap_segment.heap_segment_gen_num(childSegment) =
+                (byte)condemnedGeneration;
+            heap_segment.heap_segment_plan_gen_num(childSegment) =
+                condemnedGeneration;
+            childSegment->flags = heap_segment.heap_segment_flags_demoted;
+            generation.generation_start_segment(
+                gc_heap.generation_of(
+                    generations,
+                    (int)gc_generation_num.soh_gen2)) = parentSegment;
+
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = regionBase;
+            GCCommon.g_gc_highest_address = regionBase + (nint)(2 * RegionSize);
+            GCCommon.seg_mapping_table = segmentMap - (nint)firstRegionIndex;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed =
+                generationMap - (nint)firstRegionIndex;
+            gc_heap.lowest_address = regionBase;
+
+            short* bricks = stackalloc short[2];
+            bricks[0] = 0;
+            bricks[1] = 0;
+            gc_heap.brick_table = bricks;
+
+            nuint parentCard = gc_heap.card_of(parent);
+            nuint parentCardWord = card_table_info.card_word(parentCard);
+            uint* cards = stackalloc uint[1];
+            cards[0] = 0;
+            gc_heap.card_table = cards - (nint)parentCardWord;
+
+            nuint parentBundle =
+                card_table_info.cardw_card_bundle(parentCardWord);
+            nuint parentBundleWord =
+                card_table_info.card_bundle_word(parentBundle);
+            uint* bundles = stackalloc uint[1];
+            bundles[0] = uint.MaxValue;
+            gc_heap.card_bundle_table = bundles - (nint)parentBundleWord;
+            gc_heap.settings.card_bundles = 1;
+            gc_heap.card_bundle_clear(parentBundle);
+
+            Assert.False(gc_heap.card_set_p(parentCard));
+            Assert.Equal(
+                0u,
+                bundles[0] &
+                    (1u << (int)card_table_info.card_bundle_bit(parentBundle)));
+
+            gc_heap.check_demotion_helper(parentReference, parent);
+
+            Assert.True(gc_heap.card_set_p(parentCard));
+            Assert.NotEqual(
+                0u,
+                bundles[0] &
+                    (1u << (int)card_table_info.card_bundle_bit(parentBundle)));
+
+            gc_heap.settings.condemned_generation = condemnedGeneration;
+            gc_heap.gc_low = child;
+            gc_heap.gc_high = child + (nint)objectSize;
+            gc_heap.ephemeral_low = child;
+            gc_heap.ephemeral_high = child + (nint)objectSize;
+            byte** markList = stackalloc byte*[2];
+            nuint* survived = stackalloc nuint[2];
+            nuint* oldCardSurvived = stackalloc nuint[2];
+            Assert.True(gc_heap.setup_mark_state_for_collection(
+                markList,
+                2,
+                survived,
+                oldCardSurvived,
+                2));
+
+            gc_heap.mark_through_cards_for_segments(&heap, relocating: false);
+            gc_heap.drain_mark_queue(&heap);
+
+            Assert.Equal((nuint)child, (nuint)(*parentReference));
+            Assert.NotEqual(0, ((CObjectHeader*)child)->IsMarked());
+            Assert.True(gc_heap.card_set_p(parentCard));
+            Assert.NotEqual(
+                0u,
+                bundles[0] &
+                    (1u << (int)card_table_info.card_bundle_bit(parentBundle)));
+        }
+        finally
+        {
+            gc_heap.card_bundle_table = savedCardBundleTable;
+            System.Runtime.InteropServices.NativeMemory.Free(rawStorage);
         }
     }
 
@@ -5685,7 +5922,6 @@ public sealed unsafe class GCPrivTests
         uint* cardTable = stackalloc uint[1];
         cardTable[0] = 0;
         seg_mapping* oldSegmentMap = GCCommon.seg_mapping_table;
-        uint* oldCardTable = gc_heap.card_table;
 
         try
         {
@@ -5695,6 +5931,7 @@ public sealed unsafe class GCPrivTests
                 firstBrick + (nint)(4 * card_table_info.brick_size),
                 bricks,
                 generationMap);
+            using CardTableStateScope __ = new();
 
             nuint firstRegionIndex = (nuint)firstBrick >> (int)gc_heap.min_segment_size_shr;
             GCCommon.seg_mapping_table = segmentMap - (nint)firstRegionIndex;
@@ -5721,7 +5958,7 @@ public sealed unsafe class GCPrivTests
             nuint parentCard = gc_heap.card_of((byte*)pval);
             nuint parentCardWord = card_table_info.card_word(parentCard);
             uint parentCardMask = 1u << (int)card_table_info.card_bit(parentCard);
-            gc_heap.card_table = cardTable - (nint)parentCardWord;
+            __.Initialize(cardTable, parentCardWord, 1);
 
             gc_heap heap = default;
             gc_heap.reloc_survivor_helper(&heap, pval);
@@ -5732,7 +5969,6 @@ public sealed unsafe class GCPrivTests
         finally
         {
             GCCommon.seg_mapping_table = oldSegmentMap;
-            gc_heap.card_table = oldCardTable;
             System.Runtime.InteropServices.NativeMemory.Free(storage);
         }
     }
@@ -5757,7 +5993,7 @@ public sealed unsafe class GCPrivTests
             cards[i] = 0;
         }
 
-        gc_heap.card_table = cards - (nint)FirstCardWord;
+        _.Initialize(cards, FirstCardWord, 4);
         Assert.Equal(
             sourceCard * card_table_info.card_size,
             (nuint)gc_heap.card_address(sourceCard));
@@ -5806,7 +6042,7 @@ public sealed unsafe class GCPrivTests
             cards[i] = 0;
         }
 
-        gc_heap.card_table = cards - (nint)FirstCardWord;
+        _.Initialize(cards, FirstCardWord, 4);
         for (nuint i = 0; i < CardCount; i++)
         {
             if ((i & 1) == 0)
@@ -5852,7 +6088,7 @@ public sealed unsafe class GCPrivTests
             cards[i] = 0;
         }
 
-        gc_heap.card_table = cards - (nint)FirstCardWord;
+        _.Initialize(cards, FirstCardWord, 4);
         gc_heap.set_card(sourceCard + 1);
         gc_heap.set_card(destinationCard + 2);
         gc_heap.set_card(destinationCard + 3);
@@ -5891,7 +6127,7 @@ public sealed unsafe class GCPrivTests
             cards[i] = 0;
         }
 
-        gc_heap.card_table = cards - (nint)FirstCardWord;
+        _.Initialize(cards, FirstCardWord, 4);
         cards[0] = SourcePattern;
         cards[2] = uint.MaxValue;
 
@@ -8633,6 +8869,55 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void FindCardUsesBundlesAndClearsStaleEmptyBundles()
+    {
+        uint* savedCardTable = gc_heap.card_table;
+        uint* savedCardBundleTable = gc_heap.card_bundle_table;
+        int savedCardBundles = gc_heap.settings.card_bundles;
+        try
+        {
+            uint* cards = stackalloc uint[64];
+            uint* bundles = stackalloc uint[2];
+            for (int i = 0; i < 64; i++)
+            {
+                cards[i] = 0;
+            }
+
+            bundles[0] = 0;
+            bundles[1] = 0;
+            gc_heap.card_table = cards;
+            gc_heap.card_bundle_table = bundles;
+            gc_heap.settings.card_bundles = 1;
+
+            const nuint FirstCard = 3 * 32 + 5;
+            const nuint SecondCard = 40 * 32 + 2;
+            cards[3] = 1u << 5;
+            cards[40] = 1u << 2;
+            gc_heap.card_bundle_set(0);
+            gc_heap.card_bundle_set(1);
+
+            nuint card = 0;
+            Assert.True(gc_heap.find_card(ref card, 64, out nuint endCard));
+            Assert.Equal(FirstCard, card);
+            Assert.Equal(FirstCard + 1, endCard);
+
+            gc_heap.clear_cards(FirstCard, FirstCard + 1);
+            card = 0;
+            Assert.True(gc_heap.find_card(ref card, 64, out endCard));
+            Assert.Equal(SecondCard, card);
+            Assert.Equal(SecondCard + 1, endCard);
+            Assert.Equal(0u, bundles[0] & 1u);
+            Assert.NotEqual(0u, bundles[0] & 2u);
+        }
+        finally
+        {
+            gc_heap.card_table = savedCardTable;
+            gc_heap.card_bundle_table = savedCardBundleTable;
+            gc_heap.settings.card_bundles = savedCardBundles;
+        }
+    }
+
+    [Fact]
     public void CardTableInfoTranslatedBundleTablePreservesNativeSkew()
     {
         const nuint BundleTable = 0x100000;
@@ -10027,12 +10312,12 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void CheckDemotionHelperSipSetsOnlyParentCardForLowerChildPlanGeneration()
     {
+        using CardTableStateScope _ = new();
         nuint oldShift = gc_heap.min_segment_size_shr;
         byte* oldLowest = GCCommon.g_gc_lowest_address;
         byte* oldHighest = GCCommon.g_gc_highest_address;
         seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
         region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
-        uint* oldCardTable = gc_heap.card_table;
         seg_mapping* segMappingTable = stackalloc seg_mapping[4];
         region_info* generationMap = stackalloc region_info[4];
         uint* cards = stackalloc uint[8];
@@ -10044,7 +10329,7 @@ public sealed unsafe class GCPrivTests
             GCCommon.g_gc_highest_address = (byte*)0x9000;
             GCCommon.seg_mapping_table = segMappingTable - 5;
             gc_heap.map_region_to_generation_skewed = generationMap - 5;
-            gc_heap.card_table = cards;
+            _.Initialize(cards, firstCardWord: 0, cardWordCount: 8);
 
             for (nuint i = 0; i < 8; i++)
             {
@@ -10074,7 +10359,6 @@ public sealed unsafe class GCPrivTests
             GCCommon.g_gc_highest_address = oldHighest;
             GCCommon.seg_mapping_table = oldSegMappingTable;
             gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
-            gc_heap.card_table = oldCardTable;
         }
     }
 
@@ -17776,6 +18060,7 @@ public sealed unsafe class GCPrivTests
     {
         using LohCompactionStateScope _ = new();
         using RegionSegmentsStateScope __ = new(initializeCommitLock: false);
+        using CardTableStateScope ___ = new();
         const nuint RegionSize = 4096;
         nuint cardSize = card_table_info.card_size;
         nuint objectSize = 2 * cardSize;
@@ -17871,7 +18156,7 @@ public sealed unsafe class GCPrivTests
                 cards[i] = 0;
             }
 
-            gc_heap.card_table = cards - (nint)firstCardWord;
+            ___.Initialize(cards, firstCardWord, (nuint)cardWordCount);
             gc_heap.set_card(gc_heap.card_of(movable));
             gc_heap.never_decommit_p = true;
             gc_heap.settings = default;
@@ -17983,6 +18268,7 @@ public sealed unsafe class GCPrivTests
         using MarkPhaseStateScope __ = new();
         using PlanPhaseStateScope ___ = new();
         using LohCompactionStateScope ____ = new();
+        using CardTableStateScope _____ = new();
         void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
         int savedFreedRegions = gc_heap.num_regions_freed_in_sweep;
         CFinalize* savedFinalizeQueue = gc_heap.finalize_queue;
@@ -18046,7 +18332,7 @@ public sealed unsafe class GCPrivTests
                 generationMap - (nint)firstRegionIndex;
             gc_heap.lowest_address = regionBase;
             gc_heap.highest_address = GCCommon.g_gc_highest_address;
-            gc_heap.card_table = cards - (nint)firstCardWord;
+            _____.Initialize(cards, firstCardWord, (nuint)cardWordCount);
             gc_heap.brick_table = bricks;
             gc_heap.gc_low = regionBase;
             gc_heap.gc_high = GCCommon.g_gc_highest_address;
@@ -19954,16 +20240,52 @@ public sealed unsafe class GCPrivTests
     private sealed unsafe class CardTableStateScope : System.IDisposable
     {
         private readonly uint* _cardTable;
+        private readonly uint* _cardBundleTable;
+        private uint* _allocatedCardBundleTable;
 
         public CardTableStateScope()
         {
             _cardTable = gc_heap.card_table;
+            _cardBundleTable = gc_heap.card_bundle_table;
             gc_heap.card_table = null;
+            gc_heap.card_bundle_table = null;
+        }
+
+        public void Initialize(
+            uint* cards,
+            nuint firstCardWord,
+            nuint cardWordCount)
+        {
+            Debug.Assert(_allocatedCardBundleTable is null);
+            Debug.Assert(cardWordCount != 0);
+            gc_heap.card_table = cards - (nint)firstCardWord;
+
+            nuint firstCardBundle =
+                card_table_info.cardw_card_bundle(firstCardWord);
+            nuint lastCardBundle =
+                card_table_info.cardw_card_bundle(
+                    firstCardWord + cardWordCount - 1);
+            nuint firstCardBundleWord =
+                card_table_info.card_bundle_word(firstCardBundle);
+            nuint lastCardBundleWord =
+                card_table_info.card_bundle_word(lastCardBundle);
+            nuint cardBundleWordCount =
+                lastCardBundleWord - firstCardBundleWord + 1;
+            _allocatedCardBundleTable =
+                (uint*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(
+                    cardBundleWordCount,
+                    (nuint)sizeof(uint));
+            Assert.True(_allocatedCardBundleTable is not null);
+            gc_heap.card_bundle_table =
+                _allocatedCardBundleTable - (nint)firstCardBundleWord;
         }
 
         public void Dispose()
         {
+            System.Runtime.InteropServices.NativeMemory.Free(
+                _allocatedCardBundleTable);
             gc_heap.card_table = _cardTable;
+            gc_heap.card_bundle_table = _cardBundleTable;
         }
     }
 #endif

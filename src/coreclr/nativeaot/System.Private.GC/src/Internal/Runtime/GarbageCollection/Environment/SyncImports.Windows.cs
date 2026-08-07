@@ -82,5 +82,12 @@ namespace Internal.Runtime.GarbageCollection
         [RuntimeImport(RuntimeLibrary, "ManagedGC_Free")]
         [MethodImpl(MethodImplOptions.InternalCall)]
         public static extern void ManagedGC_Free(void* memory);
+
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_WaitUntilGCComplete")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void ManagedGC_WaitUntilGCComplete(
+            ref int gcInProgress,
+            ref int gcStarted,
+            int considerGcStart);
     }
 }

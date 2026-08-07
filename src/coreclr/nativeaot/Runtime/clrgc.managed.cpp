@@ -66,6 +66,30 @@ extern "C" void ManagedGC_ExitCriticalRegion(UInt32_BOOL entered)
     }
 }
 
+extern "C" void ManagedGC_WaitUntilGCComplete(
+    int32_t* gcInProgress,
+    int32_t* gcStarted,
+    UInt32_BOOL considerGcStart)
+{
+    Thread* thread = ThreadStore::GetCurrentThread();
+    bool restoreCooperativeMode = thread->IsCurrentThreadInCooperativeMode();
+    if (restoreCooperativeMode)
+    {
+        thread->EnablePreemptiveMode();
+    }
+
+    while (VolatileLoad(gcInProgress) != 0 ||
+        (considerGcStart && VolatileLoad(gcStarted) != 0))
+    {
+        PalSwitchToThread();
+    }
+
+    if (restoreCooperativeMode)
+    {
+        thread->DisablePreemptiveMode();
+    }
+}
+
 // Stands in for the C++ GC's PURE_VIRTUAL: the managed heap points every IGCHeap slot it has
 // not implemented yet at this, so reaching one stops the process at the call rather than
 // crashing later on a null slot or a bogus return value.

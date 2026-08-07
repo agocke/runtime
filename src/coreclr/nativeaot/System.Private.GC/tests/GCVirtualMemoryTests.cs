@@ -297,6 +297,49 @@ public sealed unsafe class GCVirtualMemoryTests
     }
 
     [Fact]
+    public void RegionBookkeepingReservesCardBundlesBeforeGenerationMap()
+    {
+        using MemoryAccountingScope accounting = new();
+        nuint pageSize = PageSize;
+        const nuint ReservationSize = 256 * 1024 * 1024;
+        byte* reservation = GCToOSInterface.VirtualReserve(
+            ReservationSize,
+            pageSize,
+            (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        using RegionAllocationScope regions = new(reservation, ReservationSize, pageSize);
+        try
+        {
+            Assert.True(regions.InitializeBookkeeping());
+            Assert.Equal(
+                (byte)1,
+                gc_heap.on_used_changed(reservation + (nint)ReservationSize));
+
+            nuint bundleSize = card_table_info.size_card_bundle_of(
+                reservation,
+                reservation + (nint)ReservationSize);
+            nuint bundleOffset =
+                gc_heap.card_table_element_layout[
+                    (int)bookkeeping_element.card_bundle_table_element];
+            nuint generationMapOffset =
+                gc_heap.card_table_element_layout[
+                    (int)bookkeeping_element.region_to_generation_table_element];
+
+            Assert.NotEqual((nuint)0, bundleSize);
+            Assert.Equal(
+                bundleSize,
+                gc_heap.bookkeeping_sizes[
+                    (int)bookkeeping_element.card_bundle_table_element]);
+            Assert.True(generationMapOffset >= bundleOffset + bundleSize);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, ReservationSize);
+        }
+    }
+
+    [Fact]
     public void OnUsedChangedIsANoOpWithinCommittedCoverage()
     {
         using MemoryAccountingScope accounting = new();

@@ -49,7 +49,7 @@ Ported so far:
 | `HandleTableCache.cs` | `handletablecache.cpp` |
 | `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
 | `ObjectHandle.cs` | `objecthandle.h`, `objecthandle.cpp` (map, bucket, initialization, and dependent-handle subset) |
-| `HandleTableScan.cs` | synchronous full-GC promotion, weak clearing, and relocation scans from `handletablescan.cpp`, `handletable.cpp`, and `objecthandle.cpp` |
+| `HandleTableScan.cs` | synchronous generational promotion, weak clearing, relocation, aging, and rejuvenation scans from `handletablescan.cpp`, `handletable.cpp`, and `objecthandle.cpp` |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
@@ -94,15 +94,15 @@ Ported so far:
 | `Environment/GCToOSInterface.Imports.Windows.cs` | the `<windows.h>` and `<psapi.h>` entry points the above call |
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
-| `Collect.cs` | bounded WKS `USE_REGIONS` synchronous full-Gen2 `garbage_collect` / `gc1` lifecycle from `collect.cpp` and `interface.cpp` |
+| `Collect.cs` | bounded WKS `USE_REGIONS` synchronous foreground Gen0/Gen1/Gen2 `garbage_collect` / `gc1` lifecycle and budget-based condemnation prefix from `collect.cpp`, `plan_phase.cpp`, and `interface.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
-| `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, the bounded WKS synchronous full-Gen2 plan-phase orchestration and SIP helpers, the WKS full-GC LOH pin queue/planning allocator, the bounded WKS synchronous full-GC compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
-| `RelocateCompact.cs` | allocation-free relocation/compaction copy primitives, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation and compaction, non-compacting UOH reference relocation, WKS full-GC LOH relocation/compaction, bounded synchronous WKS `USE_REGIONS` full-GC relocation/compaction orchestration, and dependency-closed helpers from `relocate_compact.cpp` |
+| `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle, partial dirty-card scanning for older SOH/LOH/POH objects, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
+| `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, bounded WKS synchronous foreground plan-phase orchestration and SIP helpers, the WKS full-GC LOH pin queue/planning allocator, the bounded WKS synchronous compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
+| `RelocateCompact.cs` | allocation-free relocation/compaction copy primitives, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation and compaction, partial-GC card relocation, non-compacting UOH reference relocation, WKS full-GC LOH relocation/compaction, bounded synchronous WKS `USE_REGIONS` foreground relocation/compaction orchestration, and dependency-closed helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | dependency-closed WKS `USE_REGIONS` SOH normal/special sweep brick walk and final region threading, SIP free-list handoff, empty-region replacement, UOH marked-object clearing, unused-array card clearing/reset, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp`, `plan_phase.cpp`, `allocation.cpp`, `regions_segments.cpp`, and `gcinternal.h` |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, allocation-triggered synchronous full-Gen2 collection and retry, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, UOH region acquisition/retry, the synchronous full-GC condemned-generation planning allocator, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, allocation-triggered synchronous foreground collection and retry, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, UOH region acquisition/retry, the synchronous condemned-generation planning allocator, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
-| `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping, region-table, and deferred UOH free-region-return helpers from `collect.cpp`, `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp`, plus the direct brick repair and first-object lookup leaves from `card_table.cpp` |
+| `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping, region-table, deferred UOH free-region-return, card-bundle enable/search/clear, and dirty-card range helpers from `collect.cpp`, `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, `gc.cpp`, and `card_table.cpp`, plus direct brick repair and first-object lookup |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
@@ -162,12 +162,12 @@ their initialization, removal, destruction, and allocation-failure cleanup are t
 directly; the one-heap collector makes the current bucket contain one table.
 All-table handle counting and the variable-handle type helpers also operate over this translated
 map and extra-info storage. `HndNotifyGcCycleComplete` currently has its retail no-op behavior.
-`HandleTableScan.cs` now has the bounded synchronous full-GC mark pass over the global map and
-circular type chains, with pinned roots preceding strong roots, short/long weak clearing, dead
-dependent-handle clearing, and dependent-handle secondary promotion reaching a WKS fixed point
-through parallel extra-info blocks. The non-routed WKS root slice runs its post-mark tail in the
-native order, including finalization and the sync-block weak callback. Checked-build
-scan-statistics logging remains deferred. It is not routed from `IGCHeap.GarbageCollect`.
+`HandleTableScan.cs` now has bounded synchronous generational scans over the global map and
+circular type chains. Gen0 uses the native quick segment iterator; Gen1 uses the standard
+iterator; both filter clumps through the native age mask and support promotion, weak/dependent
+clearing, relocation, aging, and demotion-driven rejuvenation. Pinned roots precede strong and
+ephemeral sized-ref roots, while dependent secondaries reach the WKS fixed point through
+parallel extra-info blocks. Checked-build scan-statistics logging remains deferred.
 
 The GC history schema translates `gcrecord.h`: the
 generation and condition condemn-reason enums, their native two-bit/one-bit packed tuning
@@ -292,10 +292,11 @@ the full mark phase remain deferred.
 The relocation branch of `GcScanHandles` now preserves the native synchronous WKS pass order:
 sync-block weak pointers and the physical block-order multi-type weak/strong/ref-counted scan,
 pinned handles with `GC_CALL_PINNED`, dependent primary and secondary pointers, then weak-interior
-primaries with the interior delta adjustment. Full segment iteration retains chain resorting,
-page trimming, empty-segment removal, and sequence maintenance. The bounded entrypoint explicitly
-rejects ephemeral and concurrent scans; async queues, aging, variable handles, standalone obsolete
-handle types, diagnostics/debug statistics, and collection routing remain deferred.
+primaries with the interior delta adjustment. Ephemeral scans also include sized-ref handles and
+apply the native clump-age filter; Gen0 uses bare segment iteration and Gen1 retains chain
+resorting. Full segment iteration retains chain resorting, page trimming, empty-segment removal,
+and sequence maintenance. Concurrent scans remain rejected; async queues, variable handles,
+standalone obsolete handle types, and diagnostics/debug statistics remain deferred.
 `FEATURE_JAVAMARSHAL` cross-reference inclusion follows the existing build guard.
 The allocation-free `memcopy` relocation primitive, card copying/clearing leaves, the pinned-queue `get_next_pinned_entry`
 and `get_oldest_pinned_entry` handoffs, brick-tree `tree_search`, `loh_object_p`, and
@@ -320,10 +321,10 @@ decay, allocation-limit clipping at the oldest pin, padding-aware fit and segmen
 marked-object planning, pinned-gap metadata, relocation-distance storage, marked-object
 reference relocation, payload/card/write-watch copying, pinned-object retention, free-gap
 threading, writable segment trimming/unlinking, and read-only prefix skipping. The bounded WKS
-`USE_REGIONS` `relocate_phase` slice preserves the native full-GC order: EE roots, compacting or
-non-compacting LOH, POH, SOH survivors, finalization data, then handles, with one initialized
-relocation `ScanContext`.
-The adjacent bounded `compact_phase` preserves the WKS `USE_REGIONS` full-Gen2 plug order,
+`USE_REGIONS` `relocate_phase` slice preserves the native foreground order: EE roots, partial
+dirty-card relocation for older SOH/LOH objects or full-GC LOH/POH traversal, SOH survivors,
+finalization data, then handles, with one initialized relocation `ScanContext`.
+The adjacent bounded `compact_phase` preserves the WKS `USE_REGIONS` foreground plug order,
 header/payload/card copying, shortened pinned pre/post record swaps, in-order brick traversal,
 SIP-region skipping, generation/segment transitions, final brick publication, pinned-record
 recovery, and `plan_allocated`-to-`used` publication. `gcmemcopy` also retains the active
@@ -332,12 +333,11 @@ recovery, and `plan_allocated`-to-`used` publication. `gcmemcopy` also retains t
 entrypoint cannot produce the BGC-mark state because the older-generation allocation path that
 sets it requires an in-progress background sweep, which this slice rejects, but the direct copy
 leaf preserves the native behavior rather than silently dropping that state. Both reject
-unsupported partial, mismatched, non-compacting, and concurrent/background modes before mutation,
-and are compiled only for WKS `USE_REGIONS`. Configured LOH compaction still uses the
+mismatched, non-compacting, and concurrent/background modes before mutation and are compiled
+only for WKS `USE_REGIONS`. Configured LOH compaction still uses the
 non-compacting LOH/POH traversal when `loh_compacted_p` is zero; when it is set, the exact native
-LOH relocation and compaction branches run. Full plan-phase post-policy orchestration,
-server/card stealing, background roots, partial card scans, debug-only region-map verification,
-and collection routing remain deferred.
+LOH relocation and compaction branches run. Server/card stealing, background roots, and
+debug-only region-map verification remain deferred.
 The bounded WKS `CFinalize` queue now relocates the native half-open generation-to-free-list
 range through the same root bridge; server merge/split and scheduling remain deferred.
 Background marking remains deferred.
@@ -545,9 +545,10 @@ the new bounds, then releases with a volatile store. `make_heap_segment` and
 allocator, commit and account for the initial page, publish the segment fields through the
 region mapping table, and return an allocation to the allocator if commit fails. The callback
 now grows the native-shaped bookkeeping coverage before an allocator can return a new high-water
-region: it reserves the card/brick/generation-map/segment-map/mark-array layout, commits each
-required card-through-segment-map range with page boundaries, rolls back partial commits, tracks
-the committed coverage and per-element sizes, and retries a failed speculative doubling at the
+region: it reserves the card/brick/card-bundle/generation-map/segment-map/mark-array layout,
+including the native card-bundle span before the generation map, commits each required
+card-through-segment-map range with page boundaries, rolls back partial commits, tracks the
+committed coverage and per-element sizes, and retries a failed speculative doubling at the
 minimum range. The table pointers are initialized before the translated card table is published;
 write-barrier stomping remains with the later collector initialization that owns it. `init_heap_segment`
 mechanically resets segment allocation state, preserves only an existing region's
@@ -874,7 +875,9 @@ The retained-native surface is now narrow and state-oriented:
   allocations of the environment layer -- the `uintptr_t[]` of `AffinitySet::Initialize`, the
   `GCEvent::Impl` of the event ports, the `minipal_mutex` that the C++ `CLRCriticalSection`
   embeds by value, and the `SYSTEM_LOGICAL_PROCESSOR_INFORMATION[]` of the Windows `GetLPI` --
-  and which are the only heap allocation the managed GC performs.
+  and which are the only heap allocation the managed GC performs;
+* `ManagedGC_WaitUntilGCComplete`, which keeps allocation waiters in preemptive mode over the
+  whole wait while preserving the EE-owned deferred transition frame.
 
 Each of them is deleted when the platform code behind it is ported; that is the remainder of
 plan step 3 in [ROADMAP.md](ROADMAP.md), which lists the modules by name. The calls are
@@ -1138,26 +1141,28 @@ depth-limited recursion terminates. Reaching `heapsort` at all needs input that 
 `max_depth`, which no natural input does, so the test carries a vector produced by McIlroy's
 quicksort adversary.
 
-### The heap routes a bounded full Gen2 collector
+### The heap routes bounded synchronous foreground collections
 
 `ManagedGCHeap.GarbageCollect` now routes the bounded workstation `USE_REGIONS` synchronous
-full-Gen2 lifecycle. The supported path rejects server, partial, non-blocking, optimized,
-aggressive, active-background, heap-verification, survivor-analysis, and collection-event
-diagnostic modes before mutating collector state. It then owns suspension/restart, fixes
-allocation contexts, initializes records and mechanisms, condemns Gen2, calls `GcStartWork`,
-runs mark and the completed plan/relocate/compact-or-sweep closure, performs minimal
-post-collection accounting and range/write-barrier publication, calls `GcDone`, restarts the
-runtime, and schedules finalization.
+foreground Gen0, Gen1, and Gen2 lifecycle. The supported path rejects server, non-blocking,
+optimized, aggressive, active-background, heap-verification, survivor-analysis, and
+collection-event diagnostic modes before mutating collector state. It owns suspension/restart,
+fixes allocation contexts, initializes records and mechanisms, selects the requested or
+budget-elevated condemned generation, calls `GcStartWork`, runs mark and the completed
+plan/relocate/compact-or-sweep closure, performs post-collection accounting and
+range/write-barrier publication, calls `GcDone`, restarts the runtime, and schedules
+finalization. Server GC and active background GC remain unsupported.
 
 Allocation now also performs the native `GC_ALLOC_FINALIZE` registration before returning an
 uninitialized finalizable object to the EE, including the allocation-failure free-object
 fallback. Explicit `RegisterForFinalization(-1, ...)` normalizes to Gen0 and preserves the
 native finalizer-run-bit behavior.
 
-The lifecycle itself is covered by Foundation tests, including exact EE callback ordering and
-pre-mutation rejection. The NativeAOT smoke now allocates garbage plus stack and handle-only
-roots, requests compacting full collections, and verifies relocation, weak reclamation,
-finalization, pinned handles, and allocation afterward. Full-plan validation includes marked
+The lifecycle itself is covered by Foundation tests, including exact EE callback ordering,
+Gen0/Gen1 condemnation and count accounting, budget elevation, and pre-mutation rejection. The
+NativeAOT smoke requests forced Gen0, Gen1, and Gen2 collections and verifies old-to-young card
+roots, stack and handle-only roots, weak reclamation, finalization, pinned handles, relocation,
+and allocation afterward. Full-plan validation includes marked
 SOH, LOH, and POH objects when checking the WKS `slow`/`shigh` range, so UOH roots no longer
 reject the collection before handle and GC-static spine relocation. The minimal recorded
 full-blocking-GC snapshot also captures the finalizable promoted count before the finalizer
@@ -1174,9 +1179,9 @@ SOH/LOH/POH generation state. `ManagedGCHeap.Alloc` uses that region heap for SO
 allocation-context refills. `GCHeapMemory` remains a separate non-collecting bootstrap range for
 unmanaged frozen-segment metadata; it neither changes the region range nor publishes card tables
 or write-barrier bounds on region targets. Allocation pressure now routes SOH budget/space
-exhaustion and UOH space/segment exhaustion through the supported synchronous blocking full-Gen2
-collector, then retries the native allocation state. Partial and background scheduling decisions
-are conservatively elevated to that full blocking collector rather than skipped.
+exhaustion through the native-shaped budget condemnation prefix: normal SOH pressure starts at
+Gen0, out-of-space SOH retry starts at Gen1, exhausted older/UOH budgets elevate the condemned
+generation, and UOH exhaustion starts at Gen2. Active background decisions remain unsupported.
 
 `GCAllocation` now writes the native-shaped free-object method table, array length, and
 doubly-linked free-list marker for object gaps, carries the allocation-limit arithmetic leaves,
@@ -1205,19 +1210,19 @@ selection, both pinned-allocation attribution forms, and
 front/tail padding, short-plug conversion, plan/commit growth and segment transition, generation
 allocation/free accounting, and region plan-generation publication. The large-plug exception
 suppresses front padding only when the native region-size threshold requires it. Planning
-traversal now has a bounded synchronous full-Gen2 adapter,
-`plan_phase_synchronous_full_gen2`. It rejects null or mismatched heap/settings, active
+traversal now has a bounded synchronous foreground adapter,
+`plan_phase_synchronous_foreground`. It rejects null or mismatched heap/settings, active
 concurrent/background collection, malformed generation/region chains, inconsistent mark
 bounds, and invalid pinned-stack/bookkeeping prerequisites before mutation. The accepted path
 preserves segment shortening, marked/pinned clearing, pinned-plug pre/post gap saves, artificial
 pinning, exact gap/relocation/left flags, brick trees and sentinels, condemned allocation,
 remaining-pin demotion, the 6-MiB large-pin threshold, exact 90-percent SIP decisions, and
-region plan generations. It then preserves native full-Gen2 ordering through fragmentation and
-compaction policy, forced or fallback LOH compaction, normal LOH/POH sweeping, special-sweep
-override, SOH relocation/compaction or free-list sweeping, final region threading, generation
-bounds, finalizer fill pointers, handle aging or rejuvenation, pinned-gap recovery, gen1 card
-clearing, and compacting-GC accounting. Non-region, server, background, partial-GC, and diagnostic paths remain outside this bounded
-adapter. The synchronous full-Gen2 path is routed by `Collect.cs`.
+region plan generations. For partial collections it also preserves older-generation allocator
+snapshot/commit-or-restore, promotion/demotion planning, dirty-card marking and relocation for
+older SOH, LOH, and POH objects, generation-bound repair, finalizer fill pointers, handle aging or
+rejuvenation, pinned-gap recovery, and Gen1 card clearing. Gen2 retains forced or fallback LOH
+compaction and normal LOH/POH sweeping. Non-region, server, background, and diagnostic paths
+remain outside this bounded adapter.
 
 The next allocation orchestration leaf connects those fits in native order:
 `soh_try_fit` favors the SOH free list, honors the short-end result, tries the current
@@ -1249,9 +1254,10 @@ and updates elapsed times only for condemned generations. The native cache-, con
 write-watch/concurrent-budget-, and region-independent UOH rules are retained; collection-time
 retuning beyond those helpers and hard-limit computation remain deferred. The production callback
 owns SOH/UOH more-space locks, allocation-budget checks, UOH region acquisition, OOM/null exits,
-and synchronous full-Gen2 collection scheduling. Unsupported partial/background decisions map to
-the supported blocking full-Gen2 collector; inactive-background queries preserve the native
-state-machine ordering. Full-GC notification remains deferred because that hook is not yet
+and synchronous foreground collection scheduling. SOH budget exhaustion starts with Gen0,
+ephemeral out-of-space retry starts with Gen1, and older/UOH budget dependencies elevate to
+Gen2; inactive-background queries preserve the native state-machine ordering. Full-GC
+notification remains deferred because that hook is not yet
 available. A null callback still returns the exact state and deferred operation for Foundation
 testing.
 The WKS `allocate_more_space` wrapper now retries from the native initial state, clears transient
@@ -1312,8 +1318,11 @@ The thread that actually suspends the EE is excluded from `ThreadStore::SuspendA
 worker threads are marked GC-special and are never hijacked. `GarbageCollect` still uses a critical
 region. NativeAOT's `RhpWaitForGC2` also recognizes the managed-GC suspending thread and returns
 from an explicit poll after the global trap is set, because that thread owns the collection and is
-the only thread that can restart the runtime. Other critical regions protect mutators that can run
-on ordinary application threads.
+the only thread that can restart the runtime. Allocation waiters leave cooperative mode through
+the EE-owned deferred transition frame for the complete wait, so a finalizer allocating while
+another thread starts a collection can be suspended without exposing native allocation frames to
+the managed stack walker. Other critical regions protect mutators that can run on ordinary
+application threads.
 
 ## Building an application against the managed GC
 

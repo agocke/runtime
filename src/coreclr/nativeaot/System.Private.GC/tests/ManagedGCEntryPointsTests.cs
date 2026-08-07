@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+
 using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
@@ -285,7 +286,7 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
 
             Assert.True(
                 result == S_OK,
-                string.Join(", ", GCToEEInterface.CollectionLifecycleCallOrder));
+                $"result={result}; {string.Join(", ", GCToEEInterface.CollectionLifecycleCallOrder)}");
             Assert.Equal(1, GCToEEInterface.SuspendEECallCount);
             Assert.Equal(SUSPEND_REASON.SUSPEND_FOR_GC, GCToEEInterface.LastSuspendReason);
             Assert.Equal(1, GCToEEInterface.GcStartWorkCallCount);
@@ -337,6 +338,71 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
             Assert.Equal(
                 gc_heap.finalize_queue->GetPromotedCount(),
                 gc_heap.last_full_blocking_gc_info.finalize_promoted_objects);
+        }
+        finally
+        {
+            CFinalize.Free(gc_heap.finalize_queue);
+            gc_heap.finalize_queue = null;
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.destroy_semi_shared();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
+    [Theory]
+    [InlineData((int)gc_generation_num.soh_gen0, true)]
+    [InlineData((int)gc_generation_num.soh_gen1, true)]
+    [InlineData((int)gc_generation_num.soh_gen1, false)]
+    public void ForegroundPartialCollectionOwnsLifecycleWithoutFullGcAccounting(
+        int generation,
+        bool compacting)
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+        GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        gc_heap.initialize_gc_static_state();
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+        Assert.True(gc_heap.initialize_mark_list());
+        Assert.True(gc_heap.initialize_mark_stack());
+        Assert.True(ManagedGCRegionBootstrap.Initialize());
+        gc_heap.finalize_queue = CFinalize.Allocate();
+        Assert.True(gc_heap.finalize_queue is not null);
+
+        try
+        {
+            gc_heap.full_gc_counts = default;
+            gc_heap.last_full_blocking_gc_info = default;
+
+            int result = gc_heap.garbage_collect_synchronous_foreground(
+                generation,
+                low_memory_p: 0,
+                (int)collection_mode.collection_blocking |
+                    (compacting
+                        ? (int)collection_mode.collection_compacting
+                        : 0));
+
+            Assert.Equal(S_OK, result);
+            Assert.Equal(generation, gc_heap.settings.condemned_generation);
+            Assert.Equal(1, GCToEEInterface.SuspendEECallCount);
+            Assert.Equal(1, GCToEEInterface.GcStartWorkCallCount);
+            Assert.Equal(generation, GCToEEInterface.LastGcStartWorkCondemned);
+            Assert.Equal(1, GCToEEInterface.GcDoneCallCount);
+            Assert.Equal(generation, GCToEEInterface.LastGcDoneCondemned);
+            Assert.Equal(1, GCToEEInterface.RestartEECallCount);
+            Assert.Equal((byte)1, GCToEEInterface.LastRestartFinishedGC);
+            Assert.Equal(
+                (nuint)1,
+                dynamic_data.dd_collection_count(
+                    gc_heap.dynamic_data_of(
+                        ManagedGCRegionBootstrap.Heap,
+                        generation)));
+            Assert.Equal(
+                (nuint)0,
+                gc_heap.full_gc_counts[gc_heap.gc_type_blocking]);
+            Assert.Equal((nuint)0, gc_heap.last_full_blocking_gc_info.index);
         }
         finally
         {
@@ -897,6 +963,9 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         GCInterfaceLayout.Reset();
         ManagedGCHeap.Reset();
         ManagedGCHandleManager.Reset();
+        gc_heap.settings = default;
+        gc_heap.current_bgc_state = bgc_state.bgc_not_in_process;
+        gc_heap.gc_background_running = 0;
     }
 
     private static string ReadNullTerminatedUtf8(byte* value)

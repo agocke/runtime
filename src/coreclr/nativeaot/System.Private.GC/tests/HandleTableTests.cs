@@ -6,6 +6,7 @@
 
 using System;
 using System.Runtime.InteropServices;
+
 using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
@@ -589,6 +590,119 @@ public sealed unsafe class HandleTableTests
     }
 
     [Fact]
+    public void AgeMasksMatchNativeEphemeralFilteringAndSaturation()
+    {
+        Assert.Equal(0x80808081u, HandleTableScan.BuildAgeMask(0, 2));
+        Assert.Equal(0x81818182u, HandleTableScan.BuildAgeMask(1, 2));
+        Assert.Equal(0xbebebebfu, HandleTableScan.BuildAgeMask(2, 2));
+
+        const uint Ages = 0xff3f0100;
+        Assert.Equal(
+            0x00000040u,
+            HandleTableScan.ComputeClumpMask(
+                Ages,
+                HandleTableScan.BuildAgeMask(0, 2)));
+        Assert.Equal(
+            0x00004040u,
+            HandleTableScan.ComputeClumpMask(
+                Ages,
+                HandleTableScan.BuildAgeMask(1, 2)));
+        Assert.Equal(
+            0xff3f0101u,
+            HandleTableScan.ComputeAgedClumps(
+                Ages,
+                HandleTableScan.BuildAgeMask(0, 2)));
+        Assert.Equal(
+            0xff3f0201u,
+            HandleTableScan.ComputeAgedClumps(
+                Ages,
+                HandleTableScan.BuildAgeMask(1, 2)));
+    }
+
+    [Fact]
+    public void EphemeralHandleAgingAndRejuvenationAreGenerationScoped()
+    {
+        SyncImports.ResetRecording();
+        GCToEEInterface.Reset();
+        ManagedGCHeap.Reset();
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+
+        try
+        {
+            byte* strongObject = (byte*)0x1000;
+            byte* pinnedObject = (byte*)0x2000;
+            byte* dependentPrimary = (byte*)0x3000;
+            byte* dependentSecondary = (byte*)0x4000;
+            byte* sizedRefObject = (byte*)0x5000;
+            OBJECTHANDLE strong = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_STRONG,
+                strongObject,
+                0);
+            OBJECTHANDLE pinned = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_PINNED,
+                pinnedObject,
+                0);
+            OBJECTHANDLE dependent = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                dependentPrimary,
+                (nuint)dependentSecondary);
+            OBJECTHANDLE sizedRef = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_SIZEDREF,
+                sizedRefObject,
+                0);
+            SetHandleAge(strong, 0);
+            SetHandleAge(pinned, 1);
+            SetHandleAge(dependent, 0);
+            SetHandleAge(sizedRef, 2);
+
+            ScanContext scanContext = default;
+            scanContext.thread_count = 1;
+            GCScan.GcPromotionsGranted(
+                0,
+                GCInterfaceOffsets.max_generation,
+                &scanContext);
+
+            Assert.Equal(1, GetHandleAge(strong));
+            Assert.Equal(1, GetHandleAge(pinned));
+            Assert.Equal(1, GetHandleAge(dependent));
+            Assert.Equal(2, GetHandleAge(sizedRef));
+
+            SetHandleAge(strong, 0);
+            SetHandleAge(pinned, 1);
+            SetHandleAge(dependent, 0);
+            SetHandleAge(sizedRef, 2);
+            ManagedGCHeap.TestGeneration = 2;
+            ManagedGCHeap.TestGenerationObject = (nint)dependentSecondary;
+            ManagedGCHeap.TestGenerationForObject = 0;
+            GCScan.GcDemote(
+                0,
+                GCInterfaceOffsets.max_generation,
+                &scanContext);
+
+            Assert.Equal(2, GetHandleAge(strong));
+            Assert.Equal(1, GetHandleAge(pinned));
+            Assert.Equal(0, GetHandleAge(dependent));
+            Assert.Equal(2, GetHandleAge(sizedRef));
+            Assert.Equal(1, GCToEEInterface.SyncBlockCachePromotionsGrantedCallCount);
+            Assert.Equal(1, GCToEEInterface.SyncBlockCacheDemoteCallCount);
+        }
+        finally
+        {
+            ManagedGCHeap.Reset();
+            GCToEEInterface.Reset();
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+            SyncImports.ResetRecording();
+        }
+    }
+
+    [Fact]
     public void FullGcHandleAgingAndRejuvenationIncludesDependentSecondaries()
     {
         SyncImports.ResetRecording();
@@ -873,6 +987,32 @@ public sealed unsafe class HandleTableTests
         where T : unmanaged
     {
         Assert.Equal((nint)expected, Marshal.OffsetOf<T>(fieldName));
+    }
+
+    private static void SetHandleAge(OBJECTHANDLE handle, byte age)
+    {
+        TableSegment* segment =
+            (TableSegment*)HandleTableCore.HandleFetchSegmentPointer(handle);
+        segment->Header.rgGeneration[GetHandleClump(handle)] = age;
+    }
+
+    private static byte GetHandleAge(OBJECTHANDLE handle)
+    {
+        TableSegment* segment =
+            (TableSegment*)HandleTableCore.HandleFetchSegmentPointer(handle);
+        return segment->Header.rgGeneration[GetHandleClump(handle)];
+    }
+
+    private static int GetHandleClump(OBJECTHANDLE handle)
+    {
+        nuint handleOrdinal =
+            (((nuint)handle.Value &
+              HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK) -
+             HandleTableConstants.HANDLE_HEADER_SIZE) /
+            (nuint)IntPtr.Size;
+        return (int)(
+            handleOrdinal /
+            HandleTableConstants.HANDLE_HANDLES_PER_CLUMP);
     }
 
     private static int AlignUp(int value, int alignment) =>

@@ -1,9 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Port of the bounded WKS USE_REGIONS synchronous full-Gen2 lifecycle from collect.cpp and
-// interface.cpp.
+// Port of the bounded WKS USE_REGIONS synchronous foreground lifecycle from collect.cpp,
+// plan_phase.cpp, and interface.cpp.
 
+using System;
 using System.Diagnostics;
 
 namespace Internal.Runtime.GarbageCollection;
@@ -26,7 +27,7 @@ internal unsafe partial struct gc_heap
     private const GCEventKeyword UnsupportedPrivateCollectionKeywords =
         GCEventKeyword.GCPrivate;
 
-    public static bool synchronous_full_gen2_collection_supported(
+    public static bool synchronous_foreground_collection_supported(
         int generation,
         int mode,
         bool survivor_analysis_requested)
@@ -41,7 +42,7 @@ internal unsafe partial struct gc_heap
             (int)collection_mode.collection_compacting;
 
         return
-            (generation < 0 || generation >= GCInterfaceOffsets.max_generation) &&
+            (generation < 0 || generation <= GCInterfaceOffsets.max_generation) &&
             (mode & unsupported_mode) == 0 &&
             (mode & ~supported_mode) == 0 &&
             GCConfig.GetServerGC() == 0 &&
@@ -55,12 +56,12 @@ internal unsafe partial struct gc_heap
             current_bgc_state == bgc_state.bgc_not_in_process;
     }
 
-    public static int garbage_collect_synchronous_full_gen2(
+    public static int garbage_collect_synchronous_foreground(
         int generation,
         byte low_memory_p,
         int mode)
     {
-        return garbage_collect_synchronous_full_gen2(
+        return garbage_collect_synchronous_foreground(
             generation,
             low_memory_p,
             mode,
@@ -68,7 +69,25 @@ internal unsafe partial struct gc_heap
             allocation_triggered_p: false);
     }
 
-    public static int garbage_collect_synchronous_full_gen2_for_allocation(gc_reason reason)
+    public static int garbage_collect_synchronous_full_gen2(
+        int generation,
+        byte low_memory_p,
+        int mode)
+    {
+        if (generation >= 0 && generation < GCInterfaceOffsets.max_generation)
+        {
+            return collection_e_notimpl;
+        }
+
+        return garbage_collect_synchronous_foreground(
+            generation,
+            low_memory_p,
+            mode);
+    }
+
+    public static int garbage_collect_synchronous_foreground_for_allocation(
+        int generation,
+        gc_reason reason)
     {
         Debug.Assert(reason is
             gc_reason.reason_alloc_soh or
@@ -76,24 +95,27 @@ internal unsafe partial struct gc_heap
             gc_reason.reason_oos_soh or
             gc_reason.reason_oos_loh);
 
-        return garbage_collect_synchronous_full_gen2(
-            GCInterfaceOffsets.max_generation,
+        return garbage_collect_synchronous_foreground(
+            generation,
             low_memory_p: 0,
             (int)collection_mode.collection_blocking,
             reason,
             allocation_triggered_p: true);
     }
 
-    private static int garbage_collect_synchronous_full_gen2(
+    private static int garbage_collect_synchronous_foreground(
         int generation,
         byte low_memory_p,
         int mode,
         gc_reason reason,
         bool allocation_triggered_p)
     {
+        int requested_generation = generation < 0
+            ? GCInterfaceOffsets.max_generation
+            : generation;
         bool survivor_analysis_requested =
-            GCToEEInterface.AnalyzeSurvivorsRequested(GCInterfaceOffsets.max_generation) != 0;
-        if (!synchronous_full_gen2_collection_supported(
+            GCToEEInterface.AnalyzeSurvivorsRequested(requested_generation) != 0;
+        if (!synchronous_foreground_collection_supported(
             generation,
             mode,
             survivor_analysis_requested))
@@ -107,7 +129,7 @@ internal unsafe partial struct gc_heap
             return collection_e_fail;
         }
 
-        dynamic_data* dd = dynamic_data_of(hp, GCInterfaceOffsets.max_generation);
+        dynamic_data* dd = dynamic_data_of(hp, requested_generation);
         nuint collection_count_at_entry = dynamic_data.dd_collection_count(dd);
 
         ManagedGCHeap.NotifyCollectionStarted();
@@ -125,7 +147,13 @@ internal unsafe partial struct gc_heap
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
 
         settings.init_mechanisms();
-        if (garbage_collect(hp, low_memory_p, mode, reason, allocation_triggered_p))
+        if (garbage_collect(
+            hp,
+            requested_generation,
+            low_memory_p,
+            mode,
+            reason,
+            allocation_triggered_p))
         {
             collection_completed = true;
             result = collection_s_ok;
@@ -148,6 +176,7 @@ internal unsafe partial struct gc_heap
 
     public static bool garbage_collect(
         gc_heap* hp,
+        int requested_generation,
         byte low_memory_p,
         int mode,
         gc_reason reason,
@@ -177,8 +206,10 @@ internal unsafe partial struct gc_heap
         num_pinned_objects = 0;
         rearrange_uoh_segments();
 
-        settings.condemned_generation = GCInterfaceOffsets.max_generation;
-        settings.promotion = 1;
+        settings.condemned_generation =
+            generation_to_condemn_minimal(hp, requested_generation);
+        settings.promotion =
+            settings.condemned_generation > (int)gc_generation_num.soh_gen1 ? 1 : 0;
         settings.concurrent = 0;
 #if BACKGROUND_GC
         settings.background_p = 0;
@@ -189,28 +220,85 @@ internal unsafe partial struct gc_heap
         GCToEEInterface.GcStartWork(
             settings.condemned_generation,
             GCInterfaceOffsets.max_generation);
-        full_gc_counts[gc_type_blocking]++;
+        if (settings.condemned_generation == GCInterfaceOffsets.max_generation)
+        {
+            full_gc_counts[gc_type_blocking]++;
+        }
 
         return gc1(hp);
+    }
+
+    public static int generation_to_condemn_minimal(
+        gc_heap* hp,
+        int initial_generation)
+    {
+        int condemned_generation = Math.Clamp(
+            initial_generation,
+            0,
+            GCInterfaceOffsets.max_generation);
+
+        for (int gen_number = 0;
+             gen_number < (int)gc_generation_num.total_generation_count;
+             gen_number++)
+        {
+            dynamic_data* dd = dynamic_data_of(hp, gen_number);
+            dynamic_data.dd_gc_new_allocation(dd) =
+                dynamic_data.dd_new_allocation(dd);
+        }
+
+        for (int gen_number = (int)gc_generation_num.loh_generation;
+             gen_number < (int)gc_generation_num.total_generation_count;
+             gen_number++)
+        {
+            if (dynamic_data.dd_new_allocation(
+                    dynamic_data_of(hp, gen_number)) <= 0)
+            {
+                condemned_generation = GCInterfaceOffsets.max_generation;
+                break;
+            }
+        }
+
+        for (int gen_number = condemned_generation + 1;
+             gen_number <= GCInterfaceOffsets.max_generation;
+             gen_number++)
+        {
+            if (dynamic_data.dd_new_allocation(
+                    dynamic_data_of(hp, gen_number)) <= 0)
+            {
+                condemned_generation = gen_number;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (last_gc_before_oom != 0)
+        {
+            condemned_generation = GCInterfaceOffsets.max_generation;
+        }
+
+        return condemned_generation;
     }
 
     public static bool gc1(gc_heap* hp)
     {
         Debug.Assert(settings.concurrent == 0);
-        Debug.Assert(settings.condemned_generation == GCInterfaceOffsets.max_generation);
 
         int n = settings.condemned_generation;
         update_collection_counts(hp);
 
         if (!mark_phase_stack_roots() ||
-            !plan_phase_synchronous_full_gen2(hp, n))
+            !plan_phase_synchronous_foreground(hp, n))
         {
             return false;
         }
 
         generation* generation_table = generation_table_of(hp);
         for (int gen_number = 0;
-             gen_number <= GCInterfaceOffsets.max_generation;
+             gen_number <= Math.Min(
+                 GCInterfaceOffsets.max_generation,
+                 n + 1);
              gen_number++)
         {
             generation* gen = generation_of(generation_table, gen_number);
@@ -232,18 +320,37 @@ internal unsafe partial struct gc_heap
         }
 
         for (int gen_number = 0;
-             gen_number <= GCInterfaceOffsets.max_generation;
+             gen_number <= n;
              gen_number++)
         {
             compute_new_dynamic_data_minimal(hp, gen_number);
         }
 
-        compute_new_dynamic_data_minimal(
-            hp,
-            (int)gc_generation_num.loh_generation);
-        compute_new_dynamic_data_minimal(
-            hp,
-            (int)gc_generation_num.poh_generation);
+        if (n == GCInterfaceOffsets.max_generation)
+        {
+            compute_new_dynamic_data_minimal(
+                hp,
+                (int)gc_generation_num.loh_generation);
+            compute_new_dynamic_data_minimal(
+                hp,
+                (int)gc_generation_num.poh_generation);
+        }
+        else
+        {
+            for (int gen_number = n + 1;
+                 gen_number <= GCInterfaceOffsets.max_generation;
+                 gen_number++)
+            {
+                update_older_dynamic_data_minimal(hp, gen_number);
+            }
+
+            for (int gen_number = n + 1;
+                 gen_number < (int)gc_generation_num.total_generation_count;
+                 gen_number++)
+            {
+                record_generation_size_after(hp, gen_number);
+            }
+        }
 
         rearrange_uoh_segments();
         compute_gc_and_ephemeral_range(hp, n, end_of_gc_p: true);
@@ -255,7 +362,10 @@ internal unsafe partial struct gc_heap
 
         update_end_ngc_time();
         update_end_gc_time_per_heap(hp);
-        record_full_blocking_gc_info_minimal(hp);
+        if (n == GCInterfaceOffsets.max_generation)
+        {
+            record_full_blocking_gc_info_minimal(hp);
+        }
         last_gc_before_oom = 0;
         GCToEEInterface.GcDone(n);
         return true;
@@ -321,8 +431,39 @@ internal unsafe partial struct gc_heap
             dynamic_data.dd_survived_size(dd) -
             dynamic_data.dd_pinned_survived_size(dd));
     }
+
+    private static void update_older_dynamic_data_minimal(
+        gc_heap* hp,
+        int gen_number)
+    {
+        if (settings.promotion != 0)
+        {
+            generation* gen = generation_of(generation_table_of(hp), gen_number);
+            dynamic_data.dd_fragmentation(dynamic_data_of(hp, gen_number)) =
+                unchecked(
+                    generation.generation_free_list_space(gen) +
+                    generation.generation_free_obj_space(gen));
+        }
+    }
+
+    private static void record_generation_size_after(
+        gc_heap* hp,
+        int gen_number)
+    {
+        generation* gen = generation_of(generation_table_of(hp), gen_number);
+        gc_history_per_heap* history =
+            (gc_history_per_heap*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+                ref gc_data_per_heap);
+        ref gc_generation_data gen_data =
+            ref gc_history_per_heap.gen_data(history, gen_number);
+        gen_data.size_after = generation_sizes(hp, gen);
+        gen_data.free_list_space_after =
+            generation.generation_free_list_space(gen);
+        gen_data.free_obj_space_after =
+            generation.generation_free_obj_space(gen);
+    }
 #else
-    public static int garbage_collect_synchronous_full_gen2(
+    public static int garbage_collect_synchronous_foreground(
         int generation,
         byte low_memory_p,
         int mode)
@@ -331,6 +472,22 @@ internal unsafe partial struct gc_heap
         _ = low_memory_p;
         _ = mode;
         return collection_e_notimpl;
+    }
+
+    public static int garbage_collect_synchronous_full_gen2(
+        int generation,
+        byte low_memory_p,
+        int mode)
+    {
+        if (generation >= 0 && generation < GCInterfaceOffsets.max_generation)
+        {
+            return collection_e_notimpl;
+        }
+
+        return garbage_collect_synchronous_foreground(
+            generation,
+            low_memory_p,
+            mode);
     }
 #endif
 }

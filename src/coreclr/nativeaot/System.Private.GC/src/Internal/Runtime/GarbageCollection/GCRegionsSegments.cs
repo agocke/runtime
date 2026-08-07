@@ -351,6 +351,7 @@ internal unsafe partial struct gc_heap
 
         sizes[(int)bookkeeping_element.card_table_element] = card_table_info.size_card_of(start, end);
         sizes[(int)bookkeeping_element.brick_table_element] = card_table_info.size_brick_of(start, end);
+        sizes[(int)bookkeeping_element.card_bundle_table_element] = card_table_info.size_card_bundle_of(start, end);
         sizes[(int)bookkeeping_element.region_to_generation_table_element] = size_region_to_generation_table_of(start, end);
         sizes[(int)bookkeeping_element.seg_mapping_table_element] = size_seg_mapping_table_of(start, end);
 #if BACKGROUND_GC
@@ -585,6 +586,13 @@ internal unsafe partial struct gc_heap
             (nint)card_table_info.size_mark_array_of(null, GCCommon.g_gc_lowest_address));
 #endif
         card_table = new_card_table;
+        if ((nuint)(GCCommon.g_gc_highest_address -
+            GCCommon.g_gc_lowest_address) >=
+            card_table_info.SH_TH_CARD_BUNDLE)
+        {
+            enable_card_bundles();
+        }
+
         return true;
     }
 
@@ -1770,6 +1778,224 @@ internal unsafe partial struct gc_heap
     {
         return (card_table[(nint)card_table_info.card_word(card)] &
             (1u << (int)card_table_info.card_bit(card))) != 0;
+    }
+
+    public static void card_bundle_clear(nuint card_bundle)
+    {
+        uint bit = 1u << (int)card_table_info.card_bundle_bit(card_bundle);
+        card_bundle_table[(nint)card_table_info.card_bundle_word(card_bundle)] &=
+            ~bit;
+    }
+
+    public static void card_bundle_set(nuint card_bundle)
+    {
+        uint bit = 1u << (int)card_table_info.card_bundle_bit(card_bundle);
+        card_bundle_table[(nint)card_table_info.card_bundle_word(card_bundle)] |=
+            bit;
+    }
+
+    public static void card_bundles_set(
+        nuint start_card_bundle,
+        nuint end_card_bundle)
+    {
+        if (start_card_bundle == end_card_bundle)
+        {
+            card_bundle_set(start_card_bundle);
+            return;
+        }
+
+        nuint start_word =
+            card_table_info.card_bundle_word(start_card_bundle);
+        nuint end_word =
+            card_table_info.card_bundle_word(end_card_bundle);
+        if (start_word < end_word)
+        {
+            card_bundle_table[(nint)start_word] |= highbits(
+                uint.MaxValue,
+                card_table_info.card_bundle_bit(start_card_bundle));
+            if (card_table_info.card_bundle_bit(end_card_bundle) != 0)
+            {
+                card_bundle_table[(nint)end_word] |= lowbits(
+                    uint.MaxValue,
+                    card_table_info.card_bundle_bit(end_card_bundle));
+            }
+
+            for (nuint word = start_word + 1; word < end_word; word++)
+            {
+                card_bundle_table[(nint)word] = uint.MaxValue;
+            }
+        }
+        else
+        {
+            card_bundle_table[(nint)start_word] |=
+                highbits(
+                    uint.MaxValue,
+                    card_table_info.card_bundle_bit(start_card_bundle)) &
+                lowbits(
+                    uint.MaxValue,
+                    card_table_info.card_bundle_bit(end_card_bundle));
+        }
+    }
+
+    public static bool card_bundles_enabled() => settings.card_bundles != 0;
+
+    public static void enable_card_bundles()
+    {
+        if (card_bundles_enabled())
+        {
+            return;
+        }
+
+        card_bundles_set(
+            card_table_info.cardw_card_bundle(
+                card_table_info.card_word(card_of(lowest_address))),
+            card_table_info.cardw_card_bundle(
+                card_table_info.align_cardw_on_bundle(
+                    card_table_info.card_word(card_of(highest_address)))));
+        settings.card_bundles = 1;
+    }
+
+    public static bool find_card_dword(ref nuint card_word, nuint card_word_end)
+    {
+        if (card_bundles_enabled())
+        {
+            nuint card_bundle =
+                card_table_info.cardw_card_bundle(card_word);
+            nuint end_card_bundle = card_table_info.cardw_card_bundle(
+                card_table_info.align_cardw_on_bundle(card_word_end));
+            while (true)
+            {
+                while (card_bundle < end_card_bundle)
+                {
+                    uint bundle_word = card_bundle_table[
+                        (nint)card_table_info.card_bundle_word(card_bundle)] >>
+                        (int)card_table_info.card_bundle_bit(card_bundle);
+                    uint bit_index;
+                    if (GCEnv.BitScanForward(&bit_index, bundle_word) != 0)
+                    {
+                        card_bundle += bit_index;
+                        break;
+                    }
+
+                    card_bundle +=
+                        card_table_info.card_bundle_word_width -
+                        card_table_info.card_bundle_bit(card_bundle);
+                }
+
+                if (card_bundle >= end_card_bundle)
+                {
+                    return false;
+                }
+
+                nuint bundle_start =
+                    card_table_info.card_bundle_cardw(card_bundle);
+                nuint bundle_end =
+                    card_table_info.card_bundle_cardw(card_bundle + 1);
+                nuint first_word =
+                    bundle_start > card_word ? bundle_start : card_word;
+                nuint last_word =
+                    bundle_end < card_word_end ? bundle_end : card_word_end;
+                nuint current_word = first_word;
+                while (current_word < last_word &&
+                    card_table[(nint)current_word] == 0)
+                {
+                    current_word++;
+                }
+
+                if (current_word != last_word)
+                {
+                    card_word = current_word;
+                    return true;
+                }
+
+                current_word = bundle_start;
+                while (current_word < bundle_end &&
+                    card_table[(nint)current_word] == 0)
+                {
+                    current_word++;
+                }
+
+                if (current_word == bundle_end)
+                {
+                    card_bundle_clear(card_bundle);
+                }
+
+                card_bundle++;
+            }
+        }
+
+        while (card_word < card_word_end)
+        {
+            if (card_table[(nint)card_word] != 0)
+            {
+                return true;
+            }
+
+            card_word++;
+        }
+
+        return false;
+    }
+
+    public static bool find_card(
+        ref nuint card,
+        nuint card_word_end,
+        out nuint end_card)
+    {
+        end_card = 0;
+        if (card_table_info.card_word(card) >= card_word_end)
+        {
+            return false;
+        }
+
+        nuint current_word = card_table_info.card_word(card);
+        uint bit_position = card_table_info.card_bit(card);
+        uint card_word_value = bit_position == 0
+            ? 0
+            : card_table[(nint)current_word] >> (int)bit_position;
+        if (card_word_value == 0)
+        {
+            current_word += bit_position != 0 ? 1u : 0u;
+            if (!find_card_dword(ref current_word, card_word_end))
+            {
+                return false;
+            }
+
+            card_word_value = card_table[(nint)current_word];
+            bit_position = 0;
+        }
+
+        uint bit_index;
+        if (GCEnv.BitScanForward(&bit_index, card_word_value) == 0)
+        {
+            return false;
+        }
+
+        card_word_value >>= (int)bit_index;
+        bit_position += bit_index;
+        card = current_word * card_table_info.card_word_width + bit_position;
+
+        do
+        {
+            bit_position++;
+            card_word_value >>= 1;
+            if (bit_position == card_table_info.card_word_width &&
+                current_word < card_word_end - 1)
+            {
+                do
+                {
+                    card_word_value = card_table[(nint)(++current_word)];
+                }
+                while (current_word < card_word_end - 1 &&
+                    card_word_value == uint.MaxValue);
+                bit_position = 0;
+            }
+        }
+        while ((card_word_value & 1) != 0);
+
+        end_card =
+            current_word * card_table_info.card_word_width + bit_position;
+        return true;
     }
 
     private static uint lowbits(uint wrd, uint bits)

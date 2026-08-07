@@ -21,11 +21,26 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+
 using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
+
+internal static class GCConfigTestAssemblyInitializer
+{
+    [ModuleInitializer]
+    internal static void Initialize()
+    {
+        RuntimeHelpers.RunClassConstructor(typeof(GCConfigTests).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ManagedGCEntryPointsTests).TypeHandle);
+#if USE_REGIONS
+        RuntimeHelpers.RunClassConstructor(typeof(GCWriteBarrierTests).TypeHandle);
+#endif
+    }
+}
 
 // GCConfig's storage is process-wide, and the affinitize-range tests inject into the same
 // substituted imports as the rest, so this class joins the collection that serializes them.

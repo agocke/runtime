@@ -790,6 +790,124 @@ namespace Internal.Runtime.GarbageCollection
         }
 #endif
 
+        public static void copy_to_alloc_list(allocator* a, alloc_list* destination)
+        {
+            for (uint i = 0; i < a->num_buckets; i++)
+            {
+                destination[i] = *alloc_list_of(a, i);
+            }
+        }
+
+        public static void copy_from_alloc_list(allocator* a, alloc_list* source)
+        {
+            bool repair_list = a->discard_if_no_fit_p() == 0;
+#if TARGET_64BIT && !TARGET_WASM
+            bool repair_doubly_linked_list =
+                a->gen_number == GCInterfaceOffsets.max_generation;
+            uint start_index = repair_doubly_linked_list ? 1u : 0u;
+            if (repair_doubly_linked_list)
+            {
+                Debug.Assert(alloc_list_damage_count_of(a, 0) == 0);
+                byte* head = alloc_list_head_of(a, 0);
+                if (head is not null)
+                {
+                    free_list_prev(head) = null;
+                }
+
+                added_alloc_list_head_of(a, 0) = null;
+                added_alloc_list_tail_of(a, 0) = null;
+            }
+#else
+            uint start_index = 0;
+#endif
+
+            for (uint i = start_index; i < a->num_buckets; i++)
+            {
+                nuint damage_count = alloc_list_damage_count_of(a, i);
+                *alloc_list_of(a, i) = source[i];
+                Debug.Assert(alloc_list_damage_count_of(a, i) == 0);
+
+                if (repair_list)
+                {
+                    byte* free_item = alloc_list_head_of(a, i);
+                    while (free_item is not null && damage_count != 0)
+                    {
+                        Debug.Assert(((CObjectHeader*)free_item)->IsFree() != 0);
+                        if (free_list_undo(free_item) != (byte*)1)
+                        {
+                            damage_count--;
+                            free_list_slot(free_item) = free_list_undo(free_item);
+                            free_list_undo(free_item) = (byte*)1;
+                        }
+
+                        free_item = free_list_slot(free_item);
+                    }
+
+#if TARGET_64BIT && !TARGET_WASM
+                    if (repair_doubly_linked_list)
+                    {
+                        added_alloc_list_head_of(a, i) = null;
+                        added_alloc_list_tail_of(a, i) = null;
+                    }
+#endif
+                }
+            }
+        }
+
+        public static void commit_alloc_list_changes(allocator* a)
+        {
+            if (a->discard_if_no_fit_p() != 0)
+            {
+                return;
+            }
+
+            for (uint i = 0; i < a->num_buckets; i++)
+            {
+                byte* free_item = alloc_list_head_of(a, i);
+#if TARGET_64BIT && !TARGET_WASM
+                bool repair_doubly_linked_list =
+                    a->gen_number == GCInterfaceOffsets.max_generation;
+                if (free_item is not null && repair_doubly_linked_list)
+                {
+                    free_list_prev(free_item) = null;
+                }
+#endif
+
+                nuint damage_count = alloc_list_damage_count_of(a, i);
+                while (free_item is not null && damage_count != 0)
+                {
+                    Debug.Assert(((CObjectHeader*)free_item)->IsFree() != 0);
+                    if (free_list_undo(free_item) != (byte*)1)
+                    {
+                        free_list_undo(free_item) = (byte*)1;
+                        damage_count--;
+                    }
+
+#if TARGET_64BIT && !TARGET_WASM
+                    if (repair_doubly_linked_list)
+                    {
+                        byte* next_item = free_list_slot(free_item);
+                        if (next_item is not null &&
+                            free_list_prev(next_item) != free_item)
+                        {
+                            free_list_prev(next_item) = free_item;
+                        }
+                    }
+#endif
+                    free_item = free_list_slot(free_item);
+                }
+
+                alloc_list_damage_count_of(a, i) = 0;
+#if TARGET_64BIT && !TARGET_WASM
+                if (repair_doubly_linked_list)
+                {
+                    added_alloc_list_head_of(a, i) = null;
+                    added_alloc_list_tail_of(a, i) = null;
+                }
+#endif
+            }
+        }
+
         public int discard_if_no_fit_p()
         {
             return (num_buckets == 1) ? 1 : 0;
@@ -3425,6 +3543,19 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint size_card_of(byte* from, byte* end)
         {
             return count_card_of(from, end) * sizeof(uint);
+        }
+
+        public static nuint size_card_bundle_of(byte* from, byte* end)
+        {
+            const nuint HeapBytesForBundleWord =
+                card_size * card_word_width * card_bundle_size * card_bundle_word_width;
+            byte* alignedFrom = (byte*)((nuint)from & ~(HeapBytesForBundleWord - 1));
+            byte* alignedEnd = (byte*)unchecked(
+                ((nuint)end + HeapBytesForBundleWord - 1) &
+                ~(HeapBytesForBundleWord - 1));
+            return (nuint)(alignedEnd - alignedFrom) /
+                HeapBytesForBundleWord *
+                sizeof(uint);
         }
 
         public static ref uint card_table_refcount(uint* c_table)

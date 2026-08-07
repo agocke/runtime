@@ -186,15 +186,9 @@ public sealed unsafe class GCScanTests
     }
 
     [Theory]
-    [InlineData(0, 1, 2, 2)]
-    [InlineData(0, 0, 1, 2)]
-    [InlineData(1, 1, 2, 2)]
-    [InlineData(1, 0, 1, 2)]
-    public void GcScanHandlesRequiresSynchronousFullGc(
-        int promotion,
-        int concurrent,
-        int condemned,
-        int maxGeneration)
+    [InlineData(0)]
+    [InlineData(1)]
+    public void GcScanHandlesRejectsConcurrentScans(int promotion)
     {
         Assert.True(ObjectHandle.Ref_Initialize());
         HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
@@ -210,12 +204,270 @@ public sealed unsafe class GCScanTests
 
             ScanContext sc = default;
             sc.promotion = (byte)promotion;
-            sc.concurrent = (byte)concurrent;
+            sc.concurrent = 1;
             ResetHandleScanObservations();
 
-            GCScan.GcScanHandles(&RecordHandle, condemned, maxGeneration, &sc);
+            GCScan.GcScanHandles(&RecordHandle, 0, 2, &sc);
 
             Assert.Equal(0, s_handleScanCallCount);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void GcScanHandlesScansGenerationScopedStrongPinnedAndSizedRefRoots(
+        int condemned)
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            OBJECTHANDLE strong = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x1000,
+                0);
+            OBJECTHANDLE pinned = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_PINNED,
+                (byte*)0x2000,
+                0);
+            OBJECTHANDLE sizedRef = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_SIZEDREF,
+                (byte*)0x3000,
+                0);
+            SetHandleAge(strong, 0);
+            SetHandleAge(pinned, 1);
+            SetHandleAge(sizedRef, 0);
+
+            ScanContext sc = default;
+            sc.promotion = 1;
+            ResetRelocationObservations();
+
+            GCScan.GcScanHandles(
+                &RecordAndRelocateHandle,
+                condemned,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+
+            if (condemned == 0)
+            {
+                Assert.Equal(2, s_handleScanCallCount);
+                AssertRecordedHandle(0, 0x1000, 0);
+                AssertRecordedHandle(1, 0x3000, 0);
+            }
+            else
+            {
+                Assert.Equal(3, s_handleScanCallCount);
+                AssertRecordedHandle(
+                    0,
+                    0x2000,
+                    (uint)GCCallFlags.GC_CALL_PINNED);
+                AssertRecordedHandle(1, 0x1000, 0);
+                AssertRecordedHandle(2, 0x3000, 0);
+            }
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void EphemeralWeakScansClearOnlyDeadEligibleHandles()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            MethodTable* methodTable = stackalloc MethodTable[1];
+            CObjectHeader* objects = stackalloc CObjectHeader[3];
+            for (int i = 0; i < 3; i++)
+            {
+                objects[i].RawSetMethodTable(methodTable);
+            }
+
+            objects[2].SetMarked();
+
+            OBJECTHANDLE oldShortWeak = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_SHORT,
+                (byte*)&objects[0],
+                0);
+            OBJECTHANDLE deadLongWeak = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_LONG,
+                (byte*)&objects[1],
+                0);
+            OBJECTHANDLE liveLongWeak = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_LONG,
+                (byte*)&objects[2],
+                0);
+            SetHandleAge(oldShortWeak, 2);
+            SetHandleAge(deadLongWeak, 0);
+            SetHandleAge(liveLongWeak, 0);
+
+            ScanContext sc = default;
+            GCScan.GcShortWeakPtrScan(0, GCInterfaceOffsets.max_generation, &sc);
+            GCScan.GcWeakPtrScan(0, GCInterfaceOffsets.max_generation, &sc);
+
+            Assert.Equal((nuint)(byte*)&objects[0], *(nuint*)oldShortWeak.Value);
+            Assert.Equal((nuint)0, *(nuint*)deadLongWeak.Value);
+            Assert.Equal((nuint)(byte*)&objects[2], *(nuint*)liveLongWeak.Value);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void EphemeralDependentScansPromoteAndClearOnlyEligibleClumps()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            MethodTable* methodTable = stackalloc MethodTable[1];
+            CObjectHeader* objects = stackalloc CObjectHeader[6];
+            for (int i = 0; i < 6; i++)
+            {
+                objects[i].RawSetMethodTable(methodTable);
+            }
+
+            objects[0].SetMarked();
+            objects[4].SetMarked();
+
+            OBJECTHANDLE young = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                (byte*)&objects[0],
+                (nuint)(void*)&objects[1]);
+            OBJECTHANDLE dead = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                (byte*)&objects[2],
+                (nuint)(void*)&objects[3]);
+            OBJECTHANDLE old = CreateHandleInDifferentClump(
+                table,
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                young,
+                (byte*)&objects[4],
+                (nuint)(void*)&objects[5]);
+            SetHandleAge(young, 0);
+            SetHandleAge(dead, 0);
+            SetHandleAge(old, 2);
+
+            ScanContext sc = default;
+            s_dependentPromotionCount = 0;
+            GCScan.GcDhInitialScan(
+                &MarkDependentObject,
+                0,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+
+            Assert.Equal(1, s_dependentPromotionCount);
+            Assert.True(objects[1].IsMarked() != 0);
+            Assert.Equal(0, objects[5].IsMarked());
+
+            GCScan.GcWeakPtrScan(
+                0,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+
+            Assert.Equal((nuint)0, *(nuint*)dead.Value);
+            Assert.Equal((nuint)0, (nuint)HandleTableManager.GetDependentHandleSecondary(dead));
+            Assert.Equal((nuint)(byte*)&objects[4], *(nuint*)old.Value);
+            Assert.Equal(
+                (nuint)(byte*)&objects[5],
+                (nuint)HandleTableManager.GetDependentHandleSecondary(old));
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void EphemeralRelocationUpdatesOnlyEligibleHandleClumps()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            OBJECTHANDLE strong = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x1000,
+                0);
+            OBJECTHANDLE pinned = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_PINNED,
+                (byte*)0x2000,
+                0);
+            OBJECTHANDLE weak = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_SHORT,
+                (byte*)0x3000,
+                0);
+            OBJECTHANDLE dependent = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                (byte*)0x4000,
+                0x4100);
+            OBJECTHANDLE sizedRef = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_SIZEDREF,
+                (byte*)0x5000,
+                0);
+            SetHandleAge(strong, 0);
+            SetHandleAge(pinned, 1);
+            SetHandleAge(weak, 0);
+            SetHandleAge(dependent, 0);
+            SetHandleAge(sizedRef, 0);
+
+            ScanContext sc = default;
+            ResetRelocationObservations();
+            s_relocationDelta = 0x20;
+
+            GCScan.GcScanHandles(
+                &RecordAndRelocateHandle,
+                0,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+
+            Assert.Equal((nuint)0x1020, *(nuint*)strong.Value);
+            Assert.Equal((nuint)0x2000, *(nuint*)pinned.Value);
+            Assert.Equal((nuint)0x3020, *(nuint*)weak.Value);
+            Assert.Equal((nuint)0x4020, *(nuint*)dependent.Value);
+            Assert.Equal(
+                (nuint)0x4120,
+                (nuint)HandleTableManager.GetDependentHandleSecondary(dependent));
+            Assert.Equal((nuint)0x5020, *(nuint*)sizedRef.Value);
+            Assert.Equal(5, s_handleScanCallCount);
         }
         finally
         {
@@ -314,9 +566,9 @@ public sealed unsafe class GCScanTests
             GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
 
 #if FEATURE_JAVAMARSHAL
-            Assert.Equal(10, s_handleScanCallCount);
+            Assert.Equal(11, s_handleScanCallCount);
 #else
-            Assert.Equal(9, s_handleScanCallCount);
+            Assert.Equal(10, s_handleScanCallCount);
 #endif
             int index = 0;
             AssertRecordedHandle(index++, 0x1000, 0);
@@ -327,6 +579,7 @@ public sealed unsafe class GCScanTests
 #if FEATURE_JAVAMARSHAL
             AssertRecordedHandle(index++, 0x1500, 0);
 #endif
+            AssertRecordedHandle(index++, 0x5200, 0);
             AssertRecordedHandle(index++, 0x2000, (uint)GCCallFlags.GC_CALL_PINNED);
             AssertRecordedHandle(index++, 0x3000, 0);
             AssertRecordedHandle(index++, 0x3100, 0);
@@ -716,6 +969,58 @@ public sealed unsafe class GCScanTests
             ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
             ObjectHandle.Ref_Shutdown();
         }
+    }
+
+    private static OBJECTHANDLE CreateHandleInDifferentClump(
+        HandleTable* table,
+        uint type,
+        OBJECTHANDLE other,
+        byte* value,
+        nuint extraInfo)
+    {
+        int otherClump = GetHandleClump(other);
+        for (int i = 0;
+             i < HandleTableConstants.HANDLE_HANDLES_PER_CLUMP * 2;
+             i++)
+        {
+            OBJECTHANDLE handle = HandleTableManager.HndCreateHandle(
+                table,
+                type,
+                null,
+                0);
+            if (GetHandleClump(handle) != otherClump)
+            {
+                HandleTableManager.HndAssignHandle(handle, value);
+                HandleTableManager.HndSetHandleExtraInfo(
+                    handle,
+                    type,
+                    extraInfo);
+
+                return handle;
+            }
+        }
+
+        Assert.Fail("Expected handle allocation to reach another clump.");
+        return default;
+    }
+
+    private static void SetHandleAge(OBJECTHANDLE handle, byte age)
+    {
+        TableSegment* segment =
+            (TableSegment*)HandleTableCore.HandleFetchSegmentPointer(handle);
+        segment->Header.rgGeneration[GetHandleClump(handle)] = age;
+    }
+
+    private static int GetHandleClump(OBJECTHANDLE handle)
+    {
+        nuint handleOrdinal =
+            (((nuint)handle.Value &
+              HandleTableConstants.HANDLE_SEGMENT_CONTENT_MASK) -
+             HandleTableConstants.HANDLE_HEADER_SIZE) /
+            (nuint)sizeof(nuint);
+        return (int)(
+            handleOrdinal /
+            HandleTableConstants.HANDLE_HANDLES_PER_CLUMP);
     }
 
     private static void Promote(byte** objectRef, ScanContext* sc, uint flags)

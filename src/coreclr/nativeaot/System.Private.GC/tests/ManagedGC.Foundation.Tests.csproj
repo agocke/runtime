@@ -26,7 +26,9 @@
          non-WASM full runtime. The managed runtime is the workstation configuration, while the
          offsets table itself keeps the native server branch for its separate verifier. -->
     <DefineConstants Condition="'$(Platform)' != 'wasm'">BACKGROUND_GC;$(DefineConstants)</DefineConstants>
-    <DefineConstants Condition="'$(Platform)' == 'x86' or '$(Platform)' == 'x64' or '$(Platform)' == 'arm' or '$(Platform)' == 'arm64' or '$(Platform)' == 'loongarch64' or '$(Platform)' == 'riscv64'">FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP;$(DefineConstants)</DefineConstants>
+    <!-- Kept in step with the NativeAOT runtime and System.Private.GC: the assembly write
+         barrier and GC-internal card writes manually maintain card bundles on these targets. -->
+    <DefineConstants Condition="'$(Platform)' == 'x64' or '$(Platform)' == 'arm64' or '$(Platform)' == 'loongarch64' or '$(Platform)' == 'riscv64'">FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP;FEATURE_MANUALLY_MANAGED_CARD_BUNDLES;$(DefineConstants)</DefineConstants>
     <!-- Kept in step with src/System.Private.GC.csproj: USE_REGIONS selects the region layout of
          the generation schema, matching gcpriv.h's HOST_64BIT && (!HOST_APPLE || HOST_OSX) after
          the standalone/illumos terms drop out for this port. -->

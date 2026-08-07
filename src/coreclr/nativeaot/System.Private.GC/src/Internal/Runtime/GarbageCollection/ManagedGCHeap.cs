@@ -11,7 +11,7 @@ namespace Internal.Runtime.GarbageCollection
     /// <remarks>
     /// <para>
     /// Region targets refill SOH and UOH allocation contexts through the translated WKS
-    /// allocation state and route the bounded synchronous full-Gen2 collection lifecycle. The
+    /// allocation state and route the bounded synchronous foreground collection lifecycle. The
     /// bootstrap bump range remains for frozen metadata. Methods outside that bounded collector
     /// either report their explicitly supported subset or stop the process through
     /// <see cref="Unsupported"/> rather than returning a plausible-looking wrong answer.
@@ -522,7 +522,7 @@ namespace Internal.Runtime.GarbageCollection
         private static int GarbageCollect(void* thisPtr, int generation, byte low_memory_p, int mode)
         {
             GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
-            int result = gc_heap.garbage_collect_synchronous_full_gen2(
+            int result = gc_heap.garbage_collect_synchronous_foreground(
                 generation,
                 low_memory_p,
                 mode);
@@ -540,7 +540,19 @@ namespace Internal.Runtime.GarbageCollection
         private static uint GetCondemnedGeneration(void* thisPtr) =>
             unchecked((uint)gc_heap.settings.condemned_generation);
 
-        private static int CollectionCount(void* thisPtr, int generation, int get_bgc_fgc_count) => Volatile.Read(ref s_gcCount);
+        private static int CollectionCount(void* thisPtr, int generation, int get_bgc_fgc_count)
+        {
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            if (heap is not null &&
+                (uint)generation <= (uint)GCInterfaceOffsets.max_generation)
+            {
+                return unchecked((int)dynamic_data.dd_collection_count(
+                    gc_heap.dynamic_data_of(heap, generation)));
+            }
+#endif
+            return Volatile.Read(ref s_gcCount);
+        }
 
         private static uint GetGcCount(void* thisPtr) => (uint)Volatile.Read(ref s_gcCount);
 
@@ -576,12 +588,10 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void WaitUntilGCCompleteCore(bool considerGcStart)
         {
-            uint switchCount = 0;
-            while (Volatile.Read(ref s_gcInProgress) != 0 ||
-                (considerGcStart && Volatile.Read(ref s_gcStarted) != 0))
-            {
-                GCToOSInterface.YieldThread(switchCount++);
-            }
+            SyncImports.ManagedGC_WaitUntilGCComplete(
+                ref s_gcInProgress,
+                ref s_gcStarted,
+                considerGcStart ? 1 : 0);
         }
 
         private static void SetWaitForGCEvent(void* thisPtr)

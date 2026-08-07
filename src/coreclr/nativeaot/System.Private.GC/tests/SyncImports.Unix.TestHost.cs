@@ -245,6 +245,18 @@ internal static unsafe partial class SyncImports
         NativeMemory.Free(memory);
     }
 
+    public static void ManagedGC_WaitUntilGCComplete(
+        ref int gcInProgress,
+        ref int gcStarted,
+        int considerGcStart)
+    {
+        while (Volatile.Read(ref gcInProgress) != 0 ||
+            (considerGcStart != 0 && Volatile.Read(ref gcStarted) != 0))
+        {
+            Thread.Yield();
+        }
+    }
+
     [DllImport("libc", EntryPoint = "pthread_mutex_init")]
     private static extern int sys_pthread_mutex_init(pthread_mutex_t* mutex, pthread_mutexattr_t* attr);
 

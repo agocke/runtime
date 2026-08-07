@@ -175,6 +175,18 @@ internal static unsafe partial class SyncImports
         NativeMemory.Free(memory);
     }
 
+    public static void ManagedGC_WaitUntilGCComplete(
+        ref int gcInProgress,
+        ref int gcStarted,
+        int considerGcStart)
+    {
+        while (Volatile.Read(ref gcInProgress) != 0 ||
+            (considerGcStart != 0 && Volatile.Read(ref gcStarted) != 0))
+        {
+            Thread.Yield();
+        }
+    }
+
     [DllImport("kernel32", EntryPoint = "CreateEventW", SetLastError = true)]
     private static extern void* sys_CreateEventW(void* lpEventAttributes, int bManualReset, int bInitialState, char* lpName);
 

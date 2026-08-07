@@ -149,6 +149,7 @@ public sealed unsafe class SoftwareWriteWatchTests : IDisposable
     {
         using SyntheticHeap heap = new(pageCount: 6);
         uint* savedCardTable = gc_heap.card_table;
+        uint* savedCardBundleTable = gc_heap.card_bundle_table;
 
         try
         {
@@ -176,6 +177,24 @@ public sealed unsafe class SoftwareWriteWatchTests : IDisposable
             }
 
             gc_heap.card_table = cardWords - (nint)firstCardWord;
+            nuint firstCardBundle =
+                card_table_info.cardw_card_bundle(firstCardWord);
+            nuint lastCardBundle =
+                card_table_info.cardw_card_bundle(lastCardWord);
+            nuint firstCardBundleWord =
+                card_table_info.card_bundle_word(firstCardBundle);
+            nuint lastCardBundleWord =
+                card_table_info.card_bundle_word(lastCardBundle);
+            int cardBundleWordCount = checked((int)(
+                lastCardBundleWord - firstCardBundleWord + 1));
+            uint* cardBundleWords = stackalloc uint[cardBundleWordCount];
+            for (int i = 0; i < cardBundleWordCount; i++)
+            {
+                cardBundleWords[i] = 0;
+            }
+
+            gc_heap.card_bundle_table =
+                cardBundleWords - (nint)firstCardBundleWord;
 
             gc_heap.gcmemcopy(dest, src, Length, copy_cards_p: 1);
             for (int i = 0; i < 6; i++)
@@ -195,6 +214,7 @@ public sealed unsafe class SoftwareWriteWatchTests : IDisposable
         finally
         {
             gc_heap.card_table = savedCardTable;
+            gc_heap.card_bundle_table = savedCardBundleTable;
         }
     }
 #endif

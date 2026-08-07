@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Port of the dependency-closed parts of gcscan.cpp, in their original order. The bounded
-// synchronous full-GC handle-table scan is in HandleTableScan.cs with its table-scanning helpers.
+// synchronous handle-table scan is in HandleTableScan.cs with its table-scanning helpers.
 
 using System.Diagnostics;
 
@@ -53,7 +53,7 @@ internal static unsafe class GCScan
         int max_gen,
         ScanContext* sc)
     {
-        if (sc->concurrent != 0 || condemned < max_gen)
+        if (sc->concurrent != 0)
         {
             return;
         }

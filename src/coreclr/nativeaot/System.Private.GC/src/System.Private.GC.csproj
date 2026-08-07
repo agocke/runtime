@@ -38,7 +38,10 @@
          workstation collector; GCInterfaceOffsets.h retains the server branch for its separate
          native verifier. -->
     <DefineConstants Condition="'$(Platform)' != 'wasm'">BACKGROUND_GC;$(DefineConstants)</DefineConstants>
-    <DefineConstants Condition="'$(Platform)' == 'x86' or '$(Platform)' == 'x64' or '$(Platform)' == 'arm' or '$(Platform)' == 'arm64' or '$(Platform)' == 'loongarch64' or '$(Platform)' == 'riscv64'">FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP;$(DefineConstants)</DefineConstants>
+    <!-- NativeAOT's runtime CMake enables software write watch and manually maintained card
+         bundles together on these architectures. The assembly write barrier maintains the
+         bundle table, so GC-internal card writes must compile the matching set_card path. -->
+    <DefineConstants Condition="'$(Platform)' == 'x64' or '$(Platform)' == 'arm64' or '$(Platform)' == 'loongarch64' or '$(Platform)' == 'riscv64'">FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP;FEATURE_MANUALLY_MANAGED_CARD_BUNDLES;$(DefineConstants)</DefineConstants>
     <!-- USE_REGIONS is the collector's region layout. gcpriv.h defines it as
          HOST_64BIT && !BUILD_AS_STANDALONE && !__sun && (!HOST_APPLE || HOST_OSX). This integrated
          port is never BUILD_AS_STANDALONE and never targets illumos/Solaris, so it reduces to

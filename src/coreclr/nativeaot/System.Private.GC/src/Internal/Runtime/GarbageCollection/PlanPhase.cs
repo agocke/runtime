@@ -1606,10 +1606,13 @@ internal unsafe partial struct gc_heap
         }
     }
 
-    private static bool validate_full_gen2_plan_prerequisites(gc_heap* hp)
+    private static bool validate_foreground_plan_prerequisites(
+        gc_heap* hp,
+        int condemned_gen_number)
     {
         if (hp is null ||
-            settings.condemned_generation != GCInterfaceOffsets.max_generation ||
+            (uint)condemned_gen_number > (uint)GCInterfaceOffsets.max_generation ||
+            settings.condemned_generation != condemned_gen_number ||
             (settings.compaction != 0 && settings.compaction != 1) ||
             settings.concurrent != 0 ||
             (settings.promotion != 0 && settings.promotion != 1) ||
@@ -1714,12 +1717,15 @@ internal unsafe partial struct gc_heap
                         return false;
                     }
 
-                    if (header->IsPinned() != 0 && header->IsMarked() == 0)
+                    if (gen_num <= condemned_gen_number &&
+                        header->IsPinned() != 0 &&
+                        header->IsMarked() == 0)
                     {
                         return false;
                     }
 
-                    if (header->IsMarked() != 0)
+                    if (gen_num <= condemned_gen_number &&
+                        header->IsMarked() != 0)
                     {
                         if (first_marked is null || object_address < first_marked)
                         {
@@ -1750,96 +1756,99 @@ internal unsafe partial struct gc_heap
             }
         }
 
-        for (int gen_num = (int)gc_generation_num.loh_generation;
-             gen_num <= (int)gc_generation_num.poh_generation;
-             gen_num++)
+        if (condemned_gen_number == GCInterfaceOffsets.max_generation)
         {
-            generation* gen = generation_of(generation_table, gen_num);
-            heap_segment* segment = generation.generation_start_segment(gen);
-            if (gen->gen_num != gen_num ||
-                segment is null ||
-                generation.generation_allocation_segment(gen) is null ||
-                generation.generation_tail_region(gen) is null)
+            for (int gen_num = (int)gc_generation_num.loh_generation;
+                 gen_num <= (int)gc_generation_num.poh_generation;
+                 gen_num++)
             {
-                return false;
-            }
-
-            nuint segmentCount = 0;
-            heap_segment* tail = null;
-            while (segment is not null)
-            {
-                bool readOnly = heap_segment.heap_segment_read_only_p(segment) != 0;
-                if (++segmentCount > region_count + 1 ||
-                    heap_segment.heap_segment_uoh_p(segment) == 0 ||
-                    (heap_segment.heap_segment_gen_num(segment) !=
-                        GCInterfaceOffsets.max_generation &&
-                     heap_segment.heap_segment_gen_num(segment) != gen_num) ||
-                    heap_segment.heap_segment_mem(segment) is null ||
-                    (!readOnly &&
-                     heap_segment.heap_segment_mem(segment) < lowest_address) ||
-                    heap_segment.heap_segment_mem(segment) >
-                        heap_segment.heap_segment_allocated(segment) ||
-                    heap_segment.heap_segment_allocated(segment) >
-                        heap_segment.heap_segment_committed(segment) ||
-                    heap_segment.heap_segment_committed(segment) >
-                        heap_segment.heap_segment_reserved(segment) ||
-                    (!readOnly &&
-                     heap_segment.heap_segment_reserved(segment) > highest_address))
+                generation* gen = generation_of(generation_table, gen_num);
+                heap_segment* segment = generation.generation_start_segment(gen);
+                if (gen->gen_num != gen_num ||
+                    segment is null ||
+                    generation.generation_allocation_segment(gen) is null ||
+                    generation.generation_tail_region(gen) is null)
                 {
                     return false;
                 }
 
-                byte* objectAddress = heap_segment.heap_segment_mem(segment);
-                byte* allocated = heap_segment.heap_segment_allocated(segment);
-                while (objectAddress < allocated)
+                nuint segmentCount = 0;
+                heap_segment* tail = null;
+                while (segment is not null)
                 {
-                    CObjectHeader* header = (CObjectHeader*)objectAddress;
-                    if (header->GetMethodTable() is null)
+                    bool readOnly = heap_segment.heap_segment_read_only_p(segment) != 0;
+                    if (++segmentCount > region_count + 1 ||
+                        heap_segment.heap_segment_uoh_p(segment) == 0 ||
+                        (heap_segment.heap_segment_gen_num(segment) !=
+                            GCInterfaceOffsets.max_generation &&
+                         heap_segment.heap_segment_gen_num(segment) != gen_num) ||
+                        heap_segment.heap_segment_mem(segment) is null ||
+                        (!readOnly &&
+                         heap_segment.heap_segment_mem(segment) < lowest_address) ||
+                        heap_segment.heap_segment_mem(segment) >
+                            heap_segment.heap_segment_allocated(segment) ||
+                        heap_segment.heap_segment_allocated(segment) >
+                            heap_segment.heap_segment_committed(segment) ||
+                        heap_segment.heap_segment_committed(segment) >
+                            heap_segment.heap_segment_reserved(segment) ||
+                        (!readOnly &&
+                         heap_segment.heap_segment_reserved(segment) > highest_address))
                     {
                         return false;
                     }
 
-                    nuint objectSize = size(objectAddress);
-                    nuint alignedSize = AlignQword(objectSize);
-                    if (objectSize == 0 ||
-                        alignedSize <
-                            Align(
-                                (nuint)GCInterfaceOffsets.min_obj_size,
-                                get_alignment_constant(small_object_p: false)) ||
-                        alignedSize > (nuint)(allocated - objectAddress) ||
-                        (header->IsPinned() != 0 && header->IsMarked() == 0))
+                    byte* objectAddress = heap_segment.heap_segment_mem(segment);
+                    byte* allocated = heap_segment.heap_segment_allocated(segment);
+                    while (objectAddress < allocated)
+                    {
+                        CObjectHeader* header = (CObjectHeader*)objectAddress;
+                        if (header->GetMethodTable() is null)
+                        {
+                            return false;
+                        }
+
+                        nuint objectSize = size(objectAddress);
+                        nuint alignedSize = AlignQword(objectSize);
+                        if (objectSize == 0 ||
+                            alignedSize <
+                                Align(
+                                    (nuint)GCInterfaceOffsets.min_obj_size,
+                                    get_alignment_constant(small_object_p: false)) ||
+                            alignedSize > (nuint)(allocated - objectAddress) ||
+                            (header->IsPinned() != 0 && header->IsMarked() == 0))
+                        {
+                            return false;
+                        }
+
+                        if (header->IsMarked() != 0)
+                        {
+                            if (first_marked is null || objectAddress < first_marked)
+                            {
+                                first_marked = objectAddress;
+                            }
+
+                            if (last_marked is null || objectAddress > last_marked)
+                            {
+                                last_marked = objectAddress;
+                            }
+                        }
+
+                        objectAddress += (nint)alignedSize;
+                    }
+
+                    if (objectAddress != allocated)
                     {
                         return false;
                     }
 
-                    if (header->IsMarked() != 0)
-                    {
-                        if (first_marked is null || objectAddress < first_marked)
-                        {
-                            first_marked = objectAddress;
-                        }
-
-                        if (last_marked is null || objectAddress > last_marked)
-                        {
-                            last_marked = objectAddress;
-                        }
-                    }
-
-                    objectAddress += (nint)alignedSize;
+                    tail = segment;
+                    segment = heap_segment.heap_segment_next(segment);
                 }
 
-                if (objectAddress != allocated)
+                if (tail != generation.generation_tail_region(gen))
                 {
                     return false;
                 }
-
-                tail = segment;
-                segment = heap_segment.heap_segment_next(segment);
-            }
-
-            if (tail != generation.generation_tail_region(gen))
-            {
-                return false;
             }
         }
 
@@ -1851,10 +1860,11 @@ internal unsafe partial struct gc_heap
         return slow == first_marked && shigh == last_marked;
     }
 
-    public static bool plan_phase_synchronous_full_gen2(gc_heap* hp, int condemned_gen_number)
+    public static bool plan_phase_synchronous_foreground(
+        gc_heap* hp,
+        int condemned_gen_number)
     {
-        if (condemned_gen_number != GCInterfaceOffsets.max_generation ||
-            !validate_full_gen2_plan_prerequisites(hp))
+        if (!validate_foreground_plan_prerequisites(hp, condemned_gen_number))
         {
             return false;
         }
@@ -1944,10 +1954,62 @@ internal unsafe partial struct gc_heap
         nuint sequence_number = 0;
         byte* last_node = null;
         nuint current_brick = brick_of(x);
-        int allocate_in_condemned = 1;
+        int allocate_in_condemned =
+            condemned_gen_number == GCInterfaceOffsets.max_generation ||
+            settings.promotion == 0
+                ? 1
+                : 0;
         int active_old_gen_number = condemned_gen_number;
-        int active_new_gen_number = condemned_gen_number;
+        int active_new_gen_number = allocate_in_condemned != 0
+            ? condemned_gen_number
+            : condemned_gen_number + 1;
         generation* consing_gen = condemned_gen1;
+        generation* older_gen = null;
+        alloc_list* saved_free_list =
+            stackalloc alloc_list[GCInterfaceOffsets.MAX_BUCKET_COUNT];
+        nuint saved_free_list_space = 0;
+        nuint saved_free_obj_space = 0;
+        nuint saved_free_list_allocated = 0;
+        nuint saved_condemned_allocated = 0;
+        nuint saved_end_seg_allocated = 0;
+        byte* saved_allocation_pointer = null;
+        byte* saved_allocation_limit = null;
+        byte* saved_allocation_start_region = null;
+        heap_segment* saved_allocation_segment = null;
+
+        if (condemned_gen_number < GCInterfaceOffsets.max_generation)
+        {
+            older_gen = generation_of(generation_table, condemned_gen_number + 1);
+            allocator.copy_to_alloc_list(
+                generation.generation_allocator(older_gen),
+                saved_free_list);
+            saved_free_list_space = generation.generation_free_list_space(older_gen);
+            saved_free_obj_space = generation.generation_free_obj_space(older_gen);
+            generation.generation_allocate_end_seg_p(older_gen) = 0;
+            saved_free_list_allocated =
+                generation.generation_free_list_allocated(older_gen);
+            saved_condemned_allocated =
+                generation.generation_condemned_allocated(older_gen);
+            saved_end_seg_allocated =
+                generation.generation_end_seg_allocated(older_gen);
+            saved_allocation_pointer =
+                generation.generation_allocation_pointer(older_gen);
+            saved_allocation_limit =
+                generation.generation_allocation_limit(older_gen);
+            saved_allocation_start_region =
+                generation.generation_allocation_context_start_region(older_gen);
+            saved_allocation_segment =
+                generation.generation_allocation_segment(older_gen);
+
+            for (heap_segment* region =
+                    generation.generation_start_segment_rw(older_gen);
+                 region is not null;
+                 region = heap_segment.heap_segment_next(region))
+            {
+                heap_segment.heap_segment_plan_allocated(region) =
+                    heap_segment.heap_segment_allocated(region);
+            }
+        }
 
         for (int gen_index = 0; gen_index <= condemned_gen_number; gen_index++)
         {
@@ -1992,9 +2054,10 @@ internal unsafe partial struct gc_heap
                 generation.generation_allocation_pointer(condemned_gen2);
         }
 
-        decide_promote_gen1_pins_p =
-            settings.promotion != 0 &&
-            settings.condemned_generation == GCInterfaceOffsets.max_generation - 1;
+        // The native path promotes Gen1 pins only for the low-card-efficiency-only
+        // condemnation reason. That tuning reason is not produced by the translated
+        // condemnation prefix.
+        decide_promote_gen1_pins_p = false;
 
         if (should_sweep_in_plan(hp, seg1))
         {
@@ -2346,24 +2409,26 @@ internal unsafe partial struct gc_heap
             fragmentation,
             ref shouldExpand);
 
-        if (settings.loh_compaction != 0)
+        if (condemned_gen_number == GCInterfaceOffsets.max_generation)
         {
-            shouldCompact = true;
-            gc_data_per_heap.set_mechanism(
-                gc_mechanism_per_heap.gc_heap_compact,
-                (uint)gc_heap_compact_reason.compact_loh_forced);
-        }
-        else
-        {
-            sweep_uoh_objects(hp, (int)gc_generation_num.loh_generation);
-        }
+            if (settings.loh_compaction != 0)
+            {
+                shouldCompact = true;
+                gc_data_per_heap.set_mechanism(
+                    gc_mechanism_per_heap.gc_heap_compact,
+                    (uint)gc_heap_compact_reason.compact_loh_forced);
+            }
+            else
+            {
+                sweep_uoh_objects(hp, (int)gc_generation_num.loh_generation);
+            }
 
-        sweep_uoh_objects(hp, (int)gc_generation_num.poh_generation);
-
-        if (shouldCompact)
-        {
-            full_gc_counts[gc_type_compacting]++;
-            loh_alloc_since_cg = 0;
+            sweep_uoh_objects(hp, (int)gc_generation_num.poh_generation);
+            if (shouldCompact)
+            {
+                full_gc_counts[gc_type_compacting]++;
+                loh_alloc_since_cg = 0;
+            }
         }
 
         if (special_sweep_p)
@@ -2372,7 +2437,8 @@ internal unsafe partial struct gc_heap
         }
 
         loh_compacted_p = 0;
-        if (settings.loh_compaction != 0)
+        if (condemned_gen_number == GCInterfaceOffsets.max_generation &&
+            settings.loh_compaction != 0)
         {
             if (shouldCompact && plan_loh(hp))
             {
@@ -2383,7 +2449,8 @@ internal unsafe partial struct gc_heap
                 sweep_uoh_objects(hp, (int)gc_generation_num.loh_generation);
             }
         }
-        else if (loh_pinned_queue is not null)
+        else if (condemned_gen_number == GCInterfaceOffsets.max_generation &&
+            loh_pinned_queue is not null)
         {
             decay_loh_pinned_queue();
         }
@@ -2393,6 +2460,12 @@ internal unsafe partial struct gc_heap
         {
             generation.generation_allocation_limit(condemned_gen1) =
                 generation.generation_allocation_pointer(condemned_gen1);
+            if (older_gen is not null)
+            {
+                allocator.commit_alloc_list_changes(
+                    generation.generation_allocator(older_gen));
+                fix_older_allocation_area(older_gen);
+            }
 
             if (!relocate_phase(hp, condemned_gen_number, first_condemned_address) ||
                 !compact_phase(
@@ -2448,6 +2521,36 @@ internal unsafe partial struct gc_heap
             settings.compaction = 0;
             settings.demotion = 0;
 
+            if (older_gen is not null)
+            {
+                allocator.copy_from_alloc_list(
+                    generation.generation_allocator(older_gen),
+                    saved_free_list);
+                generation.generation_free_list_space(older_gen) =
+                    saved_free_list_space;
+                generation.generation_free_obj_space(older_gen) =
+                    saved_free_obj_space;
+                generation.generation_free_list_allocated(older_gen) =
+                    saved_free_list_allocated;
+                generation.generation_end_seg_allocated(older_gen) =
+                    saved_end_seg_allocated;
+                generation.generation_condemned_allocated(older_gen) =
+                    saved_condemned_allocated;
+                generation.generation_sweep_allocated(older_gen) = unchecked(
+                    generation.generation_sweep_allocated(older_gen) +
+                    dynamic_data.dd_survived_size(
+                        dynamic_data_of(hp, condemned_gen_number)));
+                generation.generation_allocation_limit(older_gen) =
+                    saved_allocation_limit;
+                generation.generation_allocation_pointer(older_gen) =
+                    saved_allocation_pointer;
+                generation.generation_allocation_context_start_region(older_gen) =
+                    saved_allocation_start_region;
+                generation.generation_allocation_segment(older_gen) =
+                    saved_allocation_segment;
+                fix_older_allocation_area(older_gen);
+            }
+
             make_free_lists(hp, condemned_gen_number);
             nuint totalRecoveredSweepSize = recover_saved_pinned_info();
             if (totalRecoveredSweepSize > 0)
@@ -2487,13 +2590,39 @@ internal unsafe partial struct gc_heap
         return true;
     }
 
+    public static bool plan_phase_synchronous_full_gen2(
+        gc_heap* hp,
+        int condemned_gen_number) =>
+        plan_phase_synchronous_foreground(hp, condemned_gen_number);
+
     public static void fix_generation_bounds(
         gc_heap* hp,
         int condemned_gen_number,
         generation* consing_gen)
     {
         _ = consing_gen;
-        Debug.Assert(condemned_gen_number == GCInterfaceOffsets.max_generation);
+
+        if (settings.promotion != 0 &&
+            condemned_gen_number < GCInterfaceOffsets.max_generation)
+        {
+            generation* older_gen = generation_of(
+                generation_table_of(hp),
+                condemned_gen_number + 1);
+            heap_segment* last_alloc_region =
+                generation.generation_allocation_segment(older_gen);
+            for (heap_segment* region =
+                    generation.generation_start_segment_rw(older_gen);
+                 region is not null;
+                 region = heap_segment.heap_segment_next(region))
+            {
+                heap_segment.heap_segment_allocated(region) =
+                    heap_segment.heap_segment_plan_allocated(region);
+                if (region == last_alloc_region)
+                {
+                    break;
+                }
+            }
+        }
 
         thread_final_regions(hp, compact_p: true);
 
