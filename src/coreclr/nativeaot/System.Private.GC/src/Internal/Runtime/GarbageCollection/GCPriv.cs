@@ -947,8 +947,15 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint gen0_pinned_free_space;
         public static bool gen0_large_chunk_found;
         public static reserved_region_array reserved_free_regions_sip;
+        public static generation_region_count_array regions_per_gen;
         public static generation_region_count_array planned_regions_per_gen;
+        public static generation_region_count_array sip_maxgen_regions_per_gen;
+        public static bool decide_promote_gen1_pins_p;
+        public static bool enable_special_regions_p;
         public static bool special_sweep_p;
+        public static nuint maxgen_pinned_compact_before_advance;
+        public static int new_gen0_regions_in_plns;
+        public static int new_regions_in_prr;
         public static int new_regions_in_threading;
 
         public static ref heap_segment* reserved_free_region_sip(int generation)
@@ -1034,8 +1041,15 @@ namespace Internal.Runtime.GarbageCollection
 #endif
 #if USE_REGIONS
             reserved_free_regions_sip = default;
+            regions_per_gen = default;
             planned_regions_per_gen = default;
+            sip_maxgen_regions_per_gen = default;
+            decide_promote_gen1_pins_p = true;
+            enable_special_regions_p = GCConfig.GetGCEnableSpecialRegions() != 0;
             special_sweep_p = false;
+            maxgen_pinned_compact_before_advance = 0;
+            new_gen0_regions_in_plns = 0;
+            new_regions_in_prr = 0;
             new_regions_in_threading = 0;
 #endif
             settings.first_init();
@@ -3561,6 +3575,17 @@ namespace Internal.Runtime.GarbageCollection
             return unchecked((nuint)((plug_and_gap*)node)[-1].gap);
         }
 
+        public static void set_gap_size(byte* node, nuint size)
+        {
+            Debug.Assert(Align(size) == size);
+
+            ((plug_and_gap*)node)[-1].reloc = 0;
+            ((plug_and_gap*)node)[-1].lr = 0;
+            ((plug_and_gap*)node)[-1].gap = unchecked((nint)size);
+
+            Debug.Assert(size == 0 || size >= (nuint)sizeof(plug_and_reloc));
+        }
+
         public static nint loh_node_relocation_distance(byte* node)
         {
             return ((loh_obj_and_pad*)node)[-1].reloc;
@@ -3576,6 +3601,14 @@ namespace Internal.Runtime.GarbageCollection
             return ((plug_and_reloc*)node)[-1].reloc & 1;
         }
 
+        public static void set_node_relocation_distance(byte* node, nint val)
+        {
+            Debug.Assert(val == (val & ~(nint)3));
+            ref nint place = ref ((plug_and_reloc*)node)[-1].reloc;
+            place &= 1;
+            place |= val;
+        }
+
         public static void set_node_realigned(byte* node)
         {
             ((plug_and_reloc*)node)[-1].reloc |= 1;
@@ -3584,6 +3617,11 @@ namespace Internal.Runtime.GarbageCollection
         public static nint node_left_p(byte* node)
         {
             return ((plug_and_reloc*)node)[-1].reloc & 2;
+        }
+
+        public static void set_node_left(byte* node)
+        {
+            ((plug_and_reloc*)node)[-1].reloc |= 2;
         }
 
         public static byte* tree_search(byte* tree, byte* old_address)

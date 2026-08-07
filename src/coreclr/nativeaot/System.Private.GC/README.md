@@ -96,7 +96,7 @@ Ported so far:
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
-| `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, the bounded WKS synchronous full-GC compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
+| `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, the bounded WKS synchronous full-Gen2 SOH plan-construction core and SIP helpers, the bounded WKS synchronous full-GC compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
 | `RelocateCompact.cs` | allocation-free relocation/compaction copy primitives, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation and compaction, non-compacting UOH reference relocation, bounded synchronous WKS `USE_REGIONS` full-GC relocation/compaction orchestration, and dependency-closed helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | dependency-closed WKS `USE_REGIONS` SOH normal/special sweep brick walk and final region threading, SIP free-list handoff, empty-region replacement, UOH marked-object clearing, unused-array card clearing/reset, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp`, `plan_phase.cpp`, `allocation.cpp`, `regions_segments.cpp`, and `gcinternal.h` |
 | `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, the synchronous full-GC condemned-generation planning allocator, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
@@ -1184,7 +1184,17 @@ selection, both pinned-allocation attribution forms, and
 front/tail padding, short-plug conversion, plan/commit growth and segment transition, generation
 allocation/free accounting, and region plan-generation publication. The large-plug exception
 suppresses front padding only when the native region-size threshold requires it. Planning
-traversal and collection routing remain deferred.
+traversal now has a bounded synchronous full-Gen2 SOH adapter,
+`plan_phase_synchronous_full_gen2`. It rejects null or mismatched heap/settings, active
+concurrent/background collection, malformed generation/region chains, inconsistent mark
+bounds, and invalid pinned-stack/bookkeeping prerequisites before mutation. The accepted path
+preserves segment shortening, marked/pinned clearing, pinned-plug pre/post gap saves, artificial
+pinning, exact gap/relocation/left flags, brick trees and sentinels, condemned allocation,
+remaining-pin demotion, the 6-MiB large-pin threshold, exact 90-percent SIP decisions, and
+region plan generations through the native end of region planning. It deliberately stops before
+non-region generation starts, post-plan compaction/sweep policy, UOH planning, phase
+finalization, and collection routing. Focused foundation tests feed its plan into the existing
+relocation and compaction leaves.
 
 The next allocation orchestration leaf connects those fits in native order:
 `soh_try_fit` favors the SOH free list, honors the short-end result, tries the current

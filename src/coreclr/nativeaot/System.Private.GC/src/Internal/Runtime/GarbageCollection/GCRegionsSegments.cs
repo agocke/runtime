@@ -1332,6 +1332,14 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    public static void set_region_plan_gen_num_sip(heap_segment* region, int plan_gen_num)
+    {
+        if (heap_segment.heap_segment_swept_in_plan(region) == 0)
+        {
+            set_region_plan_gen_num(region, plan_gen_num);
+        }
+    }
+
     public static void set_region_gen_num(heap_segment* region, int gen_num)
     {
         Debug.Assert(gen_num < (1 << (sizeof(byte) * 8)));
