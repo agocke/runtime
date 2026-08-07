@@ -966,6 +966,17 @@ internal unsafe partial struct gc_heap
 
                 if (save_pre_plug_info_p != 0)
                 {
+#if TARGET_64BIT && !TARGET_WASM
+                    generation* maxGeneration = generation_of(
+                        generation_table_of(hp),
+                        GCInterfaceOffsets.max_generation);
+                    if (last_object_in_last_plug ==
+                        generation.generation_last_free_list_allocated(
+                            maxGeneration))
+                    {
+                        saved_pinned_plug_index = mark_stack_tos;
+                    }
+#endif
                     set_gap_size(plug_start, (nuint)sizeof(gap_reloc_pair));
                 }
             }
@@ -1640,9 +1651,15 @@ internal unsafe partial struct gc_heap
         }
 
 #if BACKGROUND_GC
-        if (settings.background_p != 0 ||
-            background_running_p() ||
-            current_bgc_state != bgc_state.bgc_not_in_process)
+        if ((settings.background_p != 0 || background_running_p()) &&
+            condemned_gen_number == GCInterfaceOffsets.max_generation)
+        {
+            return false;
+        }
+
+        if (settings.background_p == 0 &&
+            (background_running_p() ||
+             current_bgc_state != bgc_state.bgc_not_in_process))
         {
             return false;
         }
@@ -1885,6 +1902,15 @@ internal unsafe partial struct gc_heap
                         nuint unmarked_size = (nuint)(slow - start_unmarked);
                         if (unmarked_size > 0)
                         {
+#if BACKGROUND_GC
+                            if (current_c_gc_state ==
+                                c_gc_state.c_gc_state_marking)
+                            {
+                                bgc_clear_batch_mark_array_bits(
+                                    start_unmarked,
+                                    slow);
+                            }
+#endif
                             Debug.Assert(
                                 unmarked_size >=
                                 Align((nuint)GCInterfaceOffsets.min_obj_size));
@@ -1894,6 +1920,14 @@ internal unsafe partial struct gc_heap
 
                     if (in_range_for_segment(shigh, seg) != 0)
                     {
+#if BACKGROUND_GC
+                        if (current_c_gc_state == c_gc_state.c_gc_state_marking)
+                        {
+                            bgc_clear_batch_mark_array_bits(
+                                shigh + (nint)Align(size(shigh)),
+                                heap_segment.heap_segment_allocated(seg));
+                        }
+#endif
                         save_allocated(seg);
                         heap_segment.heap_segment_allocated(seg) =
                             shigh + (nint)Align(size(shigh));
@@ -1902,6 +1936,14 @@ internal unsafe partial struct gc_heap
                     if (!(heap_segment.heap_segment_reserved(seg) >= slow &&
                           heap_segment.heap_segment_mem(seg) <= shigh))
                     {
+#if BACKGROUND_GC
+                        if (current_c_gc_state == c_gc_state.c_gc_state_marking)
+                        {
+                            bgc_clear_batch_mark_array_bits(
+                                heap_segment.heap_segment_mem(seg),
+                                heap_segment.heap_segment_allocated(seg));
+                        }
+#endif
                         save_allocated(seg);
                         heap_segment.heap_segment_allocated(seg) =
                             heap_segment.heap_segment_mem(seg);
@@ -1921,6 +1963,14 @@ internal unsafe partial struct gc_heap
                         (nuint)(heap_segment.heap_segment_allocated(seg) - start_unmarked);
                     if (unmarked_size > 0)
                     {
+#if BACKGROUND_GC
+                        if (current_c_gc_state == c_gc_state.c_gc_state_marking)
+                        {
+                            bgc_clear_batch_mark_array_bits(
+                                start_unmarked,
+                                heap_segment.heap_segment_allocated(seg));
+                        }
+#endif
                         make_unused_array(start_unmarked, unmarked_size);
                     }
 
@@ -1986,6 +2036,13 @@ internal unsafe partial struct gc_heap
             saved_free_list_space = generation.generation_free_list_space(older_gen);
             saved_free_obj_space = generation.generation_free_obj_space(older_gen);
             generation.generation_allocate_end_seg_p(older_gen) = 0;
+#if TARGET_64BIT && !TARGET_WASM
+            if (older_gen->gen_num == GCInterfaceOffsets.max_generation)
+            {
+                generation.generation_set_bgc_mark_bit_p(older_gen) = 0;
+                generation.generation_last_free_list_allocated(older_gen) = null;
+            }
+#endif
             saved_free_list_allocated =
                 generation.generation_free_list_allocated(older_gen);
             saved_condemned_allocated =
@@ -2069,6 +2126,11 @@ internal unsafe partial struct gc_heap
                 local_mark_list_index);
             x = end;
         }
+
+#if TARGET_64BIT && !TARGET_WASM
+        gen2_removed_no_undo = 0;
+        saved_pinned_plug_index = nuint.MaxValue;
+#endif
 
         nuint last_plug_len = 0;
         while (true)
@@ -2287,16 +2349,48 @@ internal unsafe partial struct gc_heap
                 int convert_to_pinned_p = 0;
                 if (pinned_plug_p == 0)
                 {
-                    Debug.Assert(allocate_in_condemned != 0);
-                    new_address = allocate_in_condemned_generations(
-                        hp,
-                        consing_gen,
-                        ps,
-                        active_old_gen_number,
-                        &convert_to_pinned_p,
-                        npin_before_pin_p != 0 ? plug_end : null,
-                        seg1,
-                        plug_start);
+                    if (allocate_in_condemned != 0 ||
+                        settings.background_p == 0 ||
+                        condemned_gen_number == (int)gc_generation_num.soh_gen0)
+                    {
+                        new_address = allocate_in_condemned_generations(
+                            hp,
+                            consing_gen,
+                            ps,
+                            active_old_gen_number,
+                            &convert_to_pinned_p,
+                            npin_before_pin_p != 0 ? plug_end : null,
+                            seg1,
+                            plug_start);
+                    }
+                    else
+                    {
+                        Debug.Assert(older_gen is not null);
+                        new_address = allocate_in_older_generation(
+                            hp,
+                            older_gen,
+                            ps,
+                            active_old_gen_number,
+                            plug_start);
+                        if (new_address is null)
+                        {
+                            if (generation.generation_allocator(older_gen)
+                                ->discard_if_no_fit_p() != 0)
+                            {
+                                allocate_in_condemned = 1;
+                            }
+
+                            new_address = allocate_in_condemned_generations(
+                                hp,
+                                consing_gen,
+                                ps,
+                                active_old_gen_number,
+                                &convert_to_pinned_p,
+                                npin_before_pin_p != 0 ? plug_end : null,
+                                seg1,
+                                plug_start);
+                        }
+                    }
 
                     if (convert_to_pinned_p != 0)
                     {
@@ -2530,6 +2624,18 @@ internal unsafe partial struct gc_heap
                     saved_free_list_space;
                 generation.generation_free_obj_space(older_gen) =
                     saved_free_obj_space;
+#if TARGET_64BIT && !TARGET_WASM
+                if (condemned_gen_number ==
+                    GCInterfaceOffsets.max_generation - 1)
+                {
+                    generation.generation_free_list_space(older_gen) = unchecked(
+                        generation.generation_free_list_space(older_gen) -
+                        gen2_removed_no_undo);
+                    generation.generation_free_obj_space(older_gen) = unchecked(
+                        generation.generation_free_obj_space(older_gen) +
+                        gen2_removed_no_undo);
+                }
+#endif
                 generation.generation_free_list_allocated(older_gen) =
                     saved_free_list_allocated;
                 generation.generation_end_seg_allocated(older_gen) =

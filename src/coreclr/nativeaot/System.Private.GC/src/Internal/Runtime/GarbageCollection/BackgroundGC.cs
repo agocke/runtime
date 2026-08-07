@@ -5,6 +5,8 @@
 // concurrent mark/revisit, allocation trigger, and region sweep from background.cpp,
 // collect.cpp, and allocation.cpp.
 
+using System.Diagnostics;
+using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -30,6 +32,10 @@ internal unsafe partial struct gc_heap
     private static nuint bgc_thread_context;
 #if MANAGED_GC_TEST_HOST
     private static ulong background_state_transitions;
+    private static int test_pause_background;
+    private static int test_background_pause_observed;
+    private static int test_foreground_during_bgc_count;
+    private static gc_mechanisms test_last_restored_bgc_settings;
 #endif
     private static c_gc_state current_c_gc_state;
     private static heap_segment* current_sweep_seg;
@@ -249,11 +255,14 @@ internal unsafe partial struct gc_heap
             return collection_s_ok;
         }
 
+        delay_free_segments();
         ManagedGCHeap.NotifyCollectionStarted();
         background_gc_done_event.Reset();
         gc_background_running = 1;
 #if MANAGED_GC_TEST_HOST
         background_state_transitions = 0;
+        test_foreground_during_bgc_count = 0;
+        test_last_restored_bgc_settings = default;
 #endif
         set_background_state(bgc_state.bgc_initialized);
 
@@ -270,10 +279,17 @@ internal unsafe partial struct gc_heap
         settings.background_p = 1;
         settings.gc_index = dynamic_data.dd_collection_count(
             dynamic_data_of(hp, (int)gc_generation_num.soh_gen0)) + 1;
+        last_background_gc_info_index = 1 - last_background_gc_info_index;
+        background_gc_info(last_background_gc_info_index) = default;
+        background_gc_info(last_background_gc_info_index).index =
+            settings.gc_index;
+        saved_bgc_settings = settings;
         alloc_contexts_used = 0;
         fix_allocation_contexts(hp, for_gc_p: true);
         init_records(hp);
         update_collection_counts(hp);
+        bgc_data_per_heap = gc_data_per_heap;
+        bgc_data_global = gc_data_global;
         GCToEEInterface.GcStartWork(
             GCInterfaceOffsets.max_generation,
             GCInterfaceOffsets.max_generation);
@@ -458,7 +474,6 @@ internal unsafe partial struct gc_heap
         GCEvents.GCEventFireBGC2ndNonConEnd();
         GCToEEInterface.RestartEE(1);
         GCEvents.GCEventFireBGC2ndConBegin();
-        leave_gc_lock();
 
         collectionCompleted = background_sweep(hp);
         enter_gc_lock();
@@ -818,6 +833,92 @@ internal unsafe partial struct gc_heap
     {
         generation* generationTable = generation_table_of(hp);
         for (int genNumber = 0;
+             genNumber <= (int)gc_generation_num.soh_gen2;
+             genNumber++)
+        {
+            generation* gen = generation_of(generationTable, genNumber);
+            if (genNumber != (int)gc_generation_num.soh_gen2)
+            {
+                allocator.clear(generation.generation_allocator(gen));
+                generation.generation_free_list_space(gen) = 0;
+                generation.generation_free_obj_space(gen) = 0;
+            }
+
+            generation.generation_free_list_allocated(gen) = 0;
+            generation.generation_end_seg_allocated(gen) = 0;
+            generation.generation_condemned_allocated(gen) = 0;
+            generation.generation_sweep_allocated(gen) = 0;
+            generation.generation_allocation_pointer(gen) = null;
+            generation.generation_allocation_limit(gen) = null;
+            generation.generation_allocation_segment(gen) =
+                generation.generation_start_segment_rw(gen);
+            dynamic_data.dd_survived_size(dynamic_data_of(hp, genNumber)) = 0;
+        }
+
+        set_background_state(bgc_state.bgc_sweep_soh);
+        current_sweep_seg = generation.generation_start_segment_rw(
+            generation_of(generationTable, (int)gc_generation_num.soh_gen2));
+        current_sweep_pos = null;
+    }
+
+    private static bool background_sweep(gc_heap* hp)
+    {
+        allocator youngestFreeList = default;
+        allocator.initialize(&youngestFreeList);
+        nuint youngestFreeListSpace = 0;
+        nuint youngestFreeObjectSpace = 0;
+        generation* generationTable = generation_table_of(hp);
+
+        for (int genNumber = (int)gc_generation_num.soh_gen1;
+             genNumber >= (int)gc_generation_num.soh_gen0;
+             genNumber--)
+        {
+            generation* gen = generation_of(generationTable, genNumber);
+            if (!background_sweep_generation(
+                hp,
+                gen,
+                uoh_p: false,
+                genNumber == (int)gc_generation_num.soh_gen0
+                    ? &youngestFreeList
+                    : null,
+                &youngestFreeListSpace,
+                &youngestFreeObjectSpace,
+                track_sweep_cursor: false))
+            {
+                leave_gc_lock();
+                return false;
+            }
+        }
+
+        GCSpinLock.enter(&hp->more_space_lock_soh);
+        *generation.generation_allocator(
+            generation_of(generationTable, (int)gc_generation_num.soh_gen0)) =
+            youngestFreeList;
+        generation.generation_free_list_space(
+            generation_of(generationTable, (int)gc_generation_num.soh_gen0)) =
+            youngestFreeListSpace;
+        generation.generation_free_obj_space(
+            generation_of(generationTable, (int)gc_generation_num.soh_gen0)) =
+            youngestFreeObjectSpace;
+        GCSpinLock.leave(&hp->more_space_lock_soh);
+        leave_gc_lock();
+
+        if (!background_sweep_generation(
+            hp,
+            generation_of(generationTable, (int)gc_generation_num.soh_gen2),
+            uoh_p: false,
+            null,
+            &youngestFreeListSpace,
+            &youngestFreeObjectSpace,
+            track_sweep_cursor: true))
+        {
+            return false;
+        }
+
+        GCEvents.GCEventFireBGC1stSweepEnd(0);
+        set_background_state(bgc_state.bgc_sweep_uoh);
+        GCSpinLock.enter(&hp->more_space_lock_uoh);
+        for (int genNumber = (int)gc_generation_num.loh_generation;
              genNumber < (int)gc_generation_num.total_generation_count;
              genNumber++)
         {
@@ -835,79 +936,14 @@ internal unsafe partial struct gc_heap
                 generation.generation_start_segment_rw(gen);
             dynamic_data.dd_survived_size(dynamic_data_of(hp, genNumber)) = 0;
 
-            for (heap_segment* segment = generation.generation_start_segment_rw(gen);
-                 segment is not null;
-                 segment = heap_segment.heap_segment_next(segment))
-            {
-                segment->flags &= ~heap_segment.heap_segment_flags_swept;
-            }
-        }
-
-        set_background_state(bgc_state.bgc_sweep_soh);
-        current_sweep_seg = generation.generation_start_segment_rw(
-            generation_of(generationTable, (int)gc_generation_num.soh_gen2));
-        current_sweep_pos = current_sweep_seg is null
-            ? null
-            : heap_segment.heap_segment_mem(current_sweep_seg);
-    }
-
-    private static bool background_sweep(gc_heap* hp)
-    {
-        allocator youngestFreeList = default;
-        allocator.initialize(&youngestFreeList);
-        nuint youngestFreeListSpace = 0;
-        nuint youngestFreeObjectSpace = 0;
-        generation* generationTable = generation_table_of(hp);
-
-        for (int genNumber = 0;
-             genNumber <= (int)gc_generation_num.soh_gen2;
-             genNumber++)
-        {
-            generation* gen = generation_of(generationTable, genNumber);
             if (!background_sweep_generation(
                 hp,
                 gen,
-                uoh_p: false,
-                genNumber == (int)gc_generation_num.soh_gen0
-                    ? &youngestFreeList
-                    : null,
-                &youngestFreeListSpace,
-                &youngestFreeObjectSpace))
-            {
-                return false;
-            }
-
-            if (genNumber == (int)gc_generation_num.soh_gen2)
-            {
-                GCEvents.GCEventFireBGC1stSweepEnd(0);
-            }
-        }
-
-        GCSpinLock.enter(&hp->more_space_lock_soh);
-        *generation.generation_allocator(
-            generation_of(generationTable, (int)gc_generation_num.soh_gen0)) =
-            youngestFreeList;
-        generation.generation_free_list_space(
-            generation_of(generationTable, (int)gc_generation_num.soh_gen0)) =
-            youngestFreeListSpace;
-        generation.generation_free_obj_space(
-            generation_of(generationTable, (int)gc_generation_num.soh_gen0)) =
-            youngestFreeObjectSpace;
-        GCSpinLock.leave(&hp->more_space_lock_soh);
-
-        set_background_state(bgc_state.bgc_sweep_uoh);
-        GCSpinLock.enter(&hp->more_space_lock_uoh);
-        for (int genNumber = (int)gc_generation_num.loh_generation;
-             genNumber < (int)gc_generation_num.total_generation_count;
-             genNumber++)
-        {
-            if (!background_sweep_generation(
-                hp,
-                generation_of(generationTable, genNumber),
                 uoh_p: true,
                 null,
                 &youngestFreeListSpace,
-                &youngestFreeObjectSpace))
+                &youngestFreeObjectSpace,
+                track_sweep_cursor: false))
             {
                 GCSpinLock.leave(&hp->more_space_lock_uoh);
                 return false;
@@ -925,26 +961,41 @@ internal unsafe partial struct gc_heap
         bool uoh_p,
         allocator* youngestFreeList,
         nuint* youngestFreeListSpace,
-        nuint* youngestFreeObjectSpace)
+        nuint* youngestFreeObjectSpace,
+        bool track_sweep_cursor)
     {
         int genNumber = gen->gen_num;
         int alignConst = get_alignment_constant(!uoh_p);
-        for (heap_segment* segment = generation.generation_start_segment_rw(gen);
-             segment is not null;
-             segment = heap_segment.heap_segment_next(segment))
+        heap_segment* startSegment = generation.generation_start_segment_rw(gen);
+        heap_segment* previousSegment = null;
+        heap_segment* segment = startSegment;
+        while (segment is not null)
         {
+            heap_segment* nextSegment = heap_segment.heap_segment_next(segment);
             byte* end = heap_segment.heap_segment_background_allocated(segment);
             if (end is null)
             {
+                if (track_sweep_cursor)
+                {
+                    break;
+                }
+
                 segment->flags |= heap_segment.heap_segment_flags_swept;
+                previousSegment = segment;
+                segment = nextSegment;
                 continue;
             }
 
             byte* current = heap_segment.heap_segment_mem(segment);
             byte* gapStart = current;
-            current_sweep_seg = segment;
-            current_sweep_pos = current;
+            if (track_sweep_cursor)
+            {
+                current_sweep_seg = segment;
+                current_sweep_pos = current;
+            }
+
             nuint survived = 0;
+            nuint freeObjectSizeLastGap = 0;
             int processed = 0;
 
             while (current < end)
@@ -969,34 +1020,140 @@ internal unsafe partial struct gc_heap
                         youngestFreeList,
                         youngestFreeListSpace,
                         youngestFreeObjectSpace);
+                    if (freeObjectSizeLastGap != 0)
+                    {
+                        Debug.Assert(
+                            generation.generation_free_obj_space(gen) >=
+                            freeObjectSizeLastGap);
+                        generation.generation_free_obj_space(gen) -=
+                            freeObjectSizeLastGap;
+                        freeObjectSizeLastGap = 0;
+                    }
+
                     survived = unchecked(survived + alignedSize);
                     gapStart = next;
                 }
+#if TARGET_64BIT && !TARGET_WASM
+                else if (track_sweep_cursor &&
+                    ((CObjectHeader*)current)->GetMethodTable() ==
+                        GCCommon.g_gc_pFreeObjectMethodTable)
+                {
+                    freeObjectSizeLastGap = unchecked(
+                        freeObjectSizeLastGap + alignedSize);
+                    if (allocator.is_on_free_list(current, alignedSize))
+                    {
+                        allocator.unlink_item_no_undo(
+                            generation.generation_allocator(gen),
+                            current,
+                            alignedSize);
+                        Debug.Assert(
+                            generation.generation_free_list_space(gen) >=
+                            alignedSize);
+                        generation.generation_free_list_space(gen) -=
+                            alignedSize;
+                        generation.generation_free_obj_space(gen) = unchecked(
+                            generation.generation_free_obj_space(gen) +
+                            alignedSize);
+                    }
+                }
+#endif
 
                 current = next;
                 if (++processed == 256)
                 {
-                    current_sweep_pos = current;
+                    if (track_sweep_cursor)
+                    {
+                        current_sweep_pos = current;
+                    }
+
                     allow_foreground_gc();
                     processed = 0;
                 }
             }
 
-            thread_background_gap(
-                gen,
-                gapStart,
-                unchecked((nuint)(end - gapStart)),
-                youngestFreeList,
-                youngestFreeListSpace,
-                youngestFreeObjectSpace);
+            bool deleteSegment =
+                gapStart == heap_segment.heap_segment_mem(segment) &&
+                heap_segment.heap_segment_allocated(segment) == end &&
+                segment != startSegment;
+            if (!deleteSegment)
+            {
+                if (heap_segment.heap_segment_allocated(segment) != end)
+                {
+                    thread_background_gap(
+                        gen,
+                        gapStart,
+                        unchecked((nuint)(end - gapStart)),
+                        youngestFreeList,
+                        youngestFreeListSpace,
+                        youngestFreeObjectSpace);
+                }
+
+                if (freeObjectSizeLastGap != 0)
+                {
+                    Debug.Assert(
+                        generation.generation_free_obj_space(gen) >=
+                        freeObjectSizeLastGap);
+                    generation.generation_free_obj_space(gen) -=
+                        freeObjectSizeLastGap;
+                }
+
+                if (heap_segment.heap_segment_allocated(segment) == end)
+                {
+                    heap_segment.heap_segment_allocated(segment) = gapStart;
+                }
+
+                previousSegment = segment;
+                segment->flags |= heap_segment.heap_segment_flags_swept;
+                heap_segment.heap_segment_saved_bg_allocated(segment) = end;
+                heap_segment.heap_segment_background_allocated(segment) = null;
+            }
+            else
+            {
+                if (freeObjectSizeLastGap != 0)
+                {
+                    Debug.Assert(
+                        generation.generation_free_obj_space(gen) >=
+                        freeObjectSizeLastGap);
+                    generation.generation_free_obj_space(gen) -=
+                        freeObjectSizeLastGap;
+                }
+
+                if (previousSegment is not null)
+                {
+                    heap_segment.heap_segment_next(previousSegment) = nextSegment;
+                }
+
+                update_start_tail_regions(
+                    gen,
+                    segment,
+                    previousSegment,
+                    nextSegment);
+                heap_segment.heap_segment_allocated(segment) =
+                    heap_segment.heap_segment_mem(segment);
+                if (uoh_p)
+                {
+                    heap_segment.heap_segment_next(segment) =
+                        freeable_uoh_segment;
+                    freeable_uoh_segment = segment;
+                }
+                else
+                {
+                    heap_segment.heap_segment_next(segment) =
+                        freeable_soh_segment;
+                    freeable_soh_segment = segment;
+                }
+            }
+
             dynamic_data.dd_survived_size(dynamic_data_of(hp, genNumber)) =
                 unchecked(
                     dynamic_data.dd_survived_size(dynamic_data_of(hp, genNumber)) +
                     survived);
-            current_sweep_pos = end;
-            segment->flags |= heap_segment.heap_segment_flags_swept;
-            heap_segment.heap_segment_saved_bg_allocated(segment) = end;
-            heap_segment.heap_segment_background_allocated(segment) = null;
+            if (track_sweep_cursor)
+            {
+                current_sweep_pos = end;
+            }
+
+            segment = nextSegment;
         }
 
         generation.generation_allocation_segment(gen) =
@@ -1070,14 +1227,126 @@ internal unsafe partial struct gc_heap
         return true;
     }
 
+    public static bool fgc_should_consider_object(
+        byte* o,
+        heap_segment* seg,
+        bool consider_bgc_mark_p,
+        bool check_current_sweep_p)
+    {
+        bool no_bgc_mark_p = false;
+        if (consider_bgc_mark_p)
+        {
+            if (check_current_sweep_p && o < current_sweep_pos)
+            {
+                no_bgc_mark_p = true;
+            }
+
+            if (!no_bgc_mark_p)
+            {
+                byte* background_allocated =
+                    heap_segment.heap_segment_background_allocated(seg);
+                if (o >= background_allocated)
+                {
+                    no_bgc_mark_p = true;
+                }
+            }
+        }
+        else
+        {
+            no_bgc_mark_p = true;
+        }
+
+        return no_bgc_mark_p ||
+            background_object_marked(o, clear_p: false);
+    }
+
+    public static void should_check_bgc_mark(
+        heap_segment* seg,
+        out bool consider_bgc_mark_p,
+        out bool check_current_sweep_p)
+    {
+        consider_bgc_mark_p = false;
+        check_current_sweep_p = false;
+
+        if (current_c_gc_state == c_gc_state.c_gc_state_planning)
+        {
+            if (heap_segment.heap_segment_swept_p(seg) != 0 ||
+                current_sweep_pos == heap_segment.heap_segment_reserved(seg))
+            {
+                return;
+            }
+
+            if (heap_segment.heap_segment_background_allocated(seg) is null)
+            {
+                return;
+            }
+
+            consider_bgc_mark_p = true;
+            if (current_sweep_pos is not null &&
+                in_range_for_segment(current_sweep_pos, seg) != 0)
+            {
+                check_current_sweep_p = true;
+            }
+        }
+    }
+
+    public static bool should_set_bgc_mark_bit(byte* o)
+    {
+        if (current_sweep_seg is null)
+        {
+            Debug.Assert(current_bgc_state == bgc_state.bgc_not_in_process);
+            return false;
+        }
+
+        if (in_range_for_segment(o, current_sweep_seg) != 0)
+        {
+            return o >= current_sweep_pos &&
+                o < heap_segment.heap_segment_background_allocated(
+                    current_sweep_seg);
+        }
+
+        if (o < background_saved_lowest_address ||
+            o >= background_saved_highest_address)
+        {
+            return false;
+        }
+
+        heap_segment* seg = region_of(o);
+        byte* background_allocated =
+            heap_segment.heap_segment_background_allocated(seg);
+        return background_allocated is not null &&
+            o < background_allocated &&
+            heap_segment.heap_segment_swept_p(seg) == 0;
+    }
+
     private static void allow_foreground_gc()
     {
+#if MANAGED_GC_TEST_HOST
         bool toggled = GCToEEInterface.EnablePreemptiveGC() != 0;
+        if (System.Threading.Volatile.Read(ref test_pause_background) != 0)
+        {
+            System.Threading.Volatile.Write(
+                ref test_background_pause_observed,
+                1);
+            while (System.Threading.Volatile.Read(ref test_pause_background) != 0)
+            {
+                GCToOSInterface.Sleep(1);
+            }
+        }
         if (toggled)
         {
             GCToEEInterface.DisablePreemptiveGC();
         }
+#else
+        ManagedGC_AllowForegroundGC();
+#endif
     }
+
+#if !MANAGED_GC_TEST_HOST
+    [RuntimeImport("*", "ManagedGC_AllowForegroundGC")]
+    [MethodImpl(MethodImplOptions.InternalCall)]
+    private static extern void ManagedGC_AllowForegroundGC();
+#endif
 
     private static void finish_background_collection_accounting(gc_heap* hp)
     {
@@ -1102,6 +1371,7 @@ internal unsafe partial struct gc_heap
         update_end_gc_time_per_heap(hp);
         full_gc_counts[gc_type_background]++;
         last_gc_before_oom = 0;
+        record_background_gc_info_minimal(hp);
         GCToEEInterface.GcDone(GCInterfaceOffsets.max_generation);
     }
 
@@ -1131,6 +1401,38 @@ internal unsafe partial struct gc_heap
 
         dynamic_data.dd_gc_new_allocation(dd) = unchecked((nint)desiredAllocation);
         dynamic_data.dd_new_allocation(dd) = unchecked((nint)desiredAllocation);
+
+        gc_history_per_heap* history =
+            (gc_history_per_heap*)Unsafe.AsPointer(ref bgc_data_per_heap);
+        ref gc_generation_data genData =
+            ref gc_history_per_heap.gen_data(history, genNumber);
+        genData.size_after = totalGenSize;
+        genData.free_list_space_after =
+            generation.generation_free_list_space(gen);
+        genData.free_obj_space_after =
+            generation.generation_free_obj_space(gen);
+        genData.pinned_surv = dynamic_data.dd_pinned_survived_size(dd);
+        genData.npinned_surv = unchecked(
+            dynamic_data.dd_survived_size(dd) -
+            dynamic_data.dd_pinned_survived_size(dd));
+    }
+
+    private static void record_background_gc_info_minimal(gc_heap* hp)
+    {
+        ref last_recorded_gc_info info =
+            ref background_gc_info(last_background_gc_info_index);
+        info.total_committed = current_total_committed;
+        info.promoted = get_total_promoted(hp);
+        info.pinned_objects = num_pinned_objects;
+        info.finalize_promoted_objects =
+            finalize_queue is null ? 0 : finalize_queue->GetPromotedCount();
+        info.heap_size = get_total_heap_size(hp);
+        info.fragmentation = get_total_fragmentation(hp);
+        info.condemned_generation =
+            unchecked((byte)GCInterfaceOffsets.max_generation);
+        info.compaction = 0;
+        info.concurrent = 1;
+        is_last_recorded_bgc = 1;
     }
 
     private static void complete_background_gc(bool collectionCompleted)
@@ -1165,6 +1467,7 @@ internal unsafe partial struct gc_heap
             {
                 heap_segment.heap_segment_background_allocated(segment) =
                     heap_segment.heap_segment_allocated(segment);
+                segment->flags &= ~heap_segment.heap_segment_flags_swept;
             }
         }
     }
@@ -1367,6 +1670,46 @@ internal unsafe partial struct gc_heap
 #if MANAGED_GC_TEST_HOST
     public static bool background_state_was_observed(bgc_state state) =>
         (background_state_transitions & (1UL << (int)state)) != 0;
+
+    public static void request_background_pause_for_test()
+    {
+        System.Threading.Volatile.Write(ref test_background_pause_observed, 0);
+        System.Threading.Volatile.Write(ref test_pause_background, 1);
+    }
+
+    public static bool background_pause_observed_for_test() =>
+        System.Threading.Volatile.Read(ref test_background_pause_observed) != 0;
+
+    public static void release_background_pause_for_test() =>
+        System.Threading.Volatile.Write(ref test_pause_background, 0);
+
+    public static int foreground_during_bgc_count_for_test() =>
+        System.Threading.Volatile.Read(ref test_foreground_during_bgc_count);
+
+    public static gc_mechanisms last_restored_bgc_settings_for_test() =>
+        test_last_restored_bgc_settings;
+
+    public static void record_foreground_during_bgc_for_test()
+    {
+        test_last_restored_bgc_settings = settings;
+        System.Threading.Interlocked.Increment(
+            ref test_foreground_during_bgc_count);
+    }
+
+    public static void set_background_sweep_position_for_test(
+        c_gc_state state,
+        heap_segment* segment,
+        byte* position)
+    {
+        current_c_gc_state = state;
+        current_sweep_seg = segment;
+        current_sweep_pos = position;
+    }
+
+    public static void reset_background_event_for_test()
+    {
+        background_gc_done_event = default;
+    }
 #endif
 
 #if MANAGED_GC_TEST_HOST

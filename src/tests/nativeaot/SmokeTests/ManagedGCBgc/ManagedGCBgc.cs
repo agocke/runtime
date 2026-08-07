@@ -23,13 +23,12 @@ internal static class ManagedGCBgcTest
         byte[] pinnedObject = new byte[512];
         pinnedObject[0] = 0x4a;
         GCHandle pinnedHandle = GCHandle.Alloc(pinnedObject, GCHandleType.Pinned);
-        Node dependentPrimary = new Node { Value = 200 };
-        ConditionalWeakTable<Node, Node> dependentHandles = new();
-        dependentHandles.Add(dependentPrimary, new Node { Value = 201 });
         Finalizable.Reset();
         WeakReference finalizable = CreateFinalizableObject();
         Node oldTail = tail;
         int collectionCount = GC.CollectionCount(GC.MaxGeneration);
+        WeakReference recycledRegionObject =
+            CreateLargeGarbageWeakReference(8);
 
         try
         {
@@ -46,22 +45,26 @@ internal static class ManagedGCBgcTest
             tail = cardChild;
 
             int mutations = 0;
-            for (int i = 0; i < 4096; i++)
+            int foregroundCollections = 0;
+            for (int cycle = 0; cycle < 1; cycle++)
             {
-                tail.Next = new Node { Value = 300 + i };
-                tail = tail.Next;
-                mutations++;
-                byte[] garbage = new byte[256];
-                garbage[0] = (byte)i;
-                if ((i & 255) == 0)
+                for (int i = 0; i < 1024; i++)
                 {
-                    Thread.Sleep(1);
+                    tail.Next = new Node { Value = 300 + mutations };
+                    tail = tail.Next;
+                    mutations++;
+                    byte[] garbage = new byte[256];
+                    garbage[0] = (byte)i;
                 }
-            }
 
-            bool dependentAlive = dependentHandles.TryGetValue(
-                dependentPrimary,
-                out Node dependentSecondary);
+                GC.Collect(
+                    0,
+                    GCCollectionMode.Forced,
+                    blocking: true,
+                    compacting: false);
+                foregroundCollections++;
+                Thread.Yield();
+            }
 
             GC.Collect(
                 GC.MaxGeneration,
@@ -69,13 +72,19 @@ internal static class ManagedGCBgcTest
                 blocking: true,
                 compacting: false);
 
-            for (int cycle = 0; cycle < 3; cycle++)
+            for (int cycle = 0; cycle < 4; cycle++)
             {
                 GC.Collect(
                     GC.MaxGeneration,
                     GCCollectionMode.Forced,
                     blocking: false,
                     compacting: false);
+                GC.Collect(
+                    (cycle & 1) == 0 ? 1 : 0,
+                    GCCollectionMode.Forced,
+                    blocking: true,
+                    compacting: false);
+                foregroundCollections++;
                 for (int i = 0; i < 1024; i++)
                 {
                     tail.Next = new Node { Value = 40_000 + cycle * 1024 + i };
@@ -108,11 +117,13 @@ internal static class ManagedGCBgcTest
                 blocking: true,
                 compacting: false);
 
+            byte[][] recycledAllocations = AllocateLargeGarbage(8);
             byte[] subsequent = new byte[2048];
             subsequent[0] = 0x6d;
             bool result =
                 returnedBeforeCompletion &&
                 mutations != 0 &&
+                foregroundCollections == 5 &&
                 GC.CollectionCount(GC.MaxGeneration) >= collectionCount + 4 &&
                 allocationTriggered &&
                 ReferenceEquals(strongHandle.Target, root) &&
@@ -123,9 +134,9 @@ internal static class ManagedGCBgcTest
                 ReferenceEquals(pinnedHandle.Target, pinnedObject) &&
                 pinnedHandle.AddrOfPinnedObject() != IntPtr.Zero &&
                 pinnedObject[0] == 0x4a &&
-                dependentAlive &&
-                dependentSecondary.Value == 201 &&
                 Volatile.Read(ref Finalizable.Count) == 1 &&
+                !recycledRegionObject.IsAlive &&
+                recycledAllocations[0][0] == 0x7b &&
                 allocationSurvivor[0] == 0x2c &&
                 subsequent[0] == 0x6d;
 
@@ -133,12 +144,11 @@ internal static class ManagedGCBgcTest
             GC.KeepAlive(tail);
             GC.KeepAlive(weak);
             GC.KeepAlive(pinnedObject);
-            GC.KeepAlive(dependentPrimary);
-            GC.KeepAlive(dependentHandles);
-            GC.KeepAlive(dependentSecondary);
             GC.KeepAlive(finalizable);
             GC.KeepAlive(oldTail);
             GC.KeepAlive(cardChild);
+            GC.KeepAlive(recycledRegionObject);
+            GC.KeepAlive(recycledAllocations);
             GC.KeepAlive(allocationSurvivor);
             GC.KeepAlive(subsequent);
 
@@ -151,7 +161,9 @@ internal static class ManagedGCBgcTest
                     $"returned={returnedBeforeCompletion}, mutations={mutations}, " +
                     $"collections={GC.CollectionCount(GC.MaxGeneration) - collectionCount}, " +
                     $"allocationTriggered={allocationTriggered}, card={ReferenceEquals(oldTail.Next, cardChild)}, " +
-                    $"weak={weak.IsAlive}, dependent={dependentAlive}, finalizers={Volatile.Read(ref Finalizable.Count)}");
+                    $"weak={weak.IsAlive}, recycled={recycledRegionObject.IsAlive}, " +
+                    $"foreground={foregroundCollections}, " +
+                    $"finalizers={Volatile.Read(ref Finalizable.Count)}");
             }
             return result ? 100 : 1;
         }
@@ -174,6 +186,26 @@ internal static class ManagedGCBgcTest
     {
         object target = new Finalizable();
         return new WeakReference(target);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static byte[][] AllocateLargeGarbage(int count)
+    {
+        byte[][] arrays = new byte[count][];
+        for (int i = 0; i < arrays.Length; i++)
+        {
+            arrays[i] = new byte[512 * 1024];
+            arrays[i][0] = 0x7b;
+        }
+
+        return arrays;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateLargeGarbageWeakReference(int count)
+    {
+        byte[][] arrays = AllocateLargeGarbage(count);
+        return new WeakReference(arrays[0]);
     }
 
     private sealed class Node

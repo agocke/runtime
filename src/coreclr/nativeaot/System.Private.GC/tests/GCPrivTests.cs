@@ -6785,6 +6785,14 @@ public sealed unsafe class GCPrivTests
                 end + (nint)card_table_info.GC_PAGE_SIZE);
 
             Assert.Equal(ExpectedMarkMask(end), markStorage[(int)wordsPerPage]);
+
+            markStorage[0] = uint.MaxValue;
+            markStorage[1] = uint.MaxValue;
+            gc_heap.bgc_clear_batch_mark_array_bits(
+                start + (nint)card_table_info.mark_bit_pitch,
+                start + (nint)(33 * card_table_info.mark_bit_pitch));
+            Assert.Equal(ExpectedMarkMask(start), markStorage[0]);
+            Assert.Equal(0xfffffffeu, markStorage[1]);
         }
         finally
         {
@@ -6793,6 +6801,47 @@ public sealed unsafe class GCPrivTests
             gc_heap.background_saved_highest_address = previousHighestAddress;
             gc_heap.gc_can_use_concurrent = previousCanUseConcurrent;
         }
+    }
+
+    [Fact]
+    public void BackgroundSweepCursorControlsForegroundMarkAndAllocationState()
+    {
+        heap_segment segment = default;
+        heap_segment* pSegment = &segment;
+        heap_segment.heap_segment_mem(pSegment) = (byte*)0x10000;
+        heap_segment.heap_segment_reserved(pSegment) = (byte*)0x20000;
+        heap_segment.heap_segment_background_allocated(pSegment) =
+            (byte*)0x18000;
+
+        gc_heap.current_bgc_state = bgc_state.bgc_sweep_soh;
+        gc_heap.set_background_sweep_position_for_test(
+            c_gc_state.c_gc_state_planning,
+            pSegment,
+            (byte*)0x14000);
+
+        gc_heap.should_check_bgc_mark(
+            pSegment,
+            out bool considerMark,
+            out bool checkCursor);
+        Assert.True(considerMark);
+        Assert.True(checkCursor);
+        Assert.False(gc_heap.should_set_bgc_mark_bit((byte*)0x13000));
+        Assert.True(gc_heap.should_set_bgc_mark_bit((byte*)0x15000));
+        Assert.False(gc_heap.should_set_bgc_mark_bit((byte*)0x18000));
+
+        pSegment->flags |= heap_segment.heap_segment_flags_swept;
+        gc_heap.should_check_bgc_mark(
+            pSegment,
+            out considerMark,
+            out checkCursor);
+        Assert.False(considerMark);
+        Assert.False(checkCursor);
+
+        gc_heap.current_bgc_state = bgc_state.bgc_not_in_process;
+        gc_heap.set_background_sweep_position_for_test(
+            c_gc_state.c_gc_state_free,
+            null,
+            null);
     }
 
     private static nuint ExpectedMarkWord(byte* address)

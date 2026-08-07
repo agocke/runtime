@@ -215,6 +215,12 @@ internal unsafe partial struct gc_heap
     {
         if (dest != src)
         {
+#if BACKGROUND_GC
+            if (current_c_gc_state == c_gc_state.c_gc_state_marking)
+            {
+                copy_mark_bits_for_addresses(dest, src, len);
+            }
+#endif
 #if TARGET_64BIT && !TARGET_WASM
             int set_bgc_mark_bits_p = is_plug_bgc_mark_bit_set(src);
             if (set_bgc_mark_bits_p != 0)
@@ -274,6 +280,34 @@ internal unsafe partial struct gc_heap
             copy_cards_range(dest, src, len, copy_cards_p != 0);
         }
     }
+
+#if BACKGROUND_GC
+    public static void copy_mark_bits_for_addresses(
+        byte* dest,
+        byte* src,
+        nuint len)
+    {
+        byte* src_o = src;
+        byte* src_end = src + (nint)len;
+        nint reloc = unchecked((nint)(dest - src));
+        int align_const = get_alignment_constant(small_object_p: true);
+
+        while (src_o < src_end)
+        {
+            byte* next_o =
+                src_o + (nint)Align(size(src_o), align_const);
+            if (background_object_marked(src_o, clear_p: true))
+            {
+                background_mark(
+                    src_o + reloc,
+                    background_saved_lowest_address,
+                    background_saved_highest_address);
+            }
+
+            src_o = next_o;
+        }
+    }
+#endif
 
     public static void compact_plug(
         byte* plug,
@@ -1300,8 +1334,8 @@ internal unsafe partial struct gc_heap
             settings.condemned_generation != condemned_gen_number ||
             settings.concurrent != 0 ||
 #if BACKGROUND_GC
-            settings.background_p != 0 ||
-            background_running_p() ||
+            ((settings.background_p != 0 || background_running_p()) &&
+             condemned_gen_number == GCInterfaceOffsets.max_generation) ||
 #endif
             (loh_compacted_p != 0 &&
              !validate_loh_compaction_prerequisites(hp)))
@@ -1392,8 +1426,8 @@ internal unsafe partial struct gc_heap
             settings.condemned_generation != condemned_gen_number ||
             settings.concurrent != 0 ||
 #if BACKGROUND_GC
-            settings.background_p != 0 ||
-            background_running_p() ||
+            ((settings.background_p != 0 || background_running_p()) &&
+             condemned_gen_number == GCInterfaceOffsets.max_generation) ||
 #endif
             (loh_compacted_p != 0 &&
              !validate_loh_compaction_prerequisites(hp)))

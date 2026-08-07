@@ -52,8 +52,9 @@ internal unsafe partial struct gc_heap
                 UnsupportedPublicCollectionKeywords) == 0 &&
             (GCEventStatus.GetEnabledKeywords(GCEventProvider.Private) &
                 UnsupportedPrivateCollectionKeywords) == 0 &&
-            !background_running_p() &&
-            current_bgc_state == bgc_state.bgc_not_in_process;
+            (!background_running_p() ||
+             (generation >= 0 &&
+              generation < GCInterfaceOffsets.max_generation));
     }
 
     public static int garbage_collect_synchronous_foreground(
@@ -142,6 +143,17 @@ internal unsafe partial struct gc_heap
         }
 
         bool collection_completed = false;
+        bool foreground_during_bgc =
+            background_running_p() &&
+            requested_generation < GCInterfaceOffsets.max_generation;
+#if BACKGROUND_GC
+        if (foreground_during_bgc)
+        {
+            saved_bgc_settings = settings;
+        }
+#endif
+        nuint completed_gc_index = 0;
+        int found_finalizers = 0;
         int result = collection_e_fail;
 
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
@@ -156,20 +168,30 @@ internal unsafe partial struct gc_heap
             allocation_triggered_p))
         {
             collection_completed = true;
+            completed_gc_index = settings.gc_index;
+            found_finalizers = settings.found_finalizers;
             result = collection_s_ok;
+        }
+
+        if (foreground_during_bgc)
+        {
+            settings = saved_bgc_settings;
+#if MANAGED_GC_TEST_HOST
+            record_foreground_during_bgc_for_test();
+#endif
         }
 
         GCToEEInterface.RestartEE(collection_completed ? (byte)1 : (byte)0);
 
-        leave_gc_lock();
-        ManagedGCHeap.NotifyCollectionEnded();
-
         if (collection_completed)
         {
-            ManagedGCHeap.RecordCollectionCount(unchecked((int)settings.gc_index));
+            ManagedGCHeap.RecordCollectionCount(unchecked((int)completed_gc_index));
             GCToEEInterface.EnableFinalization(
-                settings.found_finalizers != 0 ? (byte)1 : (byte)0);
+                found_finalizers != 0 ? (byte)1 : (byte)0);
         }
+
+        leave_gc_lock();
+        ManagedGCHeap.NotifyCollectionEnded();
 
         return result;
     }
@@ -184,6 +206,7 @@ internal unsafe partial struct gc_heap
     {
         alloc_contexts_used = 0;
         fix_allocation_contexts(hp, for_gc_p: true);
+        delay_free_segments();
         init_records(hp);
 
         if (allocation_triggered_p)
@@ -212,7 +235,14 @@ internal unsafe partial struct gc_heap
             settings.condemned_generation > (int)gc_generation_num.soh_gen1 ? 1 : 0;
         settings.concurrent = 0;
 #if BACKGROUND_GC
-        settings.background_p = 0;
+        settings.background_p = background_running_p() ? 1 : 0;
+        if (settings.background_p != 0 &&
+            settings.condemned_generation == GCInterfaceOffsets.max_generation &&
+            requested_generation < GCInterfaceOffsets.max_generation)
+        {
+            settings.condemned_generation =
+                (int)gc_generation_num.soh_gen1;
+        }
 #endif
         settings.gc_index = dynamic_data.dd_collection_count(
             dynamic_data_of(hp, (int)gc_generation_num.soh_gen0)) + 1;
@@ -373,6 +403,9 @@ internal unsafe partial struct gc_heap
 
     public static void record_full_blocking_gc_info_minimal(gc_heap* hp)
     {
+#if BACKGROUND_GC
+        is_last_recorded_bgc = 0;
+#endif
         last_full_blocking_gc_info = default;
         last_full_blocking_gc_info.index = settings.gc_index;
         last_full_blocking_gc_info.total_committed = current_total_committed;

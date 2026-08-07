@@ -529,7 +529,11 @@ namespace Internal.Runtime.GarbageCollection
             GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
             bool nonBlocking =
                 ((collection_mode)mode & collection_mode.collection_non_blocking) != 0;
-            if (!nonBlocking && gc_heap.background_collection_pending_p())
+            int requestedGeneration =
+                generation < 0 ? GCInterfaceOffsets.max_generation : generation;
+            if (!nonBlocking &&
+                requestedGeneration >= GCInterfaceOffsets.max_generation &&
+                gc_heap.background_collection_pending_p())
             {
                 criticalRegion.Exit();
                 gc_heap.background_gc_wait();
@@ -545,11 +549,6 @@ namespace Internal.Runtime.GarbageCollection
                     generation,
                     low_memory_p,
                     mode);
-            if (result == gc_heap.collection_s_ok)
-            {
-                Volatile.Write(ref s_gcCount, unchecked((int)gc_heap.settings.gc_index));
-            }
-
             criticalRegion.Exit();
             return result;
         }
@@ -610,8 +609,23 @@ namespace Internal.Runtime.GarbageCollection
         internal static void NotifyCollectionEnded() =>
             Interlocked.Decrement(ref s_gcStarted);
 
-        internal static void RecordCollectionCount(int collectionCount) =>
-            Volatile.Write(ref s_gcCount, collectionCount);
+        internal static void RecordCollectionCount(int collectionCount)
+        {
+            int current = Volatile.Read(ref s_gcCount);
+            while (collectionCount > current)
+            {
+                int observed = Interlocked.CompareExchange(
+                    ref s_gcCount,
+                    collectionCount,
+                    current);
+                if (observed == current)
+                {
+                    break;
+                }
+
+                current = observed;
+            }
+        }
 
         private static void WaitUntilGCCompleteCore(bool considerGcStart)
         {
@@ -945,22 +959,40 @@ namespace Internal.Runtime.GarbageCollection
             ulong* pauseInfoRaw,
             int kind)
         {
+            last_recorded_gc_info* fullBlockingInfo =
+                (last_recorded_gc_info*)Unsafe.AsPointer(
+                    ref gc_heap.last_full_blocking_gc_info);
+            last_recorded_gc_info* lastGcInfo = (gc_kind)kind switch
+            {
+#if BACKGROUND_GC
+                gc_kind.gc_kind_background =>
+                    (last_recorded_gc_info*)Unsafe.AsPointer(
+                        ref gc_heap.background_gc_info(
+                            gc_heap.completed_background_gc_info_index())),
+                gc_kind.gc_kind_any when gc_heap.is_last_recorded_bgc != 0 =>
+                    (last_recorded_gc_info*)Unsafe.AsPointer(
+                        ref gc_heap.background_gc_info(
+                            gc_heap.completed_background_gc_info_index())),
+#endif
+                _ => fullBlockingInfo,
+            };
+
             *highMemLoadThresholdBytes = 0;
             *totalAvailableMemoryBytes = 0;
             *lastRecordedMemLoadBytes = 0;
-            *lastRecordedHeapSizeBytes = gc_heap.last_full_blocking_gc_info.heap_size;
+            *lastRecordedHeapSizeBytes = lastGcInfo->heap_size;
             *lastRecordedFragmentationBytes =
-                gc_heap.last_full_blocking_gc_info.fragmentation;
-            *totalCommittedBytes = gc_heap.last_full_blocking_gc_info.total_committed;
-            *promotedBytes = gc_heap.last_full_blocking_gc_info.promoted;
-            *pinnedObjectCount = gc_heap.last_full_blocking_gc_info.pinned_objects;
+                lastGcInfo->fragmentation;
+            *totalCommittedBytes = lastGcInfo->total_committed;
+            *promotedBytes = lastGcInfo->promoted;
+            *pinnedObjectCount = lastGcInfo->pinned_objects;
             *finalizationPendingCount =
-                gc_heap.last_full_blocking_gc_info.finalize_promoted_objects;
-            *index = gc_heap.last_full_blocking_gc_info.index;
-            *generation = gc_heap.last_full_blocking_gc_info.condemned_generation;
+                lastGcInfo->finalize_promoted_objects;
+            *index = lastGcInfo->index;
+            *generation = lastGcInfo->condemned_generation;
             *pauseTimePct = 0;
-            *isCompaction = gc_heap.last_full_blocking_gc_info.compaction;
-            *isConcurrent = gc_heap.last_full_blocking_gc_info.concurrent;
+            *isCompaction = lastGcInfo->compaction;
+            *isConcurrent = lastGcInfo->concurrent;
 
             // Both are fixed-size arrays in the caller: RH_GH_MEMORY_INFO holds five
             // RH_GC_GENERATION_INFO (gen0-2, LOH, POH) of four ulongs each, and two pause

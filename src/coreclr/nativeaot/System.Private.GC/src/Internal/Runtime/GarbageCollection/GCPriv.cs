@@ -532,6 +532,11 @@ namespace Internal.Runtime.GarbageCollection
             a->gen_number = 0;
         }
 
+        public static void set_gen_number(allocator* a, int gen_number)
+        {
+            a->gen_number = gen_number;
+        }
+
         private static alloc_list* alloc_list_of(allocator* a, uint bn)
         {
             Debug.Assert(bn < a->num_buckets);
@@ -659,6 +664,105 @@ namespace Internal.Runtime.GarbageCollection
                 Debug.Assert(alloc_list.alloc_list_tail(al) is null);
             }
         }
+
+#if TARGET_64BIT && !TARGET_WASM
+        public static void unlink_item_no_undo(allocator* a, uint bn, byte* item)
+        {
+            alloc_list* al = alloc_list_of(a, bn);
+            byte* next_item = free_list_slot(item);
+            byte* prev_item = free_list_prev(item);
+
+            if (prev_item is not null)
+            {
+                free_list_slot(prev_item) = next_item;
+            }
+            else
+            {
+                alloc_list.alloc_list_head(al) = next_item;
+            }
+
+            if (next_item is not null)
+            {
+                free_list_prev(next_item) = prev_item;
+            }
+
+            if (alloc_list.alloc_list_tail(al) == item)
+            {
+                alloc_list.alloc_list_tail(al) = prev_item;
+            }
+
+            free_list_prev(item) = (byte*)1;
+        }
+
+        public static void unlink_item_no_undo(allocator* a, byte* item, nuint size)
+        {
+            unlink_item_no_undo(a, a->first_suitable_bucket(size), item);
+        }
+
+        public static void unlink_item_no_undo_added(
+            allocator* a,
+            uint bn,
+            byte* item,
+            byte* previous_item)
+        {
+            alloc_list* al = alloc_list_of(a, bn);
+            byte* next_item = free_list_slot(item);
+            byte* prev_item = free_list_prev(item);
+            Debug.Assert(prev_item == previous_item);
+
+            if (prev_item is not null)
+            {
+                free_list_slot(prev_item) = next_item;
+            }
+            else
+            {
+                alloc_list.added_alloc_list_head(al) = next_item;
+            }
+
+            if (next_item is not null)
+            {
+                free_list_prev(next_item) = prev_item;
+            }
+
+            if (alloc_list.added_alloc_list_tail(al) == item)
+            {
+                alloc_list.added_alloc_list_tail(al) = prev_item;
+            }
+
+            free_list_prev(item) = (byte*)1;
+        }
+
+        public static uint thread_item_front_added(allocator* a, byte* item, nuint size)
+        {
+            uint bucket = a->first_suitable_bucket(size);
+            alloc_list* al = alloc_list_of(a, bucket);
+
+            free_list_slot(item) = alloc_list.added_alloc_list_head(al);
+            free_list_prev(item) = null;
+            free_list_undo(item) = (byte*)1;
+
+            if (alloc_list.added_alloc_list_head(al) is not null)
+            {
+                free_list_prev(alloc_list.added_alloc_list_head(al)) = item;
+            }
+
+            alloc_list.added_alloc_list_head(al) = item;
+            if (alloc_list.added_alloc_list_tail(al) is null)
+            {
+                alloc_list.added_alloc_list_tail(al) = item;
+            }
+
+            return bucket;
+        }
+
+        public static bool is_on_free_list(byte* item, nuint size)
+        {
+            return size >= unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size) &&
+                ((CObjectHeader*)item)->GetMethodTable() ==
+                    GCCommon.g_gc_pFreeObjectMethodTable &&
+                free_list_prev(item) != (byte*)1;
+        }
+#endif
 
         public static void thread_item_front(allocator* a, byte* item, nuint size)
         {
@@ -901,6 +1005,28 @@ namespace Internal.Runtime.GarbageCollection
 #if TARGET_64BIT && !TARGET_WASM
                 if (repair_doubly_linked_list)
                 {
+                    byte* head = alloc_list_head_of(a, i);
+                    byte* tail_added = added_alloc_list_tail_of(a, i);
+                    if (tail_added is not null)
+                    {
+                        Debug.Assert(free_list_slot(tail_added) is null);
+                        if (head is not null)
+                        {
+                            free_list_slot(tail_added) = head;
+                            free_list_prev(head) = tail_added;
+                        }
+                    }
+
+                    byte* head_added = added_alloc_list_head_of(a, i);
+                    if (head_added is not null)
+                    {
+                        alloc_list_head_of(a, i) = head_added;
+                        if (alloc_list_tail_of(a, i) is null)
+                        {
+                            alloc_list_tail_of(a, i) = tail_added;
+                        }
+                    }
+
                     added_alloc_list_head_of(a, i) = null;
                     added_alloc_list_tail_of(a, i) = null;
                 }
@@ -1008,6 +1134,24 @@ namespace Internal.Runtime.GarbageCollection
         public static GCSpinLock gc_lock;
         public static region_free_list global_free_huge_regions;
 
+        [InlineArray(11)]
+        internal struct gen2_alloc_list_array
+        {
+            private alloc_list _element0;
+        }
+
+        [InlineArray(6)]
+        internal struct loh_alloc_list_array
+        {
+            private alloc_list _element0;
+        }
+
+        [InlineArray(18)]
+        internal struct poh_alloc_list_array
+        {
+            private alloc_list _element0;
+        }
+
         // This is the allocation-owned WKS prefix of gc_heap. The remaining native gc_heap
         // fields stay deferred, but these fields have the same ownership as their native
         // counterparts and are sufficient to create an allocation context without external
@@ -1022,6 +1166,9 @@ namespace Internal.Runtime.GarbageCollection
         public dynamic_data dynamic_data_table2;
         public dynamic_data dynamic_data_table3;
         public dynamic_data dynamic_data_table4;
+        public gen2_alloc_list_array gen2_alloc_list;
+        public loh_alloc_list_array loh_alloc_list;
+        public poh_alloc_list_array poh_alloc_list;
         public ulong total_alloc_bytes_soh;
         public ulong total_alloc_bytes_uoh;
         public byte* alloc_allocated;
@@ -1108,6 +1255,9 @@ namespace Internal.Runtime.GarbageCollection
         public static byte* max_overflow_address;
         public static nuint alloc_contexts_used;
         public static heap_segment* freeable_uoh_segment;
+#if BACKGROUND_GC
+        public static heap_segment* freeable_soh_segment;
+#endif
         public static int sufficient_gen0_space_p;
         public static int conserve_mem_setting;
         public static int loh_compaction_always_p;
@@ -1118,8 +1268,21 @@ namespace Internal.Runtime.GarbageCollection
         public static full_gc_count_array full_gc_counts;
         public static ulong loh_alloc_since_cg;
         public static gc_history_per_heap gc_data_per_heap;
+#if BACKGROUND_GC
+        public static gc_history_per_heap bgc_data_per_heap;
+#endif
         public static fgm_history fgm_result;
         public static gc_history_global gc_data_global;
+#if BACKGROUND_GC
+        public static gc_history_global bgc_data_global;
+        public static gc_mechanisms saved_bgc_settings;
+        public static nuint gen2_removed_no_undo;
+        public static nuint saved_pinned_plug_index;
+        public static last_recorded_gc_info last_background_gc_info0;
+        public static last_recorded_gc_info last_background_gc_info1;
+        public static int last_background_gc_info_index;
+        public static int is_last_recorded_bgc;
+#endif
         public static last_recorded_gc_info last_full_blocking_gc_info;
         public static ulong end_gc_time;
         public static ulong last_alloc_reset_suspended_end_time;
@@ -1145,6 +1308,26 @@ namespace Internal.Runtime.GarbageCollection
                 ? 1
                 : 0;
         }
+
+#if BACKGROUND_GC
+        public static ref last_recorded_gc_info background_gc_info(int index)
+        {
+            Debug.Assert(index is 0 or 1);
+            if (index == 0)
+            {
+                return ref last_background_gc_info0;
+            }
+
+            return ref last_background_gc_info1;
+        }
+
+        public static int completed_background_gc_info_index()
+        {
+            return background_running_p()
+                ? 1 - last_background_gc_info_index
+                : last_background_gc_info_index;
+        }
+#endif
 
         public static void init_alloc_info(generation* gen, heap_segment* seg)
         {
@@ -1174,6 +1357,18 @@ namespace Internal.Runtime.GarbageCollection
             initialize_loh_pinned_queue_state();
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
+#if BACKGROUND_GC
+            freeable_soh_segment = null;
+            bgc_data_per_heap = default;
+            bgc_data_global = default;
+            saved_bgc_settings = default;
+            gen2_removed_no_undo = 0;
+            saved_pinned_plug_index = nuint.MaxValue;
+            last_background_gc_info0 = default;
+            last_background_gc_info1 = default;
+            last_background_gc_info_index = 0;
+            is_last_recorded_bgc = 0;
+#endif
             last_gc_before_oom = 0;
             provisional_mode_triggered = false;
             soh_allocation_no_gc = 0;

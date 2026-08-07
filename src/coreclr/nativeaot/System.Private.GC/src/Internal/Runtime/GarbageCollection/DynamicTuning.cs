@@ -99,5 +99,23 @@ internal unsafe partial struct gc_heap
 
         return total_heap_size;
     }
+
+    public static nuint get_total_fragmentation(gc_heap* heap)
+    {
+        nuint total_fragmentation = 0;
+        generation* generationTable = generation_table_of(heap);
+        for (int i = 0;
+             i < (int)gc_generation_num.total_generation_count;
+             i++)
+        {
+            generation* gen = generation_of(generationTable, i);
+            total_fragmentation = unchecked(
+                total_fragmentation +
+                generation.generation_free_list_space(gen) +
+                generation.generation_free_obj_space(gen));
+        }
+
+        return total_fragmentation;
+    }
 #endif
 }

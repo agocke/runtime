@@ -485,7 +485,7 @@ internal unsafe partial struct gc_heap
     private static nuint plug_skew => (nuint)sizeof(nuint);
 
 #if TARGET_64BIT && !TARGET_WASM
-    private static nuint min_free_item_no_prev =>
+    public static nuint min_free_item_no_prev =>
         (nuint)GCInterfaceOffsets.min_obj_size + (nuint)sizeof(byte*);
 #endif
 
@@ -1286,6 +1286,489 @@ internal unsafe partial struct gc_heap
         generation.generation_allocation_limit(older_gen) = null;
     }
 
+#if TARGET_64BIT && !TARGET_WASM
+    public static void thread_item_front_added(
+        generation* gen,
+        byte* free_start,
+        nuint free_size)
+    {
+        make_unused_array(free_start, free_size);
+        generation.generation_free_list_space(gen) = unchecked(
+            generation.generation_free_list_space(gen) + free_size);
+        allocator.thread_item_front_added(
+            generation.generation_allocator(gen),
+            free_start,
+            free_size);
+    }
+#endif
+
+    public static void adjust_limit(
+        gc_heap* hp,
+        byte* start,
+        nuint limit_size,
+        generation* gen)
+    {
+        heap_segment* seg = generation.generation_allocation_segment(gen);
+        if (generation.generation_allocation_limit(gen) != start ||
+            start != heap_segment.heap_segment_plan_allocated(seg))
+        {
+            if (generation.generation_allocation_limit(gen) ==
+                heap_segment.heap_segment_plan_allocated(seg))
+            {
+                Debug.Assert(
+                    generation.generation_allocation_pointer(gen) >=
+                    heap_segment.heap_segment_mem(seg));
+                Debug.Assert(
+                    generation.generation_allocation_pointer(gen) <=
+                    heap_segment.heap_segment_committed(seg));
+                heap_segment.heap_segment_plan_allocated(seg) =
+                    generation.generation_allocation_pointer(gen);
+            }
+            else
+            {
+                byte* hole = generation.generation_allocation_pointer(gen);
+                nuint hole_size = unchecked((nuint)(
+                    generation.generation_allocation_limit(gen) -
+                    generation.generation_allocation_pointer(gen)));
+                if (hole_size != 0)
+                {
+                    nuint allocated_size = unchecked((nuint)(
+                        generation.generation_allocation_pointer(gen) -
+                        generation.generation_allocation_context_start_region(gen)));
+#if TARGET_64BIT && !TARGET_WASM
+                    if (gen->gen_num == GCInterfaceOffsets.max_generation)
+                    {
+                        if (allocated_size <= min_free_item_no_prev)
+                        {
+                            nuint filler_free_obj_size;
+                            if (hole_size >= unchecked(
+                                2 * (nuint)GCInterfaceOffsets.min_obj_size +
+                                Align((nuint)GCInterfaceOffsets.min_obj_size)))
+                            {
+                                filler_free_obj_size =
+                                    Align((nuint)GCInterfaceOffsets.min_obj_size);
+                                thread_item_front_added(
+                                    gen,
+                                    hole + (nint)filler_free_obj_size,
+                                    unchecked(hole_size - filler_free_obj_size));
+                            }
+                            else
+                            {
+                                filler_free_obj_size = hole_size;
+                            }
+
+                            generation.generation_free_obj_space(gen) = unchecked(
+                                generation.generation_free_obj_space(gen) +
+                                filler_free_obj_size);
+                            *(nuint*)(
+                                generation.generation_allocation_context_start_region(gen) +
+                                (nint)min_free_item_no_prev) =
+                                filler_free_obj_size;
+
+                            byte* old_loc =
+                                generation.generation_last_free_list_allocated(gen);
+                            if (old_loc is not null)
+                            {
+                                byte* saved_plug_and_gap = null;
+                                if (saved_pinned_plug_index != nuint.MaxValue)
+                                {
+                                    saved_plug_and_gap =
+                                        pinned_plug(
+                                            pinned_plug_of(
+                                                hp,
+                                                saved_pinned_plug_index)) -
+                                        (nint)sizeof(plug_and_gap);
+                                }
+
+                                nuint offset = unchecked(
+                                    (nuint)(old_loc - saved_plug_and_gap));
+                                if (offset < (nuint)sizeof(gap_reloc_pair))
+                                {
+                                    mark* savedEntry = pinned_plug_of(
+                                        hp,
+                                        saved_pinned_plug_index);
+                                    set_free_obj_in_compact_bit(
+                                        (byte*)&savedEntry->saved_pre_plug_reloc +
+                                        (nint)offset);
+                                }
+                                else
+                                {
+                                    set_free_obj_in_compact_bit(old_loc);
+                                }
+                            }
+                        }
+                        else if (hole_size >=
+                            unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size))
+                        {
+                            thread_item_front_added(gen, hole, hole_size);
+                        }
+                        else
+                        {
+                            make_free_obj(gen, hole, hole_size);
+                        }
+                    }
+                    else
+#endif
+                    {
+                        if (hole_size >= unchecked(
+                            2 * (nuint)GCInterfaceOffsets.min_obj_size))
+                        {
+                            if (allocated_size < min_free_item_no_prev)
+                            {
+                                if (hole_size >= unchecked(
+                                    2 * (nuint)GCInterfaceOffsets.min_obj_size +
+                                    Align((nuint)GCInterfaceOffsets.min_obj_size)))
+                                {
+                                    nuint filler =
+                                        Align((nuint)GCInterfaceOffsets.min_obj_size);
+                                    make_free_obj(gen, hole, filler);
+                                    thread_free_item_front(
+                                        gen,
+                                        hole + (nint)filler,
+                                        unchecked(hole_size - filler));
+                                }
+                                else
+                                {
+                                    make_free_obj(gen, hole, hole_size);
+                                }
+                            }
+                            else
+                            {
+                                thread_free_item_front(gen, hole, hole_size);
+                            }
+                        }
+                        else
+                        {
+                            make_free_obj(gen, hole, hole_size);
+                        }
+                    }
+                }
+            }
+
+            generation.generation_allocation_pointer(gen) = start;
+            generation.generation_allocation_context_start_region(gen) = start;
+            generation.generation_allocation_limit(gen) =
+                start + (nint)limit_size;
+        }
+
+        _ = hp;
+    }
+
+    public static byte* allocate_in_older_generation(
+        gc_heap* hp,
+        generation* gen,
+        nuint size,
+        int from_gen_number,
+        byte* old_loc)
+    {
+        size = Align(size);
+        Debug.Assert(size >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+        Debug.Assert(from_gen_number >= 0);
+        Debug.Assert(from_gen_number < GCInterfaceOffsets.max_generation);
+        Debug.Assert(
+            generation_of(generation_table_of(hp), from_gen_number + 1) == gen);
+
+#if TARGET_64BIT && !TARGET_WASM
+        bool try_added_list_p = gen->gen_num == GCInterfaceOffsets.max_generation;
+        bool record_free_list_allocated_p =
+            gen->gen_num == GCInterfaceOffsets.max_generation &&
+            current_c_gc_state == c_gc_state.c_gc_state_planning;
+#endif
+
+        allocator* gen_allocator = generation.generation_allocator(gen);
+        bool discard_p = gen_allocator->discard_if_no_fit_p() != 0;
+        int pad_in_front =
+            old_loc is not null &&
+            from_gen_number + 1 != GCInterfaceOffsets.max_generation
+                ? USE_PADDING_FRONT
+                : 0;
+        nuint real_size = unchecked(
+            size +
+            Align((nuint)GCInterfaceOffsets.min_obj_size) +
+            (pad_in_front != 0
+                ? Align((nuint)GCInterfaceOffsets.min_obj_size)
+                : 0));
+
+        if (!size_fit_p(
+                size,
+                generation.generation_allocation_pointer(gen),
+                generation.generation_allocation_limit(gen),
+                old_loc,
+                USE_PADDING_TAIL | pad_in_front))
+        {
+            for (uint bucket = gen_allocator->first_suitable_bucket(
+                    unchecked(real_size * 2));
+                 bucket < gen_allocator->number_of_buckets();
+                 bucket++)
+            {
+                byte* previous = null;
+#if TARGET_64BIT && !TARGET_WASM
+                bool use_undo_p = !discard_p && bucket != 0;
+                if (try_added_list_p)
+                {
+                    byte* free_list =
+                        allocator.added_alloc_list_head_of(gen_allocator, bucket);
+                    while (free_list is not null)
+                    {
+                        nuint free_list_size = unused_array_size(free_list);
+                        byte* next = allocator.free_list_slot(free_list);
+                        if (size_fit_p(
+                                size,
+                                free_list,
+                                free_list + (nint)free_list_size,
+                                old_loc,
+                                USE_PADDING_TAIL | pad_in_front))
+                        {
+                            allocator.unlink_item_no_undo_added(
+                                gen_allocator,
+                                bucket,
+                                free_list,
+                                previous);
+                            generation.generation_free_list_space(gen) =
+                                unchecked(
+                                    generation.generation_free_list_space(gen) -
+                                    free_list_size);
+                            if (record_free_list_allocated_p)
+                            {
+                                generation.generation_set_bgc_mark_bit_p(gen) =
+                                    should_set_bgc_mark_bit(free_list) ? 1 : 0;
+                            }
+
+                            adjust_limit(hp, free_list, free_list_size, gen);
+                            generation.generation_allocate_end_seg_p(gen) = 0;
+                            goto finished;
+                        }
+
+                        if (bucket == 0)
+                        {
+                            generation.generation_free_obj_space(gen) = unchecked(
+                                generation.generation_free_obj_space(gen) +
+                                free_list_size);
+                            allocator.unlink_item_no_undo_added(
+                                gen_allocator,
+                                bucket,
+                                free_list,
+                                previous);
+                            generation.generation_free_list_space(gen) =
+                                unchecked(
+                                    generation.generation_free_list_space(gen) -
+                                    free_list_size);
+                        }
+                        else
+                        {
+                            previous = free_list;
+                        }
+
+                        free_list = next;
+                    }
+                }
+#else
+                bool use_undo_p = !discard_p;
+#endif
+
+                byte* item = allocator.alloc_list_head_of(gen_allocator, bucket);
+                previous = null;
+                while (item is not null)
+                {
+                    nuint item_size = unused_array_size(item);
+                    byte* next = allocator.free_list_slot(item);
+                    if (size_fit_p(
+                            size,
+                            item,
+                            item + (nint)item_size,
+                            old_loc,
+                            USE_PADDING_TAIL | pad_in_front))
+                    {
+                        allocator.unlink_item(
+                            gen_allocator,
+                            bucket,
+                            item,
+                            previous,
+                            use_undo_p);
+                        generation.generation_free_list_space(gen) = unchecked(
+                            generation.generation_free_list_space(gen) - item_size);
+#if TARGET_64BIT && !TARGET_WASM
+                        if (!discard_p && !use_undo_p)
+                        {
+                            gen2_removed_no_undo = unchecked(
+                                gen2_removed_no_undo + item_size);
+                        }
+
+                        if (record_free_list_allocated_p)
+                        {
+                            generation.generation_set_bgc_mark_bit_p(gen) =
+                                should_set_bgc_mark_bit(item) ? 1 : 0;
+                        }
+#endif
+                        adjust_limit(hp, item, item_size, gen);
+                        generation.generation_allocate_end_seg_p(gen) = 0;
+                        goto finished;
+                    }
+
+                    if (discard_p || bucket == 0)
+                    {
+                        generation.generation_free_obj_space(gen) = unchecked(
+                            generation.generation_free_obj_space(gen) + item_size);
+                        allocator.unlink_item(
+                            gen_allocator,
+                            bucket,
+                            item,
+                            previous,
+                            use_undo_p: false);
+                        generation.generation_free_list_space(gen) = unchecked(
+                            generation.generation_free_list_space(gen) - item_size);
+#if TARGET_64BIT && !TARGET_WASM
+                        if (!discard_p)
+                        {
+                            gen2_removed_no_undo = unchecked(
+                                gen2_removed_no_undo + item_size);
+                        }
+#endif
+                    }
+                    else
+                    {
+                        previous = item;
+                    }
+
+                    item = next;
+                }
+            }
+
+            heap_segment* seg = generation.generation_allocation_segment(gen);
+            Debug.Assert(seg != hp->ephemeral_heap_segment);
+            while (seg is not null)
+            {
+                byte* plan_allocated = heap_segment.heap_segment_plan_allocated(seg);
+                if (size_fit_p(
+                        size,
+                        plan_allocated,
+                        heap_segment.heap_segment_committed(seg),
+                        old_loc,
+                        USE_PADDING_TAIL | pad_in_front))
+                {
+                    adjust_limit(
+                        hp,
+                        plan_allocated,
+                        unchecked((nuint)(
+                            heap_segment.heap_segment_committed(seg) -
+                            plan_allocated)),
+                        gen);
+                    generation.generation_allocate_end_seg_p(gen) = 1;
+                    heap_segment.heap_segment_plan_allocated(seg) =
+                        heap_segment.heap_segment_committed(seg);
+                    goto finished;
+                }
+
+                if (size_fit_p(
+                        size,
+                        plan_allocated,
+                        heap_segment.heap_segment_reserved(seg),
+                        old_loc,
+                        USE_PADDING_TAIL | pad_in_front) &&
+                    grow_heap_segment(
+                        hp,
+                        seg,
+                        plan_allocated,
+                        old_loc,
+                        size,
+                        pad_in_front))
+                {
+                    adjust_limit(
+                        hp,
+                        plan_allocated,
+                        unchecked((nuint)(
+                            heap_segment.heap_segment_committed(seg) -
+                            plan_allocated)),
+                        gen);
+                    generation.generation_allocate_end_seg_p(gen) = 1;
+                    heap_segment.heap_segment_plan_allocated(seg) =
+                        heap_segment.heap_segment_committed(seg);
+                    goto finished;
+                }
+
+                adjust_limit(hp, null, 0, gen);
+                seg = heap_segment.heap_segment_next(seg);
+                if (seg is null)
+                {
+                    return null;
+                }
+
+                generation.generation_allocation_segment(gen) = seg;
+                generation.generation_allocation_pointer(gen) =
+                    heap_segment.heap_segment_mem(seg);
+                generation.generation_allocation_limit(gen) =
+                    generation.generation_allocation_pointer(gen);
+            }
+        }
+
+    finished:
+        byte* result = generation.generation_allocation_pointer(gen);
+        nuint pad = 0;
+        if ((pad_in_front & USE_PADDING_FRONT) != 0 &&
+            (generation.generation_allocation_pointer(gen) -
+                generation.generation_allocation_context_start_region(gen) == 0 ||
+             generation.generation_allocation_pointer(gen) -
+                generation.generation_allocation_context_start_region(gen) >=
+                DESIRED_PLUG_LENGTH))
+        {
+            pad = Align((nuint)GCInterfaceOffsets.min_obj_size);
+            set_plug_padded(old_loc);
+        }
+
+        if (old_loc is not null &&
+            !same_large_alignment_p(old_loc, result + (nint)pad))
+        {
+            pad = unchecked(pad + switch_alignment_size(pad != 0 ? 1 : 0));
+            set_node_realigned(old_loc);
+        }
+
+        if (old_loc is null || pad != 0)
+        {
+            generation.generation_allocation_context_start_region(gen) =
+                generation.generation_allocation_pointer(gen);
+        }
+
+        byte* nextAllocationPointer =
+            generation.generation_allocation_pointer(gen) + (nint)(size + pad);
+        if (nextAllocationPointer > generation.generation_allocation_limit(gen))
+        {
+            if (pad != 0)
+            {
+                clear_plug_padded(old_loc);
+            }
+
+            adjust_limit(hp, null, 0, gen);
+            return null;
+        }
+
+        generation.generation_allocation_pointer(gen) = nextAllocationPointer;
+        generation.generation_free_obj_space(gen) = unchecked(
+            generation.generation_free_obj_space(gen) + pad);
+
+        if (generation.generation_allocate_end_seg_p(gen) != 0)
+        {
+            generation.generation_end_seg_allocated(gen) = unchecked(
+                generation.generation_end_seg_allocated(gen) + size);
+        }
+        else
+        {
+#if TARGET_64BIT && !TARGET_WASM
+            if (generation.generation_set_bgc_mark_bit_p(gen) != 0)
+            {
+                set_plug_bgc_mark_bit(old_loc);
+            }
+
+            generation.generation_last_free_list_allocated(gen) = old_loc;
+#endif
+            generation.generation_free_list_allocated(gen) = unchecked(
+                generation.generation_free_list_allocated(gen) + size);
+        }
+
+        generation.generation_allocation_size(gen) = unchecked(
+            generation.generation_allocation_size(gen) + size);
+        return result + (nint)pad;
+    }
+
     // The heap-owned inputs stay explicit until try_allocate_more_space owns the allocation
     // policy. Region acquisition uses the already-translated get_new_region helper; allocation
     // diagnostics remain deferred with the diagnostics and production-routing slices.
@@ -1901,6 +2384,37 @@ internal unsafe partial struct gc_heap
         {
             generation.initialize(generation_table + i);
         }
+
+        hp->gen2_alloc_list = default;
+        *generation.generation_allocator(
+            generation_of(
+                generation_table,
+                (int)gc_generation_num.soh_gen2)) =
+            new allocator(
+                12,
+                7,
+                (alloc_list*)Unsafe.AsPointer(ref hp->gen2_alloc_list[0]),
+                (int)gc_generation_num.soh_gen2);
+
+        hp->loh_alloc_list = default;
+        *generation.generation_allocator(
+            generation_of(
+                generation_table,
+                (int)gc_generation_num.loh_generation)) =
+            new allocator(
+                7,
+                15,
+                (alloc_list*)Unsafe.AsPointer(ref hp->loh_alloc_list[0]));
+
+        hp->poh_alloc_list = default;
+        *generation.generation_allocator(
+            generation_of(
+                generation_table,
+                (int)gc_generation_num.poh_generation)) =
+            new allocator(
+                19,
+                7,
+                (alloc_list*)Unsafe.AsPointer(ref hp->poh_alloc_list[0]));
 
         GCSpinLock.initialize(&hp->more_space_lock_soh);
         GCSpinLock.initialize(&hp->more_space_lock_uoh);

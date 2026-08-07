@@ -91,6 +91,16 @@ extern "C" void ManagedGC_WaitUntilGCComplete(
     }
 }
 
+extern "C" void ManagedGC_AllowForegroundGC()
+{
+    Thread* thread = ThreadStore::GetCurrentThread();
+    if (thread->IsCurrentThreadInCooperativeMode())
+    {
+        thread->EnablePreemptiveMode();
+        thread->DisablePreemptiveMode();
+    }
+}
+
 struct ManagedGCBackgroundThreadArgs
 {
     void (*threadStart)(void*);

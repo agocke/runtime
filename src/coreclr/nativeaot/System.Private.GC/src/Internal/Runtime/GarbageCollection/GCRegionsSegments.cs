@@ -909,9 +909,11 @@ internal unsafe partial struct gc_heap
         gen->pinned_allocation_compact_size = 0;
         gen->allocate_end_seg_p = 0;
         allocator.clear(&gen->free_list_allocator);
+        allocator.set_gen_number(&gen->free_list_allocator, gen_num);
 
 #if TARGET_64BIT && !TARGET_WASM
         gen->set_bgc_mark_bit_p = 0;
+        gen->last_free_list_allocated = null;
 #endif
     }
 
@@ -2289,6 +2291,32 @@ internal unsafe partial struct gc_heap
         }
 
         freeable_uoh_segment = null;
+    }
+
+#if BACKGROUND_GC
+    public static void rearrange_small_heap_segments()
+    {
+        heap_segment* seg = freeable_soh_segment;
+        while (seg is not null)
+        {
+            heap_segment* next_seg = heap_segment.heap_segment_next(seg);
+            return_free_region(seg);
+            seg = next_seg;
+        }
+
+        freeable_soh_segment = null;
+    }
+#endif
+
+    public static void delay_free_segments()
+    {
+        rearrange_uoh_segments();
+#if BACKGROUND_GC
+        if (!background_running_p())
+        {
+            rearrange_small_heap_segments();
+        }
+#endif
     }
 #endif
 }

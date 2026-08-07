@@ -699,6 +699,11 @@ internal unsafe partial struct gc_heap
         return ((CObjectHeader*)node)->IsBGCMarkBitSet();
     }
 
+    public static void set_plug_bgc_mark_bit(byte* node)
+    {
+        ((CObjectHeader*)node)->SetBGCMarkBit();
+    }
+
     public static void clear_plug_bgc_mark_bit(byte* node)
     {
         ((CObjectHeader*)node)->ClearBGCMarkBit();
@@ -707,6 +712,11 @@ internal unsafe partial struct gc_heap
     public static int is_free_obj_in_compact_bit_set(byte* node)
     {
         return ((CObjectHeader*)node)->IsFreeObjInCompactBitSet();
+    }
+
+    public static void set_free_obj_in_compact_bit(byte* node)
+    {
+        ((CObjectHeader*)node)->SetFreeObjInCompactBit();
     }
 
     public static void clear_free_obj_in_compact_bit(byte* node)
@@ -758,6 +768,30 @@ internal unsafe partial struct gc_heap
         nuint index = card_table_info.mark_word_of(add);
         uint val = 1u << (int)card_table_info.mark_bit_bit_of(add);
         mark_array[(nint)index] &= ~val;
+    }
+
+    public static void bgc_clear_batch_mark_array_bits(byte* start, byte* end)
+    {
+        if (start < background_saved_highest_address &&
+            end > background_saved_lowest_address)
+        {
+            if (start < background_saved_lowest_address)
+            {
+                start = background_saved_lowest_address;
+            }
+
+            if (end > background_saved_highest_address)
+            {
+                end = background_saved_highest_address;
+            }
+
+            for (byte* address = card_table_info.align_lower_mark_bit(start);
+                 address < end;
+                 address += (nint)card_table_info.mark_bit_pitch)
+            {
+                mark_array_clear_marked(address);
+            }
+        }
     }
 
     // end must be page aligned addresses.
@@ -1239,6 +1273,12 @@ internal unsafe partial struct gc_heap
             card_of(card_table_info.align_on_card_word(segment_end)));
         byte* first_object = segment_start;
         nuint search_card = first_card;
+#if BACKGROUND_GC
+        should_check_bgc_mark(
+            segment,
+            out bool consider_bgc_mark_p,
+            out bool check_current_sweep_p);
+#endif
         while (find_card(ref search_card, card_word_end, out nuint end_card))
         {
             if (search_card > last_card)
@@ -1285,6 +1325,13 @@ internal unsafe partial struct gc_heap
                         : AlignQword(object_size);
                     byte* next = current + (nint)aligned_size;
                     if (next > card_start &&
+#if BACKGROUND_GC
+                        fgc_should_consider_object(
+                            current,
+                            segment,
+                            consider_bgc_mark_p,
+                            check_current_sweep_p) &&
+#endif
                         contain_pointers(current) != 0)
                     {
                         go_through_object(

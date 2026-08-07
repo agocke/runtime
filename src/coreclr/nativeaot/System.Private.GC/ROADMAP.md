@@ -1415,7 +1415,8 @@ finalizer queue through `GC.GetGCMemoryInfo()`.
 ### 10. Concurrency and tuning
 
 **Status: In progress -- the WKS software-write-watch revisit, native mark-array final closure,
-concurrent region sweep, allocation trigger, and reusable native-event worker are routed**
+concurrent region sweep, foreground Gen0/Gen1 coordination, allocation trigger, and reusable
+native-event worker are routed**
 
 Translate:
 
@@ -1439,23 +1440,25 @@ non-blocking background Gen2. The worker is persistent: a native manual-reset ev
 thread with no managed reverse-P/Invoke frame and re-enters the direct managed callback for each
 cycle; shutdown signals and joins that same worker.
 
-Foundation coverage pins every routed state, allocation-triggered scheduling, and reuse of one
-worker for successive cycles. The dedicated NativeAOT smoke mutates and allocates concurrently,
-checks a pre-existing-to-new card edge, strong/pinned/dependent handles and finalization, runs
-successive explicit BGC cycles through the same worker, and forces an allocation-triggered cycle.
+Foreground allocation-triggered and explicit blocking Gen0/Gen1 collections now run while BGC
+is active. They preserve and restore the BGC mechanisms under the GC lock, copy or clear
+background mark bits while relocating, classify swept/current/unswept regions through the native
+sweep cursor, and maintain the 64-bit added and doubly-linked Gen2 free lists. The BGC worker
+performs its foreground yield entirely in a native transition helper and retains the GC lock
+through ephemeral sweep before exposing concurrent Gen2 sweep. Empty regions are unlinked during
+concurrent sweep and returned through the deferred region path at the next collection. Background
+generation/history data remains separate from intervening foreground records until post-sweep
+publication.
 
-Production blockers remain. Foreground Gen0/Gen1 collections still wait for an active BGC.
-The translated foreground planner does not yet contain the native `DOUBLY_LINKED_FL` coordination
-used by `should_check_bgc_mark`, `should_set_bgc_mark_bit`, the added free lists, and
-`current_sweep_seg`/`current_sweep_pos`. Enabling the foreground route without that closure lets
-the foreground planner rewrite an unswept region or allocation context while the background
-sweeper still interprets its saved boundary, causing it to traverse overwritten free-object
-state. This must be ported mechanically from `allocation.cpp`, `plan_phase.cpp`, and
-`background.cpp`; serializing or pretending the foreground collection ran would not be correct.
-The concurrent sweeper currently threads dead spans for reuse but retains empty regions in their
-generation lists. Native empty-region deletion/return, `saved_changed_segs` publication, and the
-associated per-phase dynamic-tuning/history updates still need their allocator and history
-closure before this section is complete.
+Foundation coverage pins every routed state, the foreground/BGC settings handoff, mark-range and
+sweep-cursor state, allocation-triggered scheduling, and reuse of one worker for successive
+cycles. The dedicated NativeAOT smoke mutates and allocates during background work, runs blocking
+Gen0/Gen1 collections across active BGC cycles, checks a pre-existing-to-new card edge,
+strong/pinned handles and finalization, recycles empty UOH regions, runs successive explicit BGC
+cycles through the same worker, and forces an allocation-triggered cycle.
+
+Production blockers remain in broader dynamic tuning, diagnostic `saved_changed_segs`
+publication, and server `MULTIPLE_HEAPS` closure.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.
