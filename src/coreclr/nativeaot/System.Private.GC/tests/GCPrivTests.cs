@@ -3301,6 +3301,385 @@ public sealed unsafe class GCPrivTests
         }
     }
 
+    [Fact]
+    public void RelocateAdvanceToNonSipWalksLiveObjectsSkipsFreeObjectsAndEmptySipRegions()
+    {
+        const int BrickCount = 6;
+        int storageSize = checked((int)((BrickCount + 1) * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[BrickCount];
+        region_info* generationMap = stackalloc region_info[4];
+        seg_mapping* segmentMap = stackalloc seg_mapping[4];
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(BrickCount * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            for (nuint i = 0; i < BrickCount; i++)
+            {
+                gc_heap.set_brick(i, -1);
+            }
+
+            byte* relocationNode =
+                firstBrick + (nint)(4 * card_table_info.brick_size) + 256;
+            ((plug_and_reloc*)relocationNode)[-1].reloc = -64;
+            ((plug_and_pair*)relocationNode)[-1].m_pair = default;
+            gc_heap.set_brick(4, (nint)(relocationNode - gc_heap.brick_address(4)));
+
+            byte* firstOldAddress = relocationNode + 256;
+            byte* secondOldAddress = firstOldAddress + 64;
+            nuint objectSize = (nuint)(3 * sizeof(byte*));
+            byte* descriptorStorage =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            MethodTable* pointerMethodTable =
+                InitializePointerMethodTable(descriptorStorage, objectSize, pointerCount: 1);
+            MethodTable freeObjectMethodTable = default;
+            freeObjectMethodTable.m_uFlags = MethodTable.HasComponentSizeFlag;
+            freeObjectMethodTable.m_usComponentSize = 1;
+            freeObjectMethodTable.m_uBaseSize = (uint)GCInterfaceOffsets.min_obj_size;
+            GCCommon.g_gc_pFreeObjectMethodTable = &freeObjectMethodTable;
+
+            byte* firstObject = firstBrick + 512;
+            byte* freeObject = firstObject + (nint)gc_heap.Align(objectSize);
+            byte* secondObject = freeObject + (nint)gc_heap.Align(objectSize);
+            ((CObjectHeader*)firstObject)->RawSetMethodTable(pointerMethodTable);
+            gc_heap.make_unused_array(freeObject, objectSize);
+            ((CObjectHeader*)secondObject)->RawSetMethodTable(pointerMethodTable);
+            *(byte**)(firstObject + sizeof(byte*)) = firstOldAddress;
+            *(byte**)(secondObject + sizeof(byte*)) = secondOldAddress;
+
+            heap_segment firstSip = default;
+            heap_segment emptySip = default;
+            heap_segment nonSip = default;
+            heap_segment.heap_segment_mem(&firstSip) = firstObject;
+            heap_segment.heap_segment_allocated(&firstSip) =
+                secondObject + (nint)gc_heap.Align(objectSize);
+            heap_segment.heap_segment_gen_num(&firstSip) = (byte)gc_generation_num.soh_gen0;
+            heap_segment.heap_segment_plan_gen_num(&firstSip) =
+                (int)gc_generation_num.soh_gen2;
+            heap_segment.heap_segment_swept_in_plan(&firstSip) = 1;
+            heap_segment.heap_segment_next(&firstSip) = &emptySip;
+
+            byte* emptySipStart = firstBrick + (nint)(2 * card_table_info.brick_size);
+            heap_segment.heap_segment_mem(&emptySip) = emptySipStart;
+            heap_segment.heap_segment_allocated(&emptySip) = emptySipStart;
+            heap_segment.heap_segment_gen_num(&emptySip) = (byte)gc_generation_num.soh_gen0;
+            heap_segment.heap_segment_plan_gen_num(&emptySip) = (int)gc_generation_num.soh_gen0;
+            heap_segment.heap_segment_swept_in_plan(&emptySip) = 1;
+            heap_segment.heap_segment_next(&emptySip) = &nonSip;
+
+            byte* nonSipStart = firstBrick + (nint)(3 * card_table_info.brick_size);
+            heap_segment.heap_segment_mem(&nonSip) = nonSipStart;
+            heap_segment.heap_segment_allocated(&nonSip) = nonSipStart;
+
+            gc_heap.settings.promotion = 1;
+            byte* relocatedFirstAddress = firstOldAddress - 64;
+            nuint targetRegionIndex =
+                ((nuint)relocatedFirstAddress >> (int)gc_heap.min_segment_size_shr) -
+                ((nuint)firstBrick >> (int)gc_heap.min_segment_size_shr);
+            int targetPlanGeneration = (int)gc_generation_num.soh_gen2;
+            generationMap[(nint)targetRegionIndex] = (region_info)(
+                (targetPlanGeneration << (int)region_info.RI_PLAN_GEN_SHR) |
+                (int)gc_generation_num.soh_gen0);
+            segmentMap[(nint)targetRegionIndex].region_info.flags = 0;
+            heap_segment.heap_segment_gen_num(&segmentMap[(nint)targetRegionIndex].region_info) =
+                (byte)gc_generation_num.soh_gen0;
+            heap_segment.heap_segment_plan_gen_num(&segmentMap[(nint)targetRegionIndex].region_info) =
+                targetPlanGeneration;
+
+            gc_heap heap = default;
+            heap_segment* result = gc_heap.relocate_advance_to_non_sip(&heap, &firstSip);
+
+            Assert.True(result == &nonSip);
+            Assert.Equal(1, ((CObjectHeader*)freeObject)->IsFree());
+            Assert.Equal(
+                (nuint)(firstOldAddress - 64),
+                (nuint)(*(byte**)(firstObject + sizeof(byte*))));
+            Assert.Equal(
+                (nuint)(secondOldAddress - 64),
+                (nuint)(*(byte**)(secondObject + sizeof(byte*))));
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void RelocateSurvivorsInBrickVisitsPlugsInOrderAndLeavesLastPlugOpen()
+    {
+        const int BrickCount = 4;
+        int storageSize = checked((int)((BrickCount + 1) * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[BrickCount];
+        region_info* generationMap = stackalloc region_info[4];
+        seg_mapping* segmentMap = stackalloc seg_mapping[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(BrickCount * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            for (nuint i = 0; i < BrickCount; i++)
+            {
+                gc_heap.set_brick(i, -1);
+            }
+
+            byte* relocationNode =
+                firstBrick + (nint)(2 * card_table_info.brick_size) + 256;
+            ((plug_and_reloc*)relocationNode)[-1].reloc = -64;
+            ((plug_and_pair*)relocationNode)[-1].m_pair = default;
+            gc_heap.set_brick(2, (nint)(relocationNode - gc_heap.brick_address(2)));
+
+            nuint objectSize = (nuint)(3 * sizeof(byte*));
+            nuint alignedObjectSize = gc_heap.Align(objectSize);
+            byte* descriptorStorage =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            MethodTable* methodTable =
+                InitializePointerMethodTable(descriptorStorage, objectSize, pointerCount: 1);
+            byte* left = firstBrick + 256;
+            byte* root = firstBrick + 512;
+            byte* right = firstBrick + 768;
+            byte* firstOldAddress = relocationNode + 256;
+            byte* secondOldAddress = firstOldAddress + 64;
+            byte* thirdOldAddress = secondOldAddress + 64;
+
+            ((CObjectHeader*)left)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)root)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)right)->RawSetMethodTable(methodTable);
+            *(byte**)(left + sizeof(byte*)) = firstOldAddress;
+            *(byte**)(root + sizeof(byte*)) = secondOldAddress;
+            *(byte**)(right + sizeof(byte*)) = thirdOldAddress;
+            ((plug_and_pair*)left)[-1].m_pair = default;
+            ((plug_and_pair*)root)[-1].m_pair = default;
+            ((plug_and_pair*)right)[-1].m_pair = default;
+            ((plug_and_gap*)root)[-1].gap =
+                unchecked((nint)(root - (left + (nint)alignedObjectSize)));
+            ((plug_and_gap*)right)[-1].gap =
+                unchecked((nint)(right - (root + (nint)alignedObjectSize)));
+
+            byte* tree = gc_heap.insert_node(left, 1, left, null);
+            tree = gc_heap.insert_node(root, 2, tree, left);
+            tree = gc_heap.insert_node(right, 3, tree, root);
+            gc_heap.set_brick(0, (nint)(tree - firstBrick));
+
+            gc_heap heap = default;
+            gc_heap.relocate_args args = default;
+            gc_heap.relocate_survivors_in_brick(&heap, tree, &args);
+
+            Assert.Equal((nuint)(firstOldAddress - 64), (nuint)(*(byte**)(left + sizeof(byte*))));
+            Assert.Equal((nuint)(secondOldAddress - 64), (nuint)(*(byte**)(root + sizeof(byte*))));
+            Assert.Equal((nuint)thirdOldAddress, (nuint)(*(byte**)(right + sizeof(byte*))));
+            Assert.Equal((nuint)right, (nuint)args.last_plug);
+            Assert.Equal(0, args.is_shortened);
+            Assert.True(args.pinned_plug_entry is null);
+
+            gc_heap.relocate_survivors_in_plug(
+                &heap,
+                args.last_plug,
+                right + (nint)alignedObjectSize,
+                args.is_shortened,
+                args.pinned_plug_entry);
+
+            Assert.Equal((nuint)(thirdOldAddress - 64), (nuint)(*(byte**)(right + sizeof(byte*))));
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void RelocateSurvivorsInBrickDequeuesPinnedEntryAndCarriesPostPlugState()
+    {
+        using MarkPhaseStateScope _ = new();
+        byte* storage = stackalloc byte[512];
+        byte* tree = storage + 256;
+        mark* entries = stackalloc mark[1];
+        entries[0] = default;
+        entries[0].first = tree;
+        entries[0].saved_post_p = 1;
+        ((plug_and_pair*)tree)[-1].m_pair = default;
+
+        gc_heap.mark_stack_array = entries;
+        gc_heap.mark_stack_array_length = 1;
+        gc_heap.mark_stack_tos = 1;
+        gc_heap.mark_stack_bos = 0;
+        gc_heap.oldest_pinned_plug = tree;
+
+        gc_heap heap = default;
+        gc_heap.relocate_args args = default;
+        gc_heap.relocate_survivors_in_brick(&heap, tree, &args);
+
+        Assert.Equal((nuint)tree, (nuint)args.last_plug);
+        Assert.Equal(1, args.is_shortened);
+        Assert.True(args.pinned_plug_entry == &entries[0]);
+        Assert.Equal((nuint)1, gc_heap.mark_stack_bos);
+        Assert.Equal((nuint)0, (nuint)gc_heap.oldest_pinned_plug);
+    }
+
+    [Fact]
+    public void RelocateSurvivorsWalksGenerationsSegmentsAndBricksAcrossEmptySipRegion()
+    {
+        const int BrickCount = 8;
+        int storageSize = checked((int)((BrickCount + 1) * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[BrickCount];
+        region_info* generationMap = stackalloc region_info[4];
+        seg_mapping* segmentMap = stackalloc seg_mapping[4];
+
+        try
+        {
+            using MarkPhaseStateScope _ = new();
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope __ = new(
+                firstBrick,
+                firstBrick + (nint)(BrickCount * card_table_info.brick_size),
+                bricks,
+                generationMap,
+                segmentMap);
+
+            for (nuint i = 0; i < BrickCount; i++)
+            {
+                gc_heap.set_brick(i, -1);
+            }
+
+            byte* relocationNode =
+                firstBrick + (nint)(7 * card_table_info.brick_size) + 256;
+            ((plug_and_reloc*)relocationNode)[-1].reloc = -64;
+            ((plug_and_pair*)relocationNode)[-1].m_pair = default;
+            gc_heap.set_brick(7, (nint)(relocationNode - gc_heap.brick_address(7)));
+
+            nuint objectSize = (nuint)(3 * sizeof(byte*));
+            nuint alignedObjectSize = gc_heap.Align(objectSize);
+            byte* descriptorStorage =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            MethodTable* methodTable =
+                InitializePointerMethodTable(descriptorStorage, objectSize, pointerCount: 1);
+            byte* gen0Plug = firstBrick + 256;
+            byte* gen1FirstPlug =
+                firstBrick + (nint)card_table_info.brick_size + 256;
+            byte* gen1SecondPlug =
+                firstBrick + (nint)(2 * card_table_info.brick_size) + 256;
+            byte* gen1TailPlug =
+                firstBrick + (nint)(4 * card_table_info.brick_size) + 256;
+            byte* firstOldAddress = relocationNode + 256;
+            byte* secondOldAddress = firstOldAddress + 64;
+            byte* thirdOldAddress = secondOldAddress + 64;
+            byte* fourthOldAddress = thirdOldAddress + 64;
+
+            ((CObjectHeader*)gen0Plug)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)gen1FirstPlug)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)gen1SecondPlug)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)gen1TailPlug)->RawSetMethodTable(methodTable);
+            *(byte**)(gen0Plug + sizeof(byte*)) = firstOldAddress;
+            *(byte**)(gen1FirstPlug + sizeof(byte*)) = secondOldAddress;
+            *(byte**)(gen1SecondPlug + sizeof(byte*)) = thirdOldAddress;
+            *(byte**)(gen1TailPlug + sizeof(byte*)) = fourthOldAddress;
+            ((plug_and_pair*)gen0Plug)[-1].m_pair = default;
+            ((plug_and_pair*)gen1FirstPlug)[-1].m_pair = default;
+            ((plug_and_pair*)gen1SecondPlug)[-1].m_pair = default;
+            ((plug_and_pair*)gen1TailPlug)[-1].m_pair = default;
+            ((plug_and_gap*)gen1SecondPlug)[-1].gap =
+                unchecked((nint)(gen1SecondPlug - (gen1FirstPlug + (nint)alignedObjectSize)));
+            gc_heap.set_brick(0, (nint)(gen0Plug - gc_heap.brick_address(0)));
+            gc_heap.set_brick(1, (nint)(gen1FirstPlug - gc_heap.brick_address(1)));
+            gc_heap.set_brick(2, (nint)(gen1SecondPlug - gc_heap.brick_address(2)));
+            gc_heap.set_brick(4, (nint)(gen1TailPlug - gc_heap.brick_address(4)));
+
+            heap_segment gen0Segment = default;
+            heap_segment gen1FirstSegment = default;
+            heap_segment emptySipSegment = default;
+            heap_segment gen1TailSegment = default;
+            heap_segment.heap_segment_mem(&gen0Segment) = firstBrick;
+            heap_segment.heap_segment_allocated(&gen0Segment) =
+                gen0Plug + (nint)alignedObjectSize;
+            heap_segment.heap_segment_gen_num(&gen0Segment) = (byte)gc_generation_num.soh_gen0;
+            heap_segment.heap_segment_plan_gen_num(&gen0Segment) =
+                (int)gc_generation_num.soh_gen0;
+
+            heap_segment.heap_segment_mem(&gen1FirstSegment) =
+                firstBrick + (nint)card_table_info.brick_size;
+            heap_segment.heap_segment_allocated(&gen1FirstSegment) =
+                gen1SecondPlug + (nint)alignedObjectSize;
+            heap_segment.heap_segment_gen_num(&gen1FirstSegment) =
+                (byte)gc_generation_num.soh_gen1;
+            heap_segment.heap_segment_plan_gen_num(&gen1FirstSegment) =
+                (int)gc_generation_num.soh_gen1;
+            heap_segment.heap_segment_next(&gen1FirstSegment) = &emptySipSegment;
+
+            byte* emptySipStart = firstBrick + (nint)(3 * card_table_info.brick_size);
+            heap_segment.heap_segment_mem(&emptySipSegment) = emptySipStart;
+            heap_segment.heap_segment_allocated(&emptySipSegment) = emptySipStart;
+            heap_segment.heap_segment_gen_num(&emptySipSegment) =
+                (byte)gc_generation_num.soh_gen1;
+            heap_segment.heap_segment_plan_gen_num(&emptySipSegment) =
+                (int)gc_generation_num.soh_gen1;
+            heap_segment.heap_segment_swept_in_plan(&emptySipSegment) = 1;
+            heap_segment.heap_segment_next(&emptySipSegment) = &gen1TailSegment;
+
+            heap_segment.heap_segment_mem(&gen1TailSegment) =
+                firstBrick + (nint)(4 * card_table_info.brick_size);
+            heap_segment.heap_segment_allocated(&gen1TailSegment) =
+                gen1TailPlug + (nint)alignedObjectSize;
+            heap_segment.heap_segment_gen_num(&gen1TailSegment) =
+                (byte)gc_generation_num.soh_gen1;
+            heap_segment.heap_segment_plan_gen_num(&gen1TailSegment) =
+                (int)gc_generation_num.soh_gen1;
+
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generation* gen = gc_heap.generation_of(generations, i);
+                generation.initialize(gen);
+                gen->gen_num = i;
+            }
+
+            generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0)) =
+                &gen0Segment;
+            generation.generation_start_segment(
+                gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen1)) =
+                &gen1FirstSegment;
+
+            gc_heap.relocate_survivors(
+                &heap,
+                (int)gc_generation_num.soh_gen1,
+                heap_segment.heap_segment_mem(&gen1FirstSegment));
+
+            Assert.Equal((nuint)(firstOldAddress - 64), (nuint)(*(byte**)(gen0Plug + sizeof(byte*))));
+            Assert.Equal(
+                (nuint)(secondOldAddress - 64),
+                (nuint)(*(byte**)(gen1FirstPlug + sizeof(byte*))));
+            Assert.Equal(
+                (nuint)(thirdOldAddress - 64),
+                (nuint)(*(byte**)(gen1SecondPlug + sizeof(byte*))));
+            Assert.Equal(
+                (nuint)(fourthOldAddress - 64),
+                (nuint)(*(byte**)(gen1TailPlug + sizeof(byte*))));
+            Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
+            Assert.Equal((nuint)0, (nuint)gc_heap.oldest_pinned_plug);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
     [Theory]
     [InlineData((int)gc_generation_num.loh_generation)]
     [InlineData((int)gc_generation_num.poh_generation)]

@@ -122,6 +122,82 @@ internal unsafe partial struct gc_heap
     }
 
 #if USE_REGIONS
+    public static heap_segment* relocate_advance_to_non_sip(gc_heap* hp, heap_segment* region)
+    {
+        heap_segment* current_region = region;
+
+        while (current_region is not null)
+        {
+            if (heap_segment.heap_segment_swept_in_plan(current_region) != 0)
+            {
+                int gen_num = heap_segment.heap_segment_gen_num(current_region);
+                int plan_gen_num = heap_segment.heap_segment_plan_gen_num(current_region);
+                int use_sip_demotion = plan_gen_num > get_plan_gen_num(gen_num) ? 1 : 0;
+                byte* x = heap_segment.heap_segment_mem(current_region);
+                byte* end = heap_segment.heap_segment_allocated(current_region);
+                relocate_advance_to_non_sip_context context = new()
+                {
+                    plan_gen_num = plan_gen_num,
+                    use_sip_demotion = use_sip_demotion,
+                };
+
+                // For SIP regions, we go linearly in the region and relocate each object's references.
+                while (x < end)
+                {
+                    nuint s = size(x);
+                    Debug.Assert(s > 0);
+                    byte* next_obj = x + (nint)Align(s);
+                    if (((CObjectHeader*)x)->IsFree() == 0)
+                    {
+                        if (contain_pointers(x) != 0)
+                        {
+                            go_through_object_nostart(
+                                method_table(x),
+                                x,
+                                s,
+                                &context,
+                                &relocate_advance_to_non_sip_callback);
+                        }
+
+                        check_class_object_demotion(hp, x);
+                    }
+
+                    x = next_obj;
+                }
+            }
+            else
+            {
+                return current_region;
+            }
+
+            current_region = heap_segment.heap_segment_next(current_region);
+        }
+
+        return null;
+    }
+
+    private struct relocate_advance_to_non_sip_context
+    {
+        public int plan_gen_num;
+        public int use_sip_demotion;
+    }
+
+    private static void relocate_advance_to_non_sip_callback(byte** pval, void* contextPointer)
+    {
+        relocate_advance_to_non_sip_context* context =
+            (relocate_advance_to_non_sip_context*)contextPointer;
+
+        relocate_address(pval);
+        if (context->use_sip_demotion != 0)
+        {
+            check_demotion_helper_sip(pval, context->plan_gen_num, (byte*)pval);
+        }
+        else
+        {
+            check_demotion_helper(pval, (byte*)pval);
+        }
+    }
+
     public static void copy_cards_range(byte* dest, byte* src, nuint len, bool copy_cards_p)
     {
         if (copy_cards_p)
@@ -555,6 +631,151 @@ internal unsafe partial struct gc_heap
         else
         {
             relocate_survivor_helper(hp, plug, plug_end);
+        }
+    }
+
+    public static void relocate_survivors_in_brick(
+        gc_heap* hp,
+        byte* tree,
+        relocate_args* args)
+    {
+        Debug.Assert(tree is not null);
+
+        if (node_left_child(tree) != 0)
+        {
+            relocate_survivors_in_brick(hp, tree + node_left_child(tree), args);
+        }
+
+        {
+            byte* plug = tree;
+            int has_post_plug_info_p = 0;
+            int has_pre_plug_info_p = 0;
+
+            if (tree == oldest_pinned_plug)
+            {
+                args->pinned_plug_entry = get_oldest_pinned_entry(
+                    hp,
+                    &has_pre_plug_info_p,
+                    &has_post_plug_info_p);
+                Debug.Assert(tree == pinned_plug(args->pinned_plug_entry));
+            }
+
+            if (args->last_plug is not null)
+            {
+                nuint gap_size = node_gap_size(tree);
+                byte* gap = plug - (nint)gap_size;
+                Debug.Assert(gap_size >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+                byte* last_plug_end = gap;
+                int check_last_object_p =
+                    args->is_shortened != 0 || has_pre_plug_info_p != 0 ? 1 : 0;
+
+                relocate_survivors_in_plug(
+                    hp,
+                    args->last_plug,
+                    last_plug_end,
+                    check_last_object_p,
+                    args->pinned_plug_entry);
+            }
+            else
+            {
+                Debug.Assert(has_pre_plug_info_p == 0);
+            }
+
+            args->last_plug = plug;
+            args->is_shortened = has_post_plug_info_p;
+        }
+
+        if (node_right_child(tree) != 0)
+        {
+            relocate_survivors_in_brick(hp, tree + node_right_child(tree), args);
+        }
+    }
+
+    public static void relocate_survivors(
+        gc_heap* hp,
+        int condemned_gen_number,
+        byte* first_condemned_address)
+    {
+        reset_pinned_queue_bos(hp);
+        update_oldest_pinned_plug(hp);
+
+        int stop_gen_idx = get_stop_generation_index(condemned_gen_number);
+        _ = first_condemned_address;
+
+        generation* generation_table = generation_table_of(hp);
+        for (int i = condemned_gen_number; i >= stop_gen_idx; i--)
+        {
+            generation* condemned_gen = generation_of(generation_table, i);
+            heap_segment* current_heap_segment =
+                heap_segment_rw(generation.generation_start_segment(condemned_gen));
+            current_heap_segment = relocate_advance_to_non_sip(hp, current_heap_segment);
+            if (current_heap_segment is null)
+            {
+                continue;
+            }
+
+            byte* start_address = get_soh_start_object(current_heap_segment, condemned_gen);
+            nuint current_brick = brick_of(start_address);
+
+            Debug.Assert(current_heap_segment is not null);
+
+            byte* end_address = heap_segment.heap_segment_allocated(current_heap_segment);
+            nuint end_brick = brick_of(end_address - 1);
+            relocate_args args = default;
+
+            while (true)
+            {
+                if (current_brick > end_brick)
+                {
+                    if (args.last_plug is not null)
+                    {
+                        Debug.Assert(args.is_shortened == 0);
+                        relocate_survivors_in_plug(
+                            hp,
+                            args.last_plug,
+                            heap_segment.heap_segment_allocated(current_heap_segment),
+                            args.is_shortened,
+                            args.pinned_plug_entry);
+
+                        args.last_plug = null;
+                    }
+
+                    heap_segment* next_heap_segment =
+                        heap_segment.heap_segment_next(current_heap_segment);
+                    if (next_heap_segment is not null)
+                    {
+                        next_heap_segment = relocate_advance_to_non_sip(hp, next_heap_segment);
+                        if (next_heap_segment is not null)
+                        {
+                            current_heap_segment = next_heap_segment;
+                            current_brick = brick_of(
+                                heap_segment.heap_segment_mem(current_heap_segment));
+                            end_brick = brick_of(
+                                heap_segment.heap_segment_allocated(current_heap_segment) - 1);
+                            continue;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                int brick_entry = brick_table[(nint)current_brick];
+                if (brick_entry >= 0)
+                {
+                    relocate_survivors_in_brick(
+                        hp,
+                        brick_address(current_brick) + brick_entry - 1,
+                        &args);
+                }
+
+                current_brick++;
+            }
         }
     }
 

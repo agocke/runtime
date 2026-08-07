@@ -3387,6 +3387,13 @@ namespace Internal.Runtime.GarbageCollection
             public generation* free_list_gen;
             public byte* highest_plug;
         }
+
+        internal struct relocate_args
+        {
+            public byte* last_plug;
+            public int is_shortened;
+            public mark* pinned_plug_entry;
+        }
 #endif
 
         public static short node_left_child(byte* node)

@@ -1304,7 +1304,12 @@ Translate in dependency order:
   pointer-free-object skips; the dependency-closed plug-level SOH slice adds normal multi-object
   walking, pre/post shortened-object saved-reference replay, truncated-last-object short-bit
   replay, the pre-plug one-pointer relocation lookup adjustment, and the direct captured-lambda
-  context adapter, without brick/phase routing)
+  context adapter; the next direct traversal slice adds `CObjectHeader::IsFree`,
+  `relocate_args`, allocation-free SIP descriptor-walk context/adapters,
+  `relocate_advance_to_non_sip`, in-order `relocate_survivors_in_brick`, and
+  generation/segment `relocate_survivors`, preserving plug boundaries, pinned-queue handoff,
+  cross-brick state, swept-in-plan linear walking and empty-region transitions. `get_start_segment`,
+  `relocate_phase`, compaction, and collection routing remain deferred)
 - `sweep.cpp` (bounded WKS `USE_REGIONS` normal-plan SOH brick walk, including promotion
   target selection, swept-in-plan segment skipping, positive highest-plug rewrites, negative
   brick resets, and free-list threading; plus UOH marked-object sweep, writable-tail trim,

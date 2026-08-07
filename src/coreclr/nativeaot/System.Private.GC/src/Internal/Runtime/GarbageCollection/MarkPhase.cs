@@ -166,6 +166,9 @@ internal unsafe struct CObjectHeader
     public int IsPinned() =>
         (GetHeader()->GetBits() & ObjHeader.BIT_SBLK_GC_RESERVE) != 0 ? 1 : 0;
 
+    public int IsFree() =>
+        GetMethodTable() == (MethodTable*)GCCommon.g_gc_pFreeObjectMethodTable ? 1 : 0;
+
     public void ClearMarked()
     {
 #if TARGET_64BIT && !TARGET_WASM
