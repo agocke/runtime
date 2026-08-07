@@ -49,6 +49,7 @@ public sealed unsafe class GCRecordTests
         Assert.Equal(8, sizeof(gen_to_condemn_tuning));
         Assert.Equal(IntPtr.Size * 10, sizeof(gc_generation_data));
         Assert.Equal(IntPtr.Size == 8 ? 56 : 28, sizeof(maxgen_size_increase));
+        Assert.Equal(IntPtr.Size == 8 ? 32 : 16, sizeof(fgm_history));
 
         Assert.Equal(0, Marshal.OffsetOf<gc_generation_data>(nameof(gc_generation_data.size_before)).ToInt32());
         Assert.Equal(
@@ -57,6 +58,10 @@ public sealed unsafe class GCRecordTests
         Assert.Equal(
             IntPtr.Size * 6,
             Marshal.OffsetOf<maxgen_size_increase>(nameof(maxgen_size_increase.running_free_list_efficiency)).ToInt32());
+        Assert.Equal(0, Marshal.OffsetOf<fgm_history>(nameof(fgm_history.fgm)).ToInt32());
+        Assert.Equal(IntPtr.Size, Marshal.OffsetOf<fgm_history>(nameof(fgm_history.size)).ToInt32());
+        Assert.Equal(IntPtr.Size * 2, Marshal.OffsetOf<fgm_history>(nameof(fgm_history.available_pagefile_mb)).ToInt32());
+        Assert.Equal(IntPtr.Size * 3, Marshal.OffsetOf<fgm_history>(nameof(fgm_history.loh_p)).ToInt32());
     }
 
     [Fact]

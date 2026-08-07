@@ -216,8 +216,15 @@ namespace Internal.Runtime.GarbageCollection
             gc_heap.initialize_gc_static_state();
 
 #if USE_REGIONS
+            if (!gc_heap.initialize_mark_list())
+            {
+                gc_heap.check_commit_cs.Destroy();
+                return E_OUTOFMEMORY;
+            }
+
             if (!ManagedGCRegionBootstrap.Initialize())
             {
+                gc_heap.destroy_semi_shared();
                 gc_heap.check_commit_cs.Destroy();
                 return E_OUTOFMEMORY;
             }
@@ -227,6 +234,18 @@ namespace Internal.Runtime.GarbageCollection
             {
 #if USE_REGIONS
                 ManagedGCRegionBootstrap.Shutdown();
+                gc_heap.destroy_semi_shared();
+#endif
+                gc_heap.check_commit_cs.Destroy();
+                return E_OUTOFMEMORY;
+            }
+
+            gc_heap.finalize_queue = CFinalize.Allocate();
+            if (gc_heap.finalize_queue is null)
+            {
+#if USE_REGIONS
+                ManagedGCRegionBootstrap.Shutdown();
+                gc_heap.destroy_semi_shared();
 #endif
                 gc_heap.check_commit_cs.Destroy();
                 return E_OUTOFMEMORY;
@@ -241,8 +260,11 @@ namespace Internal.Runtime.GarbageCollection
                 return S_OK;
             }
 
+            CFinalize.Free(gc_heap.finalize_queue);
+            gc_heap.finalize_queue = null;
 #if USE_REGIONS
             ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.destroy_semi_shared();
 #endif
             gc_heap.check_commit_cs.Destroy();
             return E_OUTOFMEMORY;
@@ -250,8 +272,11 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void Shutdown(void* thisPtr)
         {
+            CFinalize.Free(gc_heap.finalize_queue);
+            gc_heap.finalize_queue = null;
 #if USE_REGIONS
             ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.destroy_semi_shared();
 #endif
         }
 
@@ -390,11 +415,12 @@ namespace Internal.Runtime.GarbageCollection
             GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
 #if USE_REGIONS
             gc_heap* regionHeap = ManagedGCRegionBootstrap.Heap;
-            if (regionHeap is not null)
+            if (regionHeap is not null && (heap is null || heap == regionHeap))
             {
                 gc_heap.fix_allocation_context(
                     acontext,
                     arg is not null,
+                    true,
                     gc_heap.generation_table_of(regionHeap),
                     regionHeap->ephemeral_heap_segment,
                     &regionHeap->alloc_allocated,
@@ -513,24 +539,24 @@ namespace Internal.Runtime.GarbageCollection
         }
 
         // ------------------------------------------------------------------------------------
-        // Finalization - nothing is ever finalized, because nothing ever dies
+        // Finalization
         // ------------------------------------------------------------------------------------
 
-        private static nuint GetNumberOfFinalizable(void* thisPtr) => 0;
+        private static nuint GetNumberOfFinalizable(void* thisPtr) =>
+            gc_heap.finalize_queue is null ? 0 : gc_heap.finalize_queue->GetNumberFinalizableObjects();
 
-        private static byte* GetNextFinalizable(void* thisPtr) => null;
+        private static byte* GetNextFinalizable(void* thisPtr) =>
+            gc_heap.finalize_queue is null ? null : gc_heap.finalize_queue->GetNextFinalizableObject();
 
         private static void SetFinalizationRun(void* thisPtr, byte* obj)
         {
+            ((CObjectHeader*)obj)->GetHeader()->SetFinalizerRun();
         }
 
-        /// <summary>
-        /// Port of <c>IGCHeap::RegisterForFinalization</c>. Reports success without recording
-        /// anything: returning false makes the EE throw <c>OutOfMemoryException</c> from every
-        /// allocation of a finalizable type, which would be a far more confusing failure than
-        /// finalizers simply never running.
-        /// </summary>
-        private static byte RegisterForFinalization(void* thisPtr, int gen, byte* obj) => 1;
+        private static byte RegisterForFinalization(void* thisPtr, int gen, byte* obj) =>
+            gc_heap.finalize_queue is not null && gc_heap.finalize_queue->RegisterForFinalization(gen, obj)
+                ? (byte)1
+                : (byte)0;
 
         private static FinalizerWorkItem* GetExtraWorkForFinalization(void* thisPtr) => null;
 
@@ -542,14 +568,25 @@ namespace Internal.Runtime.GarbageCollection
         // Object inspection
         // ------------------------------------------------------------------------------------
 
-        private static byte IsPromoted(void* thisPtr, byte* obj) => 1;
+        private static byte IsPromoted(void* thisPtr, byte* obj) => IsPromoted(obj) ? (byte)1 : (byte)0;
+
+        internal static bool IsPromoted(byte* obj)
+        {
+#if USE_REGIONS
+            return !gc_heap.is_in_gc_range(obj) ||
+                !gc_heap.is_in_condemned_gc(obj) ||
+                ((CObjectHeader*)obj)->IsMarked() != 0;
+#else
+            return true;
+#endif
+        }
 
         /// <summary>
         /// The <c>IGCHeapInternal</c> form of <see cref="IsPromoted"/>, used by the bridge code.
-        /// Nothing is ever collected, so everything is promoted, and there is no next header to
-        /// verify.
+        /// The WKS predicate has no additional next-header work in this dependency-closed slice.
         /// </summary>
-        private static byte IsPromoted2(void* thisPtr, byte* obj, byte bVerifyNextHeader) => 1;
+        private static byte IsPromoted2(void* thisPtr, byte* obj, byte bVerifyNextHeader) =>
+            IsPromoted(obj) ? (byte)1 : (byte)0;
 
         private static byte IsHeapPointer(void* thisPtr, void* obj, byte small_heap_only) =>
 #if USE_REGIONS
@@ -744,7 +781,7 @@ namespace Internal.Runtime.GarbageCollection
             *totalCommittedBytes = GetTotalBytesInUse(thisPtr);
             *promotedBytes = 0;
             *pinnedObjectCount = 0;
-            *finalizationPendingCount = 0;
+            *finalizationPendingCount = GetNumberOfFinalizable(thisPtr);
             *index = 0;
             *generation = 0;
             *pauseTimePct = 0;
@@ -855,6 +892,13 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void DiagScanFinalizeQueue(void* thisPtr, delegate* unmanaged<byte**, ScanContext*, uint, void> fn, ScanContext* sc)
         {
+            if (gc_heap.finalize_queue is not null)
+            {
+                gc_heap.finalize_queue->GcScanRoots(
+                    (delegate*<byte**, ScanContext*, uint, void>)fn,
+                    heapNumber: 0,
+                    scanContext: sc);
+            }
         }
 
         private static void DiagScanHandles(void* thisPtr, delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void> fn, int gen_number, ScanContext* context)

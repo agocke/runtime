@@ -26,6 +26,7 @@
          non-WASM full runtime. The managed runtime is the workstation configuration, while the
          offsets table itself keeps the native server branch for its separate verifier. -->
     <DefineConstants Condition="'$(Platform)' != 'wasm'">BACKGROUND_GC;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(Platform)' == 'x86' or '$(Platform)' == 'x64' or '$(Platform)' == 'arm' or '$(Platform)' == 'arm64' or '$(Platform)' == 'loongarch64' or '$(Platform)' == 'riscv64'">FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP;$(DefineConstants)</DefineConstants>
     <!-- Kept in step with src/System.Private.GC.csproj: USE_REGIONS selects the region layout of
          the generation schema, matching gcpriv.h's HOST_64BIT && (!HOST_APPLE || HOST_OSX) after
          the standalone/illumos terms drop out for this port. -->
@@ -113,6 +114,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCAllocation.cs" Link="GCAllocation.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCDesc.cs" Link="GCDesc.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/DynamicTuning.cs" Link="DynamicTuning.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCMemory.cs" Link="GCMemory.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCPriv.cs" Link="GCPriv.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCRecord.cs" Link="GCRecord.cs" />
@@ -123,11 +125,14 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTable.cs" Link="HandleTable.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableCache.cs" Link="HandleTableCache.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableCore.cs" Link="HandleTableCore.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableScan.cs" Link="HandleTableScan.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/HandleTableStructs.cs" Link="HandleTableStructs.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ObjectHandle.cs" Link="ObjectHandle.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCEntryPoints.cs" Link="ManagedGCEntryPoints.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/ManagedGCRegionBootstrap.cs" Link="ManagedGCRegionBootstrap.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/MarkPhase.cs" Link="MarkPhase.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/PlanPhase.cs" Link="PlanPhase.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/RelocateCompact.cs" Link="RelocateCompact.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/IntroSort.cs" Link="IntroSort.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceDac.cs" Link="Interface/GCInterfaceDac.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Interface/GCInterfaceEnums.cs" Link="Interface/GCInterfaceEnums.cs" />
@@ -147,6 +152,7 @@
          GCInterfaceOffsets test stub in ManagedGCEntryPoints.TestHost.cs, the same stand-in for
          the generated table that GC_INTERFACE_MAJOR_VERSION/MINOR_VERSION already use there. -->
     <Compile Include="../src/Internal/Runtime/GarbageCollection/SoftwareWriteWatch.cs" Link="SoftwareWriteWatch.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/SweepPhase.cs" Link="SweepPhase.cs" />
   </ItemGroup>
 
   <ItemGroup>

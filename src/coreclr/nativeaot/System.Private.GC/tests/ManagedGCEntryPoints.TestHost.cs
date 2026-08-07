@@ -114,6 +114,9 @@ internal static unsafe class ManagedGCHeap
 
     internal static uint GenerationOf(byte* obj) => TestGeneration;
 
+    internal static bool IsPromoted(byte* obj) =>
+        obj is null || ((CObjectHeader*)obj)->IsMarked() != 0;
+
     public static void SetCreateResult(void* createResult) => s_createResult = (nint)createResult;
 
     public static void Reset()

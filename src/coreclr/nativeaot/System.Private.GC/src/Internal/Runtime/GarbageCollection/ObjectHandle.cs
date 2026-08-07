@@ -35,6 +35,9 @@ namespace Internal.Runtime.GarbageCollection
 
         public static HandleTableMap g_HandleTableMap;
         public static HandleTableBucket g_GlobalHandleTableBucket;
+        private static DhContext* g_pDependentHandleContexts;
+
+        public static bool DependentHandleContextsInitialized => g_pDependentHandleContexts is not null;
 
         public static int getNumberOfSlots()
         {
@@ -44,6 +47,7 @@ namespace Internal.Runtime.GarbageCollection
         public static bool Ref_Initialize()
         {
             Debug.Assert(g_HandleTableMap.pBuckets == null);
+            Debug.Assert(g_pDependentHandleContexts == null);
 
             HandleTableBucket** pBuckets = (HandleTableBucket**)SyncImports.ManagedGC_AllocZeroed(
                 HandleTableConstants.INITIAL_HANDLE_TABLE_ARRAY_SIZE * (nuint)sizeof(HandleTableBucket*));
@@ -94,15 +98,31 @@ namespace Internal.Runtime.GarbageCollection
                 HandleTableManager.HndSetHandleTableIndex(pBucket->pTable[cpuIndex], 0);
             }
 
+            DhContext* contexts = (DhContext*)SyncImports.ManagedGC_AllocZeroed(
+                (nuint)nSlots * (nuint)sizeof(DhContext));
+            if (contexts == null)
+            {
+                DestroyBucketTables(pBucket, nSlots);
+                SyncImports.ManagedGC_Free(pBuckets);
+                return false;
+            }
+
             pBuckets[0] = pBucket;
             g_HandleTableMap.pBuckets = pBuckets;
             g_HandleTableMap.dwMaxIndex = HandleTableConstants.INITIAL_HANDLE_TABLE_ARRAY_SIZE;
             g_HandleTableMap.pNext = null;
+            g_pDependentHandleContexts = contexts;
             return true;
         }
 
         public static void Ref_Shutdown()
         {
+            if (g_pDependentHandleContexts != null)
+            {
+                SyncImports.ManagedGC_Free(g_pDependentHandleContexts);
+                g_pDependentHandleContexts = null;
+            }
+
             if (g_HandleTableMap.pBuckets != null)
             {
                 HandleTableMap* walk = (HandleTableMap*)System.Runtime.CompilerServices.Unsafe.AsPointer(
@@ -151,6 +171,13 @@ namespace Internal.Runtime.GarbageCollection
         public static int GetCurrentThreadHomeHeapNumber()
         {
             return 0;
+        }
+
+        public static DhContext* Ref_GetDependentHandleContext(ScanContext* sc)
+        {
+            _ = sc;
+            Debug.Assert(g_pDependentHandleContexts != null);
+            return g_pDependentHandleContexts;
         }
 
         public static bool Contains(HandleTableBucket* pBucket, OBJECTHANDLE handle)

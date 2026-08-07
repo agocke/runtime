@@ -2,7 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Ported from dependency-closed pinned-plug queue/mark-stack helpers and the active WKS
-// USE_REGIONS mark_object_simple1 leaf in mark_phase.cpp and gcinternal.h.
+// USE_REGIONS mark_object_simple1/mark_object_simple/drain_mark_queue leaves in
+// mark_phase.cpp and gcinternal.h.
 
 using System;
 using System.Diagnostics;
@@ -16,6 +17,8 @@ namespace Internal.Runtime.GarbageCollection;
 [StructLayout(LayoutKind.Explicit)]
 internal unsafe struct MethodTable
 {
+    public const uint HasCriticalFinalizerFlag = 0x00000002;
+    public const uint HasFinalizerFlag = 0x00100000;
     public const uint CollectibleFlag = 0x00200000;
     public const uint HasPointersFlag = 0x01000000;
     public const uint HasComponentSizeFlag = 0x80000000;
@@ -60,11 +63,50 @@ internal unsafe struct MethodTable
 
     public int HasReferenceFields() => (m_uFlags & HasPointersFlag) != 0 ? 1 : 0;
 
+    public int HasFinalizer() => (m_uFlags & HasFinalizerFlag) != 0 ? 1 : 0;
+
+    public int HasCriticalFinalizer() =>
+        HasComponentSize() == 0 && (m_uFlags & HasCriticalFinalizerFlag) != 0 ? 1 : 0;
+
     public int ContainsGCPointers() => HasReferenceFields();
 
     // NativeAOT's MethodTable does not support collectible types, so this is an alias of
     // HasReferenceFields rather than a check of CollectibleFlag.
     public int ContainsGCPointersOrCollectible() => HasReferenceFields();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct ObjHeader
+{
+    public const uint BIT_SBLK_GC_RESERVE = 0x20000000;
+    public const uint BIT_SBLK_FINALIZER_RUN = 0x40000000;
+
+#if TARGET_64BIT
+    private uint m_uAlignpad;
+#endif
+    private uint m_uSyncBlockValue;
+
+    public uint GetBits() => m_uSyncBlockValue;
+
+    public void SetGCBit()
+    {
+        m_uSyncBlockValue |= BIT_SBLK_GC_RESERVE;
+    }
+
+    public void ClrGCBit()
+    {
+        m_uSyncBlockValue &= ~BIT_SBLK_GC_RESERVE;
+    }
+
+    public void SetFinalizerRun()
+    {
+        m_uSyncBlockValue |= BIT_SBLK_FINALIZER_RUN;
+    }
+
+    public void ClrFinalizerRun()
+    {
+        m_uSyncBlockValue &= ~BIT_SBLK_FINALIZER_RUN;
+    }
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -106,6 +148,23 @@ internal unsafe struct CObjectHeader
     }
 
     public int IsMarked() => ((nuint)RawGetMethodTable() & GC_MARKED) != 0 ? 1 : 0;
+
+    public ObjHeader* GetHeader()
+    {
+        fixed (CObjectHeader* header = &this)
+        {
+            return (ObjHeader*)((byte*)header - sizeof(nuint));
+        }
+    }
+
+    public void SetPinned()
+    {
+        Debug.Assert(gc_heap.settings.concurrent == 0);
+        GetHeader()->SetGCBit();
+    }
+
+    public int IsPinned() =>
+        (GetHeader()->GetBits() & ObjHeader.BIT_SBLK_GC_RESERVE) != 0 ? 1 : 0;
 
     public void ClearMarked()
     {
@@ -162,6 +221,19 @@ internal unsafe struct CObjectHeader
         if (special_bits != 0)
         {
             RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | special_bits));
+        }
+    }
+
+    public void UnsetFree()
+    {
+        nuint size = (nuint)GCInterfaceOffsets.min_obj_size - (nuint)sizeof(nuint);
+        fixed (CObjectHeader* header = &this)
+        {
+            nuint* m = (nuint*)header;
+            for (nuint i = 0; i < size / (nuint)sizeof(nuint); i++)
+            {
+                *(m++) = 0;
+            }
         }
     }
 
@@ -678,9 +750,80 @@ internal unsafe partial struct gc_heap
     }
 
 #if USE_REGIONS && !MULTIPLE_HEAPS
-    // The global mark-list allocation and its g_mark_list_piece backing are not ported yet.
-    // This setup consumes externally owned storage with the same WKS pointer layout, so no
-    // collection path can accidentally invent ownership or allocate while the world is stopped.
+    public static bool setup_mark_state_for_collection()
+    {
+        if (g_mark_list is null || mark_list_size == 0)
+        {
+            return setup_mark_state_for_collection(
+                g_mark_list,
+                mark_list_size,
+                null,
+                null,
+                region_count);
+        }
+
+        grow_mark_list_piece();
+
+        nuint* survived_per_region_storage = g_mark_list_piece is null
+            ? null
+            : (nuint*)g_mark_list_piece;
+        nuint* old_card_survived_per_region_storage =
+            g_mark_list_piece is null || g_mark_list_piece_size < region_count
+                ? null
+                : survived_per_region_storage + (nint)g_mark_list_piece_size;
+
+        return setup_mark_state_for_collection(
+            g_mark_list,
+            mark_list_size,
+            survived_per_region_storage,
+            old_card_survived_per_region_storage,
+            region_count);
+    }
+
+    public static void grow_mark_list_piece()
+    {
+        if (region_count > nuint.MaxValue / 2)
+        {
+            return;
+        }
+
+        nuint required_size = region_count * 2;
+        if (g_mark_list_piece_total_size < required_size)
+        {
+            nuint doubled_size = g_mark_list_piece_size > nuint.MaxValue / 2
+                ? nuint.MaxValue
+                : g_mark_list_piece_size * 2;
+            nuint alloc_count = doubled_size > region_count ? doubled_size : region_count;
+            if (alloc_count > nuint.MaxValue / (2 * (nuint)sizeof(byte**)))
+            {
+                return;
+            }
+
+            if (g_mark_list_piece is not null)
+            {
+                SyncImports.ManagedGC_Free(g_mark_list_piece);
+                g_mark_list_piece = null;
+            }
+
+            // Two arrays of pointer-width region counters are stored per heap.
+            g_mark_list_piece = (byte***)SyncImports.ManagedGC_AllocZeroed(
+                alloc_count * 2 * (nuint)sizeof(byte**));
+            if (g_mark_list_piece is not null)
+            {
+                g_mark_list_piece_size = alloc_count;
+            }
+            else
+            {
+                g_mark_list_piece_size = 0;
+            }
+
+            g_mark_list_piece_total_size = g_mark_list_piece_size * 2;
+        }
+
+        g_mark_list_piece_size = g_mark_list_piece_total_size / 2;
+    }
+
+    // This overload remains for isolated leaves that provide their own WKS-compatible storage.
     public static bool setup_mark_state_for_collection(
         byte** mark_list_storage,
         nuint mark_list_size,
@@ -689,6 +832,7 @@ internal unsafe partial struct gc_heap
         nuint region_count)
     {
         mark_queue.verify_empty();
+        gc_heap.region_count = region_count;
 
         if (mark_list_storage is null || mark_list_size == 0)
         {
@@ -727,6 +871,161 @@ internal unsafe partial struct gc_heap
         shigh = null;
         slow = (byte*)nuint.MaxValue;
         return true;
+    }
+
+    // This is the bounded WKS root scan and synchronous post-mark tail of mark_phase. The
+    // remaining root kinds and collection phases require their own dependency closures.
+    public static bool mark_phase_stack_roots()
+    {
+        gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+        int condemned_gen_number = settings.condemned_generation;
+        if (heap is null ||
+            (uint)condemned_gen_number > (uint)GCInterfaceOffsets.max_generation ||
+            g_mark_list is null ||
+            mark_list_size == 0)
+        {
+            return false;
+        }
+
+        num_pinned_objects = 0;
+
+#if !MULTIPLE_HEAPS
+        if (gen0_must_clear_bricks > 0)
+        {
+            gen0_must_clear_bricks--;
+        }
+#endif
+
+        reset_mark_stack(heap);
+        region_count = global_region_allocator.get_used_region_count();
+        compute_gc_and_ephemeral_range(heap, condemned_gen_number, end_of_gc_p: false);
+
+        ScanContext sc = default;
+        sc.init();
+        sc.thread_number = heap->heap_number;
+        sc.thread_count = 1;
+        sc.promotion = 1;
+
+        GCToEEInterface.BeforeGcScanRoots(
+            condemned_gen_number,
+            is_bgc: 0,
+            is_concurrent: 0);
+
+        bool markStateReady = setup_mark_state_for_collection();
+        Debug.Assert(markStateReady);
+        if (!markStateReady)
+        {
+            return false;
+        }
+
+        GCScan.GcScanRoots(
+            &promote,
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+        drain_mark_queue(heap);
+
+        CFinalize* finalizeQueue = gc_heap.finalize_queue;
+        if (finalizeQueue is not null)
+        {
+            finalizeQueue->GcScanRoots(&promote, heap->heap_number, null);
+            drain_mark_queue(heap);
+        }
+
+        GCScan.GcScanHandles(
+            &promote,
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+        drain_mark_queue(heap);
+
+        if (ObjectHandle.DependentHandleContextsInitialized)
+        {
+            GCScan.GcDhInitialScan(
+                &promote,
+                condemned_gen_number,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+            scan_dependent_handles(condemned_gen_number, &sc, initial_scan_p: true);
+        }
+
+        GCToEEInterface.AfterGcScanRoots(
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+
+        GCScan.GcShortWeakPtrScan(
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+
+        if (finalizeQueue is not null)
+        {
+            finalizeQueue->ScanForFinalization(&promote, condemned_gen_number, heap);
+        }
+
+        drain_mark_queue(heap);
+        GCToEEInterface.DiagWalkFReachableObjects(heap);
+
+        if (ObjectHandle.DependentHandleContextsInitialized)
+        {
+            scan_dependent_handles(condemned_gen_number, &sc, initial_scan_p: false);
+        }
+
+        GCScan.GcWeakPtrScan(
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+        GCScan.GcWeakPtrScanBySingleThread(
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+        return true;
+    }
+
+    public static void scan_dependent_handles(
+        int condemned_gen_number,
+        ScanContext* sc,
+        bool initial_scan_p)
+    {
+        _ = initial_scan_p;
+        gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+        Debug.Assert(heap is not null);
+        if (heap is null)
+        {
+            return;
+        }
+
+        bool unscannedPromotions = true;
+        while (GCScan.GcDhUnpromotedHandlesExist(sc) && unscannedPromotions)
+        {
+            unscannedPromotions = false;
+
+            if (process_dependent_handle_overflow(heap, condemned_gen_number))
+            {
+                unscannedPromotions = true;
+            }
+
+            mark_queue.verify_empty();
+
+            if (GCScan.GcDhReScan(sc))
+            {
+                unscannedPromotions = true;
+            }
+        }
+
+        process_dependent_handle_overflow(heap, condemned_gen_number);
+    }
+
+    private static bool process_dependent_handle_overflow(gc_heap* heap, int condemned_gen_number)
+    {
+        if (max_overflow_address is not null || min_overflow_address != (byte*)nuint.MaxValue)
+        {
+            return process_mark_overflow(heap, condemned_gen_number);
+        }
+
+        drain_mark_queue(heap);
+        return false;
     }
 
     // The WKS USE_REGIONS m_boundary macro owns a fixed-capacity list. Unlike the
@@ -798,6 +1097,41 @@ internal unsafe partial struct gc_heap
 #if DEBUG
         g_promoted = unchecked(g_promoted + obj_size);
 #endif
+    }
+
+    public static void sync_promoted_bytes(gc_heap* heap)
+    {
+        if (survived_per_region is null || old_card_survived_per_region is null)
+        {
+            return;
+        }
+
+        int condemned_gen_number = settings.condemned_generation;
+        int highest_gen_number = condemned_gen_number == GCInterfaceOffsets.max_generation
+            ? (int)gc_generation_num.total_generation_count - 1
+            : settings.condemned_generation;
+        int stop_gen_idx = get_stop_generation_index(condemned_gen_number);
+        generation* generation_table = generation_table_of(heap);
+
+        for (int gen_idx = highest_gen_number; gen_idx >= stop_gen_idx; gen_idx--)
+        {
+            generation* condemned_gen = generation_of(generation_table, gen_idx);
+            heap_segment* current_region =
+                heap_segment_rw(generation.generation_start_segment(condemned_gen));
+
+            while (current_region is not null)
+            {
+                nuint region_index =
+                    get_basic_region_index_for_address(heap_segment.heap_segment_mem(current_region));
+
+                heap_segment.heap_segment_survived(current_region) =
+                    survived_per_region[(nint)region_index];
+                heap_segment.heap_segment_old_card_survived(current_region) =
+                    (int)old_card_survived_per_region[(nint)region_index];
+
+                current_region = heap_segment.heap_segment_next(current_region);
+            }
+        }
     }
 #endif
 
@@ -1052,6 +1386,315 @@ internal unsafe partial struct gc_heap
                 break;
             }
         }
+    }
+
+    private unsafe struct mark_object_simple_context
+    {
+        public gc_heap* heap;
+        public int condemned_gen;
+        public int thread;
+    }
+
+    private static void mark_object_simple_callback(byte** ppslot, void* context)
+    {
+        mark_object_simple_context* mark_context = (mark_object_simple_context*)context;
+        byte* oo = mark_queue.queue_mark(*ppslot, mark_context->condemned_gen);
+        if (oo is not null)
+        {
+            m_boundary(mark_context->heap, oo);
+            add_to_promoted_bytes(mark_context->heap, oo, mark_context->thread);
+            if (contain_pointers_or_collectible(oo) != 0)
+            {
+                mark_object_simple1(mark_context->heap, oo, oo);
+            }
+        }
+    }
+
+    // This method assumes that *po has already passed exact active-collection range checks.
+    // It does not perform the deferred mark_object wrapper's is_in_gc_range/gc_low-gc_high tests.
+    public static void mark_object_simple(gc_heap* heap, byte** po)
+    {
+        int condemned_gen = settings.condemned_generation;
+        byte* o = *po;
+        const int thread = 0;
+
+        o = mark_queue.queue_mark(o);
+        if (o is not null)
+        {
+            m_boundary(heap, o);
+            nuint s = size(o);
+            add_to_promoted_bytes(heap, o, s, thread);
+
+            mark_object_simple_context context = new()
+            {
+                heap = heap,
+                condemned_gen = condemned_gen,
+                thread = thread,
+            };
+
+            go_through_object_nostart(method_table(o), o, s, &context, &mark_object_simple_callback);
+        }
+    }
+
+    public static void drain_mark_queue(gc_heap* heap)
+    {
+        int condemned_gen = settings.condemned_generation;
+        const int thread = 0;
+
+        byte* o;
+        while ((o = mark_queue.get_next_marked()) is not null)
+        {
+            m_boundary(heap, o);
+            nuint s = size(o);
+            add_to_promoted_bytes(heap, o, s, thread);
+            if (contain_pointers_or_collectible(o) != 0)
+            {
+                mark_object_simple_context context = new()
+                {
+                    heap = heap,
+                    condemned_gen = condemned_gen,
+                    thread = thread,
+                };
+
+                go_through_object_nostart(method_table(o), o, s, &context, &mark_object_simple_callback);
+            }
+        }
+
+        mark_queue.verify_empty();
+    }
+
+    public static bool is_in_gc_range(byte* o)
+    {
+        return (gc_low <= o) && (o < gc_high);
+    }
+
+    public static bool is_in_condemned_gc(byte* o)
+    {
+        Debug.Assert((GCCommon.g_gc_lowest_address <= o) && (o < GCCommon.g_gc_highest_address));
+
+        int condemned_gen = settings.condemned_generation;
+        if (condemned_gen < GCInterfaceOffsets.max_generation)
+        {
+            int gen = get_region_gen_num(o);
+            if (gen > condemned_gen)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static void promote(byte** ppObject, ScanContext* sc, uint flags)
+    {
+        _ = sc;
+
+        if (ppObject is null)
+        {
+            return;
+        }
+
+#if USE_REGIONS
+        byte* o = *ppObject;
+        if (!is_in_heap_range(o))
+        {
+            return;
+        }
+
+        gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+        if (heap is null || !is_in_condemned_gc(o))
+        {
+            return;
+        }
+
+        if ((flags & (uint)GCCallFlags.GC_CALL_INTERIOR) != 0 &&
+            (o = find_object(o, heap)) is null)
+        {
+            return;
+        }
+
+        if ((flags & (uint)GCCallFlags.GC_CALL_PINNED) != 0)
+        {
+            pin_object(o, ppObject);
+        }
+
+        mark_object_simple(heap, &o);
+#else
+        _ = ppObject;
+        _ = flags;
+#endif
+    }
+
+    public static void pin_object(byte* o, byte** ppObject)
+    {
+        _ = ppObject;
+        ((CObjectHeader*)o)->SetPinned();
+        num_pinned_objects++;
+    }
+
+    public static void mark_object(gc_heap* heap, byte* o)
+    {
+        if (is_in_gc_range(o) && is_in_condemned_gc(o))
+        {
+            mark_object_simple(heap, &o);
+        }
+    }
+
+    private unsafe struct mark_through_object_context
+    {
+        public gc_heap* heap;
+    }
+
+    private static void mark_through_object_callback(byte** po, void* context)
+    {
+        mark_through_object_context* mark_context = (mark_through_object_context*)context;
+        mark_object(mark_context->heap, *po);
+    }
+
+    public static void mark_through_object(gc_heap* heap, byte* oo, int mark_class_object_p)
+    {
+#if !COLLECTIBLE_CLASS
+        _ = mark_class_object_p;
+        const int to_mark_class_object = 0;
+#else
+        int to_mark_class_object = (mark_class_object_p != 0 && is_collectible(oo) != 0) ? 1 : 0;
+#endif
+        if (contain_pointers(oo) != 0 || to_mark_class_object != 0)
+        {
+            nuint s = size(oo);
+
+#if COLLECTIBLE_CLASS
+            if (to_mark_class_object != 0)
+            {
+                byte* class_obj = get_class_object(oo);
+                mark_object(heap, class_obj);
+            }
+#endif
+
+            if (contain_pointers(oo) != 0)
+            {
+                mark_through_object_context context = new()
+                {
+                    heap = heap,
+                };
+
+                go_through_object_nostart(
+                    method_table(oo),
+                    oo,
+                    s,
+                    &context,
+                    &mark_through_object_callback);
+            }
+        }
+    }
+
+    public static bool process_mark_overflow(gc_heap* heap, int condemned_gen_number)
+    {
+        nuint last_promoted_bytes = get_promoted_bytes(heap);
+        bool overflow_p = false;
+
+    recheck:
+        drain_mark_queue(heap);
+        if (max_overflow_address is not null || min_overflow_address != (byte*)nuint.MaxValue)
+        {
+            overflow_p = true;
+            nuint new_size = unchecked(2 * mark_stack_array_length);
+            if (new_size < gc_rand.MARK_STACK_INITIAL_LENGTH)
+            {
+                new_size = gc_rand.MARK_STACK_INITIAL_LENGTH;
+            }
+
+            if (unchecked(new_size * (nuint)sizeof(mark)) > 100 * 1024)
+            {
+                nuint new_max_size = (get_total_heap_size(heap) / 10) / (nuint)sizeof(mark);
+                new_size = new_max_size < new_size ? new_max_size : new_size;
+            }
+
+            if (mark_stack_array_length < new_size &&
+                new_size - mark_stack_array_length > mark_stack_array_length / 2)
+            {
+                mark* tmp = (mark*)SyncImports.ManagedGC_AllocZeroed(
+                    unchecked(new_size * (nuint)sizeof(mark)));
+                if (tmp is not null)
+                {
+                    if (mark_stack_array is not null)
+                    {
+                        SyncImports.ManagedGC_Free(mark_stack_array);
+                    }
+
+                    mark_stack_array = tmp;
+                    mark_stack_array_length = new_size;
+                }
+            }
+
+            byte* min_add = min_overflow_address;
+            byte* max_add = max_overflow_address;
+            max_overflow_address = null;
+            min_overflow_address = (byte*)nuint.MaxValue;
+            process_mark_overflow_internal(heap, condemned_gen_number, min_add, max_add);
+            goto recheck;
+        }
+
+        nuint current_promoted_bytes = get_promoted_bytes(heap);
+        if (current_promoted_bytes != last_promoted_bytes)
+        {
+            fire_mark_overflow_event(current_promoted_bytes, last_promoted_bytes);
+        }
+
+        return overflow_p;
+    }
+
+    private static void fire_mark_overflow_event(nuint current_promoted_bytes, nuint previous_promoted_bytes)
+    {
+        // GC_ROOT_OVERFLOW has no translated GC event producer in this no-tracing configuration.
+        _ = current_promoted_bytes;
+        _ = previous_promoted_bytes;
+    }
+
+    public static void process_mark_overflow_internal(
+        gc_heap* heap,
+        int condemned_gen_number,
+        byte* min_add,
+        byte* max_add)
+    {
+        int full_p = condemned_gen_number == GCInterfaceOffsets.max_generation ? 1 : 0;
+        nuint obj_count = 0;
+        int gen_limit = full_p != 0
+            ? (int)gc_generation_num.total_generation_count
+            : condemned_gen_number + 1;
+        generation* generation_table = generation_table_of(heap);
+
+        for (int i = get_stop_generation_index(condemned_gen_number); i < gen_limit; i++)
+        {
+            generation* gen = generation_of(generation_table, i);
+            heap_segment* seg = heap_segment_in_range(generation.generation_start_segment(gen));
+            int align_const = get_alignment_constant(i < (int)gc_generation_num.uoh_start_generation);
+
+            Debug.Assert(seg is not null);
+
+            while (seg is not null)
+            {
+                byte* segment_start = heap_segment.heap_segment_mem(seg);
+                byte* o = segment_start > min_add ? segment_start : min_add;
+                byte* end = heap_segment.heap_segment_allocated(seg);
+
+                while (o < end && o <= max_add)
+                {
+                    Debug.Assert(min_add <= o && max_add >= o);
+                    if (((CObjectHeader*)o)->IsMarked() != 0)
+                    {
+                        mark_through_object(heap, o, mark_class_object_p: 1);
+                        obj_count++;
+                    }
+
+                    o += (nint)Align(size(o), align_const);
+                }
+
+                seg = heap_segment_next_in_range(seg);
+            }
+        }
+
+        Debug.Assert(obj_count > 0);
     }
 #endif
 

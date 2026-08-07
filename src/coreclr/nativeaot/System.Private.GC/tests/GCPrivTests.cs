@@ -40,6 +40,9 @@ public sealed unsafe class GCPrivTests
     private static byte* s_adjustLimitExpectedUsed;
     private static int s_adjustLimitUsedPublishedAtRelease;
 #endif
+    private static int s_finalizationScanCount;
+    private static byte s_finalizationScanPromotion;
+    private static int s_finalizationScanThreadCount;
 
     [Fact]
     public void GcRandPreservesNativeSequence()
@@ -71,11 +74,1013 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(32768u, gc_rand.MAX_YP_SPIN_COUNT_UNIT);
         Assert.Equal(400u, gc_rand.MIN_SOH_CROSS_GEN_REFS);
         Assert.Equal(800u, gc_rand.MIN_LOH_CROSS_GEN_REFS);
+        Assert.Equal(100 * GCToOSInterface.GetPageSize(), gc_rand.MIN_DECOMMIT_SIZE);
 #if TARGET_64BIT
         Assert.Equal(1024u, gc_rand.MARK_STACK_INITIAL_LENGTH);
 #else
         Assert.Equal(128u, gc_rand.MARK_STACK_INITIAL_LENGTH);
 #endif
+    }
+
+    [Fact]
+    public void CFinalizeLifecycleGrowsAndDequeuesInReverseRegistrationOrder()
+    {
+        const int FinalizerCount = 101;
+        SyncImports.ResetRecording();
+        GCToEEInterface.Reset();
+
+        CFinalize* queue = CFinalize.Allocate();
+        byte* objects = null;
+        try
+        {
+            Assert.True(queue is not null);
+
+            MethodTable methodTable = default;
+            methodTable.m_uFlags = MethodTable.HasFinalizerFlag;
+            objects = AllocateFinalizableObjects(&methodTable, FinalizerCount);
+            Assert.True(objects is not null);
+
+            for (int i = 0; i < FinalizerCount; i++)
+            {
+                Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen0, FinalizableObjectAt(objects, i)));
+            }
+
+            Assert.Equal(0u, queue->GetNumberFinalizableObjects());
+            Assert.Equal((nuint)(120 * sizeof(byte*)), SyncImports.LastAllocSize);
+
+            ResetFinalizationScanObservation();
+            Assert.True(queue->ScanForFinalization(&MarkFinalizable, (int)gc_generation_num.soh_gen2, null));
+            Assert.Equal(FinalizerCount, s_finalizationScanCount);
+            Assert.Equal((byte)0, s_finalizationScanPromotion);
+            Assert.Equal(0, s_finalizationScanThreadCount);
+            Assert.Equal((nuint)FinalizerCount, queue->GetPromotedCount());
+            Assert.Equal((nuint)FinalizerCount, queue->GetNumberFinalizableObjects());
+
+            for (int i = 0; i < FinalizerCount; i++)
+            {
+                Assert.Equal(
+                    (nuint)FinalizableObjectAt(objects, FinalizerCount - i - 1),
+                    (nuint)queue->GetNextFinalizableObject());
+            }
+
+            Assert.True(queue->GetNextFinalizableObject() is null);
+            Assert.Equal(0u, queue->GetNumberFinalizableObjects());
+        }
+        finally
+        {
+            if (objects is not null)
+            {
+                SyncImports.ManagedGC_Free(objects);
+            }
+
+            CFinalize.Free(queue);
+            GCToEEInterface.Reset();
+        }
+
+        Assert.Equal(SyncImports.AllocCount, SyncImports.FreeCount);
+    }
+
+    [Fact]
+    public void CFinalizeDropsEagerAndPreviouslyFinalizedObjectsBeforeReregistration()
+    {
+        SyncImports.ResetRecording();
+        GCToEEInterface.Reset();
+
+        CFinalize* queue = CFinalize.Allocate();
+        byte* objects = null;
+        try
+        {
+            Assert.True(queue is not null);
+
+            MethodTable methodTable = default;
+            methodTable.m_uFlags = MethodTable.HasFinalizerFlag;
+            objects = AllocateFinalizableObjects(&methodTable, 1);
+            byte* obj = FinalizableObjectAt(objects, 0);
+
+            GCToEEInterface.EagerFinalizedObject = obj;
+            Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen0, obj));
+            Assert.False(queue->ScanForFinalization(&MarkFinalizable, (int)gc_generation_num.soh_gen0, null));
+            Assert.Equal(0u, queue->GetNumberFinalizableObjects());
+            Assert.Equal(0u, queue->GetPromotedCount());
+
+            GCToEEInterface.EagerFinalizedObject = null;
+            Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen0, obj));
+            ((CObjectHeader*)obj)->GetHeader()->SetFinalizerRun();
+            Assert.False(queue->ScanForFinalization(&MarkFinalizable, (int)gc_generation_num.soh_gen0, null));
+            Assert.Equal(0u, ((CObjectHeader*)obj)->GetHeader()->GetBits() & ObjHeader.BIT_SBLK_FINALIZER_RUN);
+
+            Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen0, obj));
+            ResetFinalizationScanObservation();
+            Assert.True(queue->ScanForFinalization(&MarkFinalizable, (int)gc_generation_num.soh_gen0, null));
+            Assert.Equal(1, s_finalizationScanCount);
+            Assert.Equal((nuint)1, queue->GetPromotedCount());
+            Assert.Equal((nuint)obj, (nuint)queue->GetNextFinalizableObject());
+            Assert.True(queue->GetNextFinalizableObject() is null);
+        }
+        finally
+        {
+            GCToEEInterface.EagerFinalizedObject = null;
+            if (objects is not null)
+            {
+                SyncImports.ManagedGC_Free(objects);
+            }
+
+            CFinalize.Free(queue);
+            GCToEEInterface.Reset();
+        }
+    }
+
+    [Fact]
+    public void CFinalizePromotesOnlyDeadObjectsAndSeparatesCriticalFinalizers()
+    {
+        SyncImports.ResetRecording();
+        GCToEEInterface.Reset();
+
+        CFinalize* queue = CFinalize.Allocate();
+        byte* markedObjects = null;
+        byte* normalObjects = null;
+        byte* criticalObjects = null;
+        try
+        {
+            Assert.True(queue is not null);
+
+            MethodTable markedMethodTable = default;
+            markedMethodTable.m_uFlags = MethodTable.HasFinalizerFlag;
+            MethodTable normalMethodTable = default;
+            normalMethodTable.m_uFlags = MethodTable.HasFinalizerFlag;
+            MethodTable criticalMethodTable = default;
+            criticalMethodTable.m_uFlags = MethodTable.HasFinalizerFlag | MethodTable.HasCriticalFinalizerFlag;
+
+            markedObjects = AllocateFinalizableObjects(&markedMethodTable, 1);
+            normalObjects = AllocateFinalizableObjects(&normalMethodTable, 1);
+            criticalObjects = AllocateFinalizableObjects(&criticalMethodTable, 1);
+            byte* marked = FinalizableObjectAt(markedObjects, 0);
+            byte* normal = FinalizableObjectAt(normalObjects, 0);
+            byte* critical = FinalizableObjectAt(criticalObjects, 0);
+            ((CObjectHeader*)marked)->SetMarked();
+
+            Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen0, marked));
+            Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen0, normal));
+            Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen1, critical));
+
+            ResetFinalizationScanObservation();
+            Assert.True(queue->ScanForFinalization(&MarkFinalizable, (int)gc_generation_num.soh_gen1, null));
+            Assert.Equal(2, s_finalizationScanCount);
+            Assert.Equal((nuint)2, queue->GetPromotedCount());
+            Assert.Equal((nuint)2, queue->GetNumberFinalizableObjects());
+
+            ScanContext scanContext = default;
+            ResetFinalizationScanObservation();
+            queue->GcScanRoots(&MarkFinalizable, heapNumber: 7, scanContext: &scanContext);
+            Assert.Equal(2, s_finalizationScanCount);
+            Assert.Equal(7, scanContext.thread_number);
+
+            Assert.Equal((nuint)normal, (nuint)queue->GetNextFinalizableObject(only_non_critical: true));
+            Assert.True(queue->GetNextFinalizableObject(only_non_critical: true) is null);
+            Assert.Equal((nuint)critical, (nuint)queue->GetNextFinalizableObject());
+
+            ((CObjectHeader*)marked)->ClearMarked();
+            ResetFinalizationScanObservation();
+            Assert.True(queue->ScanForFinalization(&MarkFinalizable, (int)gc_generation_num.soh_gen0, null));
+            Assert.Equal(1, s_finalizationScanCount);
+            Assert.Equal((nuint)1, queue->GetPromotedCount());
+            Assert.Equal((nuint)marked, (nuint)queue->GetNextFinalizableObject());
+        }
+        finally
+        {
+            if (criticalObjects is not null)
+            {
+                SyncImports.ManagedGC_Free(criticalObjects);
+            }
+
+            if (normalObjects is not null)
+            {
+                SyncImports.ManagedGC_Free(normalObjects);
+            }
+
+            if (markedObjects is not null)
+            {
+                SyncImports.ManagedGC_Free(markedObjects);
+            }
+
+            CFinalize.Free(queue);
+            GCToEEInterface.Reset();
+        }
+    }
+
+    private static byte* AllocateFinalizableObjects(MethodTable* methodTable, int count)
+    {
+        nuint stride = (nuint)sizeof(ObjHeader) + (nuint)sizeof(CObjectHeader);
+        byte* storage = (byte*)SyncImports.ManagedGC_AllocZeroed((nuint)count * stride);
+        if (storage is not null)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                ((CObjectHeader*)FinalizableObjectAt(storage, i))->RawSetMethodTable(methodTable);
+            }
+        }
+
+        return storage;
+    }
+
+    private static byte* FinalizableObjectAt(byte* storage, int index)
+    {
+        nuint stride = (nuint)sizeof(ObjHeader) + (nuint)sizeof(CObjectHeader);
+        return storage + (nint)((nuint)index * stride) + sizeof(ObjHeader);
+    }
+
+    private static void ResetFinalizationScanObservation()
+    {
+        s_finalizationScanCount = 0;
+        s_finalizationScanPromotion = 0;
+        s_finalizationScanThreadCount = 0;
+    }
+
+    private static void MarkFinalizable(byte** obj, ScanContext* scanContext, uint flags)
+    {
+        _ = flags;
+        s_finalizationScanCount++;
+        s_finalizationScanPromotion = scanContext->promotion;
+        s_finalizationScanThreadCount = scanContext->thread_count;
+        ((CObjectHeader*)*obj)->SetMarked();
+    }
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    [Fact]
+    public void InitRecordsClearsHistoryAndSnapshotsGenerationData()
+    {
+        using InitRecordsStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        heap_segment[] regions = new heap_segment[(int)gc_generation_num.total_generation_count];
+        generation* generationTable = gc_heap.generation_table_of(pHeap);
+        nuint* expectedSizes = stackalloc nuint[(int)gc_generation_num.total_generation_count];
+        nuint* expectedFreeListSpaces = stackalloc nuint[(int)gc_generation_num.total_generation_count];
+        nuint* expectedFreeObjSpaces = stackalloc nuint[(int)gc_generation_num.total_generation_count];
+
+        fixed (heap_segment* pRegions = regions)
+        {
+            pHeap->heap_number = 0;
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                heap_segment* region = &pRegions[i];
+                nuint start = unchecked((nuint)0x100000 + ((nuint)i * 0x1000));
+                expectedSizes[i] = unchecked((nuint)(i + 1) * 0x10);
+                expectedFreeListSpaces[i] = unchecked((nuint)0x100 + (nuint)i);
+                expectedFreeObjSpaces[i] = unchecked((nuint)0x200 + (nuint)i);
+
+                heap_segment.heap_segment_mem(region) = (byte*)start;
+                heap_segment.heap_segment_allocated(region) = (byte*)(start + expectedSizes[i]);
+                heap_segment.heap_segment_next(region) = null;
+
+                generation* gen = generationTable + i;
+                generation.generation_start_segment(gen) = region;
+                generation.generation_free_list_space(gen) = expectedFreeListSpaces[i];
+                generation.generation_free_obj_space(gen) = expectedFreeObjSpaces[i];
+            }
+
+            gc_heap.gc_data_per_heap.gen_data0.size_after = 1;
+            gc_heap.gc_data_per_heap.maxgen_size_info.free_list_allocated = 2;
+            gc_heap.gc_data_per_heap.extra_gen0_committed = 3;
+            gc_heap.gc_data_global.final_youngest_desired = 4;
+            gc_heap.gc_data_global.condemned_generation = 5;
+            gc_heap.fgm_result.set_fgm(failure_get_memory.fgm_commit_table, 6, 1);
+            gc_heap.fgm_result.available_pagefile_mb = 7;
+            gc_heap.end_gen0_region_space = 8;
+            gc_heap.end_gen0_region_committed_space = 9;
+            gc_heap.gen0_pinned_free_space = 10;
+            gc_heap.gen0_large_chunk_found = true;
+            gc_heap.num_regions_freed_in_sweep = 11;
+            gc_heap.sufficient_gen0_space_p = 1;
+
+            gc_heap.init_records(pHeap);
+        }
+
+        Assert.Equal(0u, gc_heap.gc_data_per_heap.heap_index);
+        Assert.Equal((nuint)0, gc_heap.gc_data_per_heap.maxgen_size_info.free_list_allocated);
+        Assert.Equal((nuint)0, gc_heap.gc_data_per_heap.extra_gen0_committed);
+        Assert.Equal((nuint)0, gc_heap.gc_data_global.final_youngest_desired);
+        Assert.Equal(0, gc_heap.gc_data_global.condemned_generation);
+        Assert.Equal(failure_get_memory.fgm_no_failure, gc_heap.fgm_result.fgm);
+        Assert.Equal((nuint)0, gc_heap.fgm_result.size);
+        Assert.Equal((nuint)0, gc_heap.fgm_result.available_pagefile_mb);
+        Assert.Equal(0, gc_heap.fgm_result.loh_p);
+
+        gc_history_per_heap history = gc_heap.gc_data_per_heap;
+        gc_generation_data* genData = &history.gen_data0;
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            Assert.Equal(expectedSizes[i], genData[i].size_before);
+            Assert.Equal(expectedFreeListSpaces[i], genData[i].free_list_space_before);
+            Assert.Equal(expectedFreeObjSpaces[i], genData[i].free_obj_space_before);
+            Assert.Equal((nuint)0, genData[i].size_after);
+        }
+
+        Assert.Equal(nuint.MaxValue, gc_heap.end_gen0_region_space);
+        Assert.Equal((nuint)0, gc_heap.end_gen0_region_committed_space);
+        Assert.Equal((nuint)0, gc_heap.gen0_pinned_free_space);
+        Assert.False(gc_heap.gen0_large_chunk_found);
+        Assert.Equal(0, gc_heap.num_regions_freed_in_sweep);
+        Assert.Equal(0, gc_heap.sufficient_gen0_space_p);
+    }
+#endif
+
+    [Fact]
+    public void DynamicTuningSurvivalGrowthUsesNativeThresholdAndCap()
+    {
+        const float Limit = 2.0f;
+        const float MaxLimit = 4.0f;
+        float threshold = (MaxLimit - Limit) / (Limit * (MaxLimit - 1.0f));
+
+        Assert.Equal(3.0f, gc_heap.surv_to_growth(0.25f, Limit, MaxLimit));
+        Assert.Equal(MaxLimit, gc_heap.surv_to_growth(threshold, Limit, MaxLimit));
+        Assert.Equal(MaxLimit, gc_heap.surv_to_growth(0.5f, Limit, MaxLimit));
+    }
+
+    [Fact]
+    public void DynamicTuningLinearAllocationModelPreservesNativeBoundariesAndTruncation()
+    {
+        Assert.Equal((nuint)1000, LinearAllocationModel(0.0f, 1000, 2000, 0.0f));
+        Assert.Equal((nuint)1050, LinearAllocationModel(0.95f, 1000, 2000, 0.0f));
+        Assert.Equal((nuint)1250, LinearAllocationModel(0.5f, 1000, 2000, 150.0f));
+        Assert.Equal((nuint)1000, LinearAllocationModel(0.5f, 1000, 2000, 300.0f));
+        Assert.Equal((nuint)100, LinearAllocationModel(0.5f, 100, 101, 0.0f));
+    }
+
+#if !MULTIPLE_HEAPS
+    [Fact]
+    public void DynamicTuningUpdateCollectionCountsPreservesWksAccounting()
+    {
+        gc_mechanisms savedSettings = gc_heap.settings;
+
+        try
+        {
+            GCToOSInterface.ResetTimerRecording();
+            GCCommon.ResetHighPrecisionTimeStamp();
+#if TARGET_WINDOWS
+            GCToOSInterface.PerformanceFrequencyInject = true;
+            GCToOSInterface.PerformanceFrequencyValue = 1_000_000;
+            GCToOSInterface.PerformanceCounterInject = true;
+            GCToOSInterface.PerformanceCounterValue = 777;
+#else
+            GCToOSInterface.HiresTickFrequencyInject = true;
+            GCToOSInterface.HiresTickFrequencyValue = 1_000_000;
+            GCToOSInterface.HiresTicksInject = true;
+            GCToOSInterface.HiresTicksValue = 777;
+#endif
+
+            gc_heap heap = default;
+            gc_heap* pHeap = &heap;
+            dynamic_data* gen0 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen0);
+            dynamic_data* gen1 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen1);
+            dynamic_data* gen2 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen2);
+            dynamic_data* loh = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.loh_generation);
+            dynamic_data* poh = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.poh_generation);
+
+            dynamic_data.dd_collection_count(gen0) = 10;
+            dynamic_data.dd_collection_count(gen1) = 20;
+            dynamic_data.dd_collection_count(gen2) = 30;
+            dynamic_data.dd_collection_count(loh) = 40;
+            dynamic_data.dd_collection_count(poh) = 50;
+            dynamic_data.dd_gc_clock(gen0) = 40;
+            dynamic_data.dd_gc_clock(gen1) = 50;
+            dynamic_data.dd_gc_clock(gen2) = 60;
+            dynamic_data.dd_gc_clock(loh) = 70;
+            dynamic_data.dd_gc_clock(poh) = 80;
+            dynamic_data.dd_time_clock(gen0) = 100;
+            dynamic_data.dd_time_clock(gen1) = 101;
+            dynamic_data.dd_time_clock(gen2) = 102;
+            dynamic_data.dd_time_clock(loh) = 103;
+            dynamic_data.dd_time_clock(poh) = 104;
+            dynamic_data.dd_previous_time_clock(gen0) = 110;
+            dynamic_data.dd_previous_time_clock(gen1) = 111;
+            dynamic_data.dd_previous_time_clock(gen2) = 112;
+            dynamic_data.dd_previous_time_clock(loh) = 113;
+            dynamic_data.dd_previous_time_clock(poh) = 114;
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            gc_heap.update_collection_counts(pHeap);
+
+            Assert.Equal((nuint)11, dynamic_data.dd_collection_count(gen0));
+            Assert.Equal((nuint)21, dynamic_data.dd_collection_count(gen1));
+            Assert.Equal((nuint)30, dynamic_data.dd_collection_count(gen2));
+            Assert.Equal((nuint)40, dynamic_data.dd_collection_count(loh));
+            Assert.Equal((nuint)50, dynamic_data.dd_collection_count(poh));
+            Assert.Equal((nuint)41, dynamic_data.dd_gc_clock(gen0));
+            Assert.Equal((nuint)41, dynamic_data.dd_gc_clock(gen1));
+            Assert.Equal((nuint)60, dynamic_data.dd_gc_clock(gen2));
+            Assert.Equal((nuint)70, dynamic_data.dd_gc_clock(loh));
+            Assert.Equal((nuint)80, dynamic_data.dd_gc_clock(poh));
+            Assert.Equal(777UL, dynamic_data.dd_time_clock(gen0));
+            Assert.Equal(777UL, dynamic_data.dd_time_clock(gen1));
+            Assert.Equal(102UL, dynamic_data.dd_time_clock(gen2));
+            Assert.Equal(103UL, dynamic_data.dd_time_clock(loh));
+            Assert.Equal(104UL, dynamic_data.dd_time_clock(poh));
+            Assert.Equal(100UL, dynamic_data.dd_previous_time_clock(gen0));
+            Assert.Equal(101UL, dynamic_data.dd_previous_time_clock(gen1));
+            Assert.Equal(112UL, dynamic_data.dd_previous_time_clock(gen2));
+            Assert.Equal(113UL, dynamic_data.dd_previous_time_clock(loh));
+            Assert.Equal(114UL, dynamic_data.dd_previous_time_clock(poh));
+
+#if TARGET_WINDOWS
+            GCToOSInterface.PerformanceCounterValue = 888;
+#else
+            GCToOSInterface.HiresTicksValue = 888;
+#endif
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.max_generation;
+            gc_heap.update_collection_counts(pHeap);
+
+            Assert.Equal((nuint)12, dynamic_data.dd_collection_count(gen0));
+            Assert.Equal((nuint)22, dynamic_data.dd_collection_count(gen1));
+            Assert.Equal((nuint)31, dynamic_data.dd_collection_count(gen2));
+            Assert.Equal((nuint)41, dynamic_data.dd_collection_count(loh));
+            Assert.Equal((nuint)51, dynamic_data.dd_collection_count(poh));
+            Assert.Equal((nuint)42, dynamic_data.dd_gc_clock(gen0));
+            Assert.Equal((nuint)42, dynamic_data.dd_gc_clock(gen1));
+            Assert.Equal((nuint)42, dynamic_data.dd_gc_clock(gen2));
+            Assert.Equal((nuint)70, dynamic_data.dd_gc_clock(loh));
+            Assert.Equal((nuint)80, dynamic_data.dd_gc_clock(poh));
+            Assert.Equal(888UL, dynamic_data.dd_time_clock(gen0));
+            Assert.Equal(888UL, dynamic_data.dd_time_clock(gen1));
+            Assert.Equal(888UL, dynamic_data.dd_time_clock(gen2));
+            Assert.Equal(103UL, dynamic_data.dd_time_clock(loh));
+            Assert.Equal(104UL, dynamic_data.dd_time_clock(poh));
+            Assert.Equal(777UL, dynamic_data.dd_previous_time_clock(gen0));
+            Assert.Equal(777UL, dynamic_data.dd_previous_time_clock(gen1));
+            Assert.Equal(102UL, dynamic_data.dd_previous_time_clock(gen2));
+            Assert.Equal(113UL, dynamic_data.dd_previous_time_clock(loh));
+            Assert.Equal(114UL, dynamic_data.dd_previous_time_clock(poh));
+        }
+        finally
+        {
+            gc_heap.settings = savedSettings;
+            GCToOSInterface.ResetTimerRecording();
+            GCCommon.ResetHighPrecisionTimeStamp();
+        }
+    }
+#endif
+
+#if !MULTIPLE_HEAPS
+    [Fact]
+    public void DynamicTuningUpdateEndTimePreservesWksAccounting()
+    {
+        gc_mechanisms savedSettings = gc_heap.settings;
+        ulong savedEndGcTime = gc_heap.end_gc_time;
+        ulong savedLastAllocResetSuspendedEndTime = gc_heap.last_alloc_reset_suspended_end_time;
+
+        try
+        {
+            GCToOSInterface.ResetTimerRecording();
+            GCCommon.ResetHighPrecisionTimeStamp();
+#if TARGET_WINDOWS
+            GCToOSInterface.PerformanceFrequencyInject = true;
+            GCToOSInterface.PerformanceFrequencyValue = 1_000_000;
+            GCToOSInterface.PerformanceCounterInject = true;
+            GCToOSInterface.PerformanceCounterValue = 1_000;
+#else
+            GCToOSInterface.HiresTickFrequencyInject = true;
+            GCToOSInterface.HiresTickFrequencyValue = 1_000_000;
+            GCToOSInterface.HiresTicksInject = true;
+            GCToOSInterface.HiresTicksValue = 1_000;
+#endif
+
+            gc_heap heap = default;
+            gc_heap* pHeap = &heap;
+            dynamic_data* gen0 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen0);
+            dynamic_data* gen1 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen1);
+            dynamic_data* gen2 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen2);
+            dynamic_data.dd_time_clock(gen0) = 1_050;
+            dynamic_data.dd_time_clock(gen1) = 800;
+            dynamic_data.dd_gc_elapsed_time(gen0) = 10;
+            dynamic_data.dd_gc_elapsed_time(gen1) = 20;
+            dynamic_data.dd_gc_elapsed_time(gen2) = 30;
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            gc_heap.update_end_ngc_time();
+            gc_heap.update_end_gc_time_per_heap(pHeap);
+
+            Assert.Equal(1_000UL, gc_heap.end_gc_time);
+            Assert.Equal(1_000UL, gc_heap.last_alloc_reset_suspended_end_time);
+            Assert.Equal(unchecked((nuint)(1_000UL - 1_050UL)), dynamic_data.dd_gc_elapsed_time(gen0));
+            Assert.Equal((nuint)200, dynamic_data.dd_gc_elapsed_time(gen1));
+            Assert.Equal((nuint)30, dynamic_data.dd_gc_elapsed_time(gen2));
+        }
+        finally
+        {
+            gc_heap.settings = savedSettings;
+            gc_heap.end_gc_time = savedEndGcTime;
+            gc_heap.last_alloc_reset_suspended_end_time = savedLastAllocResetSuspendedEndTime;
+            GCToOSInterface.ResetTimerRecording();
+            GCCommon.ResetHighPrecisionTimeStamp();
+        }
+    }
+#endif
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    [InlineData(4, false)]
+    [InlineData(5, false)]
+    [InlineData(6, false)]
+    [InlineData(7, false)]
+    [InlineData(8, false)]
+    [InlineData(9, true)]
+    [InlineData(10, true)]
+    [InlineData(11, false)]
+    [InlineData(12, false)]
+    [InlineData(13, true)]
+    [InlineData(14, false)]
+    [InlineData(15, false)]
+    [InlineData(16, false)]
+    [InlineData(17, true)]
+    [InlineData(18, false)]
+    public void PlanPhaseIsInducedBlockingPreservesNativeReasons(int reason, bool expected)
+    {
+        Assert.Equal(expected, gc_heap.is_induced_blocking((gc_reason)reason));
+    }
+
+    [Fact]
+    public void PlanPhaseRelativePowerOfTwoIndicesPreserveNativeBoundaries()
+    {
+#if TARGET_64BIT
+        const int ExpectedMaxIndexPower2 = 28;
+#else
+        const int ExpectedMaxIndexPower2 = 24;
+#endif
+        nuint belowMinimum = ((nuint)1 << gc_heap.MIN_INDEX_POWER2) - 1;
+        nuint minimum = (nuint)1 << gc_heap.MIN_INDEX_POWER2;
+        nuint maximum = (nuint)1 << gc_heap.MAX_INDEX_POWER2;
+        nuint belowMaximum = maximum - 1;
+
+        Assert.Equal(6, gc_heap.MIN_INDEX_POWER2);
+        Assert.Equal(ExpectedMaxIndexPower2, gc_heap.MAX_INDEX_POWER2);
+        Assert.Equal(ExpectedMaxIndexPower2 - 6 + 1, gc_heap.MAX_NUM_BUCKETS);
+
+        Assert.Equal(0, gc_heap.relative_index_power2_plug(0));
+        Assert.Equal(-1, gc_heap.relative_index_power2_free_space(0));
+        Assert.Equal(0, gc_heap.relative_index_power2_plug(belowMinimum));
+        Assert.Equal(-1, gc_heap.relative_index_power2_free_space(belowMinimum));
+        Assert.Equal(0, gc_heap.relative_index_power2_plug(minimum));
+        Assert.Equal(0, gc_heap.relative_index_power2_free_space(minimum));
+        Assert.Equal(gc_heap.MAX_NUM_BUCKETS - 2, gc_heap.relative_index_power2_plug(belowMaximum));
+        Assert.Equal(gc_heap.MAX_NUM_BUCKETS - 2, gc_heap.relative_index_power2_free_space(belowMaximum));
+        Assert.Equal(gc_heap.MAX_NUM_BUCKETS - 1, gc_heap.relative_index_power2_plug(maximum));
+        Assert.Equal(gc_heap.MAX_NUM_BUCKETS - 1, gc_heap.relative_index_power2_free_space(maximum));
+    }
+
+    [Theory]
+    [InlineData(0UL, false)]
+    [InlineData(1UL, true)]
+    [InlineData(2UL, false)]
+    [InlineData(3UL, true)]
+    [InlineData(65534UL, false)]
+    [InlineData(65535UL, true)]
+    public void PlanPhaseOddpPreservesNativeParity(ulong value, bool expected)
+    {
+        Assert.Equal(expected, gc_heap.oddp((nuint)value));
+    }
+
+    [Fact]
+    public void PlanPhaseLogcountMatchesReferenceForEveryWord()
+    {
+        for (nuint word = 0; word < 0x10000; word++)
+        {
+            Assert.Equal(LogcountReference(word), gc_heap.logcount(word));
+        }
+    }
+
+#if !MULTIPLE_HEAPS
+    [Fact]
+    public void PlanPhaseCurrentGenerationSizeUsesWksDynamicData()
+    {
+        gc_heap heap = default;
+        dynamic_data* data = gc_heap.dynamic_data_of(&heap, (int)gc_generation_num.soh_gen1);
+
+        dynamic_data.dd_current_size(data) = 1000;
+        dynamic_data.dd_desired_allocation(data) = 200;
+        dynamic_data.dd_new_allocation(data) = 50;
+
+        Assert.Equal((nuint)1150, gc_heap.current_generation_size(&heap, (int)gc_generation_num.soh_gen1));
+        Assert.Equal((nuint)1000, dynamic_data.dd_current_size(data));
+        Assert.Equal((nuint)200, dynamic_data.dd_desired_allocation(data));
+        Assert.Equal((nint)50, dynamic_data.dd_new_allocation(data));
+
+        dynamic_data.dd_current_size(data) = nuint.MaxValue;
+        dynamic_data.dd_desired_allocation(data) = 2;
+        dynamic_data.dd_new_allocation(data) = 1;
+
+        Assert.Equal((nuint)0, gc_heap.current_generation_size(&heap, (int)gc_generation_num.soh_gen1));
+    }
+#endif
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    [Fact]
+    public void PlanPhaseGenerationSizesSumLinkedRegionsAndReturnZeroForNullStart()
+    {
+        using PlanPhaseStateScope _ = new();
+        gc_heap heap = default;
+        heap_segment* regions = stackalloc heap_segment[3];
+        generation* generationTable = gc_heap.generation_table_of(&heap);
+
+        SetGenerationSizeRegion(&regions[0], mem: 0x1000, planAllocated: 0x1200, allocated: 0x1300, next: &regions[1]);
+        SetGenerationSizeRegion(&regions[1], mem: 0x2000, planAllocated: 0x2400, allocated: 0x2800, next: &regions[2]);
+        SetGenerationSizeRegion(&regions[2], mem: 0x3000, planAllocated: 0x3400, allocated: 0x3500, next: null);
+        generation.generation_start_segment(
+            generationTable + (int)gc_generation_num.soh_gen1) = &regions[0];
+
+        Assert.Equal((nuint)0xA00, gc_heap.generation_plan_size(&heap, (int)gc_generation_num.soh_gen1));
+        Assert.Equal((nuint)0x1000, gc_heap.generation_size(&heap, (int)gc_generation_num.soh_gen1));
+
+        generation.generation_start_segment(
+            generationTable + (int)gc_generation_num.soh_gen1) = null;
+
+        Assert.Equal((nuint)0, gc_heap.generation_plan_size(&heap, (int)gc_generation_num.soh_gen1));
+        Assert.Equal((nuint)0, gc_heap.generation_size(&heap, (int)gc_generation_num.soh_gen1));
+    }
+
+    [Fact]
+    public void PlanPhaseAllocationAndPromotionTotalsUseWksDynamicData()
+    {
+        gc_mechanisms expectedSettings = gc_heap.settings;
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        dynamic_data* gen0 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen0);
+        dynamic_data* gen1 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen1);
+        dynamic_data* gen2 = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.soh_gen2);
+        dynamic_data* loh = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.loh_generation);
+        dynamic_data* poh = gc_heap.dynamic_data_of(pHeap, (int)gc_generation_num.poh_generation);
+
+        using (new PlanPhaseStateScope())
+        {
+            dynamic_data.dd_desired_allocation(gen0) = 1000;
+            dynamic_data.dd_new_allocation(gen0) = 100;
+            dynamic_data.dd_promoted_size(gen0) = 11;
+            dynamic_data.dd_desired_allocation(gen1) = 2000;
+            dynamic_data.dd_new_allocation(gen1) = 200;
+            dynamic_data.dd_promoted_size(gen1) = 22;
+            dynamic_data.dd_desired_allocation(gen2) = 3000;
+            dynamic_data.dd_new_allocation(gen2) = 300;
+            dynamic_data.dd_promoted_size(gen2) = 33;
+            dynamic_data.dd_desired_allocation(loh) = 4000;
+            dynamic_data.dd_new_allocation(loh) = 400;
+            dynamic_data.dd_promoted_size(loh) = 44;
+            dynamic_data.dd_desired_allocation(poh) = 5000;
+            dynamic_data.dd_new_allocation(poh) = 500;
+            dynamic_data.dd_promoted_size(poh) = 55;
+
+            Assert.Equal((nuint)9000, gc_heap.get_current_allocated(pHeap));
+            Assert.Equal((nuint)9000, gc_heap.get_total_allocated(pHeap));
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen0;
+            Assert.Equal((nuint)11, gc_heap.get_total_promoted(pHeap));
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.max_generation;
+            Assert.Equal((nuint)165, gc_heap.get_total_promoted(pHeap));
+
+            Assert.Equal((nuint)1000, dynamic_data.dd_desired_allocation(gen0));
+            Assert.Equal((nint)100, dynamic_data.dd_new_allocation(gen0));
+            Assert.Equal((nuint)11, dynamic_data.dd_promoted_size(gen0));
+            Assert.Equal((nuint)4000, dynamic_data.dd_desired_allocation(loh));
+            Assert.Equal((nint)400, dynamic_data.dd_new_allocation(loh));
+            Assert.Equal((nuint)44, dynamic_data.dd_promoted_size(loh));
+            Assert.Equal((nuint)5000, dynamic_data.dd_desired_allocation(poh));
+            Assert.Equal((nint)500, dynamic_data.dd_new_allocation(poh));
+            Assert.Equal((nuint)55, dynamic_data.dd_promoted_size(poh));
+        }
+
+        Assert.Equal(expectedSettings.condemned_generation, gc_heap.settings.condemned_generation);
+    }
+#endif
+
+#if USE_REGIONS
+    [Fact]
+    public void PlanPhaseGetGen0EndPlanSpaceFiltersRegionsAndResetsTotal()
+    {
+        using PlanPhaseStateScope _ = new();
+        gc_heap heap = default;
+        heap_segment* regions = stackalloc heap_segment[4];
+        generation* generationTable = gc_heap.generation_table_of(&heap);
+
+        SetPlanRegion(&regions[0], reserved: 0x1100, planAllocated: 0x1000, planGenNumber: 0, next: null);
+        SetPlanRegion(&regions[1], reserved: 0x2200, planAllocated: 0x2000, planGenNumber: 1, next: &regions[2]);
+        SetPlanRegion(&regions[2], reserved: 0x3400, planAllocated: 0x3000, planGenNumber: 0, next: null);
+        SetPlanRegion(&regions[3], reserved: 0x4800, planAllocated: 0x4000, planGenNumber: 0, next: null);
+        generation.generation_start_segment(generationTable + (int)gc_generation_num.soh_gen0) = &regions[0];
+        generation.generation_start_segment(generationTable + (int)gc_generation_num.soh_gen1) = &regions[1];
+        generation.generation_start_segment(generationTable + (int)gc_generation_num.soh_gen2) = &regions[3];
+        gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+        gc_heap.end_gen0_region_space = 1;
+
+        gc_heap.get_gen0_end_plan_space(&heap);
+
+        Assert.Equal((nuint)0x500, gc_heap.end_gen0_region_space);
+        Assert.False(gc_heap.gen0_large_chunk_found);
+    }
+
+    [Fact]
+    public void PlanPhaseGetGen0EndPlanSpaceSetsLargeChunkAtThreshold()
+    {
+        using PlanPhaseStateScope _ = new();
+        gc_heap heap = default;
+        heap_segment* region = stackalloc heap_segment[1];
+        generation* generationTable = gc_heap.generation_table_of(&heap);
+        nuint threshold = gc_heap.END_SPACE_AFTER_GC_FL;
+
+        SetPlanRegion(
+            region,
+            reserved: (nuint)0x100000 + threshold - 1,
+            planAllocated: 0x100000,
+            planGenNumber: 0,
+            next: null);
+        generation.generation_start_segment(generationTable + (int)gc_generation_num.soh_gen0) = region;
+        gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen0;
+
+        gc_heap.get_gen0_end_plan_space(&heap);
+
+        Assert.Equal(threshold - 1, gc_heap.end_gen0_region_space);
+        Assert.False(gc_heap.gen0_large_chunk_found);
+
+        heap_segment.heap_segment_reserved(region) = (byte*)((nuint)heap_segment.heap_segment_plan_allocated(region) + threshold);
+        gc_heap.get_gen0_end_plan_space(&heap);
+
+        Assert.Equal(threshold, gc_heap.end_gen0_region_space);
+        Assert.True(gc_heap.gen0_large_chunk_found);
+    }
+
+    [Fact]
+    public void PlanPhaseUpdatePlannedGen0FreeSpaceAccumulatesAndFindsLargeChunkAtThreshold()
+    {
+        using PlanPhaseStateScope _ = new();
+        nuint threshold = gc_heap.END_SPACE_AFTER_GC_FL;
+
+        gc_heap.update_planned_gen0_free_space(threshold - 1, null);
+
+        Assert.Equal(threshold - 1, gc_heap.gen0_pinned_free_space);
+        Assert.False(gc_heap.gen0_large_chunk_found);
+
+        gc_heap.update_planned_gen0_free_space(threshold, null);
+
+        Assert.Equal((2 * threshold) - 1, gc_heap.gen0_pinned_free_space);
+        Assert.True(gc_heap.gen0_large_chunk_found);
+
+        gc_heap.update_planned_gen0_free_space(1, null);
+
+        Assert.Equal(2 * threshold, gc_heap.gen0_pinned_free_space);
+        Assert.True(gc_heap.gen0_large_chunk_found);
+    }
+
+    [Fact]
+    public void PlanPhaseStateScopeRestoresEndPlanSpaceState()
+    {
+        gc_mechanisms expectedSettings = gc_heap.settings;
+        nuint expectedEndGen0RegionSpace = gc_heap.end_gen0_region_space;
+        nuint expectedGen0PinnedFreeSpace = gc_heap.gen0_pinned_free_space;
+        bool expectedGen0LargeChunkFound = gc_heap.gen0_large_chunk_found;
+
+        using (new PlanPhaseStateScope())
+        {
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen2;
+            gc_heap.end_gen0_region_space = 1;
+            gc_heap.gen0_pinned_free_space = 2;
+            gc_heap.gen0_large_chunk_found = true;
+        }
+
+        Assert.Equal(expectedSettings.condemned_generation, gc_heap.settings.condemned_generation);
+        Assert.Equal(expectedEndGen0RegionSpace, gc_heap.end_gen0_region_space);
+        Assert.Equal(expectedGen0PinnedFreeSpace, gc_heap.gen0_pinned_free_space);
+        Assert.Equal(expectedGen0LargeChunkFound, gc_heap.gen0_large_chunk_found);
+    }
+
+    [Theory]
+    [InlineData((int)memory_type.memory_type_reserved, 0x1300UL)]
+    [InlineData((int)memory_type.memory_type_committed, 0xC00UL)]
+    public void PlanPhaseGetGen0EndSpaceSumsLinkedSegments(int memoryType, ulong expected)
+    {
+        gc_heap heap = default;
+        heap_segment* segments = stackalloc heap_segment[2];
+        generation* generationTable = gc_heap.generation_table_of(&heap);
+
+        heap_segment.heap_segment_allocated(&segments[0]) = (byte*)0x1100;
+        heap_segment.heap_segment_committed(&segments[0]) = (byte*)0x1800;
+        heap_segment.heap_segment_reserved(&segments[0]) = (byte*)0x1A00;
+        heap_segment.heap_segment_next(&segments[0]) = &segments[1];
+        heap_segment.heap_segment_allocated(&segments[1]) = (byte*)0x2200;
+        heap_segment.heap_segment_committed(&segments[1]) = (byte*)0x2700;
+        heap_segment.heap_segment_reserved(&segments[1]) = (byte*)0x2C00;
+        heap_segment.heap_segment_next(&segments[1]) = null;
+        generation.generation_start_segment(
+            generationTable + (int)gc_generation_num.soh_gen0) = &segments[0];
+
+        Assert.Equal((nuint)expected, gc_heap.get_gen0_end_space(&heap, (memory_type)memoryType));
+    }
+
+    [Fact]
+    public void PlanPhaseGetGen0EndSpaceReturnsZeroForNullStartSegment()
+    {
+        gc_heap heap = default;
+
+        Assert.Equal((nuint)0, gc_heap.get_gen0_end_space(&heap, memory_type.memory_type_reserved));
+        Assert.Equal((nuint)0, gc_heap.get_gen0_end_space(&heap, memory_type.memory_type_committed));
+    }
+#endif
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    [Fact]
+    public void PlanPhaseSaveCurrentSurvivedSnapshotsEveryRegion()
+    {
+        using MarkPhaseStateScope _ = new();
+        nuint* survived = stackalloc nuint[3];
+        nuint* oldCardSurvived = stackalloc nuint[3];
+
+        survived[0] = 11;
+        survived[1] = 0;
+        survived[2] = 99;
+        oldCardSurvived[0] = 1;
+        oldCardSurvived[1] = 2;
+        oldCardSurvived[2] = 3;
+        gc_heap.region_count = 3;
+        gc_heap.survived_per_region = survived;
+        gc_heap.old_card_survived_per_region = oldCardSurvived;
+
+        gc_heap.save_current_survived();
+
+        Assert.Equal((nuint)11, oldCardSurvived[0]);
+        Assert.Equal((nuint)0, oldCardSurvived[1]);
+        Assert.Equal((nuint)99, oldCardSurvived[2]);
+        Assert.Equal((nuint)11, survived[0]);
+        Assert.Equal((nuint)0, survived[1]);
+        Assert.Equal((nuint)99, survived[2]);
+    }
+
+    [Fact]
+    public void PlanPhaseUpdateOldCardSurvivedStoresDeltas()
+    {
+        using MarkPhaseStateScope _ = new();
+        nuint* survived = stackalloc nuint[3];
+        nuint* oldCardSurvived = stackalloc nuint[3];
+
+        survived[0] = 11;
+        survived[1] = 25;
+        survived[2] = 99;
+        oldCardSurvived[0] = 1;
+        oldCardSurvived[1] = 25;
+        oldCardSurvived[2] = 3;
+        gc_heap.region_count = 3;
+        gc_heap.survived_per_region = survived;
+        gc_heap.old_card_survived_per_region = oldCardSurvived;
+
+        gc_heap.update_old_card_survived();
+
+        Assert.Equal((nuint)10, oldCardSurvived[0]);
+        Assert.Equal((nuint)0, oldCardSurvived[1]);
+        Assert.Equal((nuint)96, oldCardSurvived[2]);
+        Assert.Equal((nuint)11, survived[0]);
+        Assert.Equal((nuint)25, survived[1]);
+        Assert.Equal((nuint)99, survived[2]);
+    }
+
+    [Fact]
+    public void PlanPhaseSurvivedHelpersLeaveOldCardSnapshotWhenCurrentIsNull()
+    {
+        using MarkPhaseStateScope _ = new();
+        nuint* oldCardSurvived = stackalloc nuint[2];
+
+        oldCardSurvived[0] = 7;
+        oldCardSurvived[1] = 9;
+        gc_heap.region_count = 2;
+        gc_heap.survived_per_region = null;
+        gc_heap.old_card_survived_per_region = oldCardSurvived;
+
+        gc_heap.save_current_survived();
+        gc_heap.update_old_card_survived();
+
+        Assert.Equal((nuint)7, oldCardSurvived[0]);
+        Assert.Equal((nuint)9, oldCardSurvived[1]);
+    }
+
+    [Fact]
+    public void PlanPhaseUpdateOldCardSurvivedPreservesUnsignedUnderflow()
+    {
+        using MarkPhaseStateScope _ = new();
+        nuint* survived = stackalloc nuint[1];
+        nuint* oldCardSurvived = stackalloc nuint[1];
+
+        survived[0] = 0;
+        oldCardSurvived[0] = 1;
+        gc_heap.region_count = 1;
+        gc_heap.survived_per_region = survived;
+        gc_heap.old_card_survived_per_region = oldCardSurvived;
+
+        gc_heap.update_old_card_survived();
+
+        Assert.Equal(nuint.MaxValue, oldCardSurvived[0]);
+    }
+#endif
+
+    private static nuint LogcountReference(nuint word)
+    {
+        nuint count = 0;
+        while (word != 0)
+        {
+            count += word & 1;
+            word >>= 1;
+        }
+
+        return count;
+    }
+
+    private static nuint LinearAllocationModel(
+        float allocationFraction,
+        nuint newAllocation,
+        nuint previousDesiredAllocation,
+        float timeSincePreviousCollectionSecs)
+    {
+        MethodInfo method = Assert.IsAssignableFrom<MethodInfo>(typeof(gc_heap).GetMethod(
+            "linear_allocation_model",
+            BindingFlags.NonPublic | BindingFlags.Static));
+        return Assert.IsType<nuint>(method.Invoke(
+            null,
+            new object[] {
+                allocationFraction,
+                newAllocation,
+                previousDesiredAllocation,
+                timeSincePreviousCollectionSecs,
+            }));
+    }
+
+#if USE_REGIONS
+    private static void SetPlanRegion(heap_segment* region, nuint reserved, nuint planAllocated, int planGenNumber, heap_segment* next)
+    {
+        heap_segment.heap_segment_reserved(region) = (byte*)reserved;
+        heap_segment.heap_segment_plan_allocated(region) = (byte*)planAllocated;
+        heap_segment.heap_segment_plan_gen_num(region) = planGenNumber;
+        heap_segment.heap_segment_next(region) = next;
+    }
+#endif
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    private static void SetGenerationSizeRegion(
+        heap_segment* region,
+        nuint mem,
+        nuint planAllocated,
+        nuint allocated,
+        heap_segment* next)
+    {
+        heap_segment.heap_segment_mem(region) = (byte*)mem;
+        heap_segment.heap_segment_plan_allocated(region) = (byte*)planAllocated;
+        heap_segment.heap_segment_allocated(region) = (byte*)allocated;
+        heap_segment.heap_segment_next(region) = next;
+    }
+#endif
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    public void RelocateCompactMemcopyCopiesOnlyRequestedPointerWords(int pointerWordCount)
+    {
+        const nuint SourceLeadingGuard = 0x1357;
+        const nuint SourceTrailingGuard = 0x2468;
+        const nuint DestinationLeadingGuard = 0x369A;
+        const nuint DestinationTrailingGuard = 0x48BC;
+        nuint* source = stackalloc nuint[11];
+        nuint* destination = stackalloc nuint[11];
+
+        source[0] = SourceLeadingGuard;
+        source[pointerWordCount + 1] = SourceTrailingGuard;
+        destination[0] = DestinationLeadingGuard;
+        destination[pointerWordCount + 1] = DestinationTrailingGuard;
+
+        for (int i = 0; i < pointerWordCount; i++)
+        {
+            source[i + 1] = (nuint)(0x100 + i);
+            destination[i + 1] = (nuint)(0x200 + i);
+        }
+
+        gc_heap.memcopy(
+            (byte*)(destination + 1),
+            (byte*)(source + 1),
+            (nuint)(pointerWordCount * sizeof(nuint)));
+
+        Assert.Equal(SourceLeadingGuard, source[0]);
+        Assert.Equal(SourceTrailingGuard, source[pointerWordCount + 1]);
+        Assert.Equal(DestinationLeadingGuard, destination[0]);
+        Assert.Equal(DestinationTrailingGuard, destination[pointerWordCount + 1]);
+
+        for (int i = 0; i < pointerWordCount; i++)
+        {
+            Assert.Equal((nuint)(0x100 + i), source[i + 1]);
+            Assert.Equal(source[i + 1], destination[i + 1]);
+        }
     }
 
     [Fact]
@@ -462,6 +1467,102 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void MarkRecoverPlugInfoRestoresPairsForCompactAndSweep()
+    {
+        using MarkPhaseStateScope _ = new();
+        byte* storage = stackalloc byte[6 * sizeof(plug_and_gap)];
+        mark value = default;
+        mark* entry = &value;
+        gap_reloc_pair* pre = (gap_reloc_pair*)storage;
+        gap_reloc_pair* post = (gap_reloc_pair*)(storage + (2 * sizeof(plug_and_gap)));
+        gap_reloc_pair* preReloc = (gap_reloc_pair*)(storage + (3 * sizeof(plug_and_gap)));
+        gap_reloc_pair* postReloc = (gap_reloc_pair*)(storage + (4 * sizeof(plug_and_gap)));
+
+        entry->first = storage + sizeof(plug_and_gap);
+        entry->saved_pre_plug_info_reloc_start = (byte*)preReloc;
+        entry->saved_post_plug_info_start = (byte*)postReloc;
+        entry->saved_pre_p = 1;
+        entry->saved_post_p = 1;
+        entry->saved_pre_plug = Pair(1, 2, 3, 4);
+        entry->saved_post_plug = Pair(5, 6, 7, 8);
+        entry->saved_pre_plug_reloc = Pair(9, 10, 11, 12);
+        entry->saved_post_plug_reloc = Pair(13, 14, 15, 16);
+        *pre = Pair(17, 18, 19, 20);
+        *post = Pair(21, 22, 23, 24);
+
+        gc_heap.settings.compaction = 1;
+        Assert.Equal((nuint)0, mark.recover_plug_info(entry));
+        AssertPair(*preReloc, 9, 10, 11, 12);
+        AssertPair(*postReloc, 13, 14, 15, 16);
+
+        entry->saved_post_plug_info_start = (byte*)post;
+        gc_heap.settings.compaction = 0;
+        Assert.Equal((nuint)(2 * sizeof(gap_reloc_pair)), mark.recover_plug_info(entry));
+        AssertPair(*pre, 1, 2, 3, 4);
+        AssertPair(*post, 5, 6, 7, 8);
+    }
+
+    [Fact]
+    public void RelocateCompactRecoveryAggregatesOnlyGen2AndDrainsQueue()
+    {
+        using MarkPhaseStateScope _ = new();
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        mark* entries = stackalloc mark[2];
+        gap_reloc_pair* records = stackalloc gap_reloc_pair[2];
+        seg_mapping* segmentMap = stackalloc seg_mapping[3];
+        region_info* generationMap = stackalloc region_info[3];
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x8000;
+            GCCommon.seg_mapping_table = segmentMap - 5;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - 5;
+            InitializeRegionGenerationMaps(generationMap, segmentMap, 3, 1);
+            SetRegionGenerationForAddress((byte*)0x7000, 5, generationMap, segmentMap, 2);
+
+            entries[0] = default;
+            entries[0].first = (byte*)0x6000;
+            entries[0].saved_post_p = 1;
+            entries[0].saved_post_plug_info_start = (byte*)&records[0];
+            entries[0].saved_post_plug = Pair(1, 2, 3, 4);
+            entries[1] = default;
+            entries[1].first = (byte*)0x7000;
+            entries[1].saved_post_p = 1;
+            entries[1].saved_post_plug_info_start = (byte*)&records[1];
+            entries[1].saved_post_plug = Pair(5, 6, 7, 8);
+
+            gc_heap.mark_stack_array = entries;
+            gc_heap.mark_stack_array_length = 2;
+            gc_heap.mark_stack_tos = 2;
+            gc_heap.mark_stack_bos = 0;
+            gc_heap.settings.compaction = 0;
+
+            Assert.Equal((nuint)sizeof(gap_reloc_pair), gc_heap.recover_saved_pinned_info());
+            AssertPair(records[0], 1, 2, 3, 4);
+            AssertPair(records[1], 5, 6, 7, 8);
+            Assert.Equal((nuint)2, gc_heap.mark_stack_bos);
+            Assert.True(gc_heap.pinned_plug_que_empty_p(null) != 0);
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+        }
+    }
+
+    [Fact]
     public void MarkPhasePinnedQueuePreservesNativeStateTransitions()
     {
         using MarkPhaseStateScope _ = new();
@@ -519,6 +1620,189 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
         Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
         Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+    }
+
+    [Fact]
+    public void RelocateCompactGetOldestPinnedEntryDequeuesAndUpdatesOldestPlug()
+    {
+        using MarkPhaseStateScope _ = new();
+        byte* storage = stackalloc byte[128];
+        mark* entries = stackalloc mark[2];
+        generation generation = default;
+        heap_segment segment = default;
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        entries[0] = default;
+        entries[1] = default;
+        segment.mem = storage;
+        generation.generation_allocation_segment(&generation) = &segment;
+        generation.generation_allocation_pointer(&generation) = storage;
+        generation.generation_allocation_limit(&generation) = storage + 96;
+        gc_heap.make_mark_stack(pHeap, entries);
+
+        entries[0].first = storage + 32;
+        entries[0].saved_pre_p = 1;
+        entries[0].saved_post_p = 0;
+        gc_heap.set_pinned_info(pHeap, entries[0].first, 16, &generation);
+
+        entries[1].first = storage + 64;
+        entries[1].saved_pre_p = 0;
+        entries[1].saved_post_p = 1;
+        gc_heap.set_pinned_info(pHeap, entries[1].first, 16, &generation);
+
+        gc_heap.update_oldest_pinned_plug(pHeap);
+
+        int firstHasPrePlugInfo;
+        int firstHasPostPlugInfo;
+        mark* firstEntry = gc_heap.get_oldest_pinned_entry(
+            pHeap,
+            &firstHasPrePlugInfo,
+            &firstHasPostPlugInfo);
+
+        Assert.True(firstEntry == &entries[0]);
+        Assert.Equal(1, firstHasPrePlugInfo);
+        Assert.Equal(0, firstHasPostPlugInfo);
+        Assert.Equal((nuint)1, gc_heap.mark_stack_bos);
+        Assert.Equal((nuint)entries[1].first, (nuint)gc_heap.oldest_pinned_plug);
+
+        int secondHasPrePlugInfo;
+        int secondHasPostPlugInfo;
+        mark* secondEntry = gc_heap.get_oldest_pinned_entry(
+            pHeap,
+            &secondHasPrePlugInfo,
+            &secondHasPostPlugInfo);
+
+        Assert.True(secondEntry == &entries[1]);
+        Assert.Equal(0, secondHasPrePlugInfo);
+        Assert.Equal(1, secondHasPostPlugInfo);
+        Assert.Equal((nuint)2, gc_heap.mark_stack_bos);
+        Assert.Equal((nuint)0, (nuint)gc_heap.oldest_pinned_plug);
+    }
+
+    [Fact]
+    public void RelocateCompactGetNextPinnedEntryEmptyOrMismatchedLeavesOutputsAndQueue()
+    {
+        using MarkPhaseStateScope _ = new();
+        byte* storage = stackalloc byte[128];
+        mark* entries = stackalloc mark[1];
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        gc_heap.mark_stack_array = entries;
+        gc_heap.mark_stack_array_length = 1;
+        gc_heap.mark_stack_tos = 0;
+        gc_heap.mark_stack_bos = 0;
+        gc_heap.oldest_pinned_plug = storage + 96;
+
+        int hasPrePlugInfo = 37;
+        int hasPostPlugInfo = 41;
+        mark* entry = gc_heap.get_next_pinned_entry(
+            pHeap,
+            storage,
+            &hasPrePlugInfo,
+            &hasPostPlugInfo,
+            deque_p: 1);
+
+        Assert.True(entry is null);
+        Assert.Equal(37, hasPrePlugInfo);
+        Assert.Equal(41, hasPostPlugInfo);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_tos);
+        Assert.Equal((nuint)(storage + 96), (nuint)gc_heap.oldest_pinned_plug);
+
+        entries[0].first = storage + 32;
+        entries[0].saved_pre_p = 1;
+        entries[0].saved_post_p = 1;
+        gc_heap.mark_stack_tos = 1;
+        hasPrePlugInfo = 43;
+        hasPostPlugInfo = 47;
+
+        entry = gc_heap.get_next_pinned_entry(
+            pHeap,
+            storage + 64,
+            &hasPrePlugInfo,
+            &hasPostPlugInfo,
+            deque_p: 1);
+
+        Assert.True(entry is null);
+        Assert.Equal(43, hasPrePlugInfo);
+        Assert.Equal(47, hasPostPlugInfo);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
+        Assert.Equal((nuint)1, gc_heap.mark_stack_tos);
+        Assert.Equal((nuint)(storage + 96), (nuint)gc_heap.oldest_pinned_plug);
+    }
+
+    [Fact]
+    public void RelocateCompactGetNextPinnedEntryMatchesWithoutDequeueing()
+    {
+        using MarkPhaseStateScope _ = new();
+        byte* storage = stackalloc byte[128];
+        mark* entries = stackalloc mark[1];
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        entries[0].first = storage + 32;
+        entries[0].saved_pre_p = 1;
+        entries[0].saved_post_p = 0;
+        gc_heap.mark_stack_array = entries;
+        gc_heap.mark_stack_array_length = 1;
+        gc_heap.mark_stack_tos = 1;
+        gc_heap.mark_stack_bos = 0;
+        gc_heap.oldest_pinned_plug = storage + 96;
+
+        int hasPrePlugInfo = 0;
+        int hasPostPlugInfo = 0;
+        mark* entry = gc_heap.get_next_pinned_entry(
+            pHeap,
+            entries[0].first,
+            &hasPrePlugInfo,
+            &hasPostPlugInfo,
+            deque_p: 0);
+
+        Assert.True(entry == &entries[0]);
+        Assert.Equal(1, hasPrePlugInfo);
+        Assert.Equal(0, hasPostPlugInfo);
+        Assert.Equal((nuint)0, gc_heap.mark_stack_bos);
+        Assert.Equal((nuint)1, gc_heap.mark_stack_tos);
+        Assert.Equal((nuint)(storage + 96), (nuint)gc_heap.oldest_pinned_plug);
+    }
+
+    [Fact]
+    public void RelocateCompactGetNextPinnedEntryMatchesAndDequeuesWithoutUpdatingOldestPlug()
+    {
+        using MarkPhaseStateScope _ = new();
+        byte* storage = stackalloc byte[128];
+        mark* entries = stackalloc mark[2];
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+
+        entries[0].first = storage + 32;
+        entries[0].saved_pre_p = 0;
+        entries[0].saved_post_p = 1;
+        entries[1].first = storage + 64;
+        gc_heap.mark_stack_array = entries;
+        gc_heap.mark_stack_array_length = 2;
+        gc_heap.mark_stack_tos = 2;
+        gc_heap.mark_stack_bos = 0;
+        gc_heap.oldest_pinned_plug = entries[0].first;
+
+        int hasPrePlugInfo = 1;
+        int hasPostPlugInfo = 0;
+        mark* entry = gc_heap.get_next_pinned_entry(
+            pHeap,
+            entries[0].first,
+            &hasPrePlugInfo,
+            &hasPostPlugInfo,
+            deque_p: 1);
+
+        Assert.True(entry == &entries[0]);
+        Assert.Equal(0, hasPrePlugInfo);
+        Assert.Equal(1, hasPostPlugInfo);
+        Assert.Equal((nuint)1, gc_heap.mark_stack_bos);
+        Assert.Equal((nuint)2, gc_heap.mark_stack_tos);
+        Assert.True(gc_heap.oldest_pin(pHeap) == &entries[1]);
+        Assert.Equal((nuint)entries[0].first, (nuint)gc_heap.oldest_pinned_plug);
     }
 
     [Fact]
@@ -586,15 +1870,27 @@ public sealed unsafe class GCPrivTests
         long savedConfig = (long)configField.GetValue(null);
         int savedAlways = gc_heap.loh_compaction_always_p;
         gc_loh_compaction_mode savedMode = gc_heap.loh_compaction_mode;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+        int savedGen0BricksCleared = gc_heap.gen0_bricks_cleared;
+        int savedGen0MustClearBricks = gc_heap.gen0_must_clear_bricks;
+#endif
 
         try
         {
             configField.SetValue(null, 1L);
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.gen0_bricks_cleared = 1;
+            gc_heap.gen0_must_clear_bricks = gc_heap.FFIND_DECAY;
+#endif
             gc_heap.initialize_gc_static_state();
 
             Assert.Equal(0, gc_heap.settings.loh_compaction);
             Assert.Equal(1, gc_heap.loh_compaction_always_p);
             Assert.Equal(gc_loh_compaction_mode.loh_compaction_default, gc_heap.loh_compaction_mode);
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            Assert.Equal(0, gc_heap.gen0_bricks_cleared);
+            Assert.Equal(0, gc_heap.gen0_must_clear_bricks);
+#endif
             gc_heap.mark_queue.verify_empty();
 
             gc_heap.settings.init_mechanisms();
@@ -610,6 +1906,10 @@ public sealed unsafe class GCPrivTests
             configField.SetValue(null, savedConfig);
             gc_heap.loh_compaction_always_p = savedAlways;
             gc_heap.loh_compaction_mode = savedMode;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.gen0_bricks_cleared = savedGen0BricksCleared;
+            gc_heap.gen0_must_clear_bricks = savedGen0MustClearBricks;
+#endif
         }
     }
 
@@ -636,6 +1936,184 @@ public sealed unsafe class GCPrivTests
 #endif
 
 #if USE_REGIONS && !MULTIPLE_HEAPS
+    [Theory]
+    [InlineData(4 * 1024 * 1024, 8192)]
+    [InlineData(64 * 1024 * 1024, 32768)]
+    [InlineData(256 * 1024 * 1024, 100 * 1024)]
+    public void MarkPhaseOwnedMarkListUsesWksCapacityFormula(long segmentSize, long expectedCapacity)
+    {
+        using MarkPhaseStateScope _ = new();
+        ResetOwnedMarkListState();
+        FieldInfo segmentSizeField = GetGCConfigField("s_SegmentSize");
+        long savedSegmentSize = (long)segmentSizeField.GetValue(null);
+
+        try
+        {
+            SyncImports.ResetRecording();
+            segmentSizeField.SetValue(null, segmentSize);
+
+            Assert.True(gc_heap.initialize_mark_list());
+            Assert.NotEqual((nuint)0, (nuint)gc_heap.g_mark_list);
+            Assert.Equal((nuint)expectedCapacity, gc_heap.mark_list_size);
+            Assert.Equal((nuint)expectedCapacity, gc_heap.g_mark_list_total_size);
+            Assert.Equal(1, SyncImports.AllocCount);
+            Assert.Equal((nuint)expectedCapacity * (nuint)sizeof(byte*), SyncImports.LastAllocSize);
+        }
+        finally
+        {
+            gc_heap.destroy_semi_shared();
+            segmentSizeField.SetValue(null, savedSegmentSize);
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseOwnedMarkListDoesNotPublishOnOom()
+    {
+        using MarkPhaseStateScope _ = new();
+        ResetOwnedMarkListState();
+        SyncImports.ResetRecording();
+        SyncImports.FailNextAlloc = true;
+
+        Assert.False(gc_heap.initialize_mark_list());
+
+        Assert.False(SyncImports.FailNextAlloc);
+        Assert.Equal(1, SyncImports.AllocCount);
+        Assert.Equal(0, SyncImports.FreeCount);
+        Assert.Equal((nuint)0, (nuint)gc_heap.g_mark_list);
+        Assert.Equal((nuint)0, gc_heap.mark_list_size);
+        Assert.Equal((nuint)0, gc_heap.g_mark_list_total_size);
+        gc_heap.region_count = 2;
+        Assert.False(gc_heap.setup_mark_state_for_collection());
+        Assert.Equal(1, SyncImports.AllocCount);
+        Assert.Equal((nuint)0, (nuint)gc_heap.g_mark_list_piece);
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list);
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list_index);
+        Assert.Equal((nuint)0, (nuint)gc_heap.mark_list_end);
+    }
+
+    [Fact]
+    public void MarkPhaseOwnedMarkListSetupUsesPartialAndFullGcEndpoints()
+    {
+        using MarkPhaseStateScope _ = new();
+        ResetOwnedMarkListState();
+        SyncImports.ResetRecording();
+
+        try
+        {
+            Assert.True(gc_heap.initialize_mark_list());
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            Assert.True(gc_heap.setup_mark_state_for_collection());
+            Assert.Equal((nuint)gc_heap.g_mark_list, (nuint)gc_heap.mark_list);
+            Assert.Equal((nuint)gc_heap.g_mark_list, (nuint)gc_heap.mark_list_index);
+            Assert.Equal(
+                (nuint)(gc_heap.g_mark_list + (nint)(gc_heap.mark_list_size - 1)),
+                (nuint)gc_heap.mark_list_end);
+
+            gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+            Assert.True(gc_heap.setup_mark_state_for_collection());
+            Assert.Equal((nuint)gc_heap.g_mark_list, (nuint)gc_heap.mark_list);
+            Assert.Equal((nuint)gc_heap.g_mark_list, (nuint)gc_heap.mark_list_index);
+            Assert.Equal((nuint)gc_heap.g_mark_list, (nuint)gc_heap.mark_list_end);
+        }
+        finally
+        {
+            gc_heap.destroy_semi_shared();
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseOwnedRegionBackingGrowsReallocatesAndZeroes()
+    {
+        using MarkPhaseStateScope _ = new();
+        ResetOwnedMarkListState();
+        SyncImports.ResetRecording();
+
+        try
+        {
+            Assert.True(gc_heap.initialize_mark_list());
+            gc_heap.region_count = 2;
+            gc_heap.grow_mark_list_piece();
+
+            byte*** firstBacking = gc_heap.g_mark_list_piece;
+            Assert.NotEqual((nuint)0, (nuint)firstBacking);
+            Assert.Equal((nuint)2, gc_heap.g_mark_list_piece_size);
+            Assert.Equal((nuint)4, gc_heap.g_mark_list_piece_total_size);
+            Assert.Equal(2, SyncImports.AllocCount);
+            Assert.Equal(0, SyncImports.FreeCount);
+            Assert.Equal(4 * (nuint)sizeof(byte**), SyncImports.LastAllocSize);
+
+            nuint* firstCounters = (nuint*)firstBacking;
+            for (int i = 0; i < 4; i++)
+            {
+                Assert.Equal((nuint)0, firstCounters[i]);
+                firstCounters[i] = (nuint)(i + 1);
+            }
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            Assert.True(gc_heap.setup_mark_state_for_collection());
+            Assert.Equal((nuint)firstCounters, (nuint)gc_heap.survived_per_region);
+            Assert.Equal((nuint)(firstCounters + 2), (nuint)gc_heap.old_card_survived_per_region);
+            for (int i = 0; i < 4; i++)
+            {
+                Assert.Equal((nuint)0, firstCounters[i]);
+            }
+
+            gc_heap.region_count = 3;
+            gc_heap.grow_mark_list_piece();
+
+            byte*** secondBacking = gc_heap.g_mark_list_piece;
+            Assert.NotEqual((nuint)0, (nuint)secondBacking);
+            Assert.Equal((nuint)4, gc_heap.g_mark_list_piece_size);
+            Assert.Equal((nuint)8, gc_heap.g_mark_list_piece_total_size);
+            Assert.Equal(3, SyncImports.AllocCount);
+            Assert.Equal(1, SyncImports.FreeCount);
+            Assert.Equal(8 * (nuint)sizeof(byte**), SyncImports.LastAllocSize);
+
+            nuint* secondCounters = (nuint*)secondBacking;
+            for (int i = 0; i < 8; i++)
+            {
+                Assert.Equal((nuint)0, secondCounters[i]);
+            }
+
+            Assert.True(gc_heap.setup_mark_state_for_collection());
+            Assert.Equal((nuint)secondCounters, (nuint)gc_heap.survived_per_region);
+            Assert.Equal((nuint)(secondCounters + 4), (nuint)gc_heap.old_card_survived_per_region);
+        }
+        finally
+        {
+            if (gc_heap.g_mark_list_piece is not null)
+            {
+                SyncImports.ManagedGC_Free(gc_heap.g_mark_list_piece);
+                gc_heap.g_mark_list_piece = null;
+                gc_heap.g_mark_list_piece_size = 0;
+                gc_heap.g_mark_list_piece_total_size = 0;
+            }
+
+            gc_heap.destroy_semi_shared();
+        }
+
+        Assert.Equal(3, SyncImports.FreeCount);
+    }
+
+    [Fact]
+    public void MarkPhaseOwnedMarkListShutdownReleasesUnmanagedStorage()
+    {
+        using MarkPhaseStateScope _ = new();
+        ResetOwnedMarkListState();
+        SyncImports.ResetRecording();
+        Assert.True(gc_heap.initialize_mark_list());
+
+        gc_heap.destroy_semi_shared();
+
+        Assert.Equal(1, SyncImports.AllocCount);
+        Assert.Equal(1, SyncImports.FreeCount);
+        Assert.Equal((nuint)0, (nuint)gc_heap.g_mark_list);
+        gc_heap.destroy_semi_shared();
+        Assert.Equal(1, SyncImports.FreeCount);
+        Assert.Equal(1, SyncImports.FreeCount);
+    }
+
     [Fact]
     public void MarkPhaseBoundaryWritesThroughInclusiveEndAndStopsAtExhaustion()
     {
@@ -719,6 +2197,7 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list);
         Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_index);
         Assert.Equal((nuint)(markList + 2), (nuint)gc_heap.mark_list_end);
+        Assert.Equal((nuint)3, gc_heap.region_count);
         Assert.Equal((nuint)survived, (nuint)gc_heap.survived_per_region);
         Assert.Equal((nuint)oldCardSurvived, (nuint)gc_heap.old_card_survived_per_region);
         Assert.Equal((nuint)0, survived[0]);
@@ -864,6 +2343,104 @@ public sealed unsafe class GCPrivTests
         }
     }
 
+#if !MULTIPLE_HEAPS
+    [Fact]
+    public void MarkPhaseSyncPromotedBytesTransfersAndResetsCondemnedRegionChains()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        heap_segment* regions = stackalloc heap_segment[4];
+        generation* generationTable = gc_heap.generation_table_of(pHeap);
+        nuint* survived = stackalloc nuint[4];
+        nuint* oldCardSurvived = stackalloc nuint[4];
+        nuint savedMinSegmentSizeShr = gc_heap.min_segment_size_shr;
+        byte* savedLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* savedHighestAddress = GCCommon.g_gc_highest_address;
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x1000;
+            GCCommon.g_gc_highest_address = (byte*)0x5000;
+            heap_segment.heap_segment_mem(&regions[0]) = (byte*)0x1000;
+            heap_segment.heap_segment_mem(&regions[1]) = (byte*)0x2000;
+            heap_segment.heap_segment_mem(&regions[2]) = (byte*)0x3000;
+            heap_segment.heap_segment_mem(&regions[3]) = (byte*)0x4000;
+            heap_segment.heap_segment_next(&regions[0]) = &regions[1];
+
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen0) = &regions[0];
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen1) = &regions[2];
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen2) = &regions[3];
+
+            survived[0] = 10;
+            survived[1] = 20;
+            survived[2] = 30;
+            survived[3] = 40;
+            oldCardSurvived[0] = 1;
+            oldCardSurvived[1] = 2;
+            oldCardSurvived[2] = 3;
+            oldCardSurvived[3] = 4;
+            gc_heap.survived_per_region = survived;
+            gc_heap.old_card_survived_per_region = oldCardSurvived;
+            heap_segment.heap_segment_survived(&regions[3]) = 99;
+            heap_segment.heap_segment_old_card_survived(&regions[3]) = 9;
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+
+            gc_heap.sync_promoted_bytes(pHeap);
+
+            Assert.Equal((nuint)10, heap_segment.heap_segment_survived(&regions[0]));
+            Assert.Equal((nuint)20, heap_segment.heap_segment_survived(&regions[1]));
+            Assert.Equal((nuint)30, heap_segment.heap_segment_survived(&regions[2]));
+            Assert.Equal(1, heap_segment.heap_segment_old_card_survived(&regions[0]));
+            Assert.Equal(2, heap_segment.heap_segment_old_card_survived(&regions[1]));
+            Assert.Equal(3, heap_segment.heap_segment_old_card_survived(&regions[2]));
+            Assert.Equal((nuint)99, heap_segment.heap_segment_survived(&regions[3]));
+            Assert.Equal(9, heap_segment.heap_segment_old_card_survived(&regions[3]));
+
+            survived[0] = 0;
+            survived[1] = 0;
+            survived[2] = 0;
+            oldCardSurvived[0] = 0;
+            oldCardSurvived[1] = 0;
+            oldCardSurvived[2] = 0;
+
+            gc_heap.sync_promoted_bytes(pHeap);
+
+            Assert.Equal((nuint)0, heap_segment.heap_segment_survived(&regions[0]));
+            Assert.Equal((nuint)0, heap_segment.heap_segment_survived(&regions[1]));
+            Assert.Equal((nuint)0, heap_segment.heap_segment_survived(&regions[2]));
+            Assert.Equal(0, heap_segment.heap_segment_old_card_survived(&regions[0]));
+            Assert.Equal(0, heap_segment.heap_segment_old_card_survived(&regions[1]));
+            Assert.Equal(0, heap_segment.heap_segment_old_card_survived(&regions[2]));
+            Assert.Equal((nuint)99, heap_segment.heap_segment_survived(&regions[3]));
+            Assert.Equal(9, heap_segment.heap_segment_old_card_survived(&regions[3]));
+
+            gc_heap.survived_per_region = null;
+            gc_heap.old_card_survived_per_region = null;
+            gc_heap.sync_promoted_bytes(pHeap);
+
+            Assert.Equal((nuint)0, heap_segment.heap_segment_survived(&regions[0]));
+            Assert.Equal((nuint)0, heap_segment.heap_segment_survived(&regions[1]));
+            Assert.Equal((nuint)0, heap_segment.heap_segment_survived(&regions[2]));
+            Assert.Equal(0, heap_segment.heap_segment_old_card_survived(&regions[0]));
+            Assert.Equal(0, heap_segment.heap_segment_old_card_survived(&regions[1]));
+            Assert.Equal(0, heap_segment.heap_segment_old_card_survived(&regions[2]));
+            Assert.Equal((nuint)99, heap_segment.heap_segment_survived(&regions[3]));
+            Assert.Equal(9, heap_segment.heap_segment_old_card_survived(&regions[3]));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = savedMinSegmentSizeShr;
+            GCCommon.g_gc_lowest_address = savedLowestAddress;
+            GCCommon.g_gc_highest_address = savedHighestAddress;
+        }
+    }
+#endif
+
     [Fact]
     public void MarkPhasePromotedBytesPreserveNativeUnsignedOverflow()
     {
@@ -976,6 +2553,44 @@ public sealed unsafe class GCPrivTests
 #if DEBUG
         Assert.Equal((nuint)1, entries[0].saved_post_plug_debug.gap);
 #endif
+    }
+
+    [Fact]
+    public void ExpandPaddingUsesDirectAndSavedPlugLocations()
+    {
+        byte* storage = stackalloc byte[3 * sizeof(plug_and_gap)];
+        MethodTable methodTable = default;
+        MethodTable* pMethodTable = &methodTable;
+        mark entry = default;
+        mark* pEntry = &entry;
+        entry.first = storage + (2 * sizeof(plug_and_gap));
+        byte* oldLocation = entry.first - (2 * sizeof(nuint));
+        CObjectHeader* directHeader = (CObjectHeader*)oldLocation;
+        CObjectHeader* savedHeader = (CObjectHeader*)&entry.saved_pre_plug_reloc.m_pair;
+        directHeader->RawSetMethodTable(pMethodTable);
+        savedHeader->RawSetMethodTable(pMethodTable);
+
+        try
+        {
+            Assert.Equal((nuint)savedHeader, (nuint)gc_heap.get_plug_start_in_saved(oldLocation, pEntry));
+
+            gc_heap.set_padding_in_expand(oldLocation, 0, pEntry);
+            Assert.True(gc_heap.is_plug_padded(oldLocation) != 0);
+            Assert.Equal((nuint)pMethodTable, (nuint)savedHeader->RawGetMethodTable());
+            gc_heap.clear_padding_in_expand(oldLocation, 0, pEntry);
+            Assert.Equal(0, gc_heap.is_plug_padded(oldLocation));
+
+            gc_heap.set_padding_in_expand(oldLocation, 1, pEntry);
+            Assert.Equal((nuint)pMethodTable, (nuint)directHeader->RawGetMethodTable());
+            Assert.True(gc_heap.is_plug_padded((byte*)savedHeader) != 0);
+            gc_heap.clear_padding_in_expand(oldLocation, 1, pEntry);
+            Assert.Equal(0, gc_heap.is_plug_padded((byte*)savedHeader));
+        }
+        finally
+        {
+            directHeader->RawSetMethodTable(pMethodTable);
+            savedHeader->RawSetMethodTable(pMethodTable);
+        }
     }
 
     [Fact]
@@ -1224,6 +2839,233 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(0, gc_heap.contain_pointers_or_collectible((byte*)pHeader));
     }
 
+#if USE_REGIONS
+    [Fact]
+    public void SweepPhaseUohObjectMarkedPreservesNativeMarkPinAndRangeTransitions()
+    {
+        byte* storage = stackalloc byte[2 * sizeof(nuint)];
+        ObjHeader* objHeader = (ObjHeader*)storage;
+        CObjectHeader* @object = (CObjectHeader*)(storage + sizeof(ObjHeader));
+        MethodTable methodTable = default;
+        byte* oldLowestAddress = gc_heap.lowest_address;
+        byte* oldHighestAddress = gc_heap.highest_address;
+
+        try
+        {
+            Assert.Equal((nuint)sizeof(nuint), (nuint)sizeof(ObjHeader));
+            Assert.Equal((nuint)objHeader, (nuint)@object->GetHeader());
+
+            @object->RawSetMethodTable(&methodTable);
+            gc_heap.lowest_address = (byte*)@object;
+            gc_heap.highest_address = (byte*)@object + sizeof(CObjectHeader);
+
+            @object->SetMarked();
+            @object->SetPinned();
+            Assert.Equal(1, gc_heap.uoh_object_marked((byte*)@object, clearp: 0));
+            Assert.True(@object->IsMarked() != 0);
+            Assert.True(@object->IsPinned() != 0);
+
+            Assert.Equal(1, gc_heap.uoh_object_marked((byte*)@object, clearp: 1));
+            Assert.Equal(0, @object->IsMarked());
+            Assert.Equal(0, @object->IsPinned());
+
+            @object->SetPinned();
+            Assert.Equal(0, gc_heap.uoh_object_marked((byte*)@object, clearp: 1));
+            Assert.True(@object->IsPinned() != 0);
+
+            @object->SetMarked();
+            gc_heap.highest_address = (byte*)@object;
+            Assert.Equal(1, gc_heap.uoh_object_marked((byte*)@object, clearp: 1));
+            Assert.True(@object->IsMarked() != 0);
+            Assert.True(@object->IsPinned() != 0);
+        }
+        finally
+        {
+            gc_heap.lowest_address = oldLowestAddress;
+            gc_heap.highest_address = oldHighestAddress;
+        }
+    }
+
+    [Fact]
+    public void UpdateStartTailRegionsUpdatesWritableStartAndRetainsReadOnlyPrefix()
+    {
+        heap_segment deleted = default;
+        heap_segment next = default;
+        generation writableGeneration = default;
+        generation.generation_start_segment(&writableGeneration) = &deleted;
+        generation.generation_tail_region(&writableGeneration) = &next;
+
+        gc_heap.update_start_tail_regions(&writableGeneration, &deleted, null, &next);
+
+        Assert.Equal((nuint)(void*)&next, (nuint)generation.generation_start_segment(&writableGeneration));
+        Assert.Equal((nuint)(void*)&next, (nuint)generation.generation_tail_region(&writableGeneration));
+
+        heap_segment readOnly = default;
+        readOnly.flags = heap_segment.heap_segment_flags_readonly | heap_segment.heap_segment_flags_loh;
+        heap_segment.heap_segment_next(&readOnly) = &deleted;
+        generation readOnlyGeneration = default;
+        generation.generation_start_segment(&readOnlyGeneration) = &readOnly;
+        generation.generation_tail_ro_region(&readOnlyGeneration) = &readOnly;
+        generation.generation_tail_region(&readOnlyGeneration) = &next;
+
+        gc_heap.update_start_tail_regions(&readOnlyGeneration, &deleted, null, &next);
+
+        Assert.Equal((nuint)(void*)&readOnly, (nuint)generation.generation_start_segment(&readOnlyGeneration));
+        Assert.Equal((nuint)(void*)&next, (nuint)heap_segment.heap_segment_next(&readOnly));
+        Assert.Equal((nuint)(void*)&next, (nuint)generation.generation_tail_region(&readOnlyGeneration));
+    }
+
+    [Theory]
+    [InlineData((int)gc_generation_num.loh_generation)]
+    [InlineData((int)gc_generation_num.poh_generation)]
+    public void SweepUohObjectsReclaimsLinkedWritableTailAfterPreservingReadOnlyPrefix(int genNumber)
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        nuint basicRegionSize = 16 * pageSize;
+        nuint largeRegionSize = basicRegionSize * region_allocator.LARGE_REGION_FACTOR;
+        nuint reservationSize = 3 * largeRegionSize;
+        byte* reservationBacking = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(
+            reservationSize + basicRegionSize);
+        byte* reservation = (byte*)(((nuint)reservationBacking + basicRegionSize - 1) & ~(basicRegionSize - 1));
+        Assert.True(reservation is not null);
+
+        try
+        {
+            nuint firstRegionCommit = 2 * pageSize;
+            Assert.True(firstRegionCommit < largeRegionSize);
+
+            int basicRegionCount = checked((int)(reservationSize / basicRegionSize));
+            seg_mapping* table = stackalloc seg_mapping[basicRegionCount];
+            for (int i = 0; i < basicRegionCount; i++)
+            {
+                table[i] = default;
+            }
+
+            uint* cards = stackalloc uint[128];
+            for (int i = 0; i < 128; i++)
+            {
+                cards[i] = uint.MaxValue;
+            }
+
+            int regionShift = gc_heap.index_of_highest_set_bit(basicRegionSize);
+            nuint firstRegionIndex = (nuint)reservation >> regionShift;
+            gc_heap.min_segment_size_shr = (nuint)regionShift;
+            gc_heap.global_region_allocator.initialize_alignment(basicRegionSize);
+            GCCommon.seg_mapping_table = table - (nint)firstRegionIndex;
+            GCCommon.g_gc_lowest_address = reservation;
+            GCCommon.g_gc_highest_address = reservation + (nint)reservationSize;
+            gc_heap.bookkeeping_covered_committed = GCCommon.g_gc_highest_address;
+            gc_heap.card_table = cards - (nint)card_table_info.card_word(card_table_info.gcard_of(reservation));
+            gc_heap.lowest_address = reservation;
+            gc_heap.highest_address = GCCommon.g_gc_highest_address;
+
+            heap_segment* readOnly = &table[0].region_info;
+            heap_segment* writable = &table[region_allocator.LARGE_REGION_FACTOR].region_info;
+            heap_segment* emptyTail = &table[2 * region_allocator.LARGE_REGION_FACTOR].region_info;
+            byte* writableStart = reservation + (nint)largeRegionSize;
+            byte* emptyTailStart = writableStart + (nint)largeRegionSize;
+            nuint emptyTailCommit = pageSize;
+            InitializeRegion(readOnly, (nuint)reservation, (nuint)(reservation + (nint)pageSize), (nuint)(reservation + (nint)largeRegionSize), age: 0);
+            InitializeRegion(writable, (nuint)writableStart, (nuint)(writableStart + (nint)firstRegionCommit), (nuint)(writableStart + (nint)largeRegionSize), age: 0);
+            InitializeRegion(emptyTail, (nuint)emptyTailStart, (nuint)(emptyTailStart + (nint)emptyTailCommit), (nuint)(emptyTailStart + (nint)largeRegionSize), age: 0);
+
+            nuint uohFlag = genNumber == (int)gc_generation_num.loh_generation
+                ? heap_segment.heap_segment_flags_loh
+                : heap_segment.heap_segment_flags_poh;
+            readOnly->flags = uohFlag | heap_segment.heap_segment_flags_readonly;
+            writable->flags = uohFlag;
+            emptyTail->flags = uohFlag;
+            heap_segment.heap_segment_allocated(readOnly) = heap_segment.heap_segment_mem(readOnly);
+            heap_segment.heap_segment_allocated(emptyTail) = heap_segment.heap_segment_mem(emptyTail);
+            heap_segment.heap_segment_used(writable) = heap_segment.heap_segment_committed(writable);
+            heap_segment.heap_segment_next(readOnly) = writable;
+            heap_segment.heap_segment_next(writable) = emptyTail;
+
+            MethodTable liveMethodTable = default;
+            MethodTable freeObjectMethodTable = default;
+            liveMethodTable.m_uBaseSize = (uint)gc_heap.Align(
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                gc_heap.get_alignment_constant(small_object_p: false));
+            GCCommon.g_gc_pFreeObjectMethodTable = &freeObjectMethodTable;
+
+            nuint objectSize = liveMethodTable.m_uBaseSize;
+            byte* liveFirst = heap_segment.heap_segment_mem(writable);
+            byte* deadFirst = liveFirst + (nint)objectSize;
+            byte* deadSecond = deadFirst + (nint)objectSize;
+            byte* liveSecond = deadSecond + (nint)objectSize;
+            byte* trailingDead = liveSecond + (nint)objectSize;
+            ((CObjectHeader*)liveFirst)->RawSetMethodTable(&liveMethodTable);
+            ((CObjectHeader*)deadFirst)->RawSetMethodTable(&liveMethodTable);
+            ((CObjectHeader*)deadSecond)->RawSetMethodTable(&liveMethodTable);
+            ((CObjectHeader*)liveSecond)->RawSetMethodTable(&liveMethodTable);
+            ((CObjectHeader*)trailingDead)->RawSetMethodTable(&liveMethodTable);
+            ((CObjectHeader*)liveFirst)->SetMarked();
+            ((CObjectHeader*)liveFirst)->SetPinned();
+            ((CObjectHeader*)liveSecond)->SetMarked();
+            heap_segment.heap_segment_allocated(writable) = trailingDead + (nint)objectSize;
+
+            gc_heap heap = default;
+            generation* gen = gc_heap.generation_of(gc_heap.generation_table_of(&heap), genNumber);
+            generation.initialize(gen);
+            gen->gen_num = genNumber;
+            generation.generation_start_segment(gen) = readOnly;
+            generation.generation_tail_ro_region(gen) = readOnly;
+            generation.generation_tail_region(gen) = emptyTail;
+            generation.generation_allocation_segment(gen) = writable;
+
+            gc_oh_num oh = genNumber == (int)gc_generation_num.loh_generation ? gc_oh_num.loh : gc_oh_num.poh;
+            gc_heap.committed_by_oh[(int)oh] = firstRegionCommit + emptyTailCommit;
+            gc_heap.current_total_committed = firstRegionCommit + emptyTailCommit;
+
+            gc_heap.sweep_uoh_objects(&heap, genNumber);
+
+            byte* expectedCommitted = writableStart + (nint)firstRegionCommit;
+            Assert.Equal((nuint)expectedCommitted, (nuint)heap_segment.heap_segment_committed(writable));
+            Assert.Equal((nuint)expectedCommitted, (nuint)heap_segment.heap_segment_used(writable));
+            Assert.Equal((nuint)(liveSecond + (nint)objectSize), (nuint)heap_segment.heap_segment_allocated(writable));
+            Assert.Equal(0, ((CObjectHeader*)liveFirst)->IsMarked());
+            Assert.Equal(0, ((CObjectHeader*)liveFirst)->IsPinned());
+            Assert.Equal(0, ((CObjectHeader*)liveSecond)->IsMarked());
+            Assert.Equal((nuint)GCCommon.g_gc_pFreeObjectMethodTable, (nuint)((CObjectHeader*)deadFirst)->RawGetMethodTable());
+            Assert.Equal(2 * objectSize, gc_heap.unused_array_size(deadFirst));
+            Assert.Equal(2 * objectSize, generation.generation_free_list_space(gen));
+            Assert.Equal((nuint)0, generation.generation_free_obj_space(gen));
+            uint freeListBucket = generation.generation_allocator(gen)->first_suitable_bucket(2 * objectSize);
+            Assert.Equal((nuint)deadFirst, (nuint)allocator.alloc_list_head_of(generation.generation_allocator(gen), freeListBucket));
+            Assert.Equal((nuint)deadFirst, (nuint)allocator.alloc_list_tail_of(generation.generation_allocator(gen), freeListBucket));
+
+            Assert.Equal((nuint)readOnly, (nuint)generation.generation_start_segment(gen));
+            Assert.Equal((nuint)readOnly, (nuint)generation.generation_tail_ro_region(gen));
+            Assert.Equal((nuint)writable, (nuint)heap_segment.heap_segment_next(readOnly));
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(readOnly), (nuint)heap_segment.heap_segment_allocated(readOnly));
+            Assert.Equal((nuint)writable, (nuint)generation.generation_tail_region(gen));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(writable));
+            Assert.Equal((nuint)writable, (nuint)generation.generation_allocation_segment(gen));
+            Assert.Equal((nuint)emptyTail, (nuint)gc_heap.freeable_uoh_segment);
+
+            gc_heap.rearrange_uoh_segments();
+
+            Assert.True(gc_heap.freeable_uoh_segment is null);
+            region_free_list* largeFreeRegions = gc_heap.free_regions_of((int)free_region_kind.large_free_region);
+            Assert.Equal((nuint)1, region_free_list.get_num_free_regions(largeFreeRegions));
+            Assert.Equal((nuint)emptyTail, (nuint)largeFreeRegions->get_first_free_region());
+            Assert.Equal((nuint)expectedCommitted - (nuint)writableStart, gc_heap.committed_by_oh[(int)oh]);
+            Assert.Equal(emptyTailCommit, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
+            for (int i = 0; i < region_allocator.LARGE_REGION_FACTOR; i++)
+            {
+                Assert.True(heap_segment.heap_segment_allocated(&table[(2 * region_allocator.LARGE_REGION_FACTOR) + i].region_info) is null);
+            }
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+            System.Runtime.InteropServices.NativeMemory.Free(reservationBacking);
+        }
+    }
+#endif
+
     [Fact]
     public void MarkPhaseObjectSizeUsesNativeArrayLengthAndPointerSizedArithmetic()
     {
@@ -1372,6 +3214,726 @@ public sealed unsafe class GCPrivTests
             gc_heap.map_region_to_generation = oldGenerationMap;
             gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
         }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void RelocateCompactCheckDemotionHelperSetsParentCardOnlyForDemotedInHeapChild(
+        bool childInHeap,
+        bool childDemoted)
+    {
+        const nuint RegionSizeShift = 12;
+        byte* parent = (byte*)0x1080;
+        byte* child = childInHeap ? (byte*)0x1000 : (byte*)0x2000;
+        byte** pval = &child;
+        nuint regionIndex = (nuint)parent >> (int)RegionSizeShift;
+        nuint parentCard = gc_heap.card_of(parent);
+        nuint parentCardWord = card_table_info.card_word(parentCard);
+        uint parentCardMask = 1u << (int)card_table_info.card_bit(parentCard);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        uint* oldCardTable = gc_heap.card_table;
+        region_info* generationMap = stackalloc region_info[1];
+        seg_mapping* segmentMap = stackalloc seg_mapping[1];
+        uint* cardTable = stackalloc uint[1];
+
+        try
+        {
+            gc_heap.min_segment_size_shr = RegionSizeShift;
+            GCCommon.g_gc_lowest_address = (byte*)0x1000;
+            GCCommon.g_gc_highest_address = (byte*)0x2000;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)regionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)regionIndex;
+            gc_heap.card_table = cardTable - (nint)parentCardWord;
+            generationMap[0] = childDemoted ? region_info.RI_DEMOTED : default;
+            heap_segment.heap_segment_plan_gen_num(&segmentMap[0].region_info) =
+                (int)gc_generation_num.soh_gen0;
+            segmentMap[0].region_info.flags = childDemoted
+                ? heap_segment.heap_segment_flags_demoted
+                : 0;
+
+            gc_heap.check_demotion_helper(pval, parent);
+
+            Assert.Equal(childInHeap && childDemoted ? parentCardMask : 0u, cardTable[0]);
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+            gc_heap.card_table = oldCardTable;
+        }
+    }
+
+    [Fact]
+    public void CardAddressAndCopyCardsCopyAlignedCardsAcrossWordsAndClearZeroBits()
+    {
+        const nuint FirstCardWord = 4;
+        const nuint CardCount = 35;
+        const uint LeadingGuard = 0x13579BDF;
+        const uint TrailingGuard = 0x2468ACE0;
+        uint* storage = stackalloc uint[6];
+        uint* cards = storage + 1;
+        nuint sourceCard = (FirstCardWord * card_table_info.card_word_width) + 1;
+        nuint destinationCard = sourceCard + 64;
+
+        using CardTableStateScope _ = new();
+        storage[0] = LeadingGuard;
+        storage[5] = TrailingGuard;
+        for (int i = 0; i < 4; i++)
+        {
+            cards[i] = 0;
+        }
+
+        gc_heap.card_table = cards - (nint)FirstCardWord;
+        Assert.Equal(
+            sourceCard * card_table_info.card_size,
+            (nuint)gc_heap.card_address(sourceCard));
+        Assert.False(gc_heap.card_set_p(sourceCard));
+
+        for (nuint i = 0; i < CardCount; i++)
+        {
+            if ((i & 1) == 0)
+            {
+                gc_heap.set_card(sourceCard + i);
+            }
+        }
+
+        cards[2] = uint.MaxValue;
+        cards[3] = uint.MaxValue;
+
+        gc_heap.copy_cards(destinationCard, sourceCard, destinationCard + CardCount, nextp: false);
+
+        for (nuint i = 0; i < CardCount; i++)
+        {
+            Assert.Equal((i & 1) == 0, gc_heap.card_set_p(destinationCard + i));
+            Assert.Equal((i & 1) == 0, gc_heap.card_set_p(sourceCard + i));
+        }
+
+        Assert.Equal(LeadingGuard, storage[0]);
+        Assert.Equal(TrailingGuard, storage[5]);
+    }
+
+    [Fact]
+    public void CopyCardsForAddressesCopiesAlignedCardsAcrossWords()
+    {
+        const nuint FirstCardWord = 4;
+        const nuint CardCount = 35;
+        const uint LeadingGuard = 0x13579BDF;
+        const uint TrailingGuard = 0x2468ACE0;
+        uint* storage = stackalloc uint[6];
+        uint* cards = storage + 1;
+        nuint sourceCard = (FirstCardWord * card_table_info.card_word_width) + 1;
+        nuint destinationCard = sourceCard + 64;
+
+        using CardTableStateScope _ = new();
+        storage[0] = LeadingGuard;
+        storage[5] = TrailingGuard;
+        for (int i = 0; i < 4; i++)
+        {
+            cards[i] = 0;
+        }
+
+        gc_heap.card_table = cards - (nint)FirstCardWord;
+        for (nuint i = 0; i < CardCount; i++)
+        {
+            if ((i & 1) == 0)
+            {
+                gc_heap.set_card(sourceCard + i);
+            }
+        }
+
+        cards[2] = uint.MaxValue;
+        cards[3] = uint.MaxValue;
+
+        gc_heap.copy_cards_for_addresses(
+            gc_heap.card_address(destinationCard),
+            gc_heap.card_address(sourceCard),
+            CardCount * card_table_info.card_size);
+
+        for (nuint i = 0; i < CardCount; i++)
+        {
+            Assert.Equal((i & 1) == 0, gc_heap.card_set_p(destinationCard + i));
+            Assert.Equal((i & 1) == 0, gc_heap.card_set_p(sourceCard + i));
+        }
+
+        Assert.Equal(LeadingGuard, storage[0]);
+        Assert.Equal(TrailingGuard, storage[5]);
+    }
+
+    [Fact]
+    public void CopyCardsForAddressesPreservesPartialStartAndEndCards()
+    {
+        const nuint FirstCardWord = 4;
+        const uint LeadingGuard = 0x13579BDF;
+        const uint TrailingGuard = 0x2468ACE0;
+        uint* storage = stackalloc uint[6];
+        uint* cards = storage + 1;
+        nuint sourceCard = (FirstCardWord * card_table_info.card_word_width) + 1;
+        nuint destinationCard = sourceCard + 64;
+
+        using CardTableStateScope _ = new();
+        storage[0] = LeadingGuard;
+        storage[5] = TrailingGuard;
+        for (int i = 0; i < 4; i++)
+        {
+            cards[i] = 0;
+        }
+
+        gc_heap.card_table = cards - (nint)FirstCardWord;
+        gc_heap.set_card(sourceCard + 1);
+        gc_heap.set_card(destinationCard + 2);
+        gc_heap.set_card(destinationCard + 3);
+
+        gc_heap.copy_cards_for_addresses(
+            gc_heap.card_address(destinationCard) + 17,
+            gc_heap.card_address(sourceCard) + 31,
+            (3 * card_table_info.card_size) + 50);
+
+        Assert.True(gc_heap.card_set_p(destinationCard));
+        Assert.True(gc_heap.card_set_p(destinationCard + 1));
+        Assert.False(gc_heap.card_set_p(destinationCard + 2));
+        Assert.True(gc_heap.card_set_p(destinationCard + 3));
+        Assert.True(gc_heap.card_set_p(sourceCard + 1));
+        Assert.Equal(LeadingGuard, storage[0]);
+        Assert.Equal(TrailingGuard, storage[5]);
+    }
+
+    [Fact]
+    public void CopyCardsRangeWithoutCopyClearsOnlyTheDestinationCards()
+    {
+        const nuint FirstCardWord = 4;
+        const uint LeadingGuard = 0x13579BDF;
+        const uint TrailingGuard = 0x2468ACE0;
+        const uint SourcePattern = 0xA5A5A5A5;
+        uint* storage = stackalloc uint[6];
+        uint* cards = storage + 1;
+        nuint sourceCard = (FirstCardWord * card_table_info.card_word_width) + 1;
+        nuint destinationCard = sourceCard + 64;
+
+        using CardTableStateScope _ = new();
+        storage[0] = LeadingGuard;
+        storage[5] = TrailingGuard;
+        for (int i = 0; i < 4; i++)
+        {
+            cards[i] = 0;
+        }
+
+        gc_heap.card_table = cards - (nint)FirstCardWord;
+        cards[0] = SourcePattern;
+        cards[2] = uint.MaxValue;
+
+        gc_heap.copy_cards_range(
+            gc_heap.card_address(destinationCard) + 17,
+            gc_heap.card_address(sourceCard) + 31,
+            3 * card_table_info.card_size,
+            copy_cards_p: false);
+
+        Assert.Equal(SourcePattern, cards[0]);
+        Assert.True(gc_heap.card_set_p(destinationCard));
+        Assert.False(gc_heap.card_set_p(destinationCard + 1));
+        Assert.False(gc_heap.card_set_p(destinationCard + 2));
+        Assert.True(gc_heap.card_set_p(destinationCard + 3));
+        Assert.Equal(LeadingGuard, storage[0]);
+        Assert.Equal(TrailingGuard, storage[5]);
+    }
+#endif
+
+#if USE_REGIONS && !MULTIPLE_HEAPS && !MH_SC_MARK
+    [Fact]
+    public void MarkPhaseOverflowRecoveryDrainsTransitiveQueueAndReturnsFalseWhenStable()
+    {
+        using MarkPhaseStateScope _ = new();
+        SyncImports.ResetRecording();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        byte* objectStorage = stackalloc byte[(int)(11 * pointerSize)];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* child = root + (nint)(2 * pointerSize);
+        byte* grandchild = child + (nint)(2 * pointerSize);
+        byte* drainRoot = grandchild + (nint)(2 * pointerSize);
+        byte* drainChild = drainRoot + (nint)(2 * pointerSize);
+        byte* descriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* methodTable = InitializeSingleSeriesMethodTable(
+            descriptorStorage,
+            2 * pointerSize,
+            pointerSize,
+            pointerCount: 1,
+            hasPointers: 1);
+        heap_segment region = default;
+        heap_segment largeRegion = default;
+        generation* generationTable = gc_heap.generation_table_of(pHeap);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        mark* initialMarkStack = null;
+#if DEBUG
+        nuint oldPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)child)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)grandchild)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)drainRoot)->RawSetMethodTable(methodTable);
+            ((CObjectHeader*)drainChild)->RawSetMethodTable(methodTable);
+            *(byte**)(root + (nint)pointerSize) = child;
+            *(byte**)(child + (nint)pointerSize) = grandchild;
+            *(byte**)(grandchild + (nint)pointerSize) = null;
+            *(byte**)(drainRoot + (nint)pointerSize) = drainChild;
+            *(byte**)(drainChild + (nint)pointerSize) = null;
+
+            const nuint RegionShift = 4;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = drainChild + (nint)(2 * pointerSize);
+            gc_heap.gc_low = root;
+            gc_heap.gc_high = GCCommon.g_gc_highest_address;
+            nuint minimumRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maximumRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maximumRegionIndex - minimumRegionIndex + 1;
+            Assert.InRange(regionCount, (nuint)1, (nuint)8);
+            region_info* generationMap = stackalloc region_info[8];
+            seg_mapping* segmentMap = stackalloc seg_mapping[8];
+            nuint* survived = stackalloc nuint[8];
+            nuint* oldCardSurvived = stackalloc nuint[8];
+            GCCommon.seg_mapping_table = segmentMap - (nint)minimumRegionIndex;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minimumRegionIndex;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                regionCount,
+                (int)gc_generation_num.soh_gen0);
+
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generationTable[i].gen_num = i;
+            }
+
+            heap_segment.heap_segment_mem(&region) = root;
+            heap_segment.heap_segment_allocated(&region) = drainChild + (nint)(2 * pointerSize);
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen0) = &region;
+
+            nuint largeRegionSize =
+                20 * (nuint)gc_rand.MARK_STACK_INITIAL_LENGTH * (nuint)sizeof(mark);
+            byte* largeRegionStart = (byte*)(nuint)0x100000;
+            heap_segment.heap_segment_mem(&largeRegion) = largeRegionStart;
+            heap_segment.heap_segment_allocated(&largeRegion) = largeRegionStart + (nint)largeRegionSize;
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen2) = &largeRegion;
+
+            pHeap->heap_number = 0;
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen0;
+            byte** markList = stackalloc byte*[16];
+            Assert.True(gc_heap.setup_mark_state_for_collection(
+                markList,
+                16,
+                survived,
+                oldCardSurvived,
+                regionCount));
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            initialMarkStack = (mark*)SyncImports.ManagedGC_AllocZeroed((nuint)sizeof(mark));
+            Assert.NotEqual((nuint)0, (nuint)initialMarkStack);
+            gc_heap.mark_stack_array = initialMarkStack;
+            gc_heap.mark_stack_array_length = 1;
+            ((CObjectHeader*)root)->SetMarked();
+            gc_heap.record_mark_stack_overflow(pHeap, root);
+
+            Assert.Equal((nuint)root, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)root, (nuint)gc_heap.max_overflow_address);
+            Assert.True(gc_heap.process_mark_overflow(pHeap, (int)gc_generation_num.soh_gen0));
+            Assert.True(((CObjectHeader*)child)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)grandchild)->IsMarked() != 0);
+            Assert.Equal((nuint)gc_rand.MARK_STACK_INITIAL_LENGTH, gc_heap.mark_stack_array_length);
+            Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+            Assert.Equal(4 * pointerSize, SumRegionCounters(survived, regionCount));
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.queue_mark(drainRoot));
+            Assert.False(gc_heap.process_mark_overflow(pHeap, (int)gc_generation_num.soh_gen0));
+            Assert.True(((CObjectHeader*)drainRoot)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)drainChild)->IsMarked() != 0);
+            Assert.Equal(8 * pointerSize, SumRegionCounters(survived, regionCount));
+            Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            if (initialMarkStack is not null && gc_heap.mark_stack_array is not null)
+            {
+                SyncImports.ManagedGC_Free(gc_heap.mark_stack_array);
+            }
+
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = oldPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseOverflowRecoveryRechecksOverflowRecordedWhileRescanning()
+    {
+        using MarkPhaseStateScope _ = new();
+        SyncImports.ResetRecording();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int ReferenceCount = 17;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        int markStackSlots = (int)((nuint)sizeof(mark) / pointerSize);
+        int overflowReferenceCount = markStackSlots + 1;
+        nuint rootSize = (nuint)(ReferenceCount + 1) * pointerSize;
+        nuint overflowSize = (nuint)(overflowReferenceCount + 1) * pointerSize;
+        byte* objectStorage = stackalloc byte[
+            (int)(rootSize + rootSize + overflowSize + (3 * pointerSize) + pointerSize)];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* candidate = root + (nint)rootSize;
+        byte* overflow = candidate + (nint)rootSize;
+        byte* recoveryChild = overflow + (nint)overflowSize;
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* candidateDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* overflowDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootSize,
+            pointerSize,
+            (nuint)ReferenceCount,
+            hasPointers: 1);
+        MethodTable* candidateMethodTable = InitializeSingleSeriesMethodTable(
+            candidateDescriptorStorage,
+            rootSize,
+            pointerSize,
+            (nuint)ReferenceCount,
+            hasPointers: 1);
+        MethodTable* overflowMethodTable = InitializeSingleSeriesMethodTable(
+            overflowDescriptorStorage,
+            overflowSize,
+            pointerSize,
+            (nuint)overflowReferenceCount,
+            hasPointers: 1);
+        MethodTable leafMethodTable = default;
+        heap_segment region = default;
+        heap_segment largeRegion = default;
+        generation* generationTable = gc_heap.generation_table_of(pHeap);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        mark* initialMarkStack = null;
+#if DEBUG
+        nuint oldPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            leafMethodTable.m_uBaseSize = (uint)(2 * pointerSize);
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            ((CObjectHeader*)candidate)->RawSetMethodTable(candidateMethodTable);
+            ((CObjectHeader*)overflow)->RawSetMethodTable(overflowMethodTable);
+            ((CObjectHeader*)recoveryChild)->RawSetMethodTable(&leafMethodTable);
+
+            byte** rootReferences = (byte**)(root + (nint)pointerSize);
+            byte** candidateReferences = (byte**)(candidate + (nint)pointerSize);
+            byte** overflowReferences = (byte**)(overflow + (nint)pointerSize);
+            for (int i = 0; i < ReferenceCount; i++)
+            {
+                rootReferences[i] = candidate;
+                candidateReferences[i] = overflow;
+            }
+
+            overflowReferences[0] = recoveryChild;
+            for (int i = 1; i < overflowReferenceCount; i++)
+            {
+                overflowReferences[i] = null;
+            }
+
+            const nuint RegionShift = 4;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = recoveryChild + (nint)(2 * pointerSize);
+            gc_heap.gc_low = root;
+            gc_heap.gc_high = GCCommon.g_gc_highest_address;
+            nuint minimumRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maximumRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maximumRegionIndex - minimumRegionIndex + 1;
+            Assert.InRange(regionCount, (nuint)1, (nuint)64);
+            region_info* generationMap = stackalloc region_info[64];
+            seg_mapping* segmentMap = stackalloc seg_mapping[64];
+            nuint* survived = stackalloc nuint[64];
+            nuint* oldCardSurvived = stackalloc nuint[64];
+            GCCommon.seg_mapping_table = segmentMap - (nint)minimumRegionIndex;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minimumRegionIndex;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                regionCount,
+                (int)gc_generation_num.soh_gen0);
+
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generationTable[i].gen_num = i;
+            }
+
+            heap_segment.heap_segment_mem(&region) = root;
+            heap_segment.heap_segment_allocated(&region) = recoveryChild + (nint)(2 * pointerSize);
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen0) = &region;
+
+            nuint largeRegionSize =
+                20 * (nuint)gc_rand.MARK_STACK_INITIAL_LENGTH * (nuint)sizeof(mark);
+            byte* largeRegionStart = (byte*)(nuint)0x100000;
+            heap_segment.heap_segment_mem(&largeRegion) = largeRegionStart;
+            heap_segment.heap_segment_allocated(&largeRegion) = largeRegionStart + (nint)largeRegionSize;
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen2) = &largeRegion;
+
+            pHeap->heap_number = 0;
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen0;
+            byte** markList = stackalloc byte*[16];
+            Assert.True(gc_heap.setup_mark_state_for_collection(
+                markList,
+                16,
+                survived,
+                oldCardSurvived,
+                regionCount));
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            initialMarkStack = (mark*)SyncImports.ManagedGC_AllocZeroed((nuint)sizeof(mark));
+            Assert.NotEqual((nuint)0, (nuint)initialMarkStack);
+            gc_heap.mark_stack_array = initialMarkStack;
+            gc_heap.mark_stack_array_length = 1;
+            ((CObjectHeader*)root)->SetMarked();
+            gc_heap.record_mark_stack_overflow(pHeap, root);
+            SyncImports.FailNextAlloc = true;
+
+            Assert.True(gc_heap.process_mark_overflow(pHeap, (int)gc_generation_num.soh_gen0));
+            Assert.False(SyncImports.FailNextAlloc);
+            Assert.True(((CObjectHeader*)overflow)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)recoveryChild)->IsMarked() != 0);
+            Assert.Equal((nuint)gc_rand.MARK_STACK_INITIAL_LENGTH, gc_heap.mark_stack_array_length);
+            Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            SyncImports.FailNextAlloc = false;
+            if (initialMarkStack is not null && gc_heap.mark_stack_array is not null)
+            {
+                SyncImports.ManagedGC_Free(gc_heap.mark_stack_array);
+            }
+
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = oldPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseOverflowRecoveryCapsMarkStackGrowthByHeapSize()
+    {
+        using MarkPhaseStateScope _ = new();
+        SyncImports.ResetRecording();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        CObjectHeader root = default;
+        MethodTable methodTable = default;
+        heap_segment region = default;
+        heap_segment largeRegion = default;
+        generation* generationTable = gc_heap.generation_table_of(pHeap);
+        nuint oldLength = (100 * 1024) / (2 * (nuint)sizeof(mark)) + 1;
+        nuint cappedLength = oldLength + oldLength / 2 + 1;
+        mark* initialMarkStack = null;
+
+        try
+        {
+            methodTable.m_uBaseSize = (uint)sizeof(nuint);
+            root.RawSetMethodTable(&methodTable);
+            root.SetMarked();
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generationTable[i].gen_num = i;
+            }
+
+            heap_segment.heap_segment_mem(&region) = (byte*)&root;
+            heap_segment.heap_segment_allocated(&region) = (byte*)&root + sizeof(nuint);
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen0) = &region;
+
+            nuint totalHeapSize = cappedLength * 10 * (nuint)sizeof(mark);
+            byte* largeRegionStart = (byte*)(nuint)0x100000;
+            heap_segment.heap_segment_mem(&largeRegion) = largeRegionStart;
+            heap_segment.heap_segment_allocated(&largeRegion) =
+                largeRegionStart + (nint)(totalHeapSize - (nuint)sizeof(nuint));
+            generation.generation_start_segment(
+                generationTable + (int)gc_generation_num.soh_gen2) = &largeRegion;
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen0;
+            initialMarkStack = (mark*)SyncImports.ManagedGC_AllocZeroed(
+                oldLength * (nuint)sizeof(mark));
+            Assert.NotEqual((nuint)0, (nuint)initialMarkStack);
+            gc_heap.mark_stack_array = initialMarkStack;
+            gc_heap.mark_stack_array_length = oldLength;
+            gc_heap.record_mark_stack_overflow(pHeap, (byte*)&root);
+
+            Assert.True(2 * oldLength * (nuint)sizeof(mark) > 100 * 1024);
+            Assert.True(gc_heap.process_mark_overflow(pHeap, (int)gc_generation_num.soh_gen0));
+            Assert.Equal(cappedLength, gc_heap.mark_stack_array_length);
+        }
+        finally
+        {
+            if (initialMarkStack is not null && gc_heap.mark_stack_array is not null)
+            {
+                SyncImports.ManagedGC_Free(gc_heap.mark_stack_array);
+            }
+        }
+    }
+
+    [Fact]
+    public void PlanPhaseGenerationSizesAndTotalHeapSizeIncludeSohLohAndPoh()
+    {
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        generation* generationTable = gc_heap.generation_table_of(pHeap);
+        heap_segment gen0 = default;
+        heap_segment gen1 = default;
+        heap_segment gen2 = default;
+        heap_segment loh = default;
+        heap_segment poh = default;
+
+        InitializeGenerationSegment(generationTable, (int)gc_generation_num.soh_gen0, &gen0, (byte*)0x1000, 10, 11);
+        InitializeGenerationSegment(generationTable, (int)gc_generation_num.soh_gen1, &gen1, (byte*)0x2000, 20, 22);
+        InitializeGenerationSegment(generationTable, (int)gc_generation_num.soh_gen2, &gen2, (byte*)0x3000, 30, 33);
+        InitializeGenerationSegment(generationTable, (int)gc_generation_num.loh_generation, &loh, (byte*)0x4000, 40, 44);
+        InitializeGenerationSegment(generationTable, (int)gc_generation_num.poh_generation, &poh, (byte*)0x5000, 50, 55);
+
+        Assert.Equal(
+            (nuint)60,
+            gc_heap.generation_sizes(
+                pHeap,
+                generationTable + (int)gc_generation_num.soh_gen2));
+        Assert.Equal(
+            (nuint)66,
+            gc_heap.generation_sizes(
+                pHeap,
+                generationTable + (int)gc_generation_num.soh_gen2,
+                use_saved_p: true));
+        Assert.Equal(
+            (nuint)40,
+            gc_heap.generation_sizes(
+                pHeap,
+                generationTable + (int)gc_generation_num.loh_generation));
+        Assert.Equal(
+            (nuint)50,
+            gc_heap.generation_sizes(
+                pHeap,
+                generationTable + (int)gc_generation_num.poh_generation));
+        Assert.Equal((nuint)150, gc_heap.get_total_heap_size(pHeap));
+    }
+
+    [Fact]
+    public void GCPrivPromotedBytesAggregatesRegionCountersAndHandlesUnavailableStorage()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        heap_segment* regions = stackalloc heap_segment[3];
+        nuint* survived = stackalloc nuint[3];
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+#if DEBUG
+        nuint oldPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x1000;
+            GCCommon.g_gc_highest_address = (byte*)0x4000;
+            GCCommon.seg_mapping_table = (seg_mapping*)regions - 1;
+            gc_heap.region_count = 3;
+            survived[0] = 11;
+            survived[1] = 22;
+            survived[2] = 33;
+            gc_heap.survived_per_region = survived;
+            pHeap->heap_number = 0;
+#if DEBUG
+            gc_heap.g_promoted = 66;
+#endif
+
+            Assert.Equal((nuint)66, gc_heap.get_promoted_bytes(pHeap));
+
+            gc_heap.survived_per_region = null;
+            Assert.Equal((nuint)0, gc_heap.get_promoted_bytes(pHeap));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+#if DEBUG
+            gc_heap.g_promoted = oldPromoted;
+#endif
+        }
+    }
+
+    private static void InitializeGenerationSegment(
+        generation* generationTable,
+        int generationNumber,
+        heap_segment* segment,
+        byte* start,
+        nuint allocatedSize,
+        nuint savedAllocatedSize)
+    {
+        generationTable[generationNumber].gen_num = generationNumber;
+        heap_segment.heap_segment_mem(segment) = start;
+        heap_segment.heap_segment_allocated(segment) = start + (nint)allocatedSize;
+        heap_segment.heap_segment_saved_allocated(segment) = start + (nint)savedAllocatedSize;
+        generation.generation_start_segment(generationTable + generationNumber) = segment;
     }
 #endif
 
@@ -2334,6 +4896,947 @@ public sealed unsafe class GCPrivTests
         }
     }
 
+    [Fact]
+    public void MarkPhaseMarkObjectSimpleDelaysRootAndDrainProcessesPrefetchTailWithGenerationFiltering()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int FilteredChildren = 3;
+        const int ValidChildren = 17;
+        const int TotalChildren = FilteredChildren + ValidChildren;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint childObjectSize = 2 * pointerSize;
+        nuint rootObjectSize = (nuint)(TotalChildren + 1) * pointerSize;
+        nuint expectedPromoted = rootObjectSize + ((nuint)ValidChildren * childObjectSize);
+        byte* objectStorage = stackalloc byte[
+            checked((int)(rootObjectSize + ((nuint)TotalChildren * childObjectSize) + pointerSize))];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* childStart = root + (nint)rootObjectSize;
+        byte** children = stackalloc byte*[TotalChildren];
+        byte** rootReferences = (byte**)(root + sizeof(nuint));
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* childDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootObjectSize,
+            (nuint)sizeof(nuint),
+            (nuint)TotalChildren,
+            hasPointers: 1);
+        MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+            childDescriptorStorage,
+            childObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: 0,
+            hasPointers: 0);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            for (int index = 0; index < TotalChildren; index++)
+            {
+                byte* child = childStart + (nint)((nuint)index * childObjectSize);
+                children[index] = child;
+                ((CObjectHeader*)child)->RawSetMethodTable(childMethodTable);
+                rootReferences[index] = child;
+            }
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = childStart + (nint)((nuint)TotalChildren * childObjectSize);
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                regionCount,
+                (int)gc_generation_num.soh_gen1);
+
+            // mark_object_simple assumes callers already did exact collection-range checks,
+            // so this root stays eligible even when its generation is above condemned.
+            SetRegionGenerationForAddress(
+                root,
+                minRegionIndex,
+                generationMap,
+                segmentMap,
+                (int)gc_generation_num.soh_gen2);
+
+            for (int index = 0; index < FilteredChildren; index++)
+            {
+                SetRegionGenerationForAddress(
+                    children[index],
+                    minRegionIndex,
+                    generationMap,
+                    segmentMap,
+                    (int)gc_generation_num.soh_gen2);
+            }
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            byte** markList = stackalloc byte*[TotalChildren + 1];
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(
+                gc_heap.setup_mark_state_for_collection(
+                    markList,
+                    (nuint)(TotalChildren + 1),
+                    survived,
+                    oldCardSurvived,
+                    regionCount));
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            byte* rootReference = root;
+            gc_heap.mark_object_simple(pHeap, &rootReference);
+
+            Assert.Equal(0, ((CObjectHeader*)root)->IsMarked());
+            Assert.Equal(0, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.Equal((nuint)0, SumRegionCounters(survived, regionCount));
+
+            gc_heap.drain_mark_queue(pHeap);
+
+            Assert.True(((CObjectHeader*)root)->IsMarked() != 0);
+            for (int index = 0; index < FilteredChildren; index++)
+            {
+                Assert.Equal(0, ((CObjectHeader*)children[index])->IsMarked());
+            }
+
+            for (int index = FilteredChildren; index < TotalChildren; index++)
+            {
+                Assert.True(((CObjectHeader*)children[index])->IsMarked() != 0);
+            }
+
+            Assert.Equal(1 + ValidChildren, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.Equal((nuint)root, (nuint)gc_heap.slow);
+            Assert.Equal((nuint)children[TotalChildren - 1], (nuint)gc_heap.shigh);
+            Assert.Equal(expectedPromoted, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+            Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+#if DEBUG
+            Assert.Equal(expectedPromoted, gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseMarkObjectSimpleProcessesLivePrefetchEntryBeforeDrainAndPreservesTailState()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int MarkQueueSlotCount = 16;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint pointerObjectSize = 2 * pointerSize;
+        nuint leafObjectSize = 2 * pointerSize;
+        nuint expectedPromotedBeforeDrain = 2 * pointerObjectSize;
+        nuint expectedPromotedAfterDrain = expectedPromotedBeforeDrain + (3 * leafObjectSize);
+        byte* objectStorage = stackalloc byte[
+            checked((int)((2 * pointerObjectSize) + (3 * leafObjectSize) + pointerSize))];
+        byte* queuedRoot = AlignUp(objectStorage, pointerSize);
+        byte* queuedPointerChild = queuedRoot + (nint)pointerObjectSize;
+        byte* deferredRoot = queuedPointerChild + (nint)pointerObjectSize;
+        byte* deferredFromRootChild = deferredRoot + (nint)leafObjectSize;
+        byte* deferredFromSimple1Child = deferredFromRootChild + (nint)leafObjectSize;
+        byte** queuedRootReferences = (byte**)(queuedRoot + sizeof(nuint));
+        byte** queuedPointerChildReferences = (byte**)(queuedPointerChild + sizeof(nuint));
+        byte* pointerDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* leafDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* pointerMethodTable = InitializeSingleSeriesMethodTable(
+            pointerDescriptorStorage,
+            pointerObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: 1,
+            hasPointers: 1);
+        MethodTable* leafMethodTable = InitializeSingleSeriesMethodTable(
+            leafDescriptorStorage,
+            leafObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: 0,
+            hasPointers: 0);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)queuedRoot)->RawSetMethodTable(pointerMethodTable);
+            ((CObjectHeader*)queuedPointerChild)->RawSetMethodTable(pointerMethodTable);
+            ((CObjectHeader*)deferredRoot)->RawSetMethodTable(leafMethodTable);
+            ((CObjectHeader*)deferredFromRootChild)->RawSetMethodTable(leafMethodTable);
+            ((CObjectHeader*)deferredFromSimple1Child)->RawSetMethodTable(leafMethodTable);
+            queuedRootReferences[0] = deferredFromRootChild;
+            queuedPointerChildReferences[0] = deferredFromSimple1Child;
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = queuedRoot;
+            GCCommon.g_gc_highest_address = deferredFromSimple1Child + (nint)leafObjectSize;
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                regionCount,
+                (int)gc_generation_num.soh_gen1);
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            byte** markList = stackalloc byte*[8];
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 8, survived, oldCardSurvived, regionCount));
+
+            mark* markStack = stackalloc mark[4];
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = 4;
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.queue_mark(queuedRoot));
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.queue_mark(queuedPointerChild));
+            for (int slotIndex = 2; slotIndex < MarkQueueSlotCount; slotIndex++)
+            {
+                Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.queue_mark(null));
+            }
+
+            Assert.Equal((nuint)0, ReadMarkQueueTailSlotIndex());
+            Assert.Equal((nuint)queuedRoot, (nuint)ReadMarkQueueSlot(0));
+            Assert.Equal((nuint)queuedPointerChild, (nuint)ReadMarkQueueSlot(1));
+
+            byte* rootReference = deferredRoot;
+            gc_heap.mark_object_simple(pHeap, &rootReference);
+
+            Assert.True(((CObjectHeader*)queuedRoot)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)queuedPointerChild)->IsMarked() != 0);
+            Assert.Equal(0, ((CObjectHeader*)deferredRoot)->IsMarked());
+            Assert.Equal(0, ((CObjectHeader*)deferredFromRootChild)->IsMarked());
+            Assert.Equal(0, ((CObjectHeader*)deferredFromSimple1Child)->IsMarked());
+            Assert.Equal(2, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.Equal((nuint)queuedRoot, (nuint)markList[0]);
+            Assert.Equal((nuint)queuedPointerChild, (nuint)markList[1]);
+            Assert.Equal((nuint)queuedRoot, (nuint)gc_heap.slow);
+            Assert.Equal((nuint)queuedPointerChild, (nuint)gc_heap.shigh);
+            Assert.Equal(expectedPromotedBeforeDrain, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+            Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+#if DEBUG
+            Assert.Equal(expectedPromotedBeforeDrain, gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+
+            Assert.Equal((nuint)3, ReadMarkQueueTailSlotIndex());
+            Assert.Equal((nuint)deferredRoot, (nuint)ReadMarkQueueSlot(0));
+            Assert.Equal((nuint)deferredFromRootChild, (nuint)ReadMarkQueueSlot(1));
+            Assert.Equal((nuint)deferredFromSimple1Child, (nuint)ReadMarkQueueSlot(2));
+            for (int slotIndex = 3; slotIndex < MarkQueueSlotCount; slotIndex++)
+            {
+                Assert.Equal((nuint)0, (nuint)ReadMarkQueueSlot(slotIndex));
+            }
+
+            gc_heap.drain_mark_queue(pHeap);
+
+            Assert.True(((CObjectHeader*)deferredRoot)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)deferredFromRootChild)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)deferredFromSimple1Child)->IsMarked() != 0);
+            Assert.Equal(5, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.Equal((nuint)queuedRoot, (nuint)markList[0]);
+            Assert.Equal((nuint)queuedPointerChild, (nuint)markList[1]);
+            Assert.Equal((nuint)deferredRoot, (nuint)markList[2]);
+            Assert.Equal((nuint)deferredFromRootChild, (nuint)markList[3]);
+            Assert.Equal((nuint)deferredFromSimple1Child, (nuint)markList[4]);
+            Assert.Equal((nuint)queuedRoot, (nuint)gc_heap.slow);
+            Assert.Equal((nuint)deferredFromSimple1Child, (nuint)gc_heap.shigh);
+            Assert.Equal(expectedPromotedAfterDrain, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+            Assert.Equal(nuint.MaxValue, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)0, (nuint)gc_heap.max_overflow_address);
+#if DEBUG
+            Assert.Equal(expectedPromotedAfterDrain, gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+            Assert.Equal((nuint)3, ReadMarkQueueTailSlotIndex());
+            for (int slotIndex = 0; slotIndex < MarkQueueSlotCount; slotIndex++)
+            {
+                Assert.Equal((nuint)0, (nuint)ReadMarkQueueSlot(slotIndex));
+            }
+
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseDrainMarkQueueTraversesTransitiveCycleAndSkipsAlreadyMarkedReferences()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int RootReferenceCount = 17;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint rootObjectSize = (nuint)(RootReferenceCount + 1) * pointerSize;
+        nuint nodeObjectSize = 2 * pointerSize;
+        nuint expectedPromoted = rootObjectSize + (2 * nodeObjectSize);
+        byte* objectStorage = stackalloc byte[
+            checked((int)(rootObjectSize + (2 * nodeObjectSize) + pointerSize))];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* nodeA = root + (nint)rootObjectSize;
+        byte* nodeB = nodeA + (nint)nodeObjectSize;
+        byte** rootReferences = (byte**)(root + sizeof(nuint));
+        byte** nodeAReferences = (byte**)(nodeA + sizeof(nuint));
+        byte** nodeBReferences = (byte**)(nodeB + sizeof(nuint));
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* nodeDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: RootReferenceCount,
+            hasPointers: 1);
+        MethodTable* nodeMethodTable = InitializeSingleSeriesMethodTable(
+            nodeDescriptorStorage,
+            nodeObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: 1,
+            hasPointers: 1);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            ((CObjectHeader*)nodeA)->RawSetMethodTable(nodeMethodTable);
+            ((CObjectHeader*)nodeB)->RawSetMethodTable(nodeMethodTable);
+
+            for (int index = 0; index < RootReferenceCount; index++)
+            {
+                rootReferences[index] = nodeA;
+            }
+
+            nodeAReferences[0] = nodeB;
+            nodeBReferences[0] = nodeA;
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = nodeB + (nint)nodeObjectSize;
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                regionCount,
+                (int)gc_generation_num.soh_gen1);
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            byte** markList = stackalloc byte*[8];
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 8, survived, oldCardSurvived, regionCount));
+
+            mark* markStack = stackalloc mark[4];
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = 4;
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            byte* rootReference = root;
+            gc_heap.mark_object_simple(pHeap, &rootReference);
+            gc_heap.drain_mark_queue(pHeap);
+
+            Assert.True(((CObjectHeader*)root)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)nodeA)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)nodeB)->IsMarked() != 0);
+            Assert.Equal(3, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.Equal((nuint)root, (nuint)markList[0]);
+            Assert.Equal((nuint)nodeA, (nuint)markList[1]);
+            Assert.Equal((nuint)nodeB, (nuint)markList[2]);
+            Assert.Equal(expectedPromoted, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+#if DEBUG
+            Assert.Equal(expectedPromoted, gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseMarkObjectSimpleUsesBoundaryInFullGcWithCapacityOneMarkList()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int ChildCount = 17;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint childObjectSize = 2 * pointerSize;
+        nuint rootObjectSize = (nuint)(ChildCount + 1) * pointerSize;
+        nuint expectedPromoted = rootObjectSize + ((nuint)ChildCount * childObjectSize);
+        byte* objectStorage = stackalloc byte[
+            checked((int)(rootObjectSize + ((nuint)ChildCount * childObjectSize) + pointerSize))];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* childStart = root + (nint)rootObjectSize;
+        byte** rootReferences = (byte**)(root + sizeof(nuint));
+        byte** children = stackalloc byte*[ChildCount];
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* childDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: ChildCount,
+            hasPointers: 1);
+        MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+            childDescriptorStorage,
+            childObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: 0,
+            hasPointers: 0);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            for (int index = 0; index < ChildCount; index++)
+            {
+                byte* child = childStart + (nint)((nuint)index * childObjectSize);
+                children[index] = child;
+                ((CObjectHeader*)child)->RawSetMethodTable(childMethodTable);
+                rootReferences[index] = child;
+            }
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = childStart + (nint)((nuint)ChildCount * childObjectSize);
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                regionCount,
+                (int)gc_generation_num.soh_gen2);
+
+            gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
+            byte** markList = stackalloc byte*[1];
+            markList[0] = (byte*)0xDEAD;
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 1, survived, oldCardSurvived, regionCount));
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            byte* rootReference = root;
+            gc_heap.mark_object_simple(pHeap, &rootReference);
+            gc_heap.drain_mark_queue(pHeap);
+
+            Assert.Equal((nuint)root, (nuint)markList[0]);
+            Assert.Equal((nuint)(markList + 1), (nuint)gc_heap.mark_list_index);
+            Assert.Equal((nuint)markList, (nuint)gc_heap.mark_list_end);
+            Assert.Equal((nuint)root, (nuint)gc_heap.slow);
+            Assert.Equal((nuint)children[ChildCount - 1], (nuint)gc_heap.shigh);
+            Assert.True(((CObjectHeader*)root)->IsMarked() != 0);
+            for (int index = 0; index < ChildCount; index++)
+            {
+                Assert.True(((CObjectHeader*)children[index])->IsMarked() != 0);
+            }
+
+            Assert.Equal(expectedPromoted, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+#if DEBUG
+            Assert.Equal(expectedPromoted, gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void MarkPhaseDrainMarkQueuePropagatesOverflowExtremaFromMarkObjectSimple1()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int ReferencesPerChild = 17;
+        const int TotalReferences = 2 * ReferencesPerChild;
+        const nuint RegionShift = 4;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        int childPointerCount = (int)((nuint)sizeof(mark) / pointerSize) + 4;
+        nuint childObjectSize = ((nuint)childPointerCount + 1) * pointerSize;
+        nuint rootObjectSize = (nuint)(TotalReferences + 1) * pointerSize;
+        nuint expectedPromoted = rootObjectSize + (2 * childObjectSize);
+        byte* objectStorage = stackalloc byte[
+            checked((int)(rootObjectSize + (2 * childObjectSize) + pointerSize))];
+        byte* root = AlignUp(objectStorage, pointerSize);
+        byte* childLow = root + (nint)rootObjectSize;
+        byte* childHigh = childLow + (nint)childObjectSize;
+        byte** rootReferences = (byte**)(root + sizeof(nuint));
+        byte** childLowReferences = (byte**)(childLow + sizeof(nuint));
+        byte** childHighReferences = (byte**)(childHigh + sizeof(nuint));
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* childDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            rootObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: TotalReferences,
+            hasPointers: 1);
+        MethodTable* childMethodTable = InitializeSingleSeriesMethodTable(
+            childDescriptorStorage,
+            childObjectSize,
+            (nuint)sizeof(nuint),
+            pointerCount: (nuint)childPointerCount,
+            hasPointers: 1);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+#if DEBUG
+        nuint savedPromoted = gc_heap.g_promoted;
+#endif
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            ((CObjectHeader*)childLow)->RawSetMethodTable(childMethodTable);
+            ((CObjectHeader*)childHigh)->RawSetMethodTable(childMethodTable);
+
+            for (int index = 0; index < ReferencesPerChild; index++)
+            {
+                rootReferences[index] = childHigh;
+            }
+
+            for (int index = ReferencesPerChild; index < TotalReferences; index++)
+            {
+                rootReferences[index] = childLow;
+            }
+
+            for (int index = 0; index < childPointerCount; index++)
+            {
+                childLowReferences[index] = null;
+                childHighReferences[index] = null;
+            }
+
+            pHeap->heap_number = 0;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = childHigh + (nint)childObjectSize;
+
+            nuint minRegionIndex = (nuint)GCCommon.g_gc_lowest_address >> (int)RegionShift;
+            nuint maxRegionIndex = ((nuint)GCCommon.g_gc_highest_address - 1) >> (int)RegionShift;
+            nuint regionCount = maxRegionIndex - minRegionIndex + 1;
+            region_info* generationMap = stackalloc region_info[(int)regionCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[(int)regionCount];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                regionCount,
+                (int)gc_generation_num.soh_gen1);
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            byte** markList = stackalloc byte*[8];
+            nuint* survived = stackalloc nuint[(int)regionCount];
+            nuint* oldCardSurvived = stackalloc nuint[(int)regionCount];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 8, survived, oldCardSurvived, regionCount));
+
+            mark* markStack = stackalloc mark[1];
+            gc_heap.mark_stack_array = markStack;
+            gc_heap.mark_stack_array_length = 1;
+
+#if DEBUG
+            gc_heap.init_promoted_bytes();
+#endif
+
+            byte* rootReference = root;
+            gc_heap.mark_object_simple(pHeap, &rootReference);
+            gc_heap.drain_mark_queue(pHeap);
+
+            Assert.True(((CObjectHeader*)root)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)childLow)->IsMarked() != 0);
+            Assert.True(((CObjectHeader*)childHigh)->IsMarked() != 0);
+            Assert.Equal((nuint)childLow, (nuint)gc_heap.min_overflow_address);
+            Assert.Equal((nuint)childHigh, (nuint)gc_heap.max_overflow_address);
+            Assert.Equal(3, (int)(gc_heap.mark_list_index - gc_heap.mark_list));
+            Assert.Equal(expectedPromoted, SumRegionCounters(survived, regionCount));
+            for (nuint offset = 0; offset < regionCount; offset++)
+            {
+                Assert.Equal((nuint)0, oldCardSurvived[(nint)offset]);
+            }
+
+#if DEBUG
+            Assert.Equal(expectedPromoted, gc_heap.promoted_bytes(pHeap->heap_number));
+#endif
+            Assert.Equal((nuint)0, (nuint)gc_heap.mark_queue.get_next_marked());
+            gc_heap.mark_queue.verify_empty();
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+#if DEBUG
+            gc_heap.g_promoted = savedPromoted;
+#endif
+        }
+    }
+
+    [Fact]
+    public void ComputeGcAndEphemeralRangeAndPredicatesPreserveWksRegionBounds()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        heap_segment* segments = stackalloc heap_segment[3];
+        generation* generationTable = gc_heap.generation_table_of(&heap);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+
+        try
+        {
+            byte* gen0FirstStart = (byte*)0x1000;
+            byte* gen0SecondStart = (byte*)0x2000;
+            byte* gen1Start = (byte*)0x3000;
+            byte* heapEnd = (byte*)0x5000;
+            ConfigureRegion(&segments[0], gen0FirstStart, (byte*)0x1800, &segments[1]);
+            ConfigureRegion(&segments[1], gen0SecondStart, (byte*)0x2800, null);
+            ConfigureRegion(&segments[2], gen1Start, (byte*)0x3800, null);
+            generation.generation_start_segment(generationTable + (int)gc_generation_num.soh_gen0) = &segments[0];
+            generation.generation_start_segment(generationTable + (int)gc_generation_num.soh_gen1) = &segments[2];
+
+            const nuint RegionShift = 12;
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = gen0FirstStart;
+            GCCommon.g_gc_highest_address = heapEnd;
+            region_info* generationMap = stackalloc region_info[4];
+            seg_mapping* segmentMap = stackalloc seg_mapping[4];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - 1;
+            GCCommon.seg_mapping_table = segmentMap - 1;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                4,
+                (int)gc_generation_num.soh_gen2);
+            SetRegionGenerationForAddress(
+                gen0FirstStart,
+                1,
+                generationMap,
+                segmentMap,
+                (int)gc_generation_num.soh_gen0);
+            SetRegionGenerationForAddress(
+                gen1Start,
+                1,
+                generationMap,
+                segmentMap,
+                (int)gc_generation_num.soh_gen1);
+
+            gc_heap.compute_gc_and_ephemeral_range(
+                &heap,
+                (int)gc_generation_num.soh_gen0,
+                end_of_gc_p: false);
+
+            Assert.Equal((nuint)gen0FirstStart, (nuint)gc_heap.ephemeral_low);
+            Assert.Equal((nuint)0x3800, (nuint)gc_heap.ephemeral_high);
+            Assert.Equal((nuint)gen0FirstStart, (nuint)gc_heap.gc_low);
+            Assert.Equal((nuint)0x2800, (nuint)gc_heap.gc_high);
+            Assert.True(gc_heap.is_in_gc_range(gen0FirstStart));
+            Assert.False(gc_heap.is_in_gc_range(gen1Start));
+
+            gc_heap.compute_gc_and_ephemeral_range(
+                &heap,
+                (int)gc_generation_num.soh_gen2,
+                end_of_gc_p: false);
+
+            Assert.Equal((nuint)GCCommon.g_gc_lowest_address, (nuint)gc_heap.gc_low);
+            Assert.Equal((nuint)GCCommon.g_gc_highest_address, (nuint)gc_heap.gc_high);
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen0;
+            Assert.True(gc_heap.is_in_condemned_gc(gen0FirstStart));
+            Assert.False(gc_heap.is_in_condemned_gc(gen1Start));
+
+            gc_heap.compute_gc_and_ephemeral_range(
+                &heap,
+                (int)gc_generation_num.soh_gen0,
+                end_of_gc_p: true);
+
+            Assert.Equal((nuint)GCCommon.g_gc_lowest_address, (nuint)gc_heap.ephemeral_low);
+            Assert.Equal((nuint)GCCommon.g_gc_highest_address, (nuint)gc_heap.ephemeral_high);
+            Assert.Equal((nuint)GCCommon.g_gc_lowest_address, (nuint)gc_heap.gc_low);
+            Assert.Equal((nuint)GCCommon.g_gc_highest_address, (nuint)gc_heap.gc_high);
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+        }
+    }
+
+    [Fact]
+    public void MarkObjectAndMarkThroughObjectHonorActiveCollectionRange()
+    {
+        using MarkPhaseStateScope _ = new();
+        gc_heap heap = default;
+        gc_heap* pHeap = &heap;
+        const int RegionShift = 6;
+        const nuint RegionSize = (nuint)1 << RegionShift;
+        nuint pointerSize = (nuint)sizeof(byte*);
+        nuint objectSize = 2 * pointerSize;
+        byte* objectStorage = stackalloc byte[checked((int)(4 * RegionSize))];
+        byte* root = AlignUp(objectStorage, RegionSize);
+        byte* child = root + (nint)RegionSize;
+        byte* nonCondemned = child + (nint)RegionSize;
+        byte** rootReference = (byte**)(root + (nint)pointerSize);
+        byte* rootDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        byte* leafDescriptorStorage = stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+        MethodTable* rootMethodTable = InitializeSingleSeriesMethodTable(
+            rootDescriptorStorage,
+            objectSize,
+            pointerSize,
+            pointerCount: 1,
+            hasPointers: 1);
+        MethodTable* leafMethodTable = InitializeSingleSeriesMethodTable(
+            leafDescriptorStorage,
+            objectSize,
+            pointerSize,
+            pointerCount: 0,
+            hasPointers: 0);
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowestAddress = GCCommon.g_gc_lowest_address;
+        byte* oldHighestAddress = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldGenerationMap = gc_heap.map_region_to_generation;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+
+        try
+        {
+            ((CObjectHeader*)root)->RawSetMethodTable(rootMethodTable);
+            ((CObjectHeader*)child)->RawSetMethodTable(leafMethodTable);
+            ((CObjectHeader*)nonCondemned)->RawSetMethodTable(leafMethodTable);
+            *rootReference = child;
+
+            gc_heap.min_segment_size_shr = RegionShift;
+            GCCommon.g_gc_lowest_address = root;
+            GCCommon.g_gc_highest_address = nonCondemned + (nint)objectSize;
+            nuint minRegionIndex = (nuint)root >> RegionShift;
+            region_info* generationMap = stackalloc region_info[3];
+            seg_mapping* segmentMap = stackalloc seg_mapping[3];
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)minRegionIndex;
+            GCCommon.seg_mapping_table = segmentMap - (nint)minRegionIndex;
+            InitializeRegionGenerationMaps(
+                generationMap,
+                segmentMap,
+                3,
+                (int)gc_generation_num.soh_gen2);
+            SetRegionGenerationForAddress(
+                child,
+                minRegionIndex,
+                generationMap,
+                segmentMap,
+                (int)gc_generation_num.soh_gen0);
+
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen0;
+            gc_heap.gc_low = child;
+            gc_heap.gc_high = nonCondemned + (nint)objectSize;
+            byte** markList = stackalloc byte*[2];
+            nuint* survived = stackalloc nuint[3];
+            nuint* oldCardSurvived = stackalloc nuint[3];
+            Assert.True(gc_heap.setup_mark_state_for_collection(markList, 2, survived, oldCardSurvived, 3));
+
+            gc_heap.mark_object(pHeap, root);
+            gc_heap.mark_object(pHeap, nonCondemned);
+            gc_heap.drain_mark_queue(pHeap);
+
+            Assert.Equal(0, ((CObjectHeader*)root)->IsMarked());
+            Assert.Equal(0, ((CObjectHeader*)nonCondemned)->IsMarked());
+            Assert.Equal(0, ((CObjectHeader*)child)->IsMarked());
+
+            gc_heap.mark_object(pHeap, child);
+            gc_heap.drain_mark_queue(pHeap);
+
+            Assert.True(((CObjectHeader*)child)->IsMarked() != 0);
+            ((CObjectHeader*)child)->ClearMarked();
+
+            gc_heap.mark_through_object(pHeap, nonCondemned, mark_class_object_p: 1);
+            gc_heap.drain_mark_queue(pHeap);
+            Assert.Equal(0, ((CObjectHeader*)nonCondemned)->IsMarked());
+
+            gc_heap.mark_through_object(pHeap, root, mark_class_object_p: 1);
+            gc_heap.drain_mark_queue(pHeap);
+
+            Assert.Equal(0, ((CObjectHeader*)root)->IsMarked());
+            Assert.True(((CObjectHeader*)child)->IsMarked() != 0);
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowestAddress;
+            GCCommon.g_gc_highest_address = oldHighestAddress;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation = oldGenerationMap;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+        }
+    }
+
+    private static void ConfigureRegion(heap_segment* region, byte* start, byte* reserved, heap_segment* next)
+    {
+        heap_segment.heap_segment_mem(region) = start + sizeof(aligned_plug_and_gap);
+        heap_segment.heap_segment_reserved(region) = reserved;
+        heap_segment.heap_segment_next(region) = next;
+    }
+
     private static byte* AlignUp(byte* value, nuint alignment)
     {
         return (byte*)(((nuint)value + (alignment - 1)) & ~(alignment - 1));
@@ -2398,6 +5901,20 @@ public sealed unsafe class GCPrivTests
         return checked((int)(markStackLength * (nuint)MarkStackSlotsPerEntry()));
     }
 
+    private static void InitializeRegionGenerationMaps(
+        region_info* generationMap,
+        seg_mapping* segmentMap,
+        nuint regionCount,
+        int generation)
+    {
+        for (nuint offset = 0; offset < regionCount; offset++)
+        {
+            generationMap[(nint)offset] = (region_info)generation;
+            segmentMap[(nint)offset] = default;
+            segmentMap[(nint)offset].region_info.gen_num = (byte)generation;
+        }
+    }
+
     private static void SetRegionGenerationForAddress(
         byte* address,
         nuint minRegionIndex,
@@ -2421,6 +5938,26 @@ public sealed unsafe class GCPrivTests
 
         return total;
     }
+
+    private static byte* ReadMarkQueueSlot(int slotIndex)
+    {
+        const int MarkQueueSlotCount = 16;
+        Assert.InRange(slotIndex, 0, MarkQueueSlotCount - 1);
+
+        fixed (mark_queue_t* queue = &gc_heap.mark_queue)
+        {
+            return (byte*)((nuint*)queue)[slotIndex];
+        }
+    }
+
+    private static nuint ReadMarkQueueTailSlotIndex()
+    {
+        const int MarkQueueSlotCount = 16;
+        fixed (mark_queue_t* queue = &gc_heap.mark_queue)
+        {
+            return ((nuint*)queue)[MarkQueueSlotCount];
+        }
+    }
 #endif
 #endif
 
@@ -2430,6 +5967,21 @@ public sealed unsafe class GCPrivTests
         Assert.True(field is not null, $"GCConfig is missing {name}.");
         return field;
     }
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    private static void ResetOwnedMarkListState()
+    {
+        gc_heap.g_mark_list = null;
+        gc_heap.g_mark_list_copy = null;
+        gc_heap.mark_list_size = 0;
+        gc_heap.g_mark_list_total_size = 0;
+        gc_heap.mark_list_overflow = false;
+        gc_heap.g_mark_list_piece = null;
+        gc_heap.g_mark_list_piece_size = 0;
+        gc_heap.g_mark_list_piece_total_size = 0;
+        gc_heap.region_count = 0;
+    }
+#endif
 
     private static gap_reloc_pair Pair(nuint gap, nuint reloc, short left, short right) =>
         new() { gap = gap, reloc = reloc, m_pair = new pair { left = left, right = right } };
@@ -3884,6 +7436,182 @@ public sealed unsafe class GCPrivTests
     }
 
     [Fact]
+    public void ShouldCheckBrickForRelocUsesSkewedRegionGenerationMap()
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        gc_mechanisms oldSettings = gc_heap.settings;
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x9000;
+            gc_heap.map_region_to_generation_skewed = generationMap - 5;
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
+            generationMap[0] = region_info.RI_GEN_0;
+            generationMap[1] = region_info.RI_GEN_1;
+            generationMap[2] = region_info.RI_GEN_2;
+            generationMap[3] = (region_info)((byte)region_info.RI_GEN_0 | (byte)region_info.RI_SIP);
+
+            Assert.True(gc_heap.should_check_brick_for_reloc((byte*)0x5000));
+            Assert.True(gc_heap.should_check_brick_for_reloc((byte*)0x6000));
+            Assert.False(gc_heap.should_check_brick_for_reloc((byte*)0x7000));
+            Assert.False(gc_heap.should_check_brick_for_reloc((byte*)0x8000));
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+            gc_heap.settings = oldSettings;
+        }
+    }
+
+    [Fact]
+    public void CheckDemotionHelperSipIgnoresNonHeapChild()
+    {
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        uint* oldCardTable = gc_heap.card_table;
+        uint* cards = stackalloc uint[4];
+
+        try
+        {
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x9000;
+            cards[0] = 0xAAAAAAAA;
+            cards[1] = 0x55555555;
+            cards[2] = 0xCCCCCCCC;
+            cards[3] = 0x33333333;
+            gc_heap.card_table = cards;
+
+            byte* child = (byte*)0x4000;
+            gc_heap.check_demotion_helper_sip(&child, (int)gc_generation_num.soh_gen2, (byte*)0x6000);
+
+            Assert.Equal(0xAAAAAAAAu, cards[0]);
+            Assert.Equal(0x55555555u, cards[1]);
+            Assert.Equal(0xCCCCCCCCu, cards[2]);
+            Assert.Equal(0x33333333u, cards[3]);
+        }
+        finally
+        {
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            gc_heap.card_table = oldCardTable;
+        }
+    }
+
+    [Fact]
+    public void CheckDemotionHelperSipSetsOnlyParentCardForLowerChildPlanGeneration()
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        uint* oldCardTable = gc_heap.card_table;
+        seg_mapping* segMappingTable = stackalloc seg_mapping[4];
+        region_info* generationMap = stackalloc region_info[4];
+        uint* cards = stackalloc uint[8];
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x9000;
+            GCCommon.seg_mapping_table = segMappingTable - 5;
+            gc_heap.map_region_to_generation_skewed = generationMap - 5;
+            gc_heap.card_table = cards;
+
+            for (nuint i = 0; i < 8; i++)
+            {
+                cards[(nint)i] = 0;
+            }
+
+            segMappingTable[1].region_info.plan_gen_num = (int)gc_generation_num.soh_gen1;
+            generationMap[1] = (region_info)((byte)region_info.RI_GEN_1 | (byte)region_info.RI_PLAN_GEN_1);
+
+            byte* child = (byte*)0x6000;
+            byte* parentLoc = (byte*)0x6800;
+            nuint card = gc_heap.card_of(parentLoc);
+            nuint word = card_table_info.card_word(card);
+            uint expectedCard = 1u << (int)card_table_info.card_bit(card);
+
+            gc_heap.check_demotion_helper_sip(&child, (int)gc_generation_num.soh_gen2, parentLoc);
+
+            for (nuint i = 0; i < 8; i++)
+            {
+                Assert.Equal(i == word ? expectedCard : 0u, cards[(nint)i]);
+            }
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+            gc_heap.card_table = oldCardTable;
+        }
+    }
+
+    [Theory]
+    [InlineData((int)gc_generation_num.soh_gen1)]
+    [InlineData((int)gc_generation_num.soh_gen0)]
+    public void CheckDemotionHelperSipIgnoresEqualOrHigherChildPlanGeneration(int parentPlanGeneration)
+    {
+        nuint oldShift = gc_heap.min_segment_size_shr;
+        byte* oldLowest = GCCommon.g_gc_lowest_address;
+        byte* oldHighest = GCCommon.g_gc_highest_address;
+        seg_mapping* oldSegMappingTable = GCCommon.seg_mapping_table;
+        region_info* oldSkewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+        uint* oldCardTable = gc_heap.card_table;
+        seg_mapping* segMappingTable = stackalloc seg_mapping[4];
+        region_info* generationMap = stackalloc region_info[4];
+        uint* cards = stackalloc uint[8];
+
+        try
+        {
+            gc_heap.min_segment_size_shr = 12;
+            GCCommon.g_gc_lowest_address = (byte*)0x5000;
+            GCCommon.g_gc_highest_address = (byte*)0x9000;
+            GCCommon.seg_mapping_table = segMappingTable - 5;
+            gc_heap.map_region_to_generation_skewed = generationMap - 5;
+            gc_heap.card_table = cards;
+
+            for (nuint i = 0; i < 8; i++)
+            {
+                cards[(nint)i] = 0;
+            }
+
+            segMappingTable[1].region_info.plan_gen_num = (int)gc_generation_num.soh_gen1;
+            generationMap[1] = (region_info)((byte)region_info.RI_GEN_1 | (byte)region_info.RI_PLAN_GEN_1);
+
+            byte* child = (byte*)0x6000;
+            gc_heap.check_demotion_helper_sip(&child, parentPlanGeneration, (byte*)0x6800);
+
+            for (nuint i = 0; i < 8; i++)
+            {
+                Assert.Equal(0u, cards[(nint)i]);
+            }
+        }
+        finally
+        {
+            gc_heap.min_segment_size_shr = oldShift;
+            GCCommon.g_gc_lowest_address = oldLowest;
+            GCCommon.g_gc_highest_address = oldHighest;
+            GCCommon.seg_mapping_table = oldSegMappingTable;
+            gc_heap.map_region_to_generation_skewed = oldSkewedGenerationMap;
+            gc_heap.card_table = oldCardTable;
+        }
+    }
+
+    [Fact]
     public void RegionGenerationMapFlagsKeepSegmentFieldsConsistent()
     {
         nuint oldShift = gc_heap.min_segment_size_shr;
@@ -4345,6 +8073,47 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)0, p->free_obj_size);
         Assert.Equal((byte)3, p->gen_num);
         Assert.Equal(5, p->age_in_free);
+    }
+
+    [Fact]
+    public void HeapSegmentThreadFreeObjAppendsSweepGapsAndAccountsSmallGaps()
+    {
+        nuint minFreeList = unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size);
+        nuint secondSize = unchecked(minFreeList + (nuint)GCInterfaceOffsets.min_obj_size);
+        nuint belowMinFreeList = unchecked(minFreeList - 1);
+        byte* storage = stackalloc byte[256];
+        byte* belowMinGap = storage + 32;
+        byte* firstGap = storage + 96;
+        byte* secondGap = storage + 160;
+        heap_segment segment = default;
+
+        allocator.free_list_slot(belowMinGap) = (byte*)1;
+        segment.thread_free_obj(belowMinGap, belowMinFreeList);
+
+        Assert.Equal((nuint)0, (nuint)segment.free_list_head);
+        Assert.Equal((nuint)0, (nuint)segment.free_list_tail);
+        Assert.Equal((nuint)0, segment.free_list_size);
+        Assert.Equal(belowMinFreeList, segment.free_obj_size);
+        Assert.Equal((nuint)1, (nuint)allocator.free_list_slot(belowMinGap));
+
+        allocator.free_list_slot(firstGap) = (byte*)1;
+        segment.thread_free_obj(firstGap, minFreeList);
+
+        Assert.Equal((nuint)firstGap, (nuint)segment.free_list_head);
+        Assert.Equal((nuint)firstGap, (nuint)segment.free_list_tail);
+        Assert.Equal(minFreeList, segment.free_list_size);
+        Assert.Equal(belowMinFreeList, segment.free_obj_size);
+        Assert.Equal((nuint)0, (nuint)allocator.free_list_slot(firstGap));
+
+        allocator.free_list_slot(secondGap) = (byte*)1;
+        segment.thread_free_obj(secondGap, secondSize);
+
+        Assert.Equal((nuint)firstGap, (nuint)segment.free_list_head);
+        Assert.Equal((nuint)secondGap, (nuint)segment.free_list_tail);
+        Assert.Equal(unchecked(minFreeList + secondSize), segment.free_list_size);
+        Assert.Equal(belowMinFreeList, segment.free_obj_size);
+        Assert.Equal((nuint)secondGap, (nuint)allocator.free_list_slot(firstGap));
+        Assert.Equal((nuint)0, (nuint)allocator.free_list_slot(secondGap));
     }
 
     [Fact]
@@ -6747,6 +10516,347 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(-1, bricks[4]);
     }
 
+#if USE_REGIONS
+    [Fact]
+    public void FixBrickToHighestWritesPositiveAndNegativeBrickEntries()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        int storageSize = checked((int)(6 * card_table_info.brick_size));
+        byte* storage = stackalloc byte[storageSize];
+        byte* lowest = card_table_info.align_on_brick(storage);
+        short* bricks = stackalloc short[5];
+        for (int i = 0; i < 5; i++)
+        {
+            bricks[i] = 17;
+        }
+
+        gc_heap.lowest_address = lowest;
+        gc_heap.brick_table = bricks;
+
+        byte* o = lowest + (nint)card_table_info.brick_size + 64;
+        byte* next_o = lowest + (nint)(4 * card_table_info.brick_size) + 64;
+        gc_heap.fix_brick_to_highest(o, next_o);
+
+        Assert.Equal(17, gc_heap.get_brick_entry(0));
+        Assert.Equal(65, gc_heap.get_brick_entry(1));
+        Assert.Equal(-1, gc_heap.get_brick_entry(2));
+        Assert.Equal(-2, gc_heap.get_brick_entry(3));
+        Assert.Equal(17, gc_heap.get_brick_entry(4));
+    }
+
+    [Fact]
+    public void FindFirstObjectFollowsLaterNegativeBrickEntryToContainingObject()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        int storageSize = checked((int)(6 * card_table_info.brick_size));
+        byte* storage = stackalloc byte[storageSize];
+        byte* lowest = card_table_info.align_on_brick(storage);
+        short* bricks = stackalloc short[5];
+        MethodTable methodTable = default;
+        MethodTable* pMethodTable = &methodTable;
+        nuint objectSize = 3 * card_table_info.brick_size;
+        byte* o = lowest + 64;
+
+        methodTable.m_uBaseSize = (uint)objectSize;
+        ((CObjectHeader*)o)->RawSetMethodTable(pMethodTable);
+        gc_heap.lowest_address = lowest;
+        gc_heap.brick_table = bricks;
+        gc_heap.fix_brick_to_highest(o, o + (nint)objectSize);
+
+        byte* result = gc_heap.find_first_object(
+            lowest + (nint)(3 * card_table_info.brick_size) + 32,
+            o);
+
+        Assert.Equal((nuint)o, (nuint)result);
+        Assert.Equal(-2, gc_heap.get_brick_entry(2));
+    }
+
+    [Fact]
+    public void FindFirstObjectHonorsObjectAndBrickBoundariesAndFirstShortcut()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        int storageSize = checked((int)(4 * card_table_info.brick_size));
+        byte* storage = stackalloc byte[storageSize];
+        byte* lowest = card_table_info.align_on_brick(storage);
+        short* bricks = stackalloc short[3];
+        MethodTable methodTable = default;
+        MethodTable* pMethodTable = &methodTable;
+        nuint objectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+        byte* first = lowest + (nint)card_table_info.brick_size - (nint)objectSize;
+        byte* second = first + (nint)objectSize;
+
+        methodTable.m_uBaseSize = (uint)objectSize;
+        ((CObjectHeader*)first)->RawSetMethodTable(pMethodTable);
+        ((CObjectHeader*)second)->RawSetMethodTable(pMethodTable);
+        gc_heap.lowest_address = lowest;
+        gc_heap.brick_table = bricks;
+
+        bricks[0] = -1;
+        Assert.Equal((nuint)first, (nuint)gc_heap.find_first_object(first, first));
+
+        gc_heap.fix_brick_to_highest(first, second);
+        Assert.Equal((nuint)second, (nuint)gc_heap.find_first_object(second, first));
+    }
+#endif
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    [Fact]
+    public void ClearGen0BricksClearsAllGen0RegionsOnlyOnce()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        short* bricks = stackalloc short[6];
+        for (int i = 0; i < 6; i++)
+        {
+            bricks[i] = 17;
+        }
+
+        byte* lowestAddress = (byte*)0x100000;
+        gc_heap.lowest_address = lowestAddress;
+        gc_heap.brick_table = bricks;
+
+        heap_segment firstRegion = default;
+        heap_segment secondRegion = default;
+        heap_segment.heap_segment_mem(&firstRegion) = lowestAddress + (nint)card_table_info.brick_size;
+        heap_segment.heap_segment_allocated(&firstRegion) =
+            lowestAddress + (nint)(2 * card_table_info.brick_size) + 1;
+        heap_segment.heap_segment_next(&firstRegion) = &secondRegion;
+        heap_segment.heap_segment_mem(&secondRegion) = lowestAddress + (nint)(3 * card_table_info.brick_size);
+        heap_segment.heap_segment_allocated(&secondRegion) =
+            lowestAddress + (nint)(4 * card_table_info.brick_size) + 1;
+
+        gc_heap heap = default;
+        generation* gen0 = gc_heap.generation_of(
+            gc_heap.generation_table_of(&heap),
+            (int)gc_generation_num.soh_gen0);
+        generation.generation_start_segment(gen0) = &firstRegion;
+
+        gc_heap.clear_gen0_bricks(&heap);
+
+        Assert.Equal(1, gc_heap.gen0_bricks_cleared);
+        Assert.Equal(17, gc_heap.get_brick_entry(0));
+        for (nuint brick = 1; brick < 5; brick++)
+        {
+            Assert.Equal(-1, gc_heap.get_brick_entry(brick));
+        }
+        Assert.Equal(17, gc_heap.get_brick_entry(5));
+
+        bricks[2] = 23;
+        gc_heap.clear_gen0_bricks(&heap);
+
+        Assert.Equal(1, gc_heap.gen0_bricks_cleared);
+        Assert.Equal(23, gc_heap.get_brick_entry(2));
+    }
+
+    [Fact]
+    public void FindObjectLazilyRepairsSohBricksAndScansZeroBrickUohObjects()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        nuint regionSize = 2 * card_table_info.brick_size > pageSize
+            ? 2 * card_table_info.brick_size
+            : pageSize;
+        byte* heapMemory = GCToOSInterface.VirtualReserve(2 * regionSize, regionSize, (uint)VirtualReserveFlags.None);
+        Assert.True(heapMemory is not null);
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(heapMemory, 2 * regionSize));
+
+            int regionShift = 0;
+            while (((nuint)1 << regionShift) < regionSize)
+            {
+                regionShift++;
+            }
+
+            Assert.Equal(regionSize, (nuint)1 << regionShift);
+
+            int brickCount = checked((int)((2 * regionSize) / card_table_info.brick_size));
+            short* bricks = stackalloc short[brickCount];
+            seg_mapping* segments = stackalloc seg_mapping[2];
+            nuint firstRegionIndex = (nuint)heapMemory >> regionShift;
+            GCCommon.g_gc_lowest_address = heapMemory;
+            GCCommon.g_gc_highest_address = heapMemory + (nint)(2 * regionSize);
+            GCCommon.seg_mapping_table = segments - (nint)firstRegionIndex;
+            gc_heap.bookkeeping_covered_committed = GCCommon.g_gc_highest_address;
+            gc_heap.min_segment_size_shr = (nuint)regionShift;
+            gc_heap.lowest_address = heapMemory;
+            gc_heap.brick_table = bricks;
+
+            heap_segment* soh = (heap_segment*)segments;
+            nuint sohObjectSize = 2 * card_table_info.brick_size;
+            MethodTable sohMethodTable = default;
+            sohMethodTable.m_uBaseSize = (uint)sohObjectSize;
+            ((CObjectHeader*)heapMemory)->RawSetMethodTable(&sohMethodTable);
+            heap_segment.heap_segment_mem(soh) = heapMemory;
+            heap_segment.heap_segment_allocated(soh) = heapMemory + (nint)sohObjectSize;
+            heap_segment.heap_segment_reserved(soh) = heapMemory + (nint)regionSize;
+
+            byte* uohMemory = heapMemory + (nint)regionSize;
+            heap_segment* uoh = (heap_segment*)&segments[1];
+            nuint uohObjectSize = gc_heap.Align(
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                gc_heap.get_alignment_constant(small_object_p: false));
+            MethodTable uohMethodTable = default;
+            uohMethodTable.m_uBaseSize = (uint)uohObjectSize;
+            ((CObjectHeader*)uohMemory)->RawSetMethodTable(&uohMethodTable);
+            heap_segment.heap_segment_mem(uoh) = uohMemory;
+            heap_segment.heap_segment_allocated(uoh) = uohMemory + (nint)uohObjectSize;
+            heap_segment.heap_segment_reserved(uoh) = uohMemory + (nint)regionSize;
+            uoh->flags = heap_segment.heap_segment_flags_loh;
+
+            gc_heap heap = default;
+            generation* gen0 = gc_heap.generation_of(
+                gc_heap.generation_table_of(&heap),
+                (int)gc_generation_num.soh_gen0);
+            generation.generation_start_segment(gen0) = soh;
+
+            gc_heap.gen0_bricks_cleared = 0;
+            gc_heap.gen0_must_clear_bricks = 1;
+            byte* sohInterior = heapMemory + (nint)card_table_info.brick_size + (nint)sizeof(nuint);
+            Assert.Equal((nuint)heapMemory, (nuint)gc_heap.find_object(sohInterior, &heap));
+            Assert.Equal(1, gc_heap.gen0_bricks_cleared);
+            Assert.Equal(gc_heap.FFIND_DECAY, gc_heap.gen0_must_clear_bricks);
+            Assert.Equal(1, gc_heap.get_brick_entry(0));
+
+            byte* uohInterior = uohMemory + (nint)sizeof(nuint);
+            Assert.Equal(0, gc_heap.get_brick_entry(gc_heap.brick_of(uohInterior)));
+            Assert.True(gc_heap.try_get_region_segment(uohInterior, small_heap_only: false, out heap_segment* foundUoh));
+            Assert.Equal((nuint)uoh, (nuint)foundUoh);
+            Assert.Equal((nuint)uohMemory, (nuint)gc_heap.find_object(uohInterior, &heap));
+            Assert.True(gc_heap.find_object(uohMemory + (nint)uohObjectSize, &heap) is null);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(heapMemory, 2 * regionSize);
+        }
+    }
+
+    [Fact]
+    public void AdjustLimitClrMaintainsOrInvalidatesGen0FindObjectBricks()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        nuint reservationSize = 4 * pageSize;
+        byte* storage = GCToOSInterface.VirtualReserve(reservationSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(storage is not null);
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(storage, reservationSize));
+
+            int brickCount = checked((int)(reservationSize / card_table_info.brick_size));
+            short* bricks = stackalloc short[brickCount];
+            for (int i = 0; i < brickCount; i++)
+            {
+                bricks[i] = 17;
+            }
+
+            gc_heap.lowest_address = storage;
+            gc_heap.brick_table = bricks;
+            byte* start = storage + 64;
+            nuint limitSize = 2 * card_table_info.brick_size;
+            int alignment = gc_heap.get_alignment_constant(small_object_p: true);
+            generation* generations = stackalloc generation[(int)gc_generation_num.total_generation_count];
+            InitializeAllocationGenerations(generations);
+
+            heap_segment segment = default;
+            heap_segment.heap_segment_mem(&segment) = start;
+            heap_segment.heap_segment_used(&segment) = start;
+            heap_segment.heap_segment_committed(&segment) = storage + (nint)reservationSize;
+            heap_segment.heap_segment_reserved(&segment) = storage + (nint)reservationSize;
+            byte* allocAllocated = start + (nint)limitSize;
+            ulong totalAllocatedBytes = 0;
+            gc_alloc_context context = default;
+            context.alloc_limit = start;
+
+            gc_heap.gen0_must_clear_bricks = 1;
+            gc_heap.adjust_limit_clr(
+                start,
+                limitSize,
+                limitSize,
+                &context,
+                0,
+                &segment,
+                alignment,
+                (int)gc_generation_num.soh_gen0,
+                generations,
+                &segment,
+                allocAllocated,
+                &totalAllocatedBytes,
+                null,
+                null);
+
+            nuint firstBrick = gc_heap.brick_of(context.alloc_ptr);
+            nuint endBrick = gc_heap.brick_of(card_table_info.align_on_brick(start + (nint)limitSize));
+            Assert.Equal((int)(context.alloc_ptr - gc_heap.brick_address(firstBrick)) + 1, gc_heap.get_brick_entry(firstBrick));
+            for (nuint brick = firstBrick + 1; brick < endBrick; brick++)
+            {
+                Assert.Equal(-1, gc_heap.get_brick_entry(brick));
+            }
+
+            for (int i = 0; i < brickCount; i++)
+            {
+                bricks[i] = 17;
+            }
+
+            context = default;
+            context.alloc_limit = start;
+            gc_heap.gen0_must_clear_bricks = 1;
+            nuint largeLimitSize = gc_heap.DefaultAllocationQuantum / 2;
+            gc_heap.adjust_limit_clr(
+                start,
+                largeLimitSize,
+                largeLimitSize,
+                &context,
+                0,
+                null,
+                alignment,
+                (int)gc_generation_num.soh_gen0,
+                generations,
+                null,
+                null,
+                &totalAllocatedBytes,
+                null,
+                null);
+
+            firstBrick = gc_heap.brick_of(context.alloc_ptr);
+            endBrick = gc_heap.brick_of(card_table_info.align_on_brick(start + (nint)largeLimitSize));
+            Assert.Equal((int)(context.alloc_ptr - gc_heap.brick_address(firstBrick)) + 1, gc_heap.get_brick_entry(firstBrick));
+            for (nuint brick = firstBrick + 1; brick < endBrick; brick++)
+            {
+                Assert.Equal(-1, gc_heap.get_brick_entry(brick));
+            }
+
+            gc_heap.gen0_bricks_cleared = 1;
+            gc_heap.gen0_must_clear_bricks = 0;
+            context = default;
+            context.alloc_limit = start;
+            heap_segment.heap_segment_used(&segment) = start;
+            gc_heap.adjust_limit_clr(
+                start,
+                limitSize,
+                limitSize,
+                &context,
+                0,
+                &segment,
+                alignment,
+                (int)gc_generation_num.soh_gen0,
+                generations,
+                &segment,
+                allocAllocated,
+                &totalAllocatedBytes,
+                null,
+                null);
+
+            Assert.Equal(0, gc_heap.gen0_bricks_cleared);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(storage, reservationSize);
+        }
+    }
+#endif
+
 #if BACKGROUND_GC
     [Fact]
     public void InitTableForRegionCommitsMarkArrayAndInitializesOnlyTheFirstSohBrick()
@@ -7104,6 +11214,7 @@ public sealed unsafe class GCPrivTests
             gc_heap.fix_allocation_context(
                 &context,
                 false,
+                false,
                 generations,
                 &segment,
                 &allocAllocated,
@@ -7121,6 +11232,7 @@ public sealed unsafe class GCPrivTests
             gc_heap.fix_allocation_context(
                 &context,
                 true,
+                false,
                 generations,
                 &segment,
                 &allocAllocated,
@@ -7151,6 +11263,7 @@ public sealed unsafe class GCPrivTests
         gc_heap.fix_allocation_context(
             &context,
             true,
+            false,
             generations,
             &segment,
             &allocAllocated,
@@ -7160,6 +11273,89 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)0, (nuint)context.alloc_limit);
         Assert.Equal((nuint)0x1000, (nuint)allocAllocated);
         Assert.Equal(17UL, totalAllocatedBytesSoh);
+    }
+
+    [Fact]
+    public void FixAllocationContextsEnumeratesEeContextsAndRepairsTheYoungestBoundary()
+    {
+        void* oldFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        nuint oldAllocContextsUsed = gc_heap.alloc_contexts_used;
+        byte* freeListStorage = stackalloc byte[128];
+        byte* ephemeralStorage = stackalloc byte[256];
+        gc_heap heap = default;
+        heap_segment ephemeralSegment = default;
+        gc_alloc_context nullContext = default;
+        gc_alloc_context freeListContext = default;
+        gc_alloc_context ephemeralContext = default;
+        gc_alloc_context* nullContextPointer = &nullContext;
+        gc_alloc_context* freeListContextPointer = &freeListContext;
+        gc_alloc_context* ephemeralContextPointer = &ephemeralContext;
+        nuint alignedMinObjectSize = gc_heap.Align(
+            (nuint)GCInterfaceOffsets.min_obj_size,
+            gc_heap.get_alignment_constant(small_object_p: true));
+
+        try
+        {
+            GCToEEInterface.Reset();
+            GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x1234;
+            gc_heap.alloc_contexts_used = 0;
+            gc_heap.initialize_allocation_state(&heap);
+
+            ephemeralSegment.mem = ephemeralStorage;
+            ephemeralSegment.committed = ephemeralStorage + 256;
+            ephemeralSegment.reserved = ephemeralStorage + 256;
+            ephemeralSegment.allocated = ephemeralStorage + 32;
+            heap.ephemeral_heap_segment = &ephemeralSegment;
+            heap.total_alloc_bytes_soh = 1000;
+
+            freeListContext.alloc_ptr = freeListStorage + 16;
+            freeListContext.alloc_limit = freeListStorage + 48;
+            freeListContext.alloc_bytes = 200;
+
+            ephemeralContext.alloc_ptr = ephemeralStorage + 48;
+            ephemeralContext.alloc_limit = ephemeralStorage + 80;
+            ephemeralContext.alloc_bytes = 300;
+            heap.alloc_allocated = ephemeralContext.alloc_limit + (nint)alignedMinObjectSize;
+
+            GCToEEInterface.AllocContexts.Add((nuint)nullContextPointer);
+            GCToEEInterface.AllocContexts.Add((nuint)freeListContextPointer);
+            GCToEEInterface.AllocContexts.Add((nuint)ephemeralContextPointer);
+
+            gc_heap.fix_allocation_contexts(&heap, for_gc_p: true);
+
+            Assert.Equal(1, GCToEEInterface.GcEnumAllocContextsCallCount);
+            Assert.NotEqual((nuint)0, GCToEEInterface.LastGcEnumAllocContextsCallback);
+            Assert.NotEqual((nuint)0, GCToEEInterface.LastGcEnumAllocContextsParameter);
+            Assert.Equal(3, GCToEEInterface.EnumeratedAllocContexts.Count);
+            Assert.Equal((nuint)nullContextPointer, GCToEEInterface.EnumeratedAllocContexts[0]);
+            Assert.Equal((nuint)freeListContextPointer, GCToEEInterface.EnumeratedAllocContexts[1]);
+            Assert.Equal((nuint)ephemeralContextPointer, GCToEEInterface.EnumeratedAllocContexts[2]);
+
+            Assert.Equal((nuint)0, (nuint)nullContext.alloc_ptr);
+            Assert.Equal((nuint)0, (nuint)nullContext.alloc_limit);
+            Assert.Equal((nuint)0, (nuint)freeListContext.alloc_ptr);
+            Assert.Equal((nuint)0, (nuint)freeListContext.alloc_limit);
+            Assert.Equal(168L, freeListContext.alloc_bytes);
+            Assert.Equal((nuint)GCCommon.g_gc_pFreeObjectMethodTable, *(nuint*)(freeListStorage + 16));
+            Assert.Equal(
+                (nuint)(32 + alignedMinObjectSize - (nuint)GCInterfaceOffsets.min_obj_size),
+                *(nuint*)(freeListStorage + 16 + (nint)sizeof(nuint)));
+
+            Assert.Equal((nuint)0, (nuint)ephemeralContext.alloc_ptr);
+            Assert.Equal((nuint)0, (nuint)ephemeralContext.alloc_limit);
+            Assert.Equal(268L, ephemeralContext.alloc_bytes);
+            Assert.Equal(936UL, heap.total_alloc_bytes_soh);
+            Assert.Equal((nuint)32 + alignedMinObjectSize, generation.generation_free_obj_space(&heap.generation_table0));
+            Assert.Equal((nuint)2, gc_heap.alloc_contexts_used);
+            Assert.Equal((nuint)(ephemeralStorage + 48), (nuint)heap.alloc_allocated);
+            Assert.Equal((nuint)(ephemeralStorage + 48), (nuint)ephemeralSegment.allocated);
+        }
+        finally
+        {
+            GCToEEInterface.Reset();
+            GCCommon.g_gc_pFreeObjectMethodTable = oldFreeObjectMethodTable;
+            gc_heap.alloc_contexts_used = oldAllocContextsUsed;
+        }
     }
 #endif
 
@@ -7216,6 +11412,7 @@ public sealed unsafe class GCPrivTests
     public void MakeUnusedArrayAndFreeObjectWriteNativeObjectBytesAndAccounting()
     {
         byte* storage = stackalloc byte[128];
+        byte* unusedArray = storage + sizeof(nuint);
         nuint minimumObjectSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
         void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
         GCCommon.g_gc_pFreeObjectMethodTable = (void*)0x12345000;
@@ -7227,24 +11424,34 @@ public sealed unsafe class GCPrivTests
                 storage[i] = 0xcc;
             }
 
-            gc_heap.make_unused_array(storage, minimumObjectSize);
+            gc_heap.make_unused_array(unusedArray, minimumObjectSize);
 
-            Assert.Equal((nuint)0x12345000, *(nuint*)storage);
-            Assert.Equal((nuint)0, *(nuint*)(storage + (nint)sizeof(nuint)));
+            Assert.Equal((nuint)0x12345000, *(nuint*)unusedArray);
+            Assert.Equal((nuint)0, *(nuint*)(unusedArray + (nint)sizeof(nuint)));
             for (nint i = 2 * sizeof(nuint); i < (nint)minimumObjectSize; i++)
             {
-                Assert.Equal((byte)0xcc, storage[i]);
+                Assert.Equal((byte)0xcc, unusedArray[i]);
+            }
+
+            gc_heap.clear_unused_array(unusedArray, minimumObjectSize);
+
+            Assert.Equal((nuint)0, *((nuint*)unusedArray - 1));
+            Assert.Equal((nuint)0, *(nuint*)unusedArray);
+            Assert.Equal((nuint)0, *(nuint*)(unusedArray + (nint)sizeof(nuint)));
+            for (nint i = 2 * sizeof(nuint); i < (nint)minimumObjectSize; i++)
+            {
+                Assert.Equal((byte)0xcc, unusedArray[i]);
             }
 
             generation gen = default;
             nuint freeObjectSize = unchecked(2 * minimumObjectSize);
-            gc_heap.make_free_obj(&gen, storage, freeObjectSize);
+            gc_heap.make_free_obj(&gen, unusedArray, freeObjectSize);
 
-            Assert.Equal((nuint)0x12345000, *(nuint*)storage);
-            Assert.Equal(minimumObjectSize, *(nuint*)(storage + (nint)sizeof(nuint)));
-            Assert.Equal((byte)0xcc, storage[2 * sizeof(nuint)]);
+            Assert.Equal((nuint)0x12345000, *(nuint*)unusedArray);
+            Assert.Equal(minimumObjectSize, *(nuint*)(unusedArray + (nint)sizeof(nuint)));
+            Assert.Equal((byte)0xcc, unusedArray[2 * sizeof(nuint)]);
 #if TARGET_64BIT && !TARGET_WASM
-            Assert.Equal((nuint)1, (nuint)((byte**)storage)[3]);
+            Assert.Equal((nuint)1, (nuint)((byte**)unusedArray)[3]);
 #endif
             Assert.Equal(freeObjectSize, generation.generation_free_obj_space(&gen));
         }
@@ -9610,6 +13817,358 @@ public sealed unsafe class GCPrivTests
             : default;
     }
 
+#if USE_REGIONS
+    [Fact]
+    public void PlanPhaseInsertNodeBuildsNativeBrickTreeAtSequenceBoundaries()
+    {
+        const int NodeStride = 128;
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        int storageSize = checked((int)(2 * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            byte* firstNode = firstBrick + NodeStride;
+            byte* tree = firstNode;
+            byte* lastNode = null;
+
+            for (nuint sequenceNumber = 1; sequenceNumber <= 7; sequenceNumber++)
+            {
+                byte* newNode = firstNode + (nint)((sequenceNumber - 1) * NodeStride);
+                tree = gc_heap.insert_node(newNode, sequenceNumber, tree, lastNode);
+                lastNode = newNode;
+            }
+
+            byte* secondNode = firstNode + NodeStride;
+            byte* thirdNode = secondNode + NodeStride;
+            byte* fourthNode = thirdNode + NodeStride;
+            byte* fifthNode = fourthNode + NodeStride;
+            byte* sixthNode = fifthNode + NodeStride;
+            byte* seventhNode = sixthNode + NodeStride;
+
+            Assert.Equal((nuint)fourthNode, (nuint)tree);
+            Assert.Equal(unchecked((short)(secondNode - fourthNode)), gc_heap.node_left_child(fourthNode));
+            Assert.Equal(unchecked((short)(sixthNode - fourthNode)), gc_heap.node_right_child(fourthNode));
+            Assert.Equal(unchecked((short)(firstNode - secondNode)), gc_heap.node_left_child(secondNode));
+            Assert.Equal(unchecked((short)(thirdNode - secondNode)), gc_heap.node_right_child(secondNode));
+            Assert.Equal(unchecked((short)(fifthNode - sixthNode)), gc_heap.node_left_child(sixthNode));
+            Assert.Equal(unchecked((short)(seventhNode - sixthNode)), gc_heap.node_right_child(sixthNode));
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void PlanPhaseUpdateBrickTablePreservesRootsBacktrackingAndBoundarySentinels()
+    {
+        const int BrickCount = 7;
+        const int StorageBrickCount = BrickCount + 1;
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        int storageSize = checked((int)(StorageBrickCount * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[BrickCount];
+
+        try
+        {
+            for (int i = 0; i < BrickCount; i++)
+            {
+                bricks[i] = 0;
+            }
+
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            gc_heap.lowest_address = firstBrick;
+            gc_heap.brick_table = bricks;
+
+            byte* firstRoot = firstBrick + 256;
+            nuint nextBrick = gc_heap.update_brick_table(
+                firstRoot,
+                current_brick: 0,
+                x: firstBrick + (nint)(3 * card_table_info.brick_size),
+                plug_end: firstBrick + (nint)(3 * card_table_info.brick_size));
+
+            Assert.Equal((nuint)3, nextBrick);
+            Assert.Equal(257, gc_heap.get_brick_entry(0));
+            Assert.Equal(-1, gc_heap.get_brick_entry(1));
+            Assert.Equal(-2, gc_heap.get_brick_entry(2));
+            Assert.Equal(0, gc_heap.get_brick_entry(3));
+
+            byte* root = firstBrick + (nint)(3 * card_table_info.brick_size) + 256;
+            nextBrick = gc_heap.update_brick_table(
+                root,
+                current_brick: 3,
+                x: firstBrick + (nint)(6 * card_table_info.brick_size) + 128,
+                plug_end: firstBrick + (nint)(5 * card_table_info.brick_size) + 256);
+
+            Assert.Equal((nuint)6, nextBrick);
+            Assert.Equal(257, gc_heap.get_brick_entry(3));
+            Assert.Equal(-1, gc_heap.get_brick_entry(4));
+            Assert.Equal(-2, gc_heap.get_brick_entry(5));
+            Assert.Equal(-1, gc_heap.get_brick_entry(6));
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void SweepBrickTreeThreadsPostorderGapsAndUpdatesBricks()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        byte* storage = stackalloc byte[1024];
+        byte* left = storage + 256;
+        byte* root = storage + 512;
+        byte* right = storage + 768;
+        nuint gapSize = gc_heap.Align(unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size));
+
+        ((plug_and_gap*)left)[-1].gap = (nint)gapSize;
+        ((plug_and_gap*)root)[-1].gap = (nint)gapSize;
+        ((plug_and_gap*)right)[-1].gap = (nint)gapSize;
+        ((plug_and_pair*)left)[-1].m_pair = default;
+        ((plug_and_pair*)root)[-1].m_pair.left = (short)(left - root);
+        ((plug_and_pair*)root)[-1].m_pair.right = (short)(right - root);
+        ((plug_and_pair*)right)[-1].m_pair = default;
+
+        short* bricks = stackalloc short[4];
+        gc_heap.lowest_address = storage;
+        gc_heap.brick_table = bricks;
+        gc_heap.set_brick(0, 0);
+        gc_heap.set_brick(1, -1);
+        gc_heap.set_brick(2, 32766);
+        gc_heap.set_brick(3, -32768);
+
+        Assert.Equal((nuint)(storage + (nint)(2 * card_table_info.brick_size)), (nuint)gc_heap.brick_address(2));
+        Assert.Equal((short)1, bricks[0]);
+        Assert.Equal((short)-1, bricks[1]);
+        Assert.Equal(short.MaxValue, bricks[2]);
+        Assert.Equal((short)-32767, bricks[3]);
+
+        generation gen = default;
+        generation.initialize(&gen);
+        gc_heap.make_free_args args = new()
+        {
+            free_list_gen = &gen,
+        };
+
+        ((CObjectHeader*)root)->RawSetMethodTable((MethodTable*)8);
+        gc_heap.set_plug_padded(root);
+#if TARGET_64BIT && !TARGET_WASM
+        ((CObjectHeader*)root)->SetBGCMarkBit();
+        ((CObjectHeader*)root)->SetFreeObjInCompactBit();
+#endif
+        gc_heap.make_free_list_in_brick(root, &args);
+
+        Assert.Equal((nuint)right, (nuint)args.highest_plug);
+        Assert.Equal(0, gc_heap.is_plug_padded(root));
+#if TARGET_64BIT && !TARGET_WASM
+        Assert.Equal(0, ((CObjectHeader*)root)->IsBGCMarkBitSet());
+        Assert.Equal(0, ((CObjectHeader*)root)->IsFreeObjInCompactBitSet());
+#endif
+        Assert.Equal(unchecked(3 * gapSize), generation.generation_free_list_space(&gen));
+        Assert.Equal((nuint)0, generation.generation_free_obj_space(&gen));
+
+        allocator* gen_allocator = generation.generation_allocator(&gen);
+        byte* left_gap = left - (nint)gapSize;
+        byte* root_gap = root - (nint)gapSize;
+        byte* right_gap = right - (nint)gapSize;
+        Assert.Equal((nuint)left_gap, (nuint)allocator.alloc_list_head_of(gen_allocator, 0));
+        Assert.Equal((nuint)right_gap, (nuint)allocator.alloc_list_tail_of(gen_allocator, 0));
+        Assert.Equal((nuint)root_gap, (nuint)allocator.free_list_slot(left_gap));
+        Assert.Equal((nuint)right_gap, (nuint)allocator.free_list_slot(root_gap));
+        Assert.Equal((nuint)0, (nuint)allocator.free_list_slot(right_gap));
+    }
+
+    [Fact]
+    public void SweepNormalPlanPromotesAndRebuildsSohBrickTrees()
+    {
+        const int BrickCount = 5;
+        const int StorageBrickCount = BrickCount + 1;
+        const int PlugOffset = 256;
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        using PlanPhaseStateScope __ = new();
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        int storageSize = checked((int)(StorageBrickCount * card_table_info.brick_size));
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)storageSize);
+        short* bricks = stackalloc short[BrickCount];
+
+        for (int i = 0; i < BrickCount; i++)
+        {
+            bricks[i] = 0;
+        }
+
+        try
+        {
+            MethodTable freeObjectMethodTable = default;
+            GCCommon.g_gc_pFreeObjectMethodTable = &freeObjectMethodTable;
+
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            nuint gapSize = gc_heap.Align(unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size));
+            gc_heap.lowest_address = firstBrick;
+            gc_heap.brick_table = bricks;
+            gc_heap.settings.promotion = 1;
+
+            heap_segment gen0First = default;
+            heap_segment sweptInPlan = default;
+            heap_segment gen0Second = default;
+            heap_segment gen1First = default;
+            byte* gen0FirstMem = firstBrick;
+            byte* sweptInPlanMem = gen0FirstMem + (nint)card_table_info.brick_size;
+            byte* gen0SecondMem = sweptInPlanMem + (nint)card_table_info.brick_size;
+            byte* gen1FirstMem = gen0SecondMem + (2 * (nint)card_table_info.brick_size);
+
+            heap_segment.heap_segment_mem(&gen0First) = gen0FirstMem;
+            heap_segment.heap_segment_allocated(&gen0First) = sweptInPlanMem;
+            heap_segment.heap_segment_next(&gen0First) = &sweptInPlan;
+            heap_segment.heap_segment_mem(&sweptInPlan) = sweptInPlanMem;
+            heap_segment.heap_segment_allocated(&sweptInPlan) = gen0SecondMem;
+            heap_segment.heap_segment_swept_in_plan(&sweptInPlan) = 1;
+            heap_segment.heap_segment_next(&sweptInPlan) = &gen0Second;
+            heap_segment.heap_segment_mem(&gen0Second) = gen0SecondMem;
+            heap_segment.heap_segment_allocated(&gen0Second) = gen1FirstMem;
+            heap_segment.heap_segment_mem(&gen1First) = gen1FirstMem;
+            heap_segment.heap_segment_allocated(&gen1First) = gen1FirstMem + (nint)card_table_info.brick_size;
+
+            byte* gen0FirstPlug = gen0FirstMem + PlugOffset;
+            byte* gen0Root = gen0SecondMem + PlugOffset;
+            byte* gen0Right = gen0Root + PlugOffset;
+            byte* gen1Plug = gen1FirstMem + PlugOffset;
+            ((plug_and_gap*)gen0FirstPlug)[-1].gap = (nint)gapSize;
+            ((plug_and_pair*)gen0FirstPlug)[-1].m_pair = default;
+            ((plug_and_gap*)gen0Root)[-1].gap = (nint)gapSize;
+            ((plug_and_gap*)gen0Right)[-1].gap = (nint)gapSize;
+            ((plug_and_pair*)gen0Right)[-1].m_pair = default;
+            ((plug_and_gap*)gen1Plug)[-1].gap = (nint)gapSize;
+            ((plug_and_pair*)gen1Plug)[-1].m_pair = default;
+
+            byte* gen0FirstTree = gc_heap.insert_node(gen0FirstPlug, 1, gen0FirstPlug, null);
+            gc_heap.update_brick_table(
+                gen0FirstTree,
+                current_brick: 0,
+                x: sweptInPlanMem,
+                plug_end: sweptInPlanMem);
+
+            byte* gen0Tree = gc_heap.insert_node(gen0Root, 1, gen0Root, null);
+            gen0Tree = gc_heap.insert_node(gen0Right, 2, gen0Tree, gen0Root);
+            gc_heap.update_brick_table(
+                gen0Tree,
+                current_brick: 2,
+                x: gen1FirstMem,
+                plug_end: gen0SecondMem + PlugOffset);
+
+            byte* gen1Tree = gc_heap.insert_node(gen1Plug, 1, gen1Plug, null);
+            gc_heap.update_brick_table(
+                gen1Tree,
+                current_brick: 4,
+                x: gen1FirstMem + (nint)card_table_info.brick_size,
+                plug_end: gen1FirstMem + (nint)card_table_info.brick_size);
+
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generation* gen = gc_heap.generation_of(generations, i);
+                generation.initialize(gen);
+                gen->gen_num = i;
+            }
+
+            generation.generation_start_segment(gc_heap.generation_of(generations, 0)) = &gen0First;
+            generation.generation_start_segment(gc_heap.generation_of(generations, 1)) = &gen1First;
+
+            Assert.Equal((nuint)(void*)&gen0Second, (nuint)gc_heap.heap_segment_next_non_sip(&gen0First));
+            Assert.Equal(1, gc_heap.get_plan_gen_num(0));
+            Assert.Equal(2, gc_heap.get_plan_gen_num(1));
+            Assert.Equal(2, gc_heap.get_plan_gen_num(2));
+
+            gc_heap.make_free_lists(&heap, (int)gc_generation_num.soh_gen1);
+
+            generation* gen1 = gc_heap.generation_of(generations, 1);
+            generation* gen2 = gc_heap.generation_of(generations, 2);
+            byte* gen0FirstGap = gen0FirstPlug - (nint)gapSize;
+            byte* gen0RootGap = gen0Root - (nint)gapSize;
+            byte* gen0RightGap = gen0Right - (nint)gapSize;
+            byte* gen1Gap = gen1Plug - (nint)gapSize;
+            allocator* gen1Allocator = generation.generation_allocator(gen1);
+            allocator* gen2Allocator = generation.generation_allocator(gen2);
+            uint bucket = gen1Allocator->first_suitable_bucket(gapSize);
+
+            Assert.Equal(unchecked(3 * gapSize), generation.generation_free_list_space(gen1));
+            Assert.Equal((nuint)0, generation.generation_free_obj_space(gen1));
+            Assert.Equal((nuint)gen0FirstGap, (nuint)allocator.alloc_list_head_of(gen1Allocator, bucket));
+            Assert.Equal((nuint)gen0RightGap, (nuint)allocator.alloc_list_tail_of(gen1Allocator, bucket));
+            Assert.Equal((nuint)gen0RootGap, (nuint)allocator.free_list_slot(gen0FirstGap));
+            Assert.Equal((nuint)gen0RightGap, (nuint)allocator.free_list_slot(gen0RootGap));
+            Assert.Equal((nuint)0, (nuint)allocator.free_list_slot(gen0RightGap));
+            Assert.Equal(unchecked((short)(gen0Right - gen0SecondMem + 1)), gc_heap.get_brick_entry(2));
+            Assert.Equal((short)-1, gc_heap.get_brick_entry(3));
+
+            Assert.Equal(gapSize, generation.generation_free_list_space(gen2));
+            Assert.Equal((nuint)0, generation.generation_free_obj_space(gen2));
+            Assert.Equal((nuint)gen1Gap, (nuint)allocator.alloc_list_head_of(gen2Allocator, bucket));
+            Assert.Equal((nuint)gen1Gap, (nuint)allocator.alloc_list_tail_of(gen2Allocator, bucket));
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void SweepUohThreadGapFrontThreadsPreformattedGaps()
+    {
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        try
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = (MethodTable*)0x40;
+            nuint minFreeList = unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size);
+            nuint belowMinFreeList = unchecked(minFreeList - (nuint)GCInterfaceOffsets.min_obj_size);
+            byte* storage = stackalloc byte[512];
+            byte* belowMinFreeListGap = storage + 32;
+            byte* firstGap = storage + 160;
+            byte* secondGap = storage + 320;
+            generation gen = default;
+            generation.initialize(&gen);
+
+            gc_heap.make_unused_array(belowMinFreeListGap, belowMinFreeList);
+            gc_heap.make_unused_array(firstGap, minFreeList);
+            gc_heap.make_unused_array(secondGap, minFreeList);
+            ((byte**)firstGap)[3] = (byte*)0x50;
+            ((byte**)secondGap)[3] = (byte*)0x60;
+
+            gc_heap.uoh_thread_gap_front(belowMinFreeListGap, belowMinFreeList, &gen);
+
+            allocator* genAllocator = generation.generation_allocator(&gen);
+            uint bucket = genAllocator->first_suitable_bucket(minFreeList);
+            Assert.Equal((nuint)0, generation.generation_free_list_space(&gen));
+            Assert.Equal((nuint)0, generation.generation_free_obj_space(&gen));
+            Assert.Equal((nuint)0, (nuint)allocator.alloc_list_head_of(genAllocator, bucket));
+            Assert.Equal((nuint)0, (nuint)allocator.alloc_list_tail_of(genAllocator, bucket));
+            Assert.Equal(belowMinFreeList, gc_heap.unused_array_size(belowMinFreeListGap));
+
+            gc_heap.uoh_thread_gap_front(firstGap, minFreeList, &gen);
+            gc_heap.uoh_thread_gap_front(secondGap, minFreeList, &gen);
+
+            Assert.Equal(unchecked(2 * minFreeList), generation.generation_free_list_space(&gen));
+            Assert.Equal((nuint)0, generation.generation_free_obj_space(&gen));
+            Assert.Equal((nuint)secondGap, (nuint)allocator.alloc_list_head_of(genAllocator, bucket));
+            Assert.Equal((nuint)firstGap, (nuint)allocator.alloc_list_tail_of(genAllocator, bucket));
+            Assert.Equal((nuint)firstGap, (nuint)allocator.free_list_slot(secondGap));
+            Assert.Equal((nuint)0, (nuint)allocator.free_list_slot(firstGap));
+            Assert.Equal(minFreeList, gc_heap.unused_array_size(firstGap));
+            Assert.Equal(minFreeList, gc_heap.unused_array_size(secondGap));
+            Assert.Equal((nuint)0x50, (nuint)((byte**)firstGap)[3]);
+            Assert.Equal((nuint)0x60, (nuint)((byte**)secondGap)[3]);
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+#endif
+
     private static void ResetAllocationCallbackRecorder()
     {
         s_allocationCallbackCount = 0;
@@ -10024,11 +14583,24 @@ public sealed unsafe class GCPrivTests
         private readonly byte* _minOverflowAddress;
         private readonly byte* _maxOverflowAddress;
 #if USE_REGIONS && !MULTIPLE_HEAPS
+        private readonly byte** _gMarkList;
+        private readonly byte** _gMarkListCopy;
+        private readonly nuint _markListSize;
+        private readonly nuint _gMarkListTotalSize;
+        private readonly bool _markListOverflow;
+        private readonly byte*** _gMarkListPiece;
+        private readonly nuint _gMarkListPieceSize;
+        private readonly nuint _gMarkListPieceTotalSize;
         private readonly byte** _markList;
         private readonly byte** _markListEnd;
         private readonly byte** _markListIndex;
+        private readonly byte* _gcLow;
+        private readonly byte* _gcHigh;
+        private readonly byte* _ephemeralLow;
+        private readonly byte* _ephemeralHigh;
         private readonly byte* _slow;
         private readonly byte* _shigh;
+        private readonly nuint _regionCount;
         private readonly nuint* _survivedPerRegion;
         private readonly nuint* _oldCardSurvivedPerRegion;
 #endif
@@ -10045,11 +14617,24 @@ public sealed unsafe class GCPrivTests
             _minOverflowAddress = gc_heap.min_overflow_address;
             _maxOverflowAddress = gc_heap.max_overflow_address;
 #if USE_REGIONS && !MULTIPLE_HEAPS
+            _gMarkList = gc_heap.g_mark_list;
+            _gMarkListCopy = gc_heap.g_mark_list_copy;
+            _markListSize = gc_heap.mark_list_size;
+            _gMarkListTotalSize = gc_heap.g_mark_list_total_size;
+            _markListOverflow = gc_heap.mark_list_overflow;
+            _gMarkListPiece = gc_heap.g_mark_list_piece;
+            _gMarkListPieceSize = gc_heap.g_mark_list_piece_size;
+            _gMarkListPieceTotalSize = gc_heap.g_mark_list_piece_total_size;
             _markList = gc_heap.mark_list;
             _markListEnd = gc_heap.mark_list_end;
             _markListIndex = gc_heap.mark_list_index;
+            _gcLow = gc_heap.gc_low;
+            _gcHigh = gc_heap.gc_high;
+            _ephemeralLow = gc_heap.ephemeral_low;
+            _ephemeralHigh = gc_heap.ephemeral_high;
             _slow = gc_heap.slow;
             _shigh = gc_heap.shigh;
+            _regionCount = gc_heap.region_count;
             _survivedPerRegion = gc_heap.survived_per_region;
             _oldCardSurvivedPerRegion = gc_heap.old_card_survived_per_region;
 #endif
@@ -10070,16 +14655,119 @@ public sealed unsafe class GCPrivTests
             gc_heap.min_overflow_address = _minOverflowAddress;
             gc_heap.max_overflow_address = _maxOverflowAddress;
 #if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.g_mark_list = _gMarkList;
+            gc_heap.g_mark_list_copy = _gMarkListCopy;
+            gc_heap.mark_list_size = _markListSize;
+            gc_heap.g_mark_list_total_size = _gMarkListTotalSize;
+            gc_heap.mark_list_overflow = _markListOverflow;
+            gc_heap.g_mark_list_piece = _gMarkListPiece;
+            gc_heap.g_mark_list_piece_size = _gMarkListPieceSize;
+            gc_heap.g_mark_list_piece_total_size = _gMarkListPieceTotalSize;
             gc_heap.mark_list = _markList;
             gc_heap.mark_list_end = _markListEnd;
             gc_heap.mark_list_index = _markListIndex;
+            gc_heap.gc_low = _gcLow;
+            gc_heap.gc_high = _gcHigh;
+            gc_heap.ephemeral_low = _ephemeralLow;
+            gc_heap.ephemeral_high = _ephemeralHigh;
             gc_heap.slow = _slow;
             gc_heap.shigh = _shigh;
+            gc_heap.region_count = _regionCount;
             gc_heap.survived_per_region = _survivedPerRegion;
             gc_heap.old_card_survived_per_region = _oldCardSurvivedPerRegion;
 #endif
         }
     }
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+    private sealed class InitRecordsStateScope : System.IDisposable
+    {
+        private readonly gc_history_per_heap _gcDataPerHeap;
+        private readonly gc_history_global _gcDataGlobal;
+        private readonly fgm_history _fgmResult;
+        private readonly nuint _endGen0RegionSpace;
+        private readonly nuint _endGen0RegionCommittedSpace;
+        private readonly nuint _gen0PinnedFreeSpace;
+        private readonly bool _gen0LargeChunkFound;
+        private readonly int _numRegionsFreedInSweep;
+        private readonly int _sufficientGen0Space;
+
+        public InitRecordsStateScope()
+        {
+            _gcDataPerHeap = gc_heap.gc_data_per_heap;
+            _gcDataGlobal = gc_heap.gc_data_global;
+            _fgmResult = gc_heap.fgm_result;
+            _endGen0RegionSpace = gc_heap.end_gen0_region_space;
+            _endGen0RegionCommittedSpace = gc_heap.end_gen0_region_committed_space;
+            _gen0PinnedFreeSpace = gc_heap.gen0_pinned_free_space;
+            _gen0LargeChunkFound = gc_heap.gen0_large_chunk_found;
+            _numRegionsFreedInSweep = gc_heap.num_regions_freed_in_sweep;
+            _sufficientGen0Space = gc_heap.sufficient_gen0_space_p;
+        }
+
+        public void Dispose()
+        {
+            gc_heap.gc_data_per_heap = _gcDataPerHeap;
+            gc_heap.gc_data_global = _gcDataGlobal;
+            gc_heap.fgm_result = _fgmResult;
+            gc_heap.end_gen0_region_space = _endGen0RegionSpace;
+            gc_heap.end_gen0_region_committed_space = _endGen0RegionCommittedSpace;
+            gc_heap.gen0_pinned_free_space = _gen0PinnedFreeSpace;
+            gc_heap.gen0_large_chunk_found = _gen0LargeChunkFound;
+            gc_heap.num_regions_freed_in_sweep = _numRegionsFreedInSweep;
+            gc_heap.sufficient_gen0_space_p = _sufficientGen0Space;
+        }
+    }
+#endif
+
+#if USE_REGIONS
+    private sealed class PlanPhaseStateScope : System.IDisposable
+    {
+        private readonly gc_mechanisms _settings;
+        private readonly nuint _endGen0RegionSpace;
+        private readonly nuint _gen0PinnedFreeSpace;
+        private readonly bool _gen0LargeChunkFound;
+
+        public PlanPhaseStateScope()
+        {
+            _settings = gc_heap.settings;
+            _endGen0RegionSpace = gc_heap.end_gen0_region_space;
+            _gen0PinnedFreeSpace = gc_heap.gen0_pinned_free_space;
+            _gen0LargeChunkFound = gc_heap.gen0_large_chunk_found;
+
+            gc_heap.settings = default;
+            gc_heap.end_gen0_region_space = 0;
+            gc_heap.gen0_pinned_free_space = 0;
+            gc_heap.gen0_large_chunk_found = false;
+        }
+
+        public void Dispose()
+        {
+            gc_heap.settings = _settings;
+            gc_heap.end_gen0_region_space = _endGen0RegionSpace;
+            gc_heap.gen0_pinned_free_space = _gen0PinnedFreeSpace;
+            gc_heap.gen0_large_chunk_found = _gen0LargeChunkFound;
+        }
+    }
+#endif
+
+#if USE_REGIONS
+    private sealed unsafe class CardTableStateScope : System.IDisposable
+    {
+        private readonly uint* _cardTable;
+
+        public CardTableStateScope()
+        {
+            _cardTable = gc_heap.card_table;
+            gc_heap.card_table = null;
+        }
+
+        public void Dispose()
+        {
+            gc_heap.card_table = _cardTable;
+        }
+    }
+#endif
 
     private sealed unsafe class RegionSegmentsStateScope : System.IDisposable
     {
@@ -10089,6 +14777,13 @@ public sealed unsafe class GCPrivTests
         private readonly gc_heap.region_free_list_array _freeRegions;
         private readonly uint* _cardTable;
         private readonly short* _brickTable;
+        private readonly byte* _gcLowestAddress;
+        private readonly byte* _gcHighestAddress;
+        private readonly byte* _bookkeepingCoveredCommitted;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+        private readonly int _gen0BricksCleared;
+        private readonly int _gen0MustClearBricks;
+#endif
         private readonly gc_heap.recorded_committed_bucket_array _committedByOh;
         private readonly nuint _currentTotalCommitted;
         private readonly nuint _currentTotalCommittedBookkeeping;
@@ -10098,6 +14793,7 @@ public sealed unsafe class GCPrivTests
         private readonly nuint _reservedMemory;
         private readonly gc_mechanisms _settings;
         private readonly CLRCriticalSection _checkCommitCs;
+        private readonly heap_segment* _freeableUohSegment;
         private readonly bool _initializedCommitLock;
 #if BACKGROUND_GC
         private readonly GCCommon.changed_seg_array _savedChangedSegs;
@@ -10119,6 +14815,13 @@ public sealed unsafe class GCPrivTests
             _freeRegions = gc_heap.free_regions;
             _cardTable = gc_heap.card_table;
             _brickTable = gc_heap.brick_table;
+            _gcLowestAddress = GCCommon.g_gc_lowest_address;
+            _gcHighestAddress = GCCommon.g_gc_highest_address;
+            _bookkeepingCoveredCommitted = gc_heap.bookkeeping_covered_committed;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            _gen0BricksCleared = gc_heap.gen0_bricks_cleared;
+            _gen0MustClearBricks = gc_heap.gen0_must_clear_bricks;
+#endif
             _committedByOh = gc_heap.committed_by_oh;
             _currentTotalCommitted = gc_heap.current_total_committed;
             _currentTotalCommittedBookkeeping = gc_heap.current_total_committed_bookkeeping;
@@ -10128,6 +14831,7 @@ public sealed unsafe class GCPrivTests
             _reservedMemory = gc_heap.reserved_memory;
             _settings = gc_heap.settings;
             _checkCommitCs = gc_heap.check_commit_cs;
+            _freeableUohSegment = gc_heap.freeable_uoh_segment;
 #if BACKGROUND_GC
             _savedChangedSegs = GCCommon.saved_changed_segs;
             _savedChangedSegsCount = GCCommon.saved_changed_segs_count;
@@ -10143,6 +14847,7 @@ public sealed unsafe class GCPrivTests
             gc_heap.free_regions = default;
             gc_heap.card_table = null;
             gc_heap.brick_table = null;
+            gc_heap.bookkeeping_covered_committed = null;
             gc_heap.committed_by_oh = default;
             gc_heap.current_total_committed = 0;
             gc_heap.current_total_committed_bookkeeping = 0;
@@ -10151,6 +14856,7 @@ public sealed unsafe class GCPrivTests
             gc_heap.never_decommit_p = false;
             gc_heap.reserved_memory = 0;
             gc_heap.settings = default;
+            gc_heap.freeable_uoh_segment = null;
 #if BACKGROUND_GC
             GCCommon.saved_changed_segs = default;
             GCCommon.initialize();
@@ -10184,6 +14890,13 @@ public sealed unsafe class GCPrivTests
             gc_heap.free_regions = _freeRegions;
             gc_heap.card_table = _cardTable;
             gc_heap.brick_table = _brickTable;
+            GCCommon.g_gc_lowest_address = _gcLowestAddress;
+            GCCommon.g_gc_highest_address = _gcHighestAddress;
+            gc_heap.bookkeeping_covered_committed = _bookkeepingCoveredCommitted;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.gen0_bricks_cleared = _gen0BricksCleared;
+            gc_heap.gen0_must_clear_bricks = _gen0MustClearBricks;
+#endif
             gc_heap.committed_by_oh = _committedByOh;
             gc_heap.current_total_committed = _currentTotalCommitted;
             gc_heap.current_total_committed_bookkeeping = _currentTotalCommittedBookkeeping;
@@ -10193,6 +14906,7 @@ public sealed unsafe class GCPrivTests
             gc_heap.reserved_memory = _reservedMemory;
             gc_heap.settings = _settings;
             gc_heap.check_commit_cs = _checkCommitCs;
+            gc_heap.freeable_uoh_segment = _freeableUohSegment;
 #if BACKGROUND_GC
             GCCommon.saved_changed_segs = _savedChangedSegs;
             GCCommon.saved_changed_segs_count = _savedChangedSegsCount;

@@ -1,14 +1,31 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Ported from the dependency-free prefix of src/coreclr/gc/gcrecord.h, plus adjacent enums from
-// src/coreclr/gc/gc.h consumed by those records and early region-management slices.
+// Ported from the dependency-free prefix of src/coreclr/gc/gcrecord.h, plus fgm_history and
+// adjacent enums from src/coreclr/gc/gc.h consumed by those records and early region-management
+// slices.
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection
 {
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct fgm_history
+    {
+        public failure_get_memory fgm;
+        public nuint size;
+        public nuint available_pagefile_mb;
+        public int loh_p;
+
+        public void set_fgm(failure_get_memory f, nuint s, int l)
+        {
+            fgm = f;
+            size = s;
+            loh_p = l;
+        }
+    }
+
     internal enum gc_reason
     {
         reason_alloc_soh = 0,
@@ -244,6 +261,12 @@ namespace Internal.Runtime.GarbageCollection
         public uint machanism_bits;
         public uint heap_index;
         public nuint extra_gen0_committed;
+
+        public static ref gc_generation_data gen_data(gc_history_per_heap* inst, int gen_number)
+        {
+            Debug.Assert((uint)gen_number < (uint)gc_generation_num.total_generation_count);
+            return ref (&inst->gen_data0)[gen_number];
+        }
 
         public void set_mechanism(gc_mechanism_per_heap mechanism_per_heap, uint value)
         {

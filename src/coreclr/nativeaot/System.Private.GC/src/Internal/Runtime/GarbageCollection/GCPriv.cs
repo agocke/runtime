@@ -1,11 +1,13 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Ported from the dependency-free data records of src/coreclr/gc/gcpriv.h and the adjacent
-// dependency-closed helpers of region_allocator.cpp and region_free_list.cpp.
+// Ported from the dependency-free data records of src/coreclr/gc/gcpriv.h, the non-FEATURE_STRUCTALIGN
+// node-child writers of gcinternal.h, and the adjacent dependency-closed helpers of
+// region_allocator.cpp and region_free_list.cpp.
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 using unsafe region_allocator_callback_fn = delegate*<byte*, byte>;
@@ -19,6 +21,7 @@ namespace Internal.Runtime.GarbageCollection
         public const uint MAX_YP_SPIN_COUNT_UNIT = 32768;
         public const uint MIN_SOH_CROSS_GEN_REFS = 400;
         public const uint MIN_LOH_CROSS_GEN_REFS = 800;
+        public static nuint MIN_DECOMMIT_SIZE => unchecked((nuint)100 * GCToOSInterface.GetPageSize());
 #if TARGET_64BIT
         public const uint MARK_STACK_INITIAL_LENGTH = 1024;
 #else
@@ -698,6 +701,46 @@ namespace Internal.Runtime.GarbageCollection
 #endif
         }
 
+        // always thread to the end.
+        public static void thread_item(allocator* a, byte* item, nuint size)
+        {
+            uint a_l_number = a->first_suitable_bucket(size);
+            alloc_list* al = alloc_list_of(a, a_l_number);
+            ref byte* head = ref alloc_list.alloc_list_head(al);
+            ref byte* tail = ref alloc_list.alloc_list_tail(al);
+
+            if (head is null)
+            {
+                Debug.Assert(tail is null);
+            }
+
+            free_list_slot(item) = null;
+            free_list_undo(item) = (byte*)1;
+            Debug.Assert(item != head);
+
+#if TARGET_64BIT && !TARGET_WASM
+            if (a->gen_number == (int)gc_generation_num.max_generation)
+            {
+                free_list_prev(item) = tail;
+            }
+#endif
+
+            if (head is null)
+            {
+                head = item;
+            }
+            else
+            {
+                Debug.Assert(free_list_slot(head) is not null || tail == head);
+                Debug.Assert(item != tail);
+                Debug.Assert(free_list_slot(tail) is null);
+
+                free_list_slot(tail) = item;
+            }
+
+            tail = item;
+        }
+
         public int discard_if_no_fit_p()
         {
             return (num_buckets == 1) ? 1 : 0;
@@ -733,15 +776,31 @@ namespace Internal.Runtime.GarbageCollection
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
     internal unsafe partial struct gc_heap
     {
+        // For the WKS bestfit algorithm when relocating ephemeral generations into an existing
+        // gen2 segment. Sizes are recorded from 2^6 through 2^28 on 64-bit targets, or 2^24 on
+        // 32-bit targets.
+        public const int MIN_INDEX_POWER2 = 6;
+#if TARGET_64BIT
+        public const int MAX_INDEX_POWER2 = 28;
+#else
+        public const int MAX_INDEX_POWER2 = 24;
+#endif
+        public const int MAX_NUM_BUCKETS = MAX_INDEX_POWER2 - MIN_INDEX_POWER2 + 1;
+
 #if USE_REGIONS
+        // Number of blocking GCs for which find_object keeps allocation-time Gen0 bricks current.
+        public const int FFIND_DECAY = 7;
         public const nuint DefaultMinSegmentSize = 4 * 1024 * 1024;
         public const nuint MAX_REGION_SIZE = (nuint)1 << 31;
+        public static nuint uninitialized_end_gen0_region_space => nuint.MaxValue;
 
         public static nuint min_segment_size_shr;
         public static region_info* map_region_to_generation;
         public static region_info* map_region_to_generation_skewed;
         public static volatile byte* ephemeral_low;
         public static volatile byte* ephemeral_high;
+        public static byte* gc_low;
+        public static byte* gc_high;
         public static GCSpinLock gc_lock;
         public static region_free_list global_free_huge_regions;
 
@@ -771,14 +830,30 @@ namespace Internal.Runtime.GarbageCollection
         public int heap_number;
 #endif
 
-        // WKS makes these PER_HEAP_FIELD_SINGLE_GC fields static. They remain separate from
-        // the allocation-owned instance prefix until the complete native gc_heap layout is
-        // translated.
+        // WKS makes this collector state static. It remains separate from the allocation-owned
+        // instance prefix until the complete native gc_heap layout is translated.
         public static nuint mark_stack_tos;
         public static nuint mark_stack_bos;
         public static byte* oldest_pinned_plug;
+        public static nuint num_pinned_objects;
         public static mark_queue_t mark_queue;
+        public static CFinalize* finalize_queue;
 #if USE_REGIONS
+        public static nuint region_count;
+#if !MULTIPLE_HEAPS
+        // These own the WKS backing. The mark-list cursors below only borrow its storage for
+        // one collection.
+        public static int gen0_bricks_cleared;
+        public static int gen0_must_clear_bricks;
+        public static byte** g_mark_list;
+        public static byte** g_mark_list_copy;
+        public static nuint mark_list_size;
+        public static nuint g_mark_list_total_size;
+        public static bool mark_list_overflow;
+        public static byte*** g_mark_list_piece;
+        public static nuint g_mark_list_piece_size;
+        public static nuint g_mark_list_piece_total_size;
+#endif
         public static byte** mark_list;
         public static byte** mark_list_end;
         public static byte** mark_list_index;
@@ -788,13 +863,26 @@ namespace Internal.Runtime.GarbageCollection
 #endif
         public static nuint* survived_per_region;
         public static nuint* old_card_survived_per_region;
+        public static int num_regions_freed_in_sweep;
+        public static nuint end_gen0_region_space;
+        public static nuint end_gen0_region_committed_space;
+        public static nuint gen0_pinned_free_space;
+        public static bool gen0_large_chunk_found;
 #endif
         public static nuint mark_stack_array_length;
         public static mark* mark_stack_array;
         public static byte* min_overflow_address;
         public static byte* max_overflow_address;
+        public static nuint alloc_contexts_used;
+        public static heap_segment* freeable_uoh_segment;
+        public static int sufficient_gen0_space_p;
         public static int loh_compaction_always_p;
         public static gc_loh_compaction_mode loh_compaction_mode;
+        public static gc_history_per_heap gc_data_per_heap;
+        public static fgm_history fgm_result;
+        public static gc_history_global gc_data_global;
+        public static ulong end_gc_time;
+        public static ulong last_alloc_reset_suspended_end_time;
 #if !USE_REGIONS
         internal static bool gc_can_use_concurrent;
 #if BACKGROUND_GC
@@ -823,10 +911,98 @@ namespace Internal.Runtime.GarbageCollection
             // value after first_init has reset the current collection mechanisms.
             loh_compaction_always_p = 0;
             loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_default;
+            alloc_contexts_used = 0;
+            freeable_uoh_segment = null;
+#if USE_REGIONS && !MULTIPLE_HEAPS
+            gen0_bricks_cleared = 0;
+            gen0_must_clear_bricks = 0;
+#endif
             settings.first_init();
             initialize_loh_compaction_state();
             initialize_mark_phase_state();
         }
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+        public static void init_records(gc_heap* hp)
+        {
+            // An option is to move this to be after we figure out which gen to condemn so we don't
+            // need to clear some generations' data 'cause we know they don't change, but that also means
+            // we can't simply call memset here.
+            gc_data_per_heap = default;
+            gc_data_per_heap.heap_index = unchecked((uint)hp->heap_number);
+            if (hp->heap_number == 0)
+            {
+                gc_data_global = default;
+            }
+
+            fgm_result = default;
+
+            gc_history_per_heap* current_gc_data_per_heap =
+                (gc_history_per_heap*)Unsafe.AsPointer(ref gc_data_per_heap);
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                ref gc_generation_data gen_data = ref gc_history_per_heap.gen_data(current_gc_data_per_heap, i);
+                gen_data.size_before = generation_size(hp, i);
+                generation* gen = generation_of(generation_table_of(hp), i);
+                gen_data.free_list_space_before = generation.generation_free_list_space(gen);
+                gen_data.free_obj_space_before = generation.generation_free_obj_space(gen);
+            }
+
+            end_gen0_region_space = uninitialized_end_gen0_region_space;
+            end_gen0_region_committed_space = 0;
+            gen0_pinned_free_space = 0;
+            gen0_large_chunk_found = false;
+            num_regions_freed_in_sweep = 0;
+
+            sufficient_gen0_space_p = 0;
+        }
+#endif
+
+#if USE_REGIONS && !MULTIPLE_HEAPS
+        public static byte** make_mark_list(nuint size)
+        {
+            if (size > nuint.MaxValue / (nuint)sizeof(byte*))
+            {
+                return null;
+            }
+
+            return (byte**)SyncImports.ManagedGC_AllocZeroed(size * (nuint)sizeof(byte*));
+        }
+
+        public static bool initialize_mark_list()
+        {
+            nuint soh_segment_size = get_valid_segment_size();
+            nuint size = soh_segment_size / (64 * 32);
+            if (size < 8192)
+            {
+                size = 8192;
+            }
+            else if (size > 100 * 1024)
+            {
+                size = 100 * 1024;
+            }
+
+            byte** new_mark_list = make_mark_list(size);
+            if (new_mark_list is null)
+            {
+                return false;
+            }
+
+            g_mark_list = new_mark_list;
+            mark_list_size = size;
+            g_mark_list_total_size = size;
+            return true;
+        }
+
+        public static void destroy_semi_shared()
+        {
+            if (g_mark_list is not null)
+            {
+                SyncImports.ManagedGC_Free(g_mark_list);
+                g_mark_list = null;
+            }
+        }
+#endif
 
         public static heap_segment* heap_segment_in_range(heap_segment* segment)
         {
@@ -874,16 +1050,33 @@ namespace Internal.Runtime.GarbageCollection
 #endif
         }
 
-#if USE_REGIONS
-        public static void initialize_min_segment_size_shr(nuint min_segment_size)
+#if USE_REGIONS && !MULTIPLE_HEAPS
+        public static nuint get_promoted_bytes(gc_heap* heap)
         {
-            min_segment_size_shr = (nuint)index_of_highest_set_bit(min_segment_size);
-        }
+            if (survived_per_region is null)
+            {
+                return 0;
+            }
 
-        public static bool power_of_two_p(nuint value)
-        {
-            return (value & (value - 1)) == 0;
+            nuint promoted = 0;
+            for (nuint i = 0; i < region_count; i++)
+            {
+                if (survived_per_region[(nint)i] > 0)
+                {
+#if DEBUG
+                    heap_segment* region = get_region_at_index(i);
+                    Debug.Assert(region is not null);
+#endif
+                    promoted = unchecked(promoted + survived_per_region[(nint)i]);
+                }
+            }
+
+#if DEBUG
+            Debug.Assert(promoted_bytes(heap->heap_number) == promoted);
+#endif
+            return promoted;
         }
+#endif
 
         public static int index_of_highest_set_bit(nuint value)
         {
@@ -893,6 +1086,17 @@ namespace Internal.Runtime.GarbageCollection
 #else
             return GCEnv.BitScanReverse(&highest_set_bit_index, (uint)value) == 0 ? -1 : (int)highest_set_bit_index;
 #endif
+        }
+
+        public static bool power_of_two_p(nuint value)
+        {
+            return (value & (value - 1)) == 0;
+        }
+
+#if USE_REGIONS
+        public static void initialize_min_segment_size_shr(nuint min_segment_size)
+        {
+            min_segment_size_shr = (nuint)index_of_highest_set_bit(min_segment_size);
         }
 
         public static byte* align_lower_segment(byte* add)
@@ -2188,7 +2392,30 @@ namespace Internal.Runtime.GarbageCollection
             free_obj_size = 0;
         }
 
-        // thread_free_obj depends on the later free-list object representation.
+        public void thread_free_obj(byte* obj, nuint s)
+        {
+            if (s >= unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size))
+            {
+                allocator.free_list_slot(obj) = null;
+
+                if (free_list_head is not null)
+                {
+                    Debug.Assert(free_list_tail is not null);
+                    allocator.free_list_slot(free_list_tail) = obj;
+                }
+                else
+                {
+                    free_list_head = obj;
+                }
+
+                free_list_tail = obj;
+                free_list_size += s;
+            }
+            else
+            {
+                free_obj_size += s;
+            }
+        }
 #endif
 
         public static ref byte* heap_segment_reserved(heap_segment* inst) => ref inst->reserved;
@@ -2683,8 +2910,6 @@ namespace Internal.Runtime.GarbageCollection
     // omitted for NativeAOT by gcpriv.h because FEATURE_NATIVEAOT is defined; retain its methods
     // under the native feature symbol for configurations that enable it.
     //
-    // recover_plug_info remains with the later mark/compact slice: it depends on
-    // gc_heap::settings.compaction and diagnostic logging.
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct mark
@@ -2810,6 +3035,51 @@ namespace Internal.Runtime.GarbageCollection
             gap_reloc_pair temp = *(gap_reloc_pair*)inst->saved_post_plug_info_start;
             *(gap_reloc_pair*)inst->saved_post_plug_info_start = inst->saved_post_plug;
             inst->saved_post_plug = temp;
+        }
+
+        public static nuint recover_plug_info(mark* inst)
+        {
+            nuint recovered_sweep_size = 0;
+
+            if (inst->saved_pre_p != 0)
+            {
+                if (gc_heap.settings.compaction != 0)
+                {
+                    *(gap_reloc_pair*)inst->saved_pre_plug_info_reloc_start = inst->saved_pre_plug_reloc;
+                }
+                else
+                {
+                    *(gap_reloc_pair*)(inst->first - sizeof(plug_and_gap)) = inst->saved_pre_plug;
+                    recovered_sweep_size += (nuint)sizeof(gap_reloc_pair);
+                }
+            }
+
+            if (inst->saved_post_p != 0)
+            {
+                if (gc_heap.settings.compaction != 0)
+                {
+                    *(gap_reloc_pair*)inst->saved_post_plug_info_start = inst->saved_post_plug_reloc;
+                }
+                else
+                {
+                    *(gap_reloc_pair*)inst->saved_post_plug_info_start = inst->saved_post_plug;
+                    recovered_sweep_size += (nuint)sizeof(gap_reloc_pair);
+                }
+            }
+
+            return recovered_sweep_size;
+        }
+    }
+
+#pragma warning disable CS8981 // Native type names are intentionally preserved.
+    internal unsafe partial struct gc_heap
+#pragma warning restore CS8981
+    {
+        public static byte* get_plug_start_in_saved(byte* old_loc, mark* pinned_plug_entry)
+        {
+            byte* saved_pre_plug_info = (byte*)mark.get_pre_plug_reloc_info(pinned_plug_entry);
+            byte* plug_start_in_saved = saved_pre_plug_info + (old_loc - (pinned_plug(pinned_plug_entry) - sizeof(plug_and_gap)));
+            return plug_start_in_saved;
         }
     }
 
@@ -3104,6 +3374,435 @@ namespace Internal.Runtime.GarbageCollection
     {
         public pair m_pair;
         public plug m_plug;
+    }
+
+    internal unsafe partial struct gc_heap
+    {
+#if USE_REGIONS
+        internal struct make_free_args
+        {
+            public int free_list_gen_number;
+            public generation* free_list_gen;
+            public byte* highest_plug;
+        }
+#endif
+
+        public static short node_left_child(byte* node)
+        {
+            return ((plug_and_pair*)node)[-1].m_pair.left;
+        }
+
+        public static short node_right_child(byte* node)
+        {
+            return ((plug_and_pair*)node)[-1].m_pair.right;
+        }
+
+        public static void set_node_left_child(byte* node, nint val)
+        {
+            Debug.Assert(val > -(nint)card_table_info.brick_size);
+            Debug.Assert(val < (nint)card_table_info.brick_size);
+            Debug.Assert(((nuint)val & (nuint)get_alignment_constant(small_object_p: true)) == 0);
+            ((plug_and_pair*)node)[-1].m_pair.left = (short)val;
+            Debug.Assert(node_left_child(node) == val);
+        }
+
+        public static void set_node_right_child(byte* node, nint val)
+        {
+            Debug.Assert(val > -(nint)card_table_info.brick_size);
+            Debug.Assert(val < (nint)card_table_info.brick_size);
+            Debug.Assert(((nuint)val & (nuint)get_alignment_constant(small_object_p: true)) == 0);
+            ((plug_and_pair*)node)[-1].m_pair.right = (short)val;
+            Debug.Assert(node_right_child(node) == val);
+        }
+
+        public static nuint node_gap_size(byte* node)
+        {
+            return unchecked((nuint)((plug_and_gap*)node)[-1].gap);
+        }
+    }
+
+    // Port of the bounded workstation CFinalize closure in gcpriv.h and finalization.cpp.
+    // The individually named fields preserve the native contiguous m_FillPointers array without
+    // creating a managed array.
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct CFinalize
+    {
+        private const int ExtraSegCount = 2;
+        private const int FinalizerListSeg = (int)gc_generation_num.total_generation_count + 1;
+        private const int CriticalFinalizerListSeg = (int)gc_generation_num.total_generation_count;
+        private const int FreeListSeg = (int)gc_generation_num.total_generation_count + ExtraSegCount;
+        private const int FreeList = FreeListSeg;
+        private const int FinalizerStartSeg = CriticalFinalizerListSeg;
+        private const int FinalizerMaxSeg = FinalizerListSeg;
+        private const int MaxSeg = FreeListSeg;
+        private const int InitialFinalizerArraySize = 100;
+
+        private byte** m_FillPointer0;
+        private byte** m_FillPointer1;
+        private byte** m_FillPointer2;
+        private byte** m_FillPointer3;
+        private byte** m_FillPointer4;
+        private byte** m_FillPointer5;
+        private byte** m_FillPointer6;
+        private byte** m_Array;
+        private byte** m_EndArray;
+        private nuint m_PromotedCount;
+        private int @lock;
+
+        public static CFinalize* Allocate()
+        {
+            CFinalize* finalizeQueue = (CFinalize*)SyncImports.ManagedGC_AllocZeroed((nuint)sizeof(CFinalize));
+            if (finalizeQueue is null)
+            {
+                return null;
+            }
+
+            if (!finalizeQueue->Initialize())
+            {
+                SyncImports.ManagedGC_Free(finalizeQueue);
+                return null;
+            }
+
+            return finalizeQueue;
+        }
+
+        public static void Free(CFinalize* finalizeQueue)
+        {
+            if (finalizeQueue is not null)
+            {
+                finalizeQueue->Destroy();
+                SyncImports.ManagedGC_Free(finalizeQueue);
+            }
+        }
+
+        public bool Initialize()
+        {
+            m_Array = (byte**)SyncImports.ManagedGC_AllocZeroed(
+                (nuint)InitialFinalizerArraySize * (nuint)sizeof(byte*));
+            if (m_Array is null)
+            {
+                return false;
+            }
+
+            m_EndArray = m_Array + InitialFinalizerArraySize;
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                for (int i = 0; i < FreeList; i++)
+                {
+                    fillPointers[i] = m_Array;
+                }
+            }
+
+            m_PromotedCount = 0;
+            @lock = -1;
+            return true;
+        }
+
+        public void Destroy()
+        {
+            if (m_Array is not null)
+            {
+                SyncImports.ManagedGC_Free(m_Array);
+            }
+
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                for (int i = 0; i < FreeList; i++)
+                {
+                    fillPointers[i] = null;
+                }
+            }
+
+            m_Array = null;
+            m_EndArray = null;
+            m_PromotedCount = 0;
+            @lock = -1;
+        }
+
+        public nuint GetPromotedCount() => m_PromotedCount;
+
+        public void EnterFinalizeLock()
+        {
+            fixed (int* lockAddress = &@lock)
+            {
+            retry:
+                if (Interlocked.CompareExchange(lockAddress, 0, -1) >= 0)
+                {
+                    uint i = 0;
+                    while (GCEnv.VolatileLoadWithoutBarrier(lockAddress) >= 0)
+                    {
+                        if (GCToEEInterface.GetCurrentProcessCpuCount() > 1)
+                        {
+                            const int SpinCount = 128;
+                            for (int j = 0; j < SpinCount; j++)
+                            {
+                                if (GCEnv.VolatileLoadWithoutBarrier(lockAddress) < 0)
+                                {
+                                    break;
+                                }
+
+                                GCEnv.YieldProcessor();
+                            }
+                        }
+
+                        if (GCEnv.VolatileLoadWithoutBarrier(lockAddress) < 0)
+                        {
+                            break;
+                        }
+
+                        if ((++i & 7) != 0)
+                        {
+                            GCToOSInterface.YieldThread(0);
+                        }
+                        else
+                        {
+                            GCToOSInterface.Sleep(5);
+                        }
+                    }
+
+                    goto retry;
+                }
+            }
+        }
+
+        public void LeaveFinalizeLock()
+        {
+            fixed (int* lockAddress = &@lock)
+            {
+                GCEnv.VolatileStore(lockAddress, -1);
+            }
+        }
+
+        public bool RegisterForFinalization(int gen, byte* obj)
+        {
+            EnterFinalizeLock();
+
+            uint destination = gen_segment(gen);
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                byte*** source = fillPointers + (FreeListSeg - 1);
+                if (*source == seg_queue_limit(fillPointers, m_EndArray, FreeListSeg))
+                {
+                    if (!GrowArray(fillPointers))
+                    {
+                        LeaveFinalizeLock();
+                        return false;
+                    }
+
+                    source = fillPointers + (FreeListSeg - 1);
+                }
+
+                byte*** destinationLimit = fillPointers + (int)destination;
+                do
+                {
+                    if (*source != *(source - 1))
+                    {
+                        **source = *(*(source - 1));
+                    }
+
+                    (*source)++;
+                    source--;
+                }
+                while (source > destinationLimit);
+
+                **source = obj;
+                (*source)++;
+            }
+
+            LeaveFinalizeLock();
+            return true;
+        }
+
+        public byte* GetNextFinalizableObject(bool only_non_critical = false)
+        {
+            byte* obj = null;
+            EnterFinalizeLock();
+
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                if (!is_seg_empty(fillPointers, m_Array, m_EndArray, FinalizerListSeg))
+                {
+                    obj = *(--fillPointers[FinalizerListSeg]);
+                }
+                else if (!only_non_critical &&
+                    !is_seg_empty(fillPointers, m_Array, m_EndArray, CriticalFinalizerListSeg))
+                {
+                    obj = *(--fillPointers[CriticalFinalizerListSeg]);
+                    --fillPointers[FinalizerListSeg];
+                }
+            }
+
+            LeaveFinalizeLock();
+            return obj;
+        }
+
+        public nuint GetNumberFinalizableObjects()
+        {
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                return (nuint)(seg_queue_limit(fillPointers, m_EndArray, FinalizerMaxSeg) -
+                    seg_queue(fillPointers, m_Array, FinalizerStartSeg));
+            }
+        }
+
+        public void MoveItem(byte** fromIndex, uint fromSeg, uint toSeg)
+        {
+            Debug.Assert(fromSeg != toSeg);
+
+            int step = fromSeg > toSeg ? -1 : 1;
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                byte** sourceIndex = fromIndex;
+                for (uint i = fromSeg; i != toSeg; i = (uint)((int)i + step))
+                {
+                    byte*** destinationFill = fillPointers + (int)i + ((step - 1) / 2);
+                    byte** destinationIndex = *destinationFill - ((step + 1) / 2);
+                    if (sourceIndex != destinationIndex)
+                    {
+                        byte* tmp = *sourceIndex;
+                        *sourceIndex = *destinationIndex;
+                        *destinationIndex = tmp;
+                    }
+
+                    *destinationFill -= step;
+                    sourceIndex = destinationIndex;
+                }
+            }
+        }
+
+        public void GcScanRoots(
+            delegate*<byte**, ScanContext*, uint, void> fn,
+            int heapNumber,
+            ScanContext* scanContext)
+        {
+            ScanContext localScanContext = default;
+            if (scanContext is null)
+            {
+                scanContext = &localScanContext;
+            }
+
+            scanContext->thread_number = heapNumber;
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                byte** startIndex = seg_queue(fillPointers, m_Array, FinalizerStartSeg);
+                byte** stopIndex = seg_queue_limit(fillPointers, m_EndArray, FinalizerMaxSeg);
+                for (byte** current = startIndex; current < stopIndex; current++)
+                {
+                    fn(current, scanContext, 0);
+                }
+            }
+        }
+
+        public bool ScanForFinalization(
+            delegate*<byte**, ScanContext*, uint, void> promote,
+            int gen,
+            gc_heap* heap)
+        {
+            _ = heap;
+
+            ScanContext scanContext = default;
+            scanContext.promotion = 1;
+            scanContext.thread_count = 1;
+
+            uint startSeg = gen_segment(gen);
+            m_PromotedCount = 0;
+
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                for (uint segment = startSeg; segment <= gen_segment(0); segment++)
+                {
+                    byte** endIndex = seg_queue(fillPointers, m_Array, (int)segment);
+                    byte** current = seg_queue_limit(fillPointers, m_EndArray, (int)segment);
+                    while (current > endIndex)
+                    {
+                        current--;
+                        byte* obj = *current;
+                        CObjectHeader* objectHeader = (CObjectHeader*)obj;
+
+                        if (objectHeader->IsMarked() == 0)
+                        {
+                            Debug.Assert(objectHeader->GetMethodTable()->HasFinalizer() != 0);
+
+                            if (GCToEEInterface.EagerFinalized(obj) != 0)
+                            {
+                                MoveItem(current, segment, (uint)FreeListSeg);
+                            }
+                            else if ((objectHeader->GetHeader()->GetBits() & ObjHeader.BIT_SBLK_FINALIZER_RUN) != 0)
+                            {
+                                MoveItem(current, segment, (uint)FreeListSeg);
+                                objectHeader->GetHeader()->ClrFinalizerRun();
+                            }
+                            else
+                            {
+                                m_PromotedCount++;
+                                MoveItem(
+                                    current,
+                                    segment,
+                                    objectHeader->GetMethodTable()->HasCriticalFinalizer() != 0
+                                        ? (uint)CriticalFinalizerListSeg
+                                        : (uint)FinalizerListSeg);
+                            }
+                        }
+                    }
+                }
+            }
+
+            bool finalizedFound;
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                finalizedFound =
+                    !is_seg_empty(fillPointers, m_Array, m_EndArray, FinalizerListSeg) ||
+                    !is_seg_empty(fillPointers, m_Array, m_EndArray, CriticalFinalizerListSeg);
+            }
+
+            if (finalizedFound)
+            {
+                GcScanRoots(promote, 0, null);
+                gc_heap.settings.found_finalizers = 1;
+            }
+
+            return finalizedFound;
+        }
+
+        private bool GrowArray(byte*** fillPointers)
+        {
+            nuint oldArraySize = (nuint)(m_EndArray - m_Array);
+            nuint newArraySize = unchecked((oldArraySize * 12) / 10);
+            byte** newArray = (byte**)SyncImports.ManagedGC_AllocZeroed(newArraySize * (nuint)sizeof(byte*));
+            if (newArray is null)
+            {
+                return false;
+            }
+
+            nuint copySize = oldArraySize * (nuint)sizeof(byte*);
+            Buffer.MemoryCopy(m_Array, newArray, (long)(newArraySize * (nuint)sizeof(byte*)), (long)copySize);
+
+            nint delta = (nint)((byte*)newArray - (byte*)m_Array);
+            for (int i = 0; i < FreeList; i++)
+            {
+                fillPointers[i] = (byte**)((byte*)fillPointers[i] + delta);
+            }
+
+            SyncImports.ManagedGC_Free(m_Array);
+            m_Array = newArray;
+            m_EndArray = newArray + (nint)newArraySize;
+            return true;
+        }
+
+        private static uint gen_segment(int gen)
+        {
+            Debug.Assert((int)gc_generation_num.total_generation_count - gen - 1 >= 0);
+            return (uint)((int)gc_generation_num.total_generation_count - gen - 1);
+        }
+
+        private static byte** seg_queue(byte*** fillPointers, byte** array, int segment) =>
+            segment != 0 ? fillPointers[segment - 1] : array;
+
+        private static byte** seg_queue_limit(byte*** fillPointers, byte** endArray, int segment) =>
+            segment == MaxSeg ? endArray : fillPointers[segment];
+
+        private static bool is_seg_empty(byte*** fillPointers, byte** array, byte** endArray, int segment) =>
+            seg_queue_limit(fillPointers, endArray, segment) == seg_queue(fillPointers, array, segment);
     }
 
     [StructLayout(LayoutKind.Sequential)]

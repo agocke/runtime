@@ -52,6 +52,13 @@ internal sealed class ConfigRequest
     public override string ToString() => $"{Kind}({PrivateKey}, {PublicKey ?? "null"})";
 }
 
+internal static class RootScanCall
+{
+    public const string Before = nameof(Before);
+    public const string Scan = nameof(Scan);
+    public const string After = nameof(After);
+}
+
 internal static unsafe class GCToEEInterface
 {
     internal static class FiredEvent
@@ -134,6 +141,16 @@ internal static unsafe class GCToEEInterface
 
     internal static int GcScanRootsCallCount { get; private set; }
 
+    internal static int GcEnumAllocContextsCallCount { get; private set; }
+
+    internal static nuint LastGcEnumAllocContextsCallback { get; private set; }
+
+    internal static nuint LastGcEnumAllocContextsParameter { get; private set; }
+
+    internal static List<nuint> AllocContexts { get; } = new();
+
+    internal static List<nuint> EnumeratedAllocContexts { get; } = new();
+
     internal static nuint LastGcScanRootsCallback { get; private set; }
 
     internal static int LastGcScanRootsCondemned { get; private set; }
@@ -141,6 +158,60 @@ internal static unsafe class GCToEEInterface
     internal static int LastGcScanRootsMaxGeneration { get; private set; }
 
     internal static ScanContext* LastGcScanRootsContext { get; private set; }
+
+    internal static ScanContext LastGcScanRootsContextValue { get; private set; }
+
+    internal static byte** GcScanRootsSlot { get; set; }
+
+    internal static uint GcScanRootsFlags { get; set; }
+
+    internal static List<(nuint Slot, uint Flags)> GcScanRootsSlots { get; } = new();
+
+    internal static ScanContext* LastGcScanRootsCallbackContext { get; private set; }
+
+    internal static uint LastGcScanRootsCallbackFlags { get; private set; }
+
+    internal static List<string> RootScanCallOrder { get; } = new();
+
+    internal static byte* EagerFinalizedObject { get; set; }
+
+    internal static int EnableFinalizationCallCount { get; private set; }
+
+    internal static byte LastEnableFinalizationHasWork { get; private set; }
+
+    internal static int BeforeGcScanRootsCallCount { get; private set; }
+
+    internal static int LastBeforeGcScanRootsCondemned { get; private set; }
+
+    internal static byte LastBeforeGcScanRootsIsBackground { get; private set; }
+
+    internal static byte LastBeforeGcScanRootsIsConcurrent { get; private set; }
+
+    internal static int AfterGcScanRootsCallCount { get; private set; }
+
+    internal static int LastAfterGcScanRootsCondemned { get; private set; }
+
+    internal static int LastAfterGcScanRootsMaxGeneration { get; private set; }
+
+    internal static ScanContext* LastAfterGcScanRootsContext { get; private set; }
+
+    internal static ScanContext LastAfterGcScanRootsContextValue { get; private set; }
+
+    internal static Action AfterGcScanRootsObserver { get; set; }
+
+    internal static int DiagWalkFReachableObjectsCallCount { get; private set; }
+
+    internal static void* LastDiagWalkFReachableObjectsContext { get; private set; }
+
+    internal static int SyncBlockCacheWeakPtrScanCallCount { get; private set; }
+
+    internal static nuint LastSyncBlockCacheWeakPtrScanCallback { get; private set; }
+
+    internal static nuint LastSyncBlockCacheWeakPtrScanParameter1 { get; private set; }
+
+    internal static nuint LastSyncBlockCacheWeakPtrScanParameter2 { get; private set; }
+
+    internal static byte** SyncBlockCacheWeakPtrScanSlot { get; set; }
 
     internal static int GetThreadCallCount { get; private set; }
 
@@ -175,10 +246,42 @@ internal static unsafe class GCToEEInterface
         LastStompWriteBarrier = default;
         StompWriteBarrierObserver = null;
         GcScanRootsCallCount = 0;
+        GcEnumAllocContextsCallCount = 0;
+        LastGcEnumAllocContextsCallback = 0;
+        LastGcEnumAllocContextsParameter = 0;
+        AllocContexts.Clear();
+        EnumeratedAllocContexts.Clear();
         LastGcScanRootsCallback = 0;
         LastGcScanRootsCondemned = 0;
         LastGcScanRootsMaxGeneration = 0;
         LastGcScanRootsContext = null;
+        LastGcScanRootsContextValue = default;
+        GcScanRootsSlot = null;
+        GcScanRootsFlags = 0;
+        GcScanRootsSlots.Clear();
+        LastGcScanRootsCallbackContext = null;
+        LastGcScanRootsCallbackFlags = 0;
+        RootScanCallOrder.Clear();
+        EagerFinalizedObject = null;
+        EnableFinalizationCallCount = 0;
+        LastEnableFinalizationHasWork = 0;
+        BeforeGcScanRootsCallCount = 0;
+        LastBeforeGcScanRootsCondemned = 0;
+        LastBeforeGcScanRootsIsBackground = 0;
+        LastBeforeGcScanRootsIsConcurrent = 0;
+        AfterGcScanRootsCallCount = 0;
+        LastAfterGcScanRootsCondemned = 0;
+        LastAfterGcScanRootsMaxGeneration = 0;
+        LastAfterGcScanRootsContext = null;
+        LastAfterGcScanRootsContextValue = default;
+        AfterGcScanRootsObserver = null;
+        DiagWalkFReachableObjectsCallCount = 0;
+        LastDiagWalkFReachableObjectsContext = null;
+        SyncBlockCacheWeakPtrScanCallCount = 0;
+        LastSyncBlockCacheWeakPtrScanCallback = 0;
+        LastSyncBlockCacheWeakPtrScanParameter1 = 0;
+        LastSyncBlockCacheWeakPtrScanParameter2 = 0;
+        SyncBlockCacheWeakPtrScanSlot = null;
         GetThreadCallCount = 0;
         CurrentThread = null;
         LastFiredEvent = FiredEvent.None;
@@ -207,6 +310,15 @@ internal static unsafe class GCToEEInterface
 
     public static uint GetCurrentProcessCpuCount() => (uint)Environment.ProcessorCount;
 
+    public static void BeforeGcScanRoots(int condemned, byte is_bgc, byte is_concurrent)
+    {
+        BeforeGcScanRootsCallCount++;
+        LastBeforeGcScanRootsCondemned = condemned;
+        LastBeforeGcScanRootsIsBackground = is_bgc;
+        LastBeforeGcScanRootsIsConcurrent = is_concurrent;
+        RootScanCallOrder.Add(RootScanCall.Before);
+    }
+
     /// <summary>
     /// Substitute for the indirect <c>IGCToCLR::StompWriteBarrier</c> call.
     /// <see cref="SoftwareWriteWatch.EnableForGCHeap"/> and
@@ -221,6 +333,21 @@ internal static unsafe class GCToEEInterface
         StompWriteBarrierObserver?.Invoke(*args);
     }
 
+    public static void GcEnumAllocContexts(
+        delegate* unmanaged<gc_alloc_context*, void*, void> fn,
+        void* param)
+    {
+        GcEnumAllocContextsCallCount++;
+        LastGcEnumAllocContextsCallback = (nuint)fn;
+        LastGcEnumAllocContextsParameter = (nuint)param;
+
+        foreach (nuint context in AllocContexts)
+        {
+            EnumeratedAllocContexts.Add(context);
+            fn((gc_alloc_context*)context, param);
+        }
+    }
+
     public static void GcScanRoots(
         delegate*<byte**, ScanContext*, uint, void> fn,
         int condemned,
@@ -232,6 +359,65 @@ internal static unsafe class GCToEEInterface
         LastGcScanRootsCondemned = condemned;
         LastGcScanRootsMaxGeneration = max_gen;
         LastGcScanRootsContext = sc;
+        LastGcScanRootsContextValue = *sc;
+        RootScanCallOrder.Add(RootScanCall.Scan);
+
+        if (GcScanRootsSlots.Count != 0)
+        {
+            foreach ((nuint slot, uint flags) in GcScanRootsSlots)
+            {
+                LastGcScanRootsCallbackContext = sc;
+                LastGcScanRootsCallbackFlags = flags;
+                fn((byte**)slot, sc, flags);
+            }
+        }
+        else if (GcScanRootsSlot is not null)
+        {
+            LastGcScanRootsCallbackContext = sc;
+            LastGcScanRootsCallbackFlags = GcScanRootsFlags;
+            fn(GcScanRootsSlot, sc, GcScanRootsFlags);
+        }
+    }
+
+    public static void AfterGcScanRoots(int condemned, int max_gen, ScanContext* sc)
+    {
+        AfterGcScanRootsCallCount++;
+        LastAfterGcScanRootsCondemned = condemned;
+        LastAfterGcScanRootsMaxGeneration = max_gen;
+        LastAfterGcScanRootsContext = sc;
+        LastAfterGcScanRootsContextValue = *sc;
+        RootScanCallOrder.Add(RootScanCall.After);
+        AfterGcScanRootsObserver?.Invoke();
+    }
+
+    public static void EnableFinalization(byte gcHasWorkForFinalizerThread)
+    {
+        EnableFinalizationCallCount++;
+        LastEnableFinalizationHasWork = gcHasWorkForFinalizerThread;
+    }
+
+    public static byte EagerFinalized(byte* obj) => obj == EagerFinalizedObject ? (byte)1 : (byte)0;
+
+    public static void DiagWalkFReachableObjects(void* gcContext)
+    {
+        DiagWalkFReachableObjectsCallCount++;
+        LastDiagWalkFReachableObjectsContext = gcContext;
+    }
+
+    public static void SyncBlockCacheWeakPtrScan(
+        delegate* unmanaged<byte**, nuint*, nuint, nuint, void> scanProc,
+        nuint lp1,
+        nuint lp2)
+    {
+        SyncBlockCacheWeakPtrScanCallCount++;
+        LastSyncBlockCacheWeakPtrScanCallback = (nuint)scanProc;
+        LastSyncBlockCacheWeakPtrScanParameter1 = lp1;
+        LastSyncBlockCacheWeakPtrScanParameter2 = lp2;
+
+        if (SyncBlockCacheWeakPtrScanSlot is not null)
+        {
+            scanProc(SyncBlockCacheWeakPtrScanSlot, null, lp1, lp2);
+        }
     }
 
     public static void* GetThread()

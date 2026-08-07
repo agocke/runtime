@@ -41,13 +41,15 @@ Ported so far:
 | `GCEventSerializer.cs` | `gcevent_serializers.h` |
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `GCDesc.cs` | descriptor encoding and MethodTable lookup from `gcdesc.h` |
-| `GCPriv.cs` | dependency-free leaf records from `gcpriv.h` |
-| `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `gc_reason` from `gc.h` |
+| `DynamicTuning.cs` | WKS total-heap-size, collection-count, and collection-end accounting, plus pure scalar tuning helpers from `dynamic_tuning.cpp` and `collect.cpp` |
+| `GCPriv.cs` | dependency-free leaf records from `gcpriv.h`, bounded WKS `init_records`, and the WKS `CFinalize` queue closure |
+| `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `fgm_history` and `gc_reason` from `gc.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
 | `HandleTableCache.cs` | `handletablecache.cpp` |
 | `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
 | `ObjectHandle.cs` | `objecthandle.h`, `objecthandle.cpp` (map, bucket, initialization, and dependent-handle subset) |
+| `HandleTableScan.cs` | synchronous full-GC strong, pinned, and dependent-promotion scans from `handletablescan.cpp`, `handletable.cpp`, and `objecthandle.cpp` |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
@@ -93,10 +95,13 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `MarkPhase.cs` | dependency-closed pinned-plug queue helpers from `mark_phase.cpp`, `gcinternal.h` |
-| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, and free-object helpers from `allocation.cpp`, `sweep.cpp`, and `gcinternal.h` |
+| `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, and overflow-recovery helpers from `mark_phase.cpp`, `gcinternal.h` |
+| `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, and UOH region start/tail unlinking from `plan_phase.cpp` |
+| `RelocateCompact.cs` | allocation-free `memcopy` relocation primitive, pinned-queue handoffs, and dependency-closed WKS `USE_REGIONS` helpers from `relocate_compact.cpp` |
+| `SweepPhase.cs` | bounded WKS `USE_REGIONS` normal-plan SOH brick walk, brick-tree sweep leaves, UOH marked-object clearing, unused-array clearing, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp` and `gcinternal.h` |
+| `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
-| `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping and region-table helpers from `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp` |
+| `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping, region-table, and deferred UOH free-region-return helpers from `collect.cpp`, `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, and `gc.cpp`, plus the direct brick repair and first-object lookup leaves from `card_table.cpp` |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
 | `ManagedGCHeap.cs` | `gcinterface.h` `IGCHeap` (non-collecting subset) |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
@@ -155,14 +160,22 @@ the later multi-heap collector work. The native `HandleTableMap`/`HandleTableBuc
 their initialization, removal, destruction, and allocation-failure cleanup are translated
 directly; the one-heap collector makes the current bucket contain one table.
 All-table handle counting and the variable-handle type helpers also operate over this translated
-map and extra-info storage. `HndNotifyGcCycleComplete` currently has its retail no-op behavior;
-the checked-build scan-statistics logging arrives with handle scanning.
+map and extra-info storage. `HndNotifyGcCycleComplete` currently has its retail no-op behavior.
+`HandleTableScan.cs` now has the bounded synchronous full-GC mark pass over the global map and
+circular type chains, with pinned roots preceding strong roots, short/long weak clearing, dead
+dependent-handle clearing, and dependent-handle secondary promotion reaching a WKS fixed point
+through parallel extra-info blocks. The non-routed WKS root slice runs its post-mark tail in the
+native order, including finalization and the sync-block weak callback. Checked-build
+scan-statistics logging remains deferred. It is not routed from `IGCHeap.GarbageCollect`.
 
 The GC history schema translates `gcrecord.h`: the
 generation and condition condemn-reason enums, their native two-bit/one-bit packed tuning
 record, the ten-field `gc_generation_data` event payload, `maxgen_size_increase`, and the
 per-heap and global mechanism histories. It also carries the `gc_reason` enum those records use
-from `gc.h`. The shared offsets table verifies the public record layouts and every enum value
+from `gc.h`. Its `fgm_history` backing schema and the bounded WKS `init_records` reset/snapshot
+path also mirror `gc.h` and `init.cpp`; they are not routed through `ManagedGCHeap` or extended
+into condemnation or planning. The shared offsets table verifies the public record layouts and
+every enum value
 against the real WKS and SVR headers; direct tests cover the private tuning record's size, native
 OR-based bit packing, most-significant-bit mechanism encoding, and mechanism flags. The
 string-based diagnostic `print` bodies remain with the later tracing work.
@@ -190,8 +203,7 @@ the same order as native.
 The dependency-free portion of `mark` from `gcinternal.h` is translated too: its complete
 short-plug schema, native `BOOL` bit predicates, pointer accessors, and allocation-free
 gap/relocation-pair swaps are present. `SHORT_PLUGS` is unconditional, while
-`COLLECTIBLE_CLASS` remains gated as it is natively (disabled for NativeAOT). `recover_plug_info`
-is deferred until the compaction settings and diagnostics slices are available.
+`COLLECTIBLE_CLASS` remains gated as it is natively (disabled for NativeAOT).
 `MarkPhase.cs` begins `mark_phase.cpp` with the dependency-closed pinned-plug queue setup:
 queue reset/dequeue and boundary helpers, mark-stack setup, growth and overflow reset, saved
 post-plug recovery, and allocation-limit clipping at the oldest pin. Mark-stack growth keeps the
@@ -205,6 +217,8 @@ passes each reference slot to a direct managed function pointer; it does not int
 allocation, or reverse P/Invoke transition. It does not mark references or run a collection.
 Pinned-plug enqueue/save now preserve both copies of the overwritten gap records, special header
 bits, short-object reference bits, and the unconditional `SHORT_PLUGS` padded-header helpers.
+The direct and saved-plug expansion-padding bridges are present but have no planning or allocation
+callers.
 `record_interesting_data_point` remains mechanically omitted: `Runtime.ManagedGC` does not
 compile the C++ mark phase and `System.Private.GC` does not define `GC_CONFIG_DRIVEN`, so it has
 no native diagnostic storage to update. The `_DEBUG && VERIFY_HEAP`
@@ -226,7 +240,9 @@ list cursors, and `slow`/`shigh` extrema. The promoted-byte overloads record by 
 region index with native unsigned overflow, while the debug-only WKS global recording and reset
 remain guarded exactly as native. The `survived_per_region` and
 `old_card_survived_per_region` storage pointers are now WKS static state, like their native
-`PER_HEAP_FIELD_SINGLE_GC` definitions. `gc_mechanisms.first_init` and
+`PER_HEAP_FIELD_SINGLE_GC` definitions. The active WKS `USE_REGIONS`
+`sync_promoted_bytes` leaf transfers both counters through the condemned generation region
+chains into their segment fields, without collection routing. `gc_mechanisms.first_init` and
 `init_mechanisms` retain the condemned-generation defaults, debug latency-mode override, and
 full-GC decision input. Although the managed project does not define a C# `FEATURE_LOH_COMPACTION`
 symbol, native `gcpriv.h` enables that feature unconditionally; the managed lifecycle therefore
@@ -237,15 +253,44 @@ region-specific branch, without routing collection. Collection setup accepts cal
 mark-list and counter storage, preserves the full-versus-partial list-end rule, and clears both
 counter spans before resetting extrema. It rejects null or zero-length list storage with a false
 result after resetting all mark state (debug-asserting that disabled state), so it cannot publish
-a writable empty list. The native `g_mark_list`,
-`g_mark_list_piece`, sizing policy, and growth/allocation ownership remain unported because
-they depend on global planning and multi-heap state; this port deliberately does not allocate a
-substitute. The active WKS `USE_REGIONS` `mark_object_simple1` foreground helper is now
+a writable empty list. The WKS `g_mark_list` owner now uses the native 8,192-to-102,400-entry
+capacity formula and the unmanaged allocation surface; allocation failure does not publish the
+new owner. Its no-argument setup overload lends that backing to the existing setup leaf, while
+the caller-owned overload remains for isolated leaves. `g_mark_list_piece` grows the native
+two-counter backing, releasing its prior block before replacement; each setup clears the active
+counter spans. Shutdown releases the owned mark-list block. The active WKS `USE_REGIONS`
+`mark_object_simple1` foreground helper is now
 translated, including the small-object capacity fallback through `CGCDesc.GetNumPointers`, the
 local `mark_stack_array` byte-slot traversal, partial-object continuation records, and queue-tail
-behavior that leaves the final prefetch slots pending for later drain. It remains unrouted from
-collection entrypoints, and `mark_object`, `drain_mark_queue`, and `mark_through_object` remain
-deferred. Background marking remains deferred.
+behavior that leaves the final prefetch slots pending for later drain. The adjacent active WKS
+`USE_REGIONS` `mark_object_simple` and `drain_mark_queue` leaves are now translated too: they
+preserve delayed root processing through the 16-slot queue, use `m_boundary` (not
+`m_boundary_fullgc`) even on full collections, and drain until `get_next_marked` returns null
+with an empty queue. `mark_object_simple` keeps the native contract that callers already applied
+exact range checks. The WKS per-collection `gc_low`/`gc_high` fields, `collect.cpp`
+`compute_gc_and_ephemeral_range`, and the `gcinternal.h` range/condemned predicates now provide
+that check. `mark_object` and `mark_through_object` retain the native filtering and descriptor
+walk; NativeAOT keeps the `COLLECTIBLE_CLASS` branch inactive. The WKS overflow-recovery
+leaves drain the queue, grow the unmanaged mark stack subject to the native heap-size cap,
+rescan each marked object in the captured address range, and recheck until stable. Their
+generation-size, total-heap-size, and promoted-byte accounting closure is translated without
+routing any helper from collection entrypoints. `gc_heap.promote` directly follows the WKS `GCHeap::Promote` range, condemned-region,
+interior-resolution, pin, and mark ordering. Its minimal `pin_object` sets the object header's
+pinned bit and counts every pinned callback; the bounded root lifecycle resets that counter.
+ETW publication and GC statistics publication remain deferred.
+`mark_phase_stack_roots` preserves the direct WKS root order over the owned mark-list and computed
+range: `BeforeGcScanRoots`, `GcScanRoots(promote)`, queue drain, `GcScanHandles(promote)`, queue
+drain, dependent-handle initial scan/fixed-point rescan, and `AfterGcScanRoots`. This remains
+intentionally non-routed from `IGCHeap.GarbageCollect`; weak clearing and the remainder of the
+full mark phase remain deferred.
+The allocation-free `memcopy` relocation primitive, card copying/clearing leaves, the pinned-queue `get_next_pinned_entry`
+and `get_oldest_pinned_entry` handoffs, and the dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`,
+`check_demotion_helper_sip`, and `check_demotion_helper` leaves from
+`relocate_compact.cpp` are translated without relocation routing. They preserve skewed
+region-map indexing, pointer-word copy grouping, card-boundary semantics, pinned-entry flag
+snapshots before dequeue and oldest-plug publication, demotion card marking for younger planned
+and demoted children, and the native in-heap check.
+Background marking remains deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
 unconditional card-bundle pointers; `mark_array` follows `BACKGROUND_GC` and is absent on WASM.
@@ -381,7 +426,14 @@ return of `decommit_step`. `ManagedGCHeap.Initialize` explicitly initializes the
 commit-accounting critical section before heap memory can use these helpers. Ephemeral segment
 decommit workflows later in `memory.cpp` remain deferred until ephemeral generations and
 segment-decommit state are present.
-`thread_free_obj` remains deferred with the free-list object representation. The schema forks on
+`GCRegionsSegments.cs` also translates `reset_heap_segment_pages`,
+`decommit_heap_segment_pages`, and its worker from `regions_segments.cpp`, including the native
+page-up reset boundary, decommit threshold, retained-space, never-decommit,
+object-heap-accounting, and committed/used-clamping behavior.
+`heap_segment.thread_free_obj` now directly mirrors the native region-sweep helper: gaps at least
+`min_free_list` (twice `min_obj_size`) append to the segment free list and accumulate
+`free_list_size`; smaller gaps accumulate `free_obj_size`. It only threads caller-provided free
+object storage and performs no allocation. The schema forks on
 `USE_REGIONS`,
 gcpriv.h's region layout that replaces
 `allocation_start` and `plan_allocation_start`(`_size`) with `tail_region`/`tail_ro_region`.
@@ -419,7 +471,12 @@ helper remains its intentional no-op. The next dependency-closed lookup slice ad
 the already-skewed mapping table with the absolute address shift, while `get_region_at_index`
 first adds the shifted nonzero heap base. The region-build `get_uoh_start_object`,
 `get_soh_start_object`, and `get_soh_start_obj_len` helpers are also translated: both starts are
-the region's memory and the SOH length is zero. The adjacent byte-sized `region_info` map,
+the region's memory and the SOH length is zero. The WKS `clear_gen0_bricks`, `find_object`, and
+`get_brick_entry` leaves preserve the direct brick-table lifecycle: Gen0 region traversal, the
+half-open aligned brick range, one-time clearing, lazy SOH first-object repair, zero-brick UOH
+linear lookup, allocation-time brick production, and foreground mark-phase decay. Interior
+promotion/pinning uses those lookup leaves through the direct WKS `GCHeap::Promote` callback;
+collection routing remains deferred. The adjacent byte-sized `region_info` map,
 including its current/planned generation and demotion/sweep flags, is now represented with both
 the absolute and skewed table pointers. Map reads and safe flag updates preserve the native
 absolute-versus-skewed indexing; Debug checks cross-check map reads against embedded segment
@@ -1085,8 +1142,10 @@ reimplementing dynamic space/budget decisions. Likewise,
 `fix_allocation_context_for_region_rollover` is only the native
 `for_gc_p == true, record_ac_p == false` rollover call: it formats or rewinds the context,
 retires SOH accounting, and `fix_youngest_allocation_area` publishes the old region's allocation
-pointer. Concurrent verification, allocation-context statistics, diagnostic region-added events,
-and all production allocation routing remain deferred.
+pointer. The bounded stopped-world counterpart enumerates the EE contexts in order, fixes each
+with the native callback ABI, records WKS allocation-context use, and then republishes the final
+youngest boundary; no collection path invokes it yet. Concurrent verification, diagnostic
+region-added events, and all production allocation routing remain deferred.
 
 The next `try_allocate_more_space` slice is an explicit unmanaged state-machine core. It preserves
 the WKS `allocation_state` transitions around the translated SOH/UOH fit paths, including the
@@ -1096,9 +1155,12 @@ mutations, retry-other-heap exit, and failure lock-release order. Its context ho
 unmanaged heap inputs. Its WKS heap now initializes the native `static_data_table` values and
 each generation's `dynamic_data` pointer, min-size, clocks, current/promoted/collection/
 fragmentation counters, and initial SOH/LOH/POH allocation budgets from
-`dynamic_tuning.cpp`. The native cache-, configured-segment-, Gen0/Gen1-budget-, latency-level-,
+`dynamic_tuning.cpp`. Its pure scalar survival-growth and linear-allocation correction helpers
+are also translated, as are WKS `collect.cpp` `update_collection_counts`,
+`update_end_ngc_time`, and `update_end_gc_time_per_heap`. The latter records one end timestamp
+and updates elapsed times only for condemned generations. The native cache-, configured-segment-, Gen0/Gen1-budget-, latency-level-,
 write-watch/concurrent-budget-, and region-independent UOH rules are retained; collection-time
-retuning and hard-limit computation remain deferred. GC/BGC waits and triggers, full-GC
+retuning beyond those helpers and hard-limit computation remain deferred. GC/BGC waits and triggers, full-GC
 notifications, more-space locks, UOH acquisition, retry decisions, and OOM reporting are an
 unmanaged function-pointer protocol;
 a null callback returns the exact state and deferred operation rather than claiming that such work

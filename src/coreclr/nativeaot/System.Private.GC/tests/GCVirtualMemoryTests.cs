@@ -1057,6 +1057,157 @@ public sealed unsafe class GCVirtualMemoryTests
     }
 
     [Fact]
+    public void ResetHeapSegmentPagesRoundsAllocatedUpToTheNextPage()
+    {
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(3 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(reservation, 3 * pageSize));
+
+            heap_segment segment = default;
+            heap_segment.heap_segment_allocated(&segment) = reservation + (nint)(pageSize / 2);
+            heap_segment.heap_segment_committed(&segment) = reservation + (nint)(3 * pageSize);
+            GCToOSInterface.ResetRecording();
+
+            gc_heap.reset_heap_segment_pages(&segment);
+
+            AssertVirtualResetWasRequested(reservation + (nint)pageSize, 2 * pageSize);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 3 * pageSize);
+        }
+    }
+
+    [Fact]
+    public void ResetHeapSegmentPagesResetsTheCommittedTail()
+    {
+        nuint pageSize = PageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(4 * pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(reservation, 4 * pageSize));
+
+            heap_segment segment = default;
+            heap_segment.heap_segment_allocated(&segment) = reservation + (nint)pageSize;
+            heap_segment.heap_segment_committed(&segment) = reservation + (nint)(4 * pageSize);
+            GCToOSInterface.ResetRecording();
+
+            gc_heap.reset_heap_segment_pages(&segment);
+
+            AssertVirtualResetWasRequested(reservation + (nint)pageSize, 3 * pageSize);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, 4 * pageSize);
+        }
+    }
+
+    [Fact]
+    public void ResetHeapSegmentPagesSkipsAnEmptyTail()
+    {
+        byte* committed = (byte*)0x1000;
+        heap_segment segment = default;
+        heap_segment.heap_segment_allocated(&segment) = committed;
+        heap_segment.heap_segment_committed(&segment) = committed;
+        GCToOSInterface.ResetRecording();
+
+        gc_heap.reset_heap_segment_pages(&segment);
+
+        AssertNoVirtualResetWasRequested();
+    }
+
+    [Fact]
+    public void DecommitHeapSegmentPagesDoesNotDecommitBelowThreshold()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+        byte* allocated = (byte*)0x1000;
+        nuint committedSize = 100 * pageSize;
+        heap_segment segment = default;
+        heap_segment.heap_segment_allocated(&segment) = allocated;
+        heap_segment.heap_segment_used(&segment) = allocated + (nint)(committedSize - pageSize);
+        heap_segment.heap_segment_committed(&segment) = allocated + (nint)(committedSize - pageSize);
+
+        GCToOSInterface.ResetRecording();
+
+        gc_heap.decommit_heap_segment_pages(&segment, 0, 0);
+
+        AssertNoVirtualDecommitWasRequested();
+        Assert.Equal((nuint)(allocated + (nint)(committedSize - pageSize)), (nuint)heap_segment.heap_segment_committed(&segment));
+        Assert.Equal((nuint)(allocated + (nint)(committedSize - pageSize)), (nuint)heap_segment.heap_segment_used(&segment));
+    }
+
+    [Fact]
+    public void DecommitHeapSegmentPagesUpdatesObjectHeapAccountingAndClampsUsed()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+        nuint committedSize = 100 * pageSize;
+        byte* reservation = GCToOSInterface.VirtualReserve(committedSize + pageSize, pageSize, (uint)VirtualReserveFlags.None);
+        Assert.True(reservation != null);
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(reservation, committedSize + pageSize));
+
+            byte* pageStart = reservation + (nint)pageSize;
+            heap_segment segment = default;
+            heap_segment.heap_segment_allocated(&segment) = reservation + sizeof(aligned_plug_and_gap);
+            heap_segment.heap_segment_used(&segment) = pageStart + (nint)committedSize;
+            heap_segment.heap_segment_committed(&segment) = pageStart + (nint)committedSize;
+            segment.flags = heap_segment.heap_segment_flags_loh;
+            gc_heap.committed_by_oh[(int)gc_oh_num.loh] = committedSize;
+            gc_heap.current_total_committed = committedSize;
+            GCToOSInterface.ResetRecording();
+
+            gc_heap.decommit_heap_segment_pages(&segment, 0, 0);
+
+            nuint retainedSize = 32 * pageSize;
+            Assert.Equal(1, VirtualDecommitRequestCount());
+            Assert.Equal((nuint)(pageStart + (nint)retainedSize), (nuint)heap_segment.heap_segment_committed(&segment));
+            Assert.Equal((nuint)(pageStart + (nint)retainedSize), (nuint)heap_segment.heap_segment_used(&segment));
+            Assert.Equal(retainedSize, gc_heap.committed_by_oh[(int)gc_oh_num.loh]);
+            Assert.Equal((nuint)0, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+            Assert.Equal(retainedSize, gc_heap.current_total_committed);
+        }
+        finally
+        {
+            GCToOSInterface.VirtualRelease(reservation, committedSize + pageSize);
+        }
+    }
+
+    [Fact]
+    public void DecommitHeapSegmentPagesSkipsNeverDecommit()
+    {
+        using MemoryAccountingScope scope = new();
+        nuint pageSize = PageSize;
+        byte* allocated = (byte*)0x1000;
+        nuint committedSize = 100 * pageSize;
+        heap_segment segment = default;
+        heap_segment.heap_segment_allocated(&segment) = allocated;
+        heap_segment.heap_segment_used(&segment) = allocated + (nint)committedSize;
+        heap_segment.heap_segment_committed(&segment) = allocated + (nint)committedSize;
+        gc_heap.committed_by_oh[(int)gc_oh_num.soh] = committedSize;
+        gc_heap.current_total_committed = committedSize;
+        gc_heap.never_decommit_p = true;
+        GCToOSInterface.ResetRecording();
+
+        gc_heap.decommit_heap_segment_pages(&segment, 0, 0);
+
+        AssertNoVirtualDecommitWasRequested();
+        Assert.Equal((nuint)(allocated + (nint)committedSize), (nuint)heap_segment.heap_segment_committed(&segment));
+        Assert.Equal((nuint)(allocated + (nint)committedSize), (nuint)heap_segment.heap_segment_used(&segment));
+        Assert.Equal(committedSize, gc_heap.committed_by_oh[(int)gc_oh_num.soh]);
+        Assert.Equal(committedSize, gc_heap.current_total_committed);
+    }
+
+    [Fact]
     public void DecommitRegionFailedDecommitClearsCommittedBytesAndKeepsAccounting()
     {
         using MemoryAccountingScope scope = new();
@@ -1286,6 +1437,30 @@ public sealed unsafe class GCVirtualMemoryTests
         Assert.Equal(0, GCToOSInterface.VirtualAllocCount);
 #else
         Assert.Equal(0, GCToOSInterface.MprotectCount);
+#endif
+    }
+
+    private static void AssertVirtualResetWasRequested(byte* address, nuint size)
+    {
+#if TARGET_WINDOWS
+        Assert.Equal(1, GCToOSInterface.VirtualAllocCount);
+        Assert.True(GCToOSInterface.LastVirtualAlloc.lpAddress == address);
+        Assert.Equal(size, GCToOSInterface.LastVirtualAlloc.dwSize);
+        Assert.Equal(MEM_RESET, GCToOSInterface.LastVirtualAlloc.flAllocationType);
+#else
+        Assert.Equal(HasCoredumpAdvice ? 2 : 1, GCToOSInterface.MadviseCount);
+        Assert.True(GCToOSInterface.LastMadvise.addr == address);
+        Assert.Equal(size, GCToOSInterface.LastMadvise.length);
+        Assert.Equal(MADV_FREE, GCToOSInterface.LastMadvise.arg);
+#endif
+    }
+
+    private static void AssertNoVirtualResetWasRequested()
+    {
+#if TARGET_WINDOWS
+        Assert.Equal(0, GCToOSInterface.VirtualAllocCount);
+#else
+        Assert.Equal(0, GCToOSInterface.MadviseCount);
 #endif
     }
 

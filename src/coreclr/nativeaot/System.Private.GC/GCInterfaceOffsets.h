@@ -52,6 +52,17 @@
 GC_CONST(         0,         0, card_table_element)
 GC_CONST(         1,         1, brick_table_element)
 GC_CONST(         2,         2, card_bundle_table_element)
+#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+GC_CONST(         3,         3, software_write_watch_table_element)
+GC_CONST(         4,         4, region_to_generation_table_element)
+GC_CONST(         5,         5, seg_mapping_table_element)
+#ifdef BACKGROUND_GC
+GC_CONST(         6,         6, mark_array_element)
+GC_CONST(         7,         7, total_bookkeeping_elements)
+#else
+GC_CONST(         6,         6, total_bookkeeping_elements)
+#endif
+#else
 GC_CONST(         3,         3, region_to_generation_table_element)
 GC_CONST(         4,         4, seg_mapping_table_element)
 #ifdef BACKGROUND_GC
@@ -59,6 +70,7 @@ GC_CONST(         5,         5, mark_array_element)
 GC_CONST(         6,         6, total_bookkeeping_elements)
 #else
 GC_CONST(         5,         5, total_bookkeeping_elements)
+#endif
 #endif
 #endif
 

@@ -5,6 +5,7 @@
 // sweep.cpp, gcinternal.h, and dynamic_tuning.cpp.
 
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection;
 
@@ -23,6 +24,21 @@ internal unsafe partial struct gc_heap
     public static int get_alignment_constant(bool small_object_p)
     {
         return small_object_p ? GCEnv.DATA_ALIGNMENT - 1 : 7;
+    }
+
+    public static void set_padding_in_expand(
+        byte* old_loc,
+        int set_padding_on_saved_p,
+        mark* pinned_plug_entry)
+    {
+        if (set_padding_on_saved_p != 0)
+        {
+            set_plug_padded(get_plug_start_in_saved(old_loc, pinned_plug_entry));
+        }
+        else
+        {
+            set_plug_padded(old_loc);
+        }
     }
 
     public static bool a_size_fit_p(nuint size, byte* alloc_pointer, byte* alloc_limit, int align_const)
@@ -661,6 +677,7 @@ internal unsafe partial struct gc_heap
     public static void fix_allocation_context(
         gc_alloc_context* acontext,
         bool for_gc_p,
+        bool record_ac_p,
         generation* generation_table,
         heap_segment* ephemeral_heap_segment,
         byte** alloc_allocated,
@@ -701,6 +718,12 @@ internal unsafe partial struct gc_heap
         if (for_gc_p)
         {
             retire_allocation_context(acontext, total_alloc_bytes_soh);
+#if USE_REGIONS
+            if (record_ac_p)
+            {
+                alloc_contexts_used++;
+            }
+#endif
         }
     }
 
@@ -715,11 +738,48 @@ internal unsafe partial struct gc_heap
         fix_allocation_context(
             acontext,
             true,
+            false,
             generation_table,
             ephemeral_heap_segment,
             alloc_allocated,
             total_alloc_bytes_soh);
     }
+
+#if USE_REGIONS
+    private struct fix_alloc_context_args
+    {
+        public int for_gc_p;
+        public gc_heap* heap;
+    }
+
+    [UnmanagedCallersOnly]
+    public static void fix_alloc_context(gc_alloc_context* acontext, void* param)
+    {
+        fix_alloc_context_args* args = (fix_alloc_context_args*)param;
+        gc_heap* heap = args->heap;
+        fix_allocation_context(
+            acontext,
+            args->for_gc_p != 0,
+            true,
+            generation_table_of(heap),
+            heap->ephemeral_heap_segment,
+            &heap->alloc_allocated,
+            &heap->total_alloc_bytes_soh);
+    }
+
+    public static void fix_allocation_contexts(gc_heap* heap, bool for_gc_p)
+    {
+        fix_alloc_context_args args = default;
+        args.for_gc_p = for_gc_p ? 1 : 0;
+        args.heap = heap;
+
+        GCToEEInterface.GcEnumAllocContexts(&fix_alloc_context, &args);
+        fix_youngest_allocation_area(
+            generation_of(generation_table_of(heap), (int)gc_generation_num.soh_gen0),
+            heap->ephemeral_heap_segment,
+            heap->alloc_allocated);
+    }
+#endif
 
     public static void fix_youngest_allocation_area(
         generation* youngest_generation,
@@ -1359,6 +1419,9 @@ internal unsafe partial struct gc_heap
         hp->allocation_running_amount = dynamic_data.dd_min_size(dynamic_data_of(hp, (int)gc_generation_num.soh_gen0));
         hp->allocation_quantum = DefaultAllocationQuantum;
         hp->heap_number = 0;
+#if !MULTIPLE_HEAPS
+        gen0_bricks_cleared = 0;
+#endif
     }
 
     public static void create_try_allocate_more_space_context(
@@ -2324,8 +2387,8 @@ internal unsafe partial struct gc_heap
     }
 
     // This is the dependency-closed WKS USE_REGIONS portion of adjust_limit_clr. The BGC mark
-    // bit, allocation event, brick update, and verification branches remain deferred with their
-    // owning collector states; this leaf must not report that they ran.
+    // bit, allocation event, and verification branches remain deferred with their owning
+    // collector states; this leaf must not report that they ran.
     public static void adjust_limit_clr(
         byte* start,
         nuint limit_size,
@@ -2410,8 +2473,7 @@ internal unsafe partial struct gc_heap
             clear_start = obj_end;
         }
 
-        // Capture this while holding the lock, as the native code does. Brick-table maintenance
-        // that consumes it remains with the untranslated generation-0 collector state.
+        // Capture this while holding the lock, as the native code does.
         heap_segment* gen0_segment = ephemeral_heap_segment;
 
         byte* clear_end;
@@ -2440,7 +2502,32 @@ internal unsafe partial struct gc_heap
             memclr(clear_start, unchecked((nuint)(clear_end - clear_start)));
         }
 
-        _ = gen0_segment;
+#if !MULTIPLE_HEAPS
+        // this portion can be done after we release the lock
+        if (seg == gen0_segment ||
+            (seg is null &&
+             gen_number == (int)gc_generation_num.soh_gen0 &&
+             limit_size >= DefaultAllocationQuantum / 2))
+        {
+            if (gen0_must_clear_bricks > 0)
+            {
+                // set the brick table to speed up find_object
+                nuint b = brick_of(acontext->alloc_ptr);
+                set_brick(b, unchecked((nint)(acontext->alloc_ptr - brick_address(b))));
+                b++;
+                nuint end_brick = brick_of(card_table_info.align_on_brick(start + (nint)limit_size));
+
+                for (; b < end_brick; b++)
+                {
+                    GCEnv.VolatileStore((ushort*)&brick_table[(nint)b], ushort.MaxValue);
+                }
+            }
+            else
+            {
+                gen0_bricks_cleared = 0;
+            }
+        }
+#endif
     }
 
     public static void set_allocation_heap_segment(generation* gen)

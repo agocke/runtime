@@ -121,7 +121,7 @@ namespace Internal.Runtime.GarbageCollection
             return pSegment;
         }
 
-        private static bool HndIsNullOrDestroyedHandle(nuint value)
+        internal static bool HndIsNullOrDestroyedHandle(nuint value)
         {
 #if DEBUG
             if (value == HandleTableConstants.DEBUG_DestroyedHandleValue)

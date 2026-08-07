@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Port of the dependency-closed WKS USE_REGIONS helpers from init.cpp,
-// regions_segments.cpp, plan_phase.cpp, background.cpp, diagnostics.cpp, and gc.cpp.
+// Port of the dependency-closed WKS USE_REGIONS helpers from card_table.cpp, collect.cpp,
+// init.cpp, regions_segments.cpp, plan_phase.cpp, background.cpp, diagnostics.cpp, and gc.cpp.
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -16,6 +16,9 @@ internal enum bookkeeping_element
     card_table_element,
     brick_table_element,
     card_bundle_table_element,
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+    software_write_watch_table_element,
+#endif
     region_to_generation_table_element,
     seg_mapping_table_element,
 #if BACKGROUND_GC
@@ -136,6 +139,51 @@ internal unsafe partial struct gc_heap
         {
             SyncImports.ManagedGC_Free(initial_regions);
             initial_regions = null;
+        }
+    }
+
+    // recompute ephemeral range - it may have become too large because of temporary allocation
+    // and deallocation of regions
+    public static void compute_gc_and_ephemeral_range(gc_heap* hp, int condemned_gen_number, bool end_of_gc_p)
+    {
+        ephemeral_low = (byte*)nuint.MaxValue;
+        ephemeral_high = null;
+        gc_low = (byte*)nuint.MaxValue;
+        gc_high = null;
+        if (condemned_gen_number >= (int)gc_generation_num.soh_gen2 || end_of_gc_p)
+        {
+            gc_low = GCCommon.g_gc_lowest_address;
+            gc_high = GCCommon.g_gc_highest_address;
+        }
+
+        if (end_of_gc_p)
+        {
+            ephemeral_low = GCCommon.g_gc_lowest_address;
+            ephemeral_high = GCCommon.g_gc_highest_address;
+        }
+        else
+        {
+            generation* generation_table = generation_table_of(hp);
+            for (int gen_number = (int)gc_generation_num.soh_gen0;
+                 gen_number <= (int)gc_generation_num.soh_gen1;
+                 gen_number++)
+            {
+                generation* gen = generation_of(generation_table, gen_number);
+                for (heap_segment* region = generation.generation_start_segment(gen);
+                     region is not null;
+                     region = heap_segment.heap_segment_next(region))
+                {
+                    byte* region_start = get_region_start(region);
+                    byte* region_end = heap_segment.heap_segment_reserved(region);
+                    ephemeral_low = ephemeral_low < region_start ? ephemeral_low : region_start;
+                    ephemeral_high = ephemeral_high > region_end ? ephemeral_high : region_end;
+                    if (gen_number <= condemned_gen_number)
+                    {
+                        gc_low = gc_low < region_start ? gc_low : region_start;
+                        gc_high = gc_high > region_end ? gc_high : region_end;
+                    }
+                }
+            }
         }
     }
 
@@ -260,6 +308,11 @@ internal unsafe partial struct gc_heap
             case bookkeeping_element.card_table_element:
             case bookkeeping_element.card_bundle_table_element:
                 return (nuint)sizeof(uint);
+
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+            case bookkeeping_element.software_write_watch_table_element:
+                return (nuint)sizeof(nuint);
+#endif
 
             case bookkeeping_element.brick_table_element:
                 return (nuint)sizeof(short);
@@ -643,6 +696,69 @@ internal unsafe partial struct gc_heap
         return new_segment;
     }
 
+    //resets the pages beyond allocates size so they won't be swapped out and back in
+    public static void reset_heap_segment_pages(heap_segment* seg)
+    {
+        byte* page_start = align_on_page(heap_segment.heap_segment_allocated(seg));
+        nuint size = unchecked((nuint)(heap_segment.heap_segment_committed(seg) - page_start));
+        if (size != 0)
+        {
+            GCToOSInterface.VirtualReset(page_start, size, false /* unlock */);
+        }
+    }
+
+    public static void decommit_heap_segment_pages(heap_segment* seg, nuint extra_space, int heap_number)
+    {
+        if (never_decommit_p)
+        {
+            return;
+        }
+
+        byte* page_start = align_on_page(heap_segment.heap_segment_allocated(seg));
+        Debug.Assert(heap_segment.heap_segment_committed(seg) >= page_start);
+
+        nuint size = unchecked((nuint)(heap_segment.heap_segment_committed(seg) - page_start));
+        nuint page_size = GCToOSInterface.GetPageSize();
+        extra_space = align_on_page(extra_space);
+        nuint threshold = unchecked(extra_space + (2 * page_size));
+        if (threshold < gc_rand.MIN_DECOMMIT_SIZE)
+        {
+            threshold = gc_rand.MIN_DECOMMIT_SIZE;
+        }
+
+        if (size >= threshold)
+        {
+            nuint retained_space = extra_space > 32 * page_size ? extra_space : 32 * page_size;
+            page_start = (byte*)unchecked((nuint)page_start + retained_space);
+            decommit_heap_segment_pages_worker(seg, page_start, heap_number);
+        }
+    }
+
+    public static nuint decommit_heap_segment_pages_worker(heap_segment* seg, byte* new_committed, int heap_number)
+    {
+        Debug.Assert(!never_decommit_p);
+        byte* page_start = align_on_page(new_committed);
+        nint size = unchecked((nint)(heap_segment.heap_segment_committed(seg) - page_start));
+        if (size > 0)
+        {
+            bool decommit_succeeded_p = virtual_decommit(
+                page_start,
+                unchecked((nuint)size),
+                (int)heap_segment.heap_segment_oh(seg),
+                heap_number);
+            if (decommit_succeeded_p)
+            {
+                heap_segment.heap_segment_committed(seg) = page_start;
+                if (heap_segment.heap_segment_used(seg) > heap_segment.heap_segment_committed(seg))
+                {
+                    heap_segment.heap_segment_used(seg) = heap_segment.heap_segment_committed(seg);
+                }
+            }
+        }
+
+        return unchecked((nuint)size);
+    }
+
     public static heap_segment* allocate_new_region(gc_heap* hp, int gen_num, bool uoh_p, nuint size = 0)
     {
         byte* start = null;
@@ -878,6 +994,19 @@ internal unsafe partial struct gc_heap
     {
         heap_segment* ns = heap_segment.heap_segment_next(seg);
         return heap_segment_rw(ns);
+    }
+
+    public static heap_segment* heap_segment_next_non_sip(heap_segment* seg)
+    {
+        heap_segment* ns = heap_segment.heap_segment_next(seg);
+#if USE_REGIONS
+        while (ns is not null && heap_segment.heap_segment_swept_in_plan(ns) != 0)
+        {
+            ns = heap_segment.heap_segment_next(ns);
+        }
+#endif
+
+        return ns;
     }
 
     public static void thread_uoh_segment(generation* generation_table, int gen_number, heap_segment* new_seg)
@@ -1208,6 +1337,16 @@ internal unsafe partial struct gc_heap
         return gen_num;
     }
 
+    public static int object_gennum(byte* o)
+    {
+        return get_region_gen_num(o);
+    }
+
+    public static int object_gennum_plan(byte* o)
+    {
+        return get_region_plan_gen_num(o);
+    }
+
     public static int get_region_plan_gen_num(byte* obj)
     {
         nuint skewed_basic_region_index = get_skewed_basic_region_index_for_address(obj);
@@ -1258,6 +1397,13 @@ internal unsafe partial struct gc_heap
         map_region_to_generation[(nint)region_index] = (region_info)((byte)map_region_to_generation[(nint)region_index] & ~(byte)region_info.RI_DEMOTED);
     }
 
+    public static int get_plan_gen_num(int gen_number)
+    {
+        return settings.promotion != 0
+            ? (gen_number < (int)gc_generation_num.max_generation ? gen_number + 1 : (int)gc_generation_num.max_generation)
+            : gen_number;
+    }
+
     public static byte* get_uoh_start_object(heap_segment* region, generation* gen)
     {
         _ = gen;
@@ -1281,6 +1427,64 @@ internal unsafe partial struct gc_heap
         return (nuint)(add - lowest_address) / card_table_info.brick_size;
     }
 
+    public static byte* brick_address(nuint brick)
+    {
+        return (byte*)unchecked((nuint)lowest_address + (card_table_info.brick_size * brick));
+    }
+
+    // codes for the brick entries:
+    // entry == 0 -> not assigned
+    // entry > 0 offset is entry - 1
+    // entry < 0 jump back entry bricks
+    public static void set_brick(nuint index, nint val)
+    {
+        if (val < -32767)
+        {
+            val = -32767;
+        }
+
+        Debug.Assert(val < 32767);
+        if (val >= 0)
+        {
+            brick_table[(nint)index] = unchecked((short)(val + 1));
+        }
+        else
+        {
+            brick_table[(nint)index] = unchecked((short)val);
+        }
+    }
+
+#if !MULTIPLE_HEAPS
+    public static int get_brick_entry(nuint index)
+    {
+        return brick_table[(nint)index];
+    }
+
+    public static void clear_gen0_bricks(gc_heap* hp)
+    {
+        if (gen0_bricks_cleared == 0)
+        {
+            gen0_bricks_cleared = 1;
+            generation* gen0 = generation_of(
+                generation_table_of(hp),
+                (int)gc_generation_num.soh_gen0);
+            heap_segment* gen0_region = generation.generation_start_segment(gen0);
+            while (gen0_region is not null)
+            {
+                byte* clear_start = heap_segment.heap_segment_mem(gen0_region);
+                for (nuint b = brick_of(clear_start);
+                     b < brick_of(card_table_info.align_on_brick(heap_segment.heap_segment_allocated(gen0_region)));
+                     b++)
+                {
+                    set_brick(b, -1);
+                }
+
+                gen0_region = heap_segment.heap_segment_next(gen0_region);
+            }
+        }
+    }
+#endif
+
     public static void clear_brick_table(byte* from, byte* end)
     {
         nuint from_brick = brick_of(from);
@@ -1288,9 +1492,192 @@ internal unsafe partial struct gc_heap
         GCCommon.MemSet((byte*)&brick_table[(nint)from_brick], 0, (end_brick - from_brick) * (nuint)sizeof(short));
     }
 
+    public static void fix_brick_to_highest(byte* o, byte* next_o)
+    {
+        nuint new_current_brick = brick_of(o);
+        set_brick(new_current_brick, unchecked((nint)(o - brick_address(new_current_brick))));
+        nuint b = 1 + new_current_brick;
+        nuint limit = brick_of(next_o);
+        while (b < limit)
+        {
+            set_brick(b, unchecked((nint)(new_current_brick - b)));
+            b++;
+        }
+    }
+
+    // start can not be >= heap_segment_allocated for the segment.
+    public static byte* find_first_object(byte* start, byte* first_object)
+    {
+        nuint brick = brick_of(start);
+        byte* o;
+        if (brick == brick_of(first_object) || start <= first_object)
+        {
+            o = first_object;
+        }
+        else
+        {
+            nint min_brick = (nint)brick_of(first_object);
+            nint prev_brick = (nint)brick - 1;
+            int brick_entry = 0;
+            while (true)
+            {
+                if (prev_brick < min_brick)
+                {
+                    break;
+                }
+
+                brick_entry = get_brick_entry((nuint)prev_brick);
+                if (brick_entry >= 0)
+                {
+                    break;
+                }
+
+                Debug.Assert(brick_entry != 0);
+                prev_brick += brick_entry;
+            }
+
+            o = prev_brick < min_brick
+                ? first_object
+                : brick_address((nuint)prev_brick) + brick_entry - 1;
+            Debug.Assert(o <= start);
+        }
+
+        Debug.Assert(Align(size(o)) >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+        byte* next_o = o + (nint)Align(size(o));
+        nuint curr_cl = (nuint)next_o / card_table_info.brick_size;
+        nuint min_cl = (nuint)first_object / card_table_info.brick_size;
+        byte* next_b = card_table_info.align_lower_brick(next_o) + (nint)card_table_info.brick_size;
+        byte* start_plus_one = start + 1;
+        if (next_b > start_plus_one)
+        {
+            next_b = start_plus_one;
+        }
+
+        while (next_o <= start)
+        {
+            do
+            {
+                o = next_o;
+                Debug.Assert(Align(size(o)) >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+                next_o = o + (nint)Align(size(o));
+            }
+            while (next_o < next_b);
+
+            if ((nuint)next_o / card_table_info.brick_size != curr_cl)
+            {
+                if (curr_cl >= min_cl)
+                {
+                    fix_brick_to_highest(o, next_o);
+                }
+
+                curr_cl = (nuint)next_o / card_table_info.brick_size;
+            }
+
+            next_b = card_table_info.align_lower_brick(next_o) + (nint)card_table_info.brick_size;
+            if (next_b > start_plus_one)
+            {
+                next_b = start_plus_one;
+            }
+        }
+
+        nuint bo = brick_of(o);
+        if (bo < brick)
+        {
+            set_brick(bo, unchecked((nint)(o - brick_address(bo))));
+            nuint b = 1 + bo;
+            nint x = -1;
+            while (b < brick)
+            {
+                set_brick(b, x--);
+                b++;
+            }
+        }
+
+        return o;
+    }
+
+#if !MULTIPLE_HEAPS
+    // will find all heap objects (large and small)
+    //
+    // Callers of this method need to guarantee the interior pointer is within the heap range.
+    //
+    // If you need it to be stricter, eg if you only want to find an object in ephemeral range,
+    // you should make sure interior is within that range before calling this method.
+    public static byte* find_object(byte* interior, gc_heap* hp)
+    {
+        Debug.Assert(interior is not null);
+
+        if (gen0_bricks_cleared == 0)
+        {
+            clear_gen0_bricks(hp);
+        }
+
+        // indicate that in the future this needs to be done during allocation
+        gen0_must_clear_bricks = FFIND_DECAY;
+
+        int brick_entry = get_brick_entry(brick_of(interior));
+        if (brick_entry == 0)
+        {
+            // this is a pointer to a UOH object
+            if (!try_get_region_segment(interior, small_heap_only: false, out heap_segment* seg))
+            {
+                return null;
+            }
+
+            byte* allocated = heap_segment.heap_segment_allocated(seg);
+            byte* o = heap_segment.heap_segment_mem(seg);
+            int align_const = get_alignment_constant(heap_segment.heap_segment_read_only_p(seg) != 0);
+            while (o < allocated)
+            {
+                byte* next_o = o + (nint)Align(size(o), align_const);
+                Debug.Assert(next_o > o);
+                if (o <= interior && interior < next_o)
+                {
+                    return o;
+                }
+
+                o = next_o;
+            }
+
+            return null;
+        }
+
+        if (!try_get_region_segment(interior, small_heap_only: true, out heap_segment* soh_seg))
+        {
+            return null;
+        }
+
+        return find_first_object(interior, heap_segment.heap_segment_mem(soh_seg));
+    }
+#endif
+
     public static nuint card_of(byte* add)
     {
         return card_table_info.gcard_of(add);
+    }
+
+    public static byte* card_address(nuint card)
+    {
+        return (byte*)unchecked(card_table_info.card_size * card);
+    }
+
+    public static void set_card(nuint card)
+    {
+        nuint word = card_table_info.card_word(card);
+        card_table[(nint)word] = card_table[(nint)word] | (1u << (int)card_table_info.card_bit(card));
+
+#if FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
+        // Also set the card bundle that corresponds to the card
+        nuint bundle_to_set = card_table_info.cardw_card_bundle(word);
+
+        card_bundle_set(bundle_to_set);
+#endif
+    }
+
+    public static bool card_set_p(nuint card)
+    {
+        return (card_table[(nint)card_table_info.card_word(card)] &
+            (1u << (int)card_table_info.card_bit(card))) != 0;
     }
 
     private static uint lowbits(uint wrd, uint bits)
@@ -1337,6 +1724,120 @@ internal unsafe partial struct gc_heap
         nuint start_card = card_of(card_table_info.align_on_card(start_address));
         nuint end_card = card_of(card_table_info.align_lower_card(end_address));
         clear_cards(start_card, end_card);
+    }
+
+    // copy [src_card, ...[ to [dst_card, end_card[
+    // This will set the same bit twice. Can be optimized.
+    public static void copy_cards(nuint dst_card, nuint src_card, nuint end_card, bool nextp)
+    {
+        if (!(dst_card < end_card))
+        {
+            return;
+        }
+
+        uint srcbit = card_table_info.card_bit(src_card);
+        uint dstbit = card_table_info.card_bit(dst_card);
+        nuint srcwrd = card_table_info.card_word(src_card);
+        nuint dstwrd = card_table_info.card_word(dst_card);
+        uint srctmp = card_table[(nint)srcwrd];
+        uint dsttmp = card_table[(nint)dstwrd];
+
+        for (nuint card = dst_card; card < end_card; card++)
+        {
+            if ((srctmp & (1u << (int)srcbit)) != 0)
+            {
+                dsttmp |= 1u << (int)dstbit;
+            }
+            else
+            {
+                dsttmp &= ~(1u << (int)dstbit);
+            }
+
+            if (++srcbit % (uint)card_table_info.card_word_width == 0)
+            {
+                srctmp = card_table[(nint)(++srcwrd)];
+                srcbit = 0;
+            }
+
+            if (nextp && (srctmp & (1u << (int)srcbit)) != 0)
+            {
+                dsttmp |= 1u << (int)dstbit;
+            }
+
+            if (++dstbit % (uint)card_table_info.card_word_width == 0)
+            {
+                card_table[(nint)dstwrd] = dsttmp;
+
+#if FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
+                if (dsttmp != 0)
+                {
+                    card_bundle_set(card_table_info.cardw_card_bundle(dstwrd));
+                }
+#endif
+
+                dstwrd++;
+                dsttmp = card_table[(nint)dstwrd];
+                dstbit = 0;
+            }
+        }
+
+        card_table[(nint)dstwrd] = dsttmp;
+
+#if FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
+        if (dsttmp != 0)
+        {
+            card_bundle_set(card_table_info.cardw_card_bundle(dstwrd));
+        }
+#endif
+    }
+
+    public static void copy_cards_for_addresses(byte* dest, byte* src, nuint len)
+    {
+        nint relocation_distance = (nint)(src - dest);
+        nuint start_dest_card = card_of(card_table_info.align_on_card(dest));
+        nuint end_dest_card = card_of(dest + len - 1);
+        nuint dest_card = start_dest_card;
+        nuint src_card = card_of(card_address(dest_card) + relocation_distance);
+
+        // First card has two boundaries.
+        if (start_dest_card != card_of(dest))
+        {
+            if ((card_of(card_address(start_dest_card) + relocation_distance) <= card_of(src + len - 1)) &&
+                card_set_p(card_of(card_address(start_dest_card) + relocation_distance)))
+            {
+                set_card(card_of(dest));
+            }
+        }
+
+        if (card_set_p(card_of(src)))
+        {
+            set_card(card_of(dest));
+        }
+
+        copy_cards(
+            dest_card,
+            src_card,
+            end_dest_card,
+            (dest - card_table_info.align_lower_card(dest)) != (src - card_table_info.align_lower_card(src)));
+
+        // Last card has two boundaries.
+        if ((card_of(card_address(end_dest_card) + relocation_distance) >= card_of(src)) &&
+            card_set_p(card_of(card_address(end_dest_card) + relocation_distance)))
+        {
+            set_card(end_dest_card);
+        }
+
+        if (card_set_p(card_of(src + len - 1)))
+        {
+            set_card(end_dest_card);
+        }
+
+#if FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
+        card_bundles_set(
+            card_table_info.cardw_card_bundle(card_table_info.card_word(card_of(dest))),
+            card_table_info.cardw_card_bundle(
+                card_table_info.align_cardw_on_bundle(card_table_info.card_word(end_dest_card))));
+#endif
     }
 
 #if BACKGROUND_GC
@@ -1457,6 +1958,19 @@ internal unsafe partial struct gc_heap
             heap_segment.heap_segment_heap(basic_region) = null;
 #endif
         }
+    }
+
+    public static void rearrange_uoh_segments()
+    {
+        heap_segment* seg = freeable_uoh_segment;
+        while (seg is not null)
+        {
+            heap_segment* next_seg = heap_segment.heap_segment_next(seg);
+            return_free_region(seg);
+            seg = next_seg;
+        }
+
+        freeable_uoh_segment = null;
     }
 #endif
 }

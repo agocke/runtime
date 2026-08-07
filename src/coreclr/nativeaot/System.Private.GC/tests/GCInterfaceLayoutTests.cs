@@ -515,6 +515,12 @@ public sealed class GCInterfaceLayoutTests
 #else
                 false,
 #endif
+            "#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP" =>
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+                true,
+#else
+                false,
+#endif
             "#if defined(_DEBUG) || defined(DEBUG)" =>
 #if DEBUG
                 true,
