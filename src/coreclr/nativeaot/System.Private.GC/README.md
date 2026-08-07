@@ -44,12 +44,12 @@ Ported so far:
 | `DynamicTuning.cs` | WKS total-heap-size, collection-count, and collection-end accounting, plus pure scalar tuning helpers from `dynamic_tuning.cpp` and `collect.cpp` |
 | `GCPriv.cs` | dependency-free leaf records from `gcpriv.h`, bounded WKS `init_records`, and the WKS `CFinalize` queue and relocation closure |
 | `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `fgm_history` and `gc_reason` from `gc.h` |
-| `HandleTableConstants.cs` | `handletableconstants.h` |
+| `HandleTableConstants.cs` | `handletableconstants.h`, GC scan flags from `handletable.h` |
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
 | `HandleTableCache.cs` | `handletablecache.cpp` |
 | `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
 | `ObjectHandle.cs` | `objecthandle.h`, `objecthandle.cpp` (map, bucket, initialization, and dependent-handle subset) |
-| `HandleTableScan.cs` | synchronous full-GC strong, pinned, and dependent-promotion scans from `handletablescan.cpp`, `handletable.cpp`, and `objecthandle.cpp` |
+| `HandleTableScan.cs` | synchronous full-GC promotion, weak clearing, and relocation scans from `handletablescan.cpp`, `handletable.cpp`, and `objecthandle.cpp` |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
@@ -286,8 +286,16 @@ statistics publication remain deferred.
 `mark_phase_stack_roots` preserves the direct WKS root order over the owned mark-list and computed
 range: `BeforeGcScanRoots`, `GcScanRoots(promote)`, queue drain, `GcScanHandles(promote)`, queue
 drain, dependent-handle initial scan/fixed-point rescan, and `AfterGcScanRoots`. This remains
-intentionally non-routed from `IGCHeap.GarbageCollect`; weak clearing and the remainder of the
-full mark phase remain deferred.
+intentionally non-routed from `IGCHeap.GarbageCollect`; collection routing and the remainder of
+the full mark phase remain deferred.
+The relocation branch of `GcScanHandles` now preserves the native synchronous WKS pass order:
+sync-block weak pointers and the physical block-order multi-type weak/strong/ref-counted scan,
+pinned handles with `GC_CALL_PINNED`, dependent primary and secondary pointers, then weak-interior
+primaries with the interior delta adjustment. Full segment iteration retains chain resorting,
+page trimming, empty-segment removal, and sequence maintenance. The bounded entrypoint explicitly
+rejects ephemeral and concurrent scans; async queues, aging, variable handles, standalone obsolete
+handle types, diagnostics/debug statistics, and `relocate_phase`/collection routing remain
+deferred. `FEATURE_JAVAMARSHAL` cross-reference inclusion follows the existing build guard.
 The allocation-free `memcopy` relocation primitive, card copying/clearing leaves, the pinned-queue `get_next_pinned_entry`
 and `get_oldest_pinned_entry` handoffs, brick-tree `tree_search`, `loh_object_p`, and
 `relocate_address`, and the
@@ -296,7 +304,7 @@ dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`, `check_demot
 `reloc_survivor_helper`, the dependency-closed plug-level and direct traversal SOH relocation
 helpers, and
 non-compacting `relocate_in_uoh_objects` leaves from
-`relocate_compact.cpp` are translated without relocation routing. They preserve skewed
+`relocate_compact.cpp` are translated without `relocate_phase` or collection routing. They preserve skewed
 region-map indexing, pointer-word copy grouping, card-boundary semantics, pinned-entry flag
 snapshots before dequeue and oldest-plug publication, demotion card marking for younger planned
 and demoted children, brick backlinks, predecessor-node relocation, left-node gap adjustment,

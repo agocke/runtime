@@ -22,6 +22,10 @@ public sealed unsafe class HandleTableTests
         Assert.Equal(12, HandleTableConstants.HNDTYPE_INTERNAL_DATABLOCK);
         Assert.Equal(0u, HandleTableConstants.HNDF_NORMAL);
         Assert.Equal(1u, HandleTableConstants.HNDF_EXTRAINFO);
+        Assert.Equal(0u, HandleTableConstants.HNDGCF_NORMAL);
+        Assert.Equal(1u, HandleTableConstants.HNDGCF_AGE);
+        Assert.Equal(2u, HandleTableConstants.HNDGCF_ASYNC);
+        Assert.Equal(4u, HandleTableConstants.HNDGCF_EXTRAINFO);
 
         Assert.Equal(65536, HandleTableConstants.HANDLE_SEGMENT_SIZE);
         Assert.Equal(4096, HandleTableConstants.HANDLE_HEADER_SIZE);

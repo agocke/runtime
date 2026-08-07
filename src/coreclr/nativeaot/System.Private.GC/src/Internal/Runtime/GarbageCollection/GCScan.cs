@@ -53,10 +53,22 @@ internal static unsafe class GCScan
         int max_gen,
         ScanContext* sc)
     {
-        if (sc->promotion != 0 && sc->concurrent == 0 && condemned >= max_gen)
+        if (sc->concurrent != 0 || condemned < max_gen)
+        {
+            return;
+        }
+
+        if (sc->promotion != 0)
         {
             HandleTableScan.Ref_TracePinningRoots(condemned, max_gen, sc, fn);
             HandleTableScan.Ref_TraceNormalRoots(condemned, max_gen, sc, fn);
+        }
+        else
+        {
+            HandleTableScan.Ref_UpdatePointers(condemned, max_gen, sc, fn);
+            HandleTableScan.Ref_UpdatePinnedPointers(condemned, max_gen, sc, fn);
+            HandleTableScan.Ref_ScanDependentHandlesForRelocation(condemned, max_gen, sc, fn);
+            HandleTableScan.Ref_ScanWeakInteriorPointersForRelocation(condemned, max_gen, sc, fn);
         }
     }
 

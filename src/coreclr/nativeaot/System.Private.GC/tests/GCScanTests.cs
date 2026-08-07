@@ -19,6 +19,10 @@ public sealed unsafe class GCScanTests
     private static uint s_secondHandleScanFlags;
     private static uint s_handleScanFlags;
     private static int s_dependentPromotionCount;
+    private static readonly nuint[] s_recordedHandleSlots = new nuint[32];
+    private static readonly nuint[] s_recordedHandleValues = new nuint[32];
+    private static readonly uint[] s_recordedHandleFlags = new uint[32];
+    private static nint s_relocationDelta;
 
     public GCScanTests()
     {
@@ -182,10 +186,11 @@ public sealed unsafe class GCScanTests
     }
 
     [Theory]
-    [InlineData(0, 0, 2, 2)]
+    [InlineData(0, 1, 2, 2)]
+    [InlineData(0, 0, 1, 2)]
     [InlineData(1, 1, 2, 2)]
     [InlineData(1, 0, 1, 2)]
-    public void GcScanHandlesExcludesNonPromotionConcurrentAndEphemeralScans(
+    public void GcScanHandlesRequiresSynchronousFullGc(
         int promotion,
         int concurrent,
         int condemned,
@@ -211,6 +216,373 @@ public sealed unsafe class GCScanTests
             GCScan.GcScanHandles(&RecordHandle, condemned, maxGeneration, &sc);
 
             Assert.Equal(0, s_handleScanCallCount);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void GcScanHandlesRelocationUsesNativePassOrderAndTypeMasks()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            byte* syncBlockWeak = (byte*)0x1000;
+            GCToEEInterface.SyncBlockCacheWeakPtrScanSlot = &syncBlockWeak;
+
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_SHORT,
+                (byte*)0x1100,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_LONG,
+                (byte*)0x1200,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x1300,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_REFCOUNTED,
+                (byte*)0x1400,
+                0);
+#if FEATURE_JAVAMARSHAL
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_CROSSREFERENCE,
+                (byte*)0x1500,
+                0);
+#endif
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_VARIABLE,
+                (byte*)0x5000,
+                ObjectHandle.VHT_STRONG);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_ASYNCPINNED,
+                (byte*)0x5100,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_SIZEDREF,
+                (byte*)0x5200,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_NATIVE_COM,
+                (byte*)0x5300,
+                0);
+#if !FEATURE_JAVAMARSHAL
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_CROSSREFERENCE,
+                (byte*)0x5400,
+                0);
+#endif
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_PINNED,
+                (byte*)0x2000,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                (byte*)0x3000,
+                0x3100);
+            nuint interior = 0x4010;
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER,
+                (byte*)0x4000,
+                (nuint)(void*)&interior);
+
+            ScanContext sc = default;
+            ResetRelocationObservations();
+
+            GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
+
+#if FEATURE_JAVAMARSHAL
+            Assert.Equal(10, s_handleScanCallCount);
+#else
+            Assert.Equal(9, s_handleScanCallCount);
+#endif
+            int index = 0;
+            AssertRecordedHandle(index++, 0x1000, 0);
+            AssertRecordedHandle(index++, 0x1100, 0);
+            AssertRecordedHandle(index++, 0x1200, 0);
+            AssertRecordedHandle(index++, 0x1300, 0);
+            AssertRecordedHandle(index++, 0x1400, 0);
+#if FEATURE_JAVAMARSHAL
+            AssertRecordedHandle(index++, 0x1500, 0);
+#endif
+            AssertRecordedHandle(index++, 0x2000, (uint)GCCallFlags.GC_CALL_PINNED);
+            AssertRecordedHandle(index++, 0x3000, 0);
+            AssertRecordedHandle(index++, 0x3100, 0);
+            AssertRecordedHandle(index, 0x4000, 0);
+            Assert.Equal((nuint)0x4010, interior);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void GcScanHandlesRelocatesSyncBlockWeakPointer()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+
+        try
+        {
+            byte* syncBlockWeak = (byte*)0x1000;
+            GCToEEInterface.SyncBlockCacheWeakPtrScanSlot = &syncBlockWeak;
+            ScanContext sc = default;
+            ResetRelocationObservations();
+            s_relocationDelta = 0x20;
+
+            GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
+
+            Assert.Equal(1, s_handleScanCallCount);
+            AssertRecordedHandle(0, 0x1000, 0);
+            Assert.Equal((nuint)0x1020, (nuint)syncBlockWeak);
+            Assert.Equal(1, GCToEEInterface.SyncBlockCacheWeakPtrScanCallCount);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void GcScanHandlesRelocatesDependentPrimaryAndSecondary()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            OBJECTHANDLE dependent = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                (byte*)0x2000,
+                0x3000);
+            ScanContext sc = default;
+            ResetRelocationObservations();
+            s_relocationDelta = 0x40;
+
+            GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
+
+            Assert.Equal(2, s_handleScanCallCount);
+            AssertRecordedHandle(0, 0x2000, 0);
+            AssertRecordedHandle(1, 0x3000, 0);
+            Assert.Equal((nuint)0x2040, *(nuint*)dependent.Value);
+            Assert.Equal((nuint)0x3040, (nuint)HandleTableManager.GetDependentHandleSecondary(dependent));
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Theory]
+    [InlineData(0x20)]
+    [InlineData(-0x20)]
+    public void GcScanHandlesAdjustsWeakInteriorPointerByPrimaryDelta(long relocationDelta)
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            nuint interior = 0x4080;
+            OBJECTHANDLE weakInterior = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER,
+                (byte*)0x4000,
+                (nuint)(void*)&interior);
+            ScanContext sc = default;
+            ResetRelocationObservations();
+            s_relocationDelta = (nint)relocationDelta;
+
+            GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
+
+            Assert.Equal(1, s_handleScanCallCount);
+            AssertRecordedHandle(0, 0x4000, 0);
+            Assert.Equal((nuint)(0x4000 + relocationDelta), *(nuint*)weakInterior.Value);
+            Assert.Equal((nuint)(0x4080 + relocationDelta), interior);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void GcScanHandlesSkipsWeakInteriorHandleWithNullPrimary()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            nuint interior = 0x4080;
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER,
+                null,
+                (nuint)(void*)&interior);
+            ScanContext sc = default;
+            ResetRelocationObservations();
+            s_relocationDelta = 0x20;
+
+            GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
+
+            Assert.Equal(0, s_handleScanCallCount);
+            Assert.Equal((nuint)0x4080, interior);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void GcScanHandlesMultiTypeRelocationUsesPhysicalBlockOrder()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x2000,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_SHORT,
+                (byte*)0x1000,
+                0);
+            ScanContext sc = default;
+            ResetRelocationObservations();
+
+            GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
+
+            Assert.Equal(2, s_handleScanCallCount);
+            AssertRecordedHandle(0, 0x2000, 0);
+            AssertRecordedHandle(1, 0x1000, 0);
+            Assert.True(s_recordedHandleSlots[0] < s_recordedHandleSlots[1]);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void GcScanHandlesRelocationSkipsNullAndDestroyedHandles()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                null,
+                0);
+            OBJECTHANDLE destroyed = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x2000,
+                0);
+            HandleTableManager.HndDestroyHandle(table, (uint)HandleType.HNDTYPE_STRONG, destroyed);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x3000,
+                0);
+            ScanContext sc = default;
+            ResetRelocationObservations();
+
+            GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
+
+            Assert.Equal(1, s_handleScanCallCount);
+            AssertRecordedHandle(0, 0x3000, 0);
+        }
+        finally
+        {
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void GcScanHandlesFullScanPerformsSegmentMaintenance()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket = (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x1000,
+                0);
+            TableSegment* liveSegment = table->pSegmentList;
+            liveSegment->Header.bSequence = 17;
+            liveSegment->Header.fResortChains = true;
+
+            TableSegment* emptySegment = HandleTableCore.SegmentAlloc(table);
+            Assert.True(emptySegment is not null);
+            emptySegment->Header.pNextSegment = liveSegment;
+            table->pSegmentList = emptySegment;
+
+            ScanContext sc = default;
+            ResetRelocationObservations();
+
+            GCScan.GcScanHandles(&RecordAndRelocateHandle, 2, 2, &sc);
+
+            Assert.True(table->pSegmentList == liveSegment);
+            Assert.False(liveSegment->Header.fResortChains);
+            Assert.Equal((byte)0, liveSegment->Header.bSequence);
+            Assert.Equal(1, s_handleScanCallCount);
+            AssertRecordedHandle(0, 0x1000, 0);
         }
         finally
         {
@@ -368,6 +740,18 @@ public sealed unsafe class GCScanTests
         s_handleScanFlags = 0;
     }
 
+    private static void ResetRelocationObservations()
+    {
+        s_handleScanCallCount = 0;
+        s_relocationDelta = 0;
+    }
+
+    private static void AssertRecordedHandle(int index, nuint value, uint flags)
+    {
+        Assert.Equal(value, s_recordedHandleValues[index]);
+        Assert.Equal(flags, s_recordedHandleFlags[index]);
+    }
+
     private static void RecordHandle(byte** objectRef, ScanContext* sc, uint flags)
     {
         int callCount = s_handleScanCallCount++;
@@ -383,6 +767,21 @@ public sealed unsafe class GCScanTests
         }
 
         s_handleScanFlags |= flags;
+    }
+
+    private static void RecordAndRelocateHandle(byte** objectRef, ScanContext* sc, uint flags)
+    {
+        _ = sc;
+
+        int index = s_handleScanCallCount++;
+        s_recordedHandleSlots[index] = (nuint)objectRef;
+        s_recordedHandleValues[index] = (nuint)(*objectRef);
+        s_recordedHandleFlags[index] = flags;
+
+        if (*objectRef is not null)
+        {
+            *objectRef = (byte*)((nint)(*objectRef) + s_relocationDelta);
+        }
     }
 
 #if USE_REGIONS

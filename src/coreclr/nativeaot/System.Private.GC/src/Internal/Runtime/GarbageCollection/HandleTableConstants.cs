@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Ported from src/coreclr/gc/handletableconstants.h.
+// Ported from src/coreclr/gc/handletableconstants.h and the GC scan flags of handletable.h.
 
 namespace Internal.Runtime.GarbageCollection
 {
@@ -25,6 +25,11 @@ namespace Internal.Runtime.GarbageCollection
 
         public const uint HNDF_NORMAL = 0x00;
         public const uint HNDF_EXTRAINFO = 0x01;
+
+        public const uint HNDGCF_NORMAL = 0x00000000;
+        public const uint HNDGCF_AGE = 0x00000001;
+        public const uint HNDGCF_ASYNC = 0x00000002;
+        public const uint HNDGCF_EXTRAINFO = 0x00000004;
 
 #if DEBUG
         public const nuint DEBUG_DestroyedHandleValue = 0x7;
