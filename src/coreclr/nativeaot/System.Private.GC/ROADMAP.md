@@ -1269,7 +1269,9 @@ Translate in dependency order:
   leaves through `GCScan.GcScanRoots` with native range, condemned-region, interior-resolution,
   pin, and mark ordering. It sets the object-header pinned bit and counts each pin callback,
   resetting that counter at the bounded root lifecycle; ETW and GC statistics publication remain
-  deferred. The bounded
+  deferred. The adjacent WKS `GCHeap::Relocate` bridge and `is_in_find_object_range` preserve the
+  bookkeeping-covered gate, condemned-range rejection, exact SOH relocation, and compacting-LOH
+  interior offset without routing a relocation scan. The bounded
   `mark_phase_stack_roots` lifecycle preserves the direct WKS root order over the owned mark-list
   and computed range: `BeforeGcScanRoots`, stack-root scanning, queue drain, finalizer-root
   scanning, queue drain, `GcScanHandles(promote)` (pinned before strong), queue drain, initial
@@ -1279,9 +1281,9 @@ Translate in dependency order:
   `IGCHeap::GarbageCollect`; no full mark phase is routed; the WKS overflow-recovery leaves and
   their
   generation-size, total-heap-size, and promoted-byte accounting closure are translated without
-  routing. The bounded WKS `CFinalize` storage, registration/dequeue, F-reachable scan, and
-  direct `ScanForFinalization` closure are translated and classification is invoked by this
-  prefix; finalizer scheduling remains deferred;
+  routing. The bounded WKS `CFinalize` storage, registration/dequeue, F-reachable scan, direct
+  `ScanForFinalization`, and generation-range relocation closure are translated and
+  classification is invoked by this prefix; finalizer scheduling remains deferred;
   `GC_CONFIG_DRIVEN` interesting-data-point updates are omitted because the
   managed NativeAOT build defines neither that symbol nor its diagnostic storage; the
   `_DEBUG && VERIFY_HEAP` `verify_pinned_queue_p` assignment and verification-only state remain
@@ -1296,7 +1298,7 @@ Translate in dependency order:
 - `relocate_compact.cpp` (the allocation-free `memcopy` relocation primitive, card-copy/clear
   dispatch leaf, pinned-queue `get_next_pinned_entry` and `get_oldest_pinned_entry` handoffs, and
   dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`,
-  `check_demotion_helper_sip`, `check_demotion_helper`, brick-tree `tree_search`, and
+  `check_demotion_helper_sip`, `check_demotion_helper`, `loh_object_p`, brick-tree `tree_search`, and
   `relocate_address` leaves are translated without relocation routing; the next dependency-closed
   non-compacting UOH slice adds `AlignQword`, the NativeAOT-disabled collectible-class demotion
   check, `reloc_survivor_helper`, its allocation-free descriptor callback, and
@@ -1329,7 +1331,7 @@ preserve all heap invariants under checked-build verification.
 ### 10. Concurrency and tuning
 
 **Status: In progress -- bounded WKS `CFinalize` queue storage, registration/dequeue,
-F-reachable promotion, and direct root scanning are translated**
+F-reachable promotion, direct root scanning, and relocation are translated**
 
 Translate:
 
@@ -1343,10 +1345,11 @@ The C++ `MULTIPLE_HEAPS` and `SERVER_GC` conditionals sometimes change fields be
 instance storage. The C# representation must preserve behavior while remaining source-comparable;
 prefer an explicit always-instance representation where required by the language.
 
-The current finalization closure deliberately stops before server merge/split, relocation,
-background processing, and collection scheduling. `IGCHeap::GarbageCollect` does not invoke
-either the mark-prefix helper or `ScanForFinalization`; wiring either requires the remaining
-foreground mark/plan/sweep closure and must not be inferred from this bounded workstation slice.
+The current finalization closure deliberately stops before server merge/split, background
+processing, and collection scheduling. Its relocation helper remains unrouted with the rest of
+the relocation slice. `IGCHeap::GarbageCollect` does not invoke either the mark-prefix helper or
+`ScanForFinalization`; wiring either requires the remaining foreground mark/plan/sweep closure
+and must not be inferred from this bounded workstation slice.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.

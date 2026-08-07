@@ -3844,6 +3844,32 @@ namespace Internal.Runtime.GarbageCollection
             return finalizedFound;
         }
 
+        // Relocates all of the objects in the finalization array.
+        public void RelocateFinalizationData(int gen, gc_heap* heap)
+        {
+            ScanContext scanContext = default;
+            scanContext.promotion = 0;
+#if MULTIPLE_HEAPS
+            scanContext.thread_number = heap->heap_number;
+            scanContext.thread_count = gc_heap.n_heaps;
+#else
+            _ = heap;
+            scanContext.thread_count = 1;
+#endif
+
+            uint segment = gen_segment(gen);
+
+            fixed (byte*** fillPointers = &m_FillPointer0)
+            {
+                byte** startIndex = seg_queue(fillPointers, m_Array, (int)segment);
+                byte** stopIndex = seg_queue(fillPointers, m_Array, FreeList);
+                for (byte** current = startIndex; current < stopIndex; current++)
+                {
+                    gc_heap.relocate(current, &scanContext);
+                }
+            }
+        }
+
         private bool GrowArray(byte*** fillPointers)
         {
             nuint oldArraySize = (nuint)(m_EndArray - m_Array);

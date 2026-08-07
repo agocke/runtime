@@ -268,6 +268,12 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    public static int loh_object_p(byte* o)
+    {
+        int brick_entry = brick_table[(nint)brick_of(o)];
+        return brick_entry == 0 ? 1 : 0;
+    }
+
     public static void relocate_address(byte** pold_address)
     {
         byte* old_address = *pold_address;

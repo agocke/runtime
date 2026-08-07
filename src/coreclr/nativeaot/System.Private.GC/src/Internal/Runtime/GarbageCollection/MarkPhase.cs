@@ -3,7 +3,7 @@
 
 // Ported from dependency-closed pinned-plug queue/mark-stack helpers and the active WKS
 // USE_REGIONS mark_object_simple1/mark_object_simple/drain_mark_queue leaves in
-// mark_phase.cpp and gcinternal.h.
+// mark_phase.cpp, the WKS root bridges in interface.cpp, and gcinternal.h.
 
 using System;
 using System.Diagnostics;
@@ -425,6 +425,30 @@ internal unsafe partial struct gc_heap
     public static bool is_in_heap_range(byte* o)
     {
         return o >= GCCommon.g_gc_lowest_address && o < GCCommon.g_gc_highest_address;
+    }
+
+    // This needs to check the range that's covered by bookkeeping because find_object will
+    // need to look at the brick table.
+    public static bool is_in_find_object_range(byte* o)
+    {
+        if (o is null)
+        {
+            return false;
+        }
+
+#if USE_REGIONS && FEATURE_CONSERVATIVE_GC
+        return o >= GCCommon.g_gc_lowest_address && o < bookkeeping_covered_committed;
+#else
+        if (o >= GCCommon.g_gc_lowest_address && o < GCCommon.g_gc_highest_address)
+        {
+#if USE_REGIONS
+            Debug.Assert(o < bookkeeping_covered_committed);
+#endif
+            return true;
+        }
+
+        return false;
+#endif
     }
 
     public static byte* ref_from_slot(byte* r)
@@ -1524,6 +1548,50 @@ internal unsafe partial struct gc_heap
         mark_object_simple(heap, &o);
 #else
         _ = ppObject;
+        _ = flags;
+#endif
+    }
+
+    public static void relocate(byte** ppObject, ScanContext* sc, uint flags = 0)
+    {
+        _ = sc;
+
+        byte* objectAddress = *ppObject;
+        if (!is_in_find_object_range(objectAddress))
+        {
+            return;
+        }
+
+#if USE_REGIONS
+        gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+        byte* pheader;
+
+        if ((flags & (uint)GCCallFlags.GC_CALL_INTERIOR) != 0 && settings.loh_compaction != 0)
+        {
+            if (!is_in_condemned_gc(objectAddress))
+            {
+                return;
+            }
+
+            if (loh_object_p(objectAddress) != 0)
+            {
+                pheader = find_object(objectAddress, heap);
+                if (pheader is null)
+                {
+                    return;
+                }
+
+                nint ref_offset = (nint)(objectAddress - pheader);
+                relocate_address(&pheader);
+                *ppObject = pheader + ref_offset;
+                return;
+            }
+        }
+
+        pheader = objectAddress;
+        relocate_address(&pheader);
+        *ppObject = pheader;
+#else
         _ = flags;
 #endif
     }

@@ -42,7 +42,7 @@ Ported so far:
 | `GCEventStatus.cs` | `gceventstatus.h`, `gceventstatus.cpp` |
 | `GCDesc.cs` | descriptor encoding and MethodTable lookup from `gcdesc.h` |
 | `DynamicTuning.cs` | WKS total-heap-size, collection-count, and collection-end accounting, plus pure scalar tuning helpers from `dynamic_tuning.cpp` and `collect.cpp` |
-| `GCPriv.cs` | dependency-free leaf records from `gcpriv.h`, bounded WKS `init_records`, and the WKS `CFinalize` queue closure |
+| `GCPriv.cs` | dependency-free leaf records from `gcpriv.h`, bounded WKS `init_records`, and the WKS `CFinalize` queue and relocation closure |
 | `GCRecord.cs` | schema and non-diagnostic helpers from `gcrecord.h`, plus `fgm_history` and `gc_reason` from `gc.h` |
 | `HandleTableConstants.cs` | `handletableconstants.h` |
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
@@ -95,9 +95,9 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
-| `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, and overflow-recovery helpers from `mark_phase.cpp`, `gcinternal.h` |
+| `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle prefix, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, and UOH region start/tail unlinking from `plan_phase.cpp` |
-| `RelocateCompact.cs` | allocation-free `memcopy` relocation primitive, pinned-queue handoffs, brick-tree, plug-level and direct survivor-walk SOH relocation, non-compacting UOH reference relocation, and dependency-closed WKS `USE_REGIONS` helpers from `relocate_compact.cpp` |
+| `RelocateCompact.cs` | allocation-free `memcopy` relocation primitive, pinned-queue handoffs, brick-tree, LOH classification, plug-level and direct survivor-walk SOH relocation, non-compacting UOH reference relocation, and dependency-closed WKS `USE_REGIONS` helpers from `relocate_compact.cpp` |
 | `SweepPhase.cs` | bounded WKS `USE_REGIONS` normal-plan SOH brick walk, brick-tree sweep leaves, UOH marked-object clearing, unused-array clearing, free-list front-threading, and linked UOH sweep/unlinking from `sweep.cpp` and `gcinternal.h` |
 | `GCAllocation.cs` | dependency-closed WKS `USE_REGIONS` heap allocation state, allocation-context creation/callback plumbing, stopped-world allocation-context fixing, free-list/segment-end orchestration and fitting, `allocate_more_space` / deferred-operation state machines, refill-transition, `AlignQword`, and free-object helpers from `allocation.cpp` and `gcinternal.h` |
 | `GCMemory.cs` | dependency-closed WKS region memory helpers from `memory.cpp` |
@@ -275,17 +275,22 @@ walk; NativeAOT keeps the `COLLECTIBLE_CLASS` branch inactive. The WKS overflow-
 leaves drain the queue, grow the unmanaged mark stack subject to the native heap-size cap,
 rescan each marked object in the captured address range, and recheck until stable. Their
 generation-size, total-heap-size, and promoted-byte accounting closure is translated without
-routing any helper from collection entrypoints. `gc_heap.promote` directly follows the WKS `GCHeap::Promote` range, condemned-region,
-interior-resolution, pin, and mark ordering. Its minimal `pin_object` sets the object header's
-pinned bit and counts every pinned callback; the bounded root lifecycle resets that counter.
-ETW publication and GC statistics publication remain deferred.
+routing any helper from collection entrypoints. `gc_heap.promote` directly follows the WKS
+`GCHeap::Promote` range, condemned-region, interior-resolution, pin, and mark ordering. Its
+minimal `pin_object` sets the object header's pinned bit and counts every pinned callback; the
+bounded root lifecycle resets that counter. The adjacent `is_in_find_object_range` and
+`gc_heap.relocate` bridge preserve the bookkeeping-covered range gate, condemned-region
+filtering, exact SOH relocation, and compacting-LOH interior offset. Pinned flags require no
+special relocation action, as in the native bridge. ETW publication, stress logging, and GC
+statistics publication remain deferred.
 `mark_phase_stack_roots` preserves the direct WKS root order over the owned mark-list and computed
 range: `BeforeGcScanRoots`, `GcScanRoots(promote)`, queue drain, `GcScanHandles(promote)`, queue
 drain, dependent-handle initial scan/fixed-point rescan, and `AfterGcScanRoots`. This remains
 intentionally non-routed from `IGCHeap.GarbageCollect`; weak clearing and the remainder of the
 full mark phase remain deferred.
 The allocation-free `memcopy` relocation primitive, card copying/clearing leaves, the pinned-queue `get_next_pinned_entry`
-and `get_oldest_pinned_entry` handoffs, brick-tree `tree_search` and `relocate_address`, and the
+and `get_oldest_pinned_entry` handoffs, brick-tree `tree_search`, `loh_object_p`, and
+`relocate_address`, and the
 dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`, `check_demotion_helper_sip`,
 `check_demotion_helper`, NativeAOT-disabled collectible-class demotion check,
 `reloc_survivor_helper`, the dependency-closed plug-level and direct traversal SOH relocation
@@ -303,6 +308,8 @@ linear walks and skips, free-object exclusion, writable LOH/POH segment traversa
 segment skipping, pointer-free-object skipping, qword object stepping, and allocation-free
 managed function-pointer adapters for descriptor walks. `get_start_segment`, `relocate_phase`,
 compaction, and collection routing remain deferred.
+The bounded WKS `CFinalize` queue now relocates the native half-open generation-to-free-list
+range through the same root bridge; server merge/split and scheduling remain deferred.
 Background marking remains deferred.
 The adjacent `card_table_info` schema and its dependency-free helpers are translated too. Its
 DAC-compatible `recount`/`size`/`next_card_table` prefix is followed by the card, brick, and
