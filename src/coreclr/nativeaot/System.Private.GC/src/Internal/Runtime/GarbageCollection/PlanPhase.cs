@@ -1640,7 +1640,16 @@ internal unsafe partial struct gc_heap
         }
 
 #if BACKGROUND_GC
-        if (settings.background_p != 0 ||
+        if (background_final_plan())
+        {
+            if (settings.background_p != 0 ||
+                !background_running_p() ||
+                current_bgc_state != bgc_state.bgc_plan_phase)
+            {
+                return false;
+            }
+        }
+        else if (settings.background_p != 0 ||
             background_running_p() ||
             current_bgc_state != bgc_state.bgc_not_in_process)
         {
@@ -2408,6 +2417,13 @@ internal unsafe partial struct gc_heap
             condemned_gen_number,
             fragmentation,
             ref shouldExpand);
+
+#if BACKGROUND_GC
+        if (background_final_plan())
+        {
+            shouldCompact = false;
+        }
+#endif
 
         if (condemned_gen_number == GCInterfaceOffsets.max_generation)
         {

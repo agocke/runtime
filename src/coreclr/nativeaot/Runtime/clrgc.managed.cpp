@@ -90,6 +90,55 @@ extern "C" void ManagedGC_WaitUntilGCComplete(
     }
 }
 
+struct ManagedGCBackgroundThreadArgs
+{
+    void (*threadStart)(void*);
+    void* context;
+    int32_t* exited;
+};
+
+static void ManagedGCBackgroundThreadStub(void* argument)
+{
+    ManagedGCBackgroundThreadArgs* args =
+        static_cast<ManagedGCBackgroundThreadArgs*>(argument);
+    void (*threadStart)(void*) = args->threadStart;
+    void* context = args->context;
+    int32_t* exited = args->exited;
+
+    threadStart(context);
+    VolatileStore(exited, 1);
+    delete args;
+}
+
+extern "C" BOOL ManagedGC_CreateBackgroundThread(
+    void (*threadStart)(void*),
+    void* context,
+    int32_t* exited,
+    const char* name)
+{
+    ManagedGCBackgroundThreadArgs* args =
+        new (nothrow) ManagedGCBackgroundThreadArgs{
+            threadStart,
+            context,
+            exited};
+    if (args == nullptr)
+    {
+        return FALSE;
+    }
+
+    if (!::GCToEEInterface::CreateThread(
+        ManagedGCBackgroundThreadStub,
+        args,
+        true,
+        name))
+    {
+        delete args;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 // Stands in for the C++ GC's PURE_VIRTUAL: the managed heap points every IGCHeap slot it has
 // not implemented yet at this, so reaching one stops the process at the call rather than
 // crashing later on a null slot or a bogus return value.

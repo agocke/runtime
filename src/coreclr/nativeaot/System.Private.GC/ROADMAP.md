@@ -49,9 +49,10 @@ The following prerequisites are already working:
   `EnumerateConfigurationValues` slot.
 - Write-barrier globals and frozen segments are initialized sufficiently for application
   startup.
-- `GC.Collect` routes the bounded WKS `USE_REGIONS` synchronous foreground lifecycle. Server,
-  background, non-blocking/optimized/aggressive, heap-verification, survivor-analysis, and
-  collection-event diagnostic modes are rejected before collector mutation.
+- `GC.Collect` routes the bounded WKS `USE_REGIONS` synchronous foreground lifecycle.
+  Forced non-blocking Gen2 also routes when concurrent GC is configured; optimized/aggressive,
+  server, heap-verification, survivor-analysis, and collection-event diagnostic modes remain
+  rejected before collector mutation.
 - Managed GC mutations use suspension-safe critical regions.
 - GC/EE structure layouts, enum values and sizes, and all six vtable slot lists -- with their
   signatures and calling conventions -- are verified against the native headers.
@@ -1413,8 +1414,8 @@ finalizer queue through `GC.GetGCMemoryInfo()`.
 
 ### 10. Concurrency and tuning
 
-**Status: In progress -- bounded WKS `CFinalize` queue storage, registration/dequeue,
-F-reachable promotion, direct root scanning, and relocation are translated**
+**Status: In progress -- the WKS background thread/event lifecycle and a dependency-closed
+non-blocking Gen2 prefix are routed**
 
 Translate:
 
@@ -1428,11 +1429,31 @@ The C++ `MULTIPLE_HEAPS` and `SERVER_GC` conditionals sometimes change fields be
 instance storage. The C# representation must preserve behavior while remaining source-comparable;
 prefer an explicit always-instance representation where required by the language.
 
-The current finalization closure deliberately stops before server merge/split, background
-processing, and collection scheduling. Its relocation helper remains unrouted with the rest of
-the relocation slice. `IGCHeap::GarbageCollect` does not invoke either the mark-prefix helper or
-`ScanForFinalization`; wiring either requires the remaining foreground mark/plan/sweep closure
-and must not be inferred from this bounded workstation slice.
+The routed WKS slice creates a suspendable GC thread through a native thunk, preserves
+start/done events and an exit handshake, performs the initial suspended stack/finalizer-root
+snapshot, drains an unmanaged mark stack and scans strong/dependent handles concurrently, then
+performs a second suspended full-mark reconciliation and the translated non-compacting
+plan/sweep closure. It updates background state, counts, notifications, finalization, allocation
+waits, and the public concurrent-GC slots. A dedicated NativeAOT smoke verifies that a
+non-blocking Gen2 returns before completion, allocation and mutation proceed, roots/handles/
+finalization remain correct, and a foreground Gen0 plus later allocation succeed.
+
+This is deliberately a coherent prefix, not full native BGC. Exact remaining blockers are:
+
+- software-write-watch reset/revisit over only committed table ranges, plus the native dirty-page
+  and card revisit loops;
+- allocation-time BGC mark-bit publication and allocation-triggered BGC budgeting;
+- foreground Gen0/Gen1 execution *during* the concurrent phase (the current slice waits for BGC
+  completion before a foreground collection);
+- concurrent ephemeral/SOH/UOH sweep and its allocation locks, sweep cursors, changed-segment
+  handling, and per-phase tuning/history;
+- a persistent reusable managed worker. The current worker is intentionally one-shot because a
+  managed reverse-P/Invoke frame cannot remain parked across later suspensions; the native thunk
+  supplies an exit handshake so the next foreground GC cannot race thread detachment.
+
+Until those dependencies close, the final mark is a complete stopped-world reconciliation and
+allocation pressure continues to route synchronous collections. The implementation does not
+claim native pause-time or concurrent-sweep behavior.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.

@@ -241,12 +241,34 @@ EXTERN_C UInt32_BOOL QCALLTYPE RhpWaitForFinalizerRequest()
 // Fetch next object which needs finalization or return null if we've reached the end of the list.
 FCIMPL0(OBJECTREF, RhpGetNextFinalizableObject)
 {
+#ifdef FEATURE_MANAGED_GC
+    Thread* thread = ThreadStore::GetCurrentThread();
+    bool enteredCriticalRegion = !thread->IsDoNotTriggerGcSet();
+    if (enteredCriticalRegion)
+    {
+        thread->SetDoNotTriggerGc();
+        MemoryBarrier();
+        if (ThreadStore::IsTrapThreadsRequested() &&
+            ThreadStore::GetSuspendingThread() != thread)
+        {
+            thread->ClearDoNotTriggerGc();
+            return NULL;
+        }
+    }
+#endif // FEATURE_MANAGED_GC
+
     while (true)
     {
         // Get the next finalizable object. If we get back NULL we've reached the end of the list.
         OBJECTREF refNext = GCHeapUtilities::GetGCHeap()->GetNextFinalizable();
         if (refNext == NULL)
+        {
+#ifdef FEATURE_MANAGED_GC
+            if (enteredCriticalRegion)
+                thread->ClearDoNotTriggerGc();
+#endif // FEATURE_MANAGED_GC
             return NULL;
+        }
 
         // The queue may contain objects which have been marked as finalized already (via GC.SuppressFinalize()
         // for instance). Skip finalization for these but reset the flag so that the object can be put back on
@@ -258,6 +280,10 @@ FCIMPL0(OBJECTREF, RhpGetNextFinalizableObject)
         }
 
         // We've found the first finalizable object, return it to the caller.
+#ifdef FEATURE_MANAGED_GC
+        if (enteredCriticalRegion)
+            thread->ClearDoNotTriggerGc();
+#endif // FEATURE_MANAGED_GC
         return refNext;
     }
 }

@@ -349,6 +349,64 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         }
     }
 
+    [Fact]
+    public void BackgroundGen2CollectionRunsThroughWorkerStateMachine()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+        GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        gc_heap.initialize_gc_static_state();
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+        Assert.True(gc_heap.initialize_mark_list());
+        Assert.True(gc_heap.initialize_mark_stack());
+        Assert.True(ManagedGCRegionBootstrap.Initialize());
+        Assert.True(gc_heap.initialize_background_gc());
+        gc_heap.finalize_queue = CFinalize.Allocate();
+        Assert.True(gc_heap.finalize_queue is not null);
+
+        try
+        {
+            gc_heap.full_gc_counts = default;
+
+            for (int cycle = 0; cycle < 2; cycle++)
+            {
+                int result = gc_heap.garbage_collect_background(
+                    GCInterfaceOffsets.max_generation,
+                    low_memory_p: 0,
+                    (int)collection_mode.collection_non_blocking);
+
+                Assert.Equal(S_OK, result);
+                Assert.Equal(
+                    GCEnv.WAIT_OBJECT_0,
+                    gc_heap.background_gc_wait(30_000));
+            }
+
+            Assert.False(gc_heap.background_collection_running_p());
+            Assert.Equal(bgc_state.bgc_not_in_process, gc_heap.current_bgc_state);
+            Assert.Equal((nuint)2, gc_heap.full_gc_counts[gc_heap.gc_type_background]);
+            Assert.Equal(4, GCToEEInterface.SuspendEECallCount);
+            Assert.Equal(4, GCToEEInterface.RestartEECallCount);
+            Assert.Equal((byte)1, GCToEEInterface.LastRestartFinishedGC);
+            Assert.Equal(2, GCToEEInterface.GcStartWorkCallCount);
+            Assert.Equal(2, GCToEEInterface.GcDoneCallCount);
+            Assert.Equal(4, GCToEEInterface.BeforeGcScanRootsCallCount);
+            Assert.Equal((byte)1, GCToEEInterface.LastBeforeGcScanRootsIsBackground);
+            Assert.Equal((byte)0, GCToEEInterface.LastBeforeGcScanRootsIsConcurrent);
+        }
+        finally
+        {
+            CFinalize.Free(gc_heap.finalize_queue);
+            gc_heap.finalize_queue = null;
+            gc_heap.destroy_background_gc();
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.destroy_semi_shared();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
     [Theory]
     [InlineData((int)gc_generation_num.soh_gen0, true)]
     [InlineData((int)gc_generation_num.soh_gen1, true)]

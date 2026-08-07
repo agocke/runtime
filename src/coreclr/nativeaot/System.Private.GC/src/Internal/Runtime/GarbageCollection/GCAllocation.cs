@@ -2010,9 +2010,34 @@ internal unsafe partial struct gc_heap
                 return;
 
             case allocation_deferred_operation.wait_for_bgc_high_memory:
+                if (!background_running_p())
+                {
+                    result->kind = allocation_callback_result_kind.background_not_running;
+                    return;
+                }
+
+                background_gc_wait();
+                result->kind = allocation_callback_result_kind.background_running;
+                return;
+
             case allocation_deferred_operation.query_background_running:
+                result->kind = background_running_p()
+                    ? allocation_callback_result_kind.background_running
+                    : allocation_callback_result_kind.background_not_running;
+                return;
+
             case allocation_deferred_operation.check_and_wait_for_bgc:
-                result->kind = allocation_callback_result_kind.background_not_running;
+                if (!background_running_p())
+                {
+                    result->kind = allocation_callback_result_kind.background_not_running;
+                    return;
+                }
+
+                nuint compactingCollections = full_gc_counts[gc_type_compacting];
+                background_gc_wait();
+                result->kind = full_gc_counts[gc_type_compacting] > compactingCollections
+                    ? allocation_callback_result_kind.full_compact_gc
+                    : allocation_callback_result_kind.no_full_compact_gc;
                 return;
 
             case allocation_deferred_operation.trigger_gc_for_budget:

@@ -63,6 +63,11 @@ internal static unsafe class ManagedGCTest
             return 9;
         }
 
+        if (!FinalizerAllocationCanTriggerCollection())
+        {
+            return 10;
+        }
+
         Console.WriteLine("ManagedGC smoke test passed.");
         return 100;
     }
@@ -486,6 +491,41 @@ internal static unsafe class ManagedGCTest
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateAllocatingFinalizableObject()
+    {
+        object target = new AllocatingFinalizable();
+        return new WeakReference(target);
+    }
+
+    private static bool FinalizerAllocationCanTriggerCollection()
+    {
+        AllocatingFinalizable.Reset();
+        WeakReference finalizable = CreateAllocatingFinalizableObject();
+        ForceFullCollection();
+        if (!SpinWait.SpinUntil(
+            static () => Volatile.Read(ref AllocatingFinalizable.Started) != 0,
+            TimeSpan.FromSeconds(30)))
+        {
+            return false;
+        }
+
+        if (!SpinWait.SpinUntil(
+            static () => Volatile.Read(ref AllocatingFinalizable.Completed) != 0,
+            TimeSpan.FromSeconds(30)))
+        {
+            return false;
+        }
+
+        GC.WaitForPendingFinalizers();
+
+        bool result =
+            Volatile.Read(ref AllocatingFinalizable.Completed) == 1 &&
+            Volatile.Read(ref AllocatingFinalizable.CollectionsObserved) == 1;
+        GC.KeepAlive(finalizable);
+        return result;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static nuint AddressOf(byte[] array) =>
         (nuint)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(array));
 
@@ -753,6 +793,47 @@ internal static unsafe class ManagedGCTest
             {
                 Interlocked.Increment(ref Count);
             }
+        }
+    }
+
+    private sealed class AllocatingFinalizable
+    {
+        public static int CollectionsObserved;
+        public static int Completed;
+        public static int Started;
+
+        public static void Reset()
+        {
+            Volatile.Write(ref CollectionsObserved, 0);
+            Volatile.Write(ref Completed, 0);
+            Volatile.Write(ref Started, 0);
+        }
+
+        ~AllocatingFinalizable()
+        {
+            const int MaximumAllocations = 16_384;
+            const int AllocationSize = 32 * 1024;
+            int collectionCount = GC.CollectionCount(0);
+            Volatile.Write(ref Started, 1);
+
+            for (int i = 0;
+                 i < MaximumAllocations && GC.CollectionCount(0) == collectionCount;
+                 i++)
+            {
+                byte[] garbage = new byte[AllocationSize];
+                garbage[0] = (byte)i;
+                if ((i & 15) == 0)
+                {
+                    Thread.Yield();
+                }
+            }
+
+            if (GC.CollectionCount(0) > collectionCount)
+            {
+                Volatile.Write(ref CollectionsObserved, 1);
+            }
+
+            Volatile.Write(ref Completed, 1);
         }
     }
 }

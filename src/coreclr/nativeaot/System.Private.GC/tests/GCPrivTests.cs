@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 using System.Threading;
@@ -408,6 +409,79 @@ public sealed unsafe class GCPrivTests
             }
 
             Assert.Equal(gen0Empty ? 2 : 3, s_finalizationScanCount);
+        }
+        finally
+        {
+            ManagedGCHeap.Reset();
+            if (objects is not null)
+            {
+                SyncImports.ManagedGC_Free(objects);
+            }
+
+            CFinalize.Free(queue);
+            SyncImports.ResetRecording();
+        }
+    }
+
+    [Fact]
+    public void CFinalizePreservesQueueAcrossPartialFullTransitionsAndDrain()
+    {
+        SyncImports.ResetRecording();
+        ManagedGCHeap.Reset();
+        CFinalize* queue = CFinalize.Allocate();
+        byte* objects = null;
+
+        try
+        {
+            Assert.True(queue is not null);
+            MethodTable methodTable = default;
+            methodTable.m_uFlags = MethodTable.HasFinalizerFlag;
+            objects = AllocateFinalizableObjects(&methodTable, 4);
+            Assert.True(objects is not null);
+
+            byte* first = FinalizableObjectAt(objects, 0);
+            byte* drained = FinalizableObjectAt(objects, 1);
+            byte* promoted = FinalizableObjectAt(objects, 2);
+            byte* youngest = FinalizableObjectAt(objects, 3);
+
+            Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen0, first));
+            Assert.True(queue->RegisterForFinalization((int)gc_generation_num.soh_gen0, drained));
+            Assert.True(queue->ScanForFinalization(
+                &MarkFinalizable,
+                (int)gc_generation_num.soh_gen0,
+                null));
+            Assert.Equal((nuint)drained, (nuint)queue->GetNextFinalizableObject());
+
+            Assert.True(queue->RegisterForFinalization(
+                (int)gc_generation_num.soh_gen0,
+                promoted));
+            queue->UpdatePromotedGenerations(
+                (int)gc_generation_num.soh_gen0,
+                gen_0_empty_p: 1);
+
+            Assert.True(queue->RegisterForFinalization(
+                (int)gc_generation_num.soh_gen0,
+                youngest));
+            ManagedGCHeap.TestGeneration = (uint)gc_generation_num.soh_gen2;
+            queue->UpdatePromotedGenerations(
+                (int)gc_generation_num.soh_gen1,
+                gen_0_empty_p: 0);
+
+            Assert.True(queue->ScanForFinalization(
+                &MarkFinalizable,
+                (int)gc_generation_num.soh_gen2,
+                null));
+
+            HashSet<nuint> expected = [(nuint)first, (nuint)promoted, (nuint)youngest];
+            HashSet<nuint> actual = [];
+            byte* obj;
+            while ((obj = queue->GetNextFinalizableObject()) is not null)
+            {
+                Assert.True(((CObjectHeader*)obj)->GetMethodTable() == &methodTable);
+                Assert.True(actual.Add((nuint)obj));
+            }
+
+            Assert.Equal(expected, actual);
         }
         finally
         {

@@ -2,18 +2,14 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <CLRTestPriority>0</CLRTestPriority>
-    <!-- Links clrgc.managed.cpp as the GC selector and roots the runtime exports in
-         System.Private.GC, so the managed GC bring-up path runs during startup. -->
     <IlcManagedGC>true</IlcManagedGC>
-    <!-- Test infra issue on apple devices: https://github.com/dotnet/runtime/issues/89917 -->
     <CLRTestTargetUnsupported Condition="'$(TargetsAppleMobile)' == 'true'">true</CLRTestTargetUnsupported>
     <RequiresProcessIsolation>true</RequiresProcessIsolation>
     <ReferenceXUnitWrapperGenerator>false</ReferenceXUnitWrapperGenerator>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="ManagedGC.cs" />
-    <CLRTestEnvironmentVariable Include="DOTNET_gcConcurrent" Value="0" />
-    <!-- GC integer environment values are hexadecimal: 0x10000000 = 256 MB. -->
+    <Compile Include="ManagedGCBgc.cs" />
+    <CLRTestEnvironmentVariable Include="DOTNET_gcConcurrent" Value="1" />
     <CLRTestEnvironmentVariable Include="DOTNET_GCRegionRange" Value="10000000" />
   </ItemGroup>
 </Project>

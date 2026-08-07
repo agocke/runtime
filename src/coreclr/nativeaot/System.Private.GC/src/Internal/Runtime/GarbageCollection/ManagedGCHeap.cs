@@ -29,6 +29,8 @@ namespace Internal.Runtime.GarbageCollection
 
         private const int S_OK = 0;
         private const int E_OUTOFMEMORY = unchecked((int)0x8007000E);
+        private const int E_FAIL = unchecked((int)0x80004005);
+        private const int HRESULT_TIMEOUT = unchecked((int)0x800705B4);
 
         /// <summary>
         /// Objects this size and above bypass the allocation context. Must match
@@ -243,11 +245,20 @@ namespace Internal.Runtime.GarbageCollection
                 gc_heap.check_commit_cs.Destroy();
                 return E_OUTOFMEMORY;
             }
+
+            if (!gc_heap.initialize_background_gc())
+            {
+                ManagedGCRegionBootstrap.Shutdown();
+                gc_heap.destroy_semi_shared();
+                gc_heap.check_commit_cs.Destroy();
+                return E_OUTOFMEMORY;
+            }
 #endif
 
             if (!GCHeapMemory.Initialize())
             {
 #if USE_REGIONS
+                gc_heap.destroy_background_gc();
                 ManagedGCRegionBootstrap.Shutdown();
                 gc_heap.destroy_semi_shared();
 #endif
@@ -259,6 +270,7 @@ namespace Internal.Runtime.GarbageCollection
             if (gc_heap.finalize_queue is null)
             {
 #if USE_REGIONS
+                gc_heap.destroy_background_gc();
                 ManagedGCRegionBootstrap.Shutdown();
                 gc_heap.destroy_semi_shared();
 #endif
@@ -278,6 +290,7 @@ namespace Internal.Runtime.GarbageCollection
             CFinalize.Free(gc_heap.finalize_queue);
             gc_heap.finalize_queue = null;
 #if USE_REGIONS
+            gc_heap.destroy_background_gc();
             ManagedGCRegionBootstrap.Shutdown();
             gc_heap.destroy_semi_shared();
 #endif
@@ -287,6 +300,9 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void Shutdown(void* thisPtr)
         {
+#if USE_REGIONS
+            gc_heap.destroy_background_gc();
+#endif
             CFinalize.Free(gc_heap.finalize_queue);
             gc_heap.finalize_queue = null;
 #if USE_REGIONS
@@ -315,17 +331,6 @@ namespace Internal.Runtime.GarbageCollection
                 GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
                 nuint alignedSize = gc_heap.Align(size);
                 byte* result = AllocCore(acontext, alignedSize, flags, out bool waitForGc);
-                if (result is not null &&
-                    (flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_FINALIZE) != 0 &&
-                    (gc_heap.finalize_queue is null ||
-                     !gc_heap.finalize_queue->RegisterForFinalization(
-                        (int)gc_generation_num.soh_gen0,
-                        result,
-                        alignedSize)))
-                {
-                    result = null;
-                }
-
                 criticalRegion.Exit();
                 if (!waitForGc)
                 {
@@ -522,10 +527,24 @@ namespace Internal.Runtime.GarbageCollection
         private static int GarbageCollect(void* thisPtr, int generation, byte low_memory_p, int mode)
         {
             GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
-            int result = gc_heap.garbage_collect_synchronous_foreground(
-                generation,
-                low_memory_p,
-                mode);
+            bool nonBlocking =
+                ((collection_mode)mode & collection_mode.collection_non_blocking) != 0;
+            if (!nonBlocking && gc_heap.background_collection_pending_p())
+            {
+                criticalRegion.Exit();
+                gc_heap.background_gc_wait();
+                criticalRegion = GCHeapCriticalRegion.Enter();
+            }
+
+            int result = nonBlocking
+                ? gc_heap.garbage_collect_background(
+                    generation,
+                    low_memory_p,
+                    mode)
+                : gc_heap.garbage_collect_synchronous_foreground(
+                    generation,
+                    low_memory_p,
+                    mode);
             if (result == gc_heap.collection_s_ok)
             {
                 Volatile.Write(ref s_gcCount, unchecked((int)gc_heap.settings.gc_index));
@@ -543,6 +562,13 @@ namespace Internal.Runtime.GarbageCollection
         private static int CollectionCount(void* thisPtr, int generation, int get_bgc_fgc_count)
         {
 #if USE_REGIONS && !MULTIPLE_HEAPS
+            if (get_bgc_fgc_count != 0)
+            {
+                return generation == GCInterfaceOffsets.max_generation
+                    ? unchecked((int)gc_heap.full_gc_counts[gc_heap.gc_type_background])
+                    : 0;
+            }
+
             gc_heap* heap = ManagedGCRegionBootstrap.Heap;
             if (heap is not null &&
                 (uint)generation <= (uint)GCInterfaceOffsets.max_generation)
@@ -619,25 +645,41 @@ namespace Internal.Runtime.GarbageCollection
         }
 
         // ------------------------------------------------------------------------------------
-        // Concurrent GC - there isn't one
+        // Concurrent GC
         // ------------------------------------------------------------------------------------
 
         private static void WaitUntilConcurrentGCComplete(void* thisPtr)
         {
+            gc_heap.background_gc_wait();
         }
 
-        private static int WaitUntilConcurrentGCCompleteAsync(void* thisPtr, int millisecondsTimeout) => S_OK;
+        private static int WaitUntilConcurrentGCCompleteAsync(void* thisPtr, int millisecondsTimeout)
+        {
+            uint timeout = millisecondsTimeout < 0
+                ? GCEnv.INFINITE
+                : unchecked((uint)millisecondsTimeout);
+            return gc_heap.background_gc_wait(timeout) switch
+            {
+                GCEnv.WAIT_OBJECT_0 => S_OK,
+                GCEnv.WAIT_TIMEOUT => HRESULT_TIMEOUT,
+                _ => E_FAIL,
+            };
+        }
 
-        private static byte IsConcurrentGCInProgress(void* thisPtr) => 0;
+        private static byte IsConcurrentGCInProgress(void* thisPtr) =>
+            gc_heap.background_collection_running_p() ? (byte)1 : (byte)0;
 
-        private static byte IsConcurrentGCEnabled(void* thisPtr) => 0;
+        private static byte IsConcurrentGCEnabled(void* thisPtr) =>
+            gc_heap.concurrent_gc_enabled() ? (byte)1 : (byte)0;
 
         private static void TemporaryEnableConcurrentGC(void* thisPtr)
         {
+            gc_heap.set_temp_disable_concurrent(disabled: false);
         }
 
         private static void TemporaryDisableConcurrentGC(void* thisPtr)
         {
+            gc_heap.set_temp_disable_concurrent(disabled: true);
         }
 
         // ------------------------------------------------------------------------------------
@@ -659,6 +701,7 @@ namespace Internal.Runtime.GarbageCollection
 
         private static byte RegisterForFinalization(void* thisPtr, int gen, byte* obj)
         {
+            GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
             if (gen == -1)
             {
                 gen = 0;
@@ -667,13 +710,16 @@ namespace Internal.Runtime.GarbageCollection
             if ((((CObjectHeader*)obj)->GetHeader()->GetBits() & ObjHeader.BIT_SBLK_FINALIZER_RUN) != 0)
             {
                 ((CObjectHeader*)obj)->GetHeader()->ClrFinalizerRun();
+                criticalRegion.Exit();
                 return 1;
             }
 
-            return gc_heap.finalize_queue is not null &&
+            byte result = gc_heap.finalize_queue is not null &&
                 gc_heap.finalize_queue->RegisterForFinalization(gen, obj)
                     ? (byte)1
                     : (byte)0;
+            criticalRegion.Exit();
+            return result;
         }
 
         private static FinalizerWorkItem* GetExtraWorkForFinalization(void* thisPtr) => null;

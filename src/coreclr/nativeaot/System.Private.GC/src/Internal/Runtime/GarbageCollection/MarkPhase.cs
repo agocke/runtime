@@ -954,7 +954,7 @@ internal unsafe partial struct gc_heap
 
     // This is the bounded WKS root scan and synchronous post-mark tail of mark_phase. The
     // remaining root kinds and collection phases require their own dependency closures.
-    public static bool mark_phase_stack_roots()
+    public static bool mark_phase_stack_roots(bool backgroundFinalMark = false)
     {
         gc_heap* heap = ManagedGCRegionBootstrap.Heap;
         int condemned_gen_number = settings.condemned_generation;
@@ -1003,7 +1003,7 @@ internal unsafe partial struct gc_heap
 
         GCToEEInterface.BeforeGcScanRoots(
             condemned_gen_number,
-            is_bgc: 0,
+            is_bgc: backgroundFinalMark ? (byte)1 : (byte)0,
             is_concurrent: 0);
 
         bool markStateReady = setup_mark_state_for_collection();

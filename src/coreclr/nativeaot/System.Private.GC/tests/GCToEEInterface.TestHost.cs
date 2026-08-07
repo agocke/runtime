@@ -27,6 +27,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 namespace Internal.Runtime.GarbageCollection;
 
@@ -540,6 +541,53 @@ internal static unsafe class GCToEEInterface
     {
         GetThreadCallCount++;
         return CurrentThread;
+    }
+
+    public static byte EnablePreemptiveGC() => 0;
+
+    public static void DisablePreemptiveGC()
+    {
+    }
+
+    public static byte CreateThread(
+        delegate* unmanaged<void*, void> threadStart,
+        void* arg,
+        byte is_suspendable,
+        byte* name)
+    {
+        _ = is_suspendable;
+        _ = name;
+        nuint start = (nuint)threadStart;
+        nuint context = (nuint)arg;
+        Thread thread = new(() =>
+            ((delegate* unmanaged<void*, void>)start)((void*)context))
+        {
+            IsBackground = true,
+        };
+        thread.Start();
+        return 1;
+    }
+
+    public static int CreateBackgroundThread(
+        delegate* unmanaged<void*, void> threadStart,
+        void* arg,
+        int* exited,
+        byte* name)
+    {
+        _ = name;
+        nuint start = (nuint)threadStart;
+        nuint context = (nuint)arg;
+        nuint exitedAddress = (nuint)exited;
+        Thread thread = new(() =>
+        {
+            ((delegate* unmanaged<void*, void>)start)((void*)context);
+            Volatile.Write(ref *(int*)exitedAddress, 1);
+        })
+        {
+            IsBackground = true,
+        };
+        thread.Start();
+        return 1;
     }
 
     public static void FireDynamicEvent(byte* name, void* payload, uint payloadSize)

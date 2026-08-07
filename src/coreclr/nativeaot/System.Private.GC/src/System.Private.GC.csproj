@@ -63,6 +63,7 @@
     <ProjectReference Include="..\..\System.Private.CoreLib\src\System.Private.CoreLib.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Internal\Runtime\GarbageCollection\BackgroundGC.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCAllocation.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Collect.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCCommon.cs" />

@@ -11,6 +11,7 @@
     <!-- The layout tests walk the translated types by name, and this assembly is a host-only
          test that is never trimmed. -->
     <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <DefineConstants>MANAGED_GC_TEST_HOST;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -113,6 +114,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEvents.cs" Link="GCEvents.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventSerializer.cs" Link="GCEventSerializer.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCEventStatus.cs" Link="GCEventStatus.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/BackgroundGC.cs" Link="BackgroundGC.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCAllocation.cs" Link="GCAllocation.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Collect.cs" Link="Collect.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />

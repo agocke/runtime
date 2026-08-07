@@ -624,6 +624,17 @@ static Object* GcAllocInternal(MethodTable* pEEType, uint32_t uFlags, uintptr_t 
         ((Array*)pObject)->SetNumComponents((uint32_t)numElements);
     }
 
+#ifdef FEATURE_MANAGED_GC
+    // ManagedGC::Alloc runs managed code and can be suspended before it returns. Register only
+    // after returning to this cooperative native helper and publishing the EEType, so the
+    // finalization queue never exposes an uninitialized object to a concurrent finalizer drain.
+    if ((uFlags & GC_ALLOC_FINALIZE) &&
+        !GCHeapUtilities::GetGCHeap()->RegisterForFinalization(-1, pObject))
+    {
+        return NULL;
+    }
+#endif // FEATURE_MANAGED_GC
+
     if (isSampled)
     {
         FireAllocationSampled((GC_ALLOC_FLAGS)uFlags, cbSize, samplingBudget, pObject);

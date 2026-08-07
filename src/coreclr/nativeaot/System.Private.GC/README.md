@@ -95,6 +95,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `Collect.cs` | bounded WKS `USE_REGIONS` synchronous foreground Gen0/Gen1/Gen2 `garbage_collect` / `gc1` lifecycle and budget-based condemnation prefix from `collect.cpp`, `plan_phase.cpp`, and `interface.cpp` |
+| `BackgroundGC.cs` | WKS `USE_REGIONS` background-thread creation/wakeup/completion, non-blocking induced-Gen2 routing, initial suspended root snapshot, concurrent mark-stack/handle closure, final suspended full-mark reconciliation, and foreground/allocation waits from `background.cpp`, `collect.cpp`, `gcee.cpp`, and `allocation.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle, partial dirty-card scanning for older SOH/LOH/POH objects, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
 | `PlanPhase.cs` | dependency-free prefix helpers, direct WKS brick-tree insertion and brick-table updates, current-generation-size, `USE_REGIONS` generation plan/allocation-size, generation-size, allocation/promoted-size, gen0 end-space, plan-space, planned pinned-free-space accounting, bounded WKS synchronous foreground plan-phase orchestration and SIP helpers, the WKS full-GC LOH pin queue/planning allocator, the bounded WKS synchronous compaction-policy closure, and UOH region start/tail unlinking from `plan_phase.cpp` |
@@ -1144,14 +1145,24 @@ quicksort adversary.
 ### The heap routes bounded synchronous foreground collections
 
 `ManagedGCHeap.GarbageCollect` now routes the bounded workstation `USE_REGIONS` synchronous
-foreground Gen0, Gen1, and Gen2 lifecycle. The supported path rejects server, non-blocking,
-optimized, aggressive, active-background, heap-verification, survivor-analysis, and
-collection-event diagnostic modes before mutating collector state. It owns suspension/restart,
+foreground Gen0, Gen1, and Gen2 lifecycle. That path rejects server, optimized, aggressive,
+active-background, heap-verification, survivor-analysis, and collection-event diagnostic modes
+before mutating collector state. It owns suspension/restart,
 fixes allocation contexts, initializes records and mechanisms, selects the requested or
 budget-elevated condemned generation, calls `GcStartWork`, runs mark and the completed
 plan/relocate/compact-or-sweep closure, performs post-collection accounting and
 range/write-barrier publication, calls `GcDone`, restarts the runtime, and schedules
-finalization. Server GC and active background GC remain unsupported.
+finalization.
+
+When concurrent GC is configured, a forced non-blocking Gen2 request takes a separate background
+path rather than being treated as a blocking request. The initiating thread performs the first
+suspended root snapshot, starts a GC-created worker through a native exit-handshake thunk, and
+returns after restarting the runtime. The worker drains an unmanaged background mark stack and
+scans strong/dependent handles while mutators run. It then owns the second suspension, reconciles
+the heap with the complete translated foreground mark closure, forces the existing
+non-compacting plan/sweep path, publishes accounting and ranges, restarts the runtime, and signals
+completion. Blocking collections and allocation retry paths wait outside the managed-GC critical
+region and can collect afterward. Server GC remains outside the slice.
 
 Allocation now also performs the native `GC_ALLOC_FINALIZE` registration before returning an
 uninitialized finalizable object to the EE, including the allocation-failure free-object
@@ -1160,9 +1171,12 @@ native finalizer-run-bit behavior.
 
 The lifecycle itself is covered by Foundation tests, including exact EE callback ordering,
 Gen0/Gen1 condemnation and count accounting, budget elevation, and pre-mutation rejection. The
-NativeAOT smoke requests forced Gen0, Gen1, and Gen2 collections and verifies old-to-young card
-roots, stack and handle-only roots, weak reclamation, finalization, pinned handles, relocation,
-and allocation afterward. Full-plan validation includes marked
+original NativeAOT smoke requests forced Gen0, Gen1, and Gen2 collections and verifies
+old-to-young card roots, stack and handle-only roots, weak reclamation, finalization, pinned
+handles, relocation, and allocation afterward. A dedicated concurrent smoke enables
+`gcConcurrent`, requests a non-blocking Gen2, allocates and mutates a rooted graph while the
+worker runs, verifies strong/pinned/dependent roots and finalization, then runs a foreground Gen0
+and allocates again. Full-plan validation includes marked
 SOH, LOH, and POH objects when checking the WKS `slow`/`shigh` range, so UOH roots no longer
 reject the collection before handle and GC-static spine relocation. The minimal recorded
 full-blocking-GC snapshot also captures the finalizable promoted count before the finalizer
@@ -1181,7 +1195,10 @@ unmanaged frozen-segment metadata; it neither changes the region range nor publi
 or write-barrier bounds on region targets. Allocation pressure now routes SOH budget/space
 exhaustion through the native-shaped budget condemnation prefix: normal SOH pressure starts at
 Gen0, out-of-space SOH retry starts at Gen1, exhausted older/UOH budgets elevate the condemned
-generation, and UOH exhaustion starts at Gen2. Active background decisions remain unsupported.
+generation, and UOH exhaustion starts at Gen2. Allocation pressure does not yet initiate a
+background Gen2: it continues to use the synchronous production route. During an explicitly
+active background collection, allocation state-machine queries and waits report the real
+background state rather than the old always-inactive answer.
 
 `GCAllocation` now writes the native-shaped free-object method table, array length, and
 doubly-linked free-list marker for object gaps, carries the allocation-limit arithmetic leaves,
@@ -1190,7 +1207,7 @@ discontinuous hole, pads a contiguous gen0 context, updates its limit/accounting
 selected SOH/UOH allocation pointer, computes and clears the native right-edge span, applies
 zeroing-optional syncblock/object rules, and publishes the segment's used boundary. It releases
 the selected more-space lock through the unmanaged callback before clearing, and the wrapper
-does not release it again. BGC mark-bit tracking, allocation events, brick updates, and
+does not release it again. BGC allocation-time mark-bit tracking, allocation events, and
 verification remain explicit collector-owned deferrals.
 The segment-end leaf also selects the committed or reserved endpoint, derives the allocation
 limit, grows the segment through the accounted virtual-commit helper, propagates commit and
@@ -1321,8 +1338,11 @@ from an explicit poll after the global trap is set, because that thread owns the
 the only thread that can restart the runtime. Allocation waiters leave cooperative mode through
 the EE-owned deferred transition frame for the complete wait, so a finalizer allocating while
 another thread starts a collection can be suspended without exposing native allocation frames to
-the managed stack walker. Other critical regions protect mutators that can run on ordinary
-application threads.
+the managed stack walker. The native finalizer dequeue helper also keeps `TSF_DoNotTriggerGc` set
+across the managed queue mutation, and finalizable allocation publishes the method table before
+registering the object. Together these preserve the C++ GC's unsuspendable native handoff without
+letting a collection observe an uninitialized or partially dequeued finalizer-queue object. Other
+critical regions protect mutators that can run on ordinary application threads.
 
 ## Building an application against the managed GC
 
