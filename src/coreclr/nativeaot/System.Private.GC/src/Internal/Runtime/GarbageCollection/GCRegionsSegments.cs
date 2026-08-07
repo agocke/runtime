@@ -1263,6 +1263,75 @@ internal unsafe partial struct gc_heap
         return heap_segment.heap_segment_gen_num(region);
     }
 
+    public static void check_seg_gen_num(heap_segment* seg)
+    {
+#if DEBUG
+        byte* mem = heap_segment.heap_segment_mem(seg);
+
+        if (mem < GCCommon.g_gc_lowest_address || mem >= GCCommon.g_gc_highest_address)
+        {
+            GCToOSInterface.DebugBreak();
+        }
+
+        int alloc_seg_gen_num = get_region_gen_num(mem);
+        int alloc_seg_plan_gen_num = get_region_plan_gen_num(mem);
+        _ = alloc_seg_gen_num;
+        _ = alloc_seg_plan_gen_num;
+#else
+        _ = seg;
+#endif
+    }
+
+    public static void set_region_plan_gen_num(heap_segment* region, int plan_gen_num, bool replace_p = false)
+    {
+        int gen_num = heap_segment.heap_segment_gen_num(region);
+        int supposed_plan_gen_num = get_plan_gen_num(gen_num);
+        region_info region_info_bits_to_set =
+            (region_info)(plan_gen_num << (int)region_info.RI_PLAN_GEN_SHR);
+
+        if (plan_gen_num < supposed_plan_gen_num &&
+            heap_segment.heap_segment_pinned_survived(region) != 0)
+        {
+            if (settings.demotion == 0)
+            {
+                settings.demotion = 1;
+            }
+
+            gc_data_per_heap.set_mechanism_bit(gc_mechanism_bit_per_heap.gc_demotion_bit);
+            region->flags |= heap_segment.heap_segment_flags_demoted;
+            region_info_bits_to_set =
+                (region_info)((byte)region_info_bits_to_set | (byte)region_info.RI_DEMOTED);
+        }
+        else
+        {
+            region->flags &= ~heap_segment.heap_segment_flags_demoted;
+        }
+
+        if (replace_p)
+        {
+            int original_plan_gen_num = heap_segment.heap_segment_plan_gen_num(region);
+            planned_regions_per_gen[original_plan_gen_num]--;
+        }
+
+        planned_regions_per_gen[plan_gen_num]++;
+        heap_segment.heap_segment_plan_gen_num(region) = plan_gen_num;
+
+        byte* region_start = get_region_start(region);
+        byte* region_end = heap_segment.heap_segment_reserved(region);
+        nuint region_index_start = get_basic_region_index_for_address(region_start);
+        nuint region_index_end = get_basic_region_index_for_address(region_end);
+        for (nuint region_index = region_index_start;
+             region_index < region_index_end;
+             region_index++)
+        {
+            Debug.Assert(plan_gen_num <= GCInterfaceOffsets.max_generation);
+            map_region_to_generation[(nint)region_index] =
+                (region_info)((byte)region_info_bits_to_set |
+                    ((byte)map_region_to_generation[(nint)region_index] &
+                        ~((byte)region_info.RI_PLAN_GEN_MASK | (byte)region_info.RI_DEMOTED)));
+        }
+    }
+
     public static void set_region_gen_num(heap_segment* region, int gen_num)
     {
         Debug.Assert(gen_num < (1 << (sizeof(byte) * 8)));

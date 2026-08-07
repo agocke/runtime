@@ -741,6 +741,55 @@ namespace Internal.Runtime.GarbageCollection
             tail = item;
         }
 
+#if USE_REGIONS
+        public static void thread_sip_fl(allocator* a, heap_segment* region)
+        {
+            byte* region_fl_head = heap_segment.heap_segment_free_list_head(region);
+            byte* region_fl_tail = heap_segment.heap_segment_free_list_tail(region);
+
+            if (region_fl_head is null)
+            {
+                Debug.Assert(region_fl_tail is null);
+                Debug.Assert(heap_segment.heap_segment_free_list_size(region) == 0);
+                return;
+            }
+
+            if (a->num_buckets == 1)
+            {
+                alloc_list* al = alloc_list_of(a, 0);
+                ref byte* head = ref alloc_list.alloc_list_head(al);
+                ref byte* tail = ref alloc_list.alloc_list_tail(al);
+
+                if (tail is null)
+                {
+                    Debug.Assert(head is null);
+                    head = region_fl_head;
+                }
+                else
+                {
+                    free_list_slot(tail) = region_fl_head;
+                }
+
+                tail = region_fl_tail;
+            }
+            else
+            {
+                byte* region_fl_item = region_fl_head;
+                nuint total_free_size = 0;
+                while (region_fl_item is not null)
+                {
+                    byte* next_fl_item = free_list_slot(region_fl_item);
+                    nuint size_item = gc_heap.size(region_fl_item);
+                    thread_item(a, region_fl_item, size_item);
+                    total_free_size = unchecked(total_free_size + size_item);
+                    region_fl_item = next_fl_item;
+                }
+
+                Debug.Assert(total_free_size == heap_segment.heap_segment_free_list_size(region));
+            }
+        }
+#endif
+
         public int discard_if_no_fit_p()
         {
             return (num_buckets == 1) ? 1 : 0;
@@ -788,6 +837,18 @@ namespace Internal.Runtime.GarbageCollection
         public const int MAX_NUM_BUCKETS = MAX_INDEX_POWER2 - MIN_INDEX_POWER2 + 1;
 
 #if USE_REGIONS
+        [InlineArray(GCInterfaceOffsets.max_generation + 1)]
+        internal struct generation_region_count_array
+        {
+            private int _element0;
+        }
+
+        internal unsafe struct reserved_region_array
+        {
+            public heap_segment* element0;
+            public heap_segment* element1;
+        }
+
         // Number of blocking GCs for which find_object keeps allocation-time Gen0 bricks current.
         public const int FFIND_DECAY = 7;
         public const nuint DefaultMinSegmentSize = 4 * 1024 * 1024;
@@ -868,6 +929,21 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint end_gen0_region_committed_space;
         public static nuint gen0_pinned_free_space;
         public static bool gen0_large_chunk_found;
+        public static reserved_region_array reserved_free_regions_sip;
+        public static generation_region_count_array planned_regions_per_gen;
+        public static bool special_sweep_p;
+        public static int new_regions_in_threading;
+
+        public static ref heap_segment* reserved_free_region_sip(int generation)
+        {
+            Debug.Assert(generation >= 0 && generation < GCInterfaceOffsets.max_generation);
+            if (generation == 0)
+            {
+                return ref reserved_free_regions_sip.element0;
+            }
+
+            return ref reserved_free_regions_sip.element1;
+        }
 #endif
         public static nuint mark_stack_array_length;
         public static mark* mark_stack_array;
@@ -884,6 +960,9 @@ namespace Internal.Runtime.GarbageCollection
         public static gc_history_global gc_data_global;
         public static ulong end_gc_time;
         public static ulong last_alloc_reset_suspended_end_time;
+        public static int g_low_memory_status;
+        public static uint high_memory_load_th;
+        public static int reset_mm_p;
 #if !USE_REGIONS
         internal static bool gc_can_use_concurrent;
 #if BACKGROUND_GC
@@ -915,9 +994,16 @@ namespace Internal.Runtime.GarbageCollection
             loh_compacted_p = 0;
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
+            reset_mm_p = 1;
 #if USE_REGIONS && !MULTIPLE_HEAPS
             gen0_bricks_cleared = 0;
             gen0_must_clear_bricks = 0;
+#endif
+#if USE_REGIONS
+            reserved_free_regions_sip = default;
+            planned_regions_per_gen = default;
+            special_sweep_p = false;
+            new_regions_in_threading = 0;
 #endif
             settings.first_init();
             initialize_loh_compaction_state();

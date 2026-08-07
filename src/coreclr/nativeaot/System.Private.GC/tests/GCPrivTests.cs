@@ -7910,6 +7910,62 @@ public sealed unsafe class GCPrivTests
         segmentMap[offset].region_info.gen_num = (byte)generation;
     }
 
+    private static void SetSweepRegionMap(
+        region_info* generationMap,
+        seg_mapping* segmentMap,
+        int index,
+        int generation,
+        bool sweptInPlan = false)
+    {
+        region_info entry = (region_info)(
+            generation |
+            (generation << (int)region_info.RI_PLAN_GEN_SHR));
+        if (sweptInPlan)
+        {
+            entry = (region_info)((byte)entry | (byte)region_info.RI_SIP);
+        }
+
+        generationMap[index] = entry;
+        segmentMap[index].region_info.gen_num = (byte)generation;
+        segmentMap[index].region_info.plan_gen_num = generation;
+        segmentMap[index].region_info.swept_in_plan_p =
+            sweptInPlan ? (byte)1 : (byte)0;
+    }
+
+    private static void SetSweepRegionFields(heap_segment* region, int generation)
+    {
+        heap_segment.heap_segment_gen_num(region) = (byte)generation;
+        heap_segment.heap_segment_plan_gen_num(region) = generation;
+    }
+
+    private static void InitializeSweepRegion(
+        heap_segment* region,
+        byte* start,
+        int generation)
+    {
+        InitializeRegion(
+            region,
+            (nuint)start,
+            (nuint)(start + 0x1000),
+            (nuint)(start + 0x1000),
+            age: 0);
+        heap_segment.heap_segment_allocated(region) =
+            heap_segment.heap_segment_mem(region) +
+            (nint)gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+        SetSweepRegionFields(region, generation);
+    }
+
+    private static void InitializeSweepGeneration(
+        generation* generations,
+        int generationNumber,
+        heap_segment* region)
+    {
+        generation* gen = gc_heap.generation_of(generations, generationNumber);
+        generation.generation_start_segment(gen) = region;
+        generation.generation_tail_region(gen) = region;
+        generation.generation_allocation_segment(gen) = region;
+    }
+
     private static nuint SumRegionCounters(nuint* counters, nuint count)
     {
         nuint total = 0;
@@ -16164,7 +16220,7 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void PlanPhaseUpdateBrickTablePreservesRootsBacktrackingAndBoundarySentinels()
     {
-        const int BrickCount = 7;
+        const int BrickCount = 6;
         const int StorageBrickCount = BrickCount + 1;
         using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
         int storageSize = checked((int)(StorageBrickCount * card_table_info.brick_size));
@@ -16284,10 +16340,10 @@ public sealed unsafe class GCPrivTests
     [Fact]
     public void SweepNormalPlanPromotesAndRebuildsSohBrickTrees()
     {
-        const int BrickCount = 5;
+        const int BrickCount = 7;
         const int StorageBrickCount = BrickCount + 1;
         const int PlugOffset = 256;
-        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
         using PlanPhaseStateScope __ = new();
         void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
         int storageSize = checked((int)(StorageBrickCount * card_table_info.brick_size));
@@ -16306,30 +16362,108 @@ public sealed unsafe class GCPrivTests
 
             byte* firstBrick = card_table_info.align_on_brick(storage);
             nuint gapSize = gc_heap.Align(unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size));
+            nuint regionSize = card_table_info.brick_size;
+            nuint firstRegionIndex = (nuint)firstBrick >> 12;
+            region_info* generationMap = stackalloc region_info[BrickCount];
+            seg_mapping* segmentMap = stackalloc seg_mapping[BrickCount];
+            uint* cards = stackalloc uint[8];
+            uint* markWords = stackalloc uint[64];
+
+            for (int i = 0; i < BrickCount; i++)
+            {
+                generationMap[i] = default;
+                segmentMap[i] = default;
+            }
+
+            for (int i = 0; i < 8; i++)
+            {
+                cards[i] = uint.MaxValue;
+            }
+
+            for (int i = 0; i < 64; i++)
+            {
+                markWords[i] = 0;
+            }
+
+            gc_heap.min_segment_size_shr = 12;
+            gc_heap.global_region_allocator.initialize_alignment(regionSize);
+            GCCommon.g_gc_lowest_address = firstBrick;
+            GCCommon.g_gc_highest_address = firstBrick + (nint)(BrickCount * regionSize);
+            GCCommon.seg_mapping_table = segmentMap - (nint)firstRegionIndex;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - (nint)firstRegionIndex;
+            gc_heap.ephemeral_low = null;
+            gc_heap.ephemeral_high = (byte*)nuint.MaxValue;
             gc_heap.lowest_address = firstBrick;
             gc_heap.brick_table = bricks;
+            nuint firstCardWord = card_table_info.card_word(gc_heap.card_of(firstBrick));
+            gc_heap.card_table = cards - (nint)firstCardWord;
+#if BACKGROUND_GC
+            nuint firstMarkWord = card_table_info.mark_word_of(firstBrick);
+            gc_heap.mark_array = markWords - (nint)firstMarkWord;
+#endif
             gc_heap.settings.promotion = 1;
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen1;
 
             heap_segment gen0First = default;
             heap_segment sweptInPlan = default;
             heap_segment gen0Second = default;
             heap_segment gen1First = default;
-            byte* gen0FirstMem = firstBrick;
-            byte* sweptInPlanMem = gen0FirstMem + (nint)card_table_info.brick_size;
-            byte* gen0SecondMem = sweptInPlanMem + (nint)card_table_info.brick_size;
-            byte* gen1FirstMem = gen0SecondMem + (2 * (nint)card_table_info.brick_size);
+            heap_segment gen2First = default;
+            heap_segment freeGen0 = default;
+            byte* gen0FirstStart = firstBrick;
+            byte* sweptInPlanStart = gen0FirstStart + (nint)regionSize;
+            byte* gen0SecondStart = sweptInPlanStart + (nint)regionSize;
+            byte* gen1FirstStart = gen0SecondStart + (nint)regionSize;
+            byte* gen2FirstStart = gen1FirstStart + (nint)regionSize;
+            byte* freeGen0Start = gen2FirstStart + (nint)regionSize;
 
-            heap_segment.heap_segment_mem(&gen0First) = gen0FirstMem;
-            heap_segment.heap_segment_allocated(&gen0First) = sweptInPlanMem;
+            InitializeRegion(&gen0First, (nuint)gen0FirstStart, (nuint)sweptInPlanStart, (nuint)sweptInPlanStart, age: 0);
+            InitializeRegion(&sweptInPlan, (nuint)sweptInPlanStart, (nuint)gen0SecondStart, (nuint)gen0SecondStart, age: 0);
+            InitializeRegion(&gen0Second, (nuint)gen0SecondStart, (nuint)gen1FirstStart, (nuint)gen1FirstStart, age: 0);
+            InitializeRegion(&gen1First, (nuint)gen1FirstStart, (nuint)gen2FirstStart, (nuint)gen2FirstStart, age: 0);
+            InitializeRegion(&gen2First, (nuint)gen2FirstStart, (nuint)freeGen0Start, (nuint)freeGen0Start, age: 0);
+            InitializeRegion(
+                &freeGen0,
+                (nuint)freeGen0Start,
+                (nuint)(freeGen0Start + (nint)regionSize),
+                (nuint)(freeGen0Start + (nint)regionSize),
+                age: 0);
+
+            byte* gen0FirstMem = heap_segment.heap_segment_mem(&gen0First);
+            byte* sweptInPlanMem = heap_segment.heap_segment_mem(&sweptInPlan);
+            byte* gen0SecondMem = heap_segment.heap_segment_mem(&gen0Second);
+            byte* gen1FirstMem = heap_segment.heap_segment_mem(&gen1First);
+            byte* gen2FirstMem = heap_segment.heap_segment_mem(&gen2First);
+
+            heap_segment.heap_segment_allocated(&gen0First) = sweptInPlanStart;
             heap_segment.heap_segment_next(&gen0First) = &sweptInPlan;
-            heap_segment.heap_segment_mem(&sweptInPlan) = sweptInPlanMem;
-            heap_segment.heap_segment_allocated(&sweptInPlan) = gen0SecondMem;
+            heap_segment.heap_segment_allocated(&sweptInPlan) = gen0SecondStart;
             heap_segment.heap_segment_swept_in_plan(&sweptInPlan) = 1;
             heap_segment.heap_segment_next(&sweptInPlan) = &gen0Second;
-            heap_segment.heap_segment_mem(&gen0Second) = gen0SecondMem;
-            heap_segment.heap_segment_allocated(&gen0Second) = gen1FirstMem;
-            heap_segment.heap_segment_mem(&gen1First) = gen1FirstMem;
-            heap_segment.heap_segment_allocated(&gen1First) = gen1FirstMem + (nint)card_table_info.brick_size;
+            heap_segment.heap_segment_allocated(&gen0Second) = gen1FirstStart;
+            heap_segment.heap_segment_allocated(&gen1First) = gen2FirstStart;
+            heap_segment.heap_segment_allocated(&gen2First) =
+                gen2FirstMem + (nint)gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+            heap_segment.heap_segment_allocated(&freeGen0) = null;
+            SetSweepRegionFields(&gen0First, (int)gc_generation_num.soh_gen0);
+            SetSweepRegionFields(&sweptInPlan, (int)gc_generation_num.soh_gen0);
+            SetSweepRegionFields(&gen0Second, (int)gc_generation_num.soh_gen0);
+            SetSweepRegionFields(&gen1First, (int)gc_generation_num.soh_gen1);
+            SetSweepRegionFields(&gen2First, (int)gc_generation_num.soh_gen2);
+            SetSweepRegionFields(&freeGen0, (int)gc_generation_num.soh_gen0);
+            gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket] =
+                regionSize;
+#if BACKGROUND_GC
+            freeGen0.flags = heap_segment.heap_segment_flags_ma_committed;
+#endif
+
+            SetSweepRegionMap(generationMap, segmentMap, 0, (int)gc_generation_num.soh_gen0);
+            SetSweepRegionMap(generationMap, segmentMap, 1, (int)gc_generation_num.soh_gen0, sweptInPlan: true);
+            SetSweepRegionMap(generationMap, segmentMap, 2, (int)gc_generation_num.soh_gen0);
+            SetSweepRegionMap(generationMap, segmentMap, 3, (int)gc_generation_num.soh_gen1);
+            SetSweepRegionMap(generationMap, segmentMap, 4, (int)gc_generation_num.soh_gen2);
+            SetSweepRegionMap(generationMap, segmentMap, 5, (int)gc_generation_num.soh_gen0);
 
             byte* gen0FirstPlug = gen0FirstMem + PlugOffset;
             byte* gen0Root = gen0SecondMem + PlugOffset;
@@ -16347,23 +16481,23 @@ public sealed unsafe class GCPrivTests
             gc_heap.update_brick_table(
                 gen0FirstTree,
                 current_brick: 0,
-                x: sweptInPlanMem,
-                plug_end: sweptInPlanMem);
+                x: sweptInPlanStart,
+                plug_end: sweptInPlanStart);
 
             byte* gen0Tree = gc_heap.insert_node(gen0Root, 1, gen0Root, null);
             gen0Tree = gc_heap.insert_node(gen0Right, 2, gen0Tree, gen0Root);
             gc_heap.update_brick_table(
                 gen0Tree,
                 current_brick: 2,
-                x: gen1FirstMem,
+                x: gen1FirstStart,
                 plug_end: gen0SecondMem + PlugOffset);
 
             byte* gen1Tree = gc_heap.insert_node(gen1Plug, 1, gen1Plug, null);
             gc_heap.update_brick_table(
                 gen1Tree,
-                current_brick: 4,
-                x: gen1FirstMem + (nint)card_table_info.brick_size,
-                plug_end: gen1FirstMem + (nint)card_table_info.brick_size);
+                current_brick: 3,
+                x: gen2FirstStart,
+                plug_end: gen2FirstStart);
 
             gc_heap heap = default;
             generation* generations = gc_heap.generation_table_of(&heap);
@@ -16374,8 +16508,22 @@ public sealed unsafe class GCPrivTests
                 gen->gen_num = i;
             }
 
-            generation.generation_start_segment(gc_heap.generation_of(generations, 0)) = &gen0First;
-            generation.generation_start_segment(gc_heap.generation_of(generations, 1)) = &gen1First;
+            generation* gen0 = gc_heap.generation_of(generations, 0);
+            generation* gen1 = gc_heap.generation_of(generations, 1);
+            generation* gen2 = gc_heap.generation_of(generations, 2);
+            generation.generation_start_segment(gen0) = &gen0First;
+            generation.generation_tail_region(gen0) = &gen0Second;
+            generation.generation_allocation_segment(gen0) = &gen0First;
+            generation.generation_start_segment(gen1) = &gen1First;
+            generation.generation_tail_region(gen1) = &gen1First;
+            generation.generation_allocation_segment(gen1) = &gen1First;
+            generation.generation_start_segment(gen2) = &gen2First;
+            generation.generation_tail_region(gen2) = &gen2First;
+            generation.generation_allocation_segment(gen2) = &gen2First;
+
+            region_free_list.add_region_descending(
+                &freeGen0,
+                gc_heap.free_regions_of((int)free_region_kind.basic_free_region));
 
             Assert.Equal((nuint)(void*)&gen0Second, (nuint)gc_heap.heap_segment_next_non_sip(&gen0First));
             Assert.Equal(1, gc_heap.get_plan_gen_num(0));
@@ -16384,8 +16532,6 @@ public sealed unsafe class GCPrivTests
 
             gc_heap.make_free_lists(&heap, (int)gc_generation_num.soh_gen1);
 
-            generation* gen1 = gc_heap.generation_of(generations, 1);
-            generation* gen2 = gc_heap.generation_of(generations, 2);
             byte* gen0FirstGap = gen0FirstPlug - (nint)gapSize;
             byte* gen0RootGap = gen0Root - (nint)gapSize;
             byte* gen0RightGap = gen0Right - (nint)gapSize;
@@ -16401,18 +16547,319 @@ public sealed unsafe class GCPrivTests
             Assert.Equal((nuint)gen0RootGap, (nuint)allocator.free_list_slot(gen0FirstGap));
             Assert.Equal((nuint)gen0RightGap, (nuint)allocator.free_list_slot(gen0RootGap));
             Assert.Equal((nuint)0, (nuint)allocator.free_list_slot(gen0RightGap));
-            Assert.Equal(unchecked((short)(gen0Right - gen0SecondMem + 1)), gc_heap.get_brick_entry(2));
-            Assert.Equal((short)-1, gc_heap.get_brick_entry(3));
+            Assert.Equal(unchecked((short)(gen0Right - gen0SecondStart + 1)), gc_heap.get_brick_entry(2));
 
             Assert.Equal(gapSize, generation.generation_free_list_space(gen2));
             Assert.Equal((nuint)0, generation.generation_free_obj_space(gen2));
             Assert.Equal((nuint)gen1Gap, (nuint)allocator.alloc_list_head_of(gen2Allocator, bucket));
             Assert.Equal((nuint)gen1Gap, (nuint)allocator.alloc_list_tail_of(gen2Allocator, bucket));
+
+            Assert.Equal((nuint)(void*)&freeGen0, (nuint)generation.generation_start_segment(gen0));
+            Assert.Equal((nuint)(void*)&freeGen0, (nuint)generation.generation_tail_region(gen0));
+            Assert.Equal((nuint)(void*)&freeGen0, (nuint)generation.generation_allocation_segment(gen0));
+            Assert.Equal((nuint)0, (nuint)generation.generation_allocation_pointer(gen0));
+            Assert.Equal((nuint)0, (nuint)generation.generation_allocation_limit(gen0));
+            Assert.Equal((nuint)(void*)&freeGen0, (nuint)heap.ephemeral_heap_segment);
+            Assert.Equal((nuint)heap_segment.heap_segment_mem(&freeGen0), (nuint)heap.alloc_allocated);
+
+            Assert.Equal((nuint)(void*)&gen0First, (nuint)generation.generation_start_segment(gen1));
+            Assert.Equal((nuint)(void*)&sweptInPlan, (nuint)heap_segment.heap_segment_next(&gen0First));
+            Assert.Equal((nuint)(void*)&gen0Second, (nuint)heap_segment.heap_segment_next(&sweptInPlan));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(&gen0Second));
+            Assert.Equal((nuint)(void*)&gen0Second, (nuint)generation.generation_tail_region(gen1));
+
+            Assert.Equal((nuint)(void*)&gen2First, (nuint)generation.generation_start_segment(gen2));
+            Assert.Equal((nuint)(void*)&gen1First, (nuint)heap_segment.heap_segment_next(&gen2First));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(&gen1First));
+            Assert.Equal((nuint)(void*)&gen1First, (nuint)generation.generation_tail_region(gen2));
+            Assert.Equal((byte)0, heap_segment.heap_segment_swept_in_plan(&sweptInPlan));
+            Assert.Equal((nuint)0, region_free_list.get_num_free_regions(
+                gc_heap.free_regions_of((int)free_region_kind.basic_free_region)));
         }
         finally
         {
             GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
             System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void SweepSpecialPlanRetainsGenerationsAndThreadsSipFreeList()
+    {
+        const nuint RegionSize = 0x1000;
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        region_info* generationMap = stackalloc region_info[3];
+        seg_mapping* segmentMap = stackalloc seg_mapping[3];
+        byte* freeStorage = stackalloc byte[512];
+
+        try
+        {
+            MethodTable freeObjectMethodTable = default;
+            GCCommon.g_gc_pFreeObjectMethodTable = &freeObjectMethodTable;
+
+            gc_heap heap = default;
+            generation* generations = gc_heap.generation_table_of(&heap);
+            for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+            {
+                generation* gen = gc_heap.generation_of(generations, i);
+                generation.initialize(gen);
+                gen->gen_num = i;
+            }
+
+            gc_heap.min_segment_size_shr = 12;
+            gc_heap.global_region_allocator.initialize_alignment(RegionSize);
+            GCCommon.g_gc_lowest_address = (byte*)0x10000;
+            GCCommon.g_gc_highest_address = (byte*)0x13000;
+            GCCommon.seg_mapping_table = segmentMap - 0x10;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed = generationMap - 0x10;
+            gc_heap.ephemeral_low = null;
+            gc_heap.ephemeral_high = (byte*)nuint.MaxValue;
+            gc_heap.settings.promotion = 1;
+            gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen2;
+            gc_heap.special_sweep_p = true;
+
+            heap_segment gen0 = default;
+            heap_segment gen1 = default;
+            heap_segment gen2 = default;
+            InitializeSweepRegion(&gen0, (byte*)0x10000, (int)gc_generation_num.soh_gen0);
+            InitializeSweepRegion(&gen1, (byte*)0x11000, (int)gc_generation_num.soh_gen1);
+            InitializeSweepRegion(&gen2, (byte*)0x12000, (int)gc_generation_num.soh_gen2);
+            SetSweepRegionMap(generationMap, segmentMap, 0, (int)gc_generation_num.soh_gen0, sweptInPlan: true);
+            SetSweepRegionMap(generationMap, segmentMap, 1, (int)gc_generation_num.soh_gen1);
+            SetSweepRegionMap(generationMap, segmentMap, 2, (int)gc_generation_num.soh_gen2);
+
+            heap_segment.heap_segment_swept_in_plan(&gen0) = 1;
+            heap_segment.heap_segment_plan_gen_num(&gen0) = (int)gc_generation_num.soh_gen2;
+            gen0.flags |= heap_segment.heap_segment_flags_demoted;
+            generationMap[0] = (region_info)(
+                (byte)generationMap[0] |
+                (byte)region_info.RI_DEMOTED |
+                (byte)region_info.RI_PLAN_GEN_2);
+
+            nuint gapSize = gc_heap.Align(unchecked(2 * (nuint)GCInterfaceOffsets.min_obj_size));
+            byte* firstGap = freeStorage + 64;
+            byte* secondGap = freeStorage + 256;
+            gc_heap.make_unused_array(firstGap, gapSize);
+            gc_heap.make_unused_array(secondGap, gapSize);
+            gen0.thread_free_obj(firstGap, gapSize);
+            gen0.thread_free_obj(secondGap, gapSize);
+            gen0.free_obj_size = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+
+            InitializeSweepGeneration(generations, 0, &gen0);
+            InitializeSweepGeneration(generations, 1, &gen1);
+            InitializeSweepGeneration(generations, 2, &gen2);
+
+            gc_heap.thread_final_regions(&heap, compact_p: false);
+
+            generation* finalGen0 = gc_heap.generation_of(generations, 0);
+            generation* finalGen1 = gc_heap.generation_of(generations, 1);
+            generation* finalGen2 = gc_heap.generation_of(generations, 2);
+            allocator* gen0Allocator = generation.generation_allocator(finalGen0);
+            uint bucket = gen0Allocator->first_suitable_bucket(gapSize);
+
+            Assert.Equal((byte)0, heap_segment.heap_segment_gen_num(&gen0));
+            Assert.Equal(0, heap_segment.heap_segment_plan_gen_num(&gen0));
+            Assert.Equal((byte)1, heap_segment.heap_segment_gen_num(&gen1));
+            Assert.Equal(1, heap_segment.heap_segment_plan_gen_num(&gen1));
+            Assert.Equal((byte)2, heap_segment.heap_segment_gen_num(&gen2));
+            Assert.Equal(2, heap_segment.heap_segment_plan_gen_num(&gen2));
+            Assert.Equal((nuint)(void*)&gen0, (nuint)generation.generation_start_segment(finalGen0));
+            Assert.Equal((nuint)(void*)&gen1, (nuint)generation.generation_start_segment(finalGen1));
+            Assert.Equal((nuint)(void*)&gen2, (nuint)generation.generation_start_segment(finalGen2));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(&gen0));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(&gen1));
+            Assert.Equal((nuint)0, (nuint)heap_segment.heap_segment_next(&gen2));
+
+            Assert.Equal(unchecked(2 * gapSize), generation.generation_free_list_space(finalGen0));
+            Assert.Equal(gen0.free_obj_size, generation.generation_free_obj_space(finalGen0));
+            Assert.Equal((nuint)firstGap, (nuint)allocator.alloc_list_head_of(gen0Allocator, bucket));
+            Assert.Equal((nuint)secondGap, (nuint)allocator.alloc_list_tail_of(gen0Allocator, bucket));
+            Assert.Equal((nuint)secondGap, (nuint)allocator.free_list_slot(firstGap));
+            Assert.Equal((nuint)0, (nuint)allocator.free_list_slot(secondGap));
+            Assert.Equal((byte)0, heap_segment.heap_segment_swept_in_plan(&gen0));
+            Assert.Equal((nuint)0, gen0.flags & heap_segment.heap_segment_flags_demoted);
+            Assert.Equal(
+                (byte)region_info.RI_GEN_0 | (byte)region_info.RI_PLAN_GEN_0,
+                (byte)generationMap[0]);
+            Assert.Equal(1, gc_heap.planned_regions_per_gen[0]);
+            Assert.Equal(1, gc_heap.planned_regions_per_gen[1]);
+            Assert.Equal(1, gc_heap.planned_regions_per_gen[2]);
+            Assert.Equal(0, gc_heap.new_regions_in_threading);
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+        }
+    }
+
+    [Fact]
+    public void SweepEmptyRegionIsReturnedAndReusedAsGenerationReplacement()
+    {
+        const nuint RegionSize = 0x1000;
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: true);
+        region_info* generationMap = stackalloc region_info[3];
+        seg_mapping* segmentMap = stackalloc seg_mapping[3];
+        uint* cards = stackalloc uint[4];
+        short* bricks = stackalloc short[3];
+#if BACKGROUND_GC
+        uint* markWords = stackalloc uint[24];
+#endif
+
+        for (int i = 0; i < 4; i++)
+        {
+            cards[i] = uint.MaxValue;
+        }
+
+        for (int i = 0; i < 3; i++)
+        {
+            bricks[i] = -1;
+        }
+
+#if BACKGROUND_GC
+        for (int i = 0; i < 24; i++)
+        {
+            markWords[i] = 0;
+        }
+#endif
+
+        gc_heap heap = default;
+        generation* generations = gc_heap.generation_table_of(&heap);
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            generation* gen = gc_heap.generation_of(generations, i);
+            generation.initialize(gen);
+            gen->gen_num = i;
+        }
+
+        gc_heap.min_segment_size_shr = 12;
+        gc_heap.global_region_allocator.initialize_alignment(RegionSize);
+        GCCommon.g_gc_lowest_address = (byte*)0x10000;
+        GCCommon.g_gc_highest_address = (byte*)0x13000;
+        GCCommon.seg_mapping_table = segmentMap - 0x10;
+        gc_heap.map_region_to_generation = generationMap;
+        gc_heap.map_region_to_generation_skewed = generationMap - 0x10;
+        gc_heap.ephemeral_low = null;
+        gc_heap.ephemeral_high = (byte*)nuint.MaxValue;
+        gc_heap.lowest_address = (byte*)0x10000;
+        gc_heap.brick_table = bricks;
+        gc_heap.card_table = cards - (nint)card_table_info.card_word(gc_heap.card_of((byte*)0x10000));
+#if BACKGROUND_GC
+        gc_heap.mark_array = markWords - (nint)card_table_info.mark_word_of((byte*)0x10000);
+#endif
+        gc_heap.settings.promotion = 1;
+        gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen0;
+
+        heap_segment gen0 = default;
+        heap_segment gen1 = default;
+        heap_segment gen2 = default;
+        InitializeSweepRegion(&gen0, (byte*)0x10000, (int)gc_generation_num.soh_gen0);
+        InitializeSweepRegion(&gen1, (byte*)0x11000, (int)gc_generation_num.soh_gen1);
+        InitializeSweepRegion(&gen2, (byte*)0x12000, (int)gc_generation_num.soh_gen2);
+        heap_segment.heap_segment_allocated(&gen0) = heap_segment.heap_segment_mem(&gen0);
+#if BACKGROUND_GC
+        gen0.flags = heap_segment.heap_segment_flags_ma_committed;
+#endif
+        SetSweepRegionMap(generationMap, segmentMap, 0, (int)gc_generation_num.soh_gen0);
+        SetSweepRegionMap(generationMap, segmentMap, 1, (int)gc_generation_num.soh_gen1);
+        SetSweepRegionMap(generationMap, segmentMap, 2, (int)gc_generation_num.soh_gen2);
+        InitializeSweepGeneration(generations, 0, &gen0);
+        InitializeSweepGeneration(generations, 1, &gen1);
+        InitializeSweepGeneration(generations, 2, &gen2);
+
+        gc_heap.committed_by_oh[(int)gc_oh_num.soh] = RegionSize;
+
+        gc_heap.thread_final_regions(&heap, compact_p: false);
+
+        generation* finalGen0 = gc_heap.generation_of(generations, 0);
+        Assert.Equal((nuint)(void*)&gen0, (nuint)generation.generation_start_segment(finalGen0));
+        Assert.Equal((nuint)(void*)&gen0, (nuint)generation.generation_tail_region(finalGen0));
+        Assert.Equal((nuint)(void*)&gen0, (nuint)generation.generation_allocation_segment(finalGen0));
+        Assert.Equal((nuint)heap_segment.heap_segment_mem(&gen0), (nuint)heap_segment.heap_segment_allocated(&gen0));
+        Assert.Equal((byte)0, heap_segment.heap_segment_gen_num(&gen0));
+        Assert.Equal(0, heap_segment.heap_segment_plan_gen_num(&gen0));
+        Assert.Equal((nuint)0, region_free_list.get_num_free_regions(
+            gc_heap.free_regions_of((int)free_region_kind.basic_free_region)));
+        Assert.Equal(-1, bricks[0]);
+        Assert.Equal(uint.MaxValue << 16, cards[0]);
+    }
+
+    [Fact]
+    public void SweepThreadGapClearsCardsAndResetsLargeGen2Gaps()
+    {
+        using RegionSegmentsStateScope _ = new(initializeCommitLock: false);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        nuint pageSize = GCToOSInterface.GetPageSize();
+        nuint gapSize = 256 * 1024;
+        nuint reservationSize = gapSize + (2 * pageSize);
+        byte* reservation = GCToOSInterface.VirtualReserve(
+            reservationSize,
+            pageSize,
+            (uint)VirtualReserveFlags.None);
+        Assert.True(reservation is not null);
+        byte* gap = reservation + (nint)pageSize;
+
+        try
+        {
+            Assert.True(GCToOSInterface.VirtualCommit(reservation, reservationSize));
+            GCCommon.MemSet(gap, 0xA5, gapSize);
+
+            MethodTable freeObjectMethodTable = default;
+            GCCommon.g_gc_pFreeObjectMethodTable = &freeObjectMethodTable;
+
+            uint* cards = stackalloc uint[33];
+            for (int i = 0; i < 33; i++)
+            {
+                cards[i] = uint.MaxValue;
+            }
+
+            nuint firstCardWord =
+                card_table_info.card_word(gc_heap.card_of(gap));
+            gc_heap.card_table = cards - (nint)firstCardWord;
+            gc_heap.settings.concurrent = 0;
+            gc_heap.settings.entry_memory_load = 100;
+            gc_heap.high_memory_load_th = 50;
+            gc_heap.reset_mm_p = 1;
+            GCToOSInterface.ResetRecording();
+
+            generation gen2 = default;
+            generation.initialize(&gen2);
+            gen2.gen_num = (int)gc_generation_num.soh_gen2;
+
+            gc_heap.thread_gap(gap, gapSize, &gen2);
+
+            nuint startCard = gc_heap.card_of(card_table_info.align_on_card(gap));
+            nuint endCard = gc_heap.card_of(
+                card_table_info.align_lower_card(gap + (nint)gapSize));
+            for (nuint card = startCard; card < endCard; card++)
+            {
+                Assert.False(gc_heap.card_set_p(card));
+            }
+
+            Assert.True(gc_heap.card_set_p(endCard));
+            Assert.Equal(gapSize, generation.generation_free_list_space(&gen2));
+            Assert.Equal((nuint)gap, (nuint)allocator.alloc_list_head_of(
+                generation.generation_allocator(&gen2),
+                0));
+            Assert.Equal(1, gc_heap.reset_mm_p);
+#if TARGET_WINDOWS
+            Assert.Equal(1, GCToOSInterface.VirtualAllocCount);
+            Assert.Equal((nuint)gc_heap.align_on_page(gap + (nint)(
+                2 * (nuint)GCInterfaceOffsets.min_obj_size - (nuint)sizeof(nuint))),
+                (nuint)GCToOSInterface.LastVirtualAlloc.lpAddress);
+#else
+            Assert.True(GCToOSInterface.MadviseCount >= 1);
+            Assert.Equal(
+                (nuint)gc_heap.align_on_page(gap + (nint)(
+                    2 * (nuint)GCInterfaceOffsets.min_obj_size - (nuint)sizeof(nuint))),
+                (nuint)GCToOSInterface.LastMadvise.addr);
+#endif
+        }
+        finally
+        {
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+            GCToOSInterface.VirtualRelease(reservation, reservationSize);
         }
     }
 
@@ -17198,6 +17645,16 @@ public sealed unsafe class GCPrivTests
         private readonly byte* _gcLowestAddress;
         private readonly byte* _gcHighestAddress;
         private readonly byte* _bookkeepingCoveredCommitted;
+#if USE_REGIONS
+        private readonly region_info* _generationMap;
+        private readonly region_info* _skewedGenerationMap;
+        private readonly byte* _ephemeralLow;
+        private readonly byte* _ephemeralHigh;
+        private readonly gc_heap.reserved_region_array _reservedFreeRegionsSip;
+        private readonly gc_heap.generation_region_count_array _plannedRegionsPerGen;
+        private readonly bool _specialSweep;
+        private readonly int _newRegionsInThreading;
+#endif
 #if USE_REGIONS && !MULTIPLE_HEAPS
         private readonly int _gen0BricksCleared;
         private readonly int _gen0MustClearBricks;
@@ -17208,6 +17665,9 @@ public sealed unsafe class GCPrivTests
         private readonly nuint _heapHardLimit;
         private readonly gc_heap.object_heap_array _heapHardLimitOh;
         private readonly bool _neverDecommit;
+        private readonly int _lowMemoryStatus;
+        private readonly uint _highMemoryLoadThreshold;
+        private readonly int _resetMemory;
         private readonly nuint _reservedMemory;
         private readonly gc_mechanisms _settings;
         private readonly CLRCriticalSection _checkCommitCs;
@@ -17236,6 +17696,16 @@ public sealed unsafe class GCPrivTests
             _gcLowestAddress = GCCommon.g_gc_lowest_address;
             _gcHighestAddress = GCCommon.g_gc_highest_address;
             _bookkeepingCoveredCommitted = gc_heap.bookkeeping_covered_committed;
+#if USE_REGIONS
+            _generationMap = gc_heap.map_region_to_generation;
+            _skewedGenerationMap = gc_heap.map_region_to_generation_skewed;
+            _ephemeralLow = gc_heap.ephemeral_low;
+            _ephemeralHigh = gc_heap.ephemeral_high;
+            _reservedFreeRegionsSip = gc_heap.reserved_free_regions_sip;
+            _plannedRegionsPerGen = gc_heap.planned_regions_per_gen;
+            _specialSweep = gc_heap.special_sweep_p;
+            _newRegionsInThreading = gc_heap.new_regions_in_threading;
+#endif
 #if USE_REGIONS && !MULTIPLE_HEAPS
             _gen0BricksCleared = gc_heap.gen0_bricks_cleared;
             _gen0MustClearBricks = gc_heap.gen0_must_clear_bricks;
@@ -17246,6 +17716,9 @@ public sealed unsafe class GCPrivTests
             _heapHardLimit = gc_heap.heap_hard_limit;
             _heapHardLimitOh = gc_heap.heap_hard_limit_oh;
             _neverDecommit = gc_heap.never_decommit_p;
+            _lowMemoryStatus = gc_heap.g_low_memory_status;
+            _highMemoryLoadThreshold = gc_heap.high_memory_load_th;
+            _resetMemory = gc_heap.reset_mm_p;
             _reservedMemory = gc_heap.reserved_memory;
             _settings = gc_heap.settings;
             _checkCommitCs = gc_heap.check_commit_cs;
@@ -17266,12 +17739,25 @@ public sealed unsafe class GCPrivTests
             gc_heap.card_table = null;
             gc_heap.brick_table = null;
             gc_heap.bookkeeping_covered_committed = null;
+#if USE_REGIONS
+            gc_heap.map_region_to_generation = null;
+            gc_heap.map_region_to_generation_skewed = null;
+            gc_heap.ephemeral_low = (byte*)nuint.MaxValue;
+            gc_heap.ephemeral_high = null;
+            gc_heap.reserved_free_regions_sip = default;
+            gc_heap.planned_regions_per_gen = default;
+            gc_heap.special_sweep_p = false;
+            gc_heap.new_regions_in_threading = 0;
+#endif
             gc_heap.committed_by_oh = default;
             gc_heap.current_total_committed = 0;
             gc_heap.current_total_committed_bookkeeping = 0;
             gc_heap.heap_hard_limit = 0;
             gc_heap.heap_hard_limit_oh = default;
             gc_heap.never_decommit_p = false;
+            gc_heap.g_low_memory_status = 0;
+            gc_heap.high_memory_load_th = 0;
+            gc_heap.reset_mm_p = 1;
             gc_heap.reserved_memory = 0;
             gc_heap.settings = default;
             gc_heap.freeable_uoh_segment = null;
@@ -17311,6 +17797,16 @@ public sealed unsafe class GCPrivTests
             GCCommon.g_gc_lowest_address = _gcLowestAddress;
             GCCommon.g_gc_highest_address = _gcHighestAddress;
             gc_heap.bookkeeping_covered_committed = _bookkeepingCoveredCommitted;
+#if USE_REGIONS
+            gc_heap.map_region_to_generation = _generationMap;
+            gc_heap.map_region_to_generation_skewed = _skewedGenerationMap;
+            gc_heap.ephemeral_low = _ephemeralLow;
+            gc_heap.ephemeral_high = _ephemeralHigh;
+            gc_heap.reserved_free_regions_sip = _reservedFreeRegionsSip;
+            gc_heap.planned_regions_per_gen = _plannedRegionsPerGen;
+            gc_heap.special_sweep_p = _specialSweep;
+            gc_heap.new_regions_in_threading = _newRegionsInThreading;
+#endif
 #if USE_REGIONS && !MULTIPLE_HEAPS
             gc_heap.gen0_bricks_cleared = _gen0BricksCleared;
             gc_heap.gen0_must_clear_bricks = _gen0MustClearBricks;
@@ -17321,6 +17817,9 @@ public sealed unsafe class GCPrivTests
             gc_heap.heap_hard_limit = _heapHardLimit;
             gc_heap.heap_hard_limit_oh = _heapHardLimitOh;
             gc_heap.never_decommit_p = _neverDecommit;
+            gc_heap.g_low_memory_status = _lowMemoryStatus;
+            gc_heap.high_memory_load_th = _highMemoryLoadThreshold;
+            gc_heap.reset_mm_p = _resetMemory;
             gc_heap.reserved_memory = _reservedMemory;
             gc_heap.settings = _settings;
             gc_heap.check_commit_cs = _checkCommitCs;

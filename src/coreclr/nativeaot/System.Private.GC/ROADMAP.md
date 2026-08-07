@@ -1334,11 +1334,15 @@ Translate in dependency order:
   unperformed LOH compaction retains non-compacting LOH/POH traversal. Server/card stealing,
   background roots, partial card scans, `relocate_in_loh_compact`, and debug-only region-map
   verification remain deferred)
-- `sweep.cpp` (bounded WKS `USE_REGIONS` normal-plan SOH brick walk, including promotion
-  target selection, swept-in-plan segment skipping, positive highest-plug rewrites, negative
-  brick resets, and free-list threading; plus UOH marked-object sweep, writable-tail trim,
-  non-start empty-region unlink, and deferred return through the existing region free-list path.
-  `special_sweep_p`, the post-walk tail, and planning/collection routing remain deferred)
+- `sweep.cpp` (the dependency-closed WKS `USE_REGIONS` SOH sweep closure is translated:
+  normal-plan promotion and special-sweep retention, swept-in-plan segment skipping during the
+  brick walk, positive highest-plug rewrites, negative brick resets, generation free-list
+  threading, SIP regional free-list handoff and flag clearing, empty-region return/replacement,
+  final generation head/tail rebuilding, allocation-pointer reset, and the post-walk
+  `ephemeral_heap_segment`/`alloc_allocated` publication. `thread_gap` now preserves the native
+  card clearing and Gen2 reset policy. UOH marked-object sweep, writable-tail trim, non-start
+  empty-region unlink, and deferred return through the existing region free-list path remain
+  translated too. Planning and collection routing remain deferred)
 - `collect.cpp` (the unrouted WKS `compute_gc_and_ephemeral_range` helper is translated; the
   collection driver remains deferred)
 - `no_gc.cpp`

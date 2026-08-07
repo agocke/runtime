@@ -134,9 +134,14 @@ internal unsafe partial struct gc_heap
 #endif
     }
 
-    public static void make_unused_array(byte* x, nuint size)
+    public static void make_unused_array(byte* x, nuint size, int clearp = 0, int resetp = 0)
     {
         System.Diagnostics.Debug.Assert(size >= Align((nuint)GCInterfaceOffsets.min_obj_size));
+
+        if (resetp != 0)
+        {
+            reset_memory(x, size);
+        }
 
         SetFree(x, size);
 
@@ -165,6 +170,11 @@ internal unsafe partial struct gc_heap
             SetFree(tmp, remaining_size);
         }
 #endif
+
+        if (clearp != 0)
+        {
+            clear_card_for_addresses(x, x + (nint)Align(size));
+        }
     }
 
     public static nuint unused_array_size(byte* p)
