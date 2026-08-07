@@ -216,6 +216,18 @@ namespace Internal.Runtime.GarbageCollection
             gc_heap.initialize_gc_static_state();
 
 #if USE_REGIONS
+#if !MULTIPLE_HEAPS
+            ulong totalPhysicalMemory = unchecked((ulong)GCConfig.GetGCTotalPhysicalMemory());
+            if (totalPhysicalMemory == 0)
+            {
+                totalPhysicalMemory = GCToOSInterface.GetPhysicalMemoryLimit();
+            }
+
+            gc_heap.initialize_compaction_policy(
+                totalPhysicalMemory,
+                GCToOSInterface.GetTotalProcessorCount());
+#endif
+
             if (!gc_heap.initialize_mark_list())
             {
                 gc_heap.check_commit_cs.Destroy();

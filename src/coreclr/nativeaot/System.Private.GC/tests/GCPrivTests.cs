@@ -960,6 +960,295 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)0, gc_heap.get_gen0_end_space(&heap, memory_type.memory_type_reserved));
         Assert.Equal((nuint)0, gc_heap.get_gen0_end_space(&heap, memory_type.memory_type_committed));
     }
+
+    [Fact]
+    public void PlanPhaseGenerationFragmentationAddsCondemnedRegionsAndPinnedGaps()
+    {
+        using CompactionPolicyStateScope _ = new();
+        gc_heap heap = default;
+        generation* generations = gc_heap.generation_table_of(&heap);
+        heap_segment* regions = stackalloc heap_segment[4];
+        mark* pinnedPlugs = stackalloc mark[2];
+        for (int i = 0; i < 4; i++)
+        {
+            regions[i] = default;
+        }
+
+        pinnedPlugs[0] = default;
+        pinnedPlugs[1] = default;
+
+        heap_segment.heap_segment_saved_allocated(&regions[0]) = (byte*)0x1300;
+        heap_segment.heap_segment_plan_allocated(&regions[0]) = (byte*)0x1200;
+        heap_segment.heap_segment_next(&regions[0]) = null;
+        heap_segment.heap_segment_saved_allocated(&regions[1]) = (byte*)0x2500;
+        heap_segment.heap_segment_plan_allocated(&regions[1]) = (byte*)0x2200;
+        heap_segment.heap_segment_next(&regions[1]) = &regions[2];
+        heap_segment.heap_segment_saved_allocated(&regions[2]) = (byte*)0x3800;
+        heap_segment.heap_segment_plan_allocated(&regions[2]) = (byte*)0x3300;
+        heap_segment.heap_segment_next(&regions[2]) = null;
+        heap_segment.heap_segment_saved_allocated(&regions[3]) = (byte*)0x4A00;
+        heap_segment.heap_segment_plan_allocated(&regions[3]) = (byte*)0x4000;
+        heap_segment.heap_segment_next(&regions[3]) = null;
+
+        generation.generation_start_segment(
+            generations + (int)gc_generation_num.soh_gen0) = &regions[0];
+        generation.generation_start_segment(
+            generations + (int)gc_generation_num.soh_gen1) = &regions[1];
+        generation.generation_start_segment(
+            generations + (int)gc_generation_num.soh_gen2) = &regions[3];
+        (generations + (int)gc_generation_num.soh_gen0)->gen_num =
+            (int)gc_generation_num.soh_gen0;
+        (generations + (int)gc_generation_num.soh_gen1)->gen_num =
+            (int)gc_generation_num.soh_gen1;
+        (generations + (int)gc_generation_num.soh_gen2)->gen_num =
+            (int)gc_generation_num.soh_gen2;
+
+        pinnedPlugs[0].len = 0x20;
+        pinnedPlugs[1].len = 0x30;
+        gc_heap.mark_stack_array = pinnedPlugs;
+        gc_heap.mark_stack_bos = 2;
+
+        Assert.Equal(
+            (nuint)0x950,
+            gc_heap.generation_fragmentation(
+                &heap,
+                generations + (int)gc_generation_num.soh_gen1,
+                generations + (int)gc_generation_num.soh_gen0,
+                (byte*)0xDEAD));
+    }
+
+    [Fact]
+    public void PlanPhaseRegionCapacityAndHardLimitUseStrictNativeBoundaries()
+    {
+        using CompactionPolicyStateScope _ = new();
+
+        gc_heap.heap_hard_limit = 1000;
+        gc_heap.current_total_committed = 600;
+
+        Assert.True(gc_heap.check_against_hard_limit(400));
+        Assert.False(gc_heap.check_against_hard_limit(401));
+
+        gc_heap.heap_hard_limit = 0;
+        Assert.False(gc_heap.sufficient_space_regions(1000, 1000));
+        Assert.True(gc_heap.sufficient_space_regions(1001, 1000));
+
+        gc_heap.end_gen0_region_committed_space = 600;
+        gc_heap.heap_hard_limit = 1000;
+        gc_heap.current_total_committed = 600;
+        Assert.True(gc_heap.sufficient_space_regions_for_allocation(1001, 1000));
+
+        gc_heap.current_total_committed = 601;
+        Assert.False(gc_heap.sufficient_space_regions_for_allocation(1001, 1000));
+    }
+
+    [Fact]
+    public void PlanPhaseDecideOnCompactionSpacePreservesSweepAndPlanBoundaries()
+    {
+        using CompactionPolicyStateScope _ = new();
+        gc_heap heap = default;
+        dynamic_data* gen0Data = gc_heap.dynamic_data_of(
+            &heap,
+            (int)gc_generation_num.soh_gen0);
+        heap_segment region = default;
+        generation* gen0 = gc_heap.generation_of(
+            gc_heap.generation_table_of(&heap),
+            (int)gc_generation_num.soh_gen0);
+
+        dynamic_data.dd_min_size(gen0Data) = 100;
+        dynamic_data.dd_desired_allocation(gen0Data) = 0;
+        gc_heap.min_segment_size_shr = 8;
+        gc_heap.num_regions_freed_in_sweep = 1;
+
+        Assert.False(gc_heap.decide_on_compaction_space(&heap));
+        Assert.Equal(0, gc_heap.sufficient_gen0_space_p);
+
+        gc_heap.num_regions_freed_in_sweep = 0;
+        heap_segment.heap_segment_plan_gen_num(&region) = (int)gc_generation_num.soh_gen0;
+        heap_segment.heap_segment_plan_allocated(&region) = (byte*)0x100000;
+        heap_segment.heap_segment_reserved(&region) =
+            (byte*)((nuint)heap_segment.heap_segment_plan_allocated(&region) +
+                    gc_heap.END_SPACE_AFTER_GC_FL);
+        heap_segment.heap_segment_next(&region) = null;
+        generation.generation_start_segment(gen0) = &region;
+
+        Assert.True(gc_heap.decide_on_compaction_space(&heap));
+        Assert.Equal(1, gc_heap.sufficient_gen0_space_p);
+
+        dynamic_data.dd_min_size(gen0Data) = gc_heap.END_SPACE_AFTER_GC_FL / 2;
+        gc_heap.sufficient_gen0_space_p = 0;
+        gc_heap.gen0_large_chunk_found = false;
+
+        Assert.True(gc_heap.decide_on_compaction_space(&heap));
+        Assert.Equal(0, gc_heap.sufficient_gen0_space_p);
+    }
+
+    [Fact]
+    public void PlanPhaseFullCompactingProductivityRejectsGen2Growth()
+    {
+        using CompactionPolicyStateScope _ = new();
+        gc_heap heap = default;
+        generation* generations = gc_heap.generation_table_of(&heap);
+        heap_segment gen1Region = default;
+        heap_segment gen2Region = default;
+
+        generation.generation_start_segment(
+            generations + (int)gc_generation_num.soh_gen1) = &gen1Region;
+        generation.generation_tail_region(
+            generations + (int)gc_generation_num.soh_gen2) = &gen2Region;
+        heap_segment.heap_segment_allocated(&gen2Region) = (byte*)0x2000;
+        heap_segment.heap_segment_plan_allocated(&gen2Region) = (byte*)0x1800;
+
+        heap_segment.heap_segment_plan_gen_num(&gen1Region) =
+            (int)gc_generation_num.soh_gen2;
+        Assert.False(gc_heap.is_full_compacting_gc_productive(&heap));
+
+        heap_segment.heap_segment_plan_gen_num(&gen1Region) =
+            (int)gc_generation_num.soh_gen1;
+        heap_segment.heap_segment_plan_allocated(&gen2Region) =
+            heap_segment.heap_segment_allocated(&gen2Region);
+        Assert.False(gc_heap.is_full_compacting_gc_productive(&heap));
+
+        heap_segment.heap_segment_plan_allocated(&gen2Region) =
+            heap_segment.heap_segment_allocated(&gen2Region) - 1;
+        Assert.True(gc_heap.is_full_compacting_gc_productive(&heap));
+    }
+
+    [Fact]
+    public void PlanPhaseCompactionDecisionPreservesEarlyExitAndReasonPrecedence()
+    {
+        using CompactionPolicyStateScope _ = new();
+        gc_heap heap = default;
+        static_data gen2StaticData = default;
+        generation* generations = gc_heap.generation_table_of(&heap);
+        heap_segment gen1Region = default;
+        heap_segment gen2Region = default;
+        dynamic_data* gen2Data = gc_heap.dynamic_data_of(
+            &heap,
+            (int)gc_generation_num.soh_gen2);
+        gen2Data->sdata = &gen2StaticData;
+
+        SetCompactionDecisionRegions(generations, &gen1Region, &gen2Region);
+        gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen2;
+        gc_heap.settings.reason = gc_reason.reason_induced_compacting;
+        gc_heap.last_gc_before_oom = 1;
+        bool shouldExpand = true;
+
+        Assert.True(gc_heap.decide_on_compacting(
+            &heap,
+            (int)gc_generation_num.soh_gen2,
+            0,
+            ref shouldExpand));
+        Assert.False(shouldExpand);
+        Assert.Equal(
+            (int)gc_heap_compact_reason.compact_induced_compacting,
+            gc_heap.gc_data_per_heap.get_mechanism(gc_mechanism_per_heap.gc_heap_compact));
+        Assert.Equal(1, gc_heap.last_gc_before_oom);
+
+        gc_heap.gc_data_per_heap = default;
+        gc_heap.settings.reason = gc_reason.reason_induced_aggressive;
+        gc_heap.special_sweep_p = true;
+        shouldExpand = true;
+
+        Assert.False(gc_heap.decide_on_compacting(
+            &heap,
+            (int)gc_generation_num.soh_gen2,
+            0,
+            ref shouldExpand));
+        Assert.False(shouldExpand);
+        Assert.Equal(
+            -1,
+            gc_heap.gc_data_per_heap.get_mechanism(gc_mechanism_per_heap.gc_heap_compact));
+    }
+
+    [Fact]
+    public void PlanPhaseHighMemoryReclaimThresholdIsStrictAndLocksUnproductiveElevation()
+    {
+        using CompactionPolicyStateScope _ = new();
+        gc_heap heap = default;
+        static_data gen2StaticData = default;
+        generation* generations = gc_heap.generation_table_of(&heap);
+        heap_segment gen1Region = default;
+        heap_segment gen2Region = default;
+        dynamic_data* gen0Data = gc_heap.dynamic_data_of(
+            &heap,
+            (int)gc_generation_num.soh_gen0);
+        dynamic_data* gen2Data = gc_heap.dynamic_data_of(
+            &heap,
+            (int)gc_generation_num.soh_gen2);
+
+        gen2StaticData.fragmentation_limit = nuint.MaxValue;
+        gen2StaticData.fragmentation_burden_limit = 1.0f;
+        gen2Data->sdata = &gen2StaticData;
+        dynamic_data.dd_min_size(gen0Data) = 100;
+        SetCompactionDecisionRegions(generations, &gen1Region, &gen2Region);
+        heap_segment.heap_segment_mem(&gen2Region) = (byte*)0x1000;
+        heap_segment.heap_segment_allocated(&gen2Region) = (byte*)0x3000;
+        heap_segment.heap_segment_saved_allocated(&gen2Region) = (byte*)0x3000;
+        heap_segment.heap_segment_plan_allocated(&gen2Region) = (byte*)0x2C18;
+
+        gc_heap.min_segment_size_shr = 12;
+        gc_heap.num_regions_freed_in_sweep = 1;
+        gc_heap.high_memory_load_th = 90;
+        gc_heap.v_high_memory_load_th = 97;
+        gc_heap.settings.condemned_generation = (int)gc_generation_num.soh_gen2;
+        gc_heap.settings.entry_memory_load = 90;
+        gc_heap.settings.entry_available_physical_mem = 1000;
+        bool shouldExpand = false;
+
+        Assert.False(gc_heap.decide_on_compacting(
+            &heap,
+            (int)gc_generation_num.soh_gen2,
+            0,
+            ref shouldExpand));
+        Assert.Equal(1, gc_heap.settings.should_lock_elevation);
+
+        gc_heap.settings.should_lock_elevation = 0;
+        heap_segment.heap_segment_plan_allocated(&gen2Region)--;
+
+        Assert.True(gc_heap.decide_on_compacting(
+            &heap,
+            (int)gc_generation_num.soh_gen2,
+            0,
+            ref shouldExpand));
+        Assert.Equal(
+            (int)gc_heap_compact_reason.compact_high_mem_frag,
+            gc_heap.gc_data_per_heap.get_mechanism(gc_mechanism_per_heap.gc_heap_compact));
+        Assert.Equal(0, gc_heap.settings.should_lock_elevation);
+    }
+
+    [Theory]
+    [InlineData((int)gc_tuning_point.tuning_deciding_condemned_gen)]
+    [InlineData((int)gc_tuning_point.tuning_deciding_full_gc)]
+    public void PlanPhaseEphemeralFitRequiresStrictlyMoreReservedSpace(int tuningPoint)
+    {
+        using CompactionPolicyStateScope _ = new();
+        gc_heap heap = default;
+        dynamic_data* gen0Data = gc_heap.dynamic_data_of(
+            &heap,
+            (int)gc_generation_num.soh_gen0);
+        heap_segment gen0Region = default;
+        generation* gen0 = gc_heap.generation_of(
+            gc_heap.generation_table_of(&heap),
+            (int)gc_generation_num.soh_gen0);
+
+        dynamic_data.dd_min_size(gen0Data) = gc_heap.END_SPACE_AFTER_GC_FL;
+        heap_segment.heap_segment_allocated(&gen0Region) = (byte*)0x100000;
+        heap_segment.heap_segment_reserved(&gen0Region) =
+            heap_segment.heap_segment_allocated(&gen0Region) +
+            (nint)gc_heap.end_space_after_gc(&heap) * 2;
+        heap_segment.heap_segment_next(&gen0Region) = null;
+        generation.generation_start_segment(gen0) = &gen0Region;
+
+        Assert.False(gc_heap.ephemeral_gen_fit_p(
+            &heap,
+            (gc_tuning_point)tuningPoint));
+
+        heap_segment.heap_segment_reserved(&gen0Region)++;
+
+        Assert.True(gc_heap.ephemeral_gen_fit_p(
+            &heap,
+            (gc_tuning_point)tuningPoint));
+    }
 #endif
 
 #if USE_REGIONS && !MULTIPLE_HEAPS
@@ -1108,6 +1397,38 @@ public sealed unsafe class GCPrivTests
         heap_segment.heap_segment_plan_allocated(region) = (byte*)planAllocated;
         heap_segment.heap_segment_allocated(region) = (byte*)allocated;
         heap_segment.heap_segment_next(region) = next;
+    }
+
+    private static void SetCompactionDecisionRegions(
+        generation* generations,
+        heap_segment* gen1Region,
+        heap_segment* gen2Region)
+    {
+        heap_segment.heap_segment_mem(gen1Region) = (byte*)0x1000;
+        heap_segment.heap_segment_saved_allocated(gen1Region) = (byte*)0x1800;
+        heap_segment.heap_segment_plan_allocated(gen1Region) = (byte*)0x1600;
+        heap_segment.heap_segment_allocated(gen1Region) = (byte*)0x1800;
+        heap_segment.heap_segment_plan_gen_num(gen1Region) =
+            (int)gc_generation_num.soh_gen1;
+        heap_segment.heap_segment_next(gen1Region) = null;
+        heap_segment.heap_segment_mem(gen2Region) = (byte*)0x2000;
+        heap_segment.heap_segment_saved_allocated(gen2Region) = (byte*)0x3000;
+        heap_segment.heap_segment_plan_allocated(gen2Region) = (byte*)0x2800;
+        heap_segment.heap_segment_allocated(gen2Region) = (byte*)0x3000;
+        heap_segment.heap_segment_plan_gen_num(gen2Region) =
+            (int)gc_generation_num.soh_gen2;
+        heap_segment.heap_segment_next(gen2Region) = null;
+
+        generation.generation_start_segment(
+            generations + (int)gc_generation_num.soh_gen1) = gen1Region;
+        generation.generation_start_segment(
+            generations + (int)gc_generation_num.soh_gen2) = gen2Region;
+        generation.generation_tail_region(
+            generations + (int)gc_generation_num.soh_gen2) = gen2Region;
+        (generations + (int)gc_generation_num.soh_gen1)->gen_num =
+            (int)gc_generation_num.soh_gen1;
+        (generations + (int)gc_generation_num.soh_gen2)->gen_num =
+            (int)gc_generation_num.soh_gen2;
     }
 #endif
 
@@ -17584,6 +17905,107 @@ public sealed unsafe class GCPrivTests
             (nuint)(-(nint)(objectSize - (pointerCount * (nuint)sizeof(byte*)))));
         series->startoffset = (nuint)sizeof(byte*);
         return methodTable;
+    }
+
+    private sealed class CompactionPolicyStateScope : System.IDisposable
+    {
+        private readonly gc_mechanisms _settings;
+        private readonly nuint _minSegmentSizeShr;
+        private readonly region_allocator _globalRegionAllocator;
+        private readonly gc_heap.region_free_list_array _freeRegions;
+        private readonly int _numRegionsFreedInSweep;
+        private readonly nuint _endGen0RegionSpace;
+        private readonly nuint _endGen0RegionCommittedSpace;
+        private readonly nuint _gen0PinnedFreeSpace;
+        private readonly bool _gen0LargeChunkFound;
+        private readonly int _sufficientGen0Space;
+        private readonly bool _specialSweep;
+        private readonly mark* _markStackArray;
+        private readonly nuint _markStackBos;
+        private readonly nuint _heapHardLimit;
+        private readonly nuint _currentTotalCommitted;
+        private readonly gc_history_per_heap _gcDataPerHeap;
+        private readonly uint _highMemoryLoadThreshold;
+        private readonly uint _veryHighMemoryLoadThreshold;
+        private readonly ulong _memoryOnePercent;
+        private readonly int _lastGcBeforeOom;
+        private readonly bool _provisionalModeTriggered;
+        private readonly nuint _sohAllocationNoGc;
+
+        public CompactionPolicyStateScope()
+        {
+            _settings = gc_heap.settings;
+            _minSegmentSizeShr = gc_heap.min_segment_size_shr;
+            _globalRegionAllocator = gc_heap.global_region_allocator;
+            _freeRegions = gc_heap.free_regions;
+            _numRegionsFreedInSweep = gc_heap.num_regions_freed_in_sweep;
+            _endGen0RegionSpace = gc_heap.end_gen0_region_space;
+            _endGen0RegionCommittedSpace = gc_heap.end_gen0_region_committed_space;
+            _gen0PinnedFreeSpace = gc_heap.gen0_pinned_free_space;
+            _gen0LargeChunkFound = gc_heap.gen0_large_chunk_found;
+            _sufficientGen0Space = gc_heap.sufficient_gen0_space_p;
+            _specialSweep = gc_heap.special_sweep_p;
+            _markStackArray = gc_heap.mark_stack_array;
+            _markStackBos = gc_heap.mark_stack_bos;
+            _heapHardLimit = gc_heap.heap_hard_limit;
+            _currentTotalCommitted = gc_heap.current_total_committed;
+            _gcDataPerHeap = gc_heap.gc_data_per_heap;
+            _highMemoryLoadThreshold = gc_heap.high_memory_load_th;
+            _veryHighMemoryLoadThreshold = gc_heap.v_high_memory_load_th;
+            _memoryOnePercent = gc_heap.mem_one_percent;
+            _lastGcBeforeOom = gc_heap.last_gc_before_oom;
+            _provisionalModeTriggered = gc_heap.provisional_mode_triggered;
+            _sohAllocationNoGc = gc_heap.soh_allocation_no_gc;
+
+            gc_heap.settings = default;
+            gc_heap.min_segment_size_shr = 12;
+            gc_heap.global_region_allocator = default;
+            gc_heap.free_regions = default;
+            gc_heap.num_regions_freed_in_sweep = 0;
+            gc_heap.end_gen0_region_space = 0;
+            gc_heap.end_gen0_region_committed_space = 0;
+            gc_heap.gen0_pinned_free_space = 0;
+            gc_heap.gen0_large_chunk_found = false;
+            gc_heap.sufficient_gen0_space_p = 0;
+            gc_heap.special_sweep_p = false;
+            gc_heap.mark_stack_array = null;
+            gc_heap.mark_stack_bos = 0;
+            gc_heap.heap_hard_limit = 0;
+            gc_heap.current_total_committed = 0;
+            gc_heap.gc_data_per_heap = default;
+            gc_heap.high_memory_load_th = 90;
+            gc_heap.v_high_memory_load_th = 97;
+            gc_heap.mem_one_percent = 0;
+            gc_heap.last_gc_before_oom = 0;
+            gc_heap.provisional_mode_triggered = false;
+            gc_heap.soh_allocation_no_gc = 0;
+        }
+
+        public void Dispose()
+        {
+            gc_heap.settings = _settings;
+            gc_heap.min_segment_size_shr = _minSegmentSizeShr;
+            gc_heap.global_region_allocator = _globalRegionAllocator;
+            gc_heap.free_regions = _freeRegions;
+            gc_heap.num_regions_freed_in_sweep = _numRegionsFreedInSweep;
+            gc_heap.end_gen0_region_space = _endGen0RegionSpace;
+            gc_heap.end_gen0_region_committed_space = _endGen0RegionCommittedSpace;
+            gc_heap.gen0_pinned_free_space = _gen0PinnedFreeSpace;
+            gc_heap.gen0_large_chunk_found = _gen0LargeChunkFound;
+            gc_heap.sufficient_gen0_space_p = _sufficientGen0Space;
+            gc_heap.special_sweep_p = _specialSweep;
+            gc_heap.mark_stack_array = _markStackArray;
+            gc_heap.mark_stack_bos = _markStackBos;
+            gc_heap.heap_hard_limit = _heapHardLimit;
+            gc_heap.current_total_committed = _currentTotalCommitted;
+            gc_heap.gc_data_per_heap = _gcDataPerHeap;
+            gc_heap.high_memory_load_th = _highMemoryLoadThreshold;
+            gc_heap.v_high_memory_load_th = _veryHighMemoryLoadThreshold;
+            gc_heap.mem_one_percent = _memoryOnePercent;
+            gc_heap.last_gc_before_oom = _lastGcBeforeOom;
+            gc_heap.provisional_mode_triggered = _provisionalModeTriggered;
+            gc_heap.soh_allocation_no_gc = _sohAllocationNoGc;
+        }
     }
 
     private sealed class PlanPhaseStateScope : System.IDisposable

@@ -962,6 +962,11 @@ namespace Internal.Runtime.GarbageCollection
         public static ulong last_alloc_reset_suspended_end_time;
         public static int g_low_memory_status;
         public static uint high_memory_load_th;
+        public static uint v_high_memory_load_th;
+        public static ulong mem_one_percent;
+        public static int last_gc_before_oom;
+        public static bool provisional_mode_triggered;
+        public static nuint soh_allocation_no_gc;
         public static int reset_mm_p;
 #if !USE_REGIONS
         internal static bool gc_can_use_concurrent;
@@ -994,6 +999,9 @@ namespace Internal.Runtime.GarbageCollection
             loh_compacted_p = 0;
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
+            last_gc_before_oom = 0;
+            provisional_mode_triggered = false;
+            soh_allocation_no_gc = 0;
             reset_mm_p = 1;
 #if USE_REGIONS && !MULTIPLE_HEAPS
             gen0_bricks_cleared = 0;

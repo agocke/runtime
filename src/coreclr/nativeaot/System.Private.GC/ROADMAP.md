@@ -1254,8 +1254,8 @@ object-header special-bit and padded-plug prerequisites, short-object descriptor
 foreground `gc_mark1`/`gc_mark` leaves, the active WKS `USE_REGIONS`
 `mark_object_simple1`/`mark_object_simple`/`drain_mark_queue`/`mark_object`/
 `mark_through_object` bodies, `compute_gc_and_ephemeral_range`, and the synchronous WKS full-GC
-handle relocation branch and bounded `relocate_phase` orchestration are translated; collection
-entrypoints remain unrouted**
+compaction-policy closure, handle relocation branch, and bounded `relocate_phase` orchestration
+are translated; collection entrypoints remain unrouted**
 
 Translate in dependency order:
 
@@ -1302,8 +1302,12 @@ Translate in dependency order:
   `relative_index_power2_plug`, `relative_index_power2_free_space`, `oddp`, and `logcount`
   prefix helpers; direct WKS brick-tree insertion and brick-table updates; plus the WKS
   `get_gen0_end_space`/`get_gen0_end_plan_space` accounting,
-  direct/saved-plug padding bridge, and region-survivor snapshot/delta helpers are translated;
-  planning remains deferred)
+  direct/saved-plug padding bridge, region-survivor snapshot/delta helpers, and the bounded
+  `USE_REGIONS && !MULTIPLE_HEAPS` synchronous compaction-policy closure are translated. The
+  closure preserves region fragmentation and pinned-gap accounting, strict region-capacity and
+  hard-limit comparisons, compaction-space/productivity decisions, reason precedence,
+  high-memory thresholds, no-GC expansion signaling, and condemned/full-GC ephemeral-fit
+  boundaries. It remains unrouted; plan construction remains deferred)
 - `relocate_compact.cpp` (the allocation-free `memcopy` relocation primitive, card-copy/clear
   dispatch leaf, pinned-queue `get_next_pinned_entry` and `get_oldest_pinned_entry` handoffs, and
   dependency-closed WKS `USE_REGIONS` `should_check_brick_for_reloc`,
