@@ -384,15 +384,58 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
                     gc_heap.background_gc_wait(30_000));
             }
 
+            gc_alloc_context allocationContext = default;
+            gc_heap.try_allocate_more_space_context allocation = default;
+            gc_heap.create_try_allocate_more_space_context(
+                ManagedGCRegionBootstrap.Heap,
+                &allocationContext,
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                0,
+                (int)gc_generation_num.loh_generation,
+                &allocation);
+            delegate*<gc_heap.try_allocate_more_space_context*, int, gc_heap.allocation_callback_result*, void> callback =
+                gc_heap.managed_allocation_callback();
+            gc_heap.allocation_callback_result callbackResult = default;
+            callback(
+                &allocation,
+                (int)gc_heap.allocation_deferred_operation.enter_more_space_lock,
+                &callbackResult);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.completed, callbackResult.kind);
+            callback(
+                &allocation,
+                (int)gc_heap.allocation_deferred_operation.trigger_gc_for_budget,
+                &callbackResult);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.completed, callbackResult.kind);
+            callback(
+                &allocation,
+                (int)gc_heap.allocation_deferred_operation.leave_more_space_lock,
+                &callbackResult);
+            Assert.Equal(gc_heap.allocation_callback_result_kind.completed, callbackResult.kind);
+            Assert.Equal(
+                GCEnv.WAIT_OBJECT_0,
+                gc_heap.background_gc_wait(30_000));
+
             Assert.False(gc_heap.background_collection_running_p());
             Assert.Equal(bgc_state.bgc_not_in_process, gc_heap.current_bgc_state);
-            Assert.Equal((nuint)2, gc_heap.full_gc_counts[gc_heap.gc_type_background]);
-            Assert.Equal(4, GCToEEInterface.SuspendEECallCount);
-            Assert.Equal(4, GCToEEInterface.RestartEECallCount);
+            Assert.Equal((nuint)3, gc_heap.full_gc_counts[gc_heap.gc_type_background]);
+            Assert.Equal(1, GCToEEInterface.BackgroundThreadCreateCount);
+            Assert.Equal(3, GCToEEInterface.BackgroundThreadCycleCount);
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_initialized));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_reset_ww));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_mark_handles));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_mark_stack));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_revisit_soh));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_revisit_uoh));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_final_marking));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_sweep_soh));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_sweep_uoh));
+            Assert.True(gc_heap.background_state_was_observed(bgc_state.bgc_not_in_process));
+            Assert.Equal(6, GCToEEInterface.SuspendEECallCount);
+            Assert.Equal(6, GCToEEInterface.RestartEECallCount);
             Assert.Equal((byte)1, GCToEEInterface.LastRestartFinishedGC);
-            Assert.Equal(2, GCToEEInterface.GcStartWorkCallCount);
-            Assert.Equal(2, GCToEEInterface.GcDoneCallCount);
-            Assert.Equal(4, GCToEEInterface.BeforeGcScanRootsCallCount);
+            Assert.Equal(3, GCToEEInterface.GcStartWorkCallCount);
+            Assert.Equal(3, GCToEEInterface.GcDoneCallCount);
+            Assert.Equal(6, GCToEEInterface.BeforeGcScanRootsCallCount);
             Assert.Equal((byte)1, GCToEEInterface.LastBeforeGcScanRootsIsBackground);
             Assert.Equal((byte)0, GCToEEInterface.LastBeforeGcScanRootsIsConcurrent);
         }

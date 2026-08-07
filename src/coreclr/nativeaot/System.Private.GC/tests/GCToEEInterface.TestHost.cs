@@ -264,6 +264,12 @@ internal static unsafe class GCToEEInterface
 
     internal static void* CurrentThread { get; set; }
 
+    internal static int BackgroundThreadCreateCount { get; private set; }
+
+    internal static int BackgroundThreadCycleCount { get; private set; }
+
+    private static readonly AutoResetEvent s_backgroundThreadStart = new(false);
+
     internal static string LastFiredEvent { get; private set; }
 
     internal static string LastDynamicEventName { get; private set; }
@@ -348,6 +354,8 @@ internal static unsafe class GCToEEInterface
         LastSyncBlockCachePromotionsGrantedGeneration = 0;
         GetThreadCallCount = 0;
         CurrentThread = null;
+        BackgroundThreadCreateCount = 0;
+        BackgroundThreadCycleCount = 0;
         LastFiredEvent = FiredEvent.None;
         LastDynamicEventName = null;
         LastDynamicEventPayload = null;
@@ -446,7 +454,7 @@ internal static unsafe class GCToEEInterface
     }
 
     public static void GcEnumAllocContexts(
-        delegate* unmanaged<gc_alloc_context*, void*, void> fn,
+        delegate*<gc_alloc_context*, void*, void> fn,
         void* param)
     {
         GcEnumAllocContextsCallCount++;
@@ -569,18 +577,34 @@ internal static unsafe class GCToEEInterface
     }
 
     public static int CreateBackgroundThread(
-        delegate* unmanaged<void*, void> threadStart,
+        delegate*<void*, void> threadStart,
         void* arg,
+        int* shutdown,
         int* exited,
+        void** worker,
         byte* name)
     {
         _ = name;
         nuint start = (nuint)threadStart;
         nuint context = (nuint)arg;
+        nuint shutdownAddress = (nuint)shutdown;
         nuint exitedAddress = (nuint)exited;
+        BackgroundThreadCreateCount++;
+        *worker = (void*)1;
         Thread thread = new(() =>
         {
-            ((delegate* unmanaged<void*, void>)start)((void*)context);
+            while (true)
+            {
+                s_backgroundThreadStart.WaitOne();
+                if (Volatile.Read(ref *(int*)shutdownAddress) != 0)
+                {
+                    break;
+                }
+
+                ((delegate*<void*, void>)start)((void*)context);
+                BackgroundThreadCycleCount++;
+            }
+
             Volatile.Write(ref *(int*)exitedAddress, 1);
         })
         {
@@ -588,6 +612,12 @@ internal static unsafe class GCToEEInterface
         };
         thread.Start();
         return 1;
+    }
+
+    public static void SignalBackgroundThread(void* worker)
+    {
+        _ = worker;
+        s_backgroundThreadStart.Set();
     }
 
     public static void FireDynamicEvent(byte* name, void* payload, uint payloadSize)

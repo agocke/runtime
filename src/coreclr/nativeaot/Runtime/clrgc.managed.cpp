@@ -20,6 +20,7 @@
 #include "threadstore.h"
 #include "threadstore.inl"
 #include "thread.inl"
+#include "event.h"
 
 #include "gceventstatus.h"
 #include "holder.h"
@@ -94,6 +95,8 @@ struct ManagedGCBackgroundThreadArgs
 {
     void (*threadStart)(void*);
     void* context;
+    CLREventStatic startEvent;
+    int32_t* shutdown;
     int32_t* exited;
 };
 
@@ -103,9 +106,27 @@ static void ManagedGCBackgroundThreadStub(void* argument)
         static_cast<ManagedGCBackgroundThreadArgs*>(argument);
     void (*threadStart)(void*) = args->threadStart;
     void* context = args->context;
+    int32_t* shutdown = args->shutdown;
     int32_t* exited = args->exited;
 
-    threadStart(context);
+    while (true)
+    {
+        uint32_t result = args->startEvent.Wait(INFINITE, false);
+        if (result != WAIT_OBJECT_0)
+        {
+            break;
+        }
+
+        args->startEvent.Reset();
+        if (VolatileLoad(shutdown) != 0)
+        {
+            break;
+        }
+
+        threadStart(context);
+    }
+
+    args->startEvent.CloseEvent();
     VolatileStore(exited, 1);
     delete args;
 }
@@ -113,16 +134,26 @@ static void ManagedGCBackgroundThreadStub(void* argument)
 extern "C" BOOL ManagedGC_CreateBackgroundThread(
     void (*threadStart)(void*),
     void* context,
+    int32_t* shutdown,
     int32_t* exited,
+    void** worker,
     const char* name)
 {
     ManagedGCBackgroundThreadArgs* args =
         new (nothrow) ManagedGCBackgroundThreadArgs{
             threadStart,
             context,
+            {},
+            shutdown,
             exited};
     if (args == nullptr)
     {
+        return FALSE;
+    }
+
+    if (!args->startEvent.CreateManualEventNoThrow(false))
+    {
+        delete args;
         return FALSE;
     }
 
@@ -132,11 +163,18 @@ extern "C" BOOL ManagedGC_CreateBackgroundThread(
         true,
         name))
     {
+        args->startEvent.CloseEvent();
         delete args;
         return FALSE;
     }
 
+    *worker = args;
     return TRUE;
+}
+
+extern "C" void ManagedGC_SignalBackgroundThread(void* worker)
+{
+    static_cast<ManagedGCBackgroundThreadArgs*>(worker)->startEvent.Set();
 }
 
 // Stands in for the C++ GC's PURE_VIRTUAL: the managed heap points every IGCHeap slot it has

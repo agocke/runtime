@@ -600,8 +600,9 @@ namespace Internal.Runtime.GarbageCollection
         }
 
         internal static bool CollectionStartedForAllocation() =>
-            Volatile.Read(ref s_gcStarted) != 0 ||
-            Volatile.Read(ref s_gcInProgress) != 0;
+            !gc_heap.background_collection_running_p() &&
+            (Volatile.Read(ref s_gcStarted) != 0 ||
+             Volatile.Read(ref s_gcInProgress) != 0);
 
         internal static void NotifyCollectionStarted() =>
             Interlocked.Increment(ref s_gcStarted);
@@ -737,6 +738,14 @@ namespace Internal.Runtime.GarbageCollection
         internal static bool IsPromoted(byte* obj)
         {
 #if USE_REGIONS
+#if BACKGROUND_GC
+            if (gc_heap.background_collection_running_p())
+            {
+                return obj < gc_heap.background_saved_lowest_address ||
+                    obj >= gc_heap.background_saved_highest_address ||
+                    gc_heap.mark_array_marked(obj) != 0;
+            }
+#endif
             return !gc_heap.is_in_gc_range(obj) ||
                 !gc_heap.is_in_condemned_gc(obj) ||
                 ((CObjectHeader*)obj)->IsMarked() != 0;

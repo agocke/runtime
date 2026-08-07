@@ -58,7 +58,14 @@ namespace Internal.Runtime.GarbageCollection
 
         public static gc_alloc_context* GetAllocContext() => Vtable->GetAllocContext(g_theGCToCLR);
 
-        public static void GcEnumAllocContexts(delegate* unmanaged<gc_alloc_context*, void*, void> fn, void* param) => Vtable->GcEnumAllocContexts(g_theGCToCLR, fn, param);
+        // The callback is a direct managed entry point. Using an UnmanagedCallersOnly thunk
+        // would introduce a nested reverse-P/Invoke when the persistent BGC worker enumerates
+        // contexts from its managed cycle callback.
+        public static void GcEnumAllocContexts(delegate*<gc_alloc_context*, void*, void> fn, void* param) =>
+            Vtable->GcEnumAllocContexts(
+                g_theGCToCLR,
+                (delegate* unmanaged<gc_alloc_context*, void*, void>)fn,
+                param);
 
         public static byte* GetLoaderAllocatorObjectForGC(byte* pObject) => Vtable->GetLoaderAllocatorObjectForGC(g_theGCToCLR, pObject);
 

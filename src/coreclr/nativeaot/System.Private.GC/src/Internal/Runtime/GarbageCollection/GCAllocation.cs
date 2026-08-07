@@ -1190,7 +1190,6 @@ internal unsafe partial struct gc_heap
         public gc_heap* heap;
     }
 
-    [UnmanagedCallersOnly]
     public static void fix_alloc_context(gc_alloc_context* acontext, void* param)
     {
         fix_alloc_context_args* args = (fix_alloc_context_args*)param;
@@ -1217,6 +1216,7 @@ internal unsafe partial struct gc_heap
             heap->ephemeral_heap_segment,
             heap->alloc_allocated);
     }
+
 #endif
 
     public static void fix_youngest_allocation_area(
@@ -2041,15 +2041,7 @@ internal unsafe partial struct gc_heap
                 return;
 
             case allocation_deferred_operation.trigger_gc_for_budget:
-                result->kind = run_allocation_full_collection(
-                    context,
-                    context->gen_number == (int)gc_generation_num.soh_gen0
-                        ? (int)gc_generation_num.soh_gen0
-                        : GCInterfaceOffsets.max_generation,
-                    context->gen_number == (int)gc_generation_num.soh_gen0
-                        ? gc_reason.reason_alloc_soh
-                        : gc_reason.reason_alloc_loh,
-                    out _)
+                result->kind = run_allocation_budget_collection(context)
                     ? allocation_callback_result_kind.completed
                     : allocation_callback_result_kind.unsupported;
                 return;
@@ -2138,6 +2130,43 @@ internal unsafe partial struct gc_heap
 
         compacted_p = full_gc_counts[gc_type_compacting] > full_compact_gc_count;
         return collection_result == collection_s_ok;
+    }
+
+    private static bool run_allocation_budget_collection(
+        try_allocate_more_space_context* context)
+    {
+        if (context->gen_number == (int)gc_generation_num.soh_gen0)
+        {
+            return run_allocation_full_collection(
+                context,
+                (int)gc_generation_num.soh_gen0,
+                gc_reason.reason_alloc_soh,
+                out _);
+        }
+
+        GCSpinLock* moreSpaceLock =
+            more_space_lock_of(context->hp, context->gen_number);
+        GCSpinLock.leave(moreSpaceLock);
+        context->more_space_lock_held_p = 0;
+
+        int collectionResult = concurrent_gc_enabled() &&
+            !background_running_p()
+            ? garbage_collect_background(
+                GCInterfaceOffsets.max_generation,
+                low_memory_p: 0,
+                (int)collection_mode.collection_non_blocking,
+                gc_reason.reason_alloc_loh)
+            : collection_e_notimpl;
+        if (collectionResult != collection_s_ok)
+        {
+            collectionResult = garbage_collect_synchronous_foreground_for_allocation(
+                GCInterfaceOffsets.max_generation,
+                gc_reason.reason_alloc_loh);
+        }
+
+        GCSpinLock.enter(moreSpaceLock);
+        context->more_space_lock_held_p = 1;
+        return collectionResult == collection_s_ok;
     }
 
     private static nuint get_uoh_seg_size(nuint size)
@@ -3163,6 +3192,26 @@ internal unsafe partial struct gc_heap
 
         // Capture this while holding the lock, as the native code does.
         heap_segment* gen0_segment = ephemeral_heap_segment;
+
+#if BACKGROUND_GC
+        if (gen_number != (int)gc_generation_num.soh_gen0 &&
+            background_running_p() &&
+            current_c_gc_state == c_gc_state.c_gc_state_planning &&
+            seg is not null)
+        {
+            byte* obj = acontext->alloc_ptr;
+            byte* backgroundAllocated =
+                heap_segment.heap_segment_background_allocated(seg);
+            if (backgroundAllocated is not null &&
+                obj >= background_saved_lowest_address &&
+                obj < background_saved_highest_address &&
+                obj < backgroundAllocated &&
+                heap_segment.heap_segment_swept_p(seg) == 0)
+            {
+                mark_array_set_marked(obj);
+            }
+        }
+#endif
 
         byte* clear_end;
         if (seg is null || clear_limit <= heap_segment.heap_segment_used(seg))

@@ -18,7 +18,6 @@ internal static class ManagedGCBgcTest
             tail.Next = new Node { Value = i + 2 };
             tail = tail.Next;
         }
-
         WeakReference weak = CreateCollectibleObject();
         GCHandle strongHandle = GCHandle.Alloc(root);
         byte[] pinnedObject = new byte[512];
@@ -29,6 +28,7 @@ internal static class ManagedGCBgcTest
         dependentHandles.Add(dependentPrimary, new Node { Value = 201 });
         Finalizable.Reset();
         WeakReference finalizable = CreateFinalizableObject();
+        Node oldTail = tail;
         int collectionCount = GC.CollectionCount(GC.MaxGeneration);
 
         try
@@ -38,15 +38,15 @@ internal static class ManagedGCBgcTest
                 GCCollectionMode.Forced,
                 blocking: false,
                 compacting: false);
-
             bool returnedBeforeCompletion =
                 weak.IsAlive &&
                 Volatile.Read(ref Finalizable.Count) == 0;
+            Node cardChild = new Node { Value = 501 };
+            tail.Next = cardChild;
+            tail = cardChild;
+
             int mutations = 0;
-            for (int i = 0;
-                 i < 32_768 &&
-                 (weak.IsAlive || Volatile.Read(ref Finalizable.Count) == 0);
-                 i++)
+            for (int i = 0; i < 4096; i++)
             {
                 tail.Next = new Node { Value = 300 + i };
                 tail = tail.Next;
@@ -64,36 +64,61 @@ internal static class ManagedGCBgcTest
                 out Node dependentSecondary);
 
             GC.Collect(
-                generation: 0,
+                GC.MaxGeneration,
                 GCCollectionMode.Forced,
                 blocking: true,
-                compacting: true);
+                compacting: false);
 
+            for (int cycle = 0; cycle < 3; cycle++)
+            {
+                GC.Collect(
+                    GC.MaxGeneration,
+                    GCCollectionMode.Forced,
+                    blocking: false,
+                    compacting: false);
+                for (int i = 0; i < 1024; i++)
+                {
+                    tail.Next = new Node { Value = 40_000 + cycle * 1024 + i };
+                    tail = tail.Next;
+                }
+
+                GC.Collect(
+                    GC.MaxGeneration,
+                    GCCollectionMode.Forced,
+                    blocking: true,
+                    compacting: false);
+            }
+
+            int beforeAllocationTriggered = GC.CollectionCount(GC.MaxGeneration);
+            byte[] allocationSurvivor = new byte[128 * 1024];
+            allocationSurvivor[0] = 0x2c;
+            for (int i = 0;
+                 i < 4096 &&
+                 GC.CollectionCount(GC.MaxGeneration) == beforeAllocationTriggered;
+                 i++)
+            {
+                byte[] garbage = new byte[128 * 1024];
+                garbage[0] = (byte)i;
+            }
+            bool allocationTriggered =
+                GC.CollectionCount(GC.MaxGeneration) > beforeAllocationTriggered;
             GC.Collect(
                 GC.MaxGeneration,
                 GCCollectionMode.Forced,
-                blocking: false,
-                compacting: false);
-            for (int i = 0; i < 1024; i++)
-            {
-                tail.Next = new Node { Value = 40_000 + i };
-                tail = tail.Next;
-            }
-
-            GC.Collect(
-                generation: 0,
-                GCCollectionMode.Forced,
                 blocking: true,
-                compacting: true);
+                compacting: false);
 
             byte[] subsequent = new byte[2048];
             subsequent[0] = 0x6d;
             bool result =
                 returnedBeforeCompletion &&
                 mutations != 0 &&
-                GC.CollectionCount(GC.MaxGeneration) >= collectionCount + 2 &&
+                GC.CollectionCount(GC.MaxGeneration) >= collectionCount + 4 &&
+                allocationTriggered &&
                 ReferenceEquals(strongHandle.Target, root) &&
                 root.Value == 1 &&
+                ReferenceEquals(oldTail.Next, cardChild) &&
+                cardChild.Value == 501 &&
                 !weak.IsAlive &&
                 ReferenceEquals(pinnedHandle.Target, pinnedObject) &&
                 pinnedHandle.AddrOfPinnedObject() != IntPtr.Zero &&
@@ -101,6 +126,7 @@ internal static class ManagedGCBgcTest
                 dependentAlive &&
                 dependentSecondary.Value == 201 &&
                 Volatile.Read(ref Finalizable.Count) == 1 &&
+                allocationSurvivor[0] == 0x2c &&
                 subsequent[0] == 0x6d;
 
             GC.KeepAlive(root);
@@ -111,11 +137,22 @@ internal static class ManagedGCBgcTest
             GC.KeepAlive(dependentHandles);
             GC.KeepAlive(dependentSecondary);
             GC.KeepAlive(finalizable);
+            GC.KeepAlive(oldTail);
+            GC.KeepAlive(cardChild);
+            GC.KeepAlive(allocationSurvivor);
             GC.KeepAlive(subsequent);
 
             Console.WriteLine(result
                 ? "ManagedGC background smoke test passed."
                 : "ManagedGC background smoke test failed.");
+            if (!result)
+            {
+                Console.WriteLine(
+                    $"returned={returnedBeforeCompletion}, mutations={mutations}, " +
+                    $"collections={GC.CollectionCount(GC.MaxGeneration) - collectionCount}, " +
+                    $"allocationTriggered={allocationTriggered}, card={ReferenceEquals(oldTail.Next, cardChild)}, " +
+                    $"weak={weak.IsAlive}, dependent={dependentAlive}, finalizers={Volatile.Read(ref Finalizable.Count)}");
+            }
             return result ? 100 : 1;
         }
         finally
