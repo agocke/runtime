@@ -1100,6 +1100,178 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    public static void relocate_in_loh_compact(gc_heap* hp)
+    {
+        generation* gen = generation_of(
+            generation_table_of(hp),
+            (int)gc_generation_num.loh_generation);
+        heap_segment* seg =
+            heap_segment_rw(generation.generation_start_segment(gen));
+        Debug.Assert(seg is not null);
+        byte* o = get_uoh_start_object(seg, gen);
+
+        while (true)
+        {
+            if (o >= heap_segment.heap_segment_allocated(seg))
+            {
+                seg = heap_segment.heap_segment_next(seg);
+                if (seg is null)
+                {
+                    break;
+                }
+
+                o = heap_segment.heap_segment_mem(seg);
+            }
+
+            if (((CObjectHeader*)o)->IsMarked() != 0)
+            {
+                nuint object_size = AlignQword(size(o));
+                check_class_object_demotion(hp, o);
+                if (contain_pointers(o) != 0)
+                {
+                    go_through_object_nostart(
+                        method_table(o),
+                        o,
+                        size(o),
+                        hp,
+                        &reloc_survivor_helper_callback);
+                }
+
+                o += (nint)object_size;
+                if (o < heap_segment.heap_segment_allocated(seg))
+                {
+                    Debug.Assert(((CObjectHeader*)o)->IsMarked() == 0);
+                }
+            }
+            else
+            {
+                while (o < heap_segment.heap_segment_allocated(seg) &&
+                       ((CObjectHeader*)o)->IsMarked() == 0)
+                {
+                    o += (nint)AlignQword(size(o));
+                }
+            }
+        }
+    }
+
+    public static void compact_loh(gc_heap* hp)
+    {
+        Debug.Assert(
+            loh_compaction_requested() != 0 ||
+            heap_hard_limit != 0 ||
+            conserve_mem_setting != 0 ||
+            settings.reason == gc_reason.reason_induced_aggressive);
+
+        generation* gen = generation_of(
+            generation_table_of(hp),
+            (int)gc_generation_num.loh_generation);
+        heap_segment* start_seg =
+            heap_segment_rw(generation.generation_start_segment(gen));
+        Debug.Assert(start_seg is not null);
+        heap_segment* seg = start_seg;
+        heap_segment* prev_seg = null;
+        byte* o = get_uoh_start_object(seg, gen);
+
+        allocator.clear(generation.generation_allocator(gen));
+        generation.generation_free_list_space(gen) = 0;
+        generation.generation_free_obj_space(gen) = 0;
+        loh_pinned_queue_bos = 0;
+
+        while (true)
+        {
+            if (o >= heap_segment.heap_segment_allocated(seg))
+            {
+                heap_segment* next_seg = heap_segment.heap_segment_next(seg);
+                if (heap_segment.heap_segment_plan_allocated(seg) ==
+                        heap_segment.heap_segment_mem(seg) &&
+                    seg != start_seg &&
+                    heap_segment.heap_segment_read_only_p(seg) == 0)
+                {
+                    Debug.Assert(prev_seg is not null);
+                    heap_segment.heap_segment_next(prev_seg) = next_seg;
+                    heap_segment.heap_segment_next(seg) = freeable_uoh_segment;
+                    freeable_uoh_segment = seg;
+                    update_start_tail_regions(gen, seg, prev_seg, next_seg);
+                }
+                else
+                {
+                    if (heap_segment.heap_segment_read_only_p(seg) == 0)
+                    {
+                        if (heap_segment.heap_segment_plan_allocated(seg) >
+                            heap_segment.heap_segment_allocated(seg))
+                        {
+                            if (heap_segment.heap_segment_plan_allocated(seg) -
+                                    (nint)plug_skew >
+                                heap_segment.heap_segment_used(seg))
+                            {
+                                heap_segment.heap_segment_used(seg) =
+                                    heap_segment.heap_segment_plan_allocated(seg) -
+                                    (nint)plug_skew;
+                            }
+                        }
+
+                        heap_segment.heap_segment_allocated(seg) =
+                            heap_segment.heap_segment_plan_allocated(seg);
+                        decommit_heap_segment_pages(seg, 0, hp->heap_number);
+                    }
+
+                    prev_seg = seg;
+                }
+
+                seg = next_seg;
+                if (seg is null)
+                {
+                    break;
+                }
+
+                o = heap_segment.heap_segment_mem(seg);
+            }
+
+            if (((CObjectHeader*)o)->IsMarked() != 0)
+            {
+                nuint object_size = AlignQword(size(o));
+                nuint loh_pad;
+                byte* reloc = o;
+                ((CObjectHeader*)o)->ClearMarked();
+
+                if (((CObjectHeader*)o)->IsPinned() != 0)
+                {
+                    Debug.Assert(loh_pinned_plug_que_empty_p() == 0);
+                    mark* m = loh_pinned_plug_of(loh_deque_pinned_plug());
+                    byte* plug = pinned_plug(m);
+                    Debug.Assert(plug == o);
+
+                    loh_pad = pinned_len(m);
+                    ((CObjectHeader*)o)->GetHeader()->ClrGCBit();
+                }
+                else
+                {
+                    loh_pad = AlignQword((nuint)sizeof(loh_padding_obj));
+                    reloc += loh_node_relocation_distance(o);
+                    gcmemcopy(reloc, o, object_size, copy_cards_p: 1);
+                }
+
+                thread_gap(reloc - (nint)loh_pad, loh_pad, gen);
+
+                o += (nint)object_size;
+                if (o < heap_segment.heap_segment_allocated(seg))
+                {
+                    Debug.Assert(((CObjectHeader*)o)->IsMarked() == 0);
+                }
+            }
+            else
+            {
+                while (o < heap_segment.heap_segment_allocated(seg) &&
+                       ((CObjectHeader*)o)->IsMarked() == 0)
+                {
+                    o += (nint)AlignQword(size(o));
+                }
+            }
+        }
+
+        Debug.Assert(loh_pinned_plug_que_empty_p() != 0);
+    }
+
 #if !MULTIPLE_HEAPS
     public static bool relocate_phase(
         int condemned_gen_number,
@@ -1117,7 +1289,8 @@ internal unsafe partial struct gc_heap
             settings.background_p != 0 ||
             background_running_p() ||
 #endif
-            loh_compacted_p != 0)
+            (loh_compacted_p != 0 &&
+             !validate_loh_compaction_prerequisites(hp)))
         {
             return false;
         }
@@ -1135,7 +1308,16 @@ internal unsafe partial struct gc_heap
             GCInterfaceOffsets.max_generation,
             &sc);
 
-        relocate_in_uoh_objects(hp, (int)gc_generation_num.loh_generation);
+        if (loh_compacted_p != 0)
+        {
+            Debug.Assert(settings.condemned_generation == GCInterfaceOffsets.max_generation);
+            relocate_in_loh_compact(hp);
+        }
+        else
+        {
+            relocate_in_uoh_objects(hp, (int)gc_generation_num.loh_generation);
+        }
+
         relocate_in_uoh_objects(hp, (int)gc_generation_num.poh_generation);
 
         relocate_survivors(
@@ -1168,12 +1350,18 @@ internal unsafe partial struct gc_heap
             settings.background_p != 0 ||
             background_running_p() ||
 #endif
-            loh_compacted_p != 0)
+            (loh_compacted_p != 0 &&
+             !validate_loh_compaction_prerequisites(hp)))
         {
             return false;
         }
 
         _ = first_condemned_address;
+
+        if (loh_compacted_p != 0)
+        {
+            compact_loh(hp);
+        }
 
         reset_pinned_queue_bos(hp);
         update_oldest_pinned_plug(hp);

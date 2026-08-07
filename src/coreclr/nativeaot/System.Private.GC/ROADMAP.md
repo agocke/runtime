@@ -1325,6 +1325,11 @@ Translate in dependency order:
   conversion and saved gap records, remaining-pin/region demotion, SIP decisions/sweeping,
   marked/pinned clearing, allocation calls, relocation flags, brick trees/sentinels, and region
   plan generations, with pre-mutation validation and a boundary before post-plan policy. The
+  WKS full-GC LOH dependency closure adds the native pin queue state, growth/order/decay,
+  allocation-limit clipping, padding-aware fit and condemned allocation, movable/pinned object
+  planning, pinned-gap recording, relocation-distance metadata, segment fallback, and read-only
+  prefix handling. It remains a direct bounded leaf rather than adding plan-phase post-policy
+  orchestration. The
   policy closure preserves region fragmentation and pinned-gap accounting, strict
   region-capacity and hard-limit comparisons, compaction-space/productivity decisions, reason
   precedence, high-memory thresholds, no-GC expansion signaling, and condemned/full-GC
@@ -1349,16 +1354,17 @@ Translate in dependency order:
   `expand_reused_seg_p`, `gcmemcopy`, `compact_plug`, `compact_in_brick`, and `compact_phase`.
   It preserves header/payload/card copying, shortened pinned pre/post state swaps, in-order
   cross-brick traversal, SIP skipping, generation/segment boundaries, final brick publication,
-  saved-pin recovery, and `plan_allocated`-to-`used` transitions. It rejects unsupported modes
-  before mutation and excludes actual LOH compaction. Collection routing remains deferred; the
+  saved-pin recovery, and `plan_allocated`-to-`used` transitions. The LOH closure adds marked
+  object reference relocation and compaction with native padding, pinned-object order, payload,
+  card and write-watch copying, free-gap threading, segment trimming/unlinking, and read-only
+  handling. It rejects unsupported modes before mutation. Collection routing remains deferred; the
   bounded synchronous WKS `USE_REGIONS`
-  full-GC `relocate_phase` slice preserves the native roots, non-compacting LOH, POH, SOH
+  full-GC `relocate_phase` slice preserves the native roots, compacting or non-compacting LOH, POH, SOH
   survivors, finalization-data, and handle order with one initialized relocation `ScanContext`.
   It rejects partial/card scans, settings mismatch, concurrent/background collection, missing
-  heap/finalizer state, and actual LOH compaction before mutation, while configured but
+  heap/finalizer state, and malformed LOH compaction state before mutation, while configured but
   unperformed LOH compaction retains non-compacting LOH/POH traversal. Server/card stealing,
-  background roots, partial card scans, `relocate_in_loh_compact`, and debug-only region-map
-  verification remain deferred)
+  background roots, partial card scans, and debug-only region-map verification remain deferred)
 - `sweep.cpp` (the dependency-closed WKS `USE_REGIONS` SOH sweep closure is translated:
   normal-plan promotion and special-sweep retention, swept-in-plan segment skipping during the
   brick walk, positive highest-plug rewrites, negative brick resets, generation free-list

@@ -971,11 +971,19 @@ namespace Internal.Runtime.GarbageCollection
 #endif
         public static nuint mark_stack_array_length;
         public static mark* mark_stack_array;
+        public const nuint LOH_PIN_QUEUE_LENGTH = 100;
+        public const int LOH_PIN_DECAY = 10;
+        public static nuint loh_pinned_queue_tos;
+        public static nuint loh_pinned_queue_bos;
+        public static nuint loh_pinned_queue_length;
+        public static int loh_pinned_queue_decay;
+        public static mark* loh_pinned_queue;
         public static byte* min_overflow_address;
         public static byte* max_overflow_address;
         public static nuint alloc_contexts_used;
         public static heap_segment* freeable_uoh_segment;
         public static int sufficient_gen0_space_p;
+        public static int conserve_mem_setting;
         public static int loh_compaction_always_p;
         public static gc_loh_compaction_mode loh_compaction_mode;
         public static int loh_compacted_p;
@@ -1029,6 +1037,7 @@ namespace Internal.Runtime.GarbageCollection
             loh_compaction_always_p = 0;
             loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_default;
             loh_compacted_p = 0;
+            initialize_loh_pinned_queue_state();
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
             last_gc_before_oom = 0;
@@ -3589,6 +3598,11 @@ namespace Internal.Runtime.GarbageCollection
         public static nint loh_node_relocation_distance(byte* node)
         {
             return ((loh_obj_and_pad*)node)[-1].reloc;
+        }
+
+        public static void loh_set_node_relocation_distance(byte* node, nint val)
+        {
+            ((loh_obj_and_pad*)node)[-1].reloc = val;
         }
 
         public static nint node_relocation_distance(byte* node)

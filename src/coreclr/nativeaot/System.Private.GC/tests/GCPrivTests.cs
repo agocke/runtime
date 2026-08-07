@@ -4192,12 +4192,16 @@ public sealed unsafe class GCPrivTests
     }
 
 #if !MULTIPLE_HEAPS
-    [Fact]
-    public void RelocatePhaseUsesNativeFullGcOrderAndScanContext()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RelocatePhaseUsesNativeFullGcOrderAndLohBranch(bool compactLoh)
     {
         gc_mechanisms savedSettings = gc_heap.settings;
         CFinalize* savedFinalizeQueue = gc_heap.finalize_queue;
         int savedLohCompacted = gc_heap.loh_compacted_p;
+        nuint savedLohQueueTos = gc_heap.loh_pinned_queue_tos;
+        nuint savedLohQueueBos = gc_heap.loh_pinned_queue_bos;
 #if BACKGROUND_GC
         int savedBackgroundRunning = gc_heap.gc_background_running;
 #endif
@@ -4281,6 +4285,7 @@ public sealed unsafe class GCPrivTests
             byte* sohObject = savedGen2Mem + 256;
             byte* oldRoot = relocationNode + 512;
             byte* oldLohReference = relocationNode + 576;
+            byte* oldSkippedLohReference = relocationNode + 608;
             byte* oldPohReference = relocationNode + 640;
             byte* oldSohReference = relocationNode + 704;
             byte* finalizableObject = relocationNode + 768;
@@ -4307,10 +4312,18 @@ public sealed unsafe class GCPrivTests
                 sohBrick,
                 unchecked((nint)(sohObject - gc_heap.brick_address(sohBrick))));
             byte* lohObject = savedLohMem;
+            byte* secondLohObject = lohObject + (nint)alignedObjectSize;
             ((CObjectHeader*)lohObject)->RawSetMethodTable(pointerMethodTable);
             *(byte**)(lohObject + sizeof(byte*)) = oldLohReference;
+            ((CObjectHeader*)secondLohObject)->RawSetMethodTable(pointerMethodTable);
+            *(byte**)(secondLohObject + sizeof(byte*)) = oldSkippedLohReference;
+            if (compactLoh)
+            {
+                ((CObjectHeader*)lohObject)->SetMarked();
+            }
+
             heap_segment.heap_segment_allocated(lohSegment) =
-                lohObject + (nint)gc_heap.AlignQword(objectSize);
+                secondLohObject + (nint)gc_heap.AlignQword(objectSize);
 
             byte* pohObject = savedPohMem;
             ((CObjectHeader*)pohObject)->RawSetMethodTable(pointerMethodTable);
@@ -4345,7 +4358,9 @@ public sealed unsafe class GCPrivTests
             gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
             gc_heap.settings.compaction = 1;
             gc_heap.settings.loh_compaction = 1;
-            gc_heap.loh_compacted_p = 0;
+            gc_heap.loh_compacted_p = compactLoh ? 1 : 0;
+            gc_heap.loh_pinned_queue_tos = 0;
+            gc_heap.loh_pinned_queue_bos = 0;
             gc_heap.gc_low = GCCommon.g_gc_lowest_address;
             gc_heap.gc_high = GCCommon.g_gc_highest_address;
 #if BACKGROUND_GC
@@ -4374,6 +4389,9 @@ public sealed unsafe class GCPrivTests
                     (nuint)oldLohReference,
                     (nuint)(*(byte**)(lohObject + sizeof(byte*))));
                 Assert.Equal(
+                    (nuint)oldSkippedLohReference,
+                    (nuint)(*(byte**)(secondLohObject + sizeof(byte*))));
+                Assert.Equal(
                     (nuint)oldPohReference,
                     (nuint)(*(byte**)(pohObject + sizeof(byte*))));
                 Assert.Equal(
@@ -4389,6 +4407,11 @@ public sealed unsafe class GCPrivTests
                 Assert.Equal(
                     (nuint)(oldLohReference - 64),
                     (nuint)(*(byte**)(lohObject + sizeof(byte*))));
+                Assert.Equal(
+                    (nuint)(compactLoh
+                        ? oldSkippedLohReference
+                        : oldSkippedLohReference - 64),
+                    (nuint)(*(byte**)(secondLohObject + sizeof(byte*))));
                 Assert.Equal(
                     (nuint)(oldPohReference - 64),
                     (nuint)(*(byte**)(pohObject + sizeof(byte*))));
@@ -4492,6 +4515,8 @@ public sealed unsafe class GCPrivTests
 
             gc_heap.settings = savedSettings;
             gc_heap.loh_compacted_p = savedLohCompacted;
+            gc_heap.loh_pinned_queue_tos = savedLohQueueTos;
+            gc_heap.loh_pinned_queue_bos = savedLohQueueBos;
             gc_heap.gc_low = savedGcLow;
             gc_heap.gc_high = savedGcHigh;
 #if BACKGROUND_GC
@@ -5068,17 +5093,27 @@ public sealed unsafe class GCPrivTests
         Assert.True(gc_heap.get_start_segment(&gen) == &normal);
     }
 
-    [Fact]
-    public void CompactPhasePublishesPlanAllocatedAsUsedForCollectedGenerations()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CompactPhasePublishesPlanAllocatedAndExecutesLohBranch(bool compactLoh)
     {
+        using LohCompactionStateScope lohState = new();
         gc_mechanisms savedSettings = gc_heap.settings;
         int savedLohCompacted = gc_heap.loh_compacted_p;
+        int savedAlwaysCompact = gc_heap.loh_compaction_always_p;
 #if BACKGROUND_GC
         int savedBackgroundRunning = gc_heap.gc_background_running;
 #endif
         bool commitLockInitialized = false;
         bool bootstrapPrepared = false;
         generation* generations = null;
+        generation* lohGeneration = null;
+        heap_segment* savedLohStart = null;
+        heap_segment* savedLohTail = null;
+        heap_segment* savedLohReadOnlyTail = null;
+        nuint savedLohFreeListSpace = 0;
+        nuint savedLohFreeObjectSpace = 0;
         generation** collectedGenerations = stackalloc generation*[3];
         heap_segment** savedStarts = stackalloc heap_segment*[3];
         heap_segment** savedReadOnlyTails = stackalloc heap_segment*[3];
@@ -5100,6 +5135,30 @@ public sealed unsafe class GCPrivTests
             generations = ManagedGCRegionBootstrap.GenerationTable;
             Assert.True(heap is not null);
             Assert.True(generations is not null);
+
+            heap_segment lohSegment = default;
+            byte* lohStorage = stackalloc byte[sizeof(aligned_plug_and_gap) + 64];
+            byte* lohMem = lohStorage + sizeof(aligned_plug_and_gap);
+            lohGeneration = gc_heap.generation_of(
+                generations,
+                (int)gc_generation_num.loh_generation);
+            savedLohStart = generation.generation_start_segment(lohGeneration);
+            savedLohTail = generation.generation_tail_region(lohGeneration);
+            savedLohReadOnlyTail = generation.generation_tail_ro_region(lohGeneration);
+            savedLohFreeListSpace = generation.generation_free_list_space(lohGeneration);
+            savedLohFreeObjectSpace = generation.generation_free_obj_space(lohGeneration);
+            lohSegment.flags = heap_segment.heap_segment_flags_loh;
+            heap_segment.heap_segment_mem(&lohSegment) = lohMem;
+            heap_segment.heap_segment_allocated(&lohSegment) = lohMem;
+            heap_segment.heap_segment_plan_allocated(&lohSegment) = lohMem;
+            heap_segment.heap_segment_committed(&lohSegment) = lohMem;
+            heap_segment.heap_segment_reserved(&lohSegment) = lohMem;
+            heap_segment.heap_segment_used(&lohSegment) = lohMem;
+            generation.generation_start_segment(lohGeneration) = &lohSegment;
+            generation.generation_tail_region(lohGeneration) = &lohSegment;
+            generation.generation_tail_ro_region(lohGeneration) = null;
+            generation.generation_free_list_space(lohGeneration) = 123;
+            generation.generation_free_obj_space(lohGeneration) = 456;
 
             heap_segment* regions = stackalloc heap_segment[3];
             byte* regionStorage = stackalloc byte[512];
@@ -5127,7 +5186,9 @@ public sealed unsafe class GCPrivTests
             {
                 gc_heap.settings.condemned_generation = GCInterfaceOffsets.max_generation;
                 gc_heap.settings.compaction = 1;
-                gc_heap.loh_compacted_p = 0;
+                gc_heap.settings.loh_compaction = compactLoh ? 1 : 0;
+                gc_heap.loh_compacted_p = compactLoh ? 1 : 0;
+                gc_heap.loh_compaction_always_p = compactLoh ? 1 : 0;
 #if BACKGROUND_GC
                 gc_heap.settings.background_p = 0;
                 gc_heap.gc_background_running = 0;
@@ -5149,6 +5210,12 @@ public sealed unsafe class GCPrivTests
             Assert.Equal(
                 (nuint)heap_segment.heap_segment_plan_allocated(&regions[2]),
                 (nuint)heap_segment.heap_segment_used(&regions[2]));
+            Assert.Equal(
+                compactLoh ? (nuint)0 : 123,
+                generation.generation_free_list_space(lohGeneration));
+            Assert.Equal(
+                compactLoh ? (nuint)0 : 456,
+                generation.generation_free_obj_space(lohGeneration));
         }
         finally
         {
@@ -5163,8 +5230,21 @@ public sealed unsafe class GCPrivTests
                 }
             }
 
+            if (lohGeneration is not null)
+            {
+                generation.generation_start_segment(lohGeneration) = savedLohStart;
+                generation.generation_tail_region(lohGeneration) = savedLohTail;
+                generation.generation_tail_ro_region(lohGeneration) =
+                    savedLohReadOnlyTail;
+                generation.generation_free_list_space(lohGeneration) =
+                    savedLohFreeListSpace;
+                generation.generation_free_obj_space(lohGeneration) =
+                    savedLohFreeObjectSpace;
+            }
+
             gc_heap.settings = savedSettings;
             gc_heap.loh_compacted_p = savedLohCompacted;
+            gc_heap.loh_compaction_always_p = savedAlwaysCompact;
 #if BACKGROUND_GC
             gc_heap.gc_background_running = savedBackgroundRunning;
 #endif
@@ -17389,6 +17469,374 @@ public sealed unsafe class GCPrivTests
         Assert.Equal((nuint)0x10800, (nuint)gc_heap.pinned_plug(&pins[1]));
     }
 
+    [Fact]
+    public void LohPinnedQueuePreservesOrderAndNativeDecay()
+    {
+        using LohCompactionStateScope _ = new();
+        SyncImports.ResetRecording();
+        gc_heap heap = default;
+        generation* loh = gc_heap.generation_of(
+            gc_heap.generation_table_of(&heap),
+            (int)gc_generation_num.loh_generation);
+        generation.initialize(loh);
+        loh->gen_num = (int)gc_generation_num.loh_generation;
+        heap_segment segment = default;
+        heap_segment.heap_segment_mem(&segment) = (byte*)0x1000;
+        generation.generation_allocation_segment(loh) = &segment;
+        generation.generation_allocation_pointer(loh) = (byte*)0x1200;
+        generation.generation_allocation_limit(loh) = (byte*)0x3000;
+        nuint pinSize = gc_heap.Align(
+            (nuint)GCInterfaceOffsets.min_obj_size,
+            gc_heap.get_alignment_constant(small_object_p: false));
+
+        Assert.Equal((nuint)100, gc_heap.LOH_PIN_QUEUE_LENGTH);
+        Assert.Equal(10, gc_heap.LOH_PIN_DECAY);
+        Assert.Equal(1, gc_heap.loh_enque_pinned_plug(&heap, (byte*)0x1800, pinSize));
+        Assert.Equal(1, gc_heap.loh_enque_pinned_plug(&heap, (byte*)0x2000, pinSize));
+        Assert.Equal((nuint)2, gc_heap.loh_pinned_queue_tos);
+        Assert.Equal((nuint)0, gc_heap.loh_pinned_queue_bos);
+        Assert.Equal((nuint)0x1800, (nuint)generation.generation_allocation_limit(loh));
+        Assert.Equal((nuint)0x1800, (nuint)gc_heap.pinned_plug(gc_heap.loh_oldest_pin()));
+        Assert.Equal((nuint)0, gc_heap.loh_deque_pinned_plug());
+        Assert.Equal((nuint)0x2000, (nuint)gc_heap.pinned_plug(gc_heap.loh_oldest_pin()));
+        Assert.Equal((nuint)1, gc_heap.loh_deque_pinned_plug());
+        Assert.Equal(1, gc_heap.loh_pinned_plug_que_empty_p());
+
+        for (int i = 1; i < gc_heap.LOH_PIN_DECAY; i++)
+        {
+            gc_heap.decay_loh_pinned_queue();
+            Assert.True(gc_heap.loh_pinned_queue is not null);
+            Assert.Equal(gc_heap.LOH_PIN_DECAY - i, gc_heap.loh_pinned_queue_decay);
+        }
+
+        nuint queueLength = gc_heap.loh_pinned_queue_length;
+        gc_heap.decay_loh_pinned_queue();
+        Assert.True(gc_heap.loh_pinned_queue is null);
+        Assert.Equal(0, gc_heap.loh_pinned_queue_decay);
+        Assert.Equal(queueLength, gc_heap.loh_pinned_queue_length);
+        Assert.Equal(1, SyncImports.FreeCount);
+    }
+
+    [Fact]
+    public void LohAllocationUsesNativePaddingAndFallsBackToNextSegment()
+    {
+        using LohCompactionStateScope _ = new();
+        byte* storage = stackalloc byte[2048];
+        nuint padding = gc_heap.AlignQword((nuint)sizeof(loh_padding_obj));
+        const nuint ObjectSize = 128;
+
+        Assert.False(gc_heap.loh_size_fit_p(
+            ObjectSize,
+            storage,
+            storage + (nint)(ObjectSize + (2 * padding) - 1),
+            end_p: false));
+        Assert.True(gc_heap.loh_size_fit_p(
+            ObjectSize,
+            storage,
+            storage + (nint)(ObjectSize + (2 * padding)),
+            end_p: false));
+        Assert.True(gc_heap.loh_size_fit_p(
+            ObjectSize,
+            storage,
+            storage + (nint)(ObjectSize + padding),
+            end_p: true));
+
+        gc_heap heap = default;
+        generation* loh = gc_heap.generation_of(
+            gc_heap.generation_table_of(&heap),
+            (int)gc_generation_num.loh_generation);
+        generation.initialize(loh);
+        loh->gen_num = (int)gc_generation_num.loh_generation;
+        heap_segment* segments = stackalloc heap_segment[2];
+        byte* firstMem = storage + 256;
+        byte* secondMem = storage + 768;
+        segments[0] = default;
+        segments[1] = default;
+        heap_segment.heap_segment_mem(&segments[0]) = firstMem;
+        heap_segment.heap_segment_allocated(&segments[0]) = firstMem + 64;
+        heap_segment.heap_segment_committed(&segments[0]) = firstMem + 64;
+        heap_segment.heap_segment_reserved(&segments[0]) = firstMem + 64;
+        heap_segment.heap_segment_plan_allocated(&segments[0]) = firstMem + 64;
+        heap_segment.heap_segment_next(&segments[0]) = &segments[1];
+        heap_segment.heap_segment_mem(&segments[1]) = secondMem;
+        heap_segment.heap_segment_allocated(&segments[1]) = secondMem + 512;
+        heap_segment.heap_segment_committed(&segments[1]) = secondMem + 512;
+        heap_segment.heap_segment_reserved(&segments[1]) = secondMem + 512;
+        heap_segment.heap_segment_plan_allocated(&segments[1]) = secondMem + 512;
+        generation.generation_start_segment(loh) = &segments[0];
+        generation.generation_allocation_segment(loh) = &segments[0];
+        generation.generation_allocation_pointer(loh) = firstMem;
+        generation.generation_allocation_limit(loh) =
+            heap_segment.heap_segment_plan_allocated(&segments[0]);
+
+        byte* result = gc_heap.loh_allocate_in_condemned(&heap, ObjectSize);
+
+        Assert.Equal((nuint)(secondMem + (nint)padding), (nuint)result);
+        Assert.True(generation.generation_allocation_segment(loh) == &segments[1]);
+        Assert.Equal((nuint)firstMem, (nuint)heap_segment.heap_segment_plan_allocated(&segments[0]));
+        Assert.Equal(
+            (nuint)(secondMem + (nint)(ObjectSize + padding)),
+            (nuint)generation.generation_allocation_pointer(loh));
+    }
+
+    [Fact]
+    public void PlanLohMovesMovableObjectsQueuesPinsAndSkipsReadOnlyPrefix()
+    {
+        using LohCompactionStateScope _ = new();
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(4096);
+        try
+        {
+            const nuint ObjectSize = 256;
+            MethodTable methodTable = default;
+            methodTable.m_uBaseSize = (uint)ObjectSize;
+            gc_heap heap = default;
+            generation* loh = gc_heap.generation_of(
+                gc_heap.generation_table_of(&heap),
+                (int)gc_generation_num.loh_generation);
+            generation.initialize(loh);
+            loh->gen_num = (int)gc_generation_num.loh_generation;
+            heap_segment readOnly = default;
+            heap_segment writable = default;
+            byte* mem = storage + 512;
+            byte* movable = mem + (nint)ObjectSize;
+            byte* pinned = mem + (nint)(3 * ObjectSize);
+
+            for (int i = 0; i < 4; i++)
+            {
+                ((CObjectHeader*)(mem + (nint)((nuint)i * ObjectSize)))->
+                    RawSetMethodTable(&methodTable);
+            }
+
+            ((CObjectHeader*)movable)->SetMarked();
+            ((CObjectHeader*)pinned)->SetMarked();
+            ((CObjectHeader*)pinned)->SetPinned();
+
+            readOnly.flags =
+                heap_segment.heap_segment_flags_readonly |
+                heap_segment.heap_segment_flags_loh;
+            heap_segment.heap_segment_plan_allocated(&readOnly) = (byte*)0x12345678;
+            heap_segment.heap_segment_next(&readOnly) = &writable;
+            writable.flags = heap_segment.heap_segment_flags_loh;
+            heap_segment.heap_segment_mem(&writable) = mem;
+            heap_segment.heap_segment_allocated(&writable) = mem + (nint)(4 * ObjectSize);
+            heap_segment.heap_segment_committed(&writable) = storage + 4096;
+            heap_segment.heap_segment_reserved(&writable) = storage + 4096;
+            heap_segment.heap_segment_used(&writable) =
+                heap_segment.heap_segment_allocated(&writable);
+            generation.generation_start_segment(loh) = &readOnly;
+            generation.generation_tail_region(loh) = &writable;
+
+            gc_heap.settings = default;
+            gc_heap.settings.condemned_generation =
+                (int)gc_generation_num.soh_gen2;
+            gc_heap.settings.loh_compaction = 1;
+
+            Assert.True(gc_heap.plan_loh(&heap));
+
+            nuint padding = gc_heap.AlignQword((nuint)sizeof(loh_padding_obj));
+            byte* movableDestination = mem + (nint)padding;
+            Assert.Equal(
+                unchecked((nint)(movableDestination - movable)),
+                gc_heap.loh_node_relocation_distance(movable));
+            Assert.Equal((nint)0, gc_heap.loh_node_relocation_distance(pinned));
+            Assert.Equal((nuint)1, gc_heap.loh_pinned_queue_tos);
+            Assert.Equal((nuint)1, gc_heap.loh_pinned_queue_bos);
+            Assert.Equal((nuint)pinned, (nuint)gc_heap.pinned_plug(&gc_heap.loh_pinned_queue[0]));
+            Assert.Equal(
+                (nuint)(pinned - (movableDestination + (nint)ObjectSize)),
+                gc_heap.pinned_len(&gc_heap.loh_pinned_queue[0]));
+            Assert.Equal((nuint)0x12345678, (nuint)heap_segment.heap_segment_plan_allocated(&readOnly));
+            Assert.Equal(
+                (nuint)(pinned + (nint)ObjectSize),
+                (nuint)heap_segment.heap_segment_plan_allocated(&writable));
+            Assert.Equal(1, ((CObjectHeader*)movable)->IsMarked());
+            Assert.Equal(1, ((CObjectHeader*)pinned)->IsPinned());
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
+    [Fact]
+    public void PlanLohFallsBackWithoutMutationWhenQueueAllocationFails()
+    {
+        using LohCompactionStateScope _ = new();
+        SyncImports.ResetRecording();
+        gc_heap heap = default;
+        generation* loh = gc_heap.generation_of(
+            gc_heap.generation_table_of(&heap),
+            (int)gc_generation_num.loh_generation);
+        generation.initialize(loh);
+        loh->gen_num = (int)gc_generation_num.loh_generation;
+        heap_segment segment = default;
+        byte* storage = stackalloc byte[sizeof(aligned_plug_and_gap) + 64];
+        byte* mem = storage + sizeof(aligned_plug_and_gap);
+        segment.flags = heap_segment.heap_segment_flags_loh;
+        heap_segment.heap_segment_mem(&segment) = mem;
+        heap_segment.heap_segment_allocated(&segment) = mem;
+        heap_segment.heap_segment_plan_allocated(&segment) = (byte*)0x12345678;
+        heap_segment.heap_segment_committed(&segment) = mem;
+        heap_segment.heap_segment_reserved(&segment) = mem;
+        generation.generation_start_segment(loh) = &segment;
+        gc_heap.settings = default;
+        gc_heap.settings.condemned_generation =
+            (int)gc_generation_num.soh_gen2;
+        SyncImports.FailNextAlloc = true;
+
+        Assert.False(gc_heap.plan_loh(&heap));
+        Assert.True(gc_heap.loh_pinned_queue is null);
+        Assert.Equal(
+            (nuint)0x12345678,
+            (nuint)heap_segment.heap_segment_plan_allocated(&segment));
+        Assert.Equal(1, SyncImports.AllocCount);
+    }
+
+    [Fact]
+    public void LohRelocationAndCompactionPreservePayloadPinsAndCards()
+    {
+        using LohCompactionStateScope _ = new();
+        using RegionSegmentsStateScope __ = new(initializeCommitLock: false);
+        const nuint RegionSize = 4096;
+        nuint cardSize = card_table_info.card_size;
+        nuint objectSize = 2 * cardSize;
+        byte* rawStorage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(
+            2 * RegionSize);
+        void* savedFreeObjectMethodTable = GCCommon.g_gc_pFreeObjectMethodTable;
+        int savedAlwaysCompact = gc_heap.loh_compaction_always_p;
+        byte* savedGcLow = gc_heap.gc_low;
+        byte* savedGcHigh = gc_heap.gc_high;
+        byte* savedLowestAddress = gc_heap.lowest_address;
+
+        try
+        {
+            byte* regionBase = AlignUp(rawStorage, RegionSize);
+            byte* mem = regionBase + 512;
+            byte* movable = mem + (nint)objectSize;
+            byte* pinned = mem + (nint)(2 * objectSize);
+            byte* end = mem + (nint)(3 * objectSize);
+            byte* descriptorStorage =
+                stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
+            MethodTable* pointerMethodTable =
+                InitializePointerMethodTable(descriptorStorage, objectSize, pointerCount: 1);
+            MethodTable freeObjectMethodTable = default;
+            freeObjectMethodTable.m_uBaseSize = (uint)GCInterfaceOffsets.min_obj_size;
+            GCCommon.g_gc_pFreeObjectMethodTable = &freeObjectMethodTable;
+
+            ((CObjectHeader*)mem)->RawSetMethodTable(pointerMethodTable);
+            ((CObjectHeader*)movable)->RawSetMethodTable(pointerMethodTable);
+            ((CObjectHeader*)pinned)->RawSetMethodTable(pointerMethodTable);
+            *(byte**)(movable + sizeof(byte*)) = movable;
+            nuint payload = sizeof(nuint) == 8
+                ? unchecked((nuint)0x1122334455667788UL)
+                : 0x55667788u;
+            *(nuint*)(movable + (2 * sizeof(byte*))) = payload;
+            ((CObjectHeader*)movable)->SetMarked();
+            ((CObjectHeader*)pinned)->SetMarked();
+            ((CObjectHeader*)pinned)->SetPinned();
+
+            gc_heap heap = default;
+            generation* loh = gc_heap.generation_of(
+                gc_heap.generation_table_of(&heap),
+                (int)gc_generation_num.loh_generation);
+            generation.initialize(loh);
+            loh->gen_num = (int)gc_generation_num.loh_generation;
+            seg_mapping* segmentMap = stackalloc seg_mapping[1];
+            region_info* generationMap = stackalloc region_info[1];
+            segmentMap[0] = default;
+            generationMap[0] = region_info.RI_GEN_2;
+            heap_segment* segment = &segmentMap[0].region_info;
+            segment->flags = heap_segment.heap_segment_flags_loh;
+            heap_segment.heap_segment_mem(segment) = mem;
+            heap_segment.heap_segment_allocated(segment) = end;
+            heap_segment.heap_segment_committed(segment) = regionBase + (nint)RegionSize;
+            heap_segment.heap_segment_reserved(segment) = regionBase + (nint)RegionSize;
+            heap_segment.heap_segment_used(segment) = end;
+            heap_segment.heap_segment_gen_num(segment) =
+                (byte)gc_generation_num.loh_generation;
+            generation.generation_start_segment(loh) = segment;
+            generation.generation_tail_region(loh) = segment;
+
+            gc_heap.min_segment_size_shr = 12;
+            gc_heap.global_region_allocator.initialize_alignment(RegionSize);
+            nuint firstRegionIndex = (nuint)regionBase >> 12;
+            GCCommon.seg_mapping_table = segmentMap - (nint)firstRegionIndex;
+            gc_heap.map_region_to_generation = generationMap;
+            gc_heap.map_region_to_generation_skewed =
+                generationMap - (nint)firstRegionIndex;
+            GCCommon.g_gc_lowest_address = regionBase;
+            GCCommon.g_gc_highest_address = regionBase + (nint)RegionSize;
+            gc_heap.bookkeeping_covered_committed =
+                GCCommon.g_gc_highest_address;
+            gc_heap.gc_low = regionBase;
+            gc_heap.gc_high = GCCommon.g_gc_highest_address;
+            gc_heap.lowest_address = regionBase;
+            int brickCount = checked((int)(RegionSize / card_table_info.brick_size));
+            short* bricks = stackalloc short[brickCount];
+            for (int i = 0; i < brickCount; i++)
+            {
+                bricks[i] = 0;
+            }
+
+            gc_heap.brick_table = bricks;
+            gc_heap.gen0_bricks_cleared = 1;
+
+            nuint firstCard = gc_heap.card_of(mem);
+            nuint lastCard = gc_heap.card_of(end - 1);
+            nuint firstCardWord = card_table_info.card_word(firstCard);
+            nuint lastCardWord = card_table_info.card_word(lastCard);
+            int cardWordCount = checked((int)(lastCardWord - firstCardWord + 1));
+            uint* cards = stackalloc uint[cardWordCount];
+            for (int i = 0; i < cardWordCount; i++)
+            {
+                cards[i] = 0;
+            }
+
+            gc_heap.card_table = cards - (nint)firstCardWord;
+            gc_heap.set_card(gc_heap.card_of(movable));
+            gc_heap.never_decommit_p = true;
+            gc_heap.settings = default;
+            gc_heap.settings.condemned_generation =
+                (int)gc_generation_num.soh_gen2;
+            gc_heap.settings.loh_compaction = 1;
+            gc_heap.loh_compaction_always_p = 1;
+
+            Assert.True(gc_heap.plan_loh(&heap));
+            byte* destination =
+                movable + gc_heap.loh_node_relocation_distance(movable);
+            Assert.True(destination < movable);
+
+            gc_heap.loh_compacted_p = 1;
+            gc_heap.relocate_in_loh_compact(&heap);
+            Assert.Equal(
+                (nuint)destination,
+                (nuint)(*(byte**)(movable + sizeof(byte*))));
+
+            gc_heap.compact_loh(&heap);
+
+            Assert.Equal((nuint)pointerMethodTable, (nuint)gc_heap.method_table(destination));
+            Assert.Equal((nuint)destination, (nuint)(*(byte**)(destination + sizeof(byte*))));
+            Assert.Equal(payload, *(nuint*)(destination + (2 * sizeof(byte*))));
+            Assert.Equal(0, ((CObjectHeader*)destination)->IsMarked());
+            Assert.Equal(0, ((CObjectHeader*)pinned)->IsMarked());
+            Assert.Equal(0, ((CObjectHeader*)pinned)->IsPinned());
+            Assert.True(gc_heap.card_set_p(gc_heap.card_of(destination)));
+            Assert.Equal(1, gc_heap.loh_pinned_plug_que_empty_p());
+            Assert.Equal(
+                (nuint)heap_segment.heap_segment_plan_allocated(segment),
+                (nuint)heap_segment.heap_segment_allocated(segment));
+        }
+        finally
+        {
+            gc_heap.gc_low = savedGcLow;
+            gc_heap.gc_high = savedGcHigh;
+            gc_heap.lowest_address = savedLowestAddress;
+            gc_heap.loh_compaction_always_p = savedAlwaysCompact;
+            GCCommon.g_gc_pFreeObjectMethodTable = savedFreeObjectMethodTable;
+            System.Runtime.InteropServices.NativeMemory.Free(rawStorage);
+        }
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -18927,6 +19375,49 @@ public sealed unsafe class GCPrivTests
             gc_heap.gen0_bricks_cleared = _gen0BricksCleared;
             gc_heap.gen0_must_clear_bricks = _gen0MustClearBricks;
 #endif
+        }
+    }
+
+    private sealed unsafe class LohCompactionStateScope : System.IDisposable
+    {
+        private readonly nuint _queueTos;
+        private readonly nuint _queueBos;
+        private readonly nuint _queueLength;
+        private readonly int _queueDecay;
+        private readonly mark* _queue;
+        private readonly int _lohCompacted;
+        private readonly gc_mechanisms _settings;
+
+        public LohCompactionStateScope()
+        {
+            _queueTos = gc_heap.loh_pinned_queue_tos;
+            _queueBos = gc_heap.loh_pinned_queue_bos;
+            _queueLength = gc_heap.loh_pinned_queue_length;
+            _queueDecay = gc_heap.loh_pinned_queue_decay;
+            _queue = gc_heap.loh_pinned_queue;
+            _lohCompacted = gc_heap.loh_compacted_p;
+            _settings = gc_heap.settings;
+
+            gc_heap.initialize_loh_pinned_queue_state();
+            gc_heap.loh_compacted_p = 0;
+            gc_heap.settings = default;
+        }
+
+        public void Dispose()
+        {
+            if (gc_heap.loh_pinned_queue is not null &&
+                gc_heap.loh_pinned_queue != _queue)
+            {
+                SyncImports.ManagedGC_Free(gc_heap.loh_pinned_queue);
+            }
+
+            gc_heap.loh_pinned_queue_tos = _queueTos;
+            gc_heap.loh_pinned_queue_bos = _queueBos;
+            gc_heap.loh_pinned_queue_length = _queueLength;
+            gc_heap.loh_pinned_queue_decay = _queueDecay;
+            gc_heap.loh_pinned_queue = _queue;
+            gc_heap.loh_compacted_p = _lohCompacted;
+            gc_heap.settings = _settings;
         }
     }
 

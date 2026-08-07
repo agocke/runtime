@@ -154,6 +154,525 @@ internal unsafe partial struct gc_heap
         return false;
     }
 
+    public static void initialize_loh_pinned_queue_state()
+    {
+        loh_pinned_queue_tos = 0;
+        loh_pinned_queue_bos = 0;
+        loh_pinned_queue_length = 0;
+        loh_pinned_queue_decay = LOH_PIN_DECAY;
+        loh_pinned_queue = null;
+    }
+
+    public static void decay_loh_pinned_queue()
+    {
+        if (loh_pinned_queue is not null)
+        {
+            loh_pinned_queue_decay--;
+            if (loh_pinned_queue_decay == 0)
+            {
+                SyncImports.ManagedGC_Free(loh_pinned_queue);
+                loh_pinned_queue = null;
+            }
+        }
+    }
+
+    public static int loh_pinned_plug_que_empty_p()
+    {
+        return loh_pinned_queue_bos == loh_pinned_queue_tos ? 1 : 0;
+    }
+
+    public static mark* loh_pinned_plug_of(nuint bos)
+    {
+        return &loh_pinned_queue[bos];
+    }
+
+    public static void loh_set_allocator_next_pin(gc_heap* hp)
+    {
+        if (loh_pinned_plug_que_empty_p() == 0)
+        {
+            mark* oldest_entry = loh_oldest_pin();
+            byte* plug = pinned_plug(oldest_entry);
+            generation* gen = generation_of(
+                generation_table_of(hp),
+                (int)gc_generation_num.loh_generation);
+            if (plug >= generation.generation_allocation_pointer(gen) &&
+                plug < generation.generation_allocation_limit(gen))
+            {
+                generation.generation_allocation_limit(gen) = plug;
+            }
+            else
+            {
+                Debug.Assert(
+                    !(plug < generation.generation_allocation_pointer(gen) &&
+                      plug >= heap_segment.heap_segment_mem(
+                          generation.generation_allocation_segment(gen))));
+            }
+        }
+    }
+
+    public static nuint loh_deque_pinned_plug()
+    {
+        nuint m = loh_pinned_queue_bos;
+        loh_pinned_queue_bos++;
+        return m;
+    }
+
+    public static mark* loh_oldest_pin()
+    {
+        return loh_pinned_plug_of(loh_pinned_queue_bos);
+    }
+
+    public static int loh_enque_pinned_plug(gc_heap* hp, byte* plug, nuint len)
+    {
+        Debug.Assert(
+            len >= Align(
+                (nuint)GCInterfaceOffsets.min_obj_size,
+                get_alignment_constant(small_object_p: false)));
+
+        if (loh_pinned_queue_length <= loh_pinned_queue_tos)
+        {
+            if (grow_mark_stack(
+                    ref loh_pinned_queue,
+                    ref loh_pinned_queue_length,
+                    LOH_PIN_QUEUE_LENGTH) == 0)
+            {
+                return 0;
+            }
+        }
+
+        mark* m = &loh_pinned_queue[loh_pinned_queue_tos];
+        m->first = plug;
+        m->len = len;
+        loh_pinned_queue_tos++;
+        loh_set_allocator_next_pin(hp);
+        return 1;
+    }
+
+    public static bool loh_size_fit_p(
+        nuint size,
+        byte* alloc_pointer,
+        byte* alloc_limit,
+        bool end_p)
+    {
+        if (alloc_pointer > alloc_limit)
+        {
+            return false;
+        }
+
+        nuint pad = unchecked((nuint)(end_p ? 1 : 2) * AlignQword((nuint)sizeof(loh_padding_obj)));
+        nuint available = (nuint)(alloc_limit - alloc_pointer);
+        return pad <= available && size <= available - pad;
+    }
+
+    public static byte* loh_allocate_in_condemned(gc_heap* hp, nuint size)
+    {
+        generation* gen = generation_of(
+            generation_table_of(hp),
+            (int)gc_generation_num.loh_generation);
+
+        while (true)
+        {
+            heap_segment* seg = generation.generation_allocation_segment(gen);
+            if (seg is null)
+            {
+                return null;
+            }
+
+            byte* alloc_pointer = generation.generation_allocation_pointer(gen);
+            byte* alloc_limit = generation.generation_allocation_limit(gen);
+            bool end_p = alloc_limit == heap_segment.heap_segment_plan_allocated(seg);
+            if (loh_size_fit_p(size, alloc_pointer, alloc_limit, end_p))
+            {
+                Debug.Assert(alloc_pointer >= heap_segment.heap_segment_mem(seg));
+                byte* result = alloc_pointer;
+                nuint loh_pad = AlignQword((nuint)sizeof(loh_padding_obj));
+
+                generation.generation_allocation_pointer(gen) =
+                    alloc_pointer + (nint)unchecked(size + loh_pad);
+                Debug.Assert(
+                    generation.generation_allocation_pointer(gen) <=
+                    generation.generation_allocation_limit(gen));
+
+                return result + (nint)loh_pad;
+            }
+
+            if (loh_pinned_plug_que_empty_p() == 0 &&
+                alloc_limit == pinned_plug(loh_oldest_pin()))
+            {
+                mark* m = loh_pinned_plug_of(loh_deque_pinned_plug());
+                nuint len = pinned_len(m);
+                byte* plug = pinned_plug(m);
+                if (plug < alloc_pointer)
+                {
+                    return null;
+                }
+
+                m->len = (nuint)(plug - alloc_pointer);
+                generation.generation_allocation_pointer(gen) = plug + (nint)len;
+                generation.generation_allocation_limit(gen) =
+                    heap_segment.heap_segment_plan_allocated(seg);
+                loh_set_allocator_next_pin(hp);
+                continue;
+            }
+
+            if (alloc_limit != heap_segment.heap_segment_plan_allocated(seg))
+            {
+                generation.generation_allocation_limit(gen) =
+                    heap_segment.heap_segment_plan_allocated(seg);
+            }
+            else if (heap_segment.heap_segment_plan_allocated(seg) !=
+                     heap_segment.heap_segment_committed(seg))
+            {
+                heap_segment.heap_segment_plan_allocated(seg) =
+                    heap_segment.heap_segment_committed(seg);
+                generation.generation_allocation_limit(gen) =
+                    heap_segment.heap_segment_plan_allocated(seg);
+            }
+            else
+            {
+                nuint loh_pad = AlignQword((nuint)sizeof(loh_padding_obj));
+                if (loh_size_fit_p(
+                        size,
+                        generation.generation_allocation_pointer(gen),
+                        heap_segment.heap_segment_reserved(seg),
+                        end_p: true) &&
+                    grow_heap_segment(
+                        seg,
+                        generation.generation_allocation_pointer(gen) +
+                            (nint)unchecked(size + loh_pad),
+                        hp->heap_number))
+                {
+                    heap_segment.heap_segment_plan_allocated(seg) =
+                        heap_segment.heap_segment_committed(seg);
+                    generation.generation_allocation_limit(gen) =
+                        heap_segment.heap_segment_plan_allocated(seg);
+                }
+                else
+                {
+                    heap_segment* next_seg = heap_segment.heap_segment_next(seg);
+                    Debug.Assert(
+                        generation.generation_allocation_pointer(gen) >=
+                        heap_segment.heap_segment_mem(seg));
+                    if (loh_pinned_plug_que_empty_p() == 0)
+                    {
+                        byte* oldest_plug = pinned_plug(loh_oldest_pin());
+                        if (oldest_plug < heap_segment.heap_segment_allocated(seg) &&
+                            oldest_plug >= generation.generation_allocation_pointer(gen))
+                        {
+                            GCToEEInterface.HandleFatalError(CORINFO_EXCEPTION_GC);
+                            return null;
+                        }
+                    }
+
+                    Debug.Assert(
+                        generation.generation_allocation_pointer(gen) <=
+                        heap_segment.heap_segment_committed(seg));
+                    heap_segment.heap_segment_plan_allocated(seg) =
+                        generation.generation_allocation_pointer(gen);
+
+                    if (next_seg is null)
+                    {
+                        GCToEEInterface.HandleFatalError(CORINFO_EXCEPTION_GC);
+                        return null;
+                    }
+
+                    generation.generation_allocation_segment(gen) = next_seg;
+                    generation.generation_allocation_pointer(gen) =
+                        heap_segment.heap_segment_mem(next_seg);
+                    generation.generation_allocation_limit(gen) =
+                        generation.generation_allocation_pointer(gen);
+                }
+            }
+
+            loh_set_allocator_next_pin(hp);
+        }
+    }
+
+    private static bool validate_loh_compaction_prerequisites(gc_heap* hp)
+    {
+        if (hp is null ||
+            settings.condemned_generation != GCInterfaceOffsets.max_generation ||
+            (loh_compacted_p != 0 && settings.loh_compaction == 0) ||
+            settings.concurrent != 0
+#if BACKGROUND_GC
+            || settings.background_p != 0 ||
+            background_running_p()
+#endif
+            )
+        {
+            return false;
+        }
+
+        generation* gen = generation_of(
+            generation_table_of(hp),
+            (int)gc_generation_num.loh_generation);
+        heap_segment* start_seg = generation.generation_start_segment(gen);
+        heap_segment* slow_prefix = start_seg;
+        heap_segment* fast_prefix = start_seg;
+        while (start_seg is not null &&
+               heap_segment.heap_segment_read_only_p(start_seg) != 0)
+        {
+            start_seg = heap_segment.heap_segment_next(start_seg);
+            slow_prefix = slow_prefix is null
+                ? null
+                : heap_segment.heap_segment_next(slow_prefix);
+            fast_prefix = fast_prefix is null
+                ? null
+                : heap_segment.heap_segment_next(fast_prefix);
+            if (fast_prefix is not null)
+            {
+                fast_prefix = heap_segment.heap_segment_next(fast_prefix);
+            }
+
+            if (slow_prefix is not null && slow_prefix == fast_prefix)
+            {
+                return false;
+            }
+        }
+
+        if (start_seg is null)
+        {
+            return false;
+        }
+
+        heap_segment* slow_seg = start_seg;
+        heap_segment* fast_seg = start_seg;
+        nuint pinned_index = 0;
+        for (heap_segment* seg = start_seg;
+             seg is not null;
+             seg = heap_segment.heap_segment_next(seg))
+        {
+            byte* mem = heap_segment.heap_segment_mem(seg);
+            byte* allocated = heap_segment.heap_segment_allocated(seg);
+            if (heap_segment.heap_segment_read_only_p(seg) != 0 ||
+                mem is null ||
+                allocated < mem ||
+                heap_segment.heap_segment_committed(seg) < allocated ||
+                heap_segment.heap_segment_reserved(seg) <
+                    heap_segment.heap_segment_committed(seg))
+            {
+                return false;
+            }
+
+            byte* o = mem;
+            while (o < allocated)
+            {
+                CObjectHeader* header = (CObjectHeader*)o;
+                if (header->GetMethodTable() is null)
+                {
+                    return false;
+                }
+
+                nuint object_size = size(o);
+                nuint aligned_size = AlignQword(object_size);
+                if (object_size == 0 ||
+                    aligned_size <
+                        Align(
+                            (nuint)GCInterfaceOffsets.min_obj_size,
+                            get_alignment_constant(small_object_p: false)) ||
+                    aligned_size > (nuint)(allocated - o) ||
+                    (header->IsPinned() != 0 && header->IsMarked() == 0))
+                {
+                    return false;
+                }
+
+                if (loh_compacted_p != 0 && header->IsPinned() != 0)
+                {
+                    if (loh_pinned_queue is null ||
+                        pinned_index >= loh_pinned_queue_tos ||
+                        pinned_plug(&loh_pinned_queue[pinned_index]) != o)
+                    {
+                        return false;
+                    }
+
+                    pinned_index++;
+                }
+
+                o += (nint)aligned_size;
+            }
+
+            if (o != allocated)
+            {
+                return false;
+            }
+
+            slow_seg = slow_seg is null
+                ? null
+                : heap_segment.heap_segment_next(slow_seg);
+            fast_seg = fast_seg is null
+                ? null
+                : heap_segment.heap_segment_next(fast_seg);
+            if (fast_seg is not null)
+            {
+                fast_seg = heap_segment.heap_segment_next(fast_seg);
+            }
+
+            if (slow_seg is not null && slow_seg == fast_seg)
+            {
+                return false;
+            }
+        }
+
+        return loh_compacted_p == 0 ||
+            (loh_pinned_queue_bos <= loh_pinned_queue_tos &&
+             loh_pinned_queue_tos <= loh_pinned_queue_length &&
+             pinned_index == loh_pinned_queue_tos);
+    }
+
+    public static bool plan_loh(gc_heap* hp)
+    {
+        if (!validate_loh_compaction_prerequisites(hp))
+        {
+            return false;
+        }
+
+        if (loh_pinned_queue is null)
+        {
+            nuint bytes = LOH_PIN_QUEUE_LENGTH * (nuint)sizeof(mark);
+            loh_pinned_queue =
+                (mark*)SyncImports.ManagedGC_AllocZeroed(bytes);
+            if (loh_pinned_queue is null)
+            {
+                return false;
+            }
+
+            loh_pinned_queue_length = LOH_PIN_QUEUE_LENGTH;
+        }
+
+        loh_pinned_queue_decay = LOH_PIN_DECAY;
+        loh_pinned_queue_tos = 0;
+        loh_pinned_queue_bos = 0;
+
+        generation* gen = generation_of(
+            generation_table_of(hp),
+            (int)gc_generation_num.loh_generation);
+        heap_segment* start_seg =
+            heap_segment_rw(generation.generation_start_segment(gen));
+        Debug.Assert(start_seg is not null);
+        heap_segment* seg = start_seg;
+        byte* o = get_uoh_start_object(seg, gen);
+
+        while (seg is not null)
+        {
+            heap_segment.heap_segment_plan_allocated(seg) =
+                heap_segment.heap_segment_mem(seg);
+            seg = heap_segment.heap_segment_next(seg);
+        }
+
+        seg = start_seg;
+        heap_segment.heap_segment_plan_allocated(seg) = o;
+        generation.generation_allocation_pointer(gen) = o;
+        generation.generation_allocation_limit(gen) = o;
+        generation.generation_allocation_segment(gen) = start_seg;
+
+        while (true)
+        {
+            if (o >= heap_segment.heap_segment_allocated(seg))
+            {
+                seg = heap_segment.heap_segment_next(seg);
+                if (seg is null)
+                {
+                    break;
+                }
+
+                o = heap_segment.heap_segment_mem(seg);
+            }
+
+            if (((CObjectHeader*)o)->IsMarked() != 0)
+            {
+                nuint object_size = AlignQword(size(o));
+                byte* new_address;
+                if (((CObjectHeader*)o)->IsPinned() != 0)
+                {
+                    if (loh_enque_pinned_plug(hp, o, object_size) == 0)
+                    {
+                        return false;
+                    }
+
+                    new_address = o;
+                }
+                else
+                {
+                    new_address = loh_allocate_in_condemned(hp, object_size);
+                    if (new_address is null)
+                    {
+                        return false;
+                    }
+                }
+
+                loh_set_node_relocation_distance(
+                    o,
+                    unchecked((nint)(new_address - o)));
+                o += (nint)object_size;
+                if (o < heap_segment.heap_segment_allocated(seg))
+                {
+                    Debug.Assert(((CObjectHeader*)o)->IsMarked() == 0);
+                }
+            }
+            else
+            {
+                while (o < heap_segment.heap_segment_allocated(seg) &&
+                       ((CObjectHeader*)o)->IsMarked() == 0)
+                {
+                    o += (nint)AlignQword(size(o));
+                }
+            }
+        }
+
+        while (loh_pinned_plug_que_empty_p() == 0)
+        {
+            mark* m = loh_pinned_plug_of(loh_deque_pinned_plug());
+            nuint len = pinned_len(m);
+            byte* plug = pinned_plug(m);
+            heap_segment* nseg = generation.generation_allocation_segment(gen);
+            if (nseg is null)
+            {
+                return false;
+            }
+
+            while (plug < generation.generation_allocation_pointer(gen) ||
+                   plug >= heap_segment.heap_segment_allocated(nseg))
+            {
+                Debug.Assert(
+                    plug < heap_segment.heap_segment_mem(nseg) ||
+                    plug > heap_segment.heap_segment_reserved(nseg));
+                Debug.Assert(
+                    generation.generation_allocation_pointer(gen) >=
+                    heap_segment.heap_segment_mem(nseg));
+                Debug.Assert(
+                    generation.generation_allocation_pointer(gen) <=
+                    heap_segment.heap_segment_committed(nseg));
+
+                heap_segment.heap_segment_plan_allocated(nseg) =
+                    generation.generation_allocation_pointer(gen);
+                nseg = heap_segment.heap_segment_next(nseg);
+                if (nseg is null)
+                {
+                    return false;
+                }
+
+                generation.generation_allocation_segment(gen) = nseg;
+                generation.generation_allocation_pointer(gen) =
+                    heap_segment.heap_segment_mem(nseg);
+            }
+
+            if (plug < generation.generation_allocation_pointer(gen))
+            {
+                return false;
+            }
+
+            m->len = (nuint)(plug - generation.generation_allocation_pointer(gen));
+            generation.generation_allocation_pointer(gen) = plug + (nint)len;
+        }
+
+        heap_segment.heap_segment_plan_allocated(
+            generation.generation_allocation_segment(gen)) =
+            generation.generation_allocation_pointer(gen);
+        generation.generation_allocation_pointer(gen) = null;
+        generation.generation_allocation_limit(gen) = null;
+        return true;
+    }
+
     public static nuint generation_plan_size(gc_heap* hp, int gen_number)
     {
         nuint result = 0;
