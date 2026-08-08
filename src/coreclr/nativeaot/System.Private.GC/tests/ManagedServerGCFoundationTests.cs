@@ -380,6 +380,66 @@ public static class ManagedServerGCFoundationTests
         Assert.True(found, "initialize_server_allocation_state does not set generation_skip_ratio to 100.");
     }
 
+    [Fact]
+    public static void GcJoinStageMatchesNativeEnum()
+    {
+        Type joinStage = GetType("Internal.Runtime.GarbageCollection.gc_join_stage");
+
+        Assert.Equal(0, (int)Enum.Parse(joinStage, "gc_join_init_cpu_mapping"));
+        Assert.Equal(2, (int)Enum.Parse(joinStage, "gc_join_generation_determined"));
+        Assert.Equal(3, (int)Enum.Parse(joinStage, "gc_join_begin_mark_phase"));
+        Assert.Equal(4, (int)Enum.Parse(joinStage, "gc_join_scan_dependent_handles"));
+        Assert.Equal(5, (int)Enum.Parse(joinStage, "gc_join_rescan_dependent_handles"));
+        Assert.Equal(6, (int)Enum.Parse(joinStage, "gc_join_scan_sizedref_done"));
+        Assert.Equal(7, (int)Enum.Parse(joinStage, "gc_join_null_dead_short_weak"));
+        Assert.Equal(8, (int)Enum.Parse(joinStage, "gc_join_scan_finalization"));
+        Assert.Equal(9, (int)Enum.Parse(joinStage, "gc_join_null_dead_long_weak"));
+        Assert.Equal(10, (int)Enum.Parse(joinStage, "gc_join_null_dead_syncblk"));
+        Assert.Equal(28, (int)Enum.Parse(joinStage, "gc_r_join_update_card_bundle"));
+        Assert.Equal(40, (int)Enum.Parse(joinStage, "gc_join_bridge_processing"));
+        Assert.Equal(41, (int)Enum.Parse(joinStage, "gc_join_max"));
+    }
+
+    [Fact]
+    public static void ServerMarkReconciliationSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // sync_promoted_bytes and decide_on_promotion_surv walk g_heaps, so they are static.
+        MethodInfo sync = heap.GetMethod(
+            "sync_promoted_bytes",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            Type.EmptyTypes,
+            modifiers: null)!;
+        Assert.NotNull(sync);
+
+        MethodInfo decide = heap.GetMethod(
+            "decide_on_promotion_surv",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            new[] { typeof(nuint) },
+            modifiers: null)!;
+        Assert.NotNull(decide);
+        Assert.Equal(typeof(bool), decide.ReturnType);
+
+        // In the MULTIPLE_HEAPS build the PER_HEAP_FIELD_SINGLE_GC survivor/promoted counters are
+        // instance-owned so each heap's totals can be reconciled across all heaps.
+        foreach (string fieldName in new[]
+        {
+            "survived_per_region",
+            "old_card_survived_per_region",
+            "total_promoted_bytes",
+        })
+        {
+            FieldInfo field = heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.NotNull(field);
+            Assert.False(field.IsStatic);
+        }
+    }
+
     private static Type GetType(string name) =>
         s_serverGC.GetType(name, throwOnError: true)!;
 

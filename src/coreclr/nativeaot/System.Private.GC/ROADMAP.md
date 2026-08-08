@@ -1567,6 +1567,27 @@ that consume these deciders remain deferred with collection routing, as does uni
 per-heap server free-region list with the shared region free-list path used by the
 `try_get_new_free_region` empty-region fallback.
 
+The server mark phase now has its first dependency-closed slice: the cross-heap post-mark
+reconciliation that runs in the joined region of `mark_phase` after every heap finishes promoting
+its roots and cards (`ManagedServerGCMark.cs`), plus the `gcinternal.h` `gc_join_stage` enum that
+names every parallel-phase join point. `sync_promoted_bytes` gathers each heap's per-region
+`survived_per_region` / `old_card_survived_per_region` totals into the owning region's
+`heap_segment` survived / old-card-survived fields (highest condemned generation down through
+`get_stop_generation_index`), and `decide_on_promotion_surv` scans each heap's
+`total_promoted_bytes` against the gen(n+1) demotion threshold. The `PER_HEAP_FIELD_SINGLE_GC`
+`survived_per_region`, `old_card_survived_per_region`, and `total_promoted_bytes` become
+instance-owned in the `MULTIPLE_HEAPS` build (static in WKS) so the cross-heap sums are correct.
+The `!MULTIPLE_HEAPS`, `TRACE_GC`, and `FEATURE_STRUCTALIGN` branches are excluded exactly as for
+the active configuration. Focused Foundation tests pin the `gc_join_stage` enum values, the two
+static reconciliation deciders and their signatures, and the instance ownership of the three
+per-heap counters. The per-heap marking, root/handle scanning, the `MULTIPLE_HEAPS`
+`scan_dependent_handles` join loop (`s_fUnscannedPromotions` / `s_fUnpromotedHandles` /
+`s_fScanRequired`, `gc_join_scan_dependent_handles` / `gc_join_rescan_dependent_handles`),
+`mark_steal`, `equalize_promoted_bytes` region rebalancing, `sort_mark_list` / `merge_mark_lists`,
+and the full `mark_phase` join sequence (`gc_join_begin_mark_phase` through
+`gc_join_null_dead_syncblk`) remain deferred with their mark-queue, `GCScan`, `process_mark_overflow`,
+and region-threading dependencies. No collection is routed by this slice.
+
 Production blockers remain in BGC servo tuning, dynamic heap-count changes after startup,
 diagnostic `saved_changed_segs` publication, condemnation-driven collection routing, and server
 parallel collection closure.

@@ -1276,8 +1276,19 @@ namespace Internal.Runtime.GarbageCollection
         public static byte* shigh;
         public static byte* slow;
 #endif
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC survived_per_region / old_card_survived_per_region /
+        // total_promoted_bytes. These are static in WKS and per-heap in the MULTIPLE_HEAPS build so
+        // sync_promoted_bytes and decide_on_promotion_surv can reconcile each heap's per-region
+        // survivorship and promoted-byte totals after marking.
+#if MULTIPLE_HEAPS
+        public nuint* survived_per_region;
+        public nuint* old_card_survived_per_region;
+        public nuint total_promoted_bytes;
+#else
         public static nuint* survived_per_region;
         public static nuint* old_card_survived_per_region;
+        public static nuint total_promoted_bytes;
+#endif
         public static int num_regions_freed_in_sweep;
         public static nuint end_gen0_region_space;
         public static nuint end_gen0_region_committed_space;

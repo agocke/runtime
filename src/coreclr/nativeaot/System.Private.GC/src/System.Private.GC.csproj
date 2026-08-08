@@ -145,6 +145,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCRegionBootstrap.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGC.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCCondemn.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCMark.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\MarkPhase.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\NoGC.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ObjectHandle.cs" />

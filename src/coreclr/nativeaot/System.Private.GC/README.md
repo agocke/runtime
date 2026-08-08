@@ -113,6 +113,7 @@ Ported so far:
 | `ManagedGCHeap.cs` | WKS `gcinterface.h` `IGCHeap`, including allocation, collection, finalization, memory metrics, limits, and latency settings |
 | `ManagedServerGC.cs` | Foundational x64 Linux `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` initialization, heap selection, per-heap allocation, server workers, the full server `t_join` color barrier (`join`/`r_join`/`restart`/`r_restart`/`r_init`), the `gc_done_event` collection handshake (`set_gc_done`/`reset_gc_done`/`enter`/`exit_gc_done_event_lock`/`wait_for_gc_done`, `gc_started`, `enable`/`disable_preemptive`), join/coordinator state, and dynamic heap-count bootstrap from `init.cpp`, `interface.cpp`, `allocation.cpp`, `dynamic_heap_count.cpp`, `gc.cpp`, and `gcinternal.h` |
 | `ManagedServerGCCondemn.cs` | Server generation condemnation and cross-heap condemned-generation agreement (`generation_to_condemn`, `joined_generation_to_condemn`) with the exact tuning closure (`dt_*`, `estimated_reclaim`, `generation_size`, `generation_unusable_fragmentation`, `get_total_gen_*`, `get_memory_info`, `try_get_new_free_region`, `min_*_threshold`) from `plan_phase.cpp`, `dynamic_tuning.cpp`, and `gcinternal.h`; no collection is routed |
+| `ManagedServerGCMark.cs` | Server post-mark cross-heap reconciliation (`sync_promoted_bytes`, `decide_on_promotion_surv`) for the `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` chain from `mark_phase.cpp`; no collection is routed |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
 For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed
@@ -131,6 +132,21 @@ one affinitized high-priority worker per maximum heap. Explicit `GCHeapCount` st
 active heaps; the default dynamic-adaptation configuration starts with one active heap while
 retaining the initialized maximum set. Allocation uses the selected heap directly. Collection
 entry points remain deliberately unrouted until the parallel mark/plan/relocate closure exists.
+
+The server mark-phase closure now begins with the cross-heap reconciliation steps that run in the
+joined region of `mark_phase` after every heap has promoted its portion of the roots and cards
+(`ManagedServerGCMark.cs`). The `gcinternal.h` `gc_join_stage` enum is translated so the parallel
+phase joins have their native identifiers. `sync_promoted_bytes` folds every heap's
+per-region `survived_per_region` / `old_card_survived_per_region` counters into the owning
+region's `heap_segment` survived / old-card-survived fields, walking the condemned generations
+from the highest through `get_stop_generation_index`, exactly at the point native runs it before
+`sort_mark_list` reuses that storage. `decide_on_promotion_surv` scans every heap's
+`total_promoted_bytes` against the gen(n+1) demotion threshold. The `PER_HEAP_FIELD_SINGLE_GC`
+`survived_per_region`, `old_card_survived_per_region`, and `total_promoted_bytes` are instance-owned
+in the `MULTIPLE_HEAPS` build (static in WKS) so the cross-heap sums are correct. The actual
+per-heap marking, root/handle scanning, `scan_dependent_handles` synchronization, `mark_steal`,
+and `equalize_promoted_bytes` region rebalancing remain deferred with their mark-queue,
+`GCScan`, and region-threading dependencies. No collection entry point is routed by this slice.
 
 `gcinterface.dac.h` is translated, including the `dac_generation` and `dac_gc_heap` views
 generated from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Pointer-sized arrays use

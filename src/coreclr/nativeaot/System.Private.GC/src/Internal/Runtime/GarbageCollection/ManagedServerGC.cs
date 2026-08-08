@@ -238,6 +238,58 @@ internal enum join_heap_index
     join_heap_r_restart = 200,
 }
 
+// gcinternal.h gc_join_stage. These name the collection-phase join points the server GC threads
+// synchronize on through gc_t_join.join / r_join. The values are load-bearing: they index the
+// GCJoin ETW payload and must match the native enum exactly. Only a subset is currently reached
+// by translated code; the rest are present so later parallel-phase slices can reference them
+// without renumbering.
+internal enum gc_join_stage
+{
+    gc_join_init_cpu_mapping = 0,
+    gc_join_done = 1,
+    gc_join_generation_determined = 2,
+    gc_join_begin_mark_phase = 3,
+    gc_join_scan_dependent_handles = 4,
+    gc_join_rescan_dependent_handles = 5,
+    gc_join_scan_sizedref_done = 6,
+    gc_join_null_dead_short_weak = 7,
+    gc_join_scan_finalization = 8,
+    gc_join_null_dead_long_weak = 9,
+    gc_join_null_dead_syncblk = 10,
+    gc_join_decide_on_compaction = 11,
+    gc_join_rearrange_segs_compaction = 12,
+    gc_join_adjust_handle_age_compact = 13,
+    gc_join_adjust_handle_age_sweep = 14,
+    gc_join_begin_relocate_phase = 15,
+    gc_join_relocate_phase_done = 16,
+    gc_join_verify_objects_done = 17,
+    gc_join_start_bgc = 18,
+    gc_join_restart_ee = 19,
+    gc_join_concurrent_overflow = 20,
+    gc_join_suspend_ee = 21,
+    gc_join_bgc_after_ephemeral = 22,
+    gc_join_allow_fgc = 23,
+    gc_join_bgc_sweep = 24,
+    gc_join_suspend_ee_verify = 25,
+    gc_join_restart_ee_verify = 26,
+    gc_join_set_state_free = 27,
+    gc_r_join_update_card_bundle = 28,
+    gc_join_after_absorb = 29,
+    gc_join_verify_copy_table = 30,
+    gc_join_after_reset = 31,
+    gc_join_after_ephemeral_sweep = 32,
+    gc_join_after_profiler_heap_walk = 33,
+    gc_join_minimal_gc = 34,
+    gc_join_after_commit_soh_no_gc = 35,
+    gc_join_expand_loh_no_gc = 36,
+    gc_join_final_no_gc = 37,
+    // No longer in use but do not remove, see comments for this enum.
+    gc_join_disable_software_write_watch = 38,
+    gc_join_merge_temp_fl = 39,
+    gc_join_bridge_processing = 40,
+    gc_join_max = 41,
+}
+
 // join_structure of gcinternal.h. The DECLSPEC_ALIGN(HS_CACHE_LINE_SIZE) separators of the
 // native struct are false-sharing avoidance and are not observable through the DAC, so the C#
 // port keeps the members in their declared order without the explicit cache-line padding. The
