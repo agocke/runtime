@@ -111,7 +111,7 @@ Ported so far:
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping, region-table, deferred UOH free-region-return, card-bundle enable/search/clear, and dirty-card range helpers from `collect.cpp`, `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, `gc.cpp`, and `card_table.cpp`, plus direct brick repair and first-object lookup |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
 | `ManagedGCHeap.cs` | WKS `gcinterface.h` `IGCHeap`, including allocation, collection, finalization, memory metrics, limits, and latency settings |
-| `ManagedServerGC.cs` | Foundational x64 Linux `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` initialization, heap selection, per-heap allocation, server workers, join/coordinator state, and dynamic heap-count bootstrap from `init.cpp`, `interface.cpp`, `allocation.cpp`, `dynamic_heap_count.cpp`, `gc.cpp`, and `gcinternal.h` |
+| `ManagedServerGC.cs` | Foundational x64 Linux `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` initialization, heap selection, per-heap allocation, server workers, the full server `t_join` color barrier (`join`/`r_join`/`restart`/`r_restart`/`r_init`), the `gc_done_event` collection handshake (`set_gc_done`/`reset_gc_done`/`enter`/`exit_gc_done_event_lock`/`wait_for_gc_done`, `gc_started`, `enable`/`disable_preemptive`), join/coordinator state, and dynamic heap-count bootstrap from `init.cpp`, `interface.cpp`, `allocation.cpp`, `dynamic_heap_count.cpp`, `gc.cpp`, and `gcinternal.h` |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
 For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed

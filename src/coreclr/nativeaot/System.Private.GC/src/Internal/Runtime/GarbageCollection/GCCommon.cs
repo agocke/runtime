@@ -52,6 +52,8 @@ internal static unsafe partial class GCCommon
     internal static byte* g_gc_lowest_address;
     internal static byte* g_gc_highest_address;
     internal static void* g_gc_pFreeObjectMethodTable;
+    // gccommon.cpp: the process's usable processor count, published by GCHeap::Initialize.
+    internal static uint g_num_processors;
     internal static int g_fSuspensionPending;
     internal static int g_wait_for_gc_event = 1;
 

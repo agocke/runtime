@@ -4,8 +4,9 @@
 // Foundational active x64 Linux SERVER_GC / MULTIPLE_HEAPS / USE_REGIONS port from
 // gcinternal.h, init.cpp, interface.cpp, allocation.cpp, dynamic_heap_count.cpp, and gc.cpp.
 // Collection entry points deliberately remain unrouted until the parallel mark/plan closure is
-// present. Startup, heap selection, per-heap allocation, worker synchronization, and teardown
-// are real server paths and do not forward through the workstation heap.
+// present. Startup, heap selection, per-heap allocation, worker synchronization, the server
+// t_join barrier, the gc_done_event collection handshake, and teardown are real server paths
+// and do not forward through the workstation heap.
 
 #if SERVER_GC && MULTIPLE_HEAPS && USE_REGIONS
 
@@ -210,61 +211,276 @@ internal unsafe struct dynamic_heap_count_data_t
     }
 }
 
-internal unsafe struct server_gc_join
+// first_thread_arrived is the index of the third join event, used only by r_join/r_restart.
+internal static class join_constants
 {
-    private int n_threads;
-    private int join_lock;
-    private int joined_p;
-    private GCEvent joined_event;
+    public const int first_thread_arrived = 2;
+}
 
-    public bool init(int threadCount, gc_join_flavor flavor)
+internal enum join_type
+{
+    type_last_join = 0,
+    type_join = 1,
+    type_restart = 2,
+    type_first_r_join = 3,
+    type_r_join = 4,
+}
+
+internal enum join_time
+{
+    time_start = 0,
+    time_end = 1,
+}
+
+internal enum join_heap_index
+{
+    join_heap_restart = 100,
+    join_heap_r_restart = 200,
+}
+
+// join_structure of gcinternal.h. The DECLSPEC_ALIGN(HS_CACHE_LINE_SIZE) separators of the
+// native struct are false-sharing avoidance and are not observable through the DAC, so the C#
+// port keeps the members in their declared order without the explicit cache-line padding. The
+// Volatile<>/VOLATILE() fields are plain integers accessed through System.Threading.Volatile,
+// matching the port's convention for the gcpriv.h volatile-wrapped fields.
+internal unsafe struct join_structure
+{
+    public int n_threads;
+
+    [InlineArray(3)]
+    internal struct joined_event_array
     {
-        _ = flavor;
-        n_threads = threadCount;
-        join_lock = threadCount;
-        joined_p = 0;
-        return joined_event.CreateManualEventNoThrow(initialState: false);
+        private GCEvent _element0;
     }
 
-    public void update_n_threads(int threadCount)
+    // The last event in the array is only used for first_thread_arrived.
+    public joined_event_array joined_event;
+    public int lock_color;
+    public int wait_done;
+    public int joined_p;
+    public int join_lock;
+    public int r_join_lock;
+}
+
+// t_join of gcinternal.h. JOIN_STATS instrumentation is not built and is omitted.
+internal unsafe struct t_join
+{
+    private join_structure join_struct;
+
+    private int id;
+    private gc_join_flavor flavor;
+
+    public bool init(int n_th, gc_join_flavor f)
     {
-        n_threads = threadCount;
-        Volatile.Write(ref join_lock, threadCount);
-    }
-
-    public int get_num_threads() => n_threads;
-
-    public int get_join_lock() => Volatile.Read(ref join_lock);
-
-    public bool joined() => Volatile.Read(ref joined_p) != 0;
-
-    public void reset()
-    {
-        Volatile.Write(ref join_lock, n_threads);
-        Volatile.Write(ref joined_p, 0);
-        joined_event.Reset();
-    }
-
-    public bool arrive()
-    {
-        int remaining = Interlocked.Decrement(ref join_lock);
-        if (remaining == 0)
+        join_struct.n_threads = n_th;
+        join_struct.lock_color = 0;
+        for (int i = 0; i < 3; i++)
         {
-            Volatile.Write(ref joined_p, 1);
-            joined_event.Set();
-            return true;
+            if (!join_struct.joined_event[i].IsValid())
+            {
+                join_struct.joined_p = 0;
+                if (!join_struct.joined_event[i].CreateManualEventNoThrow(initialState: false))
+                {
+                    return false;
+                }
+            }
         }
+        join_struct.join_lock = join_struct.n_threads;
+        join_struct.r_join_lock = join_struct.n_threads;
+        join_struct.wait_done = 0;
+        flavor = f;
 
-        joined_event.Wait(GCEnv.INFINITE, alertable: false);
-        return false;
+        return true;
     }
+
+    public void update_n_threads(int n_th)
+    {
+        join_struct.n_threads = n_th;
+        join_struct.join_lock = n_th;
+        join_struct.r_join_lock = n_th;
+    }
+
+    public int get_num_threads() => join_struct.n_threads;
+
+    // This is for instrumentation only.
+    public int get_join_lock() =>
+        Volatile.Read(ref join_struct.join_lock);
 
     public void destroy()
     {
-        if (joined_event.IsValid())
+        for (int i = 0; i < 3; i++)
         {
-            joined_event.CloseEvent();
+            if (join_struct.joined_event[i].IsValid())
+            {
+                join_struct.joined_event[i].CloseEvent();
+            }
         }
+    }
+
+    private static void fire_event(int heap, join_time time, join_type type, int join_id) =>
+        GCEvents.GCEventFireGCJoin_V2(
+            (uint)heap,
+            (uint)time,
+            (uint)type,
+            (uint)join_id);
+
+    public void join(gc_heap* gch, int join_id)
+    {
+        Debug.Assert(Volatile.Read(ref join_struct.joined_p) == 0);
+        int color = Volatile.Read(ref join_struct.lock_color);
+
+        if (Interlocked.Decrement(ref join_struct.join_lock) != 0)
+        {
+            fire_event(gch->heap_number, join_time.time_start, join_type.type_join, join_id);
+
+            //busy wait around the color
+            if (color == Volatile.Read(ref join_struct.lock_color))
+            {
+            respin:
+                int spin_count = 128 * (int)gc_heap.yp_spin_count_unit;
+                for (int j = 0; j < spin_count; j++)
+                {
+                    if (color != Volatile.Read(ref join_struct.lock_color))
+                    {
+                        break;
+                    }
+                    GCEnv.YieldProcessor();           // indicate to the processor that we are spinning
+                }
+
+                // we've spun, and if color still hasn't changed, fall into hard wait
+                if (color == Volatile.Read(ref join_struct.lock_color))
+                {
+                    uint dwJoinWait =
+                        join_struct.joined_event[color].Wait(GCEnv.INFINITE, alertable: false);
+
+                    if (dwJoinWait != GCEnv.WAIT_OBJECT_0)
+                    {
+                        FATAL_GC_ERROR();
+                    }
+                }
+
+                // avoid race due to the thread about to reset the event (occasionally) being preempted before ResetEvent()
+                if (color == Volatile.Read(ref join_struct.lock_color))
+                {
+                    goto respin;
+                }
+            }
+
+            fire_event(gch->heap_number, join_time.time_end, join_type.type_join, join_id);
+        }
+        else
+        {
+            fire_event(gch->heap_number, join_time.time_start, join_type.type_last_join, join_id);
+
+            Volatile.Write(ref join_struct.joined_p, 1);
+            join_struct.joined_event[color == 0 ? 1 : 0].Reset();
+            id = join_id;
+        }
+    }
+
+    // Reverse join - first thread gets here does the work; other threads will only proceed
+    // after the work is done.
+    // Note that you cannot call this twice in a row on the same thread. Plus there's no
+    // need to call it twice in row - you should just merge the work.
+    public bool r_join(gc_heap* gch, int join_id)
+    {
+        if (join_struct.n_threads == 1)
+        {
+            return true;
+        }
+
+        if (Interlocked.CompareExchange(
+                ref join_struct.r_join_lock,
+                0,
+                join_struct.n_threads) == 0)
+        {
+            fire_event(gch->heap_number, join_time.time_start, join_type.type_join, join_id);
+
+            //busy wait around the color
+        respin:
+            int spin_count = 256 * (int)gc_heap.yp_spin_count_unit;
+            for (int j = 0; j < spin_count; j++)
+            {
+                if (Volatile.Read(ref join_struct.wait_done) != 0)
+                {
+                    break;
+                }
+                GCEnv.YieldProcessor();           // indicate to the processor that we are spinning
+            }
+
+            // we've spun, and if color still hasn't changed, fall into hard wait
+            if (Volatile.Read(ref join_struct.wait_done) == 0)
+            {
+                uint dwJoinWait = join_struct.joined_event[join_constants.first_thread_arrived]
+                    .Wait(GCEnv.INFINITE, alertable: false);
+                if (dwJoinWait != GCEnv.WAIT_OBJECT_0)
+                {
+                    FATAL_GC_ERROR();
+                }
+            }
+
+            // avoid race due to the thread about to reset the event (occasionally) being preempted before ResetEvent()
+            if (Volatile.Read(ref join_struct.wait_done) == 0)
+            {
+                goto respin;
+            }
+
+            fire_event(gch->heap_number, join_time.time_end, join_type.type_join, join_id);
+
+            return false;
+        }
+        else
+        {
+            fire_event(gch->heap_number, join_time.time_start, join_type.type_first_r_join, join_id);
+            return true;
+        }
+    }
+
+    public void restart()
+    {
+        fire_event((int)join_heap_index.join_heap_restart, join_time.time_start, join_type.type_restart, -1);
+        Debug.Assert(Volatile.Read(ref join_struct.joined_p) != 0);
+        Volatile.Write(ref join_struct.joined_p, 0);
+        join_struct.join_lock = join_struct.n_threads;
+        int color = Volatile.Read(ref join_struct.lock_color);
+        Volatile.Write(ref join_struct.lock_color, color == 0 ? 1 : 0);
+        join_struct.joined_event[color].Set();
+
+        fire_event((int)join_heap_index.join_heap_restart, join_time.time_end, join_type.type_restart, -1);
+    }
+
+    public bool joined() =>
+        Volatile.Read(ref join_struct.joined_p) != 0;
+
+    public void r_restart()
+    {
+        if (join_struct.n_threads != 1)
+        {
+            fire_event((int)join_heap_index.join_heap_r_restart, join_time.time_start, join_type.type_restart, -1);
+            Volatile.Write(ref join_struct.wait_done, 1);
+            join_struct.joined_event[join_constants.first_thread_arrived].Set();
+            fire_event((int)join_heap_index.join_heap_r_restart, join_time.time_end, join_type.type_restart, -1);
+        }
+    }
+
+    public void r_init()
+    {
+        if (join_struct.n_threads != 1)
+        {
+            join_struct.r_join_lock = join_struct.n_threads;
+            Volatile.Write(ref join_struct.wait_done, 0);
+            join_struct.joined_event[join_constants.first_thread_arrived].Reset();
+        }
+    }
+
+    // gcpriv.h FATAL_GC_ERROR(): break, then report the fatal error to the EE. The dprintf /
+    // _ASSERTE lines of the C++ helper have no counterpart in the port.
+    private const uint COR_E_EXECUTIONENGINE = 0x80131506;
+
+    private static void FATAL_GC_ERROR()
+    {
+        GCToOSInterface.DebugBreak();
+        GCToEEInterface.HandleFatalError(COR_E_EXECUTIONENGINE);
     }
 }
 
@@ -389,7 +605,11 @@ internal unsafe partial struct gc_heap
     public static dynamic_heap_count_data_t dynamic_heap_count_data;
     public static GCEvent gc_start_event;
     public static GCEvent ee_suspend_event;
-    public static server_gc_join gc_t_join;
+    public static t_join gc_t_join;
+    // gc_started / internal_gc_done are PER_HEAP_ISOLATED in gcpriv.h; they gate the
+    // gc_done_event handshake mutators observe while a collection is in flight.
+    public static int gc_started;
+    public static bool internal_gc_done;
     public static int server_gc_shutdown;
     public static int server_gc_threads_created;
     public static int server_gc_threads_exited;
@@ -536,6 +756,8 @@ internal unsafe partial struct gc_heap
         heap->heap_number = heapNumber;
         heap->server_free_regions = default;
         heap->alloc_context_count = 0;
+        heap->gc_done_event_lock = -1;
+        heap->gc_done_event_set = false;
     }
 
     private static void init_dynamic_data_for_server(gc_heap* heap)
@@ -615,6 +837,95 @@ internal unsafe partial struct gc_heap
         {
             gc_start_event.CloseEvent();
         }
+    }
+
+    public static bool enable_preemptive() =>
+        GCToEEInterface.EnablePreemptiveGC() != 0;
+
+    public static void disable_preemptive(bool restore_cooperative)
+    {
+        if (restore_cooperative)
+        {
+            GCToEEInterface.DisablePreemptiveGC();
+        }
+    }
+
+    public static uint wait_for_gc_done(int timeOut = unchecked((int)GCEnv.INFINITE))
+    {
+        bool cooperative_mode = enable_preemptive();
+
+        uint dwWaitResult = 0;
+
+        gc_heap* wait_heap = null;
+        while (Volatile.Read(ref gc_started) != 0)
+        {
+            wait_heap = g_heaps[heap_select.select_heap(null)];
+            dwWaitResult = wait_heap->gc_done_event.Wait((uint)timeOut, alertable: false);
+        }
+        disable_preemptive(cooperative_mode);
+
+        return dwWaitResult;
+    }
+
+    public static void set_gc_done(gc_heap* heap)
+    {
+        enter_gc_done_event_lock(heap);
+        if (!heap->gc_done_event_set)
+        {
+            heap->gc_done_event_set = true;
+            heap->gc_done_event.Set();
+        }
+        exit_gc_done_event_lock(heap);
+    }
+
+    public static void reset_gc_done(gc_heap* heap)
+    {
+        enter_gc_done_event_lock(heap);
+        if (heap->gc_done_event_set)
+        {
+            heap->gc_done_event_set = false;
+            heap->gc_done_event.Reset();
+        }
+        exit_gc_done_event_lock(heap);
+    }
+
+    public static void enter_gc_done_event_lock(gc_heap* heap)
+    {
+        uint dwSwitchCount = 0;
+    retry:
+
+        if (Interlocked.CompareExchange(ref heap->gc_done_event_lock, 0, -1) >= 0)
+        {
+            while (Volatile.Read(ref heap->gc_done_event_lock) >= 0)
+            {
+                if (GCCommon.g_num_processors > 1)
+                {
+                    int spin_count = (int)yp_spin_count_unit;
+                    for (int j = 0; j < spin_count; j++)
+                    {
+                        if (Volatile.Read(ref heap->gc_done_event_lock) < 0)
+                        {
+                            break;
+                        }
+                        GCEnv.YieldProcessor();           // indicate to the processor that we are spinning
+                    }
+                    if (Volatile.Read(ref heap->gc_done_event_lock) >= 0)
+                    {
+                        GCToOSInterface.YieldThread(++dwSwitchCount);
+                    }
+                }
+                else
+                {
+                    GCToOSInterface.YieldThread(++dwSwitchCount);
+                }
+            }
+            goto retry;
+        }
+    }
+
+    public static void exit_gc_done_event_lock(gc_heap* heap)
+    {
+        Volatile.Write(ref heap->gc_done_event_lock, -1);
     }
 
     [RuntimeImport("*", "ManagedGC_CreateServerThread")]
@@ -1060,6 +1371,8 @@ internal static unsafe class ManagedGCHeap
         _ = thisPtr;
         GCCommon.InitializeRuntimeLifecycleState();
         GCCommon.g_gc_pFreeObjectMethodTable = GCToEEInterface.GetFreeObjectMethodTable();
+        GCCommon.g_num_processors = GCToOSInterface.GetTotalProcessorCount();
+        Debug.Assert(GCCommon.g_num_processors != 0);
         if (!gc_heap.check_commit_cs.Initialize())
         {
             return E_OUTOFMEMORY;

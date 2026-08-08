@@ -1223,6 +1223,10 @@ namespace Internal.Runtime.GarbageCollection
         public region_free_list_array server_free_regions;
         public int alloc_context_count;
         public GCEvent gc_done_event;
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC gc_done_event_lock/gc_done_event_set, accessed
+        // through System.Threading.Volatile to match the native VOLATILE() wrappers.
+        public int gc_done_event_lock;
+        public bool gc_done_event_set;
         public GCEvent gc_idle_thread_event;
         public CFinalize* server_finalize_queue;
 #endif

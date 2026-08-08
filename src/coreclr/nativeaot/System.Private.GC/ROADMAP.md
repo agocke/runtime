@@ -1522,8 +1522,27 @@ defaults, and instance-owned per-heap state. A NativeAOT smoke requests `DOTNET_
 starts two server heaps/workers, and validates home-heap selection from multiple allocating
 threads. No collection entry point is routed by this slice.
 
+The server collection coordination and barrier infrastructure that precedes parallel
+mark/plan/relocate is now translated without routing any collection. The full `gcinternal.h`
+`t_join` replaces the earlier single-shot join stub: `join_structure`, the `join_type` /
+`join_time` / `join_heap_index` enums, `first_thread_arrived`, and the color-based `join`,
+reverse `r_join`, `restart`, `r_restart`, and `r_init` methods preserve the spin/hard-wait,
+lock-color flip, event-array indexing, and `FATAL_GC_ERROR` shape (`JOIN_STATS` instrumentation
+is omitted). The `gc.cpp` `gc_done_event` handshake is present as `set_gc_done`, `reset_gc_done`,
+`enter_gc_done_event_lock`, `exit_gc_done_event_lock`, and isolated `wait_for_gc_done`, gated by
+`gc_started` and the per-heap `gc_done_event_lock` / `gc_done_event_set`, with
+`enable_preemptive` / `disable_preemptive` and the published `g_num_processors`. Focused
+Foundation tests pin the join enum values, `join_structure` fields, the `t_join` method surface
+and `gc_t_join` field type, and the `gc_done_event` handshake state and coordination methods.
+
+The condemnation coordination -- `generation_to_condemn` and `joined_generation_to_condemn` --
+remains deferred: its full state closure (per-generation fragmentation/reclaim estimation,
+provisional/elevation mode, hard-limit LOH policy, `bgc_tuning`, and `gc_data_global` condemn
+reasons) is not yet present in the server foundation.
+
 Production blockers remain in BGC servo tuning, dynamic heap-count changes after startup,
-diagnostic `saved_changed_segs` publication, and server parallel collection closure.
+diagnostic `saved_changed_segs` publication, condemnation coordination, and server parallel
+collection closure.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.

@@ -98,6 +98,139 @@ public static class ManagedServerGCFoundationTests
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
     }
 
+    [Fact]
+    public static void ServerJoinBarrierMatchesNativeShape()
+    {
+        Type joinConstants = GetType(
+            "Internal.Runtime.GarbageCollection.join_constants");
+        Assert.Equal(2, GetConstant(joinConstants, "first_thread_arrived"));
+
+        Type joinType = GetType("Internal.Runtime.GarbageCollection.join_type");
+        Assert.Equal(0, (int)Enum.Parse(joinType, "type_last_join"));
+        Assert.Equal(1, (int)Enum.Parse(joinType, "type_join"));
+        Assert.Equal(2, (int)Enum.Parse(joinType, "type_restart"));
+        Assert.Equal(3, (int)Enum.Parse(joinType, "type_first_r_join"));
+        Assert.Equal(4, (int)Enum.Parse(joinType, "type_r_join"));
+
+        Type joinTime = GetType("Internal.Runtime.GarbageCollection.join_time");
+        Assert.Equal(0, (int)Enum.Parse(joinTime, "time_start"));
+        Assert.Equal(1, (int)Enum.Parse(joinTime, "time_end"));
+
+        Type joinHeapIndex = GetType(
+            "Internal.Runtime.GarbageCollection.join_heap_index");
+        Assert.Equal(100, (int)Enum.Parse(joinHeapIndex, "join_heap_restart"));
+        Assert.Equal(200, (int)Enum.Parse(joinHeapIndex, "join_heap_r_restart"));
+
+        Type joinStructure = GetType(
+            "Internal.Runtime.GarbageCollection.join_structure");
+        foreach (string field in new[]
+        {
+            "n_threads",
+            "joined_event",
+            "lock_color",
+            "wait_done",
+            "joined_p",
+            "join_lock",
+            "r_join_lock",
+        })
+        {
+            Assert.NotNull(joinStructure.GetField(
+                field,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        }
+
+        Type tJoin = GetType("Internal.Runtime.GarbageCollection.t_join");
+        foreach (string method in new[]
+        {
+            "init",
+            "update_n_threads",
+            "get_num_threads",
+            "get_join_lock",
+            "destroy",
+            "join",
+            "r_join",
+            "restart",
+            "joined",
+            "r_restart",
+            "r_init",
+        })
+        {
+            Assert.NotNull(tJoin.GetMethod(
+                method,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        }
+
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Assert.Equal(
+            tJoin,
+            heap.GetField(
+                "gc_t_join",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.FieldType);
+    }
+
+    [Fact]
+    public static void GcDoneHandshakeStateAndCoordinationArePresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        Assert.NotNull(heap.GetField(
+            "gc_done_event_lock",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        Assert.NotNull(heap.GetField(
+            "gc_done_event_set",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+
+        Assert.NotNull(heap.GetField(
+            "gc_started",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        Assert.NotNull(heap.GetField(
+            "internal_gc_done",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        foreach (string method in new[]
+        {
+            "set_gc_done",
+            "reset_gc_done",
+            "enter_gc_done_event_lock",
+            "exit_gc_done_event_lock",
+            "wait_for_gc_done",
+            "enable_preemptive",
+            "disable_preemptive",
+        })
+        {
+            Assert.NotNull(heap.GetMethod(
+                method,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        Type common = GetType("Internal.Runtime.GarbageCollection.GCCommon");
+        Assert.NotNull(common.GetField(
+            "g_num_processors",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+    }
+
+    [Fact]
+    public static void ServerAllocationStateInitializesGcDoneLock()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo initialize = heap.GetMethod(
+            "initialize_server_allocation_state",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        AssertStoresConstant(
+            initialize,
+            heap.GetField(
+                "gc_done_event_lock",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!,
+            0x15);
+        AssertStoresConstant(
+            initialize,
+            heap.GetField(
+                "gc_done_event_set",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!,
+            0x16);
+    }
+
     private static Type GetType(string name) =>
         s_serverGC.GetType(name, throwOnError: true)!;
 
@@ -111,4 +244,28 @@ public static class ManagedServerGCFoundationTests
             name,
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(
                 instance)!;
+
+    private static void AssertStoresConstant(
+        MethodInfo method,
+        FieldInfo field,
+        byte constantOpcode)
+    {
+        byte[] il = method.GetMethodBody()!.GetILAsByteArray()!;
+        byte[] fieldToken = BitConverter.GetBytes(field.MetadataToken);
+        for (int i = 0; i <= il.Length - 6; i++)
+        {
+            if (il[i] == constantOpcode &&
+                il[i + 1] == 0x7d &&
+                il[i + 2] == fieldToken[0] &&
+                il[i + 3] == fieldToken[1] &&
+                il[i + 4] == fieldToken[2] &&
+                il[i + 5] == fieldToken[3])
+            {
+                return;
+            }
+        }
+
+        Assert.Fail(
+            $"{method.Name} does not initialize {field.Name} with opcode 0x{constantOpcode:x2}.");
+    }
 }
