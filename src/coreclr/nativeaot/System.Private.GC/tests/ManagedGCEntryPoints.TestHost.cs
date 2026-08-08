@@ -111,6 +111,10 @@ internal static unsafe class ManagedGCHeap
 
     public static uint TestGenerationForObject { get; set; }
 
+    public static bool ConcurrentCollectionInProgress { get; set; }
+
+    public static nuint TestPromotedBytes { get; set; }
+
     public static void* Create()
     {
         CreateCallCount++;
@@ -124,6 +128,25 @@ internal static unsafe class ManagedGCHeap
 
     internal static bool IsPromoted(byte* obj) =>
         obj is null || ((CObjectHeader*)obj)->IsMarked() != 0;
+
+    internal static bool IsPromotedForBridge(byte* obj) =>
+        IsPromoted(obj);
+
+    internal static void DiagWalkObjectForBridge(
+        byte* obj,
+        delegate*<byte*, void*, byte> callback,
+        void* context)
+    {
+        _ = obj;
+        _ = callback;
+        _ = context;
+    }
+
+    internal static nuint GetPromotedBytesForHandleScan(int heap_index)
+    {
+        _ = heap_index;
+        return TestPromotedBytes;
+    }
 
     internal static bool CollectionStartedForAllocation() => s_gcStarted != 0;
 
@@ -145,6 +168,8 @@ internal static unsafe class ManagedGCHeap
         TestGeneration = 0;
         TestGenerationObject = 0;
         TestGenerationForObject = 0;
+        ConcurrentCollectionInProgress = false;
+        TestPromotedBytes = 0;
         s_gcStarted = 0;
     }
 }

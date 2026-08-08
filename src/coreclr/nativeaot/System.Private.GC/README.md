@@ -49,9 +49,10 @@ Ported so far:
 | `HandleTable.cs` | `handletable.cpp` (lifecycle, creation, destruction, metadata, and write-barrier subset) |
 | `HandleTableCache.cs` | `handletablecache.cpp` |
 | `HandleTableCore.cs` | `handletablecore.cpp` (segment lifecycle and handle-to-segment mapping) |
-| `ObjectHandle.cs` | `objecthandle.h`, `objecthandle.cpp` (map, bucket, initialization, and dependent-handle subset) |
-| `HandleTableScan.cs` | synchronous generational promotion, weak clearing, relocation, aging, and rejuvenation scans from `handletablescan.cpp`, `handletable.cpp`, and `objecthandle.cpp` |
+| `ObjectHandle.cs` | `objecthandle.h`, `objecthandle.cpp` (map, bucket, initialization, dependent, variable, and special-handle metadata) |
+| `HandleTableScan.cs` | synchronous/asynchronous generational promotion, weak clearing, relocation, sized-ref accounting, ref-count callbacks, aging, and rejuvenation scans from `handletablescan.cpp`, `handletable.cpp`, and `objecthandle.cpp` |
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
+| `GCBridge.cs` | active NativeAOT `FEATURE_JAVAMARSHAL` bridge graph and SCC callback data from `gcbridge.cpp` |
 | `IntroSort.cs` | `introsort.h` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
 | `Interface/GCInterfaceStructs.cs` | `gcinterface.h`, `gcinterface.ee.h` (shared structs) |
@@ -165,12 +166,17 @@ their initialization, removal, destruction, and allocation-failure cleanup are t
 directly; the one-heap collector makes the current bucket contain one table.
 All-table handle counting and the variable-handle type helpers also operate over this translated
 map and extra-info storage. `HndNotifyGcCycleComplete` currently has its retail no-op behavior.
-`HandleTableScan.cs` now has bounded synchronous generational scans over the global map and
-circular type chains. Gen0 uses the native quick segment iterator; Gen1 uses the standard
-iterator; both filter clumps through the native age mask and support promotion, weak/dependent
-clearing, relocation, aging, and demotion-driven rejuvenation. Pinned roots precede strong and
-ephemeral sized-ref roots, while dependent secondaries reach the WKS fixed point through
-parallel extra-info blocks. Checked-build scan-statistics logging remains deferred.
+`HandleTableScan.cs` now has synchronous and lock-dropping asynchronous generational scans over
+the global map and circular type chains. The asynchronous path queues native-sized block ranges,
+locks queued blocks while the table lock is released, preserves segment order, tolerates queue
+allocation failure by dropping only the unqueued ranges, and unlinks its stack-owned scan state
+before returning. Gen0 uses the native quick segment iterator; Gen1 uses the standard iterator;
+both filter clumps through the native age mask. The production type passes cover async-pinned,
+sized-ref, weak-interior, ref-counted, variable-strength, weak-native-COM, dependent, and active
+Java cross-reference handles, including extra-info layout, ref-count callbacks, full-GC sized
+accounting, relocation, weak clearing, aging, and demotion-driven rejuvenation. The active
+NativeAOT Java configuration also carries the bridge SCC processing and weak-reference nulling
+paths. Checked-build scan-statistics logging and multi-heap distribution remain deferred.
 
 The GC history schema translates `gcrecord.h`: the
 generation and condition condemn-reason enums, their native two-bit/one-bit packed tuning

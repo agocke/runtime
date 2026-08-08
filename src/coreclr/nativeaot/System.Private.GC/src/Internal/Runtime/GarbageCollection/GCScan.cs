@@ -53,11 +53,6 @@ internal static unsafe class GCScan
         int max_gen,
         ScanContext* sc)
     {
-        if (sc->concurrent != 0)
-        {
-            return;
-        }
-
         if (sc->promotion != 0)
         {
             HandleTableScan.Ref_TracePinningRoots(condemned, max_gen, sc, fn);
@@ -120,6 +115,35 @@ internal static unsafe class GCScan
     {
         HandleTableScan.Ref_CheckAlive(condemned, max_gen, sc, &CheckPromoted);
     }
+
+    public static void GcScanSizedRefs(
+        delegate*<byte**, ScanContext*, uint, void> fn,
+        int condemned,
+        int max_gen,
+        ScanContext* sc)
+    {
+        HandleTableScan.Ref_ScanSizedRefHandles(
+            condemned,
+            max_gen,
+            sc,
+            fn);
+    }
+
+#if FEATURE_JAVAMARSHAL
+    public static byte** GcProcessBridgeObjects(
+        int condemned,
+        int max_gen,
+        ScanContext* sc,
+        nuint* count)
+    {
+        Debug.Assert(sc->promotion != 0);
+        return HandleTableScan.Ref_ScanBridgeObjects(
+            condemned,
+            max_gen,
+            sc,
+            count);
+    }
+#endif
 
     public static void GcDemote(int condemned, int max_gen, ScanContext* sc)
     {

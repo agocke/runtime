@@ -926,11 +926,15 @@ internal static unsafe class ManagedGCTest
 
         GCHandle normal = GCHandle.Alloc(target);
         GCHandle weak = GCHandle.Alloc(target, GCHandleType.Weak);
+        GCHandle weakTrackResurrection =
+            GCHandle.Alloc(target, GCHandleType.WeakTrackResurrection);
         GCHandle pinned = GCHandle.Alloc(new byte[16], GCHandleType.Pinned);
 
         try
         {
-            if (!ReferenceEquals(normal.Target, target) || !ReferenceEquals(weak.Target, target))
+            if (!ReferenceEquals(normal.Target, target) ||
+                !ReferenceEquals(weak.Target, target) ||
+                !ReferenceEquals(weakTrackResurrection.Target, target))
             {
                 return false;
             }
@@ -950,6 +954,7 @@ internal static unsafe class ManagedGCTest
             ForceFullCollection();
             if (!ReferenceEquals(normal.Target, replacement) ||
                 !ReferenceEquals(weak.Target, target) ||
+                !ReferenceEquals(weakTrackResurrection.Target, target) ||
                 pinned.AddrOfPinnedObject() == IntPtr.Zero)
             {
                 return false;
@@ -959,6 +964,7 @@ internal static unsafe class ManagedGCTest
         {
             normal.Free();
             weak.Free();
+            weakTrackResurrection.Free();
             pinned.Free();
         }
 

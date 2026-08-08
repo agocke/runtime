@@ -71,6 +71,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCDesc.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\DynamicTuning.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\FullGCNotification.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCBridge.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventEnums.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEvents.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventSerializer.cs" />

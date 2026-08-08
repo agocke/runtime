@@ -22,6 +22,7 @@ internal static unsafe class HandleTableScan
 
     private struct ScanCallbackInfo
     {
+        public TableSegment* pCurrentSegment;
         public uint uFlags;
         public byte fEnumUserData;
         public uint dwAgeMask;
@@ -37,8 +38,10 @@ internal static unsafe class HandleTableScan
         delegate*<byte**, ScanContext*, uint, void> fn)
     {
         Debug.Assert((uint)condemned <= (uint)max_gen);
-        Debug.Assert(sc->concurrent == 0);
 
+        uint flags = sc->concurrent != 0
+            ? HandleTableConstants.HNDGCF_ASYNC
+            : HandleTableConstants.HNDGCF_NORMAL;
         uint type = (uint)HandleType.HNDTYPE_PINNED;
         TraceHandleTables(
             &PinObject,
@@ -48,7 +51,27 @@ internal static unsafe class HandleTableScan
             1,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_NORMAL);
+            flags);
+
+        type = (uint)HandleType.HNDTYPE_ASYNCPINNED;
+        TraceHandleTables(
+            &AsyncPinObject,
+            (nuint)sc,
+            (nuint)fn,
+            &type,
+            1,
+            condemned,
+            max_gen,
+            flags);
+
+        TraceVariableHandles(
+            &PinObject,
+            sc,
+            (nuint)fn,
+            ObjectHandle.VHT_PINNED,
+            condemned,
+            max_gen,
+            flags);
     }
 
     public static void Ref_TraceNormalRoots(
@@ -58,22 +81,50 @@ internal static unsafe class HandleTableScan
         delegate*<byte**, ScanContext*, uint, void> fn)
     {
         Debug.Assert((uint)condemned <= (uint)max_gen);
-        Debug.Assert(sc->concurrent == 0);
 
         uint* types = stackalloc uint[]
         {
             (uint)HandleType.HNDTYPE_STRONG,
             (uint)HandleType.HNDTYPE_SIZEDREF,
         };
+        uint flags = sc->concurrent != 0
+            ? HandleTableConstants.HNDGCF_ASYNC
+            : HandleTableConstants.HNDGCF_NORMAL;
         TraceHandleTables(
-            &UpdatePointer,
+            &PromoteObject,
             (nuint)sc,
             (nuint)fn,
             types,
-            condemned >= max_gen ? 1u : 2u,
+            condemned >= max_gen &&
+                !ManagedGCHeap.ConcurrentCollectionInProgress
+                    ? 1u
+                    : 2u,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_NORMAL);
+            flags);
+
+        TraceVariableHandles(
+            &PromoteObject,
+            sc,
+            (nuint)fn,
+            ObjectHandle.VHT_STRONG,
+            condemned,
+            max_gen,
+            flags);
+
+        if (sc->concurrent == 0)
+        {
+            uint type = (uint)HandleType.HNDTYPE_REFCOUNTED;
+            TraceHandleTables(
+                &PromoteRefCounted,
+                (nuint)sc,
+                (nuint)fn,
+                &type,
+                1,
+                condemned,
+                max_gen,
+                flags);
+        }
     }
 
     public static bool Ref_ScanDependentHandlesForPromotion(DhContext* context)
@@ -94,7 +145,10 @@ internal static unsafe class HandleTableScan
                 1,
                 context->m_iCondemned,
                 context->m_iMaxGen,
-                HandleTableConstants.HNDGCF_EXTRAINFO);
+                HandleTableConstants.HNDGCF_EXTRAINFO |
+                    (context->m_pScanContext->concurrent != 0
+                        ? HandleTableConstants.HNDGCF_ASYNC
+                        : HandleTableConstants.HNDGCF_NORMAL));
 
             if (context->m_fPromoted != 0)
             {
@@ -115,32 +169,37 @@ internal static unsafe class HandleTableScan
         _ = sc;
 
         uint type = (uint)HandleType.HNDTYPE_WEAK_LONG;
+        uint* types = stackalloc uint[]
+        {
+            type,
+            (uint)HandleType.HNDTYPE_REFCOUNTED,
+            (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER,
+        };
+        uint flags = sc->concurrent != 0
+            ? HandleTableConstants.HNDGCF_ASYNC
+            : HandleTableConstants.HNDGCF_NORMAL;
         TraceHandleTables(
             checkPromoted,
             0,
             0,
-            &type,
-            1,
+            types,
+            3,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_NORMAL);
+            flags);
 
-        type = (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER;
-        TraceHandleTables(
+        TraceVariableHandles(
             checkPromoted,
+            sc,
             0,
-            0,
-            &type,
-            1,
+            ObjectHandle.VHT_WEAK_LONG,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_NORMAL);
+            flags);
     }
 
     public static void Ref_ScanDependentHandlesForClearing(int condemned, int max_gen, ScanContext* sc)
     {
-        _ = sc;
-
         uint type = (uint)HandleType.HNDTYPE_DEPENDENT;
         TraceHandleTables(
             &ClearDependentHandle,
@@ -150,7 +209,10 @@ internal static unsafe class HandleTableScan
             1,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_EXTRAINFO);
+            HandleTableConstants.HNDGCF_EXTRAINFO |
+                (sc->concurrent != 0
+                    ? HandleTableConstants.HNDGCF_ASYNC
+                    : HandleTableConstants.HNDGCF_NORMAL));
     }
 
     public static void Ref_CheckAlive(
@@ -159,18 +221,32 @@ internal static unsafe class HandleTableScan
         ScanContext* sc,
         delegate*<byte**, nuint*, nuint, nuint, void> checkPromoted)
     {
-        _ = sc;
-
-        uint type = (uint)HandleType.HNDTYPE_WEAK_SHORT;
+        uint* types = stackalloc uint[]
+        {
+            (uint)HandleType.HNDTYPE_WEAK_SHORT,
+            (uint)HandleType.HNDTYPE_WEAK_NATIVE_COM,
+        };
+        uint flags = sc->concurrent != 0
+            ? HandleTableConstants.HNDGCF_ASYNC
+            : HandleTableConstants.HNDGCF_NORMAL;
         TraceHandleTables(
             checkPromoted,
             0,
             0,
-            &type,
-            1,
+            types,
+            2,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_NORMAL);
+            flags);
+
+        TraceVariableHandles(
+            checkPromoted,
+            sc,
+            0,
+            ObjectHandle.VHT_WEAK_SHORT,
+            condemned,
+            max_gen,
+            flags);
     }
 
     public static void Ref_UpdatePointers(
@@ -180,7 +256,6 @@ internal static unsafe class HandleTableScan
         delegate*<byte**, ScanContext*, uint, void> fn)
     {
         Debug.Assert((uint)condemned <= (uint)max_gen);
-        Debug.Assert(sc->concurrent == 0);
 
         delegate*<byte**, nuint*, nuint, nuint, void> updatePointer = &UpdatePointer;
         GCToEEInterface.SyncBlockCacheWeakPtrScan(
@@ -194,6 +269,7 @@ internal static unsafe class HandleTableScan
             (uint)HandleType.HNDTYPE_WEAK_LONG,
             (uint)HandleType.HNDTYPE_STRONG,
             (uint)HandleType.HNDTYPE_REFCOUNTED,
+            (uint)HandleType.HNDTYPE_WEAK_NATIVE_COM,
             (uint)HandleType.HNDTYPE_SIZEDREF,
 #if FEATURE_JAVAMARSHAL
             (uint)HandleType.HNDTYPE_CROSSREFERENCE,
@@ -206,13 +282,28 @@ internal static unsafe class HandleTableScan
             (nuint)fn,
             types,
 #if FEATURE_JAVAMARSHAL
-            6,
+            7,
 #else
-            5,
+            6,
 #endif
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_NORMAL);
+            sc->concurrent != 0
+                ? HandleTableConstants.HNDGCF_ASYNC
+                : HandleTableConstants.HNDGCF_NORMAL);
+
+        TraceVariableHandles(
+            &UpdatePointer,
+            sc,
+            (nuint)fn,
+            ObjectHandle.VHT_WEAK_SHORT |
+                ObjectHandle.VHT_WEAK_LONG |
+                ObjectHandle.VHT_STRONG,
+            condemned,
+            max_gen,
+            sc->concurrent != 0
+                ? HandleTableConstants.HNDGCF_ASYNC
+                : HandleTableConstants.HNDGCF_NORMAL);
     }
 
     public static void Ref_UpdatePinnedPointers(
@@ -222,18 +313,33 @@ internal static unsafe class HandleTableScan
         delegate*<byte**, ScanContext*, uint, void> fn)
     {
         Debug.Assert((uint)condemned <= (uint)max_gen);
-        Debug.Assert(sc->concurrent == 0);
 
-        uint type = (uint)HandleType.HNDTYPE_PINNED;
+        uint* types = stackalloc uint[]
+        {
+            (uint)HandleType.HNDTYPE_PINNED,
+            (uint)HandleType.HNDTYPE_ASYNCPINNED,
+        };
+        uint flags = sc->concurrent != 0
+            ? HandleTableConstants.HNDGCF_ASYNC
+            : HandleTableConstants.HNDGCF_NORMAL;
         TraceHandleTables(
             &UpdatePointerPinned,
             (nuint)sc,
             (nuint)fn,
-            &type,
-            1,
+            types,
+            2,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_NORMAL);
+            flags);
+
+        TraceVariableHandles(
+            &UpdatePointerPinned,
+            sc,
+            (nuint)fn,
+            ObjectHandle.VHT_PINNED,
+            condemned,
+            max_gen,
+            flags);
     }
 
     public static void Ref_ScanDependentHandlesForRelocation(
@@ -243,7 +349,6 @@ internal static unsafe class HandleTableScan
         delegate*<byte**, ScanContext*, uint, void> fn)
     {
         Debug.Assert((uint)condemned <= (uint)max_gen);
-        Debug.Assert(sc->concurrent == 0);
 
         uint type = (uint)HandleType.HNDTYPE_DEPENDENT;
         TraceHandleTables(
@@ -254,7 +359,10 @@ internal static unsafe class HandleTableScan
             1,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_EXTRAINFO);
+            HandleTableConstants.HNDGCF_EXTRAINFO |
+                (sc->concurrent != 0
+                    ? HandleTableConstants.HNDGCF_ASYNC
+                    : HandleTableConstants.HNDGCF_NORMAL));
     }
 
     public static void Ref_ScanWeakInteriorPointersForRelocation(
@@ -264,7 +372,6 @@ internal static unsafe class HandleTableScan
         delegate*<byte**, ScanContext*, uint, void> fn)
     {
         Debug.Assert((uint)condemned <= (uint)max_gen);
-        Debug.Assert(sc->concurrent == 0);
 
         uint type = (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER;
         TraceHandleTables(
@@ -275,7 +382,10 @@ internal static unsafe class HandleTableScan
             1,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_EXTRAINFO);
+            HandleTableConstants.HNDGCF_EXTRAINFO |
+                (sc->concurrent != 0
+                    ? HandleTableConstants.HNDGCF_ASYNC
+                    : HandleTableConstants.HNDGCF_NORMAL));
     }
 
     public static void Ref_AgeHandles(int condemned, int max_gen, ScanContext* sc)
@@ -295,17 +405,27 @@ internal static unsafe class HandleTableScan
             (uint)HandleType.HNDTYPE_WEAK_LONG,
             (uint)HandleType.HNDTYPE_STRONG,
             (uint)HandleType.HNDTYPE_PINNED,
+            (uint)HandleType.HNDTYPE_VARIABLE,
             (uint)HandleType.HNDTYPE_DEPENDENT,
             (uint)HandleType.HNDTYPE_REFCOUNTED,
+            (uint)HandleType.HNDTYPE_WEAK_NATIVE_COM,
+            (uint)HandleType.HNDTYPE_ASYNCPINNED,
             (uint)HandleType.HNDTYPE_SIZEDREF,
             (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER,
+#if FEATURE_JAVAMARSHAL
+            (uint)HandleType.HNDTYPE_CROSSREFERENCE,
+#endif
         };
         TraceHandleTables(
             null,
             0,
             0,
             types,
-            8,
+#if FEATURE_JAVAMARSHAL
+            12,
+#else
+            11,
+#endif
             condemned,
             max_gen,
             HandleTableConstants.HNDGCF_AGE);
@@ -328,12 +448,26 @@ internal static unsafe class HandleTableScan
             (uint)HandleType.HNDTYPE_WEAK_LONG,
             (uint)HandleType.HNDTYPE_STRONG,
             (uint)HandleType.HNDTYPE_PINNED,
+            (uint)HandleType.HNDTYPE_VARIABLE,
             (uint)HandleType.HNDTYPE_DEPENDENT,
             (uint)HandleType.HNDTYPE_REFCOUNTED,
+            (uint)HandleType.HNDTYPE_WEAK_NATIVE_COM,
+            (uint)HandleType.HNDTYPE_ASYNCPINNED,
             (uint)HandleType.HNDTYPE_SIZEDREF,
             (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER,
+#if FEATURE_JAVAMARSHAL
+            (uint)HandleType.HNDTYPE_CROSSREFERENCE,
+#endif
         };
-        ResetAgeMaps(types, 8, condemned, max_gen);
+        ResetAgeMaps(
+            types,
+#if FEATURE_JAVAMARSHAL
+            12,
+#else
+            11,
+#endif
+            condemned,
+            max_gen);
     }
 
     private static void ForEachAgedHandleBlock(
@@ -396,32 +530,13 @@ internal static unsafe class HandleTableScan
             type == (byte)HandleType.HNDTYPE_WEAK_LONG ||
             type == (byte)HandleType.HNDTYPE_STRONG ||
             type == (byte)HandleType.HNDTYPE_PINNED ||
+            type == (byte)HandleType.HNDTYPE_VARIABLE ||
             type == (byte)HandleType.HNDTYPE_DEPENDENT ||
             type == (byte)HandleType.HNDTYPE_REFCOUNTED ||
+            type == (byte)HandleType.HNDTYPE_WEAK_NATIVE_COM ||
+            type == (byte)HandleType.HNDTYPE_ASYNCPINNED ||
+            type == (byte)HandleType.HNDTYPE_SIZEDREF ||
             type == (byte)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER)
-        {
-            return true;
-        }
-
-#if FEATURE_VARIABLE_HANDLES
-        if (type == (byte)HandleType.HNDTYPE_VARIABLE)
-        {
-            return true;
-        }
-#endif
-#if FEATURE_WEAK_NATIVE_COM_HANDLES
-        if (type == (byte)HandleType.HNDTYPE_WEAK_NATIVE_COM)
-        {
-            return true;
-        }
-#endif
-#if FEATURE_ASYNC_PINNED_HANDLES
-        if (type == (byte)HandleType.HNDTYPE_ASYNCPINNED)
-        {
-            return true;
-        }
-#endif
-        if (type == (byte)HandleType.HNDTYPE_SIZEDREF)
         {
             return true;
         }
@@ -495,6 +610,13 @@ internal static unsafe class HandleTableScan
                         minAge = generation;
                     }
 
+                    delegate*<byte*, byte*, void*, void> ageCallback =
+                        &UpdateMinimumAsyncPinnedAge;
+                    GCToEEInterface.WalkAsyncPinned(
+                        (byte*)value,
+                        &minAge,
+                        (delegate* unmanaged<byte*, byte*, void*, void>)ageCallback);
+
                     if (userData is not null && userData[handleIndex] != 0)
                     {
                         int secondaryGeneration =
@@ -560,6 +682,235 @@ internal static unsafe class HandleTableScan
         }
     }
 
+    private struct VariableScanInfo
+    {
+        public nuint enableMask;
+        public delegate*<byte**, nuint*, nuint, nuint, void> trace;
+        public nuint param2;
+    }
+
+    private static void TraceVariableHandles(
+        delegate*<byte**, nuint*, nuint, nuint, void> trace,
+        ScanContext* sc,
+        nuint param2,
+        uint enableMask,
+        int condemned,
+        int max_gen,
+        uint flags)
+    {
+        uint type = (uint)HandleType.HNDTYPE_VARIABLE;
+        VariableScanInfo info = new()
+        {
+            enableMask = enableMask,
+            trace = trace,
+            param2 = param2,
+        };
+
+        TraceHandleTables(
+            &VariableTraceDispatcher,
+            (nuint)sc,
+            (nuint)(void*)&info,
+            &type,
+            1,
+            condemned,
+            max_gen,
+            HandleTableConstants.HNDGCF_EXTRAINFO | flags);
+    }
+
+    private static void VariableTraceDispatcher(
+        byte** pObjRef,
+        nuint* pExtraInfo,
+        nuint param1,
+        nuint param2)
+    {
+        Debug.Assert(pExtraInfo is not null);
+        VariableScanInfo* info = (VariableScanInfo*)param2;
+        if ((*pExtraInfo & info->enableMask) != 0)
+        {
+            info->trace(pObjRef, null, param1, info->param2);
+        }
+    }
+
+    public static void Ref_TraceRefCountHandles(
+        delegate*<byte**, nuint*, nuint, nuint, void> callback,
+        nuint param1,
+        nuint param2)
+    {
+        uint type = (uint)HandleType.HNDTYPE_REFCOUNTED;
+        EnumerateHandleTables(callback, param1, param2, &type, 1);
+    }
+
+    public static void Ref_ScanSizedRefHandles(
+        int condemned,
+        int max_gen,
+        ScanContext* sc,
+        delegate*<byte**, ScanContext*, uint, void> fn)
+    {
+        Debug.Assert(condemned == max_gen);
+        uint type = (uint)HandleType.HNDTYPE_SIZEDREF;
+        TraceHandleTables(
+            &CalculateSizedRefSize,
+            (nuint)sc,
+            (nuint)fn,
+            &type,
+            1,
+            max_gen,
+            max_gen,
+            HandleTableConstants.HNDGCF_EXTRAINFO |
+                (sc->concurrent != 0
+                    ? HandleTableConstants.HNDGCF_ASYNC
+                    : HandleTableConstants.HNDGCF_NORMAL));
+    }
+
+    public static void Ref_NullBridgeObjectsWeakRefs(
+        nuint length,
+        void* unreachableObjectHandles)
+    {
+#if FEATURE_JAVAMARSHAL
+        uint* types = stackalloc uint[]
+        {
+            (uint)HandleType.HNDTYPE_WEAK_SHORT,
+            (uint)HandleType.HNDTYPE_WEAK_LONG,
+        };
+        BridgeWeakRefScanInfo info = new()
+        {
+            length = length,
+            handles = (byte***)unreachableObjectHandles,
+        };
+        EnumerateHandleTables(
+            &NullBridgeObjectWeakRef,
+            (nuint)(void*)&info,
+            0,
+            types,
+            2);
+#else
+        _ = length;
+        _ = unreachableObjectHandles;
+#endif
+    }
+
+#if FEATURE_JAVAMARSHAL
+    public static byte** Ref_ScanBridgeObjects(
+        int condemned,
+        int max_gen,
+        ScanContext* sc,
+        nuint* count)
+    {
+        GCBridge.BridgeResetData();
+        uint type = (uint)HandleType.HNDTYPE_CROSSREFERENCE;
+        TraceHandleTables(
+            &GetBridgeObjectsForProcessing,
+            (nuint)sc,
+            0,
+            &type,
+            1,
+            condemned,
+            max_gen,
+            HandleTableConstants.HNDGCF_EXTRAINFO);
+
+        MarkCrossReferencesArgs* args =
+            GCBridge.ProcessBridgeObjects();
+        if (args is not null)
+        {
+            GCToEEInterface.TriggerClientBridgeProcessing(args);
+        }
+
+        return GCBridge.GetRegisteredBridges(count);
+    }
+
+    private static void GetBridgeObjectsForProcessing(
+        byte** pObjRef,
+        nuint* pExtraInfo,
+        nuint param1,
+        nuint param2)
+    {
+        _ = param1;
+        _ = param2;
+        Debug.Assert(pExtraInfo is not null);
+        if (!ManagedGCHeap.IsPromoted(*pObjRef))
+        {
+            GCBridge.RegisterBridgeObject(*pObjRef, *pExtraInfo);
+        }
+    }
+#endif
+
+    private static void EnumerateHandleTables(
+        delegate*<byte**, nuint*, nuint, nuint, void> callback,
+        nuint param1,
+        nuint param2,
+        uint* types,
+        uint typeCount)
+    {
+        HandleTableMap* walk =
+            (HandleTableMap*)Unsafe.AsPointer(ref ObjectHandle.g_HandleTableMap);
+        while (walk is not null)
+        {
+            for (uint bucketIndex = 0;
+                 bucketIndex < HandleTableConstants.INITIAL_HANDLE_TABLE_ARRAY_SIZE;
+                 bucketIndex++)
+            {
+                HandleTableBucket* bucket = walk->pBuckets[bucketIndex];
+                if (bucket is null)
+                {
+                    continue;
+                }
+
+                for (int slot = 0; slot < ObjectHandle.getNumberOfSlots(); slot++)
+                {
+                    HandleTable* table = bucket->pTable[slot];
+                    if (table is not null)
+                    {
+                        uint flags = TypesRequireUserDataScanning(
+                            table,
+                            types,
+                            typeCount)
+                                ? HandleTableConstants.HNDGCF_EXTRAINFO
+                                : HandleTableConstants.HNDGCF_NORMAL;
+                        HndScanHandlesForGC(
+                            table,
+                            callback,
+                            param1,
+                            param2,
+                            types,
+                            typeCount,
+                            0,
+                            0,
+                            flags);
+                    }
+                }
+            }
+
+            walk = walk->pNext;
+        }
+    }
+
+#if FEATURE_JAVAMARSHAL
+    private struct BridgeWeakRefScanInfo
+    {
+        public nuint length;
+        public byte*** handles;
+    }
+
+    private static void NullBridgeObjectWeakRef(
+        byte** handle,
+        nuint* pExtraInfo,
+        nuint param1,
+        nuint param2)
+    {
+        _ = pExtraInfo;
+        _ = param2;
+        BridgeWeakRefScanInfo* info = (BridgeWeakRefScanInfo*)param1;
+        byte* weakRef = *handle;
+        for (nuint i = 0; i < info->length; i++)
+        {
+            if (weakRef == *info->handles[i])
+            {
+                *handle = null;
+            }
+        }
+    }
+#endif
+
     private static void HndScanHandlesForGC(
         HandleTable* pTable,
         delegate*<byte**, nuint*, nuint, nuint, void> scanProc,
@@ -572,16 +923,39 @@ internal static unsafe class HandleTableScan
         uint flags)
     {
         Debug.Assert((uint)condemned <= (uint)max_gen);
-        Debug.Assert((flags & HandleTableConstants.HNDGCF_ASYNC) == 0);
-
-        if ((flags & HandleTableConstants.HNDGCF_ASYNC) != 0)
-        {
-            return;
-        }
 
         bool enumUserData =
             (flags & HandleTableConstants.HNDGCF_EXTRAINFO) != 0 &&
             TypesRequireUserDataScanning(pTable, types, typeCount);
+
+        ScanCallbackInfo info = default;
+        info.uFlags = flags;
+        info.fEnumUserData = enumUserData ? (byte)1 : (byte)0;
+        info.dwAgeMask = BuildAgeMask((uint)condemned, (uint)max_gen);
+        info.pfnScan = scanProc;
+        info.param1 = param1;
+        info.param2 = param2;
+
+        byte action = scanProc is not null
+            ? BlockActionScan
+            : BlockActionAge;
+        bool full = condemned >= max_gen;
+        if ((flags & HandleTableConstants.HNDGCF_ASYNC) != 0)
+        {
+            HandleTableCrstHolderWithState holder =
+                new(&pTable->Lock);
+            TableScanHandlesAsync(
+                pTable,
+                types,
+                typeCount,
+                full,
+                condemned == 0,
+                action,
+                &info,
+                &holder);
+            holder.Dispose();
+            return;
+        }
 
         if (condemned >= max_gen)
         {
@@ -596,17 +970,6 @@ internal static unsafe class HandleTableScan
             return;
         }
 
-        ScanCallbackInfo info = default;
-        info.uFlags = flags;
-        info.fEnumUserData = enumUserData ? (byte)1 : (byte)0;
-        info.dwAgeMask = BuildAgeMask((uint)condemned, (uint)max_gen);
-        info.pfnScan = scanProc;
-        info.param1 = param1;
-        info.param2 = param2;
-
-        byte action = scanProc is not null
-            ? BlockActionScan
-            : BlockActionAge;
         TableScanHandlesEphemeral(
             pTable,
             types,
@@ -763,6 +1126,299 @@ internal static unsafe class HandleTableScan
                     param2,
                     enumUserData);
             }
+        }
+    }
+
+    private static void TableScanHandlesAsync(
+        HandleTable* pTable,
+        uint* types,
+        uint typeCount,
+        bool full,
+        bool useQuickIterator,
+        byte action,
+        ScanCallbackInfo* info,
+        HandleTableCrstHolderWithState* holder)
+    {
+        if (pTable->pAsyncScanInfo is not null)
+        {
+            Debug.Assert(false);
+            return;
+        }
+
+        ScanQNode initialNode = default;
+        AsyncScanInfo asyncInfo = default;
+        asyncInfo.pCallbackInfo = info;
+        asyncInfo.pScanQueue = &initialNode;
+        pTable->pAsyncScanInfo = &asyncInfo;
+
+        byte* typeInclusion =
+            stackalloc byte[HandleTableConstants.HANDLE_MAX_INTERNAL_TYPES + 1];
+        if (typeCount > 1)
+        {
+            BuildInclusionMap(typeInclusion, types, typeCount);
+        }
+
+        TableSegment* segment = null;
+        for (; ; )
+        {
+            segment = full
+                ? FullSegmentIterator(pTable, segment)
+                : useQuickIterator
+                    ? QuickSegmentIterator(pTable, segment)
+                    : StandardSegmentIterator(pTable, segment);
+            if (segment is null)
+            {
+                break;
+            }
+
+            if (typeCount == 1)
+            {
+                QueueSegmentByTypeChain(segment, *types, &asyncInfo);
+            }
+            else if (typeCount > 1)
+            {
+                QueueSegmentByTypeMap(segment, typeInclusion, &asyncInfo);
+            }
+
+            if (asyncInfo.pQueueTail is not null)
+            {
+                ProcessQueuedBlocksAsync(
+                    segment,
+                    &asyncInfo,
+                    full,
+                    action,
+                    info,
+                    holder);
+            }
+        }
+
+        ScanQNode* node = initialNode.pNext;
+        while (node is not null)
+        {
+            ScanQNode* next = node->pNext;
+            SyncImports.ManagedGC_Free(node);
+            node = next;
+        }
+
+        pTable->pAsyncScanInfo = null;
+    }
+
+    private static void QueueSegmentByTypeChain(
+        TableSegment* segment,
+        uint type,
+        AsyncScanInfo* asyncInfo)
+    {
+        uint block = segment->Header.rgTail[type];
+        if (block == HandleTableConstants.BLOCK_INVALID)
+        {
+            return;
+        }
+
+        block = segment->Header.rgAllocation[block];
+        uint head = block;
+        do
+        {
+            uint last;
+            uint next = block;
+            do
+            {
+                last = next + 1;
+                next = segment->Header.rgAllocation[next];
+            }
+            while (next == last && next != head);
+
+            QueueBlocksForAsyncScan(asyncInfo, block, last - block);
+            block = next;
+        }
+        while (block != head);
+    }
+
+    private static void QueueSegmentByTypeMap(
+        TableSegment* segment,
+        byte* typeInclusion,
+        AsyncScanInfo* asyncInfo)
+    {
+        uint block = 0;
+        uint limit = segment->Header.bEmptyLine;
+        while (block < limit)
+        {
+            while (block < limit &&
+                !IsBlockIncluded(segment, block, typeInclusion))
+            {
+                block++;
+            }
+
+            if (block >= limit)
+            {
+                return;
+            }
+
+            uint first = block;
+            do
+            {
+                block++;
+            }
+            while (block < limit &&
+                IsBlockIncluded(segment, block, typeInclusion));
+
+            QueueBlocksForAsyncScan(asyncInfo, first, block - first);
+            block++;
+        }
+    }
+
+    private static void QueueBlocksForAsyncScan(
+        AsyncScanInfo* asyncInfo,
+        uint block,
+        uint count)
+    {
+        const uint RangesPerNode =
+            HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT / 4;
+
+        ScanQNode* node = asyncInfo->pQueueTail;
+        if (node is not null && node->uEntries >= RangesPerNode)
+        {
+            if (node->pNext is null)
+            {
+                node->pNext = (ScanQNode*)SyncImports.ManagedGC_AllocZeroed(
+                    (nuint)sizeof(ScanQNode));
+                if (node->pNext is null)
+                {
+                    return;
+                }
+            }
+
+            node = node->pNext;
+        }
+        else if (node is null)
+        {
+            node = asyncInfo->pScanQueue;
+        }
+
+        ScanRange* ranges = (ScanRange*)node->rgRange;
+        ranges[node->uEntries].uIndex = block;
+        ranges[node->uEntries].uCount = count;
+        node->uEntries++;
+        asyncInfo->pQueueTail = node;
+    }
+
+    private static void ProcessQueuedBlocksAsync(
+        TableSegment* segment,
+        AsyncScanInfo* asyncInfo,
+        bool full,
+        byte action,
+        ScanCallbackInfo* info,
+        HandleTableCrstHolderWithState* holder)
+    {
+        info->pCurrentSegment = segment;
+        for (ScanQNode* node = asyncInfo->pScanQueue;
+             node is not null;
+             node = node->pNext)
+        {
+            ScanRange* ranges = (ScanRange*)node->rgRange;
+            for (uint range = 0; range < node->uEntries; range++)
+            {
+                LockBlocks(
+                    segment,
+                    ranges[range].uIndex,
+                    ranges[range].uCount);
+            }
+        }
+
+        holder->Release();
+        for (ScanQNode* node = asyncInfo->pScanQueue;
+             node is not null;
+             node = node->pNext)
+        {
+            ScanRange* ranges = (ScanRange*)node->rgRange;
+            for (uint range = 0; range < node->uEntries; range++)
+            {
+                if (full)
+                {
+                    if (action == BlockActionScan)
+                    {
+                        BlockScanBlocks(
+                            segment,
+                            ranges[range].uIndex,
+                            ranges[range].uCount,
+                            info->pfnScan,
+                            info->param1,
+                            info->param2,
+                            info->fEnumUserData != 0);
+                    }
+                    else
+                    {
+                        AgeFullBlocks(
+                            segment,
+                            ranges[range].uIndex,
+                            ranges[range].uCount);
+                    }
+                }
+                else
+                {
+                    ProcessEphemeralBlocks(
+                        segment,
+                        ranges[range].uIndex,
+                        ranges[range].uCount,
+                        action,
+                        info);
+                }
+            }
+        }
+
+        holder->Acquire();
+        for (ScanQNode* node = asyncInfo->pScanQueue;
+             node is not null;
+             node = node->pNext)
+        {
+            ScanRange* ranges = (ScanRange*)node->rgRange;
+            for (uint range = 0; range < node->uEntries; range++)
+            {
+                UnlockBlocks(
+                    segment,
+                    ranges[range].uIndex,
+                    ranges[range].uCount);
+            }
+
+            node->uEntries = 0;
+        }
+
+        info->pCurrentSegment = null;
+        asyncInfo->pQueueTail = null;
+    }
+
+    private static void LockBlocks(
+        TableSegment* segment,
+        uint block,
+        uint count)
+    {
+        uint limit = block + count;
+        while (block < limit)
+        {
+            HandleTableCore.BlockLock(segment, block++);
+        }
+    }
+
+    private static void UnlockBlocks(
+        TableSegment* segment,
+        uint block,
+        uint count)
+    {
+        uint limit = block + count;
+        while (block < limit)
+        {
+            HandleTableCore.BlockUnlock(segment, block++);
+        }
+    }
+
+    private static void AgeFullBlocks(
+        TableSegment* segment,
+        uint block,
+        uint count)
+    {
+        uint limit = block + count;
+        while (block < limit)
+        {
+            AgeFullGcBlock(segment, block++);
         }
     }
 
@@ -1077,6 +1733,13 @@ internal static unsafe class HandleTableScan
                             minAge = age;
                         }
 
+                        delegate*<byte*, byte*, void*, void> ageCallback =
+                            &UpdateMinimumAsyncPinnedAge;
+                        GCToEEInterface.WalkAsyncPinned(
+                            (byte*)value,
+                            &minAge,
+                            (delegate* unmanaged<byte*, byte*, void*, void>)ageCallback);
+
                         if (pUserData is not null)
                         {
                             nuint handleIndex =
@@ -1368,6 +2031,83 @@ internal static unsafe class HandleTableScan
         callback(pObjRef, (ScanContext*)lp1, 0);
     }
 
+    private static void PromoteObject(
+        byte** pObjRef,
+        nuint* pExtraInfo,
+        nuint lp1,
+        nuint lp2)
+    {
+        UpdatePointer(pObjRef, pExtraInfo, lp1, lp2);
+    }
+
+    private static void PromoteRefCounted(
+        byte** pObjRef,
+        nuint* pExtraInfo,
+        nuint lp1,
+        nuint lp2)
+    {
+        _ = pExtraInfo;
+        ScanContext* sc = (ScanContext*)lp1;
+        Debug.Assert(sc->concurrent == 0);
+
+        byte* obj = (byte*)GCEnv.VolatileLoad((nuint*)pObjRef);
+        byte* oldObj = obj;
+        if (!HandleTableCore.HndIsNullOrDestroyedHandle((nuint)obj) &&
+            !ManagedGCHeap.IsPromoted(obj) &&
+            GCToEEInterface.RefCountedHandleCallbacks(obj) != 0)
+        {
+            Debug.Assert(lp2 != 0);
+            delegate*<byte**, ScanContext*, uint, void> callback =
+                (delegate*<byte**, ScanContext*, uint, void>)lp2;
+            callback(&obj, sc, 0);
+        }
+
+        Debug.Assert(oldObj == obj);
+    }
+
+    private static void AsyncPinObject(
+        byte** pObjRef,
+        nuint* pExtraInfo,
+        nuint lp1,
+        nuint lp2)
+    {
+        _ = pExtraInfo;
+        Debug.Assert(lp2 != 0);
+
+        delegate*<byte**, ScanContext*, uint, void> callback =
+            (delegate*<byte**, ScanContext*, uint, void>)lp2;
+        ScanContext* sc = (ScanContext*)lp1;
+        callback(pObjRef, sc, 0);
+        byte* pinnedObject = *pObjRef;
+        if (!HandleTableCore.HndIsNullOrDestroyedHandle((nuint)pinnedObject))
+        {
+            GCToEEInterface.WalkAsyncPinnedForPromotion(
+                pinnedObject,
+                sc,
+                (delegate* unmanaged<byte**, ScanContext*, uint, void>)callback);
+        }
+    }
+
+    private static void CalculateSizedRefSize(
+        byte** pObjRef,
+        nuint* pExtraInfo,
+        nuint lp1,
+        nuint lp2)
+    {
+        Debug.Assert(pExtraInfo is not null);
+        Debug.Assert(lp2 != 0);
+
+        ScanContext* sc = (ScanContext*)lp1;
+        delegate*<byte**, ScanContext*, uint, void> callback =
+            (delegate*<byte**, ScanContext*, uint, void>)lp2;
+        nuint sizeBegin =
+            ManagedGCHeap.GetPromotedBytesForHandleScan(sc->thread_number);
+        callback(pObjRef, sc, 0);
+        nuint sizeEnd =
+            ManagedGCHeap.GetPromotedBytesForHandleScan(sc->thread_number);
+        *pExtraInfo = sizeEnd - sizeBegin;
+    }
+
     private static void UpdatePointerPinned(byte** pObjRef, nuint* pExtraInfo, nuint lp1, nuint lp2)
     {
         _ = pExtraInfo;
@@ -1455,5 +2195,19 @@ internal static unsafe class HandleTableScan
     private static void PinObject(byte** pObjRef, nuint* pExtraInfo, nuint lp1, nuint lp2)
     {
         UpdatePointerPinned(pObjRef, pExtraInfo, lp1, lp2);
+    }
+
+    private static void UpdateMinimumAsyncPinnedAge(
+        byte* from,
+        byte* to,
+        void* context)
+    {
+        _ = from;
+        int* minAge = (int*)context;
+        int generation = HandleTableManager.GetConvertedGeneration(to);
+        if (*minAge > generation)
+        {
+            *minAge = generation;
+        }
     }
 }

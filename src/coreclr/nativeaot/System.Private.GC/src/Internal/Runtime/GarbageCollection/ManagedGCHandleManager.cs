@@ -113,9 +113,7 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void Shutdown(void* thisPtr)
         {
-            HandleTableBucket* bucket =
-                (HandleTableBucket*)Unsafe.AsPointer(ref ObjectHandle.g_GlobalHandleTableBucket);
-            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            DestroyHandleStore(thisPtr, Unsafe.AsPointer(ref s_storeVtablePtr));
             ObjectHandle.Ref_Shutdown();
         }
 
@@ -125,6 +123,15 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void DestroyHandleStore(void* thisPtr, void* store)
         {
+            _ = thisPtr;
+            if (store == Unsafe.AsPointer(ref s_storeVtablePtr))
+            {
+                HandleTableBucket* bucket = GetGlobalBucket();
+                if (bucket->pTable is not null)
+                {
+                    ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+                }
+            }
         }
 
         private static OBJECTHANDLE CreateGlobalHandleOfType(void* thisPtr, byte* obj, HandleType type) =>
@@ -175,6 +182,38 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void TraceRefCountedHandles(void* thisPtr, delegate* unmanaged<byte**, nuint*, nuint, nuint, void> callback, nuint lp1, nuint lp2)
         {
+            RefCountedTraceInfo info = new()
+            {
+                callback = callback,
+                param1 = lp1,
+                param2 = lp2,
+            };
+            HandleTableScan.Ref_TraceRefCountHandles(
+                &TraceRefCountedHandle,
+                (nuint)(void*)&info,
+                0);
+        }
+
+        private struct RefCountedTraceInfo
+        {
+            public delegate* unmanaged<byte**, nuint*, nuint, nuint, void> callback;
+            public nuint param1;
+            public nuint param2;
+        }
+
+        private static void TraceRefCountedHandle(
+            byte** obj,
+            nuint* extraInfo,
+            nuint param1,
+            nuint param2)
+        {
+            _ = param2;
+            RefCountedTraceInfo* info = (RefCountedTraceInfo*)param1;
+            info->callback(
+                obj,
+                extraInfo,
+                info->param1,
+                info->param2);
         }
 
         // ------------------------------------------------------------------------------------

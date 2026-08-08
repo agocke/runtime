@@ -672,19 +672,28 @@ by `handletableconstants.h`.
   Allocation failures at each unmanaged allocation boundary are covered directly.
 - `HndCountAllHandles`, the retail `HndNotifyGcCycleComplete` shape, and the variable-handle
   type constants plus get/update/compare-exchange helpers.
+- The remaining production type passes: async-pinned promotion and EE graph walk, full-GC
+  sized-ref promoted-byte accounting, ref-count callback promotion and enumeration,
+  variable-strength dispatch, weak-native-COM short-weak behavior, and weak-interior relocation.
+  Creation, assignment, compare-exchange, extra-info, unknown-type destruction, relocation,
+  aging, and rejuvenation retain the native per-type layouts and ordering.
+- `handletablescan.cpp`'s asynchronous queue: native-sized range nodes, per-table single-scan
+  state, block locking, table-lock release/reacquisition, segment-order processing, allocation
+  failure tolerance, queue reuse, and cleanup. Background handle scans now use this path instead
+  of being skipped.
+- The active NativeAOT `FEATURE_JAVAMARSHAL` paths: cross-reference scanning, bridge registration,
+  SCC callback construction, bridge promotion lists, client notification, and post-processing
+  weak-reference nulling. Inactive configurations compile these paths out.
+- The remaining live `IGCHandleManager`/`IGCHandleStore` behavior, including ref-counted
+  enumeration and store destruction. The three ABI-retained dead slots still assert/return the
+  same values as `gchandletable.cpp`.
 
 #### Remaining
 
-The bounded synchronous generational scans walk the existing global table map. Promotion follows
-each per-type circular block chain, promotes pinned handles before strong handles, includes
-sized-ref roots during ephemeral collections, and completes the dependent primary/secondary
-fixed point. Gen0 uses the quick segment iterator, while Gen1 uses the standard iterator and both
-filter clumps through the native age mask. Relocation preserves the native sync-block-first pass
-order and generation-scoped weak/strong/ref-counted/sized-ref, pinned, dependent, and
-weak-interior handling. Handle aging and demotion-driven rejuvenation use the corresponding
-ephemeral block algorithms; the full iterator and full-GC behavior retain their existing
-maintenance. Asynchronous queues, variable handles, standalone obsolete handle types,
-diagnostics/debug statistics, and multi-heap scans remain blocked.
+Checked-build scan statistics, profiler/ETW-only handle walks, verification diagnostics, and
+server/multi-heap table distribution remain blocked. The WKS production allocation, store,
+special-type, synchronous/asynchronous scan, weak/dependent, relocation, aging, Java bridge, and
+ref-count callback paths are translated.
 
 **Complete when:** handle allocation, caching, scanning, weak/dependent semantics, ref-counted
 handles, and per-type behavior match the C++ handle table under differential tests.

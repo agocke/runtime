@@ -199,6 +199,52 @@ namespace Internal.Runtime.GarbageCollection
             return false;
         }
 
+        public static bool Ref_HasHandlesOfType(uint type)
+        {
+            HandleTableMap* walk =
+                (HandleTableMap*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+                    ref g_HandleTableMap);
+            while (walk is not null)
+            {
+                for (uint bucketIndex = 0;
+                     bucketIndex < HandleTableConstants.INITIAL_HANDLE_TABLE_ARRAY_SIZE;
+                     bucketIndex++)
+                {
+                    HandleTableBucket* bucket = walk->pBuckets[bucketIndex];
+                    if (bucket is null)
+                    {
+                        continue;
+                    }
+
+                    for (int slot = 0; slot < getNumberOfSlots(); slot++)
+                    {
+                        HandleTable* table = bucket->pTable[slot];
+                        if (table is null)
+                        {
+                            continue;
+                        }
+
+                        using HandleTableCrstHolder holder =
+                            new(&table->Lock);
+                        for (TableSegment* segment = table->pSegmentList;
+                             segment is not null;
+                             segment = segment->Header.pNextSegment)
+                        {
+                            if (segment->Header.rgTail[type] !=
+                                HandleTableConstants.BLOCK_INVALID)
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+
+                walk = walk->pNext;
+            }
+
+            return false;
+        }
+
         public static uint GetVariableHandleType(OBJECTHANDLE handle)
         {
             return (uint)HandleTableManager.HndGetHandleExtraInfo(handle);

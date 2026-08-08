@@ -7,8 +7,39 @@ using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GarbageCollection
 {
-    internal struct AsyncScanInfo
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ScanRange
     {
+        public uint uIndex;
+        public uint uCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct ScanQNode
+    {
+        public ScanQNode* pNext;
+        public uint uEntries;
+        public fixed uint rgRange[
+            (HandleTableConstants.HANDLE_BLOCKS_PER_SEGMENT / 4) * 2];
+
+        public ScanRange* Ranges
+        {
+            get
+            {
+                fixed (uint* ranges = rgRange)
+                {
+                    return (ScanRange*)ranges;
+                }
+            }
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct AsyncScanInfo
+    {
+        public void* pCallbackInfo;
+        public ScanQNode* pScanQueue;
+        public ScanQNode* pQueueTail;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -52,6 +83,47 @@ namespace Internal.Runtime.GarbageCollection
         public void Dispose()
         {
             _lock->Leave();
+        }
+    }
+
+    internal unsafe struct HandleTableCrstHolderWithState
+    {
+        private HandleTableCrstStatic* _lock;
+        private byte _acquired;
+
+        public HandleTableCrstHolderWithState(
+            HandleTableCrstStatic* pLock,
+            bool acquire = true)
+        {
+            _lock = pLock;
+            _acquired = acquire ? (byte)1 : (byte)0;
+            if (acquire)
+            {
+                _lock->Enter();
+            }
+        }
+
+        public void Acquire()
+        {
+            if (_acquired == 0)
+            {
+                _lock->Enter();
+                _acquired = 1;
+            }
+        }
+
+        public void Release()
+        {
+            if (_acquired != 0)
+            {
+                _lock->Leave();
+                _acquired = 0;
+            }
+        }
+
+        public void Dispose()
+        {
+            Release();
         }
     }
 

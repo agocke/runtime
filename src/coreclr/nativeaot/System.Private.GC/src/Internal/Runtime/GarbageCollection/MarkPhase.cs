@@ -1047,6 +1047,16 @@ internal unsafe partial struct gc_heap
             return false;
         }
 
+        if (condemned_gen_number == GCInterfaceOffsets.max_generation)
+        {
+            GCScan.GcScanSizedRefs(
+                &promote,
+                condemned_gen_number,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+            drain_mark_queue(heap);
+        }
+
         GCScan.GcScanRoots(
             &promote,
             condemned_gen_number,
@@ -1093,6 +1103,29 @@ internal unsafe partial struct gc_heap
                 &sc);
             scan_dependent_handles(condemned_gen_number, &sc, initial_scan_p: true);
         }
+
+#if FEATURE_JAVAMARSHAL
+        if (ObjectHandle.DependentHandleContextsInitialized &&
+            ObjectHandle.Ref_HasHandlesOfType(
+                (uint)HandleType.HNDTYPE_CROSSREFERENCE))
+        {
+            nuint bridgeCount = 0;
+            byte** bridges = GCScan.GcProcessBridgeObjects(
+                condemned_gen_number,
+                GCInterfaceOffsets.max_generation,
+                &sc,
+                &bridgeCount);
+            for (nuint bridge = 0; bridge < bridgeCount; bridge++)
+            {
+                mark_object_simple(heap, &bridges[bridge]);
+            }
+
+            if (bridgeCount != 0)
+            {
+                drain_mark_queue(heap);
+            }
+        }
+#endif
 
         GCToEEInterface.AfterGcScanRoots(
             condemned_gen_number,

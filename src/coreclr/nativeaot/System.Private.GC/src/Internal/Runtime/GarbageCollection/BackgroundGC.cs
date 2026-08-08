@@ -405,6 +405,12 @@ internal unsafe partial struct gc_heap
         sc.promotion = 1;
         sc.concurrent = 1;
 
+        GCScan.GcScanSizedRefs(
+            &background_promote,
+            GCInterfaceOffsets.max_generation,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+
         GCScan.GcScanHandles(
             &background_promote,
             GCInterfaceOffsets.max_generation,
@@ -583,6 +589,28 @@ internal unsafe partial struct gc_heap
                 }
             }
         }
+
+#if FEATURE_JAVAMARSHAL
+        if (ObjectHandle.Ref_HasHandlesOfType(
+            (uint)HandleType.HNDTYPE_CROSSREFERENCE))
+        {
+            nuint bridgeCount = 0;
+            byte** bridges = GCScan.GcProcessBridgeObjects(
+                GCInterfaceOffsets.max_generation,
+                GCInterfaceOffsets.max_generation,
+                &sc,
+                &bridgeCount);
+            for (nuint bridge = 0; bridge < bridgeCount; bridge++)
+            {
+                background_promote(&bridges[bridge], &sc, 0);
+            }
+
+            if (bridgeCount != 0)
+            {
+                drain_background_mark_stack(hp);
+            }
+        }
+#endif
 
         if (SoftwareWriteWatch.IsEnabledForGCHeap())
         {

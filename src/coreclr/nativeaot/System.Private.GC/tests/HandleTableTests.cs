@@ -146,6 +146,8 @@ public sealed unsafe class HandleTableTests
             Assert.True(bucket->pTable[0] != null);
             Assert.Equal(0u, HandleTableManager.HndGetHandleTableIndex(bucket->pTable[0]));
             Assert.False(ObjectHandle.Contains(bucket, default));
+            Assert.False(ObjectHandle.Ref_HasHandlesOfType(
+                (uint)HandleType.HNDTYPE_CROSSREFERENCE));
 
             OBJECTHANDLE handle = HandleTableManager.HndCreateHandle(
                 bucket->pTable[0],
@@ -154,6 +156,14 @@ public sealed unsafe class HandleTableTests
                 0x5678);
             Assert.True(ObjectHandle.Contains(bucket, handle));
             Assert.Equal((nuint)0x5678, HandleTableManager.HndGetHandleExtraInfo(handle));
+
+            _ = HandleTableManager.HndCreateHandle(
+                bucket->pTable[0],
+                (uint)HandleType.HNDTYPE_CROSSREFERENCE,
+                (byte*)0x9ABC,
+                0xDEF0);
+            Assert.True(ObjectHandle.Ref_HasHandlesOfType(
+                (uint)HandleType.HNDTYPE_CROSSREFERENCE));
         }
         finally
         {
@@ -254,6 +264,68 @@ public sealed unsafe class HandleTableTests
                     type,
                     ObjectHandle.VHT_STRONG));
             Assert.Equal(ObjectHandle.VHT_STRONG, ObjectHandle.GetVariableHandleType(handle));
+        }
+        finally
+        {
+            HandleTableManager.HndDestroyHandleTable(table);
+        }
+    }
+
+    [Theory]
+    [InlineData((uint)HandleType.HNDTYPE_ASYNCPINNED, 0ul)]
+    [InlineData((uint)HandleType.HNDTYPE_SIZEDREF, 0x1001ul)]
+    [InlineData((uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER, 0x1002ul)]
+    [InlineData((uint)HandleType.HNDTYPE_REFCOUNTED, 0ul)]
+    [InlineData((uint)HandleType.HNDTYPE_VARIABLE, ObjectHandle.VHT_STRONG)]
+    [InlineData((uint)HandleType.HNDTYPE_WEAK_NATIVE_COM, 0x1003ul)]
+    public void SpecialHandleKindsPreserveTypeExtraInfoAndDestruction(
+        uint type,
+        ulong extraInfo)
+    {
+        const uint TypeCount = 12;
+        uint* typeFlags = stackalloc uint[(int)TypeCount];
+        typeFlags[(uint)HandleType.HNDTYPE_VARIABLE] =
+            HandleTableConstants.HNDF_EXTRAINFO;
+        typeFlags[(uint)HandleType.HNDTYPE_DEPENDENT] =
+            HandleTableConstants.HNDF_EXTRAINFO;
+        typeFlags[(uint)HandleType.HNDTYPE_SIZEDREF] =
+            HandleTableConstants.HNDF_EXTRAINFO;
+        typeFlags[(uint)HandleType.HNDTYPE_WEAK_NATIVE_COM] =
+            HandleTableConstants.HNDF_EXTRAINFO;
+        typeFlags[(uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER] =
+            HandleTableConstants.HNDF_EXTRAINFO;
+        typeFlags[(uint)HandleType.HNDTYPE_CROSSREFERENCE] =
+            HandleTableConstants.HNDF_EXTRAINFO;
+        HandleTable* table =
+            HandleTableManager.HndCreateHandleTable(typeFlags, TypeCount);
+        Assert.True(table != null);
+
+        try
+        {
+            OBJECTHANDLE handle = HandleTableManager.HndCreateHandle(
+                table,
+                type,
+                (byte*)0x1234,
+                (nuint)extraInfo);
+
+            Assert.Equal(type, HandleTableCore.HandleFetchType(handle));
+            if (type is
+                (uint)HandleType.HNDTYPE_VARIABLE or
+                (uint)HandleType.HNDTYPE_DEPENDENT or
+                (uint)HandleType.HNDTYPE_SIZEDREF or
+                (uint)HandleType.HNDTYPE_WEAK_NATIVE_COM or
+                (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER or
+                (uint)HandleType.HNDTYPE_CROSSREFERENCE)
+            {
+                Assert.Equal(
+                    (nuint)extraInfo,
+                    HandleTableManager.HndGetHandleExtraInfo(handle));
+            }
+            Assert.Equal(1u, HandleTableManager.HndCountHandles(table));
+
+            HandleTableManager.HndDestroyHandleOfUnknownType(table, handle);
+
+            Assert.Equal(0u, HandleTableManager.HndCountHandles(table));
         }
         finally
         {

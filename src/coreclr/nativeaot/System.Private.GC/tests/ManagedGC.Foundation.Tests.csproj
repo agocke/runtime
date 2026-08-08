@@ -12,6 +12,7 @@
          test that is never trimmed. -->
     <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
     <DefineConstants>MANAGED_GC_TEST_HOST;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(TestJavaMarshal)' == 'true'">FEATURE_JAVAMARSHAL;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -121,6 +122,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCDesc.cs" Link="GCDesc.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/DynamicTuning.cs" Link="DynamicTuning.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/FullGCNotification.cs" Link="FullGCNotification.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/GCBridge.cs" Link="GCBridge.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCMemory.cs" Link="GCMemory.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCPriv.cs" Link="GCPriv.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCRecord.cs" Link="GCRecord.cs" />

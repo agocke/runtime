@@ -521,6 +521,9 @@ namespace Internal.Runtime.GarbageCollection
         private static int GetHomeHeapNumber(void* thisPtr) => 0;
 
         private static nuint GetPromotedBytes(void* thisPtr, int heap_index) =>
+            GetPromotedBytesForHandleScan(heap_index);
+
+        internal static nuint GetPromotedBytesForHandleScan(int heap_index) =>
 #if USE_REGIONS && !MULTIPLE_HEAPS
             ManagedGCRegionBootstrap.Heap is null
                 ? 0
@@ -528,6 +531,9 @@ namespace Internal.Runtime.GarbageCollection
 #else
             0;
 #endif
+
+        internal static bool ConcurrentCollectionInProgress =>
+            gc_heap.background_collection_running_p();
 
         private static nuint GetCurrentObjSize(void* thisPtr)
         {
@@ -772,6 +778,9 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void NullBridgeObjectsWeakRefs(void* thisPtr, nuint length, void* unreachableObjectHandles)
         {
+            HandleTableScan.Ref_NullBridgeObjectsWeakRefs(
+                length,
+                unreachableObjectHandles);
         }
 
         // ------------------------------------------------------------------------------------
@@ -798,6 +807,51 @@ namespace Internal.Runtime.GarbageCollection
             return true;
 #endif
         }
+
+#if FEATURE_JAVAMARSHAL
+        internal static bool IsPromotedForBridge(byte* obj) => IsPromoted(obj);
+
+        private struct BridgeWalkContext
+        {
+            public delegate*<byte*, void*, byte> callback;
+            public void* context;
+        }
+
+        internal static void DiagWalkObjectForBridge(
+            byte* obj,
+            delegate*<byte*, void*, byte> callback,
+            void* context)
+        {
+            if (obj is null || gc_heap.contain_pointers(obj) == 0)
+            {
+                return;
+            }
+
+            BridgeWalkContext walkContext = new()
+            {
+                callback = callback,
+                context = context,
+            };
+            gc_heap.go_through_object_nostart(
+                gc_heap.method_table(obj),
+                obj,
+                gc_heap.size(obj),
+                &walkContext,
+                &BridgeWalkObjectReference);
+        }
+
+        private static void BridgeWalkObjectReference(byte** reference, void* context)
+        {
+            if (*reference is not null)
+            {
+                BridgeWalkContext* walkContext =
+                    (BridgeWalkContext*)context;
+                walkContext->callback(
+                    *reference,
+                    walkContext->context);
+            }
+        }
+#endif
 
         /// <summary>
         /// The <c>IGCHeapInternal</c> form of <see cref="IsPromoted"/>, used by the bridge code.

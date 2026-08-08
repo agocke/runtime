@@ -363,6 +363,12 @@ internal static unsafe class GCToEEInterface
         LastGCCreateSegmentAddress = null;
         LastGCCreateSegmentSize = 0;
         LastGCCreateSegmentType = 0;
+        RefCountedHandleCallbackResult = false;
+        WalkAsyncPinnedForPromotionCallCount = 0;
+        TriggerClientBridgeProcessingCallCount = 0;
+        LastBridgeComponentCount = 0;
+        LastBridgeContext = 0;
+        AsyncPinnedWalkTarget = null;
 
         foreach (IntPtr outstanding in OutstandingStrings)
         {
@@ -678,6 +684,60 @@ internal static unsafe class GCToEEInterface
 
     public static void WalkAsyncPinned(byte* @object, void* context, delegate* unmanaged<byte*, byte*, void*, void> callback)
     {
+        if (AsyncPinnedWalkTarget is not null)
+        {
+            callback(@object, AsyncPinnedWalkTarget, context);
+        }
+    }
+
+    public static byte* AsyncPinnedWalkTarget { get; set; }
+
+    public static byte RefCountedHandleCallbacks(byte* pObject) =>
+        RefCountedHandleCallbackResult ? (byte)1 : (byte)0;
+
+    public static bool RefCountedHandleCallbackResult { get; set; }
+
+    public static int WalkAsyncPinnedForPromotionCallCount { get; private set; }
+
+    public static int TriggerClientBridgeProcessingCallCount { get; private set; }
+
+    public static nuint LastBridgeComponentCount { get; private set; }
+
+    public static nuint LastBridgeContext { get; private set; }
+
+    public static void WalkAsyncPinnedForPromotion(
+        byte* @object,
+        ScanContext* sc,
+        delegate* unmanaged<byte**, ScanContext*, uint, void> callback)
+    {
+        _ = @object;
+        _ = sc;
+        _ = callback;
+        WalkAsyncPinnedForPromotionCallCount++;
+    }
+
+    public static void TriggerClientBridgeProcessing(
+        MarkCrossReferencesArgs* args)
+    {
+        TriggerClientBridgeProcessingCallCount++;
+        LastBridgeComponentCount = args->ComponentCount;
+        LastBridgeContext =
+            args->ComponentCount != 0 &&
+            args->Components[0].Count != 0
+                ? args->Components[0].Contexts[0]
+                : 0;
+
+        for (nuint component = 0;
+             component < args->ComponentCount;
+             component++)
+        {
+            SyncImports.ManagedGC_Free(
+                args->Components[component].Contexts);
+        }
+
+        SyncImports.ManagedGC_Free(args->Components);
+        SyncImports.ManagedGC_Free(args->CrossReferences);
+        SyncImports.ManagedGC_Free(args);
     }
 
     internal static void SetPrivateValue(string privateKey, ulong value) => s_privateValues[privateKey] = value;
