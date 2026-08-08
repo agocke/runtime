@@ -17,16 +17,6 @@ internal unsafe partial struct gc_heap
     public const int collection_e_notimpl = unchecked((int)0x80004001);
 
 #if USE_REGIONS && !MULTIPLE_HEAPS
-    private const GCEventKeyword UnsupportedPublicCollectionKeywords =
-        GCEventKeyword.GC |
-        GCEventKeyword.GCHeapDump |
-        GCEventKeyword.GCHeapSurvivalAndMovement |
-        GCEventKeyword.ManagedHeapCollect |
-        GCEventKeyword.GCHeapAndTypeNames;
-
-    private const GCEventKeyword UnsupportedPrivateCollectionKeywords =
-        GCEventKeyword.GCPrivate;
-
     public static bool synchronous_foreground_collection_supported(
         int generation,
         int mode,
@@ -48,10 +38,6 @@ internal unsafe partial struct gc_heap
             GCConfig.GetServerGC() == 0 &&
             GCConfig.GetHeapVerifyLevel() == 0 &&
             !survivor_analysis_requested &&
-            (GCEventStatus.GetEnabledKeywords(GCEventProvider.Default) &
-                UnsupportedPublicCollectionKeywords) == 0 &&
-            (GCEventStatus.GetEnabledKeywords(GCEventProvider.Private) &
-                UnsupportedPrivateCollectionKeywords) == 0 &&
             (!background_running_p() ||
              (generation >= 0 &&
               generation < GCInterfaceOffsets.max_generation));
@@ -158,6 +144,12 @@ internal unsafe partial struct gc_heap
 
         suspended_start_time = GCCommon.GetHighPrecisionTimeStamp();
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
+        gc_reason eventReason = get_collection_reason(
+            low_memory_p,
+            mode,
+            reason,
+            allocation_triggered_p);
+        GCEvents.GCEventFireGCTriggered(unchecked((uint)eventReason));
 
         if (!should_proceed_with_gc(hp))
         {
@@ -234,23 +226,11 @@ internal unsafe partial struct gc_heap
         delay_free_segments();
         init_records(hp);
 
-        if (allocation_triggered_p)
-        {
-            settings.reason = reason;
-        }
-        else if (low_memory_p != 0)
-        {
-            settings.reason = gc_reason.reason_lowmemory_blocking;
-        }
-        else if (((collection_mode)mode & collection_mode.collection_compacting) != 0)
-        {
-            settings.reason = gc_reason.reason_induced_compacting;
-        }
-        else
-        {
-            settings.reason = gc_reason.reason_induced;
-        }
-
+        settings.reason = get_collection_reason(
+            low_memory_p,
+            mode,
+            reason,
+            allocation_triggered_p);
         record_entry_memory_load();
         num_pinned_objects = 0;
         rearrange_uoh_segments();
@@ -277,12 +257,37 @@ internal unsafe partial struct gc_heap
         GCToEEInterface.GcStartWork(
             settings.condemned_generation,
             GCInterfaceOffsets.max_generation);
+        UpdatePreGCCounters(hp);
+        FireCommittedUsageEvent();
+        UpdateEventStatusForLinux();
         if (settings.condemned_generation == GCInterfaceOffsets.max_generation)
         {
             full_gc_counts[gc_type_blocking]++;
         }
 
         return gc1(hp);
+    }
+
+    private static gc_reason get_collection_reason(
+        byte low_memory_p,
+        int mode,
+        gc_reason allocationReason,
+        bool allocation_triggered_p)
+    {
+        if (allocation_triggered_p)
+        {
+            return allocationReason;
+        }
+
+        if (low_memory_p != 0)
+        {
+            return gc_reason.reason_lowmemory_blocking;
+        }
+
+        return ((collection_mode)mode &
+            collection_mode.collection_compacting) != 0
+                ? gc_reason.reason_induced_compacting
+                : gc_reason.reason_induced;
     }
 
     public static int generation_to_condemn_minimal(
@@ -429,6 +434,10 @@ internal unsafe partial struct gc_heap
             }
         }
 
+        gc_data_global.final_youngest_desired =
+            dynamic_data.dd_desired_allocation(
+                dynamic_data_of(hp, (int)gc_generation_num.soh_gen0));
+        FirePrivateEvents();
         rearrange_uoh_segments();
         compute_gc_and_ephemeral_range(hp, n, end_of_gc_p: true);
         GCWriteBarrier.stomp_write_barrier_ephemeral(
@@ -443,6 +452,8 @@ internal unsafe partial struct gc_heap
         update_full_gc_notification_after_gc(hp);
         last_gc_before_oom = 0;
         GCToEEInterface.GcDone(n);
+        FireCommittedUsageEvent();
+        UpdatePostGCCounters(hp);
         return true;
     }
 

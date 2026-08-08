@@ -84,8 +84,18 @@ internal static unsafe class ManagedGCTest
             return 13;
         }
 
+        if (!RuntimeGcEventsWork())
+        {
+            return 14;
+        }
+
         Console.WriteLine("ManagedGC smoke test passed.");
         return 100;
+    }
+
+    private static bool RuntimeGcEventsWork()
+    {
+        return EventPipeGcSmoke.CollectAndValidate(background: false);
     }
 
     private static int s_noGCRegionCallbackCount;

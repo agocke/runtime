@@ -97,6 +97,7 @@ Ported so far:
 | `SoftwareWriteWatch.cs` | `softwarewritewatch.h`, `softwarewritewatch.cpp` |
 | `GCScan.cs` | dependency-closed parts of `gcscan.cpp` |
 | `Collect.cs` | bounded WKS `USE_REGIONS` synchronous foreground Gen0/Gen1/Gen2 `garbage_collect` / `gc1` lifecycle and budget-based condemnation prefix from `collect.cpp`, `plan_phase.cpp`, and `interface.cpp` |
+| `Diagnostics.cs` | active WKS `USE_REGIONS` DAC publication, diagnostic walks/settings, collection counters, allocation/segment/root/history events, and committed-usage snapshots from `gc.cpp`, `gcee.cpp`, `diagnostics.cpp`, `interface.cpp`, and `allocation.cpp` |
 | `BackgroundGC.cs` | WKS `USE_REGIONS` persistent background-thread creation/wakeup/completion, non-blocking Gen2 routing, initial/final background-mark closure, software-write-watch/card revisit, concurrent region sweep, foreground Gen0/Gen1 coordination, and foreground/allocation waits from `background.cpp`, `collect.cpp`, `gcee.cpp`, and `allocation.cpp` |
 | `GCHeapMemory.cs` | `gcenv.ee.cpp` write-barrier publication, `card_table.cpp` (tables only) |
 | `MarkPhase.cs` | dependency-closed pinned-plug queue, bounded WKS stack/finalizer/handle root lifecycle, partial dirty-card scanning for older SOH/LOH/POH objects, root promotion/relocation bridges, and overflow-recovery helpers from `mark_phase.cpp`, `interface.cpp`, and `gcinternal.h` |
@@ -121,11 +122,12 @@ for this lives in `tests/ManagedGCEntryPointsTests.cs`.
 generated from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Pointer-sized arrays use
 conditional primitive fixed buffers because C# fixed buffers do not accept `nuint`; arrays of
 translated structures are represented by contiguous numbered fields. The handle-table analogues
-are present with the constants and packed segment schema they depend on. Nothing populates a
-`GcDacVars` yet:
-`PopulateDacVars` publishes the addresses of the collector's data structures, which this heap
-does not have. The managed selector therefore leaves its DAC interface version zero, making a
-DAC reject this collector as unsupported until those structures are available.
+are present with the constants and packed segment schema they depend on. The WKS `USE_REGIONS`
+selector now negotiates DAC version 2.8 and `PopulateDacVars` publishes the build variant,
+generation layout/offsets, handle map, finalization queue, mark/sweep/background state, region
+free lists, bookkeeping, OOM history, and GC validity counter. Heap-owned generation,
+ephemeral-segment, and allocation addresses are published after region initialization and
+cleared before teardown. Server, non-region, and the cDAC `gc_descriptor` remain deferred.
 
 The first real handle-table slices establish the schema and segment lifecycle:
 `HandleTableConstants.cs` translates the size, mask, block, clump, and cache arithmetic of
@@ -182,13 +184,15 @@ The GC history schema translates `gcrecord.h`: the
 generation and condition condemn-reason enums, their native two-bit/one-bit packed tuning
 record, the ten-field `gc_generation_data` event payload, `maxgen_size_increase`, and the
 per-heap and global mechanism histories. It also carries the `gc_reason` enum those records use
-from `gc.h`. Its `fgm_history` backing schema and the bounded WKS `init_records` reset/snapshot
-path also mirror `gc.h` and `init.cpp`; they are not routed through `ManagedGCHeap` or extended
-into condemnation or planning. The shared offsets table verifies the public record layouts and
+from `gc.h`. Its `fgm_history` backing schema and the WKS `init_records` reset/snapshot path also
+mirror `gc.h` and `init.cpp`. Foreground and background collections now retain separate live
+records and publish `GCGlobalHeapHistory_V4` / `GCPerHeapHistory_V3` with generation before/after,
+fragmentation, incoming, pinned/non-pinned survivor, allocation, and max-generation planning
+fields. Detailed per-phase timing slots, condemnation-reason tuning, and string-based diagnostic
+`print` bodies remain deferred. The shared offsets table verifies the public record layouts and
 every enum value
 against the real WKS and SVR headers; direct tests cover the private tuning record's size, native
-OR-based bit packing, most-significant-bit mechanism encoding, and mechanism flags. The
-string-based diagnostic `print` bodies remain with the later tracing work.
+OR-based bit packing, most-significant-bit mechanism encoding, and mechanism flags.
 
 `GCPriv.cs` starts the main collector schema with the dependency-free `static_data`,
 `recorded_generation_info`, `last_recorded_gc_info`, `etw_opt_info`, allocation-wait records,
@@ -1155,8 +1159,8 @@ quicksort adversary.
 
 `ManagedGCHeap.GarbageCollect` now routes the bounded workstation `USE_REGIONS` synchronous
 foreground Gen0, Gen1, and Gen2 lifecycle. That path rejects server, optimized, aggressive,
-active-background Gen2, heap-verification, survivor-analysis, and collection-event diagnostic
-modes before mutating collector state. Active-background Gen0/Gen1 follows the foreground
+active-background Gen2, heap-verification, and survivor-analysis modes before mutating collector
+state. Public/private event keywords no longer disable collection. Active-background Gen0/Gen1 follows the foreground
 handoff instead of waiting for BGC completion. It owns suspension/restart,
 fixes allocation contexts, initializes records and mechanisms, selects the requested or
 budget-elevated condemned generation, calls `GcStartWork`, runs mark and the completed
@@ -1177,7 +1181,9 @@ retains the GC lock through ephemeral sweep, then releases it for concurrent Gen
 same worker handles later cycles and is signaled and joined at shutdown. Dead spans are threaded
 for allocation reuse, empty regions are unlinked and returned through the deferred region path,
 and background history stays separate from intervening foreground records until post-sweep
-publication. Changed-segment diagnostics and full per-phase tuning remain deferred.
+publication. Both paths preserve GC start/range/trigger/end/heap-stat/history/committed-usage
+ordering; background waits and phase transitions publish their private events. Changed-segment
+diagnostics and full per-phase tuning remain deferred.
 
 Allocation now also performs the native `GC_ALLOC_FINALIZE` registration before returning an
 uninitialized finalizable object to the EE, including the allocation-failure free-object
@@ -1226,8 +1232,9 @@ selected SOH/UOH allocation pointer, computes and clears the native right-edge s
 zeroing-optional syncblock/object rules, and publishes the segment's used boundary. It releases
 the selected more-space lock through the unmanaged callback before clearing, and the wrapper
 does not release it again. UOH allocation during background planning publishes the native mark-array bit when the object is
-inside an unswept saved range. Allocation events and verification remain explicit
-collector-owned deferrals.
+inside an unswept saved range. Allocation refills maintain the native 100-KiB running thresholds
+and publish `GCAllocationTick_V4` after releasing the more-space lock. Verification remains
+behind its native feature guard.
 The segment-end leaf also selects the committed or reserved endpoint, derives the allocation
 limit, grows the segment through the accounted virtual-commit helper, propagates commit and
 hard-limit failures, and hands the range to that refill transition. Its UOH wrapper walks

@@ -660,6 +660,14 @@ internal unsafe partial struct gc_heap
         reloc_survivor_helper((gc_heap*)context, pval);
     }
 
+    private static void reloc_loh_survivor_helper_callback(
+        byte** pval,
+        void* context)
+    {
+        RecordLohReference(*pval);
+        reloc_survivor_helper((gc_heap*)context, pval);
+    }
+
     public static void relocate_obj_helper(gc_heap* hp, byte* x, nuint s)
     {
         if (contain_pointers(x) != 0)
@@ -1136,6 +1144,7 @@ internal unsafe partial struct gc_heap
 
     public static void relocate_in_loh_compact(gc_heap* hp)
     {
+        BeginLohRelocate();
         generation* gen = generation_of(
             generation_table_of(hp),
             (int)gc_generation_num.loh_generation);
@@ -1168,7 +1177,7 @@ internal unsafe partial struct gc_heap
                         o,
                         size(o),
                         hp,
-                        &reloc_survivor_helper_callback);
+                        &reloc_loh_survivor_helper_callback);
                 }
 
                 o += (nint)object_size;
@@ -1186,10 +1195,13 @@ internal unsafe partial struct gc_heap
                 }
             }
         }
+
+        EndLohRelocate();
     }
 
     public static void compact_loh(gc_heap* hp)
     {
+        BeginLohCompact();
         Debug.Assert(
             loh_compaction_requested() != 0 ||
             heap_hard_limit != 0 ||
@@ -1304,6 +1316,7 @@ internal unsafe partial struct gc_heap
         }
 
         Debug.Assert(loh_pinned_plug_que_empty_p() != 0);
+        EndLohCompact();
     }
 
 #if !MULTIPLE_HEAPS

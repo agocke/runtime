@@ -1034,6 +1034,7 @@ internal unsafe partial struct gc_heap
         sc.thread_number = heap->heap_number;
         sc.thread_count = 1;
         sc.promotion = 1;
+        nuint lastPromotedBytes = 0;
 
         GCToEEInterface.BeforeGcScanRoots(
             condemned_gen_number,
@@ -1055,6 +1056,7 @@ internal unsafe partial struct gc_heap
                 GCInterfaceOffsets.max_generation,
                 &sc);
             drain_mark_queue(heap);
+            FireMarkEvent(4, heap, ref lastPromotedBytes);
         }
 
         GCScan.GcScanRoots(
@@ -1063,12 +1065,14 @@ internal unsafe partial struct gc_heap
             GCInterfaceOffsets.max_generation,
             &sc);
         drain_mark_queue(heap);
+        FireMarkEvent(0, heap, ref lastPromotedBytes);
 
         CFinalize* finalizeQueue = gc_heap.finalize_queue;
         if (finalizeQueue is not null)
         {
             finalizeQueue->GcScanRoots(&promote, heap->heap_number, null);
             drain_mark_queue(heap);
+            FireMarkEvent(1, heap, ref lastPromotedBytes);
         }
 
         GCScan.GcScanHandles(
@@ -1077,6 +1081,7 @@ internal unsafe partial struct gc_heap
             GCInterfaceOffsets.max_generation,
             &sc);
         drain_mark_queue(heap);
+        FireMarkEvent(2, heap, ref lastPromotedBytes);
 
         if (condemned_gen_number < GCInterfaceOffsets.max_generation)
         {
@@ -1092,6 +1097,7 @@ internal unsafe partial struct gc_heap
                 relocating: false);
             drain_mark_queue(heap);
             update_old_card_survived();
+            FireMarkEvent(3, heap, ref lastPromotedBytes);
         }
 
         if (ObjectHandle.DependentHandleContextsInitialized)
@@ -1102,6 +1108,7 @@ internal unsafe partial struct gc_heap
                 GCInterfaceOffsets.max_generation,
                 &sc);
             scan_dependent_handles(condemned_gen_number, &sc, initial_scan_p: true);
+            FireMarkEvent(6, heap, ref lastPromotedBytes);
         }
 
 #if FEATURE_JAVAMARSHAL
@@ -1148,11 +1155,13 @@ internal unsafe partial struct gc_heap
         finalization_promoted_bytes = promotedBytesWithFinalization >= promotedBytesLive
             ? promotedBytesWithFinalization - promotedBytesLive
             : 0;
+        FireMarkEvent(7, heap, ref lastPromotedBytes);
         GCToEEInterface.DiagWalkFReachableObjects(heap);
 
         if (ObjectHandle.DependentHandleContextsInitialized)
         {
             scan_dependent_handles(condemned_gen_number, &sc, initial_scan_p: false);
+            FireMarkEvent(6, heap, ref lastPromotedBytes);
         }
 
         GCScan.GcWeakPtrScan(
@@ -2008,8 +2017,8 @@ internal unsafe partial struct gc_heap
 
     public static void pin_object(byte* o, byte** ppObject)
     {
-        _ = ppObject;
         ((CObjectHeader*)o)->SetPinned();
+        GCEvents.GCEventFirePinObjectAtGCTime(o, ppObject);
         num_pinned_objects++;
     }
 

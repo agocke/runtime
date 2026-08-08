@@ -163,6 +163,7 @@ internal static unsafe class ManagedGCRegionBootstrap
             gc_heap.ephemeral_high,
             gc_heap.map_region_to_generation_skewed,
             (byte)gc_heap.min_segment_size_shr);
+        gc_heap.PublishHeapDacVars(s_heap);
         s_initialized = true;
         return true;
 
@@ -301,6 +302,7 @@ internal static unsafe class ManagedGCRegionBootstrap
 
         if (s_heap is not null)
         {
+            gc_heap.UnpublishHeapDacVars();
             SyncImports.ManagedGC_Free(s_heap);
             s_heap = null;
         }

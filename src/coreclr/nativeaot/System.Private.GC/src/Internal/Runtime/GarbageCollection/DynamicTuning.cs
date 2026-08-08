@@ -259,10 +259,13 @@ internal unsafe partial struct gc_heap
         if (configuredPhysicalMemory != 0)
         {
             total_physical_mem = unchecked((ulong)configuredPhysicalMemory);
+            physical_memory_from_config =
+                unchecked((nuint)configuredPhysicalMemory);
             is_restricted_physical_mem = 0;
         }
         else
         {
+            physical_memory_from_config = 0;
             byte restricted = 0;
             total_physical_mem = GCToOSInterface.GetPhysicalMemoryLimit(&restricted);
             is_restricted_physical_mem = restricted;

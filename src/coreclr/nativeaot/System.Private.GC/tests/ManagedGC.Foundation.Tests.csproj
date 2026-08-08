@@ -118,6 +118,7 @@
     <Compile Include="../src/Internal/Runtime/GarbageCollection/BackgroundGC.cs" Link="BackgroundGC.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCAllocation.cs" Link="GCAllocation.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/Collect.cs" Link="Collect.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/Diagnostics.cs" Link="Diagnostics.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCCommon.cs" Link="GCCommon.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/GCDesc.cs" Link="GCDesc.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/DynamicTuning.cs" Link="DynamicTuning.cs" />

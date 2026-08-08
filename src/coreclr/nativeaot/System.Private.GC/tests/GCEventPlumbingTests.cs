@@ -179,6 +179,105 @@ public sealed unsafe class GCEventPlumbingTests
         Assert.Equal(8u, BinaryPrimitives.ReadUInt32LittleEndian(payload[34..]));
     }
 
+    [Fact]
+    public void AllocationTickUsesNativeThresholdAndPayload()
+    {
+        gc_heap.ResetDiagnosticEventStateForTest();
+        GCToEEInterface.Reset();
+        GCEventStatus.Set(
+            GCEventProvider.Default,
+            GCEventKeyword.GC,
+            GCEventLevel.Verbose);
+
+        nuint allocationAmount = 0;
+        Assert.False(gc_heap.UpdateAllocationInfo(
+            (int)gc_generation_num.soh_gen0,
+            100 * 1024,
+            &allocationAmount));
+        Assert.True(gc_heap.UpdateAllocationInfo(
+            (int)gc_generation_num.soh_gen0,
+            1,
+            &allocationAmount));
+        Assert.Equal((nuint)(100 * 1024 + 1), allocationAmount);
+
+        gc_heap.FireAllocationEvent(
+            allocationAmount,
+            (int)gc_generation_num.soh_gen0,
+            (byte*)0x1234,
+            64);
+
+        Assert.Equal(
+            GCToEEInterface.FiredEvent.GCAllocationTick_V4,
+            GCToEEInterface.LastFiredEvent);
+        Assert.Equal((ulong)allocationAmount, GCToEEInterface.LastAllocationAmount);
+        Assert.Equal((uint)gc_oh_num.soh, GCToEEInterface.LastAllocationKind);
+        Assert.Equal(0u, GCToEEInterface.LastAllocationHeapIndex);
+        Assert.Equal((nuint)0x1234, (nuint)GCToEEInterface.LastAllocationObjectAddress);
+        Assert.Equal(64ul, GCToEEInterface.LastAllocationObjectSize);
+    }
+
+    [Fact]
+    public void HistoryEventsPublishNativeCountsAndElementSizes()
+    {
+        GCToEEInterface.Reset();
+        GCEventStatus.Set(
+            GCEventProvider.Default,
+            GCEventKeyword.GC,
+            GCEventLevel.Information);
+        gc_heap.settings = default;
+        gc_heap.settings.compaction = 1;
+        gc_heap.settings.condemned_generation =
+            (int)gc_generation_num.soh_gen2;
+        gc_heap.settings.reason = gc_reason.reason_induced;
+        gc_heap.gc_data_global = default;
+        gc_heap.gc_data_global.final_youngest_desired = 0x1234;
+        gc_heap.gc_data_per_heap = default;
+        gc_heap.gc_data_per_heap.heap_index = 0;
+
+        gc_heap.FirePrivateEvents();
+
+        Assert.Equal(
+            GCToEEInterface.FiredEvent.GCPerHeapHistory_V3,
+            GCToEEInterface.LastFiredEvent);
+        Assert.Equal(8u, GCToEEInterface.LastGlobalHistoryCount);
+        Assert.Equal((uint)sizeof(uint), GCToEEInterface.LastGlobalHistoryValueSize);
+        Assert.Equal(
+            (uint)gc_generation_num.total_generation_count,
+            GCToEEInterface.LastPerHeapHistoryCount);
+        Assert.Equal(
+            (uint)sizeof(gc_generation_data),
+            GCToEEInterface.LastPerHeapHistoryValueSize);
+    }
+
+    [Fact]
+    public void DiagnosticSettingsPublishConfiguredCollectorState()
+    {
+        gc_heap.heap_hard_limit = 0x1000;
+        gc_heap.physical_memory_from_config = 0x2000;
+        gc_heap.gen0_min_budget_from_config = 0x3000;
+        gc_heap.gen0_max_budget_from_config = 0x4000;
+        gc_heap.high_mem_percent_from_config = 75;
+        gc_heap.gc_can_use_concurrent = true;
+        gc_heap.use_large_pages_p = 1;
+        gc_heap.use_frozen_segments_p = 1;
+        gc_heap.hard_limit_config_p = true;
+        EtwGCSettingsInfo settings = default;
+
+        gc_heap.DiagGetSettings(&settings, 85_000);
+
+        Assert.Equal((nuint)0x1000, settings.heap_hard_limit);
+        Assert.Equal((nuint)85_000, settings.loh_threshold);
+        Assert.Equal((nuint)0x2000, settings.physical_memory_from_config);
+        Assert.Equal((nuint)0x3000, settings.gen0_min_budget_from_config);
+        Assert.Equal((nuint)0x4000, settings.gen0_max_budget_from_config);
+        Assert.Equal(75u, settings.high_mem_percent_from_config);
+        Assert.Equal((byte)1, settings.concurrent_gc_p);
+        Assert.Equal((byte)1, settings.use_large_pages_p);
+        Assert.Equal((byte)1, settings.use_frozen_segments_p);
+        Assert.Equal((byte)1, settings.hard_limit_config_p);
+        Assert.Equal((byte)1, settings.no_affinitize_p);
+    }
+
     private static ReadOnlySpan<byte> AssertDynamicEvent(string name, int payloadSize)
     {
         Assert.Equal(GCToEEInterface.FiredEvent.Dynamic, GCToEEInterface.LastFiredEvent);

@@ -5,12 +5,14 @@
     <!-- Links clrgc.managed.cpp as the GC selector and roots the runtime exports in
          System.Private.GC, so the managed GC bring-up path runs during startup. -->
     <IlcManagedGC>true</IlcManagedGC>
+    <EventSourceSupport>true</EventSourceSupport>
     <!-- Test infra issue on apple devices: https://github.com/dotnet/runtime/issues/89917 -->
     <CLRTestTargetUnsupported Condition="'$(TargetsAppleMobile)' == 'true'">true</CLRTestTargetUnsupported>
     <RequiresProcessIsolation>true</RequiresProcessIsolation>
     <ReferenceXUnitWrapperGenerator>false</ReferenceXUnitWrapperGenerator>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="EventPipeGcSmoke.cs" />
     <Compile Include="ManagedGC.cs" />
     <CLRTestEnvironmentVariable Include="DOTNET_gcConcurrent" Value="0" />
     <!-- GC integer environment values are hexadecimal: 0x10000000 = 256 MB. -->

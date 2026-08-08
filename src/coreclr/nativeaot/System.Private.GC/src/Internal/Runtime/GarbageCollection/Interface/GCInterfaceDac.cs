@@ -16,10 +16,9 @@
 // interface: asserted against the C++ header by the native build and against these types by
 // GCInterfaceLayout.
 //
-// Nothing populates a GcDacVars yet: PopulateDacVars publishes the addresses of the collector's
-// data structures, which do not exist in this GC. The runtime writes the DAC interface version
-// it supports into the struct before calling GC_Initialize, and leaving it as it arrived is
-// what tells a DAC that this GC has no state it knows how to read.
+// The WKS USE_REGIONS collector populates this structure from Diagnostics.cs. Heap-owned
+// addresses are completed after the region heap is initialized and cleared before it is freed;
+// server and non-region publication remain deferred.
 
 using System.Runtime.InteropServices;
 

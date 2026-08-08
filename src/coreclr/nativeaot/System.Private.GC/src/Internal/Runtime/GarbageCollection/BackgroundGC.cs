@@ -230,11 +230,7 @@ internal unsafe partial struct gc_heap
             !concurrent_gc_enabled() ||
             GCConfig.GetServerGC() != 0 ||
             GCConfig.GetHeapVerifyLevel() != 0 ||
-            survivorAnalysisRequested ||
-            (GCEventStatus.GetEnabledKeywords(GCEventProvider.Default) &
-                UnsupportedPublicCollectionKeywords) != 0 ||
-            (GCEventStatus.GetEnabledKeywords(GCEventProvider.Private) &
-                UnsupportedPrivateCollectionKeywords) != 0)
+            survivorAnalysisRequested)
         {
             return collection_e_notimpl;
         }
@@ -272,6 +268,7 @@ internal unsafe partial struct gc_heap
         settings.reason = low_memory_p != 0
             ? gc_reason.reason_lowmemory
             : reason;
+        GCEvents.GCEventFireGCTriggered(unchecked((uint)settings.reason));
         settings.condemned_generation = GCInterfaceOffsets.max_generation;
         settings.promotion = 1;
         settings.compaction = 0;
@@ -295,6 +292,9 @@ internal unsafe partial struct gc_heap
         GCToEEInterface.GcStartWork(
             GCInterfaceOffsets.max_generation,
             GCInterfaceOffsets.max_generation);
+        UpdatePreGCCounters(hp);
+        FireCommittedUsageEvent();
+        UpdateEventStatusForLinux();
         GCEvents.GCEventFireBGCBegin();
 
         background_saved_lowest_address = lowest_address;
@@ -1407,6 +1407,10 @@ internal unsafe partial struct gc_heap
                 generation.generation_free_obj_space(gen);
         }
 
+        bgc_data_global.final_youngest_desired =
+            dynamic_data.dd_desired_allocation(
+                dynamic_data_of(hp, (int)gc_generation_num.soh_gen0));
+        FirePrivateEvents();
         rearrange_uoh_segments();
         compute_gc_and_ephemeral_range(
             hp,
@@ -1426,6 +1430,7 @@ internal unsafe partial struct gc_heap
         fgn_last_alloc = unchecked((nuint)dynamic_data.dd_new_allocation(
             dynamic_data_of(hp, (int)gc_generation_num.soh_gen0)));
         GCToEEInterface.GcDone(GCInterfaceOffsets.max_generation);
+        UpdatePostGCCounters(hp);
     }
 
     private static void complete_background_gc(bool collectionCompleted)
@@ -1619,7 +1624,9 @@ internal unsafe partial struct gc_heap
         }
     }
 
-    public static uint background_gc_wait(uint timeout = GCEnv.INFINITE)
+    public static uint background_gc_wait(
+        uint timeout = GCEnv.INFINITE,
+        alloc_wait_reason reason = alloc_wait_reason.awr_ignored)
     {
         if (!background_gc_done_event.IsValid())
         {
@@ -1627,7 +1634,16 @@ internal unsafe partial struct gc_heap
         }
 
         bool toggled = GCToEEInterface.EnablePreemptiveGC() != 0;
+        if (reason != alloc_wait_reason.awr_ignored)
+        {
+            GCEvents.GCEventFireBGCAllocWaitBegin(unchecked((uint)reason));
+        }
+
         uint result = background_gc_done_event.Wait(timeout, alertable: false);
+        if (reason != alloc_wait_reason.awr_ignored)
+        {
+            GCEvents.GCEventFireBGCAllocWaitEnd(unchecked((uint)reason));
+        }
 
         if (toggled)
         {
@@ -1769,9 +1785,12 @@ internal unsafe partial struct gc_heap
         return collection_e_notimpl;
     }
 
-    public static uint background_gc_wait(uint timeout = GCEnv.INFINITE)
+    public static uint background_gc_wait(
+        uint timeout = GCEnv.INFINITE,
+        alloc_wait_reason reason = alloc_wait_reason.awr_ignored)
     {
         _ = timeout;
+        _ = reason;
         return GCEnv.WAIT_OBJECT_0;
     }
 #endif

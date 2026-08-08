@@ -1387,6 +1387,13 @@ namespace Internal.Runtime.GarbageCollection
             process_start_time = 0;
             last_alloc_reset_suspended_end_time = 0;
             total_physical_mem = 0;
+            physical_memory_from_config = 0;
+            gen0_min_budget_from_config = 0;
+            gen0_max_budget_from_config = 0;
+            high_mem_percent_from_config = 0;
+            use_large_pages_p = 0;
+            use_frozen_segments_p = 0;
+            oom_info = default;
             is_restricted_physical_mem = 0;
             hard_limit_config_p = false;
             reserved_memory_limit = 0;
@@ -3296,7 +3303,7 @@ namespace Internal.Runtime.GarbageCollection
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal struct gc_mechanisms
+    internal unsafe struct gc_mechanisms
     {
         public nuint gc_index;
         public int condemned_generation;
@@ -3365,6 +3372,53 @@ namespace Internal.Runtime.GarbageCollection
             pause_mode = gc_pause_mode.pause_batch;
 #endif
             init_mechanisms();
+        }
+
+        public void record(gc_history_global* history)
+        {
+            history->num_heaps = 1;
+            history->condemned_generation = condemned_generation;
+            history->gen0_reduction_count = gen0_reduction_count;
+            history->reason = reason;
+            history->pause_mode = (int)pause_mode;
+            history->mem_pressure = entry_memory_load;
+            history->global_mechanisms_p = 0;
+
+            if (concurrent != 0)
+            {
+                history->set_mechanism_p(
+                    gc_global_mechanism_p.global_concurrent);
+            }
+
+            if (compaction != 0)
+            {
+                history->set_mechanism_p(
+                    gc_global_mechanism_p.global_compaction);
+            }
+
+            if (promotion != 0)
+            {
+                history->set_mechanism_p(
+                    gc_global_mechanism_p.global_promotion);
+            }
+
+            if (demotion != 0)
+            {
+                history->set_mechanism_p(
+                    gc_global_mechanism_p.global_demotion);
+            }
+
+            if (card_bundles != 0)
+            {
+                history->set_mechanism_p(
+                    gc_global_mechanism_p.global_card_bundles);
+            }
+
+            if (elevation_reduced != 0)
+            {
+                history->set_mechanism_p(
+                    gc_global_mechanism_p.global_elevation);
+            }
         }
     }
 

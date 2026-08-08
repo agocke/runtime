@@ -2418,6 +2418,13 @@ internal unsafe partial struct gc_heap
 
                 if (pinned_plug_p != 0)
                 {
+                    GCEvents.GCEventFirePinPlugAtGCTime(
+                        plug_start,
+                        plug_end,
+                        merge_with_last_pin_p != 0
+                            ? null
+                            : (byte*)node_gap_size(plug_start));
+
                     if (merge_with_last_pin_p != 0)
                     {
                         merge_with_last_pinned_plug(hp, last_pinned_plug, ps);
@@ -2531,10 +2538,22 @@ internal unsafe partial struct gc_heap
         }
 
         loh_compacted_p = 0;
+        ResetLohCompactInfo();
         if (condemned_gen_number == GCInterfaceOffsets.max_generation &&
             settings.loh_compaction != 0)
         {
-            if (shouldCompact && plan_loh(hp))
+            bool lohPlanSucceeded = false;
+            if (shouldCompact)
+            {
+                BeginLohPlan();
+                lohPlanSucceeded = plan_loh(hp);
+                if (lohPlanSucceeded)
+                {
+                    EndLohPlan();
+                }
+            }
+
+            if (lohPlanSucceeded)
             {
                 loh_compacted_p = 1;
             }
@@ -2547,6 +2566,18 @@ internal unsafe partial struct gc_heap
             loh_pinned_queue is not null)
         {
             decay_loh_pinned_queue();
+        }
+
+        if (condemned_gen_number ==
+            GCInterfaceOffsets.max_generation - 1)
+        {
+            Debug.Assert(older_gen is not null);
+            SnapshotGen2GrowthHistory(
+                older_gen,
+                saved_free_obj_space,
+                saved_free_list_allocated,
+                saved_condemned_allocated,
+                saved_end_seg_allocated);
         }
 
         _ = shouldExpand;
@@ -2810,12 +2841,14 @@ internal unsafe partial struct gc_heap
         uint highmem_th_from_config = unchecked((uint)GCConfig.GetGCHighMemPercent());
         if (highmem_th_from_config != 0)
         {
+            high_mem_percent_from_config = highmem_th_from_config;
             high_memory_load_th = highmem_th_from_config < 99 ? highmem_th_from_config : 99;
             uint very_high_memory_load = unchecked(high_memory_load_th + 7);
             v_high_memory_load_th = very_high_memory_load < 99 ? very_high_memory_load : 99;
         }
         else
         {
+            high_mem_percent_from_config = 0;
             int available_mem_th = 10;
             if (total_physical_mem >= 80UL * 1024 * 1024 * 1024)
             {

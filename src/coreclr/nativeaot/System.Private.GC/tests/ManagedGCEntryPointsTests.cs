@@ -149,7 +149,7 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         Assert.Equal(1, GCInterfaceLayout.VerifyCallCount);
         Assert.Equal(1, ManagedGCHandleManager.CreateCallCount);
         Assert.Equal(1, ManagedGCHeap.CreateCallCount);
-        Assert.Equal(5, gcDacVars.major_version_number);
+        Assert.Equal(2, gcDacVars.major_version_number);
         Assert.Equal(8, gcDacVars.minor_version_number);
     }
 
@@ -177,8 +177,46 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         Assert.Equal(1, GCInterfaceLayout.VerifyCallCount);
         Assert.Equal(1, ManagedGCHandleManager.CreateCallCount);
         Assert.Equal(1, ManagedGCHeap.CreateCallCount);
-        Assert.Equal(5, gcDacVars.major_version_number);
+        Assert.Equal(2, gcDacVars.major_version_number);
         Assert.Equal(8, gcDacVars.minor_version_number);
+        Assert.Equal((nuint)sizeof(generation), gcDacVars.generation_size);
+        Assert.Equal(
+            (nuint)gc_generation_num.total_generation_count,
+            gcDacVars.total_generation_count);
+        Assert.True(gcDacVars.build_variant is not null);
+        Assert.Equal(
+            GCInterfaceDacConstants.build_variant_use_region |
+                GCInterfaceDacConstants.build_variant_background_gc,
+            *gcDacVars.build_variant);
+        Assert.True(gcDacVars.built_with_svr is not null);
+        Assert.Equal(0, *gcDacVars.built_with_svr);
+        Assert.True(gcDacVars.max_gen is not null);
+        Assert.Equal((uint)GCInterfaceOffsets.max_generation, *gcDacVars.max_gen);
+        Assert.True(gcDacVars.gc_structures_invalid_cnt is not null);
+        Assert.True(gcDacVars.handle_table_map is not null);
+        Assert.True(gcDacVars.generation_field_offsets is not null);
+        int* generationOffsets = (int*)gcDacVars.generation_field_offsets;
+        Assert.Equal(0, generationOffsets[0]);
+        generation generationValue = default;
+        Assert.Equal(
+            (int)((byte*)&generationValue.start_segment -
+                (byte*)&generationValue),
+            generationOffsets[1]);
+        Assert.Equal(-1, generationOffsets[2]);
+        Assert.Equal(
+            (int)bookkeeping_element.total_bookkeeping_elements,
+            gcDacVars.total_bookkeeping_elements);
+        Assert.Equal(
+            (int)free_region_kind.count_free_region_kinds,
+            gcDacVars.count_free_region_kinds);
+        Assert.Equal((nuint)sizeof(card_table_info), gcDacVars.card_table_info_size);
+        Assert.True(gcDacVars.bookkeeping_start is not null);
+        Assert.True(gcDacVars.global_regions_to_decommit is not null);
+        Assert.True(gcDacVars.global_free_huge_regions is not null);
+        Assert.True(gcDacVars.free_regions is not null);
+        Assert.True(gcDacVars.generation_table is null);
+        Assert.True(gcDacVars.ephemeral_heap_segment is null);
+        Assert.True(gcDacVars.alloc_allocated is null);
 #if USE_REGIONS
         Assert.Equal(GCSpinLock.lock_free, GCWriteBarrier.write_barrier_spin_lock.@lock);
         Assert.Equal(nuint.MaxValue, (nuint)gc_heap.ephemeral_low);
@@ -198,12 +236,14 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
     [InlineData(4)]
     [InlineData(5)]
     [InlineData(6)]
-    [InlineData(7)]
     [InlineData(8)]
     public void FullGen2CollectionRejectsUnsupportedStateBeforeMutation(int guard)
     {
         GCConfig.Initialize();
-        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+        GCEventStatus.Set(
+            GCEventProvider.Default,
+            GCEventKeyword.None,
+            GCEventLevel.None);
         GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
         gc_heap.settings = default;
         gc_heap.settings.gc_index = 37;
@@ -236,12 +276,6 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
             case 6:
                 GCToEEInterface.AnalyzeSurvivorsRequestedResult = 1;
                 break;
-            case 7:
-                GCEventStatus.Set(
-                    GCEventProvider.Default,
-                    GCEventKeyword.GC,
-                    GCEventLevel.Information);
-                break;
             case 8:
                 gc_heap.gc_background_running = 1;
                 break;
@@ -265,7 +299,10 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
     {
         GCToOSInterface.ResetRecording();
         GCConfig.Initialize();
-        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+        GCEventStatus.Set(
+            GCEventProvider.Default,
+            GCEventKeyword.GC,
+            GCEventLevel.Information);
         GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
         GCCommon.initialize();
         Assert.True(gc_heap.check_commit_cs.Initialize());
@@ -298,6 +335,9 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
             Assert.Equal(1, GCToEEInterface.RestartEECallCount);
             Assert.Equal((byte)1, GCToEEInterface.LastRestartFinishedGC);
             Assert.Equal(1, GCToEEInterface.EnableFinalizationCallCount);
+            Assert.Equal(
+                GCToEEInterface.FiredEvent.GCHeapStats_V2,
+                GCToEEInterface.LastFiredEvent);
             Assert.Equal(
                 new[]
                 {
@@ -613,6 +653,12 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         GCCommon.initialize();
         Assert.True(gc_heap.check_commit_cs.Initialize());
         Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+        GcDacVars gcDacVars = default;
+        gcDacVars.minor_version_number = 8;
+        gc_heap.PopulateDacVars(&gcDacVars);
+        Assert.True(gcDacVars.generation_table is null);
+        Assert.True(gcDacVars.ephemeral_heap_segment is null);
+        Assert.True(gcDacVars.alloc_allocated is null);
 
         try
         {
@@ -625,6 +671,15 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
             Assert.True(generations is not null);
             Assert.True(ephemeral is not null);
             Assert.True(range is not null);
+            Assert.Equal(
+                (nuint)generations,
+                (nuint)gcDacVars.generation_table);
+            Assert.Equal(
+                (nuint)ephemeral,
+                (nuint)(*gcDacVars.ephemeral_heap_segment));
+            Assert.Equal(
+                (nuint)ManagedGCRegionBootstrap.AllocAllocated,
+                (nuint)(*gcDacVars.alloc_allocated));
             Assert.True(ManagedGCRegionBootstrap.ReservedRegionRangeSize >= 19 * gc_heap.DefaultMinSegmentSize);
             Assert.Equal((nuint)ephemeral, (nuint)generation.generation_allocation_segment(
                 gc_heap.generation_of(generations, (int)gc_generation_num.soh_gen0)));
@@ -657,9 +712,41 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
 
             s_describedGenerationCount = 0;
             s_describedGenerationFailure = 0;
-            ManagedGCRegionBootstrap.DescribeGenerations(&RecordDescribedGeneration, null);
+            gc_heap.DiagDescribeGenerations(&RecordDescribedGeneration, null);
             Assert.Equal((int)gc_generation_num.total_generation_count, s_describedGenerationCount);
             Assert.Equal(0, s_describedGenerationFailure);
+
+            byte* start = null;
+            byte* allocated = null;
+            byte* reserved = null;
+            uint generationNumber = 0;
+            Assert.True(ManagedGCRegionBootstrap.TryGetGenerationWithRange(
+                heap_segment.heap_segment_mem(ephemeral),
+                &start,
+                &allocated,
+                &reserved,
+                &generationNumber));
+            Assert.Equal((uint)gc_generation_num.soh_gen0, generationNumber);
+            Assert.Equal(
+                (nuint)heap_segment.heap_segment_mem(ephemeral),
+                (nuint)start);
+            Assert.Equal(
+                (nuint)heap_segment.heap_segment_allocated(ephemeral),
+                (nuint)allocated);
+            Assert.Equal(
+                (nuint)heap_segment.heap_segment_reserved(ephemeral),
+                (nuint)reserved);
+
+            GCToEEInterface.Reset();
+            GCEventStatus.Set(
+                GCEventProvider.Default,
+                GCEventKeyword.GC,
+                GCEventLevel.Information);
+            gc_heap.DiagTraceSegments();
+            Assert.Equal(3, GCToEEInterface.GCCreateSegmentCallCount);
+            Assert.Equal(
+                (uint)gc_etw_segment_type.gc_etw_segment_pinned_object_heap,
+                GCToEEInterface.LastGCCreateSegmentType);
         }
         finally
         {
@@ -673,6 +760,9 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         Assert.True(ManagedGCRegionBootstrap.ReservedRegionRange is null);
         Assert.True(gc_heap.initial_regions is null);
         Assert.True(gc_heap.bookkeeping_start is null);
+        Assert.True(gcDacVars.generation_table is null);
+        Assert.True(gcDacVars.ephemeral_heap_segment is null);
+        Assert.True(gcDacVars.alloc_allocated is null);
         Assert.Equal((nuint)0, gc_heap.current_total_committed);
         Assert.Equal((nuint)0, gc_heap.current_total_committed_bookkeeping);
     }
@@ -1316,6 +1406,7 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
 
     private static void ResetState()
     {
+        gc_heap.ResetDacPublicationForTest();
 #if USE_REGIONS
         ManagedGCRegionBootstrap.Shutdown();
 #endif

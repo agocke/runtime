@@ -105,6 +105,12 @@ internal static unsafe class ManagedGCHeap
 
     public static int CreateCallCount { get; private set; }
 
+    public static bool CollectionInProgressForDiagnostics => false;
+
+    public static void DiagTraceFrozenSegments()
+    {
+    }
+
     public static uint TestGeneration { get; set; }
 
     public static nint TestGenerationObject { get; set; }

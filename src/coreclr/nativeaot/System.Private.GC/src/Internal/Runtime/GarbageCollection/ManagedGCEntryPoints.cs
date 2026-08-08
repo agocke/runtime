@@ -66,10 +66,8 @@ namespace Internal.Runtime.GarbageCollection
         /// Brings up the managed GC. Port of <c>GC_Initialize</c>.
         /// </summary>
         /// <remarks>
-        /// The heap this hands back allocates but never collects (see
-        /// <see cref="ManagedGCHeap"/>), so an application runs until it has exhausted the
-        /// region and then gets OOM. Because <c>IlcManagedGC</c> is an explicit opt-in,
-        /// initialization failures fail runtime startup rather than selecting the C++ GC.
+        /// Because <c>IlcManagedGC</c> is an explicit opt-in, initialization failures fail
+        /// runtime startup rather than selecting the C++ GC.
         /// </remarks>
         [RuntimeExport("ManagedGC_Initialize")]
         internal static int ManagedGC_Initialize(void* clrToGC, void** gcHeap, void** gcHandleManager, GcDacVars* gcDacVars)
@@ -115,6 +113,7 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             heap = ManagedGCHeap.Create();
+            gc_heap.PopulateDacVars(gcDacVars);
             if (heap == null)
             {
                 return E_OUTOFMEMORY;
@@ -122,10 +121,6 @@ namespace Internal.Runtime.GarbageCollection
 
             *gcHandleManager = handleManager;
             *gcHeap = heap;
-
-            // gcDacVars is left as the runtime handed it over. The managed selector leaves the
-            // DAC interface version zero until PopulateDacVars and the collector structures it
-            // publishes are translated, so a DAC rejects this collector as unsupported.
             return S_OK;
         }
     }

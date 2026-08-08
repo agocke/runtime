@@ -31,6 +31,10 @@ internal static unsafe class GCScan
         return invalidCount == 0;
     }
 
+    public static int* DacInvalidCountAddress() =>
+        (int*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+            ref m_GcStructuresInvalidCnt);
+
     public static void Initialize()
     {
         // The C++ global is initialized to one by the native loader. An explicit call preserves

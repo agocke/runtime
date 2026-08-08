@@ -2218,9 +2218,14 @@ internal unsafe partial struct gc_heap
     private static void init_static_data()
     {
         nuint soh_segment_size = get_valid_segment_size();
+        long configuredGen0Min = GCConfig.GetGen0Size();
+        gen0_min_budget_from_config = configuredGen0Min != 0
+            ? unchecked((nuint)configuredGen0Min)
+            : 0;
         nuint gen0_min_size = get_gen0_min_size(soh_segment_size);
         nuint gen0_max_size;
         nuint gen0_max_size_config = unchecked((nuint)GCConfig.GetGCGen0MaxBudget());
+        gen0_max_budget_from_config = gen0_max_size_config;
 
         if (gen0_max_size_config != 0)
         {
@@ -2540,7 +2545,8 @@ internal unsafe partial struct gc_heap
                     return;
                 }
 
-                background_gc_wait();
+                background_gc_wait(
+                    reason: alloc_wait_reason.awr_alloc_loh_low_mem);
                 result->kind = allocation_callback_result_kind.background_running;
                 return;
 
@@ -2558,7 +2564,11 @@ internal unsafe partial struct gc_heap
                 }
 
                 nuint compactingCollections = full_gc_counts[gc_type_compacting];
-                background_gc_wait();
+                background_gc_wait(
+                    reason: context->gen_number ==
+                        (int)gc_generation_num.soh_gen0
+                            ? alloc_wait_reason.awr_gen0_oos_bgc
+                            : alloc_wait_reason.awr_loh_oos_bgc);
                 result->kind = full_gc_counts[gc_type_compacting] > compactingCollections
                     ? allocation_callback_result_kind.full_compact_gc
                     : allocation_callback_result_kind.no_full_compact_gc;
@@ -3624,6 +3634,11 @@ internal unsafe partial struct gc_heap
 
         if (status != allocation_state.a_state_can_allocate)
         {
+            if (context->oom_r != oom_reason.oom_no_failure)
+            {
+                RecordOom(context);
+            }
+
             allocation_deferred_operation deferred_operation = context->deferred_operation;
             leave_more_space_lock(context, callback);
             context->deferred_operation = deferred_operation;
@@ -3634,9 +3649,8 @@ internal unsafe partial struct gc_heap
             context->deferred_operation == allocation_deferred_operation.none;
     }
 
-    // This is the dependency-closed WKS USE_REGIONS portion of adjust_limit_clr. The BGC mark
-    // bit, allocation event, and verification branches remain deferred with their owning
-    // collector states; this leaf must not report that they ran.
+    // This is the WKS USE_REGIONS portion of adjust_limit_clr. It includes the BGC allocation
+    // mark bit and allocation-tick publication; verification remains behind its native feature.
     public static void adjust_limit_clr(
         byte* start,
         nuint limit_size,
@@ -3689,7 +3703,24 @@ internal unsafe partial struct gc_heap
             }
         }
 
-        set_alloc_context_limit(acontext, start, limit_size, gen_number, align_const, total_alloc_bytes);
+        nuint addedBytes = unchecked(
+            limit_size -
+            (gen_number <= GCInterfaceOffsets.max_generation
+                ? aligned_min_obj_size
+                : 0));
+        set_alloc_context_limit(
+            acontext,
+            start,
+            limit_size,
+            gen_number,
+            align_const,
+            total_alloc_bytes);
+        nuint allocationAmount = 0;
+        bool fireAllocationEvent =
+            UpdateAllocationInfo(
+                gen_number,
+                addedBytes,
+                &allocationAmount);
 
         if (seg is not null && seg == ephemeral_heap_segment)
         {
@@ -3768,6 +3799,15 @@ internal unsafe partial struct gc_heap
             // A concrete more-space lock release is synchronous. If test or incomplete wiring
             // defers it, clearing under the still-held lock is safer than publishing dirty memory.
             memclr(clear_start, unchecked((nuint)(clear_end - clear_start)));
+        }
+
+        if (fireAllocationEvent)
+        {
+            FireAllocationEvent(
+                allocationAmount,
+                gen_number,
+                acontext->alloc_ptr,
+                size);
         }
 
 #if !MULTIPLE_HEAPS

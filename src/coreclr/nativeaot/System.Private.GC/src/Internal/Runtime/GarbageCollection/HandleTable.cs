@@ -437,6 +437,11 @@ namespace Internal.Runtime.GarbageCollection
                         {
                             for (; pTable != pLastTable; pTable++)
                             {
+                                if (*pTable is null)
+                                {
+                                    continue;
+                                }
+
                                 using HandleTableCrstHolder holder = new HandleTableCrstHolder(&(*pTable)->Lock);
                                 uCount += HndCountHandles(*pTable);
                             }
@@ -445,7 +450,10 @@ namespace Internal.Runtime.GarbageCollection
                         {
                             for (; pTable != pLastTable; pTable++)
                             {
-                                uCount += HndCountHandles(*pTable);
+                                if (*pTable is not null)
+                                {
+                                    uCount += HndCountHandles(*pTable);
+                                }
                             }
                         }
                     }

@@ -3,11 +3,13 @@
     <OutputType>Exe</OutputType>
     <CLRTestPriority>0</CLRTestPriority>
     <IlcManagedGC>true</IlcManagedGC>
+    <EventSourceSupport>true</EventSourceSupport>
     <CLRTestTargetUnsupported Condition="'$(TargetsAppleMobile)' == 'true'">true</CLRTestTargetUnsupported>
     <RequiresProcessIsolation>true</RequiresProcessIsolation>
     <ReferenceXUnitWrapperGenerator>false</ReferenceXUnitWrapperGenerator>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../ManagedGC/EventPipeGcSmoke.cs" Link="EventPipeGcSmoke.cs" />
     <Compile Include="ManagedGCBgc.cs" />
     <CLRTestEnvironmentVariable Include="DOTNET_gcConcurrent" Value="1" />
     <CLRTestEnvironmentVariable Include="DOTNET_GCRegionRange" Value="10000000" />

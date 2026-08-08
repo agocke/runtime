@@ -16,6 +16,11 @@ internal static class ManagedGCBgcTest
             return 2;
         }
 
+        if (!EventPipeGcSmoke.CollectAndValidate(background: true))
+        {
+            return 3;
+        }
+
         const int NodeCount = 65_536;
         Node root = new Node { Value = 1 };
         Node tail = root;

@@ -51,8 +51,8 @@ The following prerequisites are already working:
   startup.
 - `GC.Collect` routes the bounded WKS `USE_REGIONS` synchronous foreground lifecycle.
   Forced non-blocking Gen2 also routes when concurrent GC is configured; optimized/aggressive,
-  server, heap-verification, survivor-analysis, and collection-event diagnostic modes remain
-  rejected before collector mutation.
+  server, heap-verification, and survivor-analysis modes remain rejected before collector
+  mutation. Public and private collection event modes are routed.
 - Managed GC mutations use suspension-safe critical regions.
 - GC/EE structure layouts, enum values and sizes, and all six vtable slot lists -- with their
   signatures and calling conventions -- are verified against the native headers.
@@ -481,10 +481,9 @@ software write watch, and event plumbing no longer depend on placeholder impleme
   failure semantics that are reachable in `Runtime.ManagedGC`: clear output pointers first,
   record the incoming `IGCToCLR` pointer before further setup, run interface-layout verification,
   initialize managed `GCConfig`, create the handle manager before the heap, return
-  `E_OUTOFMEMORY` on a null creation result, and leave the zero-versioned `GcDacVars` untouched
-  because the translated heap still has no DAC-published internal structures. The zero DAC
-  interface version makes a DAC reject the collector as unsupported rather than interpreting the
-  GC/EE interface version as a newer DAC format. Focused tests in
+  `E_OUTOFMEMORY` on a null creation result. The WKS `USE_REGIONS` path now negotiates DAC 2.8,
+  publishes static collector addresses during `GC_Initialize`, completes heap-owned generation
+  and allocation addresses after region initialization, and clears them before teardown. Focused tests in
   `tests/ManagedGCEntryPointsTests.cs` verify ABI/version reporting and the null-clr/layout/OOM
   failure paths directly.
 - The dependency-closed `GetHighPrecisionTimeStamp` leaf of `gccommon.cpp`, as
@@ -1503,7 +1502,28 @@ match the native collector's synchronization and scheduling behavior.
 
 ### 11. Diagnostics and runtime integration
 
-**Status: Not started**
+**Status: In progress -- active WKS `USE_REGIONS` diagnostics and event integration complete**
+
+The workstation region path now includes:
+
+- DAC 2.8 publication for generation layouts, heap/generation/segment addresses, handle maps,
+  finalization, background mark/sweep state, region free lists, bookkeeping, OOM history, and
+  runtime-structure validity.
+- Finalizer, handle, dependent-handle, generation, and segment diagnostic walks;
+  `DiagGetGCSettings`; and generation-with-range publication.
+- Public and private event control plus collection start/range/trigger/end/stats, allocation,
+  pinning, segment, committed-usage, foreground/background history, BGC phase, wait, handle, and
+  notification events. Event payloads remain allocation-free in collector code.
+- Foundation coverage for DAC addresses/layouts, diagnostic handle flags, range/settings/history
+  payloads, and event thresholds, plus NativeAOT EventPipe smokes for blocking and background GC.
+
+Still deferred:
+
+- Server `MULTIPLE_HEAPS` and non-region diagnostics.
+- cDAC `gc_descriptor`, changed-segment publication, global per-phase timing, and fit-bucket
+  diagnostic payloads.
+- GCStress, heap verification, survivor analysis, and dump-only verification helpers; the
+  collection guards for these modes remain faithful.
 
 Translate and integrate:
 

@@ -127,6 +127,190 @@ internal static unsafe class HandleTableScan
         }
     }
 
+    public static void Ref_ScanHandlesForProfilerAndETW(
+        int max_gen,
+        ScanContext* sc,
+        delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void> fn)
+    {
+        uint* types = stackalloc uint[]
+        {
+            (uint)HandleType.HNDTYPE_WEAK_SHORT,
+            (uint)HandleType.HNDTYPE_WEAK_LONG,
+            (uint)HandleType.HNDTYPE_STRONG,
+            (uint)HandleType.HNDTYPE_REFCOUNTED,
+            (uint)HandleType.HNDTYPE_WEAK_NATIVE_COM,
+            (uint)HandleType.HNDTYPE_PINNED,
+            (uint)HandleType.HNDTYPE_VARIABLE,
+            (uint)HandleType.HNDTYPE_ASYNCPINNED,
+            (uint)HandleType.HNDTYPE_SIZEDREF,
+            (uint)HandleType.HNDTYPE_WEAK_INTERIOR_POINTER,
+#if FEATURE_JAVAMARSHAL
+            (uint)HandleType.HNDTYPE_CROSSREFERENCE,
+#endif
+        };
+
+        TraceHandleTables(
+            &ScanPointerForProfilerAndETW,
+            (nuint)sc,
+            (nuint)fn,
+            types,
+#if FEATURE_JAVAMARSHAL
+            11,
+#else
+            10,
+#endif
+            max_gen,
+            max_gen,
+            HandleTableConstants.HNDGCF_NORMAL);
+
+        TraceVariableHandles(
+            &ScanPointerForProfilerAndETW,
+            sc,
+            (nuint)fn,
+            ObjectHandle.VHT_WEAK_SHORT |
+                ObjectHandle.VHT_WEAK_LONG |
+                ObjectHandle.VHT_STRONG,
+            max_gen,
+            max_gen,
+            HandleTableConstants.HNDGCF_NORMAL);
+    }
+
+    public static void Ref_ScanDependentHandlesForProfilerAndETW(
+        int max_gen,
+        ScanContext* sc,
+        delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void> fn)
+    {
+        DiagDependentScanInfo info = new()
+        {
+            callback = fn,
+        };
+        uint type = (uint)HandleType.HNDTYPE_DEPENDENT;
+        TraceHandleTables(
+            &TraceDependentHandleForProfilerAndETW,
+            (nuint)sc,
+            (nuint)(void*)&info,
+            &type,
+            1,
+            max_gen,
+            max_gen,
+            HandleTableConstants.HNDGCF_EXTRAINFO |
+                HandleTableConstants.HNDGCF_NORMAL);
+    }
+
+    private struct DiagDependentScanInfo
+    {
+        public delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void> callback;
+    }
+
+    private static void TraceDependentHandleForProfilerAndETW(
+        byte** pObjRef,
+        nuint* pExtraInfo,
+        nuint param1,
+        nuint param2)
+    {
+        if (pObjRef is null ||
+            pExtraInfo is null ||
+            *pObjRef is null ||
+            *pExtraInfo == 0)
+        {
+            return;
+        }
+
+        DiagDependentScanInfo* info =
+            (DiagDependentScanInfo*)param2;
+        ScanPointerForProfilerAndETW(
+            pObjRef,
+            null,
+            param1,
+            (nuint)info->callback);
+    }
+
+    private static void ScanPointerForProfilerAndETW(
+        byte** pObjRef,
+        nuint* pExtraInfo,
+        nuint param1,
+        nuint param2)
+    {
+        _ = pExtraInfo;
+
+        OBJECTHANDLE handle = new(pObjRef);
+        HandleType type =
+            (HandleType)HandleTableCore.HandleFetchType(handle);
+        uint rootFlags = 0;
+        bool isDependent = false;
+        switch (type)
+        {
+            case HandleType.HNDTYPE_DEPENDENT:
+                isDependent = true;
+                break;
+
+            case HandleType.HNDTYPE_WEAK_SHORT:
+            case HandleType.HNDTYPE_WEAK_LONG:
+            case HandleType.HNDTYPE_WEAK_INTERIOR_POINTER:
+            case HandleType.HNDTYPE_WEAK_NATIVE_COM:
+                rootFlags |= (uint)EtwGCRootFlags.kEtwGCRootFlagsWeakRef;
+                break;
+
+            case HandleType.HNDTYPE_STRONG:
+            case HandleType.HNDTYPE_SIZEDREF:
+#if FEATURE_JAVAMARSHAL
+            case HandleType.HNDTYPE_CROSSREFERENCE:
+#endif
+                break;
+
+            case HandleType.HNDTYPE_PINNED:
+            case HandleType.HNDTYPE_ASYNCPINNED:
+                rootFlags |= (uint)EtwGCRootFlags.kEtwGCRootFlagsPinning;
+                break;
+
+            case HandleType.HNDTYPE_VARIABLE:
+                uint variableType = ObjectHandle.GetVariableHandleType(handle);
+                if ((variableType &
+                    (ObjectHandle.VHT_WEAK_SHORT |
+                     ObjectHandle.VHT_WEAK_LONG)) != 0)
+                {
+                    rootFlags |=
+                        (uint)EtwGCRootFlags.kEtwGCRootFlagsWeakRef;
+                }
+
+                if ((variableType & ObjectHandle.VHT_PINNED) != 0)
+                {
+                    rootFlags |=
+                        (uint)EtwGCRootFlags.kEtwGCRootFlagsPinning;
+                }
+
+                break;
+
+            case HandleType.HNDTYPE_REFCOUNTED:
+                rootFlags |=
+                    (uint)EtwGCRootFlags.kEtwGCRootFlagsRefCounted;
+                if (*pObjRef is not null &&
+                    GCToEEInterface.RefCountedHandleCallbacks(*pObjRef) == 0)
+                {
+                    rootFlags |=
+                        (uint)EtwGCRootFlags.kEtwGCRootFlagsWeakRef;
+                }
+
+                break;
+
+            default:
+                Debug.Assert(false);
+                break;
+        }
+
+        byte* secondary = isDependent
+            ? (byte*)HandleTableManager.HndGetHandleExtraInfo(handle)
+            : null;
+        delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void> callback =
+            (delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void>)param2;
+        callback(
+            pObjRef,
+            secondary,
+            rootFlags,
+            (ScanContext*)param1,
+            isDependent ? (byte)1 : (byte)0);
+    }
+
     public static bool Ref_ScanDependentHandlesForPromotion(DhContext* context)
     {
         bool anyPromotions = false;

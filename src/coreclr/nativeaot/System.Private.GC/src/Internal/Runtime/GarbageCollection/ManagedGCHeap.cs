@@ -73,6 +73,7 @@ namespace Internal.Runtime.GarbageCollection
             // Volatile and Interlocked cannot be instantiated over a pointer type.
             public nint Start;
             public nint End;
+            public nint Reserved;
         }
 
         /// <summary>
@@ -641,6 +642,9 @@ namespace Internal.Runtime.GarbageCollection
         internal static void NotifyCollectionEnded() =>
             Interlocked.Decrement(ref s_gcStarted);
 
+        internal static bool CollectionInProgressForDiagnostics =>
+            Volatile.Read(ref s_gcInProgress) != 0;
+
         internal static void RecordCollectionCount(int collectionCount)
         {
             int current = Volatile.Read(ref s_gcCount);
@@ -909,7 +913,7 @@ namespace Internal.Runtime.GarbageCollection
             {
                 *ppStart = (byte*)Volatile.Read(ref frozen->Start);
                 *ppAllocated = (byte*)Volatile.Read(ref frozen->End);
-                *ppReserved = *ppAllocated;
+                *ppReserved = (byte*)Volatile.Read(ref frozen->Reserved);
                 return MaxGeneration;
             }
 
@@ -950,10 +954,12 @@ namespace Internal.Runtime.GarbageCollection
                 {
                     FrozenSegment* segment = s_frozenSegments + count;
                     segment->End = (nint)((byte*)pseginfo->pvMem + pseginfo->ibAllocated);
+                    segment->Reserved = (nint)((byte*)pseginfo->pvMem + pseginfo->ibReserved);
 
                     // Published last: FindFrozenSegment treats a zero Start as "not filled in
                     // yet" and skips the entry, so the range is never seen half-written.
                     Volatile.Write(ref segment->Start, (nint)((byte*)pseginfo->pvMem + pseginfo->ibFirstObject));
+                    gc_heap.use_frozen_segments_p = 1;
                     return new segment_handle(segment);
                 }
             }
@@ -977,6 +983,7 @@ namespace Internal.Runtime.GarbageCollection
             FrozenSegment* segment = (FrozenSegment*)seg.Value;
             Volatile.Write(ref segment->Start, 0);
             segment->End = 0;
+            segment->Reserved = 0;
             criticalRegion.Exit();
         }
 
@@ -997,6 +1004,24 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             return null;
+        }
+
+        internal static void DiagTraceFrozenSegments()
+        {
+            int count = Volatile.Read(ref s_frozenSegmentCount);
+            for (int i = 0; i < count; i++)
+            {
+                FrozenSegment* segment = s_frozenSegments + i;
+                nint start = Volatile.Read(ref segment->Start);
+                nint reserved = Volatile.Read(ref segment->Reserved);
+                if (start != 0 && reserved >= start)
+                {
+                    GCEvents.GCEventFireGCCreateSegment_V1(
+                        (void*)start,
+                        unchecked((nuint)(reserved - start)),
+                        (uint)gc_etw_segment_type.gc_etw_segment_read_only_heap);
+                }
+            }
         }
 
         // ------------------------------------------------------------------------------------
@@ -1125,11 +1150,8 @@ namespace Internal.Runtime.GarbageCollection
         private static long GetTotalPauseDuration(void* thisPtr) =>
             unchecked((long)gc_heap.total_suspended_time * 10);
 
-        private static int GetLastGCPercentTimeInGC(void* thisPtr)
-        {
-            last_recorded_gc_info* info = GetLatestBlockingGcInfo();
-            return unchecked((int)info->pause_percentage);
-        }
+        private static int GetLastGCPercentTimeInGC(void* thisPtr) =>
+            gc_heap.GetLastGCPercentTimeInGC();
 
         private static nuint GetLastGCGenerationSize(void* thisPtr, int gen)
         {
@@ -1138,11 +1160,7 @@ namespace Internal.Runtime.GarbageCollection
                 return 0;
             }
 
-            last_recorded_gc_info* info = GetLatestBlockingGcInfo();
-            recorded_generation_info* generationInfo =
-                (recorded_generation_info*)Unsafe.AsPointer(
-                    ref info->gen_info0);
-            return generationInfo[gen].size_after;
+            return gc_heap.GetLastGCGenerationSize(gen);
         }
 
         private static nuint GetLastGCStartTime(void* thisPtr, int generation)
@@ -1408,16 +1426,24 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void DiagScanHandles(void* thisPtr, delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void> fn, int gen_number, ScanContext* context)
         {
+            HandleTableScan.Ref_ScanHandlesForProfilerAndETW(
+                gen_number,
+                context,
+                fn);
         }
 
         private static void DiagScanDependentHandles(void* thisPtr, delegate* unmanaged<byte**, byte*, uint, ScanContext*, byte, void> fn, int gen_number, ScanContext* context)
         {
+            HandleTableScan.Ref_ScanDependentHandlesForProfilerAndETW(
+                gen_number,
+                context,
+                fn);
         }
 
         private static void DiagDescrGenerations(void* thisPtr, delegate* unmanaged<void*, int, byte*, byte*, byte*, void> fn, void* context)
         {
 #if USE_REGIONS
-            ManagedGCRegionBootstrap.DescribeGenerations(fn, context);
+            gc_heap.DiagDescribeGenerations(fn, context);
 #else
             fn(context, 0, GCHeapMemory.HeapStart, GCHeapMemory.HeapEnd, GCHeapMemory.HeapEnd);
 #endif
@@ -1425,12 +1451,12 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void DiagTraceGCSegments(void* thisPtr)
         {
+            gc_heap.DiagTraceSegments();
         }
 
         private static void DiagGetGCSettings(void* thisPtr, EtwGCSettingsInfo* pGcSettings)
         {
-            *pGcSettings = default;
-            pGcSettings->loh_threshold = LargeObjectSize;
+            gc_heap.DiagGetSettings(pGcSettings, LargeObjectSize);
         }
     }
 }

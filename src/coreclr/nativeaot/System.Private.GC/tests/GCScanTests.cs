@@ -5,6 +5,8 @@
 // compiled directly into this assembly; only the IGCToCLR root-scan call beneath it is
 // substituted.
 
+using System.Runtime.InteropServices;
+
 using Xunit;
 
 namespace Internal.Runtime.GarbageCollection;
@@ -23,6 +25,11 @@ public sealed unsafe class GCScanTests
     private static readonly nuint[] s_recordedHandleValues = new nuint[32];
     private static readonly uint[] s_recordedHandleFlags = new uint[32];
     private static nint s_relocationDelta;
+    private static int s_diagnosticHandleCount;
+    private static readonly nuint[] s_diagnosticHandleValues = new nuint[16];
+    private static readonly nuint[] s_diagnosticSecondaryValues = new nuint[16];
+    private static readonly uint[] s_diagnosticRootFlags = new uint[16];
+    private static readonly byte[] s_diagnosticDependent = new byte[16];
 
     public GCScanTests()
     {
@@ -138,9 +145,90 @@ public sealed unsafe class GCScanTests
             AssertRecordedHandle(2, 0x2000, 0);
             Assert.Equal(1, GCToEEInterface.WalkAsyncPinnedForPromotionCallCount);
         }
+
         finally
         {
             ManagedGCHeap.Reset();
+            ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
+            ObjectHandle.Ref_Shutdown();
+        }
+    }
+
+    [Fact]
+    public void DiagnosticHandleScansPreserveRootFlagsAndDependentSecondary()
+    {
+        Assert.True(ObjectHandle.Ref_Initialize());
+        HandleTableBucket* bucket =
+            (HandleTableBucket*)System.Runtime.CompilerServices.Unsafe.AsPointer(
+                ref ObjectHandle.g_GlobalHandleTableBucket);
+        HandleTable* table = bucket->pTable[0];
+
+        try
+        {
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_STRONG,
+                (byte*)0x1000,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_WEAK_SHORT,
+                (byte*)0x2000,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_PINNED,
+                (byte*)0x3000,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_REFCOUNTED,
+                (byte*)0x4000,
+                0);
+            _ = HandleTableManager.HndCreateHandle(
+                table,
+                (uint)HandleType.HNDTYPE_DEPENDENT,
+                (byte*)0x5000,
+                0x6000);
+
+            ScanContext sc = default;
+            ResetDiagnosticHandleObservations();
+            HandleTableScan.Ref_ScanHandlesForProfilerAndETW(
+                2,
+                &sc,
+                &RecordDiagnosticHandle);
+
+            Assert.Equal(4, s_diagnosticHandleCount);
+            AssertDiagnosticHandle(0x1000, 0, 0, 0);
+            AssertDiagnosticHandle(
+                0x2000,
+                0,
+                (uint)EtwGCRootFlags.kEtwGCRootFlagsWeakRef,
+                0);
+            AssertDiagnosticHandle(
+                0x3000,
+                0,
+                (uint)EtwGCRootFlags.kEtwGCRootFlagsPinning,
+                0);
+            AssertDiagnosticHandle(
+                0x4000,
+                0,
+                (uint)(
+                    EtwGCRootFlags.kEtwGCRootFlagsRefCounted |
+                    EtwGCRootFlags.kEtwGCRootFlagsWeakRef),
+                0);
+
+            ResetDiagnosticHandleObservations();
+            HandleTableScan.Ref_ScanDependentHandlesForProfilerAndETW(
+                2,
+                &sc,
+                &RecordDiagnosticHandle);
+
+            Assert.Equal(1, s_diagnosticHandleCount);
+            AssertDiagnosticHandle(0x5000, 0x6000, 0, 1);
+        }
+        finally
+        {
             ObjectHandle.Ref_DestroyHandleTableBucket(bucket);
             ObjectHandle.Ref_Shutdown();
         }
@@ -1427,6 +1515,48 @@ public sealed unsafe class GCScanTests
     {
         s_handleScanCallCount = 0;
         s_relocationDelta = 0;
+    }
+
+    private static void ResetDiagnosticHandleObservations()
+    {
+        s_diagnosticHandleCount = 0;
+        System.Array.Clear(s_diagnosticHandleValues);
+        System.Array.Clear(s_diagnosticSecondaryValues);
+        System.Array.Clear(s_diagnosticRootFlags);
+        System.Array.Clear(s_diagnosticDependent);
+    }
+
+    private static void AssertDiagnosticHandle(
+        nuint value,
+        nuint secondary,
+        uint flags,
+        byte dependent)
+    {
+        int index = System.Array.IndexOf(
+            s_diagnosticHandleValues,
+            value,
+            0,
+            s_diagnosticHandleCount);
+        Assert.True(index >= 0, $"Handle 0x{value:x} was not reported.");
+        Assert.Equal(secondary, s_diagnosticSecondaryValues[index]);
+        Assert.Equal(flags, s_diagnosticRootFlags[index]);
+        Assert.Equal(dependent, s_diagnosticDependent[index]);
+    }
+
+    [UnmanagedCallersOnly]
+    private static void RecordDiagnosticHandle(
+        byte** objectRef,
+        byte* secondary,
+        uint flags,
+        ScanContext* context,
+        byte dependent)
+    {
+        _ = context;
+        int index = s_diagnosticHandleCount++;
+        s_diagnosticHandleValues[index] = (nuint)(*objectRef);
+        s_diagnosticSecondaryValues[index] = (nuint)secondary;
+        s_diagnosticRootFlags[index] = flags;
+        s_diagnosticDependent[index] = dependent;
     }
 
     private static void AssertRecordedHandle(int index, nuint value, uint flags)

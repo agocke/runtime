@@ -216,6 +216,20 @@ internal static unsafe class GCToEEInterface
 
     internal static int LastGcDoneCondemned { get; private set; }
 
+    internal static uint GetActiveSyncBlockCount() => 0;
+
+    internal static void UpdateGCEventStatus(
+        int publicLevel,
+        int publicKeywords,
+        int privateLevel,
+        int privateKeywords)
+    {
+        _ = publicLevel;
+        _ = publicKeywords;
+        _ = privateLevel;
+        _ = privateKeywords;
+    }
+
     internal static int BeforeGcScanRootsCallCount { get; private set; }
 
     internal static int LastBeforeGcScanRootsCondemned { get; private set; }
@@ -275,6 +289,24 @@ internal static unsafe class GCToEEInterface
     internal static string LastDynamicEventName { get; private set; }
 
     internal static byte[] LastDynamicEventPayload { get; private set; }
+
+    internal static ulong LastAllocationAmount { get; private set; }
+
+    internal static uint LastAllocationKind { get; private set; }
+
+    internal static uint LastAllocationHeapIndex { get; private set; }
+
+    internal static void* LastAllocationObjectAddress { get; private set; }
+
+    internal static ulong LastAllocationObjectSize { get; private set; }
+
+    internal static uint LastGlobalHistoryCount { get; private set; }
+
+    internal static uint LastGlobalHistoryValueSize { get; private set; }
+
+    internal static uint LastPerHeapHistoryCount { get; private set; }
+
+    internal static uint LastPerHeapHistoryValueSize { get; private set; }
 
     internal static int GCCreateSegmentCallCount { get; private set; }
 
@@ -359,6 +391,15 @@ internal static unsafe class GCToEEInterface
         LastFiredEvent = FiredEvent.None;
         LastDynamicEventName = null;
         LastDynamicEventPayload = null;
+        LastAllocationAmount = 0;
+        LastAllocationKind = 0;
+        LastAllocationHeapIndex = 0;
+        LastAllocationObjectAddress = null;
+        LastAllocationObjectSize = 0;
+        LastGlobalHistoryCount = 0;
+        LastGlobalHistoryValueSize = 0;
+        LastPerHeapHistoryCount = 0;
+        LastPerHeapHistoryValueSize = 0;
         GCCreateSegmentCallCount = 0;
         LastGCCreateSegmentAddress = null;
         LastGCCreateSegmentSize = 0;
@@ -655,12 +696,30 @@ internal static unsafe class GCToEEInterface
     public static void FireGCTriggered(uint reason) => LastFiredEvent = FiredEvent.GCTriggered;
     public static void FireGCMarkWithType(uint heapNum, uint type, ulong bytes) => LastFiredEvent = FiredEvent.GCMarkWithType;
     public static void FireGCJoin_V2(uint heap, uint joinTime, uint joinType, uint joinId) => LastFiredEvent = FiredEvent.GCJoin_V2;
-    public static void FireGCGlobalHeapHistory_V4(ulong finalYoungestDesired, int numHeaps, uint condemnedGeneration, uint gen0ReductionCount, uint reason, uint globalMechanisms, uint pauseMode, uint memoryPressure, uint condemnReasons0, uint condemnReasons1, uint count, uint valuesLen, void* values) => LastFiredEvent = FiredEvent.GCGlobalHeapHistory_V4;
+    public static void FireGCGlobalHeapHistory_V4(ulong finalYoungestDesired, int numHeaps, uint condemnedGeneration, uint gen0ReductionCount, uint reason, uint globalMechanisms, uint pauseMode, uint memoryPressure, uint condemnReasons0, uint condemnReasons1, uint count, uint valuesLen, void* values)
+    {
+        LastFiredEvent = FiredEvent.GCGlobalHeapHistory_V4;
+        LastGlobalHistoryCount = count;
+        LastGlobalHistoryValueSize = valuesLen;
+    }
     public static void FireGCAllocationTick_V1(uint allocationAmount, uint allocationKind) => LastFiredEvent = FiredEvent.GCAllocationTick_V1;
-    public static void FireGCAllocationTick_V4(ulong allocationAmount, uint allocationKind, uint heapIndex, void* objectAddress, ulong objectSize) => LastFiredEvent = FiredEvent.GCAllocationTick_V4;
+    public static void FireGCAllocationTick_V4(ulong allocationAmount, uint allocationKind, uint heapIndex, void* objectAddress, ulong objectSize)
+    {
+        LastFiredEvent = FiredEvent.GCAllocationTick_V4;
+        LastAllocationAmount = allocationAmount;
+        LastAllocationKind = allocationKind;
+        LastAllocationHeapIndex = heapIndex;
+        LastAllocationObjectAddress = objectAddress;
+        LastAllocationObjectSize = objectSize;
+    }
     public static void FirePinObjectAtGCTime(void* objectAddress, byte** objectHandle) => LastFiredEvent = FiredEvent.PinObjectAtGCTime;
     public static void FirePinPlugAtGCTime(byte* plugStart, byte* plugEnd, byte* gapBeforeSize) => LastFiredEvent = FiredEvent.PinPlugAtGCTime;
-    public static void FireGCPerHeapHistory_V3(void* freeListAllocated, void* freeListRejected, void* endOfSegAllocated, void* condemnedAllocated, void* pinnedAllocated, void* pinnedAllocatedAdvance, uint runningFreeListEfficiency, uint condemnReasons0, uint condemnReasons1, uint compactMechanisms, uint expandMechanisms, uint heapIndex, void* extraGen0Commit, uint count, uint valuesLen, void* values) => LastFiredEvent = FiredEvent.GCPerHeapHistory_V3;
+    public static void FireGCPerHeapHistory_V3(void* freeListAllocated, void* freeListRejected, void* endOfSegAllocated, void* condemnedAllocated, void* pinnedAllocated, void* pinnedAllocatedAdvance, uint runningFreeListEfficiency, uint condemnReasons0, uint condemnReasons1, uint compactMechanisms, uint expandMechanisms, uint heapIndex, void* extraGen0Commit, uint count, uint valuesLen, void* values)
+    {
+        LastFiredEvent = FiredEvent.GCPerHeapHistory_V3;
+        LastPerHeapHistoryCount = count;
+        LastPerHeapHistoryValueSize = valuesLen;
+    }
     public static void FireGCLOHCompact(ushort count, uint valuesLen, void* values) => LastFiredEvent = FiredEvent.GCLOHCompact;
     public static void FireGCFitBucketInfo(ushort kind, nuint totalSize, ushort count, uint valuesLen, void* values) => LastFiredEvent = FiredEvent.GCFitBucketInfo;
     public static void FireBGCBegin() => LastFiredEvent = FiredEvent.BGCBegin;
