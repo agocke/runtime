@@ -123,7 +123,7 @@ public static class ManagedServerGCFoundationTests
 
         Type joinStructure = GetType(
             "Internal.Runtime.GarbageCollection.join_structure");
-        foreach (string field in new[]
+        foreach (string fieldName in new[]
         {
             "n_threads",
             "joined_event",
@@ -135,7 +135,7 @@ public static class ManagedServerGCFoundationTests
         })
         {
             Assert.NotNull(joinStructure.GetField(
-                field,
+                fieldName,
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
         }
 
@@ -231,8 +231,165 @@ public static class ManagedServerGCFoundationTests
             0x16);
     }
 
+    [Fact]
+    public static void CondemnReasonEnumsMatchNativeShape()
+    {
+        Type reasonGen = GetType(
+            "Internal.Runtime.GarbageCollection.gc_condemn_reason_gen");
+        Assert.Equal(0, (int)Enum.Parse(reasonGen, "gen_initial"));
+        Assert.Equal(1, (int)Enum.Parse(reasonGen, "gen_final_per_heap"));
+        Assert.Equal(2, (int)Enum.Parse(reasonGen, "gen_alloc_budget"));
+        Assert.Equal(3, (int)Enum.Parse(reasonGen, "gen_time_tuning"));
+        Assert.Equal(4, (int)Enum.Parse(reasonGen, "gcrg_max"));
+
+        Type reasonCondition = GetType(
+            "Internal.Runtime.GarbageCollection.gc_condemn_reason_condition");
+        Assert.Equal(4, (int)Enum.Parse(reasonCondition, "gen_low_ephemeral_p"));
+        Assert.Equal(5, (int)Enum.Parse(reasonCondition, "gen_low_card_p"));
+        Assert.Equal(6, (int)Enum.Parse(reasonCondition, "gen_eph_high_frag_p"));
+        Assert.Equal(7, (int)Enum.Parse(reasonCondition, "gen_max_high_frag_p"));
+        Assert.Equal(16, (int)Enum.Parse(reasonCondition, "gen_almost_max_alloc"));
+        Assert.Equal(17, (int)Enum.Parse(reasonCondition, "gen_joined_avoid_unproductive"));
+        Assert.Equal(18, (int)Enum.Parse(reasonCondition, "gen_joined_pm_induced_fullgc_p"));
+        Assert.Equal(21, (int)Enum.Parse(reasonCondition, "gen_joined_limit_before_oom"));
+        Assert.Equal(22, (int)Enum.Parse(reasonCondition, "gen_joined_limit_loh_frag"));
+        Assert.Equal(23, (int)Enum.Parse(reasonCondition, "gen_joined_limit_loh_reclaim"));
+        Assert.Equal(30, (int)Enum.Parse(reasonCondition, "gen_joined_aggressive"));
+        Assert.Equal(31, (int)Enum.Parse(reasonCondition, "gcrc_max"));
+    }
+
+    [Fact]
+    public static void GenToCondemnTuningEncodesReasons()
+    {
+        Type tuning = GetType(
+            "Internal.Runtime.GarbageCollection.gen_to_condemn_tuning");
+        Type reasonGen = GetType(
+            "Internal.Runtime.GarbageCollection.gc_condemn_reason_gen");
+        Type reasonCondition = GetType(
+            "Internal.Runtime.GarbageCollection.gc_condemn_reason_condition");
+
+        object reasons = Activator.CreateInstance(tuning)!;
+        MethodInfo init = GetMethod(tuning, "init", Type.EmptyTypes);
+        MethodInfo setGen = GetMethod(tuning, "set_gen", new[] { reasonGen, typeof(uint) });
+        MethodInfo setCondition = GetMethod(tuning, "set_condition", new[] { reasonCondition });
+        MethodInfo getGen = GetMethod(tuning, "get_gen", new[] { reasonGen });
+        MethodInfo getCondition = GetMethod(tuning, "get_condition", new[] { reasonCondition });
+
+        init.Invoke(reasons, null);
+
+        object genFinalPerHeap = Enum.Parse(reasonGen, "gen_final_per_heap");
+        object joinedAggressive = Enum.Parse(reasonCondition, "gen_joined_aggressive");
+
+        setGen.Invoke(reasons, new object[] { genFinalPerHeap, 2u });
+        Assert.Equal(2u, (uint)getGen.Invoke(reasons, new object[] { genFinalPerHeap })!);
+
+        Assert.Equal(0u, (uint)getCondition.Invoke(reasons, new object[] { joinedAggressive })!);
+        setCondition.Invoke(reasons, new object[] { joinedAggressive });
+        Assert.NotEqual(0u, (uint)getCondition.Invoke(reasons, new object[] { joinedAggressive })!);
+    }
+
+    [Fact]
+    public static void ServerCondemnationSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        foreach (string fieldName in new[]
+        {
+            "condemned_generation_num",
+            "blocking_collection",
+            "elevation_requested",
+            "generation_skip_ratio",
+            "last_gc_before_oom",
+            "gen_to_condemn_reasons",
+            "gc_data_per_heap",
+            "bgc_data_per_heap",
+        })
+        {
+            FieldInfo field = heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.False(field.IsStatic);
+        }
+
+        foreach (string field in new[]
+        {
+            "generation_skip_ratio_threshold",
+            "trigger_initial_gen2_p",
+            "trigger_bgc_for_rethreading_p",
+        })
+        {
+            Assert.NotNull(heap.GetField(
+                field,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        foreach (string method in new[]
+        {
+            "generation_to_condemn",
+            "joined_generation_to_condemn",
+            "dt_high_frag_p",
+            "dt_low_ephemeral_space_p",
+            "dt_low_card_table_efficiency_p",
+            "dt_estimate_reclaim_space_p",
+            "dt_estimate_high_frag_p",
+            "get_total_gen_fragmentation",
+            "get_total_gen_estimated_reclaim",
+            "get_total_gen_size",
+            "try_get_new_free_region",
+            "estimated_reclaim",
+            "ephemeral_gen_fit_p",
+        })
+        {
+            Assert.NotNull(heap.GetMethod(
+                method,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+    }
+
+    [Fact]
+    public static void ServerAllocationStateInitializesGenerationSkipRatio()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo initialize = heap.GetMethod(
+            "initialize_server_allocation_state",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        FieldInfo field = heap.GetField(
+            "generation_skip_ratio",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        // ldc.i4.s 100 (0x1F 0x64) followed by stfld generation_skip_ratio.
+        byte[] il = initialize.GetMethodBody()!.GetILAsByteArray()!;
+        byte[] fieldToken = BitConverter.GetBytes(field.MetadataToken);
+        bool found = false;
+        for (int i = 0; i <= il.Length - 7; i++)
+        {
+            if (il[i] == 0x1F &&
+                il[i + 1] == 0x64 &&
+                il[i + 2] == 0x7d &&
+                il[i + 3] == fieldToken[0] &&
+                il[i + 4] == fieldToken[1] &&
+                il[i + 5] == fieldToken[2] &&
+                il[i + 6] == fieldToken[3])
+            {
+                found = true;
+                break;
+            }
+        }
+
+        Assert.True(found, "initialize_server_allocation_state does not set generation_skip_ratio to 100.");
+    }
+
     private static Type GetType(string name) =>
         s_serverGC.GetType(name, throwOnError: true)!;
+
+    private static MethodInfo GetMethod(Type type, string name, Type[] parameters) =>
+        type.GetMethod(
+            name,
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static,
+            binder: null,
+            parameters,
+            modifiers: null)!;
 
     private static int GetConstant(Type type, string name) =>
         (int)type.GetField(

@@ -1536,13 +1536,40 @@ Foundation tests pin the join enum values, `join_structure` fields, the `t_join`
 and `gc_t_join` field type, and the `gc_done_event` handshake state and coordination methods.
 
 The condemnation coordination -- `generation_to_condemn` and `joined_generation_to_condemn` --
-remains deferred: its full state closure (per-generation fragmentation/reclaim estimation,
-provisional/elevation mode, hard-limit LOH policy, `bgc_tuning`, and `gc_data_global` condemn
-reasons) is not yet present in the server foundation.
+is now translated for the server `SERVER_GC -> MULTIPLE_HEAPS -> DYNAMIC_HEAP_COUNT -> USE_REGIONS`
+configuration without routing any collection (`ManagedServerGCCondemn.cs`). The per-heap
+`generation_to_condemn` preserves budget/UOH allocation triggers, the low-card-table-efficiency,
+low-ephemeral-space, and ephemeral/gen2 fragmentation escalations, the `USE_REGIONS`
+`try_get_new_free_region` OOM signal, memory-load and VA-load sampling, provisional/elevation
+mode, `HOST_64BIT` almost-max-alloc elevation, the `last_gc_before_oom` blocking path, induced /
+induced-noforce reasons, the `BACKGROUND_GC` gen2-too-small blocking heuristic, and per-heap
+`gen_to_condemn_reasons` publication. `joined_generation_to_condemn` preserves the cross-heap
+`joined_last_gc_before_oom` scan, elevation locking / reduction, provisional-mode gen reduction,
+hard-limit LOH fragmentation/reclaim compaction policy, `GCConserveMem` combined-fragmentation
+policy, aggressive-induced LOH compaction, background gen2 retraction, and the
+`DYNAMIC_HEAP_COUNT` rethreading / initial-gen2 triggers, all writing `gc_data_global` condemn
+reasons. The supporting closure -- `dt_low_ephemeral_space_p`, `dt_high_frag_p`,
+`dt_estimate_reclaim_space_p`, `dt_estimate_high_frag_p`, `dt_low_card_table_efficiency_p`,
+`ephemeral_gen_fit_p`, `estimated_reclaim`, `generation_size`, `generation_unusable_fragmentation`,
+`get_new_allocation`, `current_generation_size`, `get_memory_info`, `get_total_gen_*`,
+`min_reclaim_fragmentation_threshold`, `min_high_fragmentation_threshold`, and
+`try_get_new_free_region` -- is translated with server `n_heaps` scaling. The PER_HEAP fields
+`condemned_generation_num`, `blocking_collection`, `elevation_requested`, `generation_skip_ratio`,
+`last_gc_before_oom`, and `gen_to_condemn_reasons` are instance-owned in the `MULTIPLE_HEAPS`
+build, and `generation_skip_ratio_threshold`, `trigger_initial_gen2_p`, and
+`trigger_bgc_for_rethreading_p` are added as isolated state. Focused Foundation tests pin the
+condemn-reason enum values, the `gen_to_condemn_tuning` encoding, the decider/tuning method
+surface, the per-heap and isolated condemn fields, and the per-heap `generation_skip_ratio`
+initialization. The `BGC_SERVO_TUNING`, `STRESS_HEAP`, `STRESS_DYNAMIC_HEAP_COUNT`, and
+`HEAP_ANALYZE` branches are excluded exactly as for the active configuration. The
+`garbage_collect` `gc_join_generation_determined` join and cross-heap `gen_max` aggregation
+that consume these deciders remain deferred with collection routing, as does unification of the
+per-heap server free-region list with the shared region free-list path used by the
+`try_get_new_free_region` empty-region fallback.
 
 Production blockers remain in BGC servo tuning, dynamic heap-count changes after startup,
-diagnostic `saved_changed_segs` publication, condemnation coordination, and server parallel
-collection closure.
+diagnostic `saved_changed_segs` publication, condemnation-driven collection routing, and server
+parallel collection closure.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.

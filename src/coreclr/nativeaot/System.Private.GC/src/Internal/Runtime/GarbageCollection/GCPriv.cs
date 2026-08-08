@@ -1229,6 +1229,19 @@ namespace Internal.Runtime.GarbageCollection
         public bool gc_done_event_set;
         public GCEvent gc_idle_thread_event;
         public CFinalize* server_finalize_queue;
+        // Server condemnation state. In the MULTIPLE_HEAPS build these gcpriv.h PER_HEAP fields are
+        // instance-owned so joined_generation_to_condemn and the garbage_collect cross-heap
+        // aggregation can read each heap's decision. WKS represents them as static.
+        public int condemned_generation_num;
+        public int blocking_collection;
+        public int elevation_requested;
+        public int generation_skip_ratio;
+        public int last_gc_before_oom;
+        public gen_to_condemn_tuning gen_to_condemn_reasons;
+        public gc_history_per_heap gc_data_per_heap;
+#if BACKGROUND_GC
+        public gc_history_per_heap bgc_data_per_heap;
+#endif
 #endif
 #endif
 
@@ -1319,9 +1332,11 @@ namespace Internal.Runtime.GarbageCollection
         public static full_gc_count_array full_gc_counts;
         public static ulong loh_alloc_since_cg;
         public static nuint finalization_promoted_bytes;
+#if !MULTIPLE_HEAPS
         public static gc_history_per_heap gc_data_per_heap;
 #if BACKGROUND_GC
         public static gc_history_per_heap bgc_data_per_heap;
+#endif
 #endif
         public static fgm_history fgm_result;
         public static gc_history_global gc_data_global;
@@ -1352,7 +1367,12 @@ namespace Internal.Runtime.GarbageCollection
 #if TARGET_64BIT
         public static nuint youngest_gen_desired_th;
 #endif
+#if !MULTIPLE_HEAPS
+        // In the MULTIPLE_HEAPS (server) build last_gc_before_oom is PER_HEAP; the instance field
+        // lives on gc_heap in ManagedServerGCCondemn.cs so joined_generation_to_condemn can read
+        // each heap's flag.
         public static int last_gc_before_oom;
+#endif
         public static bool provisional_mode_triggered;
         public static nuint soh_allocation_no_gc;
         public static nuint loh_allocation_no_gc;
@@ -1453,7 +1473,9 @@ namespace Internal.Runtime.GarbageCollection
             freeable_uoh_segment = null;
 #if BACKGROUND_GC
             freeable_soh_segment = null;
+#if !MULTIPLE_HEAPS
             bgc_data_per_heap = default;
+#endif
             bgc_data_global = default;
             saved_bgc_settings = default;
             gen2_removed_no_undo = 0;
@@ -1463,7 +1485,9 @@ namespace Internal.Runtime.GarbageCollection
             last_background_gc_info_index = 0;
             is_last_recorded_bgc = 0;
 #endif
+#if !MULTIPLE_HEAPS
             last_gc_before_oom = 0;
+#endif
             provisional_mode_triggered = false;
             soh_allocation_no_gc = 0;
             loh_allocation_no_gc = 0;

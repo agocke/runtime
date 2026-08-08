@@ -758,6 +758,12 @@ internal unsafe partial struct gc_heap
         heap->alloc_context_count = 0;
         heap->gc_done_event_lock = -1;
         heap->gc_done_event_set = false;
+        heap->condemned_generation_num = 0;
+        heap->blocking_collection = 0;
+        heap->elevation_requested = 0;
+        heap->generation_skip_ratio = 100;
+        heap->last_gc_before_oom = 0;
+        heap->gen_to_condemn_reasons = default;
     }
 
     private static void init_dynamic_data_for_server(gc_heap* heap)
@@ -1378,6 +1384,7 @@ internal static unsafe class ManagedGCHeap
             return E_OUTOFMEMORY;
         }
         gc_heap.initialize_gc_static_state();
+        gc_heap.generation_skip_ratio_threshold = (int)GCConfig.GetGCLowSkipRatio();
         gc_heap.initialize_spin_count_unit();
         if (!ManagedGCRegionBootstrap.Initialize())
         {

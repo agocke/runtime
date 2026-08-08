@@ -112,6 +112,7 @@ Ported so far:
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
 | `ManagedGCHeap.cs` | WKS `gcinterface.h` `IGCHeap`, including allocation, collection, finalization, memory metrics, limits, and latency settings |
 | `ManagedServerGC.cs` | Foundational x64 Linux `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` initialization, heap selection, per-heap allocation, server workers, the full server `t_join` color barrier (`join`/`r_join`/`restart`/`r_restart`/`r_init`), the `gc_done_event` collection handshake (`set_gc_done`/`reset_gc_done`/`enter`/`exit_gc_done_event_lock`/`wait_for_gc_done`, `gc_started`, `enable`/`disable_preemptive`), join/coordinator state, and dynamic heap-count bootstrap from `init.cpp`, `interface.cpp`, `allocation.cpp`, `dynamic_heap_count.cpp`, `gc.cpp`, and `gcinternal.h` |
+| `ManagedServerGCCondemn.cs` | Server generation condemnation and cross-heap condemned-generation agreement (`generation_to_condemn`, `joined_generation_to_condemn`) with the exact tuning closure (`dt_*`, `estimated_reclaim`, `generation_size`, `generation_unusable_fragmentation`, `get_total_gen_*`, `get_memory_info`, `try_get_new_free_region`, `min_*_threshold`) from `plan_phase.cpp`, `dynamic_tuning.cpp`, and `gcinternal.h`; no collection is routed |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
 For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed

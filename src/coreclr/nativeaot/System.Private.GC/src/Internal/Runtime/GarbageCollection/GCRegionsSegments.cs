@@ -1307,7 +1307,13 @@ internal unsafe partial struct gc_heap
                 settings.demotion = 1;
             }
 
-            gc_data_per_heap.set_mechanism_bit(gc_mechanism_bit_per_heap.gc_demotion_bit);
+#if MULTIPLE_HEAPS
+            heap_segment.heap_segment_heap(region)->gc_data_per_heap.set_mechanism_bit(
+                gc_mechanism_bit_per_heap.gc_demotion_bit);
+#else
+            gc_data_per_heap.set_mechanism_bit(
+                gc_mechanism_bit_per_heap.gc_demotion_bit);
+#endif
             region->flags |= heap_segment.heap_segment_flags_demoted;
             region_info_bits_to_set =
                 (region_info)((byte)region_info_bits_to_set | (byte)region_info.RI_DEMOTED);
