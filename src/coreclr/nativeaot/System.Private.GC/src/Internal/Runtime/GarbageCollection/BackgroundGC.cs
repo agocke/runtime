@@ -1633,21 +1633,19 @@ internal unsafe partial struct gc_heap
             return GCEnv.WAIT_OBJECT_0;
         }
 
-        bool toggled = GCToEEInterface.EnablePreemptiveGC() != 0;
         if (reason != alloc_wait_reason.awr_ignored)
         {
             GCEvents.GCEventFireBGCAllocWaitBegin(unchecked((uint)reason));
         }
 
+#if MANAGED_GC_TEST_HOST
         uint result = background_gc_done_event.Wait(timeout, alertable: false);
+#else
+        uint result = background_gc_done_event.UserThreadWait(timeout);
+#endif
         if (reason != alloc_wait_reason.awr_ignored)
         {
             GCEvents.GCEventFireBGCAllocWaitEnd(unchecked((uint)reason));
-        }
-
-        if (toggled)
-        {
-            GCToEEInterface.DisablePreemptiveGC();
         }
 
         return result;

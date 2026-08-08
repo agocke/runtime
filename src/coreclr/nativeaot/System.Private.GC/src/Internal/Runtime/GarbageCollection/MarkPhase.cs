@@ -1474,6 +1474,46 @@ internal unsafe partial struct gc_heap
         return false;
     }
 
+    private static byte** binary_search(byte** left, byte** right, byte* e)
+    {
+        if (left == right)
+        {
+            return left;
+        }
+
+        Debug.Assert(left < right);
+        byte** a = left;
+        nuint l = 0;
+        nuint r = (nuint)(right - left);
+        while ((r - l) >= 2)
+        {
+            nuint m = l + ((r - l) / 2);
+            Debug.Assert(l < m && m < r);
+
+            if (a[m] < e)
+            {
+                l = m;
+            }
+            else
+            {
+                r = m;
+            }
+        }
+
+        return a[l] < e ? a + (nint)l + 1 : a + (nint)l;
+    }
+
+    public static byte** get_region_mark_list(
+        ref int use_mark_list,
+        byte* start,
+        byte* end,
+        byte*** mark_list_end_ptr)
+    {
+        _ = use_mark_list;
+        *mark_list_end_ptr = binary_search(mark_list, mark_list_index, end);
+        return binary_search(mark_list, *mark_list_end_ptr, start);
+    }
+
     // The WKS USE_REGIONS m_boundary macro owns a fixed-capacity list. Unlike the
     // GC_CONFIG_DRIVEN server branch, exhaustion leaves its cursor one past the final entry.
     public static void m_boundary(gc_heap* heap, byte* o)

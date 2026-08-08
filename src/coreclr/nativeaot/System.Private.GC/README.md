@@ -54,6 +54,7 @@ Ported so far:
 | `HandleTableStructs.cs` | `handletablepriv.h` (segment header, segment, type cache) |
 | `GCBridge.cs` | active NativeAOT `FEATURE_JAVAMARSHAL` bridge graph and SCC callback data from `gcbridge.cpp` |
 | `IntroSort.cs` | `introsort.h` |
+| `VxSort.cs` | active x64 pointer-key sorting interface, thresholds, introspective partitioning, AVX2/AVX-512 selection, and scalar fallback from `gc.cpp` and `vxsort` |
 | `Interface/GCInterfaceEnums.cs` | `gcinterface.h`, `gcinterface.ee.h` (enums) |
 | `Interface/GCInterfaceStructs.cs` | `gcinterface.h`, `gcinterface.ee.h` (shared structs) |
 | `Interface/GCInterfaceVtables.cs` | `gcinterface.h`, `gcinterface.ee.h`, `gc.h` (abstract classes) |
@@ -1154,6 +1155,18 @@ gives in both languages, that nothing outside the sorted range is written, and t
 depth-limited recursion terminates. Reaching `heapsort` at all needs input that exhausts
 `max_depth`, which no natural input does, so the test carries a vector produced by McIlroy's
 quicksort adversary.
+
+`VxSort` preserves the native GC-facing inclusive-range interface, the 8-KiB AVX2 and 128-KiB
+AVX-512 crossover thresholds, the 64/128-element small-sort boundaries, median-of-three pivoting,
+depth-limited heap fallback, duplicate ordering, and scalar `IntroSort` fallback. The x64
+partition scans use unaligned AVX2 or AVX-512 loads only after proving a complete vector remains;
+their comparison masks advance directly to the first lane on the wrong side of the pivot, and
+the tail stays scalar, so no vector read crosses the supplied range. Foundation tests compare
+sorted output with `Array.Sort` over ordered, reversed, duplicate-heavy, organ-pipe, randomized,
+threshold-boundary, and adversarial inputs, retain guard words on both sides, and run under the
+hardware-intrinsic disable switches. The planning-phase test also proves that a usable WKS
+ephemeral mark list is sorted and records `gc_mark_list_bit`, while full Gen2 and overflow paths
+leave the list unused, matching `plan_phase.cpp`.
 
 ### The heap routes bounded synchronous foreground collections
 

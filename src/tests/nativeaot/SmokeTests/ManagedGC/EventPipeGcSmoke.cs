@@ -113,6 +113,9 @@ internal static unsafe class EventPipeGcSmoke
             }
             finally
             {
+                // Ensure the finalizer thread has finished emitting events for the collections
+                // above before the listener session releases its buffers.
+                GC.WaitForPendingFinalizers();
                 EventPipeInternal_Disable(session);
             }
         }

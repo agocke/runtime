@@ -508,6 +508,24 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    public static void clear_unused_bricks_after_compaction(
+        heap_segment* region,
+        byte* plan_allocated)
+    {
+        byte* firstUnusedBrick =
+            card_table_info.align_lower_brick(plan_allocated);
+        if (firstUnusedBrick < plan_allocated)
+        {
+            firstUnusedBrick += (nint)card_table_info.brick_size;
+        }
+
+        byte* reserved = heap_segment.heap_segment_reserved(region);
+        if (firstUnusedBrick < reserved)
+        {
+            clear_brick_table(firstUnusedBrick, reserved);
+        }
+    }
+
     public static bool should_check_brick_for_reloc(byte* o)
     {
         Debug.Assert((o >= GCCommon.g_gc_lowest_address) && (o < GCCommon.g_gc_highest_address));
@@ -1566,6 +1584,7 @@ internal unsafe partial struct gc_heap
                  region = heap_segment.heap_segment_next(region))
             {
                 byte* plan_allocated = heap_segment.heap_segment_plan_allocated(region);
+                clear_unused_bricks_after_compaction(region, plan_allocated);
                 if (plan_allocated > heap_segment.heap_segment_used(region))
                 {
                     heap_segment.heap_segment_used(region) = plan_allocated;

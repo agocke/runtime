@@ -163,6 +163,7 @@
          the generated table that GC_INTERFACE_MAJOR_VERSION/MINOR_VERSION already use there. -->
     <Compile Include="../src/Internal/Runtime/GarbageCollection/SoftwareWriteWatch.cs" Link="SoftwareWriteWatch.cs" />
     <Compile Include="../src/Internal/Runtime/GarbageCollection/SweepPhase.cs" Link="SweepPhase.cs" />
+    <Compile Include="../src/Internal/Runtime/GarbageCollection/VxSort.cs" Link="VxSort.cs" />
   </ItemGroup>
 
   <ItemGroup>

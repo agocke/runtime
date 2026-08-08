@@ -93,6 +93,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableStructs.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\SoftwareWriteWatch.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\SweepPhase.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\VxSort.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\AffinitySet.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnv.Base.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnv.MemoryBarrierProcessWide.cs" />

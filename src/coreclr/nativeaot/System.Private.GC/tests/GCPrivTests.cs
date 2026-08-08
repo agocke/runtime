@@ -5487,6 +5487,59 @@ public sealed unsafe class GCPrivTests
         }
     }
 
+    [Fact]
+    public void CompactPhaseClearsBricksBeyondThePlannedAllocation()
+    {
+        nuint brickSize = card_table_info.brick_size;
+        byte* storage = (byte*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(
+            6 * brickSize);
+        short* bricks = stackalloc short[5];
+        region_info* generationMap = stackalloc region_info[4];
+
+        try
+        {
+            byte* firstBrick = card_table_info.align_on_brick(storage);
+            using RelocateAddressStateScope _ = new(
+                firstBrick,
+                firstBrick + (nint)(4 * brickSize),
+                bricks,
+                generationMap);
+
+            heap_segment region = default;
+            heap_segment.heap_segment_mem(&region) = firstBrick;
+            heap_segment.heap_segment_reserved(&region) =
+                firstBrick + (nint)(4 * brickSize);
+
+            for (int i = 0; i < 4; i++)
+            {
+                bricks[i] = (short)(i + 1);
+            }
+
+            gc_heap.clear_unused_bricks_after_compaction(
+                &region,
+                firstBrick + (nint)brickSize + 128);
+
+            Assert.Equal((short)1, bricks[0]);
+            Assert.Equal((short)2, bricks[1]);
+            Assert.Equal((short)0, bricks[2]);
+            Assert.Equal((short)0, bricks[3]);
+
+            bricks[2] = 3;
+            bricks[3] = 4;
+            gc_heap.clear_unused_bricks_after_compaction(
+                &region,
+                firstBrick + (nint)(2 * brickSize));
+
+            Assert.Equal((short)2, bricks[1]);
+            Assert.Equal((short)0, bricks[2]);
+            Assert.Equal((short)0, bricks[3]);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(storage);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -18645,6 +18698,84 @@ public sealed unsafe class GCPrivTests
             (nuint)heap_segment.heap_segment_plan_allocated(&segment));
         Assert.Equal(guard == 4 ? (nuint)1 : 0, gc_heap.mark_stack_bos);
         Assert.Equal((nuint)0, gc_heap.mark_stack_tos);
+    }
+
+    [Fact]
+    public unsafe void PlanPhaseSortsUsableMarkListWithVxSort()
+    {
+        const int Count = 8193;
+        byte** savedMarkList = gc_heap.mark_list;
+        byte** savedMarkListIndex = gc_heap.mark_list_index;
+        byte** savedMarkListEnd = gc_heap.mark_list_end;
+        byte* savedSlow = gc_heap.slow;
+        byte* savedShigh = gc_heap.shigh;
+        gc_history_per_heap savedHistory = gc_heap.gc_data_per_heap;
+        byte** values = (byte**)System.Runtime.InteropServices.NativeMemory.Alloc(
+            (nuint)(Count + 1),
+            (nuint)sizeof(byte*));
+
+        try
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                values[i] = (byte*)(nuint)((Count - i) * sizeof(nuint));
+            }
+
+            gc_heap.mark_list = values;
+            gc_heap.mark_list_index = values + Count;
+            gc_heap.mark_list_end = values + Count;
+            gc_heap.slow = (byte*)(nuint)sizeof(nuint);
+            gc_heap.shigh = (byte*)(nuint)(Count * sizeof(nuint));
+            gc_heap.gc_data_per_heap = default;
+
+            Assert.Equal(
+                1,
+                gc_heap.prepare_mark_list_for_plan(
+                    (int)gc_generation_num.soh_gen1));
+            for (int i = 0; i < Count; i++)
+            {
+                Assert.Equal(
+                    (nuint)((i + 1) * sizeof(nuint)),
+                    (nuint)values[i]);
+            }
+            Assert.True(gc_heap.gc_data_per_heap.is_mechanism_bit_set(
+                gc_mechanism_bit_per_heap.gc_mark_list_bit));
+
+            int useMarkList = 1;
+            byte** regionMarkListEnd = null;
+            byte** regionMarkList = gc_heap.get_region_mark_list(
+                ref useMarkList,
+                (byte*)(nuint)(100 * sizeof(nuint)),
+                (byte*)(nuint)(200 * sizeof(nuint)),
+                &regionMarkListEnd);
+            Assert.Equal((nuint)(values + 99), (nuint)regionMarkList);
+            Assert.Equal((nuint)(values + 199), (nuint)regionMarkListEnd);
+
+            values[0] = (byte*)2;
+            values[1] = (byte*)1;
+            Assert.Equal(
+                0,
+                gc_heap.prepare_mark_list_for_plan(
+                    (int)gc_generation_num.soh_gen2));
+            Assert.Equal((nuint)2, (nuint)values[0]);
+            Assert.Equal((nuint)1, (nuint)values[1]);
+
+            gc_heap.mark_list_index = gc_heap.mark_list_end + 1;
+            Assert.Equal(
+                0,
+                gc_heap.prepare_mark_list_for_plan(
+                    (int)gc_generation_num.soh_gen1));
+        }
+        finally
+        {
+            gc_heap.mark_list = savedMarkList;
+            gc_heap.mark_list_index = savedMarkListIndex;
+            gc_heap.mark_list_end = savedMarkListEnd;
+            gc_heap.slow = savedSlow;
+            gc_heap.shigh = savedShigh;
+            gc_heap.gc_data_per_heap = savedHistory;
+            System.Runtime.InteropServices.NativeMemory.Free(values);
+        }
     }
 
     [Theory]

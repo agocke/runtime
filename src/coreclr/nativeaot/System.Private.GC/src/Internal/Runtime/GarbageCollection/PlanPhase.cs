@@ -1877,6 +1877,24 @@ internal unsafe partial struct gc_heap
         return slow == first_marked && shigh == last_marked;
     }
 
+    internal static int prepare_mark_list_for_plan(int condemned_gen_number)
+    {
+        if (condemned_gen_number >= GCInterfaceOffsets.max_generation ||
+            mark_list_index > mark_list_end)
+        {
+            return 0;
+        }
+
+        VxSort.do_vxsort(
+            mark_list,
+            (nint)(mark_list_index - mark_list),
+            slow,
+            shigh);
+        get_gc_data_per_heap()->set_mechanism_bit(
+            gc_mechanism_bit_per_heap.gc_mark_list_bit);
+        return 1;
+    }
+
     public static bool plan_phase_synchronous_foreground(
         gc_heap* hp,
         int condemned_gen_number)
@@ -1885,6 +1903,8 @@ internal unsafe partial struct gc_heap
         {
             return false;
         }
+
+        int use_mark_list = prepare_mark_list_for_plan(condemned_gen_number);
 
         generation* generation_table = generation_table_of(hp);
         for (int gen_index = 0; gen_index <= condemned_gen_number; gen_index++)
@@ -1999,6 +2019,14 @@ internal unsafe partial struct gc_heap
         int pinned_survived_region = 0;
         byte** local_mark_list_index = null;
         byte** mark_list_next = null;
+        if (use_mark_list != 0)
+        {
+            mark_list_next = get_region_mark_list(
+                ref use_mark_list,
+                x,
+                end,
+                &local_mark_list_index);
+        }
         byte* plug_end = x;
         byte* tree = null;
         nuint sequence_number = 0;
@@ -2121,7 +2149,7 @@ internal unsafe partial struct gc_heap
             sweep_region_in_plan(
                 hp,
                 seg1,
-                use_mark_list: 0,
+                use_mark_list,
                 ref mark_list_next,
                 local_mark_list_index);
             x = end;
@@ -2173,12 +2201,20 @@ internal unsafe partial struct gc_heap
                     end = heap_segment.heap_segment_allocated(seg1);
                     plug_end = x = heap_segment.heap_segment_mem(seg1);
                     current_brick = brick_of(x);
+                    if (use_mark_list != 0)
+                    {
+                        mark_list_next = get_region_mark_list(
+                            ref use_mark_list,
+                            x,
+                            end,
+                            &local_mark_list_index);
+                    }
                     if (should_sweep_in_plan(hp, seg1))
                     {
                         sweep_region_in_plan(
                             hp,
                             seg1,
-                            use_mark_list: 0,
+                            use_mark_list,
                             ref mark_list_next,
                             local_mark_list_index);
                         x = end;
@@ -2224,12 +2260,20 @@ internal unsafe partial struct gc_heap
                 end = heap_segment.heap_segment_allocated(seg1);
                 plug_end = x = heap_segment.heap_segment_mem(seg1);
                 current_brick = brick_of(x);
+                if (use_mark_list != 0)
+                {
+                    mark_list_next = get_region_mark_list(
+                        ref use_mark_list,
+                        x,
+                        end,
+                        &local_mark_list_index);
+                }
                 if (should_sweep_in_plan(hp, seg1))
                 {
                     sweep_region_in_plan(
                         hp,
                         seg1,
-                        use_mark_list: 0,
+                        use_mark_list,
                         ref mark_list_next,
                         local_mark_list_index);
                     x = end;
@@ -2492,7 +2536,7 @@ internal unsafe partial struct gc_heap
             x = find_next_marked(
                 x,
                 end,
-                use_mark_list: 0,
+                use_mark_list,
                 ref mark_list_next,
                 local_mark_list_index);
         }

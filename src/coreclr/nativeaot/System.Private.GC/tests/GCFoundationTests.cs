@@ -46,6 +46,58 @@ public sealed class GCFoundationTests
     }
 
     [Fact]
+    public static void VxSortMatchesReferenceSort()
+    {
+        int[] lengths =
+        {
+            0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 65, 66, 83, 84, 85,
+            127, 128, 129, 255, 256, 257, 1024, 8192, 8193, 16384,
+        };
+
+        foreach (int length in lengths)
+        {
+            for (int pattern = 0; pattern < PatternCount; pattern++)
+            {
+                AssertVxSortMatchesReference(ToAddresses(MakePattern(length, pattern), spread: false));
+            }
+        }
+
+        AssertVxSortMatchesReference(
+            ToAddresses(
+                MakePattern((int)VxSort.AVX512F_THRESHOLD_SIZE + 1, pattern: 4),
+                spread: false));
+
+        uint state = 0xD1B54A35;
+        for (int iteration = 0; iteration < 40; iteration++)
+        {
+            state = (state * 1664525) + 1013904223;
+            int length = 65 + (int)(state % 20000);
+            nuint[] addresses = new nuint[length];
+            for (int i = 0; i < addresses.Length; i++)
+            {
+                state = (state * 1664525) + 1013904223;
+                addresses[i] = ((nuint)(state % 4096) + 1) * (nuint)sizeof(nuint);
+            }
+
+            AssertVxSortMatchesReference(addresses);
+        }
+    }
+
+    [Fact]
+    public static void VxSortInstructionSetSelectionMatchesNativeThresholds()
+    {
+#if TARGET_AMD64
+        Assert.Equal(VxSort.scalar_isa, VxSort.select_isa(VxSort.AVX2_THRESHOLD_SIZE, true, true, false));
+        Assert.Equal(VxSort.avx2_isa, VxSort.select_isa(VxSort.AVX2_THRESHOLD_SIZE + 1, true, false, false));
+        Assert.Equal(VxSort.avx2_isa, VxSort.select_isa(VxSort.AVX512F_THRESHOLD_SIZE, true, true, false));
+        Assert.Equal(VxSort.avx512_isa, VxSort.select_isa(VxSort.AVX512F_THRESHOLD_SIZE + 1, true, true, false));
+        Assert.Equal(VxSort.scalar_isa, VxSort.select_isa(VxSort.AVX512F_THRESHOLD_SIZE + 1, false, true, false));
+#else
+        Assert.Equal(VxSort.scalar_isa, VxSort.select_isa(nint.MaxValue, true, true, true));
+#endif
+    }
+
+    [Fact]
     public static void EventStatusTracksLevelsAndKeywordsPerProvider()
     {
         GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
@@ -222,6 +274,48 @@ public sealed class GCFoundationTests
             for (int i = 0; i < length; i++)
             {
                 Assert.Equal(expected[i], (nuint)begin[i]);
+            }
+        }
+    }
+
+    private static unsafe void AssertVxSortMatchesReference(nuint[] addresses)
+    {
+        const nuint Guard = 0xF0F0F0F0;
+
+        int length = addresses.Length;
+        nuint[] expected = (nuint[])addresses.Clone();
+        Array.Sort(expected);
+
+        byte*[] buffer = new byte*[length + 2];
+        fixed (byte** first = buffer)
+        {
+            byte** begin = first + 1;
+            first[0] = (byte*)Guard;
+            first[length + 1] = (byte*)Guard;
+            nuint low = nuint.MaxValue;
+            nuint high = 0;
+            for (int i = 0; i < length; i++)
+            {
+                nuint address = addresses[i];
+                begin[i] = (byte*)address;
+                low = Math.Min(low, address);
+                high = Math.Max(high, address);
+            }
+
+            if (length == 0)
+            {
+                low = 0;
+            }
+
+            VxSort.do_vxsort(begin, length, (byte*)low, (byte*)high);
+
+            Assert.Equal((nuint)Guard, (nuint)first[0]);
+            Assert.Equal((nuint)Guard, (nuint)first[length + 1]);
+            for (int i = 0; i < length; i++)
+            {
+                Assert.True(
+                    expected[i] == (nuint)begin[i],
+                    $"length={length}, index={i}, expected={expected[i]}, actual={(nuint)begin[i]}");
             }
         }
     }

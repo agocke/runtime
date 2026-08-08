@@ -1542,12 +1542,17 @@ inspection provide equivalent information for the managed and C++ collectors.
 
 ### 12. `vxsort`
 
-**Status: Not started**
+**Status: In progress -- the active x64 path and scalar fallback are translated; ARM64 NEON
+remains**
 
-Reimplement `vxsort` with `System.Runtime.Intrinsics` for AVX2, AVX-512, and NEON, preserving the
-scalar and platform fallback behavior. The native implementation may remain temporarily linked
-until the managed version matches its correctness and throughput. The initial implementation may
-be use a simpler sorting algorithm, to verify correctness at the cost of throughput.
+The managed implementation preserves the native GC-facing pointer-key interface, AVX2 and
+AVX-512 crossover thresholds, small-sort boundaries, median-of-three and depth-limit behavior,
+and scalar fallback. It uses guarded unaligned x64 vector scans with scalar tails, and the WKS
+region planning phase now calls it at the same usable-mark-list point as `plan_phase.cpp`.
+Differential Foundation coverage includes randomized, duplicate-heavy, ordered, reversed,
+threshold-boundary, guard-word, and adversarial inputs; a planning-phase test covers the
+mark-list mechanism bit and the full-GC/overflow exclusions. The ARM64 NEON partition remains
+on the scalar fallback.
 
 **Complete when:** differential sorting tests pass on all supported instruction sets and
 performance is comparable to the native implementation.
