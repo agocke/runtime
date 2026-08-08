@@ -45,6 +45,14 @@ public sealed unsafe class GCPrivTests
     private static int s_finalizationScanCount;
     private static byte s_finalizationScanPromotion;
     private static int s_finalizationScanThreadCount;
+    private static int s_gcInProgress;
+    private static int s_gcStarted;
+    private static int s_waitForGCEvent;
+    private static int s_waitCompleted;
+#if BACKGROUND_GC && USE_REGIONS && !MULTIPLE_HEAPS
+    private static nint s_uohPublicationObject;
+    private static int s_uohReaderEntered;
+#endif
 
     [Fact]
     public void GcRandPreservesNativeSequence()
@@ -83,6 +91,135 @@ public sealed unsafe class GCPrivTests
         Assert.Equal(128u, gc_rand.MARK_STACK_INITIAL_LENGTH);
 #endif
     }
+
+    [Fact]
+    public void ManagedHeapLifecycleHooksPreserveNativeSemantics()
+    {
+        int savedSuspensionPending = Volatile.Read(
+            ref GCCommon.g_fSuspensionPending);
+        int savedWaitForGCEvent = Volatile.Read(
+            ref GCCommon.g_wait_for_gc_event);
+        uint savedOriginalSpinCountUnit = gc_heap.original_spin_count_unit;
+        uint savedSpinCountUnit = gc_heap.yp_spin_count_unit;
+        bool savedConfigOverride = gc_heap.spin_count_unit_config_p;
+#if BACKGROUND_GC && USE_REGIONS && !MULTIPLE_HEAPS
+        c_gc_state savedState = gc_heap.current_c_gc_state_for_test();
+        Thread reader = null;
+#endif
+        try
+        {
+            GCCommon.InitializeRuntimeLifecycleState();
+            Assert.Equal(1, Volatile.Read(ref GCCommon.g_wait_for_gc_event));
+            Assert.Equal(0, Volatile.Read(ref GCCommon.g_fSuspensionPending));
+
+            GCCommon.ResetWaitForGCEvent();
+            Assert.Equal(0, Volatile.Read(ref GCCommon.g_wait_for_gc_event));
+            GCCommon.SetWaitForGCEvent();
+            Assert.Equal(1, Volatile.Read(ref GCCommon.g_wait_for_gc_event));
+
+            GCCommon.SetSuspensionPending(suspensionPending: true);
+            GCCommon.SetSuspensionPending(suspensionPending: true);
+            Assert.Equal(2, Volatile.Read(ref GCCommon.g_fSuspensionPending));
+            GCCommon.SetSuspensionPending(suspensionPending: false);
+            GCCommon.SetSuspensionPending(suspensionPending: false);
+            Assert.Equal(0, Volatile.Read(ref GCCommon.g_fSuspensionPending));
+
+            s_gcInProgress = 0;
+            s_gcStarted = 0;
+            s_waitForGCEvent = 0;
+            s_waitCompleted = 0;
+            Thread waiter = new(WaitUntilGCComplete);
+            waiter.Start();
+            Assert.False(waiter.Join(100));
+            Volatile.Write(ref s_waitForGCEvent, 1);
+            Assert.True(waiter.Join(5_000));
+            Assert.Equal(1, Volatile.Read(ref s_waitCompleted));
+
+            gc_heap.original_spin_count_unit = 288;
+            gc_heap.yp_spin_count_unit = 288;
+            gc_heap.spin_count_unit_config_p = false;
+
+            gc_heap.set_yield_processor_scaling_factor(4.5f);
+            Assert.Equal(144u, gc_heap.yp_spin_count_unit);
+
+            gc_heap.set_yield_processor_scaling_factor(0);
+            Assert.Equal(144u, gc_heap.yp_spin_count_unit);
+
+            gc_heap.set_yield_processor_scaling_factor(float.MaxValue);
+            Assert.Equal(144u, gc_heap.yp_spin_count_unit);
+
+            gc_heap.spin_count_unit_config_p = true;
+            gc_heap.set_yield_processor_scaling_factor(9);
+            Assert.Equal(144u, gc_heap.yp_spin_count_unit);
+
+#if BACKGROUND_GC && USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.yp_spin_count_unit = 1;
+            gc_heap.reset_uoh_publication_for_test(concurrentMarking: true);
+            s_uohPublicationObject = 0x123400;
+            s_uohReaderEntered = 0;
+            gc_heap.begin_uoh_allocation((byte*)s_uohPublicationObject);
+            Assert.Equal(0, gc_heap.uoh_alloc_thread_count_for_test());
+
+            reader = new Thread(ReadUohObject);
+            reader.Start();
+            Assert.False(reader.Join(100));
+
+            gc_heap.publish_uoh_allocation((byte*)s_uohPublicationObject);
+            Assert.True(reader.Join(5_000));
+            Assert.Equal(1, Volatile.Read(ref s_uohReaderEntered));
+
+            gc_heap.set_background_sweep_position_for_test(
+                c_gc_state.c_gc_state_planning,
+                null,
+                null);
+            gc_heap.begin_uoh_allocation((byte*)s_uohPublicationObject);
+            Assert.Equal(1, gc_heap.uoh_alloc_thread_count_for_test());
+            gc_heap.publish_uoh_allocation((byte*)s_uohPublicationObject);
+            Assert.Equal(0, gc_heap.uoh_alloc_thread_count_for_test());
+#endif
+        }
+        finally
+        {
+            Volatile.Write(ref s_waitForGCEvent, 1);
+#if BACKGROUND_GC && USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.publish_uoh_allocation((byte*)s_uohPublicationObject);
+            reader?.Join(5_000);
+            gc_heap.reset_uoh_publication_for_test(concurrentMarking: false);
+            gc_heap.set_background_sweep_position_for_test(
+                savedState,
+                null,
+                null);
+#endif
+            Volatile.Write(
+                ref GCCommon.g_fSuspensionPending,
+                savedSuspensionPending);
+            Volatile.Write(
+                ref GCCommon.g_wait_for_gc_event,
+                savedWaitForGCEvent);
+            gc_heap.original_spin_count_unit = savedOriginalSpinCountUnit;
+            gc_heap.yp_spin_count_unit = savedSpinCountUnit;
+            gc_heap.spin_count_unit_config_p = savedConfigOverride;
+        }
+    }
+
+    private static void WaitUntilGCComplete()
+    {
+        SyncImports.ManagedGC_WaitUntilGCComplete(
+            ref s_gcInProgress,
+            ref s_gcStarted,
+            ref s_waitForGCEvent,
+            considerGcStart: 1);
+        Volatile.Write(ref s_waitCompleted, 1);
+    }
+
+#if BACKGROUND_GC && USE_REGIONS && !MULTIPLE_HEAPS
+    private static void ReadUohObject()
+    {
+        gc_heap.begin_uoh_object_read_for_test((byte*)s_uohPublicationObject);
+        Volatile.Write(ref s_uohReaderEntered, 1);
+        gc_heap.end_uoh_object_read_for_test();
+    }
+#endif
 
     [Fact]
     public void CFinalizeLifecycleGrowsAndDequeuesInReverseRegistrationOrder()

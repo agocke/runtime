@@ -1072,6 +1072,46 @@ namespace Internal.Runtime.GarbageCollection
         public const int DESIRED_PLUG_LENGTH = 1000;
         public const int USE_PADDING_FRONT = 1;
         public const int USE_PADDING_TAIL = 2;
+        public static uint yp_spin_count_unit;
+        public static uint original_spin_count_unit;
+        public static bool spin_count_unit_config_p;
+
+        public static void initialize_spin_count_unit()
+        {
+            yp_spin_count_unit = unchecked(32 * GCToEEInterface.GetCurrentProcessCpuCount());
+            if (yp_spin_count_unit == 0)
+            {
+                yp_spin_count_unit = 32;
+            }
+
+            long configuredSpinCountUnit = GCConfig.GetGCSpinCountUnit();
+            spin_count_unit_config_p =
+                configuredSpinCountUnit > 0 &&
+                configuredSpinCountUnit <= gc_rand.MAX_YP_SPIN_COUNT_UNIT;
+            if (spin_count_unit_config_p)
+            {
+                yp_spin_count_unit = (uint)configuredSpinCountUnit;
+            }
+
+            original_spin_count_unit = yp_spin_count_unit;
+        }
+
+        public static void set_yield_processor_scaling_factor(float scalingFactor)
+        {
+            if (spin_count_unit_config_p)
+            {
+                return;
+            }
+
+            Debug.Assert(yp_spin_count_unit != 0);
+            uint scaledSpinCountUnit = unchecked(
+                (uint)((float)original_spin_count_unit * scalingFactor / 9.0f));
+            if (scaledSpinCountUnit != 0 &&
+                scaledSpinCountUnit <= gc_rand.MAX_YP_SPIN_COUNT_UNIT)
+            {
+                yp_spin_count_unit = scaledSpinCountUnit;
+            }
+        }
 
         // Returns true if two pointers have the same large (double than normal) alignment.
         public static bool same_large_alignment_p(byte* p1, byte* p2)
@@ -1820,7 +1860,26 @@ namespace Internal.Runtime.GarbageCollection
 
                 while (GCEnv.VolatileLoadWithoutBarrier(lock_address) >= 0)
                 {
-                    GCEnv.YieldProcessor();
+                    if (System.Threading.Volatile.Read(
+                        ref GCCommon.g_fSuspensionPending) != 0)
+                    {
+                        SyncImports.ManagedGC_AllowForegroundGC();
+                        continue;
+                    }
+
+                    uint spinCount = unchecked(32 * gc_heap.yp_spin_count_unit);
+                    for (uint i = 0;
+                         i < spinCount &&
+                         GCEnv.VolatileLoadWithoutBarrier(lock_address) >= 0;
+                         i++)
+                    {
+                        GCEnv.YieldProcessor();
+                    }
+
+                    if (GCEnv.VolatileLoadWithoutBarrier(lock_address) >= 0)
+                    {
+                        GCToOSInterface.YieldThread(0);
+                    }
                 }
             }
 
@@ -4293,8 +4352,8 @@ namespace Internal.Runtime.GarbageCollection
                     {
                         if (GCToEEInterface.GetCurrentProcessCpuCount() > 1)
                         {
-                            const int SpinCount = 128;
-                            for (int j = 0; j < SpinCount; j++)
+                            uint spinCount = unchecked(128 * gc_heap.yp_spin_count_unit);
+                            for (uint j = 0; j < spinCount; j++)
                             {
                                 if (GCEnv.VolatileLoadWithoutBarrier(lockAddress) < 0)
                                 {

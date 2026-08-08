@@ -21,6 +21,11 @@ internal static class ManagedGCBgcTest
             return 3;
         }
 
+        if (!ConcurrentUohPublicationPreservesArrayMetadata())
+        {
+            return 4;
+        }
+
         const int NodeCount = 65_536;
         Node root = new Node { Value = 1 };
         Node tail = root;
@@ -271,6 +276,59 @@ internal static class ManagedGCBgcTest
         }
 
         return result;
+    }
+
+    private static bool ConcurrentUohPublicationPreservesArrayMetadata()
+    {
+        const int ArrayCount = 128;
+        const int ArrayLength = 16 * 1024;
+
+        Node root = new Node { Value = 1 };
+        Node tail = root;
+        for (int i = 0; i < 32_768; i++)
+        {
+            tail.Next = new Node { Value = i + 2 };
+            tail = tail.Next;
+        }
+
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: false,
+            compacting: false);
+
+        object[][] arrays = new object[ArrayCount][];
+        for (int i = 0; i < arrays.Length; i++)
+        {
+            object[] array = new object[ArrayLength];
+            array[0] = new Node { Value = i };
+            array[^1] = tail;
+            arrays[i] = array;
+            Thread.Yield();
+        }
+
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
+
+        for (int i = 0; i < arrays.Length; i++)
+        {
+            if (arrays[i].Length != ArrayLength ||
+                arrays[i][0] is not Node first ||
+                first.Value != i ||
+                !ReferenceEquals(arrays[i][^1], tail))
+            {
+                Console.WriteLine($"Concurrent UOH publication failed at {i}.");
+                return false;
+            }
+        }
+
+        GC.KeepAlive(root);
+        GC.KeepAlive(tail);
+        GC.KeepAlive(arrays);
+        return true;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

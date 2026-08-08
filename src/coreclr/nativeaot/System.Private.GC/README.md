@@ -685,9 +685,9 @@ word to find which of its bytes are set, issuing `GCEnv.MemoryBarrierProcessWide
 `[RuntimeImport]` over `minipal_memory_barrier_process_wide`, next to the rest of the
 environment's process-wide primitives -- before reading dirty state on an unsuspended runtime and
 again after clearing it, exactly where the C++ comments say a cross-thread barrier is needed.
-`GetTableStartByteOffset` is declared by the header but has no definition or caller anywhere in
-`src/coreclr`, so it has no C# counterpart; inventing a body would not be a translation of
-anything. The heap bounds `GetHeapStartAddress`/`GetHeapEndAddress` read are
+The dead `GetTableStartByteOffset` declaration was removed from the native header after verifying
+that it had no definition or caller, so there is no inactive API to mirror in C#. The heap bounds
+`GetHeapStartAddress`/`GetHeapEndAddress` read are
 `GCCommon.g_gc_lowest_address`/`g_gc_highest_address`, the same globals `gccommon.cpp` declares;
 `GCHeapMemory.Initialize` is what publishes them today, and `HeapStart`/`HeapEnd` simply read them
 back, so there is one authoritative place the heap's bounds are set.
@@ -1355,6 +1355,21 @@ the NativeAOT smokes exercise the public no-GC callback and full-GC wait/cancel 
 `IGCHeap` slots that a non-collecting heap cannot answer honestly are filled with a fail-fast
 stub rather than a plausible-looking wrong answer, so the first caller that needs a real
 collector is a crash with a stack trace rather than silent corruption.
+
+The production lifecycle slots are translated rather than stubbed. The manual-reset
+`WaitForGCEvent` state gates allocation waiters until NativeAOT has restarted managed threads;
+the suspension-pending counter retains nested increment/decrement semantics; and
+`SetYieldProcessorScalingFactor` updates the same validated spin-count unit consumed by WKS
+spin locks, unless `GCSpinCountUnit` supplied an explicit override. UOH allocations registered
+during concurrent marking remain hidden behind the native two-sided publication handshake until
+`PublishObject` runs after the runtime writes the method table and array length. Concurrent UOH
+revisit/overflow readers wait for that release, and sweep waits for all registered allocators
+after taking the UOH allocation lock.
+
+`ManagedGCHandleManager` owns the one global WKS handle-table bucket for the process. NativeAOT
+has no call site for creating secondary stores or for the legacy `Uproot`/`ContainsHandle`
+queries; those three ABI-retained slots assert and return the same null/false values as the
+native WKS implementation. Global-store shutdown remains the only store-lifetime path.
 
 The object handed to the EE is an `IGCHeapInternal`, as `GCHeap` is in the C++ GC: its vtable is
 the `IGCHeap` slots followed by the four slots `gc.h` adds. The EE only reads the `IGCHeap`

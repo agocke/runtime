@@ -129,6 +129,11 @@ namespace Internal.Runtime.GarbageCollection
         public static extern void ManagedGC_WaitUntilGCComplete(
             ref int gcInProgress,
             ref int gcStarted,
+            ref int waitForGCEvent,
             int considerGcStart);
+
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_AllowForegroundGC")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void ManagedGC_AllowForegroundGC();
     }
 }

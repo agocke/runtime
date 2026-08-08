@@ -4,6 +4,7 @@
 // Port of the dependency-closed parts of gccommon.cpp, in their original order.
 
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace Internal.Runtime.GarbageCollection;
 
@@ -51,6 +52,32 @@ internal static unsafe partial class GCCommon
     internal static byte* g_gc_lowest_address;
     internal static byte* g_gc_highest_address;
     internal static void* g_gc_pFreeObjectMethodTable;
+    internal static int g_fSuspensionPending;
+    internal static int g_wait_for_gc_event = 1;
+
+    internal static void InitializeRuntimeLifecycleState()
+    {
+        Volatile.Write(ref g_fSuspensionPending, 0);
+        Volatile.Write(ref g_wait_for_gc_event, 1);
+    }
+
+    internal static void SetSuspensionPending(bool suspensionPending)
+    {
+        if (suspensionPending)
+        {
+            Interlocked.Increment(ref g_fSuspensionPending);
+        }
+        else
+        {
+            Interlocked.Decrement(ref g_fSuspensionPending);
+        }
+    }
+
+    internal static void SetWaitForGCEvent() =>
+        Volatile.Write(ref g_wait_for_gc_event, 1);
+
+    internal static void ResetWaitForGCEvent() =>
+        Volatile.Write(ref g_wait_for_gc_event, 0);
 
 #if USE_REGIONS
     // gcinternal.h declares this as a global, not a gc_heap member. The entries are addressed

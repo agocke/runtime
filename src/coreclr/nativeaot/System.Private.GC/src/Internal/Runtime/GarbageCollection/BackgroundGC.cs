@@ -28,6 +28,11 @@ internal unsafe partial struct gc_heap
     private static nuint background_mark_stack_array_length;
     private static nuint background_mark_stack_tos;
     private static int background_mark_stack_overflow;
+    private const int MaxPendingUohAllocations = 64;
+    private static int uoh_publication_lock;
+    private static nint uoh_object_being_read;
+    private static pending_uoh_allocation_array pending_uoh_allocations;
+    private static int uoh_alloc_thread_count;
     private static int temp_disable_concurrent_p;
     private static nuint bgc_thread_context;
 #if MANAGED_GC_TEST_HOST
@@ -49,6 +54,12 @@ internal unsafe partial struct gc_heap
     }
 
     private static background_written_address_array background_written_addresses;
+
+    [InlineArray(MaxPendingUohAllocations)]
+    private struct pending_uoh_allocation_array
+    {
+        private nint _element0;
+    }
 
     [InlineArray(9)]
     private struct bgc_thread_name_buffer
@@ -98,6 +109,10 @@ internal unsafe partial struct gc_heap
         background_mark_stack_array_length = stackLength;
         background_mark_stack_tos = 0;
         background_mark_stack_overflow = 0;
+        uoh_publication_lock = 0;
+        uoh_object_being_read = 0;
+        pending_uoh_allocations = default;
+        uoh_alloc_thread_count = 0;
         bgc_thread_running = 0;
         bgc_thread_shutdown = 0;
         bgc_thread_context = 0;
@@ -442,9 +457,9 @@ internal unsafe partial struct gc_heap
         drain_background_mark_stack(hp);
         allow_foreground_gc();
         revisit_written_pages(hp, concurrent_p: true);
-        revisit_dirty_cards(hp);
+        revisit_dirty_cards(hp, concurrent_p: true);
         revisit_written_pages(hp, concurrent_p: true);
-        revisit_dirty_cards(hp);
+        revisit_dirty_cards(hp, concurrent_p: true);
         drain_background_mark_stack(hp);
         GCEvents.GCEventFireBGC1stConEnd();
     }
@@ -569,7 +584,7 @@ internal unsafe partial struct gc_heap
         drain_background_mark_stack(hp);
 
         revisit_written_pages(hp, concurrent_p: false);
-        revisit_dirty_cards(hp);
+        revisit_dirty_cards(hp, concurrent_p: false);
         drain_background_mark_stack(hp);
 
         if (ObjectHandle.DependentHandleContextsInitialized)
@@ -747,7 +762,8 @@ internal unsafe partial struct gc_heap
                                 segment,
                                 page,
                                 end,
-                                genNumber > (int)gc_generation_num.soh_gen2);
+                                genNumber > (int)gc_generation_num.soh_gen2,
+                                concurrent_p);
                         }
 
                         if (count < BackgroundWrittenAddressCount)
@@ -769,7 +785,7 @@ internal unsafe partial struct gc_heap
         }
     }
 
-    private static void revisit_dirty_cards(gc_heap* hp)
+    private static void revisit_dirty_cards(gc_heap* hp, bool concurrent_p)
     {
         generation* generationTable = generation_table_of(hp);
         for (int genNumber = (int)gc_generation_num.soh_gen2;
@@ -806,7 +822,8 @@ internal unsafe partial struct gc_heap
                             segment,
                             card_address(card),
                             end,
-                            genNumber > (int)gc_generation_num.soh_gen2);
+                            genNumber > (int)gc_generation_num.soh_gen2,
+                            concurrent_p);
                     }
 
                     if (batchEnd <= searchCard)
@@ -824,7 +841,8 @@ internal unsafe partial struct gc_heap
         heap_segment* segment,
         byte* page,
         byte* segmentEnd,
-        bool uoh_p)
+        bool uoh_p,
+        bool concurrent_p)
     {
         byte* pageEnd = page + 0x1000;
         byte* segmentStart = heap_segment.heap_segment_mem(segment);
@@ -839,10 +857,19 @@ internal unsafe partial struct gc_heap
         }
 
         byte* current = uoh_p
-            ? find_uoh_object_for_card(page, segmentStart, segmentEnd)
+            ? find_uoh_object_for_card(
+                page,
+                segmentStart,
+                segmentEnd,
+                concurrent_p)
             : find_first_object(page, segmentStart);
         while (current < pageEnd)
         {
+            if (uoh_p && concurrent_p)
+            {
+                begin_uoh_object_read(current);
+            }
+
             nuint objectSize = size(current);
             byte* next = current + (nint)(uoh_p
                 ? AlignQword(objectSize)
@@ -863,8 +890,196 @@ internal unsafe partial struct gc_heap
                     start_useful: 1);
             }
 
+            if (uoh_p && concurrent_p)
+            {
+                end_uoh_object_read();
+            }
+
             current = next;
         }
+    }
+
+    public static void begin_uoh_allocation(byte* obj)
+    {
+        c_gc_state state = current_c_gc_state;
+        if (state == c_gc_state.c_gc_state_planning)
+        {
+            Interlocked.Increment(ref uoh_alloc_thread_count);
+            return;
+        }
+
+        if (state != c_gc_state.c_gc_state_marking)
+        {
+            return;
+        }
+
+        while (true)
+        {
+            enter_uoh_publication_lock();
+            if ((byte*)System.Threading.Volatile.Read(ref uoh_object_being_read) == obj)
+            {
+                leave_uoh_publication_lock();
+                wait_for_uoh_object_read(obj);
+                continue;
+            }
+
+            for (int i = 0; i < MaxPendingUohAllocations; i++)
+            {
+                if (System.Threading.Volatile.Read(ref pending_uoh_allocations[i]) == 0)
+                {
+                    System.Threading.Volatile.Write(
+                        ref pending_uoh_allocations[i],
+                        (nint)obj);
+                    leave_uoh_publication_lock();
+                    return;
+                }
+            }
+
+            leave_uoh_publication_lock();
+            wait_for_pending_uoh_slot();
+        }
+    }
+
+    public static void publish_uoh_allocation(byte* obj)
+    {
+        for (int i = 0; i < MaxPendingUohAllocations; i++)
+        {
+            if ((byte*)System.Threading.Volatile.Read(
+                    ref pending_uoh_allocations[i]) == obj)
+            {
+                System.Threading.Volatile.Write(
+                    ref pending_uoh_allocations[i],
+                    0);
+                break;
+            }
+        }
+
+        if (current_c_gc_state == c_gc_state.c_gc_state_planning)
+        {
+            Interlocked.Decrement(ref uoh_alloc_thread_count);
+        }
+    }
+
+    private static void begin_uoh_object_read(byte* obj)
+    {
+        while (true)
+        {
+            enter_uoh_publication_lock();
+            bool allocationPending = false;
+            for (int i = 0; i < MaxPendingUohAllocations; i++)
+            {
+                if ((byte*)System.Threading.Volatile.Read(
+                        ref pending_uoh_allocations[i]) == obj)
+                {
+                    allocationPending = true;
+                    break;
+                }
+            }
+
+            if (!allocationPending)
+            {
+                System.Threading.Volatile.Write(
+                    ref uoh_object_being_read,
+                    (nint)obj);
+                leave_uoh_publication_lock();
+                return;
+            }
+
+            leave_uoh_publication_lock();
+            wait_for_uoh_allocation_publication(obj);
+        }
+    }
+
+    private static void end_uoh_object_read() =>
+        System.Threading.Volatile.Write(ref uoh_object_being_read, 0);
+
+    private static void enter_uoh_publication_lock()
+    {
+        while (Interlocked.CompareExchange(
+            ref uoh_publication_lock,
+            1,
+            0) != 0)
+        {
+            spin_for_uoh_publication();
+        }
+    }
+
+    private static void leave_uoh_publication_lock() =>
+        System.Threading.Volatile.Write(ref uoh_publication_lock, 0);
+
+    private static void wait_for_uoh_object_read(byte* obj)
+    {
+        while ((byte*)System.Threading.Volatile.Read(
+            ref uoh_object_being_read) == obj)
+        {
+            spin_for_uoh_publication();
+        }
+    }
+
+    private static void wait_for_uoh_allocation_publication(byte* obj)
+    {
+        while (true)
+        {
+            bool allocationPending = false;
+            for (int i = 0; i < MaxPendingUohAllocations; i++)
+            {
+                if ((byte*)System.Threading.Volatile.Read(
+                        ref pending_uoh_allocations[i]) == obj)
+                {
+                    allocationPending = true;
+                    break;
+                }
+            }
+
+            if (!allocationPending)
+            {
+                return;
+            }
+
+            spin_for_uoh_publication();
+        }
+    }
+
+    private static void wait_for_pending_uoh_slot()
+    {
+        while (true)
+        {
+            for (int i = 0; i < MaxPendingUohAllocations; i++)
+            {
+                if (System.Threading.Volatile.Read(
+                    ref pending_uoh_allocations[i]) == 0)
+                {
+                    return;
+                }
+            }
+
+            spin_for_uoh_publication();
+        }
+    }
+
+    private static void wait_for_uoh_allocations()
+    {
+        while (System.Threading.Volatile.Read(ref uoh_alloc_thread_count) != 0)
+        {
+            spin_for_uoh_publication();
+        }
+
+        for (int i = 0; i < MaxPendingUohAllocations; i++)
+        {
+            Debug.Assert(System.Threading.Volatile.Read(
+                ref pending_uoh_allocations[i]) == 0);
+        }
+    }
+
+    private static void spin_for_uoh_publication()
+    {
+        uint spinCount = gc_heap.yp_spin_count_unit;
+        for (uint i = 0; i < spinCount; i++)
+        {
+            GCEnv.YieldProcessor();
+        }
+
+        GCToOSInterface.YieldThread(0);
     }
 
     private static void prepare_background_sweep(gc_heap* hp)
@@ -954,8 +1169,9 @@ internal unsafe partial struct gc_heap
         }
 
         GCEvents.GCEventFireBGC1stSweepEnd(0);
-        set_background_state(bgc_state.bgc_sweep_uoh);
         GCSpinLock.enter(&hp->more_space_lock_uoh);
+        wait_for_uoh_allocations();
+        set_background_state(bgc_state.bgc_sweep_uoh);
         for (int genNumber = (int)gc_generation_num.loh_generation;
              genNumber < (int)gc_generation_num.total_generation_count;
              genNumber++)
@@ -1604,6 +1820,14 @@ internal unsafe partial struct gc_heap
                 byte* end = heap_segment.heap_segment_allocated(segment);
                 while (current < end)
                 {
+                    bool publicationReadHeld =
+                        uoh_p &&
+                        current_c_gc_state == c_gc_state.c_gc_state_marking;
+                    if (publicationReadHeld)
+                    {
+                        begin_uoh_object_read(current);
+                    }
+
                     nuint objectSize = size(current);
                     if (background_object_marked(current, clear_p: false) &&
                         contain_pointers_or_collectible(current) != 0)
@@ -1614,6 +1838,11 @@ internal unsafe partial struct gc_heap
                             objectSize,
                             null,
                             &background_mark_reference);
+                    }
+
+                    if (publicationReadHeld)
+                    {
+                        end_uoh_object_read();
                     }
 
                     current += (nint)(uoh_p
@@ -1712,6 +1941,29 @@ internal unsafe partial struct gc_heap
         current_sweep_seg = segment;
         current_sweep_pos = position;
     }
+
+    public static void reset_uoh_publication_for_test(bool concurrentMarking)
+    {
+        uoh_publication_lock = 0;
+        uoh_object_being_read = 0;
+        pending_uoh_allocations = default;
+        uoh_alloc_thread_count = 0;
+        current_c_gc_state = concurrentMarking
+            ? c_gc_state.c_gc_state_marking
+            : c_gc_state.c_gc_state_free;
+    }
+
+    public static void begin_uoh_object_read_for_test(byte* obj) =>
+        begin_uoh_object_read(obj);
+
+    public static void end_uoh_object_read_for_test() =>
+        end_uoh_object_read();
+
+    public static int uoh_alloc_thread_count_for_test() =>
+        System.Threading.Volatile.Read(ref uoh_alloc_thread_count);
+
+    public static c_gc_state current_c_gc_state_for_test() =>
+        current_c_gc_state;
 
     public static void reset_background_event_for_test()
     {

@@ -245,6 +245,8 @@ void ThreadStore::SuspendAllThreads(bool waitForGCEvent)
         GCHeapUtilities::GetGCHeap()->ResetWaitForGCEvent();
     }
 
+    GCHeapUtilities::GetGCHeap()->SetSuspensionPending(true);
+
     // set the global trap for pinvoke leave and return
     RhpTrapThreads |= (uint32_t)TrapThreadsFlags::TrapThreads;
 
@@ -346,6 +348,7 @@ void ThreadStore::ResumeAllThreads(bool waitForGCEvent)
 #endif //TARGET_ARM || TARGET_ARM64 || TARGET_LOONGARCH64
 
     RhpTrapThreads &= ~(uint32_t)TrapThreadsFlags::TrapThreads;
+    GCHeapUtilities::GetGCHeap()->SetSuspensionPending(false);
 
     RhpSuspendingThread = NULL;
     if (waitForGCEvent)

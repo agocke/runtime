@@ -514,9 +514,9 @@ software write watch, and event plumbing no longer depend on placeholder impleme
   (`ClearDirty`/`SetDirty`/`SetDirtyRegion`, `GetDirtyFromBlock`/`GetDirty`, with their exact
   bit-scan-to-page-address arithmetic and the `GCEnv.MemoryBarrierProcessWide` calls the C++
   comments require before and after a dirty scan on an unsuspended runtime).
-  `GetTableStartByteOffset` is declared by the header but has no definition or caller anywhere
-  in `src/coreclr`, so it has no C# counterpart; a comment at its would-be call site in
-  `GetTableByteSize`'s neighborhood records why. `memcpy` and `memset` become
+  the dead `GetTableStartByteOffset` declaration was removed from the native header after
+  verifying that it had no definition or caller, so there is no inactive API to mirror.
+  `memcpy` and `memset` become
   `Buffer.MemoryCopy` and a small chunked wrapper over `Unsafe.InitBlockUnaligned`, both
   allocation-free CoreLib primitives rather than `NativeMemory`, which owns memory instead of
   merely operating on caller-supplied pointers. The heap bounds `GetHeapStartAddress`/
@@ -570,11 +570,10 @@ native workstation/server heap construction and DAC population paths. `Runtime.M
 `IlcManagedGC=true`. The rest of `gccommon.cpp` and `gcscan.cpp` is blocked on later heap and
 handle-table stages. The disabled `TRACE_GC_EVENT_STATE` debug dump remains with diagnostics
 because it requires string-free logging; all current event serializers and expanded event
-helpers are translated. `softwarewritewatch.h`/`.cpp` are translated in full except for the
-declared-but-undefined `GetTableStartByteOffset`; nothing in `Runtime.ManagedGC` calls
-`SoftwareWriteWatch` yet, since its only caller in the C++ is `card_table.cpp`, which arrives with
-the core heap and region modules of stage 7 -- the port is ready for those call sites when they
-land. The remaining `gccommon.cpp` state is
+helpers are translated. `softwarewritewatch.h`/`.cpp` are translated in full; the declaration-only
+`GetTableStartByteOffset` was removed from the native header. `Runtime.ManagedGC` actively uses
+software write watch for background reset and concurrent/final dirty-page revisit. The remaining
+`gccommon.cpp` state is
 either compiled out of NativeAOT or belongs to the core heap and region modules in stages 6 and
 7; `log_init_error_to_host` also needs the allocation-free native-formatting support used by its
 callers. `GCConfig::RefreshHeapHardLimitSettings`
@@ -686,6 +685,11 @@ by `handletableconstants.h`.
 - The remaining live `IGCHandleManager`/`IGCHandleStore` behavior, including ref-counted
   enumeration and store destruction. The three ABI-retained dead slots still assert/return the
   same values as `gchandletable.cpp`.
+- The WKS production `IGCHeap` lifecycle/tuning hooks: UOH publication exclusion through
+  `PublishObject`, manual-reset GC-completion gating, nested suspension-pending accounting, and
+  validated yield-processor scaling consumed by the translated spin loops. Foundation tests
+  cover state transitions and the UOH reader/publication handshake; regular and background
+  NativeAOT smokes exercise the runtime call paths.
 
 #### Remaining
 

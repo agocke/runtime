@@ -202,6 +202,7 @@ namespace Internal.Runtime.GarbageCollection
 
         private static int Initialize(void* thisPtr)
         {
+            GCCommon.InitializeRuntimeLifecycleState();
 #if BACKGROUND_GC
             GCCommon.initialize();
 #endif
@@ -214,6 +215,7 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             gc_heap.initialize_gc_static_state();
+            gc_heap.initialize_spin_count_unit();
             GCSpinLock.initialize(ref s_noGcRegionLock);
 
 #if USE_REGIONS
@@ -505,6 +507,9 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void PublishObject(void* thisPtr, byte* obj)
         {
+#if BACKGROUND_GC && USE_REGIONS && !MULTIPLE_HEAPS
+            gc_heap.publish_uoh_allocation(obj);
+#endif
         }
 
         private static nuint GetLOHThreshold(void* thisPtr) => LargeObjectSize;
@@ -668,23 +673,28 @@ namespace Internal.Runtime.GarbageCollection
             SyncImports.ManagedGC_WaitUntilGCComplete(
                 ref s_gcInProgress,
                 ref s_gcStarted,
+                ref GCCommon.g_wait_for_gc_event,
                 considerGcStart ? 1 : 0);
         }
 
         private static void SetWaitForGCEvent(void* thisPtr)
         {
+            GCCommon.SetWaitForGCEvent();
         }
 
         private static void ResetWaitForGCEvent(void* thisPtr)
         {
+            GCCommon.ResetWaitForGCEvent();
         }
 
         private static void SetSuspensionPending(void* thisPtr, byte fSuspensionPending)
         {
+            GCCommon.SetSuspensionPending(fSuspensionPending != 0);
         }
 
         private static void SetYieldProcessorScalingFactor(void* thisPtr, float yieldProcessorScalingFactor)
         {
+            gc_heap.set_yield_processor_scaling_factor(yieldProcessorScalingFactor);
         }
 
         private static byte RuntimeStructuresValid(void* thisPtr) => 1;

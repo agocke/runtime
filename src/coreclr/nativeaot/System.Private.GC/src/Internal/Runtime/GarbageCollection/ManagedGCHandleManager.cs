@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 
@@ -119,7 +120,12 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void* GetGlobalHandleStore(void* thisPtr) => Unsafe.AsPointer(ref s_storeVtablePtr);
 
-        private static void* CreateHandleStore(void* thisPtr) => null;
+        private static void* CreateHandleStore(void* thisPtr)
+        {
+            // Dead ABI slot: NativeAOT only uses the global store.
+            Debug.Assert(false);
+            return null;
+        }
 
         private static void DestroyHandleStore(void* thisPtr, void* store)
         {
@@ -222,12 +228,14 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void Uproot(void* thisPtr)
         {
-            System.Diagnostics.Debug.Assert(false);
+            // Dead ABI slot retained by the native WKS implementation.
+            Debug.Assert(false);
         }
 
         private static byte ContainsHandle(void* thisPtr, OBJECTHANDLE handle)
         {
-            System.Diagnostics.Debug.Assert(false);
+            // Dead ABI slot retained by the native WKS implementation.
+            Debug.Assert(false);
             return 0;
         }
 

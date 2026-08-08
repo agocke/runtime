@@ -412,6 +412,9 @@ internal unsafe partial struct gc_heap
 
                 if ((diff == 0) || (diff >= unchecked((nint)Align((nuint)GCInterfaceOffsets.min_obj_size, align_const))))
                 {
+#if BACKGROUND_GC && !MANAGED_GC_TEST_HOST
+                    begin_uoh_allocation(free_list);
+#endif
                     allocator.unlink_item(gen_allocator, a_l_idx, free_list, prev_free_item, false);
 
                     nuint limit = limit_from_size(
@@ -1008,6 +1011,12 @@ internal unsafe partial struct gc_heap
         }
 
         byte* old_alloc = allocated;
+#if BACKGROUND_GC && !MANAGED_GC_TEST_HOST
+        if (gen_number != 0)
+        {
+            begin_uoh_allocation(old_alloc);
+        }
+#endif
         advance_allocated(alloc_allocated, seg, limit, gen_number);
         adjust_limit_clr(
             old_alloc,

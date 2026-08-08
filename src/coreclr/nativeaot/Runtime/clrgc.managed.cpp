@@ -76,6 +76,7 @@ extern "C" void ManagedGC_ExitCriticalRegion(UInt32_BOOL entered)
 extern "C" void ManagedGC_WaitUntilGCComplete(
     int32_t* gcInProgress,
     int32_t* gcStarted,
+    int32_t* waitForGCEvent,
     UInt32_BOOL considerGcStart)
 {
     Thread* thread = ThreadStore::GetCurrentThread();
@@ -85,7 +86,8 @@ extern "C" void ManagedGC_WaitUntilGCComplete(
         thread->EnablePreemptiveMode();
     }
 
-    while (VolatileLoad(gcInProgress) != 0 ||
+    while (VolatileLoad(waitForGCEvent) == 0 ||
+        VolatileLoad(gcInProgress) != 0 ||
         (considerGcStart && VolatileLoad(gcStarted) != 0))
     {
         PalSwitchToThread();

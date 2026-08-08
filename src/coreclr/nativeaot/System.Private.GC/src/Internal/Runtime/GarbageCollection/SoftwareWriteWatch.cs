@@ -10,11 +10,6 @@
 // are translated together, in the header's declaration order, so this file reads as one
 // `SoftwareWriteWatch` class the way the C++ class does across its two source files.
 //
-// GetTableStartByteOffset is declared by softwarewritewatch.h but is not defined anywhere in
-// src/coreclr, nor called from anywhere in it -- it is a vestigial declaration with no body to
-// translate. Inventing one would not be a translation of anything, so it is intentionally
-// omitted here.
-//
 // memcpy and memset are Buffer.MemoryCopy and GCCommon.MemSet respectively: both are
 // allocation-free CoreLib primitives, unlike NativeMemory, which owns memory rather than merely
 // operating on caller-supplied pointers.
@@ -243,9 +238,6 @@ internal static unsafe class SoftwareWriteWatch
         tableByteSize = GCEnv.ALIGN_UP(tableByteSize, (nuint)sizeof(nuint));
         return tableByteSize;
     }
-
-    // GetTableStartByteOffset(size_t byteSizeBeforeTable) is declared by softwarewritewatch.h but has no
-    // definition or caller anywhere in src/coreclr; see the file header comment.
 
     private static byte* TranslateTableToExcludeHeapStartAddress(byte* table, void* heapStartAddress)
     {

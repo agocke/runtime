@@ -178,14 +178,18 @@ internal static unsafe partial class SyncImports
     public static void ManagedGC_WaitUntilGCComplete(
         ref int gcInProgress,
         ref int gcStarted,
+        ref int waitForGCEvent,
         int considerGcStart)
     {
-        while (Volatile.Read(ref gcInProgress) != 0 ||
+        while (Volatile.Read(ref waitForGCEvent) == 0 ||
+            Volatile.Read(ref gcInProgress) != 0 ||
             (considerGcStart != 0 && Volatile.Read(ref gcStarted) != 0))
         {
             Thread.Yield();
         }
     }
+
+    public static void ManagedGC_AllowForegroundGC() => Thread.Yield();
 
     [DllImport("kernel32", EntryPoint = "CreateEventW", SetLastError = true)]
     private static extern void* sys_CreateEventW(void* lpEventAttributes, int bManualReset, int bInitialState, char* lpName);

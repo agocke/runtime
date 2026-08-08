@@ -1412,12 +1412,24 @@ internal unsafe partial struct gc_heap
     private static byte* find_uoh_object_for_card(
         byte* card_start,
         byte* segment_start,
-        byte* segment_end)
+        byte* segment_end,
+        bool concurrent_p = false)
     {
         byte* current = segment_start;
         while (current < segment_end)
         {
-            byte* next = current + (nint)AlignQword(size(current));
+            if (concurrent_p)
+            {
+                begin_uoh_object_read(current);
+            }
+
+            nuint object_size = size(current);
+            if (concurrent_p)
+            {
+                end_uoh_object_read();
+            }
+
+            byte* next = current + (nint)AlignQword(object_size);
             if (next > card_start)
             {
                 return current;

@@ -248,14 +248,18 @@ internal static unsafe partial class SyncImports
     public static void ManagedGC_WaitUntilGCComplete(
         ref int gcInProgress,
         ref int gcStarted,
+        ref int waitForGCEvent,
         int considerGcStart)
     {
-        while (Volatile.Read(ref gcInProgress) != 0 ||
+        while (Volatile.Read(ref waitForGCEvent) == 0 ||
+            Volatile.Read(ref gcInProgress) != 0 ||
             (considerGcStart != 0 && Volatile.Read(ref gcStarted) != 0))
         {
             Thread.Yield();
         }
     }
+
+    public static void ManagedGC_AllowForegroundGC() => Thread.Yield();
 
     [DllImport("libc", EntryPoint = "pthread_mutex_init")]
     private static extern int sys_pthread_mutex_init(pthread_mutex_t* mutex, pthread_mutexattr_t* attr);

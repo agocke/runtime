@@ -64,7 +64,6 @@ private:
     static void *GetPageAddress(size_t tableByteIndex);
 public:
     static size_t GetTableByteSize(void *heapStartAddress, void *heapEndAddress);
-    static size_t GetTableStartByteOffset(size_t byteSizeBeforeTable);
 private:
     static uint8_t *TranslateTableToExcludeHeapStartAddress(uint8_t *table, void *heapStartAddress);
     static void TranslateToTableRegion(void *baseAddress, size_t regionByteSize, uint8_t **tableBaseAddressRef, size_t *tableRegionByteSizeRef);
