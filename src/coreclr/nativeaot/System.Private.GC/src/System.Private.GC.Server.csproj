@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <ManagedGCServerBuild>true</ManagedGCServerBuild>
+    <AssemblyName>System.Private.GC.Server</AssemblyName>
+    <RootNamespace>System.Private.GC</RootNamespace>
+  </PropertyGroup>
+  <Import Project="System.Private.GC.csproj" />
+</Project>

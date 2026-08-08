@@ -111,6 +111,7 @@ Ported so far:
 | `GCRegionsSegments.cs` | dependency-closed WKS `USE_REGIONS` mapping, region-table, deferred UOH free-region-return, card-bundle enable/search/clear, and dirty-card range helpers from `collect.cpp`, `regions_segments.cpp`, `plan_phase.cpp`, `background.cpp`, `diagnostics.cpp`, `gc.cpp`, and `card_table.cpp`, plus direct brick repair and first-object lookup |
 | `GCWriteBarrier.cs` | WKS `USE_REGIONS` write-barrier helpers from `gc.cpp` |
 | `ManagedGCHeap.cs` | WKS `gcinterface.h` `IGCHeap`, including allocation, collection, finalization, memory metrics, limits, and latency settings |
+| `ManagedServerGC.cs` | Foundational x64 Linux `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` initialization, heap selection, per-heap allocation, server workers, join/coordinator state, and dynamic heap-count bootstrap from `init.cpp`, `interface.cpp`, `allocation.cpp`, `dynamic_heap_count.cpp`, `gc.cpp`, and `gcinternal.h` |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
 For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed
@@ -118,6 +119,17 @@ entry points preserve the loader protocol order for output clearing, incoming `I
 recording, interface-layout verification, managed `GCConfig` initialization, and
 handle-manager/heap creation with OOM returns. The direct ABI/version and failure-path coverage
 for this lives in `tests/ManagedGCEntryPointsTests.cs`.
+
+The managed server foundation builds as `System.Private.GC.Server`,
+`Runtime.ManagedServerGC`, and `managedservergc-enabled`. `IlcManagedServerGC` retains the
+managed WKS assembly for `DOTNET_gcServer=0` and selects distinct server exports for
+`DOTNET_gcServer=1`. Server startup creates the heap-count and heap-pointer arrays, one
+region-backed generation/allocation/free-region/lock set and handle-table slot per heap,
+processor-based home/alloc heap selection, start/suspend events, join/coordinator state, and
+one affinitized high-priority worker per maximum heap. Explicit `GCHeapCount` starts that many
+active heaps; the default dynamic-adaptation configuration starts with one active heap while
+retaining the initialized maximum set. Allocation uses the selected heap directly. Collection
+entry points remain deliberately unrouted until the parallel mark/plan/relocate closure exists.
 
 `gcinterface.dac.h` is translated, including the `dac_generation` and `dac_gc_heap` views
 generated from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Pointer-sized arrays use

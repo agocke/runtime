@@ -5800,6 +5800,7 @@ public sealed unsafe class GCPrivTests
         gc_mechanisms savedSettings = gc_heap.settings;
         int savedLohCompacted = gc_heap.loh_compacted_p;
         int savedAlwaysCompact = gc_heap.loh_compaction_always_p;
+        bool savedNeverDecommit = gc_heap.never_decommit_p;
 #if BACKGROUND_GC
         int savedBackgroundRunning = gc_heap.gc_background_running;
 #endif
@@ -5833,6 +5834,7 @@ public sealed unsafe class GCPrivTests
             generations = ManagedGCRegionBootstrap.GenerationTable;
             Assert.True(heap is not null);
             Assert.True(generations is not null);
+            gc_heap.never_decommit_p = true;
 
             heap_segment lohSegment = default;
             byte* lohStorage = stackalloc byte[sizeof(aligned_plug_and_gap) + 64];
@@ -5943,6 +5945,7 @@ public sealed unsafe class GCPrivTests
             gc_heap.settings = savedSettings;
             gc_heap.loh_compacted_p = savedLohCompacted;
             gc_heap.loh_compaction_always_p = savedAlwaysCompact;
+            gc_heap.never_decommit_p = savedNeverDecommit;
 #if BACKGROUND_GC
             gc_heap.gc_background_running = savedBackgroundRunning;
 #endif
@@ -18664,8 +18667,9 @@ public sealed unsafe class GCPrivTests
             byte* regionBase = AlignUp(rawStorage, RegionSize);
             byte* mem = regionBase + 512;
             byte* movable = mem + (nint)objectSize;
-            byte* pinned = mem + (nint)(2 * objectSize);
-            byte* end = mem + (nint)(3 * objectSize);
+            byte* gap = mem + (nint)(2 * objectSize);
+            byte* pinned = mem + (nint)(3 * objectSize);
+            byte* end = mem + (nint)(4 * objectSize);
             byte* descriptorStorage =
                 stackalloc byte[sizeof(nuint) + sizeof(CGCDescSeries) + sizeof(MethodTable)];
             MethodTable* pointerMethodTable =
@@ -18676,6 +18680,7 @@ public sealed unsafe class GCPrivTests
 
             ((CObjectHeader*)mem)->RawSetMethodTable(pointerMethodTable);
             ((CObjectHeader*)movable)->RawSetMethodTable(pointerMethodTable);
+            ((CObjectHeader*)gap)->RawSetMethodTable(pointerMethodTable);
             ((CObjectHeader*)pinned)->RawSetMethodTable(pointerMethodTable);
             *(byte**)(movable + sizeof(byte*)) = movable;
             nuint payload = sizeof(nuint) == 8
@@ -19013,13 +19018,17 @@ public sealed unsafe class GCPrivTests
                 (int)gc_generation_num.soh_gen2;
             gc_heap.settings.promotion = 1;
             gc_heap.settings.compaction =
-                mode is 0 or 3 or 4 or 5 or 7 ? 1 : 0;
+                mode is 0 or 3 or 4 or 5 or 6 or 7 ? 1 : 0;
             gc_heap.settings.concurrent = 0;
             gc_heap.settings.reason =
                 mode is 0 or 2 or 6
                     ? gc_reason.reason_induced_compacting
                     : gc_reason.reason_induced;
             gc_heap.settings.loh_compaction = mode is 3 or 4 or 7 ? 1 : 0;
+            gc_heap.loh_compaction_mode =
+                mode is 3 or 4 or 7
+                    ? gc_loh_compaction_mode.loh_compaction_once
+                    : gc_loh_compaction_mode.loh_compaction_default;
             gc_heap.special_sweep_p = mode == 2;
 #if BACKGROUND_GC
             gc_heap.settings.background_p = 0;
@@ -19287,7 +19296,7 @@ public sealed unsafe class GCPrivTests
             }
 
             Assert.Equal(
-                mode is 0 or 3 or 4 or 7 ? 1 : 0,
+                mode is 0 or 3 or 4 or 6 or 7 ? 1 : 0,
                 gc_heap.settings.compaction);
             Assert.Equal(
                 countedCompactingDecision ? (nuint)1 : 0,

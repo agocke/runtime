@@ -29,6 +29,14 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_ExitCriticalRegion(int entered);
 
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_SuspendCriticalRegion")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ManagedGC_SuspendCriticalRegion();
+
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_ResumeCriticalRegion")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void ManagedGC_ResumeCriticalRegion(int suspended);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static GCHeapCriticalRegion Enter() =>
             new GCHeapCriticalRegion(ManagedGC_EnterCriticalRegion());
@@ -36,5 +44,11 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Exit() =>
             ManagedGC_ExitCriticalRegion(_entered);
+
+        public static int Suspend() =>
+            ManagedGC_SuspendCriticalRegion();
+
+        public static void Resume(int suspended) =>
+            ManagedGC_ResumeCriticalRegion(suspended);
     }
 }

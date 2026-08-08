@@ -94,6 +94,7 @@ The .NET Foundation licenses this file to you under the MIT license.
       <!-- The managed GC replaces the GC selector outright, so it is mutually exclusive with
            the standalone GC loader rather than layered on top of it. -->
       <StandaloneGCSupportName Condition="'$(IlcManagedGC)' == 'true'">libmanagedgc-enabled</StandaloneGCSupportName>
+      <StandaloneGCSupportName Condition="'$(IlcManagedServerGC)' == 'true'">libmanagedservergc-enabled</StandaloneGCSupportName>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(_IsiOSLikePlatform)' == 'true'">

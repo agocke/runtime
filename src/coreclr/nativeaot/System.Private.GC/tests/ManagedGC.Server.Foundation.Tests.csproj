@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(NetCoreAppToolCurrent)</TargetFramework>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <DisableImplicitFrameworkReferences>false</DisableImplicitFrameworkReferences>
+    <AddAdditionalExplicitAssemblyReferences>true</AddAdditionalExplicitAssemblyReferences>
+    <DisableImplicitFrameworkReferences>false</DisableImplicitFrameworkReferences>
+    <AddAdditionalExplicitAssemblyReferences>true</AddAdditionalExplicitAssemblyReferences>
+    <AssemblyName>ManagedGC.Server.Foundation.Tests</AssemblyName>
+    <SignAssembly>false</SignAssembly>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DotNet.XUnitExtensions" Version="$(MicrosoftDotNetXUnitExtensionsVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="ManagedServerGCFoundationTests.cs" />
+    <Content Include="$(RuntimeBinDir)aotsdk/System.Private.GC.Server.dll"
+             Link="System.Private.GC.Server.dll"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildManagedServerGC" BeforeTargets="BeforeBuild">
+    <MSBuild Projects="../src/System.Private.GC.Server.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);TargetOS=$(TargetOS);TargetArchitecture=$(TargetArchitecture);Platform=$(Platform)" />
+  </Target>
+  <Target Name="CopyServerFoundationDepsFile" AfterTargets="GenerateBuildDependencyFile">
+    <Copy SourceFiles="$(ProjectDepsFilePath)"
+          DestinationFiles="$(OutputPath)$(AssemblyName).deps.json" />
+  </Target>
+</Project>

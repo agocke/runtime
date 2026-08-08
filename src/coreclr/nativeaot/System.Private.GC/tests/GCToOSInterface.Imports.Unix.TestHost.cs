@@ -793,9 +793,10 @@ internal static unsafe partial class GCToOSInterface
             }
         }
 
-        if (NanosleepCount < NanosleepCalls.Length)
+        int callIndex = System.Threading.Interlocked.Increment(ref NanosleepCount) - 1;
+        if ((uint)callIndex < (uint)NanosleepCalls.Length)
         {
-            NanosleepCalls[NanosleepCount] = new NanosleepCall
+            NanosleepCalls[callIndex] = new NanosleepCall
             {
                 requested = *req,
                 remaining = reported,
@@ -804,7 +805,6 @@ internal static unsafe partial class GCToOSInterface
             };
         }
 
-        NanosleepCount++;
         return result;
     }
 

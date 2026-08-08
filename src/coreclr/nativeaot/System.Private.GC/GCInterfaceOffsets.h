@@ -49,6 +49,11 @@
 // NOTE: the values MUST be in hex notation WITHOUT the 0x prefix.
 
 #ifdef USE_REGIONS
+#ifdef SERVER_GC
+GC_VALUE(         1,         1, MANAGED_SERVER_GC_LAYOUT, 1)
+GC_VALUE(         1,         1, MANAGED_MULTIPLE_HEAPS_LAYOUT, 1)
+GC_VALUE(         1,         1, MANAGED_DYNAMIC_HEAP_COUNT_LAYOUT, 1)
+#endif
 GC_CONST(         0,         0, card_table_element)
 GC_CONST(         1,         1, brick_table_element)
 GC_CONST(         2,         2, card_bundle_table_element)

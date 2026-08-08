@@ -188,6 +188,13 @@ namespace Internal.Runtime.GarbageCollection
 
         private static void TraceRefCountedHandles(void* thisPtr, delegate* unmanaged<byte**, nuint*, nuint, nuint, void> callback, nuint lp1, nuint lp2)
         {
+#if MULTIPLE_HEAPS
+            _ = thisPtr;
+            _ = callback;
+            _ = lp1;
+            _ = lp2;
+            Unsupported();
+#else
             RefCountedTraceInfo info = new()
             {
                 callback = callback,
@@ -198,6 +205,7 @@ namespace Internal.Runtime.GarbageCollection
                 &TraceRefCountedHandle,
                 (nuint)(void*)&info,
                 0);
+#endif
         }
 
         private struct RefCountedTraceInfo

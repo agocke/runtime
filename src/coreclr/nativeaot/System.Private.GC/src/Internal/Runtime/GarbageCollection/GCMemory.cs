@@ -405,14 +405,12 @@ internal unsafe partial struct gc_heap
         }
 #endif
 
-        if (never_decommit_p)
-        {
-            Debug.Assert(heap_segment.heap_segment_used(region) == heap_segment.heap_segment_mem(region));
-        }
-        else
-        {
-            Debug.Assert(heap_segment.heap_segment_committed(region) == heap_segment.heap_segment_mem(region));
-        }
+        Debug.Assert(
+            never_decommit_p || !decommit_succeeded_p
+                ? heap_segment.heap_segment_used(region) ==
+                    heap_segment.heap_segment_mem(region)
+                : heap_segment.heap_segment_committed(region) ==
+                    heap_segment.heap_segment_mem(region));
 #if BACKGROUND_GC
         Debug.Assert((region->flags & heap_segment.heap_segment_flags_ma_committed) == 0);
 #endif

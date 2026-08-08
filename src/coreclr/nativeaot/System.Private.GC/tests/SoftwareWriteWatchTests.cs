@@ -150,9 +150,11 @@ public sealed unsafe class SoftwareWriteWatchTests : IDisposable
         using SyntheticHeap heap = new(pageCount: 6);
         uint* savedCardTable = gc_heap.card_table;
         uint* savedCardBundleTable = gc_heap.card_bundle_table;
+        c_gc_state savedState = gc_heap.current_c_gc_state_for_test();
 
         try
         {
+            gc_heap.set_current_c_gc_state_for_test(c_gc_state.c_gc_state_free);
             const nuint Length = 64;
             nuint copiedDestinationSize = Length - (nuint)sizeof(nuint);
             byte* dest = heap.Page(1) - (nint)copiedDestinationSize;
@@ -213,6 +215,7 @@ public sealed unsafe class SoftwareWriteWatchTests : IDisposable
         }
         finally
         {
+            gc_heap.set_current_c_gc_state_for_test(savedState);
             gc_heap.card_table = savedCardTable;
             gc_heap.card_bundle_table = savedCardBundleTable;
         }

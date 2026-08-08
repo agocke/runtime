@@ -9,6 +9,7 @@
          reachable unless IlcManagedGC roots its runtime exports, so default (C++ GC) builds are
          unaffected. -->
     <DocumentationFile>$(OutputPath)$(MSBuildProjectName).xml</DocumentationFile>
+    <NoWarn Condition="'$(ManagedGCServerBuild)' == 'true'">$(NoWarn);CS0436</NoWarn>
   </PropertyGroup>
   <PropertyGroup>
     <!-- The Unix virtual memory port selects the <sys/mman.h> and <sys/resource.h> values of the
@@ -33,11 +34,11 @@
          native build labels it Linux. gcenv.managed.cpp checks the two selections against each
          other. -->
     <DefineConstants Condition="'$(TargetsAndroid)' == 'true'">TARGET_ANDROID;$(DefineConstants)</DefineConstants>
-    <!-- gcpriv.h enables BACKGROUND_GC on every non-WASM full runtime. MULTIPLE_HEAPS is not
-         defined here: Runtime.ManagedGC and its generated offsets table are built from the
-         workstation collector; GCInterfaceOffsets.h retains the server branch for its separate
-         native verifier. -->
+    <!-- gcpriv.h enables BACKGROUND_GC on every non-WASM full runtime. The server companion
+         project imports this project with ManagedGCServerBuild=true, selecting the same
+         SERVER_GC -> MULTIPLE_HEAPS -> DYNAMIC_HEAP_COUNT chain as gcimpl.h/gcpriv.h. -->
     <DefineConstants Condition="'$(Platform)' != 'wasm'">BACKGROUND_GC;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition="'$(ManagedGCServerBuild)' == 'true'">SERVER_GC;MULTIPLE_HEAPS;DYNAMIC_HEAP_COUNT;$(DefineConstants)</DefineConstants>
     <!-- NativeAOT's runtime CMake enables software write watch and manually maintained card
          bundles together on these architectures. The assembly write barrier maintains the
          bundle table, so GC-internal card writes must compile the matching set_card path. -->
@@ -63,16 +64,16 @@
     <ProjectReference Include="..\..\System.Private.CoreLib\src\System.Private.CoreLib.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Internal\Runtime\GarbageCollection\BackgroundGC.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\GCAllocation.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\Collect.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\Diagnostics.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\BackgroundGC.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCAllocation.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Collect.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\Diagnostics.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCCommon.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCConfig.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCDesc.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\DynamicTuning.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\FullGCNotification.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\GCBridge.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\DynamicTuning.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\FullGCNotification.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCBridge.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventEnums.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEvents.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCEventSerializer.cs" />
@@ -83,16 +84,16 @@
     <Compile Include="Internal\Runtime\GarbageCollection\GCPriv.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCRecord.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCRegionsSegments.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\GCScan.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\GCScan.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\GCWriteBarrier.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableConstants.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTable.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableCache.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableCore.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\HandleTableScan.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\HandleTableScan.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\HandleTableStructs.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\SoftwareWriteWatch.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\SweepPhase.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\SweepPhase.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\VxSort.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\AffinitySet.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Environment\GCEnv.Base.cs" />
@@ -140,13 +141,14 @@
     <Compile Include="Internal\Runtime\GarbageCollection\IntroSort.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCEntryPoints.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHandleManager.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHeap.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCRegionBootstrap.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\MarkPhase.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\NoGC.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCHeap.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedGCRegionBootstrap.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGC.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\MarkPhase.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\NoGC.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ObjectHandle.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\PlanPhase.cs" />
-    <Compile Include="Internal\Runtime\GarbageCollection\RelocateCompact.cs" />
+    <Compile Include="Internal\Runtime\GarbageCollection\PlanPhase.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\RelocateCompact.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="System\Runtime\RuntimeExportAttribute.cs" />
     <Compile Include="System\Runtime\RuntimeImportAttribute.cs" />
     <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCInterfaceDac.cs" />
@@ -157,6 +159,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\Interface\GCToEEInterface.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(InPlaceRuntime)' == 'true'">
-    <Compile Include="$(IntermediatesDir)\nativeaot\Runtime\Full\GCInterfaceOffsets.cs" />
+    <Compile Include="$(IntermediatesDir)\nativeaot\Runtime\Full\GCInterfaceOffsets.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
+    <Compile Include="$(IntermediatesDir)\nativeaot\Runtime\Full\GCInterfaceOffsets.Server.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
   </ItemGroup>
 </Project>

@@ -34,7 +34,11 @@ namespace Internal.Runtime.GarbageCollection
         /// Reports the GC/EE interface version this GC was built against, and records the
         /// version the runtime reports it supports. Port of <c>GC_VersionInfo</c>.
         /// </summary>
+#if SERVER_GC
+        [RuntimeExport("ManagedServerGC_VersionInfo")]
+#else
         [RuntimeExport("ManagedGC_VersionInfo")]
+#endif
         internal static void ManagedGC_VersionInfo(VersionInfo* info)
         {
             // On entry the runtime has filled this in with the interface version it supports,
@@ -69,7 +73,11 @@ namespace Internal.Runtime.GarbageCollection
         /// Because <c>IlcManagedGC</c> is an explicit opt-in, initialization failures fail
         /// runtime startup rather than selecting the C++ GC.
         /// </remarks>
+#if SERVER_GC
+        [RuntimeExport("ManagedServerGC_Initialize")]
+#else
         [RuntimeExport("ManagedGC_Initialize")]
+#endif
         internal static int ManagedGC_Initialize(void* clrToGC, void** gcHeap, void** gcHandleManager, GcDacVars* gcDacVars)
         {
             void* heap;
@@ -86,7 +94,9 @@ namespace Internal.Runtime.GarbageCollection
             }
 
             GCToEEInterface.Initialize(clrToGC);
+#if !MULTIPLE_HEAPS
             GCScan.Initialize();
+#endif
 
             if (!GCInterfaceLayout.Verify())
             {
@@ -123,5 +133,21 @@ namespace Internal.Runtime.GarbageCollection
             *gcHeap = heap;
             return S_OK;
         }
+
+#if SERVER_GC
+        [RuntimeExport("ManagedServerGC_GetCurrentHomeHeapNumber")]
+        internal static int ManagedServerGC_GetCurrentHomeHeapNumber() =>
+            ManagedGCHeap.CurrentHomeHeapNumber;
+
+        [RuntimeExport("ManagedServerGC_GetHeapCount")]
+        internal static int ManagedServerGC_GetHeapCount() => gc_heap.n_heaps;
+
+        [RuntimeExport("ManagedServerGC_GetWorkerThreadCount")]
+        internal static int ManagedServerGC_GetWorkerThreadCount() =>
+            System.Threading.Volatile.Read(
+                ref gc_heap.server_gc_threads_created) -
+            System.Threading.Volatile.Read(
+                ref gc_heap.server_gc_threads_exited);
+#endif
     }
 }

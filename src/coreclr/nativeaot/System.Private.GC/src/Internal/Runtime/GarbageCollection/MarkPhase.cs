@@ -1023,6 +1023,9 @@ internal unsafe partial struct gc_heap
             gen0_must_clear_bricks--;
         }
 #endif
+#if DEBUG
+        init_promoted_bytes();
+#endif
 
         reset_mark_stack(heap);
         special_sweep_p = false;

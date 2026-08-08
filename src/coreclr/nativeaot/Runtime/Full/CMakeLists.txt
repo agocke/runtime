@@ -169,6 +169,18 @@ endif()
 target_compile_definitions(Runtime.ManagedGC PRIVATE FEATURE_MANAGED_GC)
 target_link_libraries(Runtime.ManagedGC PRIVATE aotminipal nativeaot_cdac_contract_descriptor)
 
+add_library(Runtime.ManagedServerGC STATIC
+    ${MANAGED_GC_RUNTIME_SOURCES}
+    ${FULL_RUNTIME_SOURCES}
+    ${NATIVEAOT_PRIVATE_LIBUNWIND_OBJECT}
+    ${RUNTIME_ARCH_ASM_OBJECTS})
+add_dependencies(Runtime.ManagedServerGC VerifyGCInterfaceVtables)
+if(FEATURE_PERFTRACING)
+  add_dependencies(Runtime.ManagedServerGC aot_eventing_headers)
+endif()
+target_compile_definitions(Runtime.ManagedServerGC PRIVATE FEATURE_MANAGED_GC FEATURE_SVR_GC)
+target_link_libraries(Runtime.ManagedServerGC PRIVATE aotminipal nativeaot_cdac_contract_descriptor)
+
 add_library(Runtime.ServerGC STATIC
     ${COMMON_RUNTIME_SOURCES}
     ${FULL_RUNTIME_SOURCES}
@@ -193,11 +205,17 @@ add_library(managedgc-enabled STATIC ${MANAGEDGC_ENABLED_SOURCES})
 if(FEATURE_PERFTRACING)
   add_dependencies(managedgc-enabled aot_eventing_headers)
 endif()
+add_library(managedservergc-enabled STATIC ${MANAGEDGC_ENABLED_SOURCES})
+target_compile_definitions(managedservergc-enabled PRIVATE FEATURE_SVR_GC)
+if(FEATURE_PERFTRACING)
+  add_dependencies(managedservergc-enabled aot_eventing_headers)
+endif()
 if(FEATURE_EVENT_TRACE)
   if(CLR_CMAKE_TARGET_WIN32)
     add_dependencies(standalonegc-disabled aot_etw_headers)
     add_dependencies(standalonegc-enabled aot_etw_headers)
     add_dependencies(managedgc-enabled aot_etw_headers)
+    add_dependencies(managedservergc-enabled aot_etw_headers)
   endif()
 endif()
 
@@ -252,6 +270,14 @@ add_custom_command(
 )
 
 add_custom_command(
+    # The server layout is compiled into the companion System.Private.GC.Server assembly.
+    TARGET Runtime.ServerGC
+    POST_BUILD
+    COMMAND ${CMAKE_CXX_COMPILER} ${COMPILER_LANGUAGE} ${DEFINITIONS} -DSERVER_GC ${GC_PREPROCESSOR_FLAGS}
+            -I"${ARCH_SOURCES_DIR}" "${GC_INTERFACE_OFFSETS_CSPP}" >"${CMAKE_CURRENT_BINARY_DIR}/GCInterfaceOffsets.Server.cs"
+)
+
+add_custom_command(
     COMMAND ${CMAKE_CXX_COMPILER} ${DEFINITIONS} ${PREPROCESSOR_FLAGS} -I"${NATIVEAOT_RUNTIME_DIR}" -I"${ARCH_SOURCES_DIR}" "${ASM_OFFSETS_CPP}" >"${CMAKE_CURRENT_BINARY_DIR}/AsmOffsets.inc"
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/AsmOffsets.inc"
     DEPENDS "${ASM_OFFSETS_CPP}" "${NATIVEAOT_RUNTIME_DIR}/AsmOffsets.h"
@@ -272,14 +298,17 @@ add_dependencies(Runtime.AsmHelpers RuntimeAsmHelpers)
 
 target_link_libraries(Runtime.WorkstationGC PRIVATE Runtime.AsmHelpers)
 target_link_libraries(Runtime.ManagedGC PRIVATE Runtime.AsmHelpers)
+target_link_libraries(Runtime.ManagedServerGC PRIVATE Runtime.AsmHelpers)
 target_link_libraries(Runtime.ServerGC PRIVATE Runtime.AsmHelpers)
 
 install_static_library(Runtime.WorkstationGC aotsdk nativeaot)
 install_static_library(Runtime.ManagedGC aotsdk nativeaot)
+install_static_library(Runtime.ManagedServerGC aotsdk nativeaot)
 install_static_library(Runtime.ServerGC aotsdk nativeaot)
 install_static_library(standalonegc-disabled aotsdk nativeaot)
 install_static_library(standalonegc-enabled aotsdk nativeaot)
 install_static_library(managedgc-enabled aotsdk nativeaot)
+install_static_library(managedservergc-enabled aotsdk nativeaot)
 install_static_library(aotminipal aotsdk nativeaot)
 if (CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
   install_static_library(Runtime.VxsortEnabled aotsdk nativeaot)

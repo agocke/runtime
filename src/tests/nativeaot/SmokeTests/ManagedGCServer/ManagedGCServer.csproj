@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <CLRTestPriority>0</CLRTestPriority>
+    <IlcManagedServerGC>true</IlcManagedServerGC>
+    <CLRTestTargetUnsupported Condition="'$(TargetsAppleMobile)' == 'true'">true</CLRTestTargetUnsupported>
+    <RequiresProcessIsolation>true</RequiresProcessIsolation>
+    <ReferenceXUnitWrapperGenerator>false</ReferenceXUnitWrapperGenerator>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ManagedGCServer.cs" />
+    <CLRTestEnvironmentVariable Include="DOTNET_gcServer" Value="1" />
+    <CLRTestEnvironmentVariable Include="DOTNET_GCHeapCount" Value="2" />
+    <CLRTestEnvironmentVariable Include="DOTNET_GCRegionSize" Value="1000000" />
+    <CLRTestEnvironmentVariable Include="DOTNET_GCRegionRange" Value="80000000" />
+    <CLRTestEnvironmentVariable Include="DOTNET_gcConcurrent" Value="0" />
+  </ItemGroup>
+</Project>

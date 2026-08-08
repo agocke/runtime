@@ -1435,10 +1435,12 @@ collection after those queries.
 
 ### 10. Concurrency and tuning
 
-**Status: In progress -- the WKS software-write-watch revisit, native mark-array final closure,
+**Status: In progress -- WKS production closure and initialized server multi-heap foundation**
+
+The WKS software-write-watch revisit, native mark-array final closure,
 concurrent region sweep, foreground Gen0/Gen1 coordination, allocation and memory-pressure
 triggers, reusable native-event worker, dynamic budget retuning, hard-limit refresh, and public
-memory/pause/latency reporting are routed**
+memory/pause/latency reporting are routed.
 
 Translate:
 
@@ -1451,6 +1453,23 @@ Translate:
 The C++ `MULTIPLE_HEAPS` and `SERVER_GC` conditionals sometimes change fields between static and
 instance storage. The C# representation must preserve behavior while remaining source-comparable;
 prefer an explicit always-instance representation where required by the language.
+
+The first server slice selects the active x64 Linux
+`SERVER_GC -> MULTIPLE_HEAPS -> DYNAMIC_HEAP_COUNT` feature chain. It adds server-generated
+layout constants and native verification, `System.Private.GC.Server`,
+`Runtime.ManagedServerGC`, a server-aware selector archive, and the `IlcManagedServerGC` option.
+The same server-capable runtime continues to choose managed WKS when `DOTNET_gcServer=0`.
+
+Server initialization now owns `n_heaps`, `n_max_heaps`, and `g_heaps`; creates one five-
+generation `gc_heap`, initial region set, SOH/UOH lock set, free-region array, finalization queue,
+handle table, and dependent-handle context per heap; and publishes the server and dynamic-heap-
+count feature bits through DAC. The ported processor map selects allocation-context home and
+allocation heaps, and allocation refills from the selected heap's own Gen0/LOH/POH regions.
+Worker creation preserves non-suspendable native thread creation, optional affinity, priority
+boost, start/suspend events, join/coordinator state, and shutdown wake/join behavior. The
+dynamic heap-count sample/history schemas and native defaults are present; DATAS starts with one
+active heap unless `GCHeapCount` fixes the active count. Runtime heap-count changes remain
+deferred.
 
 The routed WKS slice now resets software write watch over committed segment extents, revisits
 dirty pages and cards during concurrent marking, performs the final root/handle/finalization
@@ -1498,8 +1517,13 @@ strong/pinned handles and finalization, recycles empty UOH regions, runs success
 cycles through the same worker, forces allocation- and memory-pressure-triggered cycles, and
 checks memory/pause APIs and active-BGC latency changes.
 
-Production blockers remain in BGC servo tuning, dynamic heap count, diagnostic
-`saved_changed_segs` publication, and server `MULTIPLE_HEAPS` closure.
+Foundation coverage verifies the server feature symbols and x64 layouts, dynamic heap-count
+defaults, and instance-owned per-heap state. A NativeAOT smoke requests `DOTNET_gcServer=1`,
+starts two server heaps/workers, and validates home-heap selection from multiple allocating
+threads. No collection entry point is routed by this slice.
+
+Production blockers remain in BGC servo tuning, dynamic heap-count changes after startup,
+diagnostic `saved_changed_segs` publication, and server parallel collection closure.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.

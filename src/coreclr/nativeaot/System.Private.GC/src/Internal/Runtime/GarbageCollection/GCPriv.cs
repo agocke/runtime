@@ -1219,6 +1219,13 @@ namespace Internal.Runtime.GarbageCollection
         public nuint allocation_running_amount;
         public nuint allocation_quantum;
         public int heap_number;
+#if MULTIPLE_HEAPS
+        public region_free_list_array server_free_regions;
+        public int alloc_context_count;
+        public GCEvent gc_done_event;
+        public GCEvent gc_idle_thread_event;
+        public CFinalize* server_finalize_queue;
+#endif
 #endif
 
         // WKS makes this collector state static. It remains separate from the allocation-owned
@@ -1829,8 +1836,18 @@ namespace Internal.Runtime.GarbageCollection
         // Native VOLATILE(int32_t); access this through GCEnv's volatile helpers.
         public int @lock;
 #if DEBUG
+#if SERVER_GC
+        private int _holdingThreadAlignment;
+#endif
         public void* holding_thread;
         public int released_by_gc_p;
+#if SERVER_GC
+        private int _serverDebugPadding0;
+        private long _serverDebugPadding1;
+#endif
+#elif SERVER_GC
+        private int _serverPadding0;
+        private long _serverPadding1;
 #endif
 
         // C# does not run struct constructors for embedded fields or unmanaged storage, so keep
@@ -4592,15 +4609,19 @@ namespace Internal.Runtime.GarbageCollection
         // Relocates all of the objects in the finalization array.
         public void RelocateFinalizationData(int gen, gc_heap* heap)
         {
+#if MULTIPLE_HEAPS
+            if (m_Array is null)
+            {
+                return;
+            }
+            _ = gen;
+            _ = heap;
+            return;
+#else
             ScanContext scanContext = default;
             scanContext.promotion = 0;
-#if MULTIPLE_HEAPS
-            scanContext.thread_number = heap->heap_number;
-            scanContext.thread_count = gc_heap.n_heaps;
-#else
             _ = heap;
             scanContext.thread_count = 1;
-#endif
 
             uint segment = gen_segment(gen);
 
@@ -4613,6 +4634,7 @@ namespace Internal.Runtime.GarbageCollection
                     gc_heap.relocate(current, &scanContext);
                 }
             }
+#endif
         }
 
         public void UpdatePromotedGenerations(int gen, int gen_0_empty_p)

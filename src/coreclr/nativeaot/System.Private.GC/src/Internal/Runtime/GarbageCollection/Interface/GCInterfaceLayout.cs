@@ -30,7 +30,8 @@ namespace Internal.Runtime.GarbageCollection
         /// Returns true if every managed GC/EE interface type matches the pinned native layout.
         /// </summary>
         public static bool Verify() =>
-            VerifySharedStructs()
+            VerifyBuildFeatures()
+            && VerifySharedStructs()
             && VerifyEnvironmentTypes()
             && VerifyHandleTableTypes()
             && VerifyGCDescTypes()
@@ -40,6 +41,17 @@ namespace Internal.Runtime.GarbageCollection
             && VerifyVtables()
             && VerifyEnumSizes()
             && VerifyEnumValues();
+
+        private static bool VerifyBuildFeatures()
+        {
+#if SERVER_GC
+            return GCInterfaceOffsets.MANAGED_SERVER_GC_LAYOUT == 1
+                && GCInterfaceOffsets.MANAGED_MULTIPLE_HEAPS_LAYOUT == 1
+                && GCInterfaceOffsets.MANAGED_DYNAMIC_HEAP_COUNT_LAYOUT == 1;
+#else
+            return true;
+#endif
+        }
 
         /// <summary>
         /// The structures of gcinterface.h and gcinterface.ee.h that the EE and the GC pass to

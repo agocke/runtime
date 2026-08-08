@@ -44,6 +44,14 @@ extern "C" HRESULT LOCALGC_CALLCONV ManagedGC_Initialize(
     /* Out */ IGCHeap** gcHeap,
     /* Out */ IGCHandleManager** gcHandleManager,
     /* Out */ GcDacVars* gcDacVars);
+#ifdef FEATURE_SVR_GC
+extern "C" void LOCALGC_CALLCONV ManagedServerGC_VersionInfo(/* InOut */ VersionInfo* info);
+extern "C" HRESULT LOCALGC_CALLCONV ManagedServerGC_Initialize(
+    /* In  */ IGCToCLR* clrToGC,
+    /* Out */ IGCHeap** gcHeap,
+    /* Out */ IGCHandleManager** gcHandleManager,
+    /* Out */ GcDacVars* gcDacVars);
+#endif
 
 // Managed GC methods are ordinary managed code, so the runtime would otherwise be allowed to
 // suspend a thread at one of their safe points. That differs from the C++ GC, where a thread in
@@ -53,6 +61,49 @@ extern "C" HRESULT LOCALGC_CALLCONV ManagedGC_Initialize(
 //
 // The calls are nesting-safe because some runtime paths already set TSF_DoNotTriggerGc before
 // calling managed code. Only the outermost managed-GC critical region owns the flag.
+int32_t g_managedGCCriticalRegionCount = 0;
+int32_t g_managedGCSuspensionPending = 0;
+thread_local bool t_managedGCOwnsCriticalRegion = false;
+thread_local int32_t t_managedGCAllocationHelperDepth = 0;
+thread_local bool t_managedGCAllocationHelperOwnsCriticalRegion = false;
+
+static void ManagedGC_EnterOwnedCriticalRegion(Thread* thread)
+{
+    while (true)
+    {
+        while (VolatileLoad(&g_managedGCSuspensionPending) != 0)
+        {
+            bool restoreCooperativeMode =
+                thread->IsCurrentThreadInCooperativeMode();
+            if (restoreCooperativeMode)
+            {
+                thread->EnablePreemptiveMode();
+            }
+
+            while (VolatileLoad(&g_managedGCSuspensionPending) != 0)
+            {
+                PalSwitchToThread();
+            }
+
+            if (restoreCooperativeMode)
+            {
+                thread->DisablePreemptiveMode();
+            }
+        }
+
+        thread->SetDoNotTriggerGc();
+        PalInterlockedIncrement(&g_managedGCCriticalRegionCount);
+        MemoryBarrier();
+        if (VolatileLoad(&g_managedGCSuspensionPending) == 0)
+        {
+            return;
+        }
+
+        thread->ClearDoNotTriggerGc();
+        PalInterlockedDecrement(&g_managedGCCriticalRegionCount);
+    }
+}
+
 extern "C" UInt32_BOOL ManagedGC_EnterCriticalRegion()
 {
     Thread* thread = ThreadStore::GetCurrentThread();
@@ -61,7 +112,8 @@ extern "C" UInt32_BOOL ManagedGC_EnterCriticalRegion()
         return UInt32_FALSE;
     }
 
-    thread->SetDoNotTriggerGc();
+    ManagedGC_EnterOwnedCriticalRegion(thread);
+    t_managedGCOwnsCriticalRegion = true;
     return UInt32_TRUE;
 }
 
@@ -69,7 +121,103 @@ extern "C" void ManagedGC_ExitCriticalRegion(UInt32_BOOL entered)
 {
     if (entered)
     {
+        t_managedGCOwnsCriticalRegion = false;
         ThreadStore::GetCurrentThread()->ClearDoNotTriggerGc();
+        PalInterlockedDecrement(&g_managedGCCriticalRegionCount);
+    }
+}
+
+extern "C" UInt32_BOOL ManagedGC_SuspendCriticalRegion()
+{
+    Thread* thread = ThreadStore::GetCurrentThread();
+    uint32_t suspended = 0;
+    if (thread->IsDoNotTriggerGcSet())
+    {
+        thread->ClearDoNotTriggerGc();
+        if (t_managedGCAllocationHelperOwnsCriticalRegion)
+        {
+            t_managedGCAllocationHelperOwnsCriticalRegion = false;
+            PalInterlockedDecrement(&g_managedGCCriticalRegionCount);
+            suspended |= 2;
+        }
+        else if (t_managedGCOwnsCriticalRegion)
+        {
+            t_managedGCOwnsCriticalRegion = false;
+            PalInterlockedDecrement(&g_managedGCCriticalRegionCount);
+            suspended |= 1;
+        }
+        else
+        {
+            suspended |= 4;
+        }
+    }
+
+    return suspended;
+}
+
+extern "C" void ManagedGC_ResumeCriticalRegion(UInt32_BOOL suspended)
+{
+    if ((suspended & 2) != 0)
+    {
+        ManagedGC_EnterOwnedCriticalRegion(ThreadStore::GetCurrentThread());
+        t_managedGCAllocationHelperOwnsCriticalRegion = true;
+    }
+
+    if ((suspended & 1) != 0)
+    {
+        ManagedGC_EnterOwnedCriticalRegion(ThreadStore::GetCurrentThread());
+        t_managedGCOwnsCriticalRegion = true;
+    }
+
+    if ((suspended & 4) != 0)
+    {
+        ThreadStore::GetCurrentThread()->SetDoNotTriggerGc();
+    }
+}
+
+extern "C" void ManagedGC_PrepareForSuspension()
+{
+    VolatileStore(&g_managedGCSuspensionPending, 1);
+    MemoryBarrier();
+    int32_t ownedCount =
+        (t_managedGCOwnsCriticalRegion ||
+         t_managedGCAllocationHelperOwnsCriticalRegion)
+            ? 1
+            : 0;
+    while (VolatileLoad(&g_managedGCCriticalRegionCount) != ownedCount)
+    {
+        PalSwitchToThread();
+    }
+}
+
+extern "C" void ManagedGC_CompleteSuspension()
+{
+    VolatileStore(&g_managedGCSuspensionPending, 0);
+}
+
+extern "C" void ManagedGC_EnterAllocationHelper()
+{
+    if (t_managedGCAllocationHelperDepth++ == 0)
+    {
+        Thread* thread = ThreadStore::GetCurrentThread();
+        if (!thread->IsDoNotTriggerGcSet())
+        {
+            ManagedGC_EnterOwnedCriticalRegion(thread);
+            t_managedGCAllocationHelperOwnsCriticalRegion = true;
+        }
+    }
+}
+
+extern "C" void ManagedGC_ExitAllocationHelper()
+{
+    if (--t_managedGCAllocationHelperDepth == 0)
+    {
+        if (t_managedGCAllocationHelperOwnsCriticalRegion)
+        {
+            t_managedGCAllocationHelperOwnsCriticalRegion = false;
+            ThreadStore::GetCurrentThread()->ClearDoNotTriggerGc();
+            PalInterlockedDecrement(&g_managedGCCriticalRegionCount);
+        }
     }
 }
 
@@ -80,6 +228,7 @@ extern "C" void ManagedGC_WaitUntilGCComplete(
     UInt32_BOOL considerGcStart)
 {
     Thread* thread = ThreadStore::GetCurrentThread();
+    uint32_t suspendedCriticalRegion = 0;
     bool restoreCooperativeMode = thread->IsCurrentThreadInCooperativeMode();
     if (restoreCooperativeMode)
     {
@@ -90,6 +239,11 @@ extern "C" void ManagedGC_WaitUntilGCComplete(
         VolatileLoad(gcInProgress) != 0 ||
         (considerGcStart && VolatileLoad(gcStarted) != 0))
     {
+        if (suspendedCriticalRegion == 0 &&
+            VolatileLoad(&g_managedGCSuspensionPending) != 0)
+        {
+            suspendedCriticalRegion = ManagedGC_SuspendCriticalRegion();
+        }
         PalSwitchToThread();
     }
 
@@ -97,6 +251,7 @@ extern "C" void ManagedGC_WaitUntilGCComplete(
     {
         thread->DisablePreemptiveMode();
     }
+    ManagedGC_ResumeCriticalRegion(suspendedCriticalRegion);
 }
 
 #ifdef TARGET_UNIX
@@ -199,12 +354,28 @@ extern "C" uint32_t QCALLTYPE ManagedGC_PthreadEventWait(
 extern "C" void ManagedGC_AllowForegroundGC()
 {
     Thread* thread = ThreadStore::GetCurrentThread();
+    uint32_t suspendedCriticalRegion = ManagedGC_SuspendCriticalRegion();
     if (thread->IsCurrentThreadInCooperativeMode())
     {
         thread->EnablePreemptiveMode();
         thread->DisablePreemptiveMode();
     }
+    ManagedGC_ResumeCriticalRegion(suspendedCriticalRegion);
 }
+
+#ifdef FEATURE_SVR_GC
+extern "C" int ManagedGC_CreateServerThread(
+    void (*threadStart)(void*),
+    void* context,
+    const char* name)
+{
+    return GCToEEInterface::CreateThread(
+        threadStart,
+        context,
+        false,
+        name);
+}
+#endif
 
 struct ManagedGCBackgroundThreadArgs
 {
@@ -341,7 +512,16 @@ HRESULT InitializeGCSelector()
     versionInfo.MinorVersion = 0;
     versionInfo.BuildVersion = 0;
     versionInfo.Name = nullptr;
-    ManagedGC_VersionInfo(&versionInfo);
+#ifdef FEATURE_SVR_GC
+    if (GCHeapUtilities::IsServerHeap())
+    {
+        ManagedServerGC_VersionInfo(&versionInfo);
+    }
+    else
+#endif
+    {
+        ManagedGC_VersionInfo(&versionInfo);
+    }
 
     if (versionInfo.MajorVersion < GC_INTERFACE_MAJOR_VERSION)
     {
@@ -354,7 +534,17 @@ HRESULT InitializeGCSelector()
 
     IGCHeap* heap = nullptr;
     IGCHandleManager* manager = nullptr;
-    HRESULT initResult = ManagedGC_Initialize(gcToClr, &heap, &manager, &g_gc_dac_vars);
+    HRESULT initResult;
+#ifdef FEATURE_SVR_GC
+    if (GCHeapUtilities::IsServerHeap())
+    {
+        initResult = ManagedServerGC_Initialize(gcToClr, &heap, &manager, &g_gc_dac_vars);
+    }
+    else
+#endif
+    {
+        initResult = ManagedGC_Initialize(gcToClr, &heap, &manager, &g_gc_dac_vars);
+    }
 
     if (FAILED(initResult))
     {

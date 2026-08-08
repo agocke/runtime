@@ -1556,12 +1556,12 @@ internal unsafe partial struct gc_heap
         }
     }
 
-#if !MULTIPLE_HEAPS
     public static int get_brick_entry(nuint index)
     {
         return brick_table[(nint)index];
     }
 
+#if !MULTIPLE_HEAPS
     public static void clear_gen0_bricks(gc_heap* hp)
     {
         if (gen0_bricks_cleared == 0)

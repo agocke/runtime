@@ -9,6 +9,8 @@
 // src/System.Private.GC.csproj's InPlaceRuntime item group), so this hand-maintained subset is the
 // same substitution point GC_INTERFACE_MAJOR_VERSION/MINOR_VERSION already use.
 
+[assembly: Xunit.CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Internal.Runtime.GarbageCollection;
 
 internal static class GCInterfaceOffsets

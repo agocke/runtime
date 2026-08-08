@@ -14,6 +14,10 @@ The .NET Foundation licenses this file to you under the MIT license.
 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
+  <PropertyGroup Condition="'$(IlcManagedServerGC)' == 'true'">
+    <IlcManagedGC>true</IlcManagedGC>
+  </PropertyGroup>
+
   <!-- Set defaults for unspecified properties -->
   <PropertyGroup>
     <StripSymbols Condition="'$(StripSymbols)' == '' and '$(_targetOS)' != 'win'">true</StripSymbols>
@@ -114,6 +118,7 @@ The .NET Foundation licenses this file to you under the MIT license.
          clrgc.managed.cpp (linked as managedgc-enabled) resolves against. Without this the
          assembly is still referenced, but nothing in it is rooted, so it costs nothing. -->
     <UnmanagedEntryPointsAssembly Include="System.Private.GC,HIDDEN" Condition="'$(IlcManagedGC)' == 'true'" />
+    <UnmanagedEntryPointsAssembly Include="System.Private.GC.Server,HIDDEN" Condition="'$(IlcManagedServerGC)' == 'true'" />
     <AutoInitializedAssemblies Include="System.Private.CoreLib" />
     <AutoInitializedAssemblies Include="System.Private.StackTraceMetadata" Condition="$(StackTraceSupport) != 'false'" />
     <AutoInitializedAssemblies Include="System.Private.TypeLoader" />
@@ -133,10 +138,16 @@ The .NET Foundation licenses this file to you under the MIT license.
       <FullRuntimeName Condition="'$(_targetOS)' == 'win'">Runtime.ManagedGC</FullRuntimeName>
       <FullRuntimeName Condition="'$(_targetOS)' != 'win'">libRuntime.ManagedGC</FullRuntimeName>
     </PropertyGroup>
+    <PropertyGroup Condition="'$(IlcManagedServerGC)' == 'true'">
+      <FullRuntimeName Condition="'$(_targetOS)' == 'win'">Runtime.ManagedServerGC</FullRuntimeName>
+      <FullRuntimeName Condition="'$(_targetOS)' != 'win'">libRuntime.ManagedServerGC</FullRuntimeName>
+    </PropertyGroup>
 
     <!-- Both pick the GC selector that gets linked, so one would silently win over the other. -->
     <Error Condition="'$(IlcStandaloneGCSupport)' == 'true' and '$(IlcManagedGC)' == 'true'"
            Text="IlcStandaloneGCSupport and IlcManagedGC are mutually exclusive: the managed GC replaces the GC selector that loads a standalone GC library." />
+    <Error Condition="'$(IlcManagedServerGC)' == 'true' and '$(IlcManagedGC)' == 'false'"
+           Text="IlcManagedServerGC requires IlcManagedGC because the server-enabled runtime preserves the managed workstation collector for DOTNET_gcServer=0." />
     <!-- WindowsNodeMangler.ExternMethod leaves runtime export names undecorated on x86, but the
          C declarations in clrgc.managed.cpp reference the cdecl-decorated _ManagedGC_Initialize,
          so the two would not link. Fail with something actionable instead. -->
@@ -173,6 +184,8 @@ The .NET Foundation licenses this file to you under the MIT license.
 
     <ItemGroup>
       <PrivateSdkAssemblies Include="$(IlcSdkPath)*.dll"/>
+      <PrivateSdkAssemblies Remove="$(IlcSdkPath)System.Private.GC.Server.dll"
+                            Condition="'$(IlcManagedServerGC)' != 'true'" />
       <FrameworkAssemblies Include="@(RuntimePackAsset)" Condition="'$(PublishAotUsingRuntimePack)' == 'true' and '%(Extension)' == '.dll'" />
       <!-- When we aren't pulling in runtime pack assets, make sure we manually grab the assets that the SDK would select from within the package. -->
       <FrameworkAssemblies Include="$(IlcFrameworkPath)**/*.dll" Condition="'$(PublishAotUsingRuntimePack)' != 'true'" />

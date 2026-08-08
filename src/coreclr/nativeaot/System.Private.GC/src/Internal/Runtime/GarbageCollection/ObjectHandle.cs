@@ -41,7 +41,21 @@ namespace Internal.Runtime.GarbageCollection
 
         public static int getNumberOfSlots()
         {
+#if MULTIPLE_HEAPS
+            int heapCount = gc_heap.n_max_heaps;
+            if (heapCount == 0)
+            {
+                heapCount = (int)GCToEEInterface.GetCurrentProcessCpuCount();
+                if (heapCount > GCToOSInterface.MAX_SUPPORTED_HEAPS)
+                {
+                    heapCount = GCToOSInterface.MAX_SUPPORTED_HEAPS;
+                }
+            }
+
+            return heapCount > 0 ? heapCount : 1;
+#else
             return 1;
+#endif
         }
 
         public static bool Ref_Initialize()
@@ -170,14 +184,23 @@ namespace Internal.Runtime.GarbageCollection
 
         public static int GetCurrentThreadHomeHeapNumber()
         {
+#if MULTIPLE_HEAPS
+            return ManagedGCHeap.CurrentHomeHeapNumber;
+#else
             return 0;
+#endif
         }
 
         public static DhContext* Ref_GetDependentHandleContext(ScanContext* sc)
         {
-            _ = sc;
             Debug.Assert(g_pDependentHandleContexts != null);
+#if MULTIPLE_HEAPS
+            int heapNumber = sc is null ? GetCurrentThreadHomeHeapNumber() : sc->thread_number;
+            return g_pDependentHandleContexts + heapNumber;
+#else
+            _ = sc;
             return g_pDependentHandleContexts;
+#endif
         }
 
         public static bool Contains(HandleTableBucket* pBucket, OBJECTHANDLE handle)
@@ -206,6 +229,11 @@ namespace Internal.Runtime.GarbageCollection
                     ref g_HandleTableMap);
             while (walk is not null)
             {
+                if (walk->pBuckets is null)
+                {
+                    return false;
+                }
+
                 for (uint bucketIndex = 0;
                      bucketIndex < HandleTableConstants.INITIAL_HANDLE_TABLE_ARRAY_SIZE;
                      bucketIndex++)

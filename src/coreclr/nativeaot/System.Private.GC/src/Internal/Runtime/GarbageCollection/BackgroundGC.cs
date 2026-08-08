@@ -39,6 +39,8 @@ internal unsafe partial struct gc_heap
     private static ulong background_state_transitions;
     private static int test_pause_background;
     private static int test_background_pause_observed;
+    private static int test_pause_background_sweep;
+    private static int test_background_sweep_pause_observed;
     private static int test_foreground_during_bgc_count;
     private static gc_mechanisms test_last_restored_bgc_settings;
 #endif
@@ -113,6 +115,12 @@ internal unsafe partial struct gc_heap
         uoh_object_being_read = 0;
         pending_uoh_allocations = default;
         uoh_alloc_thread_count = 0;
+#if MANAGED_GC_TEST_HOST
+        test_pause_background = 0;
+        test_background_pause_observed = 0;
+        test_pause_background_sweep = 0;
+        test_background_sweep_pause_observed = 0;
+#endif
         bgc_thread_running = 0;
         bgc_thread_shutdown = 0;
         bgc_thread_context = 0;
@@ -272,13 +280,23 @@ internal unsafe partial struct gc_heap
         gc_background_running = 1;
 #if MANAGED_GC_TEST_HOST
         background_state_transitions = 0;
+        test_background_pause_observed = 0;
+        test_background_sweep_pause_observed = 0;
         test_foreground_during_bgc_count = 0;
         test_last_restored_bgc_settings = default;
 #endif
         set_background_state(bgc_state.bgc_initialized);
 
         suspended_start_time = GCCommon.GetHighPrecisionTimeStamp();
+#if !MANAGED_GC_TEST_HOST
+        int suspendedCriticalRegion = GCHeapCriticalRegion.Suspend();
+#endif
+        ManagedGC_PrepareForSuspension();
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
+        ManagedGC_CompleteSuspension();
+#if !MANAGED_GC_TEST_HOST
+        GCHeapCriticalRegion.Resume(suspendedCriticalRegion);
+#endif
         settings.init_mechanisms();
         settings.reason = low_memory_p != 0
             ? gc_reason.reason_lowmemory
@@ -475,7 +493,10 @@ internal unsafe partial struct gc_heap
 
         enter_gc_lock();
         suspended_start_time = GCCommon.GetHighPrecisionTimeStamp();
+        ManagedGC_PrepareForSuspension();
         GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC);
+        ManagedGC_CompleteSuspension();
+        GCSpinLock.enter(&hp->more_space_lock_soh);
         set_background_state(bgc_state.bgc_final_marking);
         GCEvents.GCEventFireBGC2ndNonConBegin();
 
@@ -491,15 +512,20 @@ internal unsafe partial struct gc_heap
             GCEvents.GCEventFireBGC2ndNonConEnd();
             GCToEEInterface.RestartEE(0);
             leave_gc_lock();
+            GCSpinLock.leave(&hp->more_space_lock_soh);
             complete_background_gc(collectionCompleted: false);
             return;
         }
 
+        void_allocation_contexts();
         prepare_background_sweep(hp);
         GCEvents.GCEventFireBGC2ndNonConEnd();
         add_bgc_pause_duration_1();
         GCToEEInterface.RestartEE(1);
         GCEvents.GCEventFireBGC2ndConBegin();
+#if MANAGED_GC_TEST_HOST
+        pause_before_background_sweep_for_test();
+#endif
 
         collectionCompleted = background_sweep(hp);
         enter_gc_lock();
@@ -585,6 +611,7 @@ internal unsafe partial struct gc_heap
 
         revisit_written_pages(hp, concurrent_p: false);
         revisit_dirty_cards(hp, concurrent_p: false);
+        revisit_uoh_objects(hp);
         drain_background_mark_stack(hp);
 
         if (ObjectHandle.DependentHandleContextsInitialized)
@@ -713,6 +740,12 @@ internal unsafe partial struct gc_heap
              genNumber < (int)gc_generation_num.total_generation_count;
              genNumber++)
         {
+            if (concurrent_p &&
+                genNumber > (int)gc_generation_num.soh_gen2)
+            {
+                continue;
+            }
+
             if (genNumber == (int)gc_generation_num.loh_generation)
             {
                 set_background_state(bgc_state.bgc_revisit_uoh);
@@ -792,6 +825,12 @@ internal unsafe partial struct gc_heap
              genNumber < (int)gc_generation_num.total_generation_count;
              genNumber++)
         {
+            if (concurrent_p &&
+                genNumber > (int)gc_generation_num.soh_gen2)
+            {
+                continue;
+            }
+
             generation* gen = generation_of(generationTable, genNumber);
             for (heap_segment* segment = generation.generation_start_segment_rw(gen);
                  segment is not null;
@@ -832,6 +871,50 @@ internal unsafe partial struct gc_heap
                     }
 
                     searchCard = batchEnd;
+                }
+            }
+        }
+    }
+
+    private static void revisit_uoh_objects(gc_heap* hp)
+    {
+        generation* generationTable = generation_table_of(hp);
+        for (int genNumber = (int)gc_generation_num.loh_generation;
+             genNumber < (int)gc_generation_num.total_generation_count;
+             genNumber++)
+        {
+            for (heap_segment* segment =
+                    generation.generation_start_segment_rw(
+                        generation_of(generationTable, genNumber));
+                 segment is not null;
+                 segment = heap_segment.heap_segment_next(segment))
+            {
+                byte* current = heap_segment.heap_segment_mem(segment);
+                byte* end = heap_segment.heap_segment_allocated(segment);
+                while (current < end)
+                {
+                    nuint objectSize = size(current);
+                    byte* next = current + (nint)AlignQword(objectSize);
+                    if (next <= current || next > end)
+                    {
+                        GCToEEInterface.HandleFatalError(CORINFO_EXCEPTION_GC);
+                        return;
+                    }
+
+                    if (((CObjectHeader*)current)->GetMethodTable() !=
+                            GCCommon.g_gc_pFreeObjectMethodTable &&
+                        contain_pointers(current) != 0 &&
+                        background_object_marked(current, clear_p: false))
+                    {
+                        go_through_object_nostart(
+                            method_table(current),
+                            current,
+                            objectSize,
+                            null,
+                            &background_mark_reference);
+                    }
+
+                    current = next;
                 }
             }
         }
@@ -942,6 +1025,7 @@ internal unsafe partial struct gc_heap
 
     public static void publish_uoh_allocation(byte* obj)
     {
+        c_gc_state state = current_c_gc_state;
         for (int i = 0; i < MaxPendingUohAllocations; i++)
         {
             if ((byte*)System.Threading.Volatile.Read(
@@ -954,7 +1038,7 @@ internal unsafe partial struct gc_heap
             }
         }
 
-        if (current_c_gc_state == c_gc_state.c_gc_state_planning)
+        if (state == c_gc_state.c_gc_state_planning)
         {
             Interlocked.Decrement(ref uoh_alloc_thread_count);
         }
@@ -1139,11 +1223,11 @@ internal unsafe partial struct gc_heap
                 track_sweep_cursor: false))
             {
                 leave_gc_lock();
+                GCSpinLock.leave(&hp->more_space_lock_soh);
                 return false;
             }
         }
 
-        GCSpinLock.enter(&hp->more_space_lock_soh);
         *generation.generation_allocator(
             generation_of(generationTable, (int)gc_generation_num.soh_gen0)) =
             youngestFreeList;
@@ -1153,8 +1237,8 @@ internal unsafe partial struct gc_heap
         generation.generation_free_obj_space(
             generation_of(generationTable, (int)gc_generation_num.soh_gen0)) =
             youngestFreeObjectSpace;
-        GCSpinLock.leave(&hp->more_space_lock_soh);
         leave_gc_lock();
+        GCSpinLock.leave(&hp->more_space_lock_soh);
 
         if (!background_sweep_generation(
             hp,
@@ -1204,6 +1288,18 @@ internal unsafe partial struct gc_heap
             }
         }
         GCSpinLock.leave(&hp->more_space_lock_uoh);
+
+        generation* maxGeneration =
+            generation_of(generationTable, (int)gc_generation_num.soh_gen2);
+        for (heap_segment* segment =
+                generation.generation_start_segment_rw(maxGeneration);
+             segment is not null;
+             segment = heap_segment.heap_segment_next(segment))
+        {
+            heap_segment.heap_segment_saved_bg_allocated(segment) =
+                heap_segment.heap_segment_background_allocated(segment);
+            heap_segment.heap_segment_background_allocated(segment) = null;
+        }
 
         GCEvents.GCEventFireBGC2ndConEnd();
         return true;
@@ -1320,12 +1416,16 @@ internal unsafe partial struct gc_heap
                         current_sweep_pos = current;
                     }
 
-                    allow_foreground_gc();
+                    if (track_sweep_cursor || uoh_p)
+                    {
+                        allow_foreground_gc();
+                    }
                     processed = 0;
                 }
             }
 
             bool deleteSegment =
+                (track_sweep_cursor || uoh_p) &&
                 gapStart == heap_segment.heap_segment_mem(segment) &&
                 heap_segment.heap_segment_allocated(segment) == end &&
                 segment != startSegment;
@@ -1358,8 +1458,10 @@ internal unsafe partial struct gc_heap
 
                 previousSegment = segment;
                 segment->flags |= heap_segment.heap_segment_flags_swept;
-                heap_segment.heap_segment_saved_bg_allocated(segment) = end;
-                heap_segment.heap_segment_background_allocated(segment) = null;
+                if (!track_sweep_cursor && !uoh_p)
+                {
+                    heap_segment.heap_segment_background_allocated(segment) = null;
+                }
             }
             else
             {
@@ -1726,10 +1828,32 @@ internal unsafe partial struct gc_heap
             }
         }
 
-        if (background_mark1(o) != 0 && contain_pointers_or_collectible(o) != 0)
+        if (background_mark1(o) != 0 &&
+            contain_pointers_or_collectible(o) != 0 &&
+            should_scan_background_object(o))
         {
             push_background_mark(o);
         }
+    }
+
+    private static bool should_scan_background_object(byte* o)
+    {
+        if (current_bgc_state == bgc_state.bgc_final_marking)
+        {
+            return true;
+        }
+
+        byte* start;
+        byte* allocated;
+        byte* reserved;
+        uint generation;
+        return !ManagedGCRegionBootstrap.TryGetGenerationWithRange(
+                o,
+                &start,
+                &allocated,
+                &reserved,
+                &generation) ||
+            generation <= GCInterfaceOffsets.max_generation;
     }
 
     private static void push_background_mark(byte* o)
@@ -1753,7 +1877,8 @@ internal unsafe partial struct gc_heap
         if (child >= background_saved_lowest_address &&
             child < background_saved_highest_address &&
             background_mark1(child) != 0 &&
-            contain_pointers_or_collectible(child) != 0)
+            contain_pointers_or_collectible(child) != 0 &&
+            should_scan_background_object(child))
         {
             push_background_mark(child);
         }
@@ -1862,26 +1987,44 @@ internal unsafe partial struct gc_heap
             return GCEnv.WAIT_OBJECT_0;
         }
 
+#if !MANAGED_GC_TEST_HOST
+        int suspendedCriticalRegion = GCHeapCriticalRegion.Suspend();
+#endif
+        bool toggled = GCToEEInterface.EnablePreemptiveGC() != 0;
         if (reason != alloc_wait_reason.awr_ignored)
         {
             GCEvents.GCEventFireBGCAllocWaitBegin(unchecked((uint)reason));
         }
 
-#if MANAGED_GC_TEST_HOST
         uint result = background_gc_done_event.Wait(timeout, alertable: false);
-#else
-        uint result = background_gc_done_event.UserThreadWait(timeout);
-#endif
         if (reason != alloc_wait_reason.awr_ignored)
         {
             GCEvents.GCEventFireBGCAllocWaitEnd(unchecked((uint)reason));
         }
+
+        if (toggled)
+        {
+            GCToEEInterface.DisablePreemptiveGC();
+        }
+#if !MANAGED_GC_TEST_HOST
+        GCHeapCriticalRegion.Resume(suspendedCriticalRegion);
+#endif
 
         return result;
     }
 
     public static bool background_collection_running_p() =>
         background_running_p();
+
+    public static void mark_new_soh_allocation(byte* obj)
+    {
+        if (background_running_p() &&
+            obj >= background_saved_lowest_address &&
+            obj < background_saved_highest_address)
+        {
+            mark_array_set_marked(obj);
+        }
+    }
 
     public static bool background_collection_pending_p() =>
         background_running_p();
@@ -1918,6 +2061,39 @@ internal unsafe partial struct gc_heap
 
     public static void release_background_pause_for_test() =>
         System.Threading.Volatile.Write(ref test_pause_background, 0);
+
+    public static void request_background_sweep_pause_for_test()
+    {
+        System.Threading.Volatile.Write(
+            ref test_background_sweep_pause_observed,
+            0);
+        System.Threading.Volatile.Write(ref test_pause_background_sweep, 1);
+    }
+
+    public static bool background_sweep_pause_observed_for_test() =>
+        System.Threading.Volatile.Read(
+            ref test_background_sweep_pause_observed) != 0;
+
+    public static void release_background_sweep_pause_for_test() =>
+        System.Threading.Volatile.Write(ref test_pause_background_sweep, 0);
+
+    private static void pause_before_background_sweep_for_test()
+    {
+        if (System.Threading.Volatile.Read(
+                ref test_pause_background_sweep) == 0)
+        {
+            return;
+        }
+
+        System.Threading.Volatile.Write(
+            ref test_background_sweep_pause_observed,
+            1);
+        while (System.Threading.Volatile.Read(
+            ref test_pause_background_sweep) != 0)
+        {
+            GCToOSInterface.Sleep(1);
+        }
+    }
 
     public static int foreground_during_bgc_count_for_test() =>
         System.Threading.Volatile.Read(ref test_foreground_during_bgc_count);
@@ -1965,13 +2141,26 @@ internal unsafe partial struct gc_heap
     public static c_gc_state current_c_gc_state_for_test() =>
         current_c_gc_state;
 
+    public static void set_current_c_gc_state_for_test(c_gc_state state) =>
+        current_c_gc_state = state;
+
     public static void reset_background_event_for_test()
     {
+        release_background_pause_for_test();
+        release_background_sweep_pause_for_test();
         background_gc_done_event = default;
     }
 #endif
 
 #if MANAGED_GC_TEST_HOST
+    private static void ManagedGC_PrepareForSuspension()
+    {
+    }
+
+    private static void ManagedGC_CompleteSuspension()
+    {
+    }
+
     private static int ManagedGC_CreateBackgroundThread(
         delegate*<void*, void> threadStart,
         void* context,
@@ -1990,6 +2179,14 @@ internal unsafe partial struct gc_heap
     private static void ManagedGC_SignalBackgroundThread(void* worker) =>
         GCToEEInterface.SignalBackgroundThread(worker);
 #else
+    [System.Runtime.RuntimeImport("*", "ManagedGC_PrepareForSuspension")]
+    [MethodImpl(MethodImplOptions.InternalCall)]
+    private static extern void ManagedGC_PrepareForSuspension();
+
+    [System.Runtime.RuntimeImport("*", "ManagedGC_CompleteSuspension")]
+    [MethodImpl(MethodImplOptions.InternalCall)]
+    private static extern void ManagedGC_CompleteSuspension();
+
     [System.Runtime.RuntimeImport("*", "ManagedGC_CreateBackgroundThread")]
     [MethodImpl(MethodImplOptions.InternalCall)]
     private static extern int ManagedGC_CreateBackgroundThread(

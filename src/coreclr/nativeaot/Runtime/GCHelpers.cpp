@@ -28,6 +28,11 @@
 
 #include "gcdesc.h"
 
+#ifdef FEATURE_MANAGED_GC
+extern "C" void ManagedGC_EnterAllocationHelper();
+extern "C" void ManagedGC_ExitAllocationHelper();
+#endif
+
 #ifdef FEATURE_EVENT_TRACE
    #include "clretwallmain.h"
 #else // FEATURE_EVENT_TRACE
@@ -613,9 +618,18 @@ static Object* GcAllocInternal(MethodTable* pEEType, uint32_t uFlags, uintptr_t 
         }
     }
 
+#ifdef FEATURE_MANAGED_GC
+    ManagedGC_EnterAllocationHelper();
+#endif
+
     Object* pObject = GCHeapUtilities::GetGCHeap()->Alloc(pAllocContext, cbSize, uFlags);
     if (pObject == NULL)
+    {
+#ifdef FEATURE_MANAGED_GC
+        ManagedGC_ExitAllocationHelper();
+#endif
         return NULL;
+    }
 
     pObject->SetMethodTable(pEEType);
     if (pEEType->HasComponentSize())
@@ -631,6 +645,7 @@ static Object* GcAllocInternal(MethodTable* pEEType, uint32_t uFlags, uintptr_t 
     if ((uFlags & GC_ALLOC_FINALIZE) &&
         !GCHeapUtilities::GetGCHeap()->RegisterForFinalization(-1, pObject))
     {
+        ManagedGC_ExitAllocationHelper();
         return NULL;
     }
 #endif // FEATURE_MANAGED_GC
@@ -650,6 +665,10 @@ static Object* GcAllocInternal(MethodTable* pEEType, uint32_t uFlags, uintptr_t 
 
     if (uFlags & GC_ALLOC_USER_OLD_HEAP)
         GCHeapUtilities::GetGCHeap()->PublishObject((uint8_t*)pObject);
+
+#ifdef FEATURE_MANAGED_GC
+    ManagedGC_ExitAllocationHelper();
+#endif
 
 #ifdef _DEBUG
     // We assume that the allocation quantum is never big enough for LARGE_OBJECT_SIZE.

@@ -1275,20 +1275,9 @@ public sealed unsafe class GCVirtualMemoryTests
             GCToOSInterface.ResetRecording();
             GCToOSInterface.ForceVirtualDecommitFailureCount = 1;
 
-#if DEBUG
-            try
-            {
-                gc_heap.decommit_region(&region, gc_heap.recorded_committed_free_bucket, -1);
-                Assert.Fail("The native debug assert for a failed region decommit should fire.");
-            }
-            catch (Exception ex) when (ex.GetType().Name == "DebugAssertException")
-            {
-            }
-#else
             nuint decommitted = gc_heap.decommit_region(&region, gc_heap.recorded_committed_free_bucket, -1);
 
             Assert.Equal(pageSize, decommitted);
-#endif
             Assert.Equal(1, VirtualDecommitRequestCount());
             Assert.Equal(pageSize, gc_heap.committed_by_oh[gc_heap.recorded_committed_free_bucket]);
             Assert.Equal(pageSize, gc_heap.current_total_committed);
@@ -1296,6 +1285,7 @@ public sealed unsafe class GCVirtualMemoryTests
             Assert.Equal((nuint)regionEnd, (nuint)heap_segment.heap_segment_committed(&region));
             AssertRangeIsZero(regionStart, pageSize);
         }
+
         finally
         {
             GCToOSInterface.ForceVirtualDecommitFailureCount = 0;

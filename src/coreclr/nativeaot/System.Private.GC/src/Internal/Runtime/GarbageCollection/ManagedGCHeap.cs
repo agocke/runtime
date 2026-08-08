@@ -432,6 +432,9 @@ namespace Internal.Runtime.GarbageCollection
                 size <= (nuint)(acontext->alloc_limit - allocPtr))
             {
                 acontext->alloc_ptr = allocPtr + size;
+#if BACKGROUND_GC
+                gc_heap.mark_new_soh_allocation(allocPtr);
+#endif
                 return allocPtr;
             }
 
@@ -467,6 +470,9 @@ namespace Internal.Runtime.GarbageCollection
             if (smallObject)
             {
                 acontext->alloc_ptr = allocPtr + size;
+#if BACKGROUND_GC
+                gc_heap.mark_new_soh_allocation(allocPtr);
+#endif
             }
             else
             {

@@ -252,30 +252,55 @@ public sealed unsafe class GCEventPlumbingTests
     [Fact]
     public void DiagnosticSettingsPublishConfiguredCollectorState()
     {
-        gc_heap.heap_hard_limit = 0x1000;
-        gc_heap.physical_memory_from_config = 0x2000;
-        gc_heap.gen0_min_budget_from_config = 0x3000;
-        gc_heap.gen0_max_budget_from_config = 0x4000;
-        gc_heap.high_mem_percent_from_config = 75;
-        gc_heap.gc_can_use_concurrent = true;
-        gc_heap.use_large_pages_p = 1;
-        gc_heap.use_frozen_segments_p = 1;
-        gc_heap.hard_limit_config_p = true;
-        EtwGCSettingsInfo settings = default;
+        nuint savedHeapHardLimit = gc_heap.heap_hard_limit;
+        nuint savedPhysicalMemory = gc_heap.physical_memory_from_config;
+        nuint savedGen0MinBudget = gc_heap.gen0_min_budget_from_config;
+        nuint savedGen0MaxBudget = gc_heap.gen0_max_budget_from_config;
+        uint savedHighMemoryPercent = gc_heap.high_mem_percent_from_config;
+        bool savedConcurrent = gc_heap.gc_can_use_concurrent;
+        byte savedLargePages = gc_heap.use_large_pages_p;
+        byte savedFrozenSegments = gc_heap.use_frozen_segments_p;
+        bool savedHardLimitConfig = gc_heap.hard_limit_config_p;
 
-        gc_heap.DiagGetSettings(&settings, 85_000);
+        try
+        {
+            gc_heap.heap_hard_limit = 0x1000;
+            gc_heap.physical_memory_from_config = 0x2000;
+            gc_heap.gen0_min_budget_from_config = 0x3000;
+            gc_heap.gen0_max_budget_from_config = 0x4000;
+            gc_heap.high_mem_percent_from_config = 75;
+            gc_heap.gc_can_use_concurrent = true;
+            gc_heap.use_large_pages_p = 1;
+            gc_heap.use_frozen_segments_p = 1;
+            gc_heap.hard_limit_config_p = true;
+            EtwGCSettingsInfo settings = default;
 
-        Assert.Equal((nuint)0x1000, settings.heap_hard_limit);
-        Assert.Equal((nuint)85_000, settings.loh_threshold);
-        Assert.Equal((nuint)0x2000, settings.physical_memory_from_config);
-        Assert.Equal((nuint)0x3000, settings.gen0_min_budget_from_config);
-        Assert.Equal((nuint)0x4000, settings.gen0_max_budget_from_config);
-        Assert.Equal(75u, settings.high_mem_percent_from_config);
-        Assert.Equal((byte)1, settings.concurrent_gc_p);
-        Assert.Equal((byte)1, settings.use_large_pages_p);
-        Assert.Equal((byte)1, settings.use_frozen_segments_p);
-        Assert.Equal((byte)1, settings.hard_limit_config_p);
-        Assert.Equal((byte)1, settings.no_affinitize_p);
+            gc_heap.DiagGetSettings(&settings, 85_000);
+
+            Assert.Equal((nuint)0x1000, settings.heap_hard_limit);
+            Assert.Equal((nuint)85_000, settings.loh_threshold);
+            Assert.Equal((nuint)0x2000, settings.physical_memory_from_config);
+            Assert.Equal((nuint)0x3000, settings.gen0_min_budget_from_config);
+            Assert.Equal((nuint)0x4000, settings.gen0_max_budget_from_config);
+            Assert.Equal(75u, settings.high_mem_percent_from_config);
+            Assert.Equal((byte)1, settings.concurrent_gc_p);
+            Assert.Equal((byte)1, settings.use_large_pages_p);
+            Assert.Equal((byte)1, settings.use_frozen_segments_p);
+            Assert.Equal((byte)1, settings.hard_limit_config_p);
+            Assert.Equal((byte)1, settings.no_affinitize_p);
+        }
+        finally
+        {
+            gc_heap.heap_hard_limit = savedHeapHardLimit;
+            gc_heap.physical_memory_from_config = savedPhysicalMemory;
+            gc_heap.gen0_min_budget_from_config = savedGen0MinBudget;
+            gc_heap.gen0_max_budget_from_config = savedGen0MaxBudget;
+            gc_heap.high_mem_percent_from_config = savedHighMemoryPercent;
+            gc_heap.gc_can_use_concurrent = savedConcurrent;
+            gc_heap.use_large_pages_p = savedLargePages;
+            gc_heap.use_frozen_segments_p = savedFrozenSegments;
+            gc_heap.hard_limit_config_p = savedHardLimitConfig;
+        }
     }
 
     private static ReadOnlySpan<byte> AssertDynamicEvent(string name, int payloadSize)

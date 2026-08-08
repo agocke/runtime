@@ -13,17 +13,17 @@ internal static class ManagedGCBgcTest
     {
         if (!FullGCNotificationCancellationIsStable())
         {
-            return 2;
+            return 4;
         }
 
         if (!EventPipeGcSmoke.CollectAndValidate(background: true))
         {
-            return 3;
+            return 5;
         }
 
         if (!ConcurrentUohPublicationPreservesArrayMetadata())
         {
-            return 4;
+            return 6;
         }
 
         const int NodeCount = 65_536;

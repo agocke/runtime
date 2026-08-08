@@ -26,6 +26,12 @@ namespace Internal.Runtime.GarbageCollection
 #if defined(HOST_64BIT) && !defined(TARGET_WASM)
 #define DOUBLY_LINKED_FL
 #endif
+#if defined(SERVER_GC)
+#define MULTIPLE_HEAPS
+#if defined(USE_REGIONS)
+#define DYNAMIC_HEAP_COUNT
+#endif
+#endif
 #include "../GCInterfaceOffsets.h"
     }
 }

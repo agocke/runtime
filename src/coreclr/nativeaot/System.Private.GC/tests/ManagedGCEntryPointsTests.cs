@@ -500,6 +500,111 @@ public sealed unsafe class ManagedGCEntryPointsTests : IDisposable
         }
     }
 
+    [Fact]
+    public void BackgroundSweepBlocksSohRefillsAndVoidsPublishedAllocationContexts()
+    {
+        GCToOSInterface.ResetRecording();
+        GCConfig.Initialize();
+        GCEventStatus.Set(GCEventProvider.Default, GCEventKeyword.None, GCEventLevel.None);
+        GCEventStatus.Set(GCEventProvider.Private, GCEventKeyword.None, GCEventLevel.None);
+        GCCommon.initialize();
+        Assert.True(gc_heap.check_commit_cs.Initialize());
+        gc_heap.initialize_gc_static_state();
+        Assert.Equal(S_OK, ManagedGCRegionBootstrap.Prepare());
+        Assert.True(gc_heap.initialize_mark_list());
+        Assert.True(gc_heap.initialize_mark_stack());
+        Assert.True(ManagedGCRegionBootstrap.Initialize());
+        Assert.True(gc_heap.initialize_background_gc());
+        gc_heap.finalize_queue = CFinalize.Allocate();
+        Assert.True(gc_heap.finalize_queue is not null);
+
+        Thread refillThread = null;
+        try
+        {
+            gc_alloc_context allocationContext = default;
+            GCToEEInterface.AllocContexts.Add((nuint)(&allocationContext));
+            gc_heap.request_background_pause_for_test();
+            gc_heap.request_background_sweep_pause_for_test();
+
+            Assert.Equal(
+                S_OK,
+                gc_heap.garbage_collect_background(
+                    GCInterfaceOffsets.max_generation,
+                    low_memory_p: 0,
+                    (int)collection_mode.collection_non_blocking));
+            Assert.True(
+                SpinWait.SpinUntil(
+                    () => gc_heap.background_pause_observed_for_test(),
+                    30_000));
+
+            byte* allocationStorage = stackalloc byte[128];
+            allocationContext.alloc_ptr = allocationStorage + 32;
+            allocationContext.alloc_limit = allocationStorage + 96;
+            allocationContext.alloc_bytes = 64;
+            gc_heap.release_background_pause_for_test();
+
+            Assert.True(
+                SpinWait.SpinUntil(
+                    () => gc_heap.background_sweep_pause_observed_for_test(),
+                    30_000));
+            Assert.Equal((nuint)0, (nuint)allocationContext.alloc_ptr);
+            Assert.Equal((nuint)0, (nuint)allocationContext.alloc_limit);
+
+            gc_heap* heap = ManagedGCRegionBootstrap.Heap;
+            Assert.True(heap is not null);
+            ManualResetEventSlim refillEntered = new();
+            nuint heapAddress = (nuint)heap;
+            refillThread = new Thread(() =>
+            {
+                gc_heap* refillHeap = (gc_heap*)heapAddress;
+                GCSpinLock.enter(&refillHeap->more_space_lock_soh);
+                refillEntered.Set();
+                GCSpinLock.leave(&refillHeap->more_space_lock_soh);
+            });
+            refillThread.Start();
+
+            Assert.False(refillEntered.Wait(100));
+            gc_heap.release_background_sweep_pause_for_test();
+            Assert.True(refillEntered.Wait(30_000));
+            Assert.True(refillThread.Join(30_000));
+            Assert.Equal(
+                GCEnv.WAIT_OBJECT_0,
+                gc_heap.background_gc_wait(30_000));
+
+            generation* gen2 = gc_heap.generation_of(
+                gc_heap.generation_table_of(heap),
+                (int)gc_generation_num.soh_gen2);
+            heap_segment* segment =
+                generation.generation_start_segment_rw(gen2);
+            Assert.True(segment is not null);
+            Assert.NotEqual(
+                (nuint)0,
+                (nuint)heap_segment.heap_segment_saved_bg_allocated(segment));
+            Assert.Equal(
+                (nuint)0,
+                (nuint)heap_segment.heap_segment_background_allocated(segment));
+            Assert.True(
+                gc_heap.background_state_was_observed(
+                    bgc_state.bgc_sweep_soh));
+            Assert.True(
+                gc_heap.background_state_was_observed(
+                    bgc_state.bgc_sweep_uoh));
+        }
+        finally
+        {
+            gc_heap.release_background_pause_for_test();
+            gc_heap.release_background_sweep_pause_for_test();
+            refillThread?.Join(1_000);
+            CFinalize.Free(gc_heap.finalize_queue);
+            gc_heap.finalize_queue = null;
+            gc_heap.destroy_background_gc();
+            gc_heap.reset_background_event_for_test();
+            ManagedGCRegionBootstrap.Shutdown();
+            gc_heap.destroy_semi_shared();
+            gc_heap.check_commit_cs.Destroy();
+        }
+    }
+
     [Theory]
     [InlineData((int)gc_generation_num.soh_gen0)]
     [InlineData((int)gc_generation_num.soh_gen1)]

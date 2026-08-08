@@ -1226,6 +1226,21 @@ internal unsafe partial struct gc_heap
             heap->alloc_allocated);
     }
 
+    private static void void_allocation_context(
+        gc_alloc_context* acontext,
+        void* param)
+    {
+        _ = param;
+        if (acontext->alloc_ptr is not null)
+        {
+            acontext->alloc_ptr = null;
+            acontext->alloc_limit = null;
+        }
+    }
+
+    private static void void_allocation_contexts() =>
+        GCToEEInterface.GcEnumAllocContexts(&void_allocation_context, null);
+
 #endif
 
     public static void fix_youngest_allocation_area(
@@ -2554,8 +2569,9 @@ internal unsafe partial struct gc_heap
                     return;
                 }
 
-                background_gc_wait(
-                    reason: alloc_wait_reason.awr_alloc_loh_low_mem);
+                wait_for_background_with_released_more_space_lock(
+                    context,
+                    alloc_wait_reason.awr_alloc_loh_low_mem);
                 result->kind = allocation_callback_result_kind.background_running;
                 return;
 
@@ -2573,8 +2589,9 @@ internal unsafe partial struct gc_heap
                 }
 
                 nuint compactingCollections = full_gc_counts[gc_type_compacting];
-                background_gc_wait(
-                    reason: context->gen_number ==
+                wait_for_background_with_released_more_space_lock(
+                    context,
+                    context->gen_number ==
                         (int)gc_generation_num.soh_gen0
                             ? alloc_wait_reason.awr_gen0_oos_bgc
                             : alloc_wait_reason.awr_loh_oos_bgc);
@@ -2650,6 +2667,21 @@ internal unsafe partial struct gc_heap
                 result->kind = allocation_callback_result_kind.completed;
                 return;
         }
+    }
+
+    private static void wait_for_background_with_released_more_space_lock(
+        try_allocate_more_space_context* context,
+        alloc_wait_reason reason)
+    {
+        GCSpinLock* moreSpaceLock =
+            more_space_lock_of(context->hp, context->gen_number);
+        GCSpinLock.leave(moreSpaceLock);
+        context->more_space_lock_held_p = 0;
+
+        background_gc_wait(reason: reason);
+
+        GCSpinLock.enter(moreSpaceLock);
+        context->more_space_lock_held_p = 1;
     }
 
     private static bool run_allocation_full_collection(
@@ -3440,6 +3472,19 @@ internal unsafe partial struct gc_heap
             context->more_space_lock_held_p = 1;
         }
 
+#if BACKGROUND_GC
+        if (context->state == allocation_state.a_state_start &&
+            context->gen_number != (int)gc_generation_num.soh_gen0 &&
+            context->bgc_high_memory_waited_p == 0 &&
+            background_running_p())
+        {
+            wait_for_background_with_released_more_space_lock(
+                context,
+                alloc_wait_reason.awr_alloc_loh_low_mem);
+            context->bgc_high_memory_waited_p = 1;
+        }
+#endif
+
         if (context->state == allocation_state.a_state_start &&
             context->full_gc_notification_p != 0 &&
             context->full_gc_checked_p == 0)
@@ -3767,19 +3812,23 @@ internal unsafe partial struct gc_heap
 #if BACKGROUND_GC
         if (gen_number != (int)gc_generation_num.soh_gen0 &&
             background_running_p() &&
-            current_c_gc_state == c_gc_state.c_gc_state_planning &&
-            seg is not null)
+            current_c_gc_state == c_gc_state.c_gc_state_planning)
         {
             byte* obj = acontext->alloc_ptr;
-            byte* backgroundAllocated =
-                heap_segment.heap_segment_background_allocated(seg);
-            if (backgroundAllocated is not null &&
-                obj >= background_saved_lowest_address &&
-                obj < background_saved_highest_address &&
-                obj < backgroundAllocated &&
-                heap_segment.heap_segment_swept_p(seg) == 0)
+            if (obj >= background_saved_lowest_address &&
+                obj < background_saved_highest_address)
             {
-                mark_array_set_marked(obj);
+                heap_segment* backgroundSegment =
+                    seg is not null ? seg : region_of(obj);
+                byte* backgroundAllocated =
+                    heap_segment.heap_segment_background_allocated(
+                        backgroundSegment);
+                if (backgroundAllocated is not null &&
+                    obj < backgroundAllocated &&
+                    heap_segment.heap_segment_swept_p(backgroundSegment) == 0)
+                {
+                    mark_array_set_marked(obj);
+                }
             }
         }
 #endif
