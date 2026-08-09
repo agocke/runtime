@@ -1409,6 +1409,280 @@ public static class ManagedServerGCFoundationTests
         }
     }
 
+    [Fact]
+    public static void ServerPlanBrickThreadingSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type gen = GetType("Internal.Runtime.GarbageCollection.generation");
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // The brick-tree threading and pinned-plug-queue write leaves the plan-phase driver invokes
+        // are all present in the server build.
+        foreach (string method in new[]
+        {
+            "oddp",
+            "logcount",
+            "insert_node",
+            "update_brick_table",
+            "clear_special_bits",
+            "set_special_bits",
+            "grow_mark_stack",
+            "convert_to_pinned_plug",
+            "enque_pinned_plug",
+            "save_post_plug_info",
+            "store_plug_gap_info",
+            "set_allocator_next_pin",
+            "set_pinned_info",
+            "merge_with_last_pinned_plug",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == method);
+        }
+
+        Type byteType = typeof(byte);
+        Type bytePtr = byteType.MakePointerType();
+
+        // insert_node (byte*, nuint, byte*, byte*) -> byte*, as uint8_t* gc_heap::insert_node.
+        MethodInfo insert = heap.GetMethod(
+            "insert_node",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(bytePtr, insert.ReturnType);
+        ParameterInfo[] insertParams = insert.GetParameters();
+        Assert.Equal(4, insertParams.Length);
+        Assert.Equal(bytePtr, insertParams[0].ParameterType);
+        Assert.Equal(typeof(nuint), insertParams[1].ParameterType);
+        Assert.Equal(bytePtr, insertParams[2].ParameterType);
+        Assert.Equal(bytePtr, insertParams[3].ParameterType);
+
+        // update_brick_table (byte*, nuint, byte*, byte*) -> nuint, as size_t gc_heap::update_brick_table.
+        MethodInfo ubt = heap.GetMethod(
+            "update_brick_table",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(nuint), ubt.ReturnType);
+        Assert.Equal(4, ubt.GetParameters().Length);
+
+        // enque_pinned_plug (gc_heap*, byte*, int, byte*) -> void, reaching this heap's own queue.
+        MethodInfo enque = heap.GetMethod(
+            "enque_pinned_plug",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), enque.ReturnType);
+        ParameterInfo[] enqueParams = enque.GetParameters();
+        Assert.Equal(4, enqueParams.Length);
+        Assert.Equal(heap.MakePointerType(), enqueParams[0].ParameterType);
+        Assert.Equal(bytePtr, enqueParams[1].ParameterType);
+        Assert.Equal(typeof(int), enqueParams[2].ParameterType);
+        Assert.Equal(bytePtr, enqueParams[3].ParameterType);
+
+        // save_post_plug_info (gc_heap*, byte*, byte*, byte*) -> void.
+        MethodInfo savePost = heap.GetMethod(
+            "save_post_plug_info",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), savePost.ReturnType);
+        Assert.Equal(4, savePost.GetParameters().Length);
+        Assert.Equal(heap.MakePointerType(), savePost.GetParameters()[0].ParameterType);
+
+        // store_plug_gap_info (gc_heap*, byte*, byte*, ref int, ref int, ref byte*, ref int, byte*,
+        // ref int, nuint) -> void, matching void gc_heap::store_plug_gap_info.
+        MethodInfo store = heap.GetMethod(
+            "store_plug_gap_info",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), store.ReturnType);
+        ParameterInfo[] storeParams = store.GetParameters();
+        Assert.Equal(10, storeParams.Length);
+        Assert.Equal(heap.MakePointerType(), storeParams[0].ParameterType);
+        Assert.True(storeParams[3].ParameterType.IsByRef);
+        Assert.True(storeParams[5].ParameterType.IsByRef);
+        Assert.Equal(typeof(nuint), storeParams[9].ParameterType);
+
+        // set_allocator_next_pin (gc_heap*, generation*) -> void.
+        MethodInfo sanp = heap.GetMethod(
+            "set_allocator_next_pin",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), sanp.ReturnType);
+        ParameterInfo[] sanpParams = sanp.GetParameters();
+        Assert.Equal(2, sanpParams.Length);
+        Assert.Equal(heap.MakePointerType(), sanpParams[0].ParameterType);
+        Assert.Equal(gen.MakePointerType(), sanpParams[1].ParameterType);
+    }
+
+    [Theory]
+    [InlineData(0u, false)]
+    [InlineData(1u, true)]
+    [InlineData(2u, false)]
+    [InlineData(255u, true)]
+    [InlineData(256u, false)]
+    public static void ServerOddpMatchesParity(uint value, bool expected)
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo oddp = heap.GetMethod(
+            "oddp",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        object result = oddp.Invoke(null, new object[] { (nuint)value })!;
+        Assert.Equal(expected, (bool)result);
+    }
+
+    [Theory]
+    [InlineData(0u, 0u)]
+    [InlineData(1u, 1u)]
+    [InlineData(0xFFFFu, 16u)]
+    [InlineData(0x8001u, 2u)]
+    [InlineData(0x0F0Fu, 8u)]
+    public static void ServerLogcountCountsHighBits(uint word, uint expected)
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo logcount = heap.GetMethod(
+            "logcount",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        object result = logcount.Invoke(null, new object[] { (nuint)word })!;
+        Assert.Equal((nuint)expected, (nuint)result);
+    }
+
+    [Fact]
+    public static void ServerInsertNodeThreadsBrickTree()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // insert_node links each plug into the balanced brick tree using power_of_two_p / oddp /
+        // logcount and the shared node-child offset accessors.
+        MethodInfo insert = heap.GetMethod(
+            "insert_node",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] names, _) = CollectCallTargets(insert, "logcount");
+        foreach (string expected in new[]
+        {
+            "power_of_two_p",
+            "oddp",
+            "logcount",
+            "node_right_child",
+            "set_node_left_child",
+            "set_node_right_child",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        // update_brick_table publishes the tree and fills the intervening bricks.
+        MethodInfo ubt = heap.GetMethod(
+            "update_brick_table",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] ubtNames, _) = CollectCallTargets(ubt, "set_brick");
+        foreach (string expected in new[] { "set_brick", "brick_address", "brick_of" })
+        {
+            Assert.Contains(expected, ubtNames);
+        }
+    }
+
+    [Fact]
+    public static void ServerPinnedQueueWritersCallClosedLeaves()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // store_plug_gap_info records the gap size, enqueues / post-annotates the pin, and remembers
+        // the gen2 free-list pin index (DOUBLY_LINKED_FL) through the owning heap.
+        MethodInfo store = heap.GetMethod(
+            "store_plug_gap_info",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] storeNames, _) = CollectCallTargets(store, "enque_pinned_plug");
+        foreach (string expected in new[]
+        {
+            "set_gap_size",
+            "enque_pinned_plug",
+            "save_post_plug_info",
+            "generation_last_free_list_allocated",
+        })
+        {
+            Assert.Contains(expected, storeNames);
+        }
+
+        // enque_pinned_plug grows this heap's queue and snapshots the pre-plug info, marking the
+        // short-object reference bits through go_through_object_nostart.
+        MethodInfo enque = heap.GetMethod(
+            "enque_pinned_plug",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] enqueNames, _) = CollectCallTargets(enque, "grow_mark_stack");
+        foreach (string expected in new[]
+        {
+            "grow_mark_stack",
+            "clear_special_bits",
+            "set_special_bits",
+            "contain_pointers",
+            "go_through_object_nostart",
+        })
+        {
+            Assert.Contains(expected, enqueNames);
+        }
+
+        // set_allocator_next_pin caps the allocation limit at the oldest queued pin.
+        MethodInfo sanp = heap.GetMethod(
+            "set_allocator_next_pin",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] sanpNames, _) = CollectCallTargets(sanp, "oldest_pin");
+        foreach (string expected in new[] { "pinned_plug_que_empty_p", "oldest_pin", "pinned_plug" })
+        {
+            Assert.Contains(expected, sanpNames);
+        }
+    }
+
+    [Fact]
+    public static void ServerSavedPinnedPlugIndexIsInstanceOwned()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h marks saved_pinned_plug_index PER_HEAP_FIELD_SINGLE_GC, so it is instance-owned in
+        // the MULTIPLE_HEAPS build; store_plug_gap_info records the pin index through the owning heap.
+        FieldInfo instance = heap.GetField(
+            "saved_pinned_plug_index",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.NotNull(instance);
+        Assert.False(instance.IsStatic);
+
+        Assert.Null(heap.GetField(
+            "saved_pinned_plug_index",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+    }
+
+    [Fact]
+    public static unsafe void ServerObjectHeaderSpecialBitsRoundTrip()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gc.cpp clear_special_bits strips the lower method-table bits and returns them;
+        // set_special_bits restores them. A method-table word with GC_MARKED |
+        // MAKE_FREE_OBJ_IN_COMPACT set must round-trip through the pair, and the stripped word must
+        // have no special bits left. The static wrappers take the object address directly.
+        IntPtr buffer = Marshal.AllocHGlobal(sizeof(nuint));
+        try
+        {
+            const nuint markedBits = 0x1 | 0x4; // GC_MARKED | MAKE_FREE_OBJ_IN_COMPACT
+            var basePtr = (nuint)0x40000;
+            Marshal.WriteIntPtr(buffer, (IntPtr)(nint)(basePtr | markedBits));
+
+            MethodInfo clear = heap.GetMethod(
+                "clear_special_bits",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+            MethodInfo set = heap.GetMethod(
+                "set_special_bits",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+            Type bytePtr = typeof(byte).MakePointerType();
+            object removed = clear.Invoke(
+                null,
+                new object[] { Pointer.Box((void*)buffer, bytePtr) })!;
+            Assert.Equal(markedBits, (nuint)removed);
+            Assert.Equal((nuint)basePtr, (nuint)(nint)Marshal.ReadIntPtr(buffer));
+
+            set.Invoke(
+                null,
+                new object[] { Pointer.Box((void*)buffer, bytePtr), (nuint)removed });
+            Assert.Equal(basePtr | markedBits, (nuint)(nint)Marshal.ReadIntPtr(buffer));
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
     // how many of them have a given name (used to count gc_t_join.join sites). Tokens are resolved
     // through the module so stray operand bytes that look like call opcodes are discarded.
     private static (string[] Names, int NamedCount) CollectCallTargets(MethodInfo method, string countName)

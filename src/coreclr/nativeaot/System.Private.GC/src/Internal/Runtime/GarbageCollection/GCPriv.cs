@@ -1464,7 +1464,14 @@ namespace Internal.Runtime.GarbageCollection
         public static gc_history_global bgc_data_global;
         public static gc_mechanisms saved_bgc_settings;
         public static nuint gen2_removed_no_undo;
+        // gcpriv.h marks saved_pinned_plug_index PER_HEAP_FIELD_SINGLE_GC, so it is instance-owned
+        // in the MULTIPLE_HEAPS build (static in WKS) and store_plug_gap_info records the pin index
+        // through the owning heap.
+#if MULTIPLE_HEAPS
+        public nuint saved_pinned_plug_index;
+#else
         public static nuint saved_pinned_plug_index;
+#endif
         public static last_recorded_gc_info last_background_gc_info0;
         public static last_recorded_gc_info last_background_gc_info1;
         public static int last_background_gc_info_index;
@@ -1601,7 +1608,12 @@ namespace Internal.Runtime.GarbageCollection
             bgc_data_global = default;
             saved_bgc_settings = default;
             gen2_removed_no_undo = 0;
+#if !MULTIPLE_HEAPS
+            // In the MULTIPLE_HEAPS build saved_pinned_plug_index is instance-owned (reset per GC
+            // in the plan-phase driver, matching native's PER_HEAP_FIELD_SINGLE_GC), so the static
+            // reset only applies to the WKS build's single-heap static field.
             saved_pinned_plug_index = nuint.MaxValue;
+#endif
             last_background_gc_info0 = default;
             last_background_gc_info1 = default;
             last_background_gc_info_index = 0;

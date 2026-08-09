@@ -75,6 +75,13 @@ internal unsafe struct CObjectHeader
 {
     private const nuint SPECIAL_HEADER_BITS = 0x7;
     public const nuint GC_MARKED = 0x1;
+    // gcpriv.h: the doubly-linked free list and BGC-during-FGC marking reuse the lower method-table
+    // bits on 64-bit. The server build is always 64-bit (regions require it), so the full allowed
+    // special-bit set is GC_MARKED | BGC_MARKED_BY_FGC | MAKE_FREE_OBJ_IN_COMPACT.
+    public const nuint BGC_MARKED_BY_FGC = 0x2;
+    public const nuint MAKE_FREE_OBJ_IN_COMPACT = 0x4;
+    private const nuint ALLOWED_SPECIAL_HEADER_BITS =
+        GC_MARKED | BGC_MARKED_BY_FGC | MAKE_FREE_OBJ_IN_COMPACT;
     private MethodTable* m_pEEType;
 
     public MethodTable* RawGetMethodTable() => m_pEEType;
@@ -105,6 +112,29 @@ internal unsafe struct CObjectHeader
     public int IsFree() =>
         GetMethodTable() ==
         (MethodTable*)GCCommon.g_gc_pFreeObjectMethodTable ? 1 : 0;
+
+    // gc.cpp: strip the special method-table bits before saving a copy of the pre/post-plug info,
+    // returning the removed bits so SetSpecialBits can restore them on the original object.
+    public nuint ClearSpecialBits()
+    {
+        nuint special_bits = (nuint)m_pEEType & SPECIAL_HEADER_BITS;
+        if (special_bits != 0)
+        {
+            Debug.Assert((special_bits & ~ALLOWED_SPECIAL_HEADER_BITS) == 0);
+            m_pEEType = (MethodTable*)((nuint)m_pEEType & ~SPECIAL_HEADER_BITS);
+        }
+
+        return special_bits;
+    }
+
+    public void SetSpecialBits(nuint special_bits)
+    {
+        Debug.Assert((special_bits & ~ALLOWED_SPECIAL_HEADER_BITS) == 0);
+        if (special_bits != 0)
+        {
+            m_pEEType = (MethodTable*)((nuint)m_pEEType | special_bits);
+        }
+    }
 
     public ObjHeader* GetHeader()
     {

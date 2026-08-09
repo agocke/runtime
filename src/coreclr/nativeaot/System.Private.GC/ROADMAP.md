@@ -1731,14 +1731,40 @@ now returns `m->first` per `gcinternal.h` (was `first + len`, which silently div
 region-planning fields are instance-owned (and `enable_special_regions_p` is not), and check
 `pinned_plug` returns the plug address. No collection is routed.
 
-Production blockers remain in the `plan_phase` driver that sequences these helpers (including
-`allocate_in_condemned_generations`, the brick/tree threading, `plan_loh` / `plan_poh` — which need
-`grow_heap_segment` / `grow_mark_stack` — and `fix_generation_bounds` — which needs
-`thread_final_regions` / `find_first_valid_region` / `reset_allocation_pointers` and the BGC end-mark
-accounting), the `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
+The brick/tree threading and pinned-plug-queue write leaves (`ManagedServerGCPlanBrick.cs`) now
+translate, from the SVR compilation of `plan_phase.cpp` and `mark_phase.cpp`, the leaves the
+`plan_phase` driver invokes as it walks a heap's condemned plugs: the parity/pop-count helpers `oddp`
+/ `logcount`, the brick-tree threading leaves `insert_node` / `update_brick_table`, the
+special-method-table-bit save/restore leaves `clear_special_bits` / `set_special_bits` and the
+short-plug reference-bit callback (`short_plug_context` / `set_short_plug_bit`), the queue-growth leaf
+`grow_mark_stack` and the pinned-plug-queue writers `enque_pinned_plug` / `save_post_plug_info`,
+`convert_to_pinned_plug`, the per-plug dispatch `store_plug_gap_info`, and the pin-consuming allocator
+positioning leaves `set_allocator_next_pin` / `set_pinned_info` / `merge_with_last_pinned_plug`. The
+queue writers reach this heap's own `mark_stack_array` / `mark_stack_array_length` / `mark_stack_tos`
+/ `mark_stack_bos` and `saved_pinned_plug_index` through the `gc_heap*` parameter;
+`saved_pinned_plug_index` is `PER_HEAP_FIELD_SINGLE_GC` and is now instance-owned in the
+`MULTIPLE_HEAPS` build (static in WKS, where `initialize_gc_static_state` keeps its reset). The brick
+table is a single process-wide bookkeeping array, so `insert_node` / `update_brick_table` and their
+`set_brick` / `brick_of` / `brick_address` leaves stay static, matching native. `ClearSpecialBits` /
+`SetSpecialBits` (with the 64-bit `ALLOWED_SPECIAL_HEADER_BITS` of `GC_MARKED | BGC_MARKED_BY_FGC |
+MAKE_FREE_OBJ_IN_COMPACT`) are added to the server `CObjectHeader`, and the `store_plug_gap_info`
+`DOUBLY_LINKED_FL` block routes `generation_last_free_list_allocated` through the heap. Focused
+Foundation tests pin the leaf method surface and the `insert_node` / `update_brick_table` /
+`enque_pinned_plug` / `save_post_plug_info` / `store_plug_gap_info` / `set_allocator_next_pin`
+signatures, resolve the closed-leaf call tokens `insert_node` / `update_brick_table` /
+`store_plug_gap_info` / `enque_pinned_plug` / `set_allocator_next_pin` make, exercise `oddp` /
+`logcount` and the `clear_special_bits` / `set_special_bits` round trip behaviorally, and verify
+`saved_pinned_plug_index` is instance-owned. No collection is routed.
+
+Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
+per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
+and of `saved_pinned_plug_index`, `allocate_in_condemned_generations` — which needs `get_next_alloc_seg`
+/ `size_fit_p` / `pad_in_front` — `plan_generation_start`, the plug walk, `plan_loh` / `plan_poh` — which
+need `grow_heap_segment` — and `fix_generation_bounds` — which needs `thread_final_regions` /
+`find_first_valid_region` / `reset_allocation_pointers` and the BGC end-mark accounting), the
+`gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
 `gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, the server
-`relocate_phase` / `compact_phase` / `make_free_lists` execution, the plan-phase driver's own reset of
-the region-planning counters (`memset (regions_per_gen ...)`, `decide_promote_gen1_pins_p`), BGC servo
+`relocate_phase` / `compact_phase` / `make_free_lists` execution, BGC servo
 tuning, dynamic heap-count changes after startup, diagnostic `saved_changed_segs` publication,
 condemnation-driven collection routing, the server background collector (thread lifecycle, concurrent
 mark/revisit, region sweep), and server parallel collection closure.
