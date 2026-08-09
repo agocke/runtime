@@ -1756,11 +1756,43 @@ signatures, resolve the closed-leaf call tokens `insert_node` / `update_brick_ta
 `logcount` and the `clear_special_bits` / `set_special_bits` round trip behaviorally, and verify
 `saved_pinned_plug_index` is instance-owned. No collection is routed.
 
+The condemned-generation plan allocator (`ManagedServerGCPlanCondemned.cs`) translates, from the SVR
+compilation of `allocation.cpp`, the allocator the `plan_phase` plug walk uses to place every
+surviving non-pinned plug of a condemned generation into its destination generation's plan-allocated
+space: `get_next_alloc_seg` (walk a generation's allocation-region list, skip SIP regions, and switch
+down to a younger generation's start segment when a region runs out so the alloc region stays in sync
+with the pinned-plug queue); the `USE_REGIONS` overload of `attribute_pin_higher_gen_alloc` (attribute
+a consumed pin's bytes to the higher generation's pinned-allocation sweep size, and to the destination
+generation's compact size when promoted, using the caller's destination generation when the pin still
+lives in the region being planned); and `allocate_in_condemned_generations` itself, whose retry loop
+advances the plan window past consumed pins, moves to the next region (or grows the current one via
+`grow_heap_segment`) when the window is exhausted, lays the plug down with the `size_fit_p` /
+`pad_in_front` / large-alignment adjustments the compactor expects, and converts an npinned plug that
+would leave too small a gap before the next pin into an artificial pin (`SHORT_PLUGS`, unconditionally
+defined here). Every function reaches the owning heap through its `gc_heap*` parameter; the pinned-plug
+queue (`mark_stack_array` / `mark_stack_tos` / `mark_stack_bos`), its consumers, the pin-positioning
+leaf `set_allocator_next_pin`, and `update_planned_gen0_free_space` are all `PER_HEAP_FIELD_SINGLE_GC`
+and instance-owned in the `MULTIPLE_HEAPS` build, and `set_region_plan_gen_num` routes
+`planned_regions_per_gen` through `heap_segment_heap(region)`. The dependency-free leaves the allocator
+needs but that live in the WKS-only `GCAllocation.cs` / `MarkPhase.cs` (`size_fit_p`,
+`switch_alignment_size`, both `grow_heap_segment` overloads, and `set_plug_padded` /
+`clear_plug_padded`) are re-translated here; they are identical for the WKS and SVR compilations.
+`plan_generation_start` / `plan_generation_starts` are not translated because `plan_phase.cpp`
+compiles them only under `!USE_REGIONS` — the region plan places generation boundaries through
+`set_region_plan_gen_num` and `process_remaining_regions` / `process_last_np_surv_region` instead.
+Focused Foundation tests pin the allocator method surface and the `allocate_in_condemned_generations`
+(`gc_heap*`, `generation*`, `nuint`, int, `int*`, `byte*`, `heap_segment*`, `byte*`) /
+`get_next_alloc_seg` / `attribute_pin_higher_gen_alloc` signatures, resolve the closed-leaf call tokens
+`allocate_in_condemned_generations` / `get_next_alloc_seg` make, and exercise `size_fit_p`
+behaviorally. No collection is routed: the `plan_phase` driver that sequences this allocator,
+`allocate_in_older_generation` (the older-generation free-list plan allocator the non-max-gen SOH plug
+branch also calls), `plan_loh` / `plan_poh`, and the relocate/compact/sweep execution remain deferred.
+
 Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
 per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
-and of `saved_pinned_plug_index`, `allocate_in_condemned_generations` — which needs `get_next_alloc_seg`
-/ `size_fit_p` / `pad_in_front` — `plan_generation_start`, the plug walk, `plan_loh` / `plan_poh` — which
-need `grow_heap_segment` — and `fix_generation_bounds` — which needs `thread_final_regions` /
+and of `saved_pinned_plug_index`; the plug walk itself — which additionally needs
+`allocate_in_older_generation` for the non-max-gen SOH branch; `plan_loh` / `plan_poh` — which need
+`grow_heap_segment` — and `fix_generation_bounds` — which needs `thread_final_regions` /
 `find_first_valid_region` / `reset_allocation_pointers` and the BGC end-mark accounting), the
 `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
 `gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, the server

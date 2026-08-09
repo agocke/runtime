@@ -1683,6 +1683,156 @@ public static class ManagedServerGCFoundationTests
         }
     }
 
+    [Fact]
+    public static void ServerAllocateInCondemnedGenerationSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type gen = GetType("Internal.Runtime.GarbageCollection.generation");
+        Type segment = GetType("Internal.Runtime.GarbageCollection.heap_segment");
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // The condemned-generation plan allocator and its dependency-free leaf family are present in
+        // the server build.
+        foreach (string method in new[]
+        {
+            "allocate_in_condemned_generations",
+            "get_next_alloc_seg",
+            "attribute_pin_higher_gen_alloc",
+            "size_fit_p",
+            "switch_alignment_size",
+            "grow_heap_segment",
+            "set_plug_padded",
+            "clear_plug_padded",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == method);
+        }
+
+        // uint8_t* gc_heap::allocate_in_condemned_generations (generation* gen, size_t size,
+        // int from_gen_number, BOOL* convert_to_pinned_p, uint8_t* next_pinned_plug,
+        // heap_segment* current_seg, uint8_t* old_loc) -> in the SVR compilation the implicit this is
+        // an explicit gc_heap* first parameter and the plug address is a byte*.
+        MethodInfo aic = heap.GetMethod(
+            "allocate_in_condemned_generations",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(byte).MakePointerType(), aic.ReturnType);
+        ParameterInfo[] aicParams = aic.GetParameters();
+        Assert.Equal(8, aicParams.Length);
+        Assert.Equal(heap.MakePointerType(), aicParams[0].ParameterType);
+        Assert.Equal(gen.MakePointerType(), aicParams[1].ParameterType);
+        Assert.Equal(typeof(nuint), aicParams[2].ParameterType);
+        Assert.Equal(typeof(int), aicParams[3].ParameterType);
+        Assert.Equal(typeof(int).MakePointerType(), aicParams[4].ParameterType);
+        Assert.Equal(typeof(byte).MakePointerType(), aicParams[5].ParameterType);
+        Assert.Equal(segment.MakePointerType(), aicParams[6].ParameterType);
+        Assert.Equal(typeof(byte).MakePointerType(), aicParams[7].ParameterType);
+
+        // heap_segment* gc_heap::get_next_alloc_seg (generation* gen) -> (gc_heap*, generation*).
+        MethodInfo gnas = heap.GetMethod(
+            "get_next_alloc_seg",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(segment.MakePointerType(), gnas.ReturnType);
+        ParameterInfo[] gnasParams = gnas.GetParameters();
+        Assert.Equal(2, gnasParams.Length);
+        Assert.Equal(heap.MakePointerType(), gnasParams[0].ParameterType);
+        Assert.Equal(gen.MakePointerType(), gnasParams[1].ParameterType);
+
+        // The USE_REGIONS attribute_pin_higher_gen_alloc overload takes the pin's segment and the
+        // destination generation: (gc_heap*, heap_segment*, int, byte*, nuint) -> void.
+        MethodInfo attr = GetMethod(
+            heap,
+            "attribute_pin_higher_gen_alloc",
+            new[]
+            {
+                heap.MakePointerType(),
+                segment.MakePointerType(),
+                typeof(int),
+                typeof(byte).MakePointerType(),
+                typeof(nuint),
+            });
+        Assert.NotNull(attr);
+        Assert.Equal(typeof(void), attr.ReturnType);
+    }
+
+    [Fact]
+    public static void ServerAllocateInCondemnedGenerationCallsClosedLeaves()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // allocate_in_condemned_generations fits the plug into the consing generation's plan window,
+        // consuming pins from this heap's queue and advancing / growing the region as needed. Its
+        // call graph must reach exactly the closed leaves the native retry loop invokes.
+        MethodInfo aic = heap.GetMethod(
+            "allocate_in_condemned_generations",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] aicNames, _) = CollectCallTargets(aic, "get_next_alloc_seg");
+        foreach (string expected in new[]
+        {
+            "get_next_alloc_seg",
+            "size_fit_p",
+            "pinned_plug_que_empty_p",
+            "oldest_pin",
+            "pinned_plug",
+            "deque_pinned_plug",
+            "pinned_plug_of",
+            "pinned_len",
+            "set_new_pin_info",
+            "update_planned_gen0_free_space",
+            "set_allocator_next_pin",
+            "attribute_pin_higher_gen_alloc",
+            "grow_heap_segment",
+            "set_region_plan_gen_num",
+            "init_alloc_info",
+            "same_large_alignment_p",
+            "set_plug_padded",
+            "clear_plug_padded",
+        })
+        {
+            Assert.Contains(expected, aicNames);
+        }
+
+        // get_next_alloc_seg walks past SIP regions and re-initializes the alloc info when the region
+        // changes.
+        MethodInfo gnas = heap.GetMethod(
+            "get_next_alloc_seg",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] gnasNames, _) = CollectCallTargets(gnas, "heap_segment_non_sip");
+        foreach (string expected in new[] { "heap_segment_non_sip", "init_alloc_info" })
+        {
+            Assert.Contains(expected, gnasNames);
+        }
+    }
+
+    [Theory]
+    // (size, ptr..limit gap, expected) exercising the no-old_loc branch: a min-object plug fits only
+    // when the window is at least its aligned size.
+    [InlineData(0x18u, 0x18u, true)]
+    [InlineData(0x18u, 0x20u, true)]
+    [InlineData(0x18u, 0x10u, false)]
+    public static unsafe void ServerSizeFitPMeasuresPlanWindow(uint size, uint gap, bool expected)
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo sizeFit = heap.GetMethod(
+            "size_fit_p",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var basePtr = (nuint)0x40000;
+        Type bytePtr = typeof(byte).MakePointerType();
+        object result = sizeFit.Invoke(
+            null,
+            new object[]
+            {
+                (nuint)size,
+                Pointer.Box((void*)basePtr, bytePtr),
+                Pointer.Box((void*)(basePtr + gap), bytePtr),
+                Pointer.Box(null, bytePtr),
+                2, // USE_PADDING_TAIL
+            })!;
+
+        Assert.Equal(expected, (bool)result);
+    }
+
     // how many of them have a given name (used to count gc_t_join.join sites). Tokens are resolved
     // through the module so stray operand bytes that look like call opcodes are discarded.
     private static (string[] Names, int NamedCount) CollectCallTargets(MethodInfo method, string countName)
