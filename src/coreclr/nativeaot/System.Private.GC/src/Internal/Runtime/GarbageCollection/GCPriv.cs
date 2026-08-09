@@ -1340,6 +1340,10 @@ namespace Internal.Runtime.GarbageCollection
         public nuint end_gen0_region_committed_space;
         public nuint gen0_pinned_free_space;
         public bool gen0_large_chunk_found;
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC gc_policy: instance-owned per server heap so each worker
+        // publishes its own sweep/compact/expand vote for the plan-phase gc_join_decide_on_compaction
+        // reduction. WKS computes should_compact directly and does not use gc_policy.
+        public int gc_policy;
 #else
         public static int num_regions_freed_in_sweep;
         public static nuint end_gen0_region_space;
@@ -1463,11 +1467,22 @@ namespace Internal.Runtime.GarbageCollection
         public static int conserve_mem_setting;
         public static int loh_compaction_always_p;
         public static gc_loh_compaction_mode loh_compaction_mode;
+#if MULTIPLE_HEAPS
+        public int loh_compacted_p;
+#else
         public static int loh_compacted_p;
+#endif
         public const int gc_type_compacting = 0;
         public const int gc_type_blocking = 1;
         public static full_gc_count_array full_gc_counts;
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC_ALLOC loh_alloc_since_cg: instance-owned per server heap
+        // (static in WKS) so plan_phase's compaction join resets each heap's own LOH allocation
+        // counter through g_heaps[i]->loh_alloc_since_cg.
+#if MULTIPLE_HEAPS
+        public ulong loh_alloc_since_cg;
+#else
         public static ulong loh_alloc_since_cg;
+#endif
 #if MULTIPLE_HEAPS
         public nuint finalization_promoted_bytes;
 #else
@@ -1614,9 +1629,13 @@ namespace Internal.Runtime.GarbageCollection
             // value after first_init has reset the current collection mechanisms.
             loh_compaction_always_p = 0;
             loh_compaction_mode = gc_loh_compaction_mode.loh_compaction_default;
+#if !MULTIPLE_HEAPS
             loh_compacted_p = 0;
+#endif
             full_gc_counts = default;
+#if !MULTIPLE_HEAPS
             loh_alloc_since_cg = 0;
+#endif
 #if !MULTIPLE_HEAPS
             finalization_promoted_bytes = 0;
 #endif

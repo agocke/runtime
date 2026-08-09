@@ -2632,6 +2632,170 @@ public static class ManagedServerGCFoundationTests
         return (array, namedCount);
     }
 
+    [Fact]
+    public static void ServerPlanPhaseDriverHasNativeSignature()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // void gc_heap::plan_phase (int condemned_gen_number), translated as a per-heap static
+        // taking the owning heap explicitly: plan_phase (gc_heap*, int).
+        MethodInfo plan = heap.GetMethod(
+            "plan_phase",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), plan.ReturnType);
+        ParameterInfo[] planParams = plan.GetParameters();
+        Assert.Equal(2, planParams.Length);
+        Assert.Equal(heap.MakePointerType(), planParams[0].ParameterType);
+        Assert.Equal(typeof(int), planParams[1].ParameterType);
+
+        // gc_policy and loh_compacted_p are PER_HEAP_FIELD_SINGLE_GC, so they are instance fields
+        // on the server heap.
+        foreach (string perHeapField in new[] { "gc_policy", "loh_compacted_p" })
+        {
+            FieldInfo field = heap.GetField(
+                perHeapField,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.NotNull(field);
+            Assert.Equal(typeof(int), field.FieldType);
+            Assert.Null(heap.GetField(
+                perHeapField,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        // maxgen_size_inc_p / pm_trigger_full_gc / pm_stress_on are PER_HEAP_ISOLATED, so they are
+        // static in both builds.
+        foreach (string isolated in new[] { "maxgen_size_inc_p", "pm_trigger_full_gc", "pm_stress_on" })
+        {
+            FieldInfo field = heap.GetField(
+                isolated,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+            Assert.NotNull(field);
+            Assert.Equal(typeof(bool), field.FieldType);
+        }
+
+        // loh_alloc_since_cg is PER_HEAP_FIELD_SINGLE_GC_ALLOC, so it is instance-owned for the
+        // MULTIPLE_HEAPS build and the compaction join resets each heap's own counter.
+        FieldInfo lohAlloc = heap.GetField(
+            "loh_alloc_since_cg",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.NotNull(lohAlloc);
+        Assert.Equal(typeof(ulong), lohAlloc.FieldType);
+    }
+
+    [Fact]
+    public static void ServerPlanPhaseDriverSequencesTranslatedHelpers()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo plan = heap.GetMethod(
+            "plan_phase",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        // plan_phase drives the whole already-translated plan-phase family: the region-planning
+        // consumers, the plug walk allocators / brick threading, the compaction-vs-sweep deciders,
+        // the diagnostic leaves this task adds, and the LOH compaction gating / UOH sweep. It also
+        // closes the gc_join_decide_on_compaction join and reads/writes its per-GC reset fields.
+        (string[] names, _) = CollectCallTargets(plan, "sweep_uoh_objects");
+        foreach (string expected in new[]
+        {
+            "get_soh_start_object",
+            "get_region_mark_list",
+            "should_sweep_in_plan",
+            "sweep_region_in_plan",
+            "store_plug_gap_info",
+            "allocate_in_condemned_generations",
+            "allocate_in_older_generation",
+            "enque_pinned_plug",
+            "convert_to_pinned_plug",
+            "merge_with_last_pinned_plug",
+            "set_pinned_info",
+            "insert_node",
+            "update_brick_table",
+            "find_next_marked",
+            "process_last_np_surv_region",
+            "process_remaining_regions",
+            "add_gen_plug",
+            "init_free_and_plug",
+            "descr_generations",
+            "print_free_and_plug",
+            "sweep_ro_segments",
+            "is_plug_padded",
+            "generation_fragmentation",
+            "decide_on_compacting",
+            "sweep_uoh_objects",
+            "plan_loh",
+            "decay_loh_pinned_queue",
+            "fix_older_allocation_area",
+            "join",
+            "joined",
+            "restart",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        // The driver stops before the relocate / compact / sweep execution: it must not call the
+        // deferred relocate_phase / compact_phase / make_free_lists / fix_generation_bounds tail.
+        foreach (string deferred in new[]
+        {
+            "relocate_phase",
+            "compact_phase",
+            "make_free_lists",
+            "fix_generation_bounds",
+            "recover_saved_pinned_info",
+        })
+        {
+            Assert.DoesNotContain(deferred, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerPlanPhaseGetRegionMarkListIsHeapParameterized()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // get_region_mark_list (gc_heap*, ref int, byte*, byte*, byte***) -> byte** binary-searches
+        // this heap's own sorted mark list, so it takes the owning heap explicitly (the WKS overload
+        // reads the static mark_list). It calls binary_search.
+        MethodInfo regionList = heap.GetMethod(
+            "get_region_mark_list",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(byte).MakePointerType().MakePointerType(), regionList.ReturnType);
+        ParameterInfo[] regionParams = regionList.GetParameters();
+        Assert.Equal(5, regionParams.Length);
+        Assert.Equal(heap.MakePointerType(), regionParams[0].ParameterType);
+        Assert.True(regionParams[1].ParameterType.IsByRef);
+        Assert.Equal(typeof(int), regionParams[1].ParameterType.GetElementType());
+
+        (string[] names, _) = CollectCallTargets(regionList, "binary_search");
+        Assert.Contains("binary_search", names);
+    }
+
+    [Fact]
+    public static void ServerPlanPhaseDiagnosticLeavesAreNoOps()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // add_gen_plug / init_free_and_plug / print_free_and_plug / descr_generations /
+        // sweep_ro_segments are FREE_USAGE_STATS / SIMPLE_DPRINTF / !USE_REGIONS no-ops for this
+        // configuration, so they carry no calls of their own.
+        foreach (string leaf in new[]
+        {
+            "add_gen_plug",
+            "init_free_and_plug",
+            "print_free_and_plug",
+            "descr_generations",
+            "sweep_ro_segments",
+        })
+        {
+            MethodInfo method = heap.GetMethod(
+                leaf,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+            Assert.NotNull(method);
+            (string[] names, _) = CollectCallTargets(method, leaf);
+            Assert.Empty(names);
+        }
+    }
+
     private static unsafe bool IsNullPointer(object? boxedPointer) =>
         boxedPointer is null || System.Reflection.Pointer.Unbox(boxedPointer) is null;
 
