@@ -23,8 +23,11 @@
 // as in gcpriv.h under USE_REGIONS. The MULTIPLE_HEAPS m_boundary macro records only the mark list
 // (no per-heap slow/shigh range), and m_boundary_fullgc is a no-op, exactly as in gcinternal.h.
 // process_mark_overflow_internal walks every heap's generations (g_heaps[(heap_number+hi)%n_heaps]).
-// No collection is routed by this slice; sort_mark_list / merge_mark_lists, mark_steal,
-// equalize_promoted_bytes, and the full mark_phase join sequence remain deferred. The scalar
+// No collection is routed by this slice. The cross-heap mark-list balancing (sort_mark_list /
+// equalize_mark_lists / append_to_mark_list / target_mark_count_for_heap) and promoted-byte
+// balancing (equalize_promoted_bytes plus its region-threading helpers) are now translated and
+// wired into the driver; merge_mark_lists (#if MULTIPLE_HEAPS && !USE_REGIONS) and mark_steal
+// (MH_SC_MARK) remain excluded/deferred, as does the cross-generation card scan. The scalar
 // TRACE_GC, SNOOP_STATS, HEAP_ANALYZE, COLLECTIBLE_CLASS, FEATURE_STRUCTALIGN, STRESS_PINNING, and
 // GC_CONFIG_DRIVEN branches are excluded exactly as for the active configuration.
 
@@ -765,6 +768,8 @@ internal unsafe partial struct gc_heap
         heap->mark_list = null;
         heap->mark_list_index = null;
         heap->mark_list_end = null;
+        heap->mark_list_piece_start = null;
+        heap->mark_list_piece_end = null;
         heap->survived_per_region = null;
         heap->old_card_survived_per_region = null;
     }
@@ -799,6 +804,13 @@ internal unsafe partial struct gc_heap
         grow_mark_list_piece();
         if (g_mark_list_piece is not null)
         {
+            // Two arrays with g_mark_list_piece_size entries per heap. The mark-list pieces
+            // (populated by sort_mark_list) and the card-scan survivor arrays alias the same
+            // storage: they are live at disjoint points in the collection.
+            heap->mark_list_piece_start =
+                &g_mark_list_piece[(nuint)heap->heap_number * 2 * g_mark_list_piece_size];
+            heap->mark_list_piece_end =
+                &heap->mark_list_piece_start[(nint)g_mark_list_piece_size];
             heap->survived_per_region = (nuint*)&g_mark_list_piece[
                 (nuint)heap->heap_number * 2 * g_mark_list_piece_size];
             heap->old_card_survived_per_region =
@@ -809,6 +821,9 @@ internal unsafe partial struct gc_heap
         }
         else
         {
+            // disable use of mark list altogether
+            heap->mark_list_piece_start = null;
+            heap->mark_list_piece_end = null;
             heap->survived_per_region = null;
             heap->old_card_survived_per_region = null;
             heap->mark_list_end = partition;
@@ -874,6 +889,8 @@ internal unsafe partial struct gc_heap
         heap->mark_list = null;
         heap->mark_list_index = null;
         heap->mark_list_end = null;
+        heap->mark_list_piece_start = null;
+        heap->mark_list_piece_end = null;
     }
 
     // Sum every heap's SOH/UOH generation sizes, used to cap mark-stack growth on overflow.
@@ -1525,6 +1542,672 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    // ----------------------------------------------------------------------------------------
+    // Cross-heap mark-list balancing, translated from the MULTIPLE_HEAPS compilation of
+    // mark_phase.cpp (target_mark_count_for_heap / equalize_mark_lists / sort_mark_list /
+    // append_to_mark_list). Every server worker sorts its own portion of the shared mark list at
+    // the end of mark_phase; equalize_mark_lists first moves entries between heap partitions so
+    // each heap sorts an even share, then sort_mark_list bins the sorted addresses into the
+    // per-region mark_list_piece_start/end arrays the plan phase consumes. merge_mark_lists stays
+    // excluded (#if MULTIPLE_HEAPS && !USE_REGIONS), as does the USE_VXSORT WRITE_SORT_DATA branch.
+    // ----------------------------------------------------------------------------------------
+
+    // gcpriv.h FATAL_GC_ERROR() free function: break, assert, then report to the EE. The TRACE_GC
+    // flush_gc_log and _ASSERTE lines have no counterpart in the port.
+    private const uint COR_E_EXECUTIONENGINE = 0x80131506;
+
+    private static void FATAL_GC_ERROR()
+    {
+        GCToOSInterface.DebugBreak();
+        GCToEEInterface.HandleFatalError(COR_E_EXECUTIONENGINE);
+    }
+
+    private static nuint target_mark_count_for_heap(nuint total_mark_count, int heap_count, int heap_number)
+    {
+        // compute the average (rounded down)
+        nuint average_mark_count = total_mark_count / (nuint)heap_count;
+
+        // compute the remainder
+        nuint remaining_mark_count = total_mark_count - (average_mark_count * (nuint)heap_count);
+
+        // compute the target count for this heap - last heap has the remainder
+        if (heap_number == (heap_count - 1))
+        {
+            return average_mark_count + remaining_mark_count;
+        }
+
+        return average_mark_count;
+    }
+
+    public static byte** equalize_mark_lists(gc_heap* heap, nuint total_mark_list_size)
+    {
+        nuint* local_mark_count = stackalloc nuint[GCToOSInterface.MAX_SUPPORTED_HEAPS];
+        nuint total_mark_count = 0;
+
+        // compute mark count per heap into a local array
+        // compute the total
+        for (int i = 0; i < n_heaps; i++)
+        {
+            gc_heap* hp = g_heaps[i];
+            nuint mark_count = (nuint)(hp->mark_list_index - hp->mark_list);
+            local_mark_count[i] = mark_count;
+            total_mark_count += mark_count;
+        }
+
+        // this should agree with our input parameter
+        Debug.Assert(total_mark_count == total_mark_list_size);
+
+        // compute the target count for this heap
+        nuint this_target_mark_count =
+            target_mark_count_for_heap(total_mark_count, n_heaps, heap->heap_number);
+
+        // if our heap has sufficient entries, we can exit early
+        if (local_mark_count[heap->heap_number] >= this_target_mark_count)
+        {
+            return heap->mark_list + (nint)this_target_mark_count;
+        }
+
+        // In the following, we try to fill the deficit in heap "deficit_heap_index" with
+        // surplus from "surplus_heap_index".
+        // If there is no deficit or surplus (anymore), the indices are advanced.
+        int surplus_heap_index = 0;
+        for (int deficit_heap_index = 0; deficit_heap_index <= heap->heap_number; deficit_heap_index++)
+        {
+            // compute the target count for this heap - last heap has the remainder
+            nuint deficit_target_mark_count =
+                target_mark_count_for_heap(total_mark_count, n_heaps, deficit_heap_index);
+
+            // if this heap has the target or larger count, skip it
+            if (local_mark_count[deficit_heap_index] >= deficit_target_mark_count)
+            {
+                continue;
+            }
+
+            // while this heap is lower than average, fill it up
+            while ((surplus_heap_index < n_heaps) &&
+                   (local_mark_count[deficit_heap_index] < deficit_target_mark_count))
+            {
+                nuint deficit = deficit_target_mark_count - local_mark_count[deficit_heap_index];
+
+                nuint surplus_target_mark_count =
+                    target_mark_count_for_heap(total_mark_count, n_heaps, surplus_heap_index);
+
+                if (local_mark_count[surplus_heap_index] > surplus_target_mark_count)
+                {
+                    nuint surplus = local_mark_count[surplus_heap_index] - surplus_target_mark_count;
+                    nuint amount_to_transfer = deficit < surplus ? deficit : surplus;
+                    local_mark_count[surplus_heap_index] -= amount_to_transfer;
+                    if (deficit_heap_index == heap->heap_number)
+                    {
+                        // copy amount_to_transfer mark list items
+                        NativeMemory.Copy(
+                            &g_heaps[surplus_heap_index]->mark_list[local_mark_count[surplus_heap_index]],
+                            &g_heaps[deficit_heap_index]->mark_list[local_mark_count[deficit_heap_index]],
+                            amount_to_transfer * (nuint)sizeof(byte*));
+                    }
+                    local_mark_count[deficit_heap_index] += amount_to_transfer;
+                }
+                else
+                {
+                    surplus_heap_index++;
+                }
+            }
+        }
+
+        return heap->mark_list + (nint)local_mark_count[heap->heap_number];
+    }
+
+    public static nuint sort_mark_list(gc_heap* heap)
+    {
+        if ((settings.condemned_generation >= GCInterfaceOffsets.max_generation) ||
+            (g_mark_list_piece is null))
+        {
+            // fake a mark list overflow so merge_mark_lists knows to quit early
+            heap->mark_list_index = heap->mark_list_end + 1;
+            return 0;
+        }
+
+        // if this heap had a mark list overflow, we don't do anything
+        if (heap->mark_list_index > heap->mark_list_end)
+        {
+            mark_list_overflow = true;
+            return 0;
+        }
+
+        // if any other heap had a mark list overflow, we fake one too,
+        // so we don't use an incomplete mark list by mistake
+        for (int i = 0; i < n_heaps; i++)
+        {
+            if (g_heaps[i]->mark_list_index > g_heaps[i]->mark_list_end)
+            {
+                heap->mark_list_index = heap->mark_list_end + 1;
+                return 0;
+            }
+        }
+
+        // compute total mark list size and total ephemeral size
+        nuint total_mark_list_size = 0;
+        nuint total_ephemeral_size = 0;
+        byte* low = (byte*)~(nuint)0;
+        byte* high = null;
+        for (int i = 0; i < n_heaps; i++)
+        {
+            gc_heap* hp = g_heaps[i];
+            total_mark_list_size += (nuint)(hp->mark_list_index - hp->mark_list);
+            // iterate through the ephemeral regions to get a tighter bound
+            for (int gen_num = settings.condemned_generation; gen_num >= 0; gen_num--)
+            {
+                generation* gen = generation_of(generation_table_of(hp), gen_num);
+                for (heap_segment* seg = generation.generation_start_segment(gen);
+                     seg is not null;
+                     seg = heap_segment.heap_segment_next(seg))
+                {
+                    nuint ephemeral_size = (nuint)(
+                        heap_segment.heap_segment_allocated(seg) - heap_segment.heap_segment_mem(seg));
+                    total_ephemeral_size += ephemeral_size;
+                    low = low <= heap_segment.heap_segment_mem(seg)
+                        ? low
+                        : heap_segment.heap_segment_mem(seg);
+                    high = high >= heap_segment.heap_segment_allocated(seg)
+                        ? high
+                        : heap_segment.heap_segment_allocated(seg);
+                }
+            }
+        }
+
+        // give up if the mark list size is unreasonably large
+        if (total_mark_list_size > (total_ephemeral_size / 256))
+        {
+            heap->mark_list_index = heap->mark_list_end + 1;
+            // let's not count this as a mark list overflow
+            mark_list_overflow = false;
+            return 0;
+        }
+
+        byte** local_mark_list_index = equalize_mark_lists(heap, total_mark_list_size);
+
+        nint item_count = (nint)(local_mark_list_index - heap->mark_list);
+#if DEBUG
+        // in debug, make a copy of the mark list
+        // for checking and debugging purposes
+        byte** mark_list_copy = &g_mark_list_copy[(nuint)heap->heap_number * mark_list_size];
+        byte** mark_list_copy_index = &mark_list_copy[item_count];
+        for (nint i = 0; i < item_count; i++)
+        {
+            byte* item = heap->mark_list[i];
+            Debug.Assert((low <= item) && (item < high));
+            mark_list_copy[i] = item;
+        }
+#endif // DEBUG
+
+        VxSort.do_vxsort(heap->mark_list, item_count, low, high);
+
+#if DEBUG
+        // in debug, sort the copy as well using the proven sort, so we can check we got the right result
+        if (mark_list_copy_index > mark_list_copy)
+        {
+            IntroSort.Sort(mark_list_copy, mark_list_copy_index - 1);
+        }
+        for (nint i = 0; i < item_count; i++)
+        {
+            byte* item = heap->mark_list[i];
+            Debug.Assert(mark_list_copy[i] == item);
+        }
+#endif // DEBUG
+
+        byte** x = heap->mark_list;
+
+        // first set the pieces for all regions to empty
+        Debug.Assert(g_mark_list_piece_size >= region_count);
+        Debug.Assert(g_mark_list_piece_total_size >= region_count * (nuint)n_heaps);
+        for (nuint region_index = 0; region_index < region_count; region_index++)
+        {
+            heap->mark_list_piece_start[region_index] = null;
+            heap->mark_list_piece_end[region_index] = null;
+        }
+
+        while (x < local_mark_list_index)
+        {
+            heap_segment* region = get_region_info_for_address(*x);
+
+            // sanity check - the object on the mark list should be within the region
+            Debug.Assert((heap_segment.heap_segment_mem(region) <= *x) &&
+                (*x < heap_segment.heap_segment_allocated(region)));
+
+            nuint region_index = get_basic_region_index_for_address(heap_segment.heap_segment_mem(region));
+            byte* region_limit = heap_segment.heap_segment_allocated(region);
+
+            // Due to GC holes, x can point to something in a region that already got freed. And that region's
+            // allocated would be 0 and cause an infinite loop which is much harder to handle on production than
+            // simply throwing an exception.
+            if (region_limit is null)
+            {
+                FATAL_GC_ERROR();
+            }
+
+            byte*** mark_list_piece_start_ptr = &heap->mark_list_piece_start[region_index];
+            byte*** mark_list_piece_end_ptr = &heap->mark_list_piece_end[region_index];
+
+            // x is the start of the mark list piece for this heap/region
+            *mark_list_piece_start_ptr = x;
+
+            // to find the end of the mark list piece for this heap/region, find the first x
+            // that has !predicate(x), i.e. that is either not in this heap, or beyond the end of the list
+            // predicate means: x is still within the mark list, and within the bounds of this region
+            if ((x < local_mark_list_index) && (*x < region_limit))
+            {
+                // let's see if we get lucky and the whole rest belongs to this piece
+                byte** last = local_mark_list_index - 1;
+                if ((last < local_mark_list_index) && (*last < region_limit))
+                {
+                    x = local_mark_list_index;
+                    *mark_list_piece_end_ptr = x;
+                    break;
+                }
+
+                // we play a variant of binary search to find the point sooner.
+                // the first loop advances by increasing steps until the predicate turns false.
+                // then we retreat the last step, and the second loop advances by decreasing steps, keeping the predicate true.
+                uint inc = 1;
+                do
+                {
+                    inc *= 2;
+                    byte** temp_x = x;
+                    x += inc;
+                    if (temp_x > x)
+                    {
+                        break;
+                    }
+                }
+                while ((x < local_mark_list_index) && (*x < region_limit));
+                // we know that only the last step was wrong, so we undo it
+                x -= inc;
+                do
+                {
+                    // loop invariant - predicate holds at x, but not x + inc
+                    Debug.Assert(((x < local_mark_list_index) && (*x < region_limit)) &&
+                        !(((x + inc) > x) && (x + inc < local_mark_list_index) && (*(x + inc) < region_limit)));
+                    inc /= 2;
+                    if (((x + inc) > x) &&
+                        (x + inc < local_mark_list_index) && (*(x + inc) < region_limit))
+                    {
+                        x += inc;
+                    }
+                }
+                while (inc > 1);
+                // the termination condition and the loop invariant together imply this:
+                Debug.Assert(((x < local_mark_list_index) && (*x < region_limit)) &&
+                    !((x + inc < local_mark_list_index) && (*(x + inc) < region_limit)) && (inc == 1));
+                // so the spot we're looking for is one further
+                x += 1;
+            }
+
+            *mark_list_piece_end_ptr = x;
+        }
+
+        return total_mark_list_size;
+    }
+
+    public static void append_to_mark_list(gc_heap* heap, byte** start, byte** end)
+    {
+        nuint slots_needed = (nuint)(end - start);
+        nuint slots_available = (nuint)(heap->mark_list_end + 1 - heap->mark_list_index);
+        nuint slots_to_copy = slots_needed < slots_available ? slots_needed : slots_available;
+        NativeMemory.Copy(start, heap->mark_list_index, slots_to_copy * (nuint)sizeof(byte*));
+        heap->mark_list_index += slots_to_copy;
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Cross-heap promoted-byte balancing, translated from equalize_promoted_bytes in
+    // mark_phase.cpp together with the region-threading helpers it drives from regions_segments.cpp
+    // (set_heap_for_contained_basic_regions / unlink_first_rw_region / thread_rw_region_front) and
+    // plan_phase.cpp (thread_start_region). It runs once, on the joined worker, after
+    // sync_promoted_bytes has folded per-region survivors into heap_segment_survived. Regions are
+    // moved between heaps so each heap owns roughly the average survivorship, improving the work
+    // balance of the plan and relocate phases. The _DEBUG committed_by_oh_per_heap accounting is a
+    // PER_HEAP_FIELD_DIAG_ONLY subsystem that this port does not maintain, so its assertions and
+    // updates are excluded exactly as elsewhere.
+    // ----------------------------------------------------------------------------------------
+
+    public static void set_heap_for_contained_basic_regions(heap_segment* region, gc_heap* hp)
+    {
+        byte* region_start = get_region_start(region);
+        byte* region_end = heap_segment.heap_segment_reserved(region);
+
+        int num_basic_regions = (int)((nuint)(region_end - region_start) >> (int)min_segment_size_shr);
+        for (int i = 0; i < num_basic_regions; i++)
+        {
+            byte* basic_region_start = region_start + ((nuint)i << (int)min_segment_size_shr);
+            heap_segment* basic_region = get_region_info(basic_region_start);
+            heap_segment.heap_segment_heap(basic_region) = hp;
+        }
+    }
+
+    public static heap_segment* unlink_first_rw_region(gc_heap* heap, int gen_idx)
+    {
+        generation* gen = generation_of(generation_table_of(heap), gen_idx);
+        heap_segment* prev_region = generation.generation_tail_ro_region(gen);
+        heap_segment* region;
+        if (prev_region is not null)
+        {
+            Debug.Assert(heap_segment.heap_segment_read_only_p(prev_region) != 0);
+            region = heap_segment.heap_segment_next(prev_region);
+            Debug.Assert(region is not null);
+            // don't remove the last region in the generation
+            if (heap_segment.heap_segment_next(region) is null)
+            {
+                Debug.Assert(region == generation.generation_tail_region(gen));
+                return null;
+            }
+            heap_segment.heap_segment_next(prev_region) = heap_segment.heap_segment_next(region);
+        }
+        else
+        {
+            region = generation.generation_start_segment(gen);
+            Debug.Assert(region is not null);
+            // don't remove the last region in the generation
+            if (heap_segment.heap_segment_next(region) is null)
+            {
+                Debug.Assert(region == generation.generation_tail_region(gen));
+                return null;
+            }
+            generation.generation_start_segment(gen) = heap_segment.heap_segment_next(region);
+        }
+        Debug.Assert(region != generation.generation_tail_region(gen));
+        Debug.Assert(heap_segment.heap_segment_read_only_p(region) == 0);
+
+        set_heap_for_contained_basic_regions(region, null);
+
+        return region;
+    }
+
+    public static void thread_rw_region_front(gc_heap* heap, int gen_idx, heap_segment* region)
+    {
+        generation* gen = generation_of(generation_table_of(heap), gen_idx);
+        Debug.Assert(heap_segment.heap_segment_read_only_p(region) == 0);
+        heap_segment* prev_region = generation.generation_tail_ro_region(gen);
+        if (prev_region is not null)
+        {
+            heap_segment.heap_segment_next(region) = heap_segment.heap_segment_next(prev_region);
+            heap_segment.heap_segment_next(prev_region) = region;
+        }
+        else
+        {
+            heap_segment.heap_segment_next(region) = generation.generation_start_segment(gen);
+            generation.generation_start_segment(gen) = region;
+        }
+        if (heap_segment.heap_segment_next(region) is null)
+        {
+            generation.generation_tail_region(gen) = region;
+        }
+
+        set_heap_for_contained_basic_regions(region, heap);
+    }
+
+    public static void thread_start_region(generation* gen, heap_segment* region)
+    {
+        heap_segment* prev_region = generation.generation_tail_ro_region(gen);
+
+        if (prev_region is not null)
+        {
+            heap_segment.heap_segment_next(prev_region) = region;
+        }
+        else
+        {
+            generation.generation_start_segment(gen) = region;
+        }
+
+        generation.generation_tail_region(gen) = region;
+    }
+
+    public static void equalize_promoted_bytes(gc_heap* heap, int condemned_gen_number)
+    {
+        // algorithm to roughly balance promoted bytes across heaps by moving regions between heaps
+        // goal is just to balance roughly, while keeping computational complexity low
+        // hope is to achieve better work balancing in relocate and compact phases
+        // this is also used when the heap count changes to balance regions between heaps
+        int highest_gen_number = (condemned_gen_number == GCInterfaceOffsets.max_generation)
+            ? ((int)gc_generation_num.total_generation_count - 1)
+            : condemned_gen_number;
+        int stop_gen_idx = get_stop_generation_index(condemned_gen_number);
+
+        nuint* surv_per_heap = stackalloc nuint[GCToOSInterface.MAX_SUPPORTED_HEAPS];
+        int* next_heap_in_size_class = stackalloc int[GCToOSInterface.MAX_SUPPORTED_HEAPS];
+
+        // we arrange both surplus regions and deficit heaps by size classes
+        const int NUM_SIZE_CLASSES = 16;
+        heap_segment** surplus_regions_by_size_class = stackalloc heap_segment*[NUM_SIZE_CLASSES];
+        int* heaps_by_deficit_size_class = stackalloc int[NUM_SIZE_CLASSES];
+
+        for (int gen_idx = highest_gen_number; gen_idx >= stop_gen_idx; gen_idx--)
+        {
+            // step 1:
+            //  compute total promoted bytes per gen
+            nuint total_surv = 0;
+            nuint max_surv_per_heap = 0;
+            for (int i = 0; i < n_heaps; i++)
+            {
+                surv_per_heap[i] = 0;
+
+                gc_heap* hp = g_heaps[i];
+
+                generation* condemned_gen = generation_of(generation_table_of(hp), gen_idx);
+                heap_segment* current_region =
+                    heap_segment_rw(generation.generation_start_segment(condemned_gen));
+
+                while (current_region is not null)
+                {
+                    total_surv += heap_segment.heap_segment_survived(current_region);
+                    surv_per_heap[i] += heap_segment.heap_segment_survived(current_region);
+                    current_region = heap_segment.heap_segment_next(current_region);
+                }
+
+                max_surv_per_heap = max_surv_per_heap >= surv_per_heap[i]
+                    ? max_surv_per_heap
+                    : surv_per_heap[i];
+            }
+            // compute average promoted bytes per heap and per gen
+            // be careful to round up
+            nuint avg_surv_per_heap = (total_surv + (nuint)n_heaps - 1) / (nuint)n_heaps;
+
+            //
+            // step 2:
+            //   remove regions from surplus heaps until all heaps are <= average
+            //   put removed regions into surplus regions
+            //
+            // step 3:
+            //   put regions into size classes by survivorship
+            //   put deficit heaps into size classes by deficit
+            //
+            // step 4:
+            //   while (surplus regions is non-empty)
+            //     get surplus region from biggest size class
+            //     put it into heap from biggest deficit size class
+            //     re-insert heap by resulting deficit size class
+
+            heap_segment* surplus_regions = null;
+            nuint max_deficit = 0;
+            nuint max_survived = 0;
+
+            //  go through all the heaps
+            for (int i = 0; i < n_heaps; i++)
+            {
+                // remove regions from this heap until it has average or less survivorship
+                while (surv_per_heap[i] > avg_surv_per_heap)
+                {
+                    heap_segment* region = unlink_first_rw_region(g_heaps[i], gen_idx);
+                    if (region is null)
+                    {
+                        break;
+                    }
+                    Debug.Assert(surv_per_heap[i] >= heap_segment.heap_segment_survived(region));
+
+                    surv_per_heap[i] -= heap_segment.heap_segment_survived(region);
+
+                    heap_segment.heap_segment_next(region) = surplus_regions;
+                    surplus_regions = region;
+
+                    max_survived = max_survived >= heap_segment.heap_segment_survived(region)
+                        ? max_survived
+                        : heap_segment.heap_segment_survived(region);
+                }
+                if (surv_per_heap[i] < avg_surv_per_heap)
+                {
+                    nuint deficit = avg_surv_per_heap - surv_per_heap[i];
+                    max_deficit = max_deficit >= deficit ? max_deficit : deficit;
+                }
+            }
+
+            // give heaps without regions a region from the surplus_regions,
+            // if none are available, steal a region from another heap
+            for (int i = 0; i < n_heaps; i++)
+            {
+                gc_heap* hp = g_heaps[i];
+                generation* gen = generation_of(generation_table_of(hp), gen_idx);
+                if (heap_segment_rw(generation.generation_start_segment(gen)) is null)
+                {
+                    heap_segment* start_region = surplus_regions;
+                    if (start_region is not null)
+                    {
+                        surplus_regions = heap_segment.heap_segment_next(start_region);
+                    }
+                    else
+                    {
+                        for (int j = 0; j < n_heaps; j++)
+                        {
+                            start_region = unlink_first_rw_region(g_heaps[j], gen_idx);
+                            if (start_region is not null)
+                            {
+                                surv_per_heap[j] -= heap_segment.heap_segment_survived(start_region);
+                                nuint deficit = avg_surv_per_heap - surv_per_heap[j];
+                                max_deficit = max_deficit >= deficit ? max_deficit : deficit;
+                                break;
+                            }
+                        }
+                    }
+                    Debug.Assert(start_region is not null);
+                    heap_segment.heap_segment_next(start_region) = null;
+
+                    Debug.Assert(heap_segment.heap_segment_heap(start_region) is null && hp is not null);
+                    set_heap_for_contained_basic_regions(start_region, hp);
+                    max_survived = max_survived >= heap_segment.heap_segment_survived(start_region)
+                        ? max_survived
+                        : heap_segment.heap_segment_survived(start_region);
+                    thread_start_region(gen, start_region);
+                    surv_per_heap[i] += heap_segment.heap_segment_survived(start_region);
+                }
+            }
+
+            // we arrange both surplus regions and deficit heaps by size classes
+            for (int i = 0; i < NUM_SIZE_CLASSES; i++)
+            {
+                surplus_regions_by_size_class[i] = null;
+            }
+            double survived_scale_factor = ((double)NUM_SIZE_CLASSES) / (max_survived + 1);
+
+            heap_segment* next_region;
+            for (heap_segment* region = surplus_regions; region is not null; region = next_region)
+            {
+                nuint size_class = (nuint)(heap_segment.heap_segment_survived(region) * survived_scale_factor);
+                Debug.Assert(size_class < NUM_SIZE_CLASSES);
+                next_region = heap_segment.heap_segment_next(region);
+                heap_segment.heap_segment_next(region) = surplus_regions_by_size_class[(nint)size_class];
+                surplus_regions_by_size_class[(nint)size_class] = region;
+            }
+
+            for (int i = 0; i < NUM_SIZE_CLASSES; i++)
+            {
+                heaps_by_deficit_size_class[i] = -1;
+            }
+            double deficit_scale_factor = ((double)NUM_SIZE_CLASSES) / (max_deficit + 1);
+
+            for (int i = 0; i < n_heaps; i++)
+            {
+                if (avg_surv_per_heap > surv_per_heap[i])
+                {
+                    nuint deficit = avg_surv_per_heap - surv_per_heap[i];
+                    int size_class = (int)(deficit * deficit_scale_factor);
+                    Debug.Assert((0 <= size_class) && (size_class < NUM_SIZE_CLASSES));
+                    next_heap_in_size_class[i] = heaps_by_deficit_size_class[size_class];
+                    heaps_by_deficit_size_class[size_class] = i;
+                }
+            }
+
+            int region_size_class = NUM_SIZE_CLASSES - 1;
+            int heap_size_class = NUM_SIZE_CLASSES - 1;
+            while (region_size_class >= 0)
+            {
+                // obtain a region from the biggest size class
+                heap_segment* region = surplus_regions_by_size_class[region_size_class];
+                if (region is null)
+                {
+                    region_size_class--;
+                    continue;
+                }
+                // and a heap from the biggest deficit size class
+                int heap_num;
+                while (true)
+                {
+                    if (heap_size_class < 0)
+                    {
+                        // put any remaining regions on heap 0
+                        // rare case, but there may be some 0 surv size regions
+                        heap_num = 0;
+                        break;
+                    }
+                    heap_num = heaps_by_deficit_size_class[heap_size_class];
+                    if (heap_num >= 0)
+                    {
+                        break;
+                    }
+                    heap_size_class--;
+                }
+
+                // now move the region to the heap
+                surplus_regions_by_size_class[region_size_class] = heap_segment.heap_segment_next(region);
+                thread_rw_region_front(g_heaps[heap_num], gen_idx, region);
+
+                // adjust survival for this heap
+                surv_per_heap[heap_num] += heap_segment.heap_segment_survived(region);
+
+                if (heap_size_class < 0)
+                {
+                    // no need to update size classes for heaps -
+                    // just work down the remaining regions, if any
+                    continue;
+                }
+
+                // is this heap now average or above?
+                if (surv_per_heap[heap_num] >= avg_surv_per_heap)
+                {
+                    // if so, unlink from the current size class
+                    heaps_by_deficit_size_class[heap_size_class] = next_heap_in_size_class[heap_num];
+                    continue;
+                }
+
+                // otherwise compute the updated deficit
+                nuint new_deficit = avg_surv_per_heap - surv_per_heap[heap_num];
+
+                // check if this heap moves to a differenct deficit size class
+                int new_heap_size_class = (int)(new_deficit * deficit_scale_factor);
+                if (new_heap_size_class != heap_size_class)
+                {
+                    // the new deficit size class should be smaller and in range
+                    Debug.Assert(new_heap_size_class < heap_size_class);
+                    Debug.Assert((0 <= new_heap_size_class) && (new_heap_size_class < NUM_SIZE_CLASSES));
+
+                    // if so, unlink from the current size class
+                    heaps_by_deficit_size_class[heap_size_class] = next_heap_in_size_class[heap_num];
+
+                    // and link to the new size class
+                    next_heap_in_size_class[heap_num] = heaps_by_deficit_size_class[new_heap_size_class];
+                    heaps_by_deficit_size_class[new_heap_size_class] = heap_num;
+                }
+            }
+            // we will generally be left with some heaps with deficits here, but that's ok
+        }
+    }
+
     // mark_phase.cpp declares this as a function-static VOLATILE(int32_t): the first server worker
     // to finish (would-be) sorting its mark list scans the syncblk cache exactly once. The joined
     // gc_join_null_dead_long_weak region resets it to 0 for every collection.
@@ -1547,20 +2230,21 @@ internal unsafe partial struct gc_heap
     // gc_join_null_dead_long_weak, and gc_join_null_dead_syncblk. No collection routes this driver
     // yet.
     //
-    // Two native steps whose cross-heap dependencies are not yet closed are kept as faithful,
-    // clearly marked DEFERRED call sites:
-    //   * the !full_p cross-generation card-marking block
-    //     (mark_through_cards_for_segments / mark_through_cards_for_uoh_objects) needs the server
-    //     card-scan plus background-sweep state (should_check_bgc_mark / fgc_should_consider_object)
-    //     which is a separate unported subsystem; the bracketing save_current_survived /
-    //     update_old_card_survived are translated, and
-    //   * equalize_promoted_bytes (region rebalancing) and sort_mark_list (per-heap mark-list sort
-    //     with its cross-heap equalize_mark_lists) are the "too large" cross-heap balancing steps.
-    // merge_mark_lists is #if MULTIPLE_HEAPS && !USE_REGIONS in native and so is excluded for the
-    // region build regardless. The MH_SC_MARK mark_steal, the CARD_BUNDLE r_join, the BGC
-    // background-root scan, and the FEATURE_JAVAMARSHAL bridge, plus the HEAP_ANALYZE / SNOOP_STATS
-    // / FEATURE_EVENT_TRACE record_mark_time instrumentation, are excluded exactly as for the
-    // active configuration / deferred subsystems.
+    // The cross-heap balancing steps are now translated and wired in: equalize_promoted_bytes runs
+    // on the joined worker in the gc_join_null_dead_long_weak region (right after
+    // sync_promoted_bytes), and every worker runs sort_mark_list (with equalize_mark_lists) after
+    // GcWeakPtrScan. merge_mark_lists, the sole consumer of sort_mark_list's return value, is
+    // #if MULTIPLE_HEAPS && !USE_REGIONS and so stays excluded for the region build.
+    //
+    // One native step whose cross-heap dependencies are not yet closed is kept as a faithful,
+    // clearly marked DEFERRED call site: the !full_p cross-generation card-marking block
+    // (mark_through_cards_for_segments / mark_through_cards_for_uoh_objects) needs the server
+    // card-scan plus background-sweep state (should_check_bgc_mark / fgc_should_consider_object)
+    // which is a separate unported subsystem; the bracketing save_current_survived /
+    // update_old_card_survived are translated. The MH_SC_MARK mark_steal, the CARD_BUNDLE r_join,
+    // the BGC background-root scan, and the FEATURE_JAVAMARSHAL bridge, plus the HEAP_ANALYZE /
+    // SNOOP_STATS / FEATURE_EVENT_TRACE record_mark_time instrumentation, are excluded exactly as
+    // for the active configuration / deferred subsystems.
     public static void mark_phase(gc_heap* heap, int condemned_gen_number)
     {
         Debug.Assert(settings.concurrent == 0);
@@ -1731,13 +2415,7 @@ internal unsafe partial struct gc_heap
         if (gc_t_join.joined())
         {
             sync_promoted_bytes();
-
-            // DEFERRED: equalize_promoted_bytes(settings.condemned_generation) roughly balances
-            // promoted bytes across heaps by moving regions between them, to load-balance the plan
-            // and relocate phases. It depends on the cross-heap unlink_first_rw_region /
-            // thread_start_region region-threading machinery that is not yet ported.
-            // sync_promoted_bytes above still folds every heap's per-region survivors into the
-            // owning region's segment fields.
+            equalize_promoted_bytes(heap, settings.condemned_generation);
 
             syncblock_scan_p = 0;
             gc_t_join.restart();
@@ -1749,10 +2427,7 @@ internal unsafe partial struct gc_heap
             GCInterfaceOffsets.max_generation,
             &sc);
 
-        // DEFERRED: total_mark_list_size = sort_mark_list() sorts this heap's portion of the mark
-        // list for the plan phase; its cross-heap equalize_mark_lists is not yet ported.
-        // merge_mark_lists (which consumes total_mark_list_size) is #if MULTIPLE_HEAPS &&
-        // !USE_REGIONS and so is excluded for the region build regardless.
+        nuint total_mark_list_size = sort_mark_list(heap);
 
         // First thread to finish (would-be) sorting scans the syncblk cache exactly once.
         if (syncblock_scan_p == 0 &&
@@ -1785,7 +2460,9 @@ internal unsafe partial struct gc_heap
             gc_t_join.restart();
         }
 
-        // merge_mark_lists (total_mark_list_size) is #if MULTIPLE_HEAPS && !USE_REGIONS; excluded.
+        // merge_mark_lists (total_mark_list_size) is #if MULTIPLE_HEAPS && !USE_REGIONS; excluded
+        // for the region build, so its sole consumer of sort_mark_list's return value is elided.
+        _ = total_mark_list_size;
 
         heap->finalization_promoted_bytes =
             unchecked(heap->total_promoted_bytes - promoted_bytes_live);

@@ -1286,8 +1286,8 @@ namespace Internal.Runtime.GarbageCollection
         public static byte* slow;
 #else
         // gcpriv.h PER_HEAP_ISOLATED shared mark-list backing: one block partitioned across the
-        // heaps. sort_mark_list / merge_mark_lists across heaps remain deferred, so each heap
-        // marks into its own g_mark_list partition.
+        // heaps. sort_mark_list partitions each heap's portion into per-region pieces; each heap
+        // still marks into its own g_mark_list partition.
         public static byte** g_mark_list;
         public static byte** g_mark_list_copy;
         public static nuint mark_list_size;
@@ -1303,6 +1303,11 @@ namespace Internal.Runtime.GarbageCollection
         public byte** mark_list;
         public byte** mark_list_end;
         public byte** mark_list_index;
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC per-region mark-list pieces produced by sort_mark_list.
+        // These alias this heap's slice of g_mark_list_piece (the same storage the card-scan
+        // survivor arrays borrow), populated after marking and consumed by the plan phase.
+        public byte*** mark_list_piece_start;
+        public byte*** mark_list_piece_end;
 #endif
         // gcpriv.h PER_HEAP_FIELD_SINGLE_GC survived_per_region / old_card_survived_per_region /
         // total_promoted_bytes. These are static in WKS and per-heap in the MULTIPLE_HEAPS build so

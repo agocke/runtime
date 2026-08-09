@@ -758,8 +758,11 @@ public static class ManagedServerGCFoundationTests
             "DiagWalkFReachableObjects",
             "GcWeakPtrScan",
             "GcWeakPtrScanBySingleThread",
-            // Cross-heap reconciliation and the promotion decision in the joined tail.
+            // Cross-heap reconciliation, region/mark-list balancing, and the promotion decision in
+            // the joined tail and per-heap sort.
             "sync_promoted_bytes",
+            "equalize_promoted_bytes",
+            "sort_mark_list",
             "decide_on_promotion_surv",
         })
         {
@@ -774,14 +777,13 @@ public static class ManagedServerGCFoundationTests
         MethodInfo[] methods =
             heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
 
-        // The cross-heap region/mark-list balancing and the server card scan remain deferred, so
-        // no method for them is ported yet and the driver cannot reference one.
+        // The cross-heap mark-list / promoted-byte balancing is now translated and wired into the
+        // driver, but merge_mark_lists (#if MULTIPLE_HEAPS && !USE_REGIONS), mark_steal
+        // (MH_SC_MARK), and the server cross-generation card scan remain deferred, so no method for
+        // them is ported yet and the driver cannot reference one.
         foreach (string deferred in new[]
         {
-            "equalize_promoted_bytes",
-            "sort_mark_list",
             "merge_mark_lists",
-            "equalize_mark_lists",
             "mark_steal",
             "mark_through_cards_for_segments",
             "mark_through_cards_for_uoh_objects",
@@ -789,6 +791,90 @@ public static class ManagedServerGCFoundationTests
         {
             Assert.DoesNotContain(methods, m => m.Name == deferred);
         }
+    }
+
+    [Fact]
+    public static void ServerMarkListBalancingSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // The mark-list balancing leaves plus the promoted-byte balancing and its region-threading
+        // helpers are now present in the server build.
+        foreach (string method in new[]
+        {
+            "target_mark_count_for_heap",
+            "equalize_mark_lists",
+            "sort_mark_list",
+            "append_to_mark_list",
+            "equalize_promoted_bytes",
+            "set_heap_for_contained_basic_regions",
+            "unlink_first_rw_region",
+            "thread_rw_region_front",
+            "thread_start_region",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == method);
+        }
+
+        // sort_mark_list (gc_heap*) -> nuint, exactly as size_t gc_heap::sort_mark_list().
+        MethodInfo sort = heap.GetMethod(
+            "sort_mark_list",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(nuint), sort.ReturnType);
+        Assert.Equal(heap.MakePointerType(), sort.GetParameters()[0].ParameterType);
+
+        // equalize_promoted_bytes (gc_heap*, int) -> void, exactly as
+        // gc_heap::equalize_promoted_bytes (int condemned_gen_number).
+        MethodInfo equalize = heap.GetMethod(
+            "equalize_promoted_bytes",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), equalize.ReturnType);
+        Assert.Equal(2, equalize.GetParameters().Length);
+        Assert.Equal(heap.MakePointerType(), equalize.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(int), equalize.GetParameters()[1].ParameterType);
+
+        // The per-region mark-list pieces are PER_HEAP_FIELD_SINGLE_GC, so instance-owned in the
+        // MULTIPLE_HEAPS build alongside mark_list itself.
+        foreach (string field in new[] { "mark_list_piece_start", "mark_list_piece_end" })
+        {
+            FieldInfo info = heap.GetField(
+                field,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.NotNull(info);
+            Assert.False(info.IsStatic);
+        }
+    }
+
+    [Fact]
+    public static void ServerTargetMarkCountSplitsEvenlyWithRemainderOnLastHeap()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo target = heap.GetMethod(
+            "target_mark_count_for_heap",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        // total 10 across 4 heaps: average 2, remainder 2 all folded into the last heap.
+        Assert.Equal((nuint)2, Invoke(target, (nuint)10, 4, 0));
+        Assert.Equal((nuint)2, Invoke(target, (nuint)10, 4, 1));
+        Assert.Equal((nuint)2, Invoke(target, (nuint)10, 4, 2));
+        Assert.Equal((nuint)4, Invoke(target, (nuint)10, 4, 3));
+
+        // an exact split leaves no remainder on the last heap.
+        Assert.Equal((nuint)2, Invoke(target, (nuint)8, 4, 3));
+
+        // the per-heap targets always sum back to the total.
+        nuint sum = 0;
+        for (int h = 0; h < 3; h++)
+        {
+            sum += Invoke(target, (nuint)7, 3, h);
+        }
+
+        Assert.Equal((nuint)7, sum);
+
+        static nuint Invoke(MethodInfo method, nuint total, int count, int number) =>
+            (nuint)method.Invoke(null, new object[] { total, count, number })!;
     }
 
     // Walk a method body collecting the simple names of its call/callvirt/newobj targets, and count

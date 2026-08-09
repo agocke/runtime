@@ -114,7 +114,7 @@ Ported so far:
 | `ManagedServerGC.cs` | Foundational x64 Linux `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` initialization, heap selection, per-heap allocation, server workers, the full server `t_join` color barrier (`join`/`r_join`/`restart`/`r_restart`/`r_init`), the `gc_done_event` collection handshake (`set_gc_done`/`reset_gc_done`/`enter`/`exit_gc_done_event_lock`/`wait_for_gc_done`, `gc_started`, `enable`/`disable_preemptive`), join/coordinator state, and dynamic heap-count bootstrap from `init.cpp`, `interface.cpp`, `allocation.cpp`, `dynamic_heap_count.cpp`, `gc.cpp`, and `gcinternal.h` |
 | `ManagedServerGCCondemn.cs` | Server generation condemnation and cross-heap condemned-generation agreement (`generation_to_condemn`, `joined_generation_to_condemn`) with the exact tuning closure (`dt_*`, `estimated_reclaim`, `generation_size`, `generation_unusable_fragmentation`, `get_total_gen_*`, `get_memory_info`, `try_get_new_free_region`, `min_*_threshold`) from `plan_phase.cpp`, `dynamic_tuning.cpp`, and `gcinternal.h`; no collection is routed |
 | `ManagedServerGCMark.cs` | Server post-mark cross-heap reconciliation (`sync_promoted_bytes`, `decide_on_promotion_surv`) for the `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` chain from `mark_phase.cpp`; no collection is routed |
-| `ManagedServerGCMarkPhase.cs` | Server mark slice plus the blocking `mark_phase` driver from the SVR compilation of `mark_phase.cpp`/`interface.cpp`: per-heap mark storage init/cleanup, the object-walk and marking leaves, `gc_mark`/`m_boundary`/promoted-byte accounting, the mark queue push/drain/overflow path, the exact/interior/pinned `promote` (`GCHeap::Promote`) and `pin_object` callbacks, the per-heap root/finalizer/strong+pinned handle scan entry point, the `MULTIPLE_HEAPS` `scan_dependent_handles` join wiring, and the full `mark_phase` join sequence (`gc_join_begin_mark_phase` through `gc_join_null_dead_syncblk`) with `fire_mark_event` / `save_current_survived` / `update_old_card_survived`; the `!full_p` card scan, `equalize_promoted_bytes`, and `sort_mark_list` stay deferred and no collection is routed |
+| `ManagedServerGCMarkPhase.cs` | Server mark slice plus the blocking `mark_phase` driver from the SVR compilation of `mark_phase.cpp`/`interface.cpp`: per-heap mark storage init/cleanup, the object-walk and marking leaves, `gc_mark`/`m_boundary`/promoted-byte accounting, the mark queue push/drain/overflow path, the exact/interior/pinned `promote` (`GCHeap::Promote`) and `pin_object` callbacks, the per-heap root/finalizer/strong+pinned handle scan entry point, the `MULTIPLE_HEAPS` `scan_dependent_handles` join wiring, the full `mark_phase` join sequence (`gc_join_begin_mark_phase` through `gc_join_null_dead_syncblk`) with `fire_mark_event` / `save_current_survived` / `update_old_card_survived`, and the cross-heap mark-list balancing (`target_mark_count_for_heap` / `equalize_mark_lists` / `sort_mark_list` / `append_to_mark_list`) plus promoted-byte balancing (`equalize_promoted_bytes` with the `set_heap_for_contained_basic_regions` / `unlink_first_rw_region` / `thread_rw_region_front` / `thread_start_region` region-threading helpers) wired into the driver; the `!full_p` cross-generation card scan stays deferred and no collection is routed |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
 For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed
@@ -145,9 +145,9 @@ from the highest through `get_stop_generation_index`, exactly at the point nativ
 `total_promoted_bytes` against the gen(n+1) demotion threshold. The `PER_HEAP_FIELD_SINGLE_GC`
 `survived_per_region`, `old_card_survived_per_region`, and `total_promoted_bytes` are instance-owned
 in the `MULTIPLE_HEAPS` build (static in WKS) so the cross-heap sums are correct. The actual
-per-heap marking, root/handle scanning, `scan_dependent_handles` synchronization, `mark_steal`,
-and `equalize_promoted_bytes` region rebalancing remain deferred with their mark-queue,
-`GCScan`, and region-threading dependencies. No collection entry point is routed by this slice.
+per-heap marking, root/handle scanning, and `scan_dependent_handles` synchronization are driven by
+`ManagedServerGCMarkPhase.cs`; the cross-heap `mark_steal` (`MH_SC_MARK`) remains deferred with its
+mark-queue and snoop-stat dependencies. No collection entry point is routed by this slice.
 
 The server mark phase now has an executable slice and its blocking driver
 (`ManagedServerGCMarkPhase.cs`),
@@ -156,8 +156,9 @@ for the `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` chain. It can be compiled
 without routing the overall collection:
 
 - **Per-heap mark storage init/cleanup.** `initialize_shared_mark_list` allocates the
-  `PER_HEAP_ISOLATED` `g_mark_list` backing once (one partition per heap; `sort_mark_list` /
-  `merge_mark_lists` across heaps stay deferred), `initialize_mark_stack` / `make_mark_stack`
+  `PER_HEAP_ISOLATED` `g_mark_list` backing once (one partition per heap; `sort_mark_list`
+  partitions each heap's portion into per-region pieces after marking), `initialize_mark_stack` /
+  `make_mark_stack`
   allocate each heap's `mark_stack_array`, `initialize_mark_phase_state` resets the
   `PER_HEAP_FIELD_SINGLE_GC` queue/pinned-stack/overflow state, `setup_mark_state_for_collection`
   points a heap's `mark_list` cursors into its partition and allocates the per-region survivor
@@ -201,20 +202,27 @@ without routing the overall collection:
   `syncblock_scan_p` reset), `GcWeakPtrScan`, the single-thread `syncblock_scan_p` gate around
   `GcWeakPtrScanBySingleThread`, and `gc_join_null_dead_syncblk` (joined `decide_on_promotion_surv`).
   `fire_mark_event` is the server copy of the WKS `FireMarkEvent`; `save_current_survived` /
-  `update_old_card_survived` (from `plan_phase.cpp`) bracket the `!full_p` card block. The `!full_p`
-  card marking, `equalize_promoted_bytes`, and `sort_mark_list` are kept as faithful DEFERRED call
-  sites; `merge_mark_lists` is `#if !USE_REGIONS` and `mark_steal` is `MH_SC_MARK`, both excluded.
+  `update_old_card_survived` (from `plan_phase.cpp`) bracket the `!full_p` card block. The
+  cross-heap mark-list balancing runs on top of that driver: every worker runs `sort_mark_list`
+  (with `equalize_mark_lists` / `target_mark_count_for_heap`) after `GcWeakPtrScan`, binning its
+  sorted portion into the per-region `mark_list_piece_start`/`end` arrays; the joined worker runs
+  `equalize_promoted_bytes` in the `gc_join_null_dead_long_weak` region, using the
+  `set_heap_for_contained_basic_regions` / `unlink_first_rw_region` / `thread_rw_region_front` /
+  `thread_start_region` region-threading helpers to move regions between heaps by survivorship. The
+  `!full_p` cross-generation card marking is kept as a faithful DEFERRED call site;
+  `merge_mark_lists` is `#if !USE_REGIONS` and `mark_steal` is `MH_SC_MARK`, both excluded.
   No collection routes the driver yet.
 
 The `PER_HEAP_FIELD_SINGLE_GC` / `MAINTAINED` / `DIAG_ONLY` mark state (`mark_queue`,
 `mark_stack_tos`/`bos`, `oldest_pinned_plug`, `num_pinned_objects`, `mark_stack_array`(`_length`),
-`mark_list`(`_index`/`_end`), `min`/`max_overflow_address`, `gen0_bricks_cleared`/
-`gen0_must_clear_bricks`) is instance-owned in the `MULTIPLE_HEAPS` build (static in WKS), while
-`gc_low`/`gc_high` stay `PER_HEAP_ISOLATED` as in `gcpriv.h` under `USE_REGIONS`. The cross-heap
-`sort_mark_list` / `merge_mark_lists` / `equalize_mark_lists`, `mark_steal`, the `!full_p`
-cross-generation card scan, and `equalize_promoted_bytes` region rebalancing remain deferred (so
-the `mark_phase` driver stays unrouted), as does routing `GarbageCollect`. No collection entry
-point is routed by this slice.
+`mark_list`(`_index`/`_end`), `mark_list_piece_start`/`end`, `min`/`max_overflow_address`,
+`gen0_bricks_cleared`/`gen0_must_clear_bricks`) is instance-owned in the `MULTIPLE_HEAPS` build
+(static in WKS), while `gc_low`/`gc_high` stay `PER_HEAP_ISOLATED` as in `gcpriv.h` under
+`USE_REGIONS`. The `!full_p` cross-generation card scan (which needs the `should_check_bgc_mark` /
+`fgc_should_consider_object` background-sweep state that is a separate unported subsystem for the
+server build), the `merge_mark_lists` (`#if !USE_REGIONS`) mark-list merge, and the `mark_steal`
+(`MH_SC_MARK`) cross-heap stealing remain deferred (so the `mark_phase` driver stays unrouted), as
+does routing `GarbageCollect`. No collection entry point is routed by this slice.
 
 `gcinterface.dac.h` is translated, including the `dac_generation` and `dac_gc_heap` views
 generated from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Pointer-sized arrays use
