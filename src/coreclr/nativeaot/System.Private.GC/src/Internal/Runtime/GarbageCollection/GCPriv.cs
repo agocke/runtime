@@ -1436,9 +1436,22 @@ namespace Internal.Runtime.GarbageCollection
         public static byte* max_overflow_address;
 #endif
         public static nuint alloc_contexts_used;
+        // gcpriv.h PER_HEAP_FIELD_MAINTAINED freeable_uoh_segment / freeable_soh_segment: the
+        // plan-time UOH sweep and the background/compaction segment-return paths thread emptied
+        // regions onto these per-heap lists, which rearrange_uoh_segments / rearrange_small_heap_segments
+        // later return to the free-region pool. Static in WKS and instance-owned in the MULTIPLE_HEAPS
+        // build so each server heap owns its own freeable segments (reset per heap in init_gc_heap).
+#if MULTIPLE_HEAPS
+        public heap_segment* freeable_uoh_segment;
+#else
         public static heap_segment* freeable_uoh_segment;
+#endif
 #if BACKGROUND_GC
+#if MULTIPLE_HEAPS
+        public heap_segment* freeable_soh_segment;
+#else
         public static heap_segment* freeable_soh_segment;
+#endif
 #endif
         // gcpriv.h PER_HEAP_FIELD_SINGLE_GC sufficient_gen0_space_p: instance-owned per server heap
         // (static in WKS) so decide_on_compaction_space records each heap's own result.
@@ -1624,10 +1637,16 @@ namespace Internal.Runtime.GarbageCollection
             initialize_loh_pinned_queue_state();
 #endif
             alloc_contexts_used = 0;
-            freeable_uoh_segment = null;
-#if BACKGROUND_GC
-            freeable_soh_segment = null;
 #if !MULTIPLE_HEAPS
+            // In the MULTIPLE_HEAPS build freeable_uoh_segment / freeable_soh_segment are
+            // instance-owned (reset per heap by initialize_freeable_segments_state(hp) during heap
+            // creation, matching native init_gc_heap's PER_HEAP_FIELD_MAINTAINED reset), so the
+            // static reset only applies to the WKS build's single heap.
+            freeable_uoh_segment = null;
+#endif
+#if BACKGROUND_GC
+#if !MULTIPLE_HEAPS
+            freeable_soh_segment = null;
             bgc_data_per_heap = default;
 #endif
             bgc_data_global = default;

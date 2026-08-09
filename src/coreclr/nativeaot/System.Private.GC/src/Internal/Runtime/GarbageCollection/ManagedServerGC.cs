@@ -821,6 +821,19 @@ internal unsafe partial struct gc_heap
         hp->loh_pinned_queue = null;
     }
 
+    // gc.cpp init_gc_heap: reset this heap's freeable-segment lists. freeable_uoh_segment (and, for
+    // BACKGROUND_GC, freeable_soh_segment) are PER_HEAP_FIELD_MAINTAINED in the MULTIPLE_HEAPS build,
+    // so each server heap owns its own emptied-segment return lists (mutated by the plan-time UOH
+    // sweep and the background/compaction segment-return paths, drained by rearrange_uoh_segments /
+    // rearrange_small_heap_segments).
+    public static void initialize_freeable_segments_state(gc_heap* hp)
+    {
+        hp->freeable_uoh_segment = null;
+#if BACKGROUND_GC
+        hp->freeable_soh_segment = null;
+#endif
+    }
+
     public static void initialize_concurrent_gc()
     {
         gc_can_use_concurrent = false;
@@ -1261,6 +1274,7 @@ internal static unsafe class ManagedGCRegionBootstrap
             gc_heap.g_heaps[i] = heap;
             gc_heap.initialize_server_allocation_state(heap, i);
             gc_heap.initialize_loh_pinned_queue_state(heap);
+            gc_heap.initialize_freeable_segments_state(heap);
             if (!heap->gc_done_event.CreateManualEventNoThrow(initialState: false))
             {
                 Cleanup();

@@ -2294,6 +2294,11 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    // The freeable-segment return family owns the PER_HEAP_FIELD_MAINTAINED freeable_uoh_segment /
+    // freeable_soh_segment lists. In the MULTIPLE_HEAPS build those fields are instance-owned, so the
+    // server compilation reaches them through a gc_heap* parameter (ManagedServerGCPlanSweep.cs); the
+    // static WKS versions below stay for the single-heap build.
+#if !MULTIPLE_HEAPS
     public static void rearrange_uoh_segments()
     {
         heap_segment* seg = freeable_uoh_segment;
@@ -2332,6 +2337,7 @@ internal unsafe partial struct gc_heap
         }
 #endif
     }
+#endif
 #endif
 }
 #pragma warning restore CS8981

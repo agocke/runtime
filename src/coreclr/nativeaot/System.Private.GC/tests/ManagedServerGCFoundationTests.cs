@@ -2252,6 +2252,177 @@ public static class ManagedServerGCFoundationTests
         Assert.Equal(typeof(void), init.ReturnType);
     }
 
+    [Fact]
+    public static void ServerSweepUohSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type genType = GetType("Internal.Runtime.GarbageCollection.generation");
+        Type segType = GetType("Internal.Runtime.GarbageCollection.heap_segment");
+        Type bytePtr = typeof(byte).MakePointerType();
+        Type heapPtr = heap.MakePointerType();
+        Type genPtr = genType.MakePointerType();
+        Type segPtr = segType.MakePointerType();
+
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // sweep.cpp / plan_phase.cpp / regions_segments.cpp plan-time UOH sweep and segment-return
+        // family, translated for the server compilation.
+        foreach (string expected in new[]
+        {
+            "sweep_uoh_objects",
+            "thread_gap",
+            "uoh_thread_gap_front",
+            "uoh_object_marked",
+            "update_start_tail_regions",
+            "rearrange_uoh_segments",
+            "rearrange_small_heap_segments",
+            "delay_free_segments",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == expected);
+        }
+
+        // void gc_heap::sweep_uoh_objects (int gen_num) -> void (gc_heap*, int).
+        MethodInfo sweep = GetMethod(heap, "sweep_uoh_objects", new[] { heapPtr, typeof(int) });
+        Assert.Equal(typeof(void), sweep.ReturnType);
+
+        // BOOL gc_heap::uoh_object_marked (uint8_t*, BOOL) -> int (byte*, int). lowest_address /
+        // highest_address stay static in the managed model, so this keeps the WKS static signature.
+        MethodInfo marked = GetMethod(heap, "uoh_object_marked", new[] { bytePtr, typeof(int) });
+        Assert.Equal(typeof(int), marked.ReturnType);
+
+        // void gc_heap::thread_gap (uint8_t*, size_t, generation*) -> void (byte*, nuint, generation*).
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "thread_gap", new[] { bytePtr, typeof(nuint), genPtr }).ReturnType);
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "uoh_thread_gap_front", new[] { bytePtr, typeof(nuint), genPtr }).ReturnType);
+
+        // void gc_heap::update_start_tail_regions (generation*, heap_segment* x3).
+        Assert.Equal(
+            typeof(void),
+            GetMethod(
+                heap,
+                "update_start_tail_regions",
+                new[] { genPtr, segPtr, segPtr, segPtr }).ReturnType);
+
+        // The segment-return family threads freeable_*_segment (PER_HEAP_FIELD_MAINTAINED) through the
+        // gc_heap* parameter in the server build.
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "rearrange_uoh_segments", new[] { heapPtr }).ReturnType);
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "rearrange_small_heap_segments", new[] { heapPtr }).ReturnType);
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "delay_free_segments", new[] { heapPtr }).ReturnType);
+    }
+
+    [Fact]
+    public static void ServerSweepUohCallsClosedLeaves()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // sweep_uoh_objects clears the allocator, threads gaps, un-marks survivors, unlinks empty
+        // regions (update_start_tail_regions), and trims / decommits partially-live segments.
+        MethodInfo sweep = heap.GetMethod(
+            "sweep_uoh_objects",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] sweepNames, _) = CollectCallTargets(sweep, "thread_gap");
+        foreach (string expected in new[]
+        {
+            "thread_gap",
+            "uoh_object_marked",
+            "update_start_tail_regions",
+            "decommit_heap_segment_pages",
+            "get_uoh_start_object",
+            "heap_segment_rw",
+            "clear",
+        })
+        {
+            Assert.Contains(expected, sweepNames);
+        }
+
+        // delay_free_segments drives both rearrange leaves (SOH one only when no BGC runs).
+        MethodInfo delay = heap.GetMethod(
+            "delay_free_segments",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] delayNames, _) = CollectCallTargets(delay, "rearrange_uoh_segments");
+        Assert.Contains("rearrange_uoh_segments", delayNames);
+        Assert.Contains("rearrange_small_heap_segments", delayNames);
+
+        // rearrange_uoh_segments returns each queued segment to the free-region pool.
+        MethodInfo rearrange = heap.GetMethod(
+            "rearrange_uoh_segments",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] rearrangeNames, _) = CollectCallTargets(rearrange, "return_free_region");
+        Assert.Contains("return_free_region", rearrangeNames);
+
+        // thread_gap makes the gap an unused array and threads it onto the free list.
+        MethodInfo threadGap = heap.GetMethod(
+            "thread_gap",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] threadGapNames, _) = CollectCallTargets(threadGap, "make_unused_array");
+        foreach (string expected in new[] { "make_unused_array", "thread_item" })
+        {
+            Assert.Contains(expected, threadGapNames);
+        }
+    }
+
+    [Fact]
+    public static void ServerFreeableSegmentsAreInstanceOwned()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h marks freeable_uoh_segment / freeable_soh_segment PER_HEAP_FIELD_MAINTAINED, so in
+        // the MULTIPLE_HEAPS build each server heap owns its own freeable-segment lists (instance,
+        // not static). init_gc_heap resets them per heap through the gc_heap* leaf.
+        foreach (string fieldName in new[] { "freeable_uoh_segment", "freeable_soh_segment" })
+        {
+            Assert.NotNull(heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+            Assert.Null(heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        MethodInfo init = GetMethod(
+            heap,
+            "initialize_freeable_segments_state",
+            new[] { heap.MakePointerType() });
+        Assert.Equal(typeof(void), init.ReturnType);
+
+        // The server heap-creation path resets each heap's freeable segments during init.
+        MethodInfo create = heap.GetMethod(
+            "initialize_freeable_segments_state",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        FieldInfo uohField = heap.GetField(
+            "freeable_uoh_segment",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        byte[] il = create.GetMethodBody()!.GetILAsByteArray()!;
+        byte[] token = BitConverter.GetBytes(uohField.MetadataToken);
+        bool storesField = false;
+        for (int i = 0; i <= il.Length - 5; i++)
+        {
+            // stfld <freeable_uoh_segment>
+            if (il[i] == 0x7d &&
+                il[i + 1] == token[0] &&
+                il[i + 2] == token[1] &&
+                il[i + 3] == token[2] &&
+                il[i + 4] == token[3])
+            {
+                storesField = true;
+                break;
+            }
+        }
+
+        Assert.True(storesField, "initialize_freeable_segments_state must null this heap's freeable_uoh_segment.");
+    }
+
     private static (string[] Names, int NamedCount) CollectCallTargets(MethodInfo method, string countName)
     {
         byte[] il = method.GetMethodBody()!.GetILAsByteArray()!;

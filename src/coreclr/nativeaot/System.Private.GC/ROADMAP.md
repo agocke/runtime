@@ -1852,29 +1852,60 @@ tokens `plan_loh` / `loh_allocate_in_condemned` / `loh_enque_pinned_plug` / `dec
 make, exercise `loh_size_fit_p` behaviorally across the end-of-window and mid-window pad, and verify the
 `loh_pinned_queue_*` fields are instance-owned. No collection is routed.
 
-The plan-time UOH *sweep* leaf `sweep_uoh_objects` — which the `plan_phase` driver uses for POH (which
-is never compacted, so `plan_poh` is just this sweep) and for a non-compacting LOH — is **not** in this
-slice. It mutates `freeable_uoh_segment` (`PER_HEAP_FIELD_MAINTAINED`); making that field per-heap drags
-in the `rearrange_uoh_segments` / `rearrange_small_heap_segments` / `delay_free_segments`
-segment-return family and its `gc_heap*` threading through the WKS collection drivers
-(`garbage_collect_background`, `gc1`) that currently take no `hp` — a separate coherent unit. Its other
-leaves (`thread_gap`, `uoh_object_marked`, `update_start_tail_regions`, `allocator.clear`) would be
-re-translated there.
+The plan-time UOH *sweep* leaf and its per-heap segment-return family (`ManagedServerGCPlanSweep.cs`)
+now close the leaf the `plan_phase` driver uses for POH (which is never compacted, so `plan_poh` is
+just this sweep) and for a non-compacting LOH. Translated from the SVR compilation of `sweep.cpp`,
+`plan_phase.cpp`, `allocation.cpp`, and `regions_segments.cpp`: `sweep_uoh_objects` clears the
+generation allocator and free-list / free-obj accounting, then walks every UOH region — unlinking each
+empty non-start region onto this heap's `freeable_uoh_segment` list and repairing the generation
+start/tail links (`update_start_tail_regions`), trimming and decommitting a partially-live region's
+tail, threading each inter-plug gap onto the free list (`thread_gap`), and un-marking / un-pinning
+survivors (`uoh_object_marked`) — before resetting the generation allocation segment to the start.
+`uoh_thread_gap_front` threads a gap onto the *front* of the free list (the UOH allocation fast-reuse
+leaf). The segment-return family `rearrange_uoh_segments` / `rearrange_small_heap_segments` (BGC) /
+`delay_free_segments` returns this heap's freeable segments to the free-region pool. `freeable_uoh_segment`
+and `freeable_soh_segment` (`PER_HEAP_FIELD_MAINTAINED`) are now instance-owned for `MULTIPLE_HEAPS` in
+`GCPriv.cs` — static in WKS — so each server heap owns its freeable lists; the static WKS
+`rearrange_*` / `delay_free_segments` stay in `GCRegionsSegments.cs` under `!MULTIPLE_HEAPS`, and
+`initialize_freeable_segments_state` takes the `gc_heap*` and is called per heap during heap creation,
+matching native `init_gc_heap`, while the WKS static reset stays gated on `!MULTIPLE_HEAPS` in
+`initialize_gc_static_state`. `uoh_object_marked` keeps its static WKS signature because
+`lowest_address` / `highest_address` remain static in the managed model (their
+`PER_HEAP_FIELD_INIT_ONLY` conversion is a separate deferred unit); `return_free_region` / `free_regions`
+likewise remain shared/static for now, so the segment-return path still targets the shared free-region
+pool. `make_unused_array` / `size` / `Align` / `AlignQword` / `get_alignment_constant`
+(`ManagedServerGC.cs`), `heap_segment_rw` / `get_uoh_start_object` / `decommit_heap_segment_pages` /
+`return_free_region` / `background_running_p` (`GCRegionsSegments.cs`), and `allocator.clear` /
+`thread_item` / `thread_item_front` (`GCPriv.cs`) are reused as-is. Focused Foundation tests pin the
+`sweep_uoh_objects` / `thread_gap` / `uoh_thread_gap_front` / `uoh_object_marked` /
+`update_start_tail_regions` / `rearrange_uoh_segments` / `rearrange_small_heap_segments` /
+`delay_free_segments` signatures, resolve the closed-leaf call tokens `sweep_uoh_objects` makes
+(`thread_gap` / `uoh_object_marked` / `update_start_tail_regions` / `decommit_heap_segment_pages` /
+`get_uoh_start_object` / `heap_segment_rw` / allocator `clear`), verify `delay_free_segments` drives
+both `rearrange_*` leaves and that `rearrange_uoh_segments` returns segments through
+`return_free_region`, and confirm `freeable_uoh_segment` / `freeable_soh_segment` are instance-owned
+and reset per heap. No collection is routed.
 
-The dedicated server smoke test (`src/tests/nativeaot/SmokeTests/ManagedGCServer`) still cannot be
-built through the `src/tests` harness: `src/tests/Common/dirs.proj` fails with
-`MSB4184: The expression "[System.IO.File]::ReadAllText('')" cannot be evaluated. The value cannot be
-an empty string.` during test enumeration, before any project compiles. This is a pre-existing
-test-infrastructure issue independent of the GC translation; the `System.Private.GC.Server` assembly
-builds and links into `clr.aot` cleanly.
+The plan-time UOH *compact* planner (`plan_loh`) closed in the prior slice; together with this sweep
+slice the `plan_phase` driver now has both the compacting-LOH planner and the non-compacting-LOH / POH
+sweep leaf it selects between.
+
+The dedicated server smoke test (`src/tests/nativeaot/SmokeTests/ManagedGCServer`) builds directly
+through its own project (`dotnet build ManagedGCServer.csproj`), and the `System.Private.GC.Server`
+assembly builds and links into `clr.aot` cleanly. Driving it end-to-end through the `src/tests`
+harness has previously hit a pre-existing, GC-independent enumeration failure in
+`src/tests/Common/dirs.proj` (`MSB4184: The expression "[System.IO.File]::ReadAllText('')" cannot be
+evaluated. The value cannot be an empty string.`); this reproduces intermittently depending on the
+prior test-layout state and is not caused by the GC translation. Because this slice routes no
+collection, an end-to-end server run would not yet exercise the new sweep/segment-return leaves.
 
 Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
 per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
 and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself — which now has both
 `allocate_in_condemned_generations` and `allocate_in_older_generation` for the SOH branches and
 `plan_loh` for the compacting LOH; the LOH compaction gating (`settings.loh_compaction` /
-`loh_compacted_p` / `loh_compaction_requested`) and the `sweep_uoh_objects` fallback for the
-non-compacting LOH and for POH — which needs the per-heap `freeable_uoh_segment` segment-return family;
+`loh_compacted_p` / `loh_compaction_requested`) that selects `plan_loh` versus the now-translated
+`sweep_uoh_objects` fallback for the non-compacting LOH and for POH;
 and `fix_generation_bounds` — which needs `thread_final_regions` /
 `find_first_valid_region` / `reset_allocation_pointers` and the BGC end-mark accounting), the
 `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
