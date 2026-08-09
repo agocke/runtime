@@ -99,6 +99,16 @@ internal unsafe struct CObjectHeader
     public void ClearMarked() =>
         RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() & ~GC_MARKED));
 
+    // gcinternal.h SetBGCMarkBit / SetFreeObjInCompactBit reuse the lower method-table bits during
+    // planning: the BGC-during-FGC marked bit keeps a plug placed on the max_gen free list from
+    // being swept by a concurrent background GC, and the make-free-obj-in-compact bit records that
+    // a saved pinned-plug reloc word must become a free object after compaction.
+    public void SetBGCMarkBit() =>
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | BGC_MARKED_BY_FGC));
+
+    public void SetFreeObjInCompactBit() =>
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | MAKE_FREE_OBJ_IN_COMPACT));
+
     public void SetPinned() => GetHeader()->SetGCBit();
 
     public int IsPinned() =>
@@ -785,9 +795,12 @@ internal unsafe partial struct gc_heap
         if (size >=
             (nuint)GCInterfaceOffsets.min_obj_size + (nuint)sizeof(nuint))
         {
+            // gcinternal.h SetFree stores the free object's component count as raw bytes
+            // (free_object_base_size == min_obj_size, component size 1), so unused_array_size can
+            // recover the exact length as min_obj_size + this word. Do not scale by the pointer
+            // size here or the free-list plan allocator would mis-size threaded free items.
             *(nuint*)(address + sizeof(nuint)) =
-                (size - (nuint)GCInterfaceOffsets.min_obj_size) /
-                (nuint)sizeof(nuint);
+                size - (nuint)GCInterfaceOffsets.min_obj_size;
         }
     }
 

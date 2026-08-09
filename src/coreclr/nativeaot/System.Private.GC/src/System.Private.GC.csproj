@@ -150,6 +150,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCMark.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCMarkPhase.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCPlanCondemned.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCPlanOlder.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCPlanPhase.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCPlanBrick.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCPlanRegions.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />

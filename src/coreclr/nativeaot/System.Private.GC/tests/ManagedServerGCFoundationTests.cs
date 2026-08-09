@@ -1833,6 +1833,215 @@ public static class ManagedServerGCFoundationTests
         Assert.Equal(expected, (bool)result);
     }
 
+    [Fact]
+    public static void ServerAllocateInOlderGenerationSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type gen = GetType("Internal.Runtime.GarbageCollection.generation");
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // The older-generation free-list plan allocator, its close-out helper, and the free-list /
+        // free-object bookkeeping leaves it needs are present in the server build.
+        foreach (string method in new[]
+        {
+            "allocate_in_older_generation",
+            "fix_older_allocation_area",
+            "adjust_limit",
+            "unused_array_size",
+            "make_free_obj",
+            "thread_free_item_front",
+            "thread_item_front_added",
+            "should_set_bgc_mark_bit",
+            "set_plug_bgc_mark_bit",
+            "set_free_obj_in_compact_bit",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == method);
+        }
+
+        // uint8_t* gc_heap::allocate_in_older_generation (generation* gen, size_t size,
+        // int from_gen_number, uint8_t* old_loc) -> in the SVR compilation the implicit this is an
+        // explicit gc_heap* first parameter and the plug address is a byte*.
+        MethodInfo aiog = heap.GetMethod(
+            "allocate_in_older_generation",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(byte).MakePointerType(), aiog.ReturnType);
+        ParameterInfo[] aiogParams = aiog.GetParameters();
+        Assert.Equal(5, aiogParams.Length);
+        Assert.Equal(heap.MakePointerType(), aiogParams[0].ParameterType);
+        Assert.Equal(gen.MakePointerType(), aiogParams[1].ParameterType);
+        Assert.Equal(typeof(nuint), aiogParams[2].ParameterType);
+        Assert.Equal(typeof(int), aiogParams[3].ParameterType);
+        Assert.Equal(typeof(byte).MakePointerType(), aiogParams[4].ParameterType);
+
+        // void gc_heap::fix_older_allocation_area (generation* older_gen) -> (gc_heap*, generation*).
+        MethodInfo fix = heap.GetMethod(
+            "fix_older_allocation_area",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), fix.ReturnType);
+        ParameterInfo[] fixParams = fix.GetParameters();
+        Assert.Equal(2, fixParams.Length);
+        Assert.Equal(heap.MakePointerType(), fixParams[0].ParameterType);
+        Assert.Equal(gen.MakePointerType(), fixParams[1].ParameterType);
+
+        // void gc_heap::adjust_limit (uint8_t* start, size_t limit_size, generation* gen) ->
+        // (gc_heap*, byte*, nuint, generation*); leave_allocation_segment is adjust_limit(0, 0, gen).
+        MethodInfo adjust = heap.GetMethod(
+            "adjust_limit",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), adjust.ReturnType);
+        ParameterInfo[] adjustParams = adjust.GetParameters();
+        Assert.Equal(4, adjustParams.Length);
+        Assert.Equal(heap.MakePointerType(), adjustParams[0].ParameterType);
+        Assert.Equal(typeof(byte).MakePointerType(), adjustParams[1].ParameterType);
+        Assert.Equal(typeof(nuint), adjustParams[2].ParameterType);
+        Assert.Equal(gen.MakePointerType(), adjustParams[3].ParameterType);
+
+        // commit_alloc_list_changes stays on the shared allocator type; the plan driver invokes it
+        // through generation_allocator (older_gen) before fix_older_allocation_area.
+        Type allocatorType = GetType("Internal.Runtime.GarbageCollection.allocator");
+        Assert.Contains(
+            allocatorType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static),
+            m => m.Name == "commit_alloc_list_changes");
+    }
+
+    [Fact]
+    public static void ServerAllocateInOlderGenerationCallsClosedLeaves()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // allocate_in_older_generation walks the older generation's size-segregated free lists and
+        // end-of-segment space; its call graph must reach exactly the closed free-list mutation and
+        // plan-window leaves the native loop invokes.
+        MethodInfo aiog = heap.GetMethod(
+            "allocate_in_older_generation",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] aiogNames, _) = CollectCallTargets(aiog, "size_fit_p");
+        foreach (string expected in new[]
+        {
+            "size_fit_p",
+            "first_suitable_bucket",
+            "number_of_buckets",
+            "added_alloc_list_head_of",
+            "alloc_list_head_of",
+            "free_list_slot",
+            "unused_array_size",
+            "unlink_item",
+            "unlink_item_no_undo_added",
+            "should_set_bgc_mark_bit",
+            "adjust_limit",
+            "grow_heap_segment",
+            "set_plug_padded",
+            "clear_plug_padded",
+            "same_large_alignment_p",
+            "set_node_realigned",
+            "set_plug_bgc_mark_bit",
+        })
+        {
+            Assert.Contains(expected, aiogNames);
+        }
+
+        // adjust_limit turns the abandoned plan window into free objects / threaded free items and
+        // records the free-obj-in-compact bit on the saved pinned-plug reloc word.
+        MethodInfo adjust = heap.GetMethod(
+            "adjust_limit",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] adjustNames, _) = CollectCallTargets(adjust, "make_free_obj");
+        foreach (string expected in new[]
+        {
+            "make_free_obj",
+            "thread_free_item_front",
+            "thread_item_front_added",
+            "set_free_obj_in_compact_bit",
+            "pinned_plug",
+            "pinned_plug_of",
+        })
+        {
+            Assert.Contains(expected, adjustNames);
+        }
+
+        // fix_older_allocation_area threads the unused tail back onto the free list.
+        MethodInfo fix = heap.GetMethod(
+            "fix_older_allocation_area",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] fixNames, _) = CollectCallTargets(fix, "make_unused_array");
+        foreach (string expected in new[] { "make_unused_array", "thread_item_front" })
+        {
+            Assert.Contains(expected, fixNames);
+        }
+    }
+
+    [Theory]
+    // A free object laid down by make_unused_array must report exactly its byte length through
+    // unused_array_size, so the older-generation plan allocator sizes threaded free items correctly.
+    [InlineData(0x18u)]
+    [InlineData(0x20u)]
+    [InlineData(0x100u)]
+    [InlineData(0x4000u)]
+    public static unsafe void ServerUnusedArraySizeRoundTripsMakeUnusedArray(uint size)
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo make = heap.GetMethod(
+            "make_unused_array",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        MethodInfo unused = heap.GetMethod(
+            "unused_array_size",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        Type bytePtr = typeof(byte).MakePointerType();
+        IntPtr buffer = Marshal.AllocHGlobal((int)size + sizeof(nuint) * 2);
+        try
+        {
+            for (int i = 0; i < (int)size + sizeof(nuint) * 2; i++)
+            {
+                Marshal.WriteByte(buffer, i, 0);
+            }
+
+            // GCCommon.g_gc_pFreeObjectMethodTable is null in the test host; make_unused_array writes
+            // that (null) method table and unused_array_size's IsFree() check compares equal.
+            make.Invoke(
+                null,
+                new object[]
+                {
+                    Pointer.Box((void*)buffer, bytePtr),
+                    (nuint)size,
+                    0,
+                    0,
+                });
+
+            object result = unused.Invoke(
+                null,
+                new object[] { Pointer.Box((void*)buffer, bytePtr) })!;
+
+            Assert.Equal((nuint)size, (nuint)result);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Fact]
+    public static void ServerPlanSingleGcCountersAreInstanceOwned()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gen2_removed_no_undo and saved_pinned_plug_index are PER_HEAP_FIELD_SINGLE_GC, so in the
+        // MULTIPLE_HEAPS build the older-generation plan allocator and adjust_limit must reach this
+        // heap's own copies (instance fields, not statics).
+        foreach (string fieldName in new[] { "gen2_removed_no_undo", "saved_pinned_plug_index" })
+        {
+            FieldInfo instance = heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.NotNull(instance);
+            Assert.Null(heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+    }
+
     // how many of them have a given name (used to count gc_t_join.join sites). Tokens are resolved
     // through the module so stray operand bytes that look like call opcodes are discarded.
     private static (string[] Names, int NamedCount) CollectCallTargets(MethodInfo method, string countName)

@@ -1788,10 +1788,51 @@ behaviorally. No collection is routed: the `plan_phase` driver that sequences th
 `allocate_in_older_generation` (the older-generation free-list plan allocator the non-max-gen SOH plug
 branch also calls), `plan_loh` / `plan_poh`, and the relocate/compact/sweep execution remain deferred.
 
+The older-generation free-list plan allocator (`ManagedServerGCPlanOlder.cs`) closes the last plug-walk
+allocator dependency. Translated from the SVR compilation of `allocation.cpp`, it is the allocator the
+non-max-gen SOH branch of the plug walk (`settings.condemned_generation < max_generation`) calls to
+place a surviving non-pinned plug into the *older* generation's already-swept free list before falling
+back to `allocate_in_condemned_generations`: `allocate_in_older_generation` (walk the older generation
+allocator's size-segregated free lists — plus the `DOUBLY_LINKED_FL` "added" list BGC threads for
+`max_generation` — fitting the plug with `size_fit_p` / front-tail padding / large-alignment, discarding
+non-fitting bucket-0 items, then committing / growing the region's plan-allocated tail; returns null so
+the caller retries through the condemned allocator); `fix_older_allocation_area` (thread the unused tail
+of the older generation's plan window back onto its free list, or account it as free-object space, when
+the plug walk switches older generations); and `adjust_limit` (`leave_allocation_segment` ==
+`adjust_limit(0, 0, gen)`; switch the plan window and turn the abandoned tail into free objects /
+threaded free items, setting the free-obj-in-compact bit on a saved pinned-plug reloc word). Each
+function is `gc_heap`-parameterized; the free-list mutation runs through `generation_allocator (gen)`
+and the generation's free-list / free-object accounting, so the only per-heap state captured is
+`gen2_removed_no_undo` and `saved_pinned_plug_index` (both `PER_HEAP_FIELD_SINGLE_GC`, now
+instance-owned for `MULTIPLE_HEAPS` in `GCPriv.cs` — static in WKS, where `init_records` keeps their
+reset), plus the background-sweep predicates `should_set_bgc_mark_bit` consults (`current_sweep_pos` /
+`current_sweep_seg` instance, `current_bgc_state` / `background_saved_*_address` shared). The WKS-only
+leaves it needs (`unused_array_size`, `make_free_obj`, `thread_free_item_front`,
+`thread_item_front_added`, `should_set_bgc_mark_bit`, `set_plug_bgc_mark_bit`,
+`set_free_obj_in_compact_bit`, `min_free_item_no_prev`) are re-translated here; `size_fit_p` /
+`grow_heap_segment` / `set_plug_padded` / `clear_plug_padded` are reused from
+`ManagedServerGCPlanCondemned.cs`. `SetBGCMarkBit` / `SetFreeObjInCompactBit` are added to the server
+`CObjectHeader`. The server `make_unused_array` num-components word is corrected to store the raw byte
+length (matching native `SetFree` / `unused_array_size`, component size 1) so free items round-trip; the
+previous divide-by-`sizeof(nuint)` mis-sized every free-list item the plan allocator revisits.
+`commit_alloc_list_changes` stays the shared allocator method in `GCPriv.cs`. Focused Foundation tests
+pin the `allocate_in_older_generation` (`gc_heap*`, `generation*`, `nuint`, int, `byte*`) /
+`fix_older_allocation_area` / `adjust_limit` signatures, resolve the closed-leaf call tokens each makes,
+exercise the `make_unused_array` / `unused_array_size` round-trip behaviorally, and verify
+`gen2_removed_no_undo` / `saved_pinned_plug_index` are instance-owned. No collection is routed.
+
+The dedicated server smoke test (`src/tests/nativeaot/SmokeTests/ManagedGCServer`) still cannot be
+built through the `src/tests` harness: `src/tests/Common/dirs.proj` fails with
+`MSB4184: The expression "[System.IO.File]::ReadAllText('')" cannot be evaluated. The value cannot be
+an empty string.` during test enumeration, before any project compiles. This is a pre-existing
+test-infrastructure issue independent of the GC translation; the `System.Private.GC.Server` assembly
+builds and links into `clr.aot` cleanly.
+
 Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
 per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
-and of `saved_pinned_plug_index`; the plug walk itself — which additionally needs
-`allocate_in_older_generation` for the non-max-gen SOH branch; `plan_loh` / `plan_poh` — which need
+and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself — which now has both
+`allocate_in_condemned_generations` and `allocate_in_older_generation` for the SOH branches;
+`plan_loh` / `plan_poh` — which need
 `grow_heap_segment` — and `fix_generation_bounds` — which needs `thread_final_regions` /
 `find_first_valid_region` / `reset_allocation_pointers` and the BGC end-mark accounting), the
 `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
