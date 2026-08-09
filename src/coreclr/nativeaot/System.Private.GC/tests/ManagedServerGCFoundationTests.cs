@@ -746,8 +746,10 @@ public static class ManagedServerGCFoundationTests
             "GcScanHandles",
             "drain_mark_queue",
             "fire_mark_event",
-            // The !full_p survivor bookkeeping that brackets the deferred card scan.
+            // The !full_p survivor bookkeeping that brackets the cross-generation card scan.
             "save_current_survived",
+            "mark_through_cards_for_segments",
+            "mark_through_cards_for_uoh_objects",
             "update_old_card_survived",
             // Dependent handles, short/long weak, single-thread syncblk, finalization.
             "GcDhInitialScan",
@@ -771,26 +773,138 @@ public static class ManagedServerGCFoundationTests
     }
 
     [Fact]
-    public static void ServerMarkPhaseDefersBalancingAndCardScan()
+    public static void ServerMarkPhaseDefersRemainingBalancing()
     {
         Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
         MethodInfo[] methods =
             heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
 
-        // The cross-heap mark-list / promoted-byte balancing is now translated and wired into the
-        // driver, but merge_mark_lists (#if MULTIPLE_HEAPS && !USE_REGIONS), mark_steal
-        // (MH_SC_MARK), and the server cross-generation card scan remain deferred, so no method for
-        // them is ported yet and the driver cannot reference one.
+        // The cross-heap mark-list / promoted-byte balancing and the cross-generation card scan are
+        // now translated and wired into the driver, but merge_mark_lists
+        // (#if MULTIPLE_HEAPS && !USE_REGIONS) and mark_steal (MH_SC_MARK) remain deferred, so no
+        // method for them is ported yet and the driver cannot reference one.
         foreach (string deferred in new[]
         {
             "merge_mark_lists",
             "mark_steal",
-            "mark_through_cards_for_segments",
-            "mark_through_cards_for_uoh_objects",
         })
         {
             Assert.DoesNotContain(methods, m => m.Name == deferred);
         }
+    }
+
+    [Fact]
+    public static void ServerCardScanSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // mark_through_cards_for_segments (gc_heap*, bool) -> void, exactly as
+        // gc_heap::mark_through_cards_for_segments (card_fn, relocating) with the non-stealing
+        // signature (FEATURE_CARD_MARKING_STEALING is not defined for this port).
+        MethodInfo soh = heap.GetMethod(
+            "mark_through_cards_for_segments",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), soh.ReturnType);
+        Assert.Equal(2, soh.GetParameters().Length);
+        Assert.Equal(heap.MakePointerType(), soh.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(bool), soh.GetParameters()[1].ParameterType);
+
+        // mark_through_cards_for_uoh_objects (gc_heap*, int gen_number, bool) -> void.
+        MethodInfo uoh = heap.GetMethod(
+            "mark_through_cards_for_uoh_objects",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), uoh.ReturnType);
+        Assert.Equal(3, uoh.GetParameters().Length);
+        Assert.Equal(heap.MakePointerType(), uoh.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(int), uoh.GetParameters()[1].ParameterType);
+        Assert.Equal(typeof(bool), uoh.GetParameters()[2].ParameterType);
+
+        // The internal per-segment scan and the UOH object finder that back the two entry points.
+        foreach (string helper in new[] { "scan_cards_for_segment", "find_uoh_object_for_card" })
+        {
+            Assert.Contains(
+                heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static),
+                m => m.Name == helper);
+        }
+
+        // mark_through_cards_for_segments walks find_card / find_first_object over each set card's
+        // objects, promotes cross-generation children through mark_object_simple, and clears cards
+        // that no longer point across generations.
+        (string[] names, _) = CollectCallTargets(soh, "scan_cards_for_segment");
+        foreach (string expected in new[]
+        {
+            "scan_cards_for_segment",
+            "generation_of",
+            "generation_start_segment_rw",
+            "heap_segment_next",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        (string[] scanNames, _) = CollectCallTargets(
+            heap.GetMethod(
+                "scan_cards_for_segment",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!,
+            "find_card");
+        foreach (string expected in new[]
+        {
+            "find_card",
+            "find_first_object",
+            "find_uoh_object_for_card",
+            "go_through_object",
+            "clear_cards",
+            "should_check_bgc_mark",
+            "fgc_should_consider_object",
+        })
+        {
+            Assert.Contains(expected, scanNames);
+        }
+    }
+
+    [Fact]
+    public static void ServerBackgroundSweepStateIsInstanceOwnedExceptSharedPhase()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h PER_HEAP_ISOLATED_FIELD_SINGLE_GC current_c_gc_state is shared/static.
+        FieldInfo phase = heap.GetField(
+            "current_c_gc_state",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.NotNull(phase);
+        Assert.True(phase.IsStatic);
+        Assert.Equal(
+            GetType("Internal.Runtime.GarbageCollection.c_gc_state"),
+            phase.FieldType);
+
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC current_sweep_pos / current_sweep_seg are instance-owned
+        // in the MULTIPLE_HEAPS build so each server heap tracks its own sweep progress.
+        foreach (string field in new[] { "current_sweep_pos", "current_sweep_seg" })
+        {
+            FieldInfo info = heap.GetField(
+                field,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.NotNull(info);
+            Assert.False(info.IsStatic);
+        }
+
+        // The sweep/mark-state predicates the card scan consults.
+        MethodInfo shouldCheck = heap.GetMethod(
+            "should_check_bgc_mark",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), shouldCheck.ReturnType);
+        ParameterInfo[] shouldCheckParams = shouldCheck.GetParameters();
+        Assert.Equal(4, shouldCheckParams.Length);
+        Assert.Equal(heap.MakePointerType(), shouldCheckParams[0].ParameterType);
+        Assert.True(shouldCheckParams[2].IsOut);
+        Assert.True(shouldCheckParams[3].IsOut);
+
+        MethodInfo fgc = heap.GetMethod(
+            "fgc_should_consider_object",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(bool), fgc.ReturnType);
+        Assert.Equal(5, fgc.GetParameters().Length);
+        Assert.Equal(heap.MakePointerType(), fgc.GetParameters()[0].ParameterType);
     }
 
     [Fact]

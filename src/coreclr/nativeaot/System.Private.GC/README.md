@@ -114,7 +114,9 @@ Ported so far:
 | `ManagedServerGC.cs` | Foundational x64 Linux `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` initialization, heap selection, per-heap allocation, server workers, the full server `t_join` color barrier (`join`/`r_join`/`restart`/`r_restart`/`r_init`), the `gc_done_event` collection handshake (`set_gc_done`/`reset_gc_done`/`enter`/`exit_gc_done_event_lock`/`wait_for_gc_done`, `gc_started`, `enable`/`disable_preemptive`), join/coordinator state, and dynamic heap-count bootstrap from `init.cpp`, `interface.cpp`, `allocation.cpp`, `dynamic_heap_count.cpp`, `gc.cpp`, and `gcinternal.h` |
 | `ManagedServerGCCondemn.cs` | Server generation condemnation and cross-heap condemned-generation agreement (`generation_to_condemn`, `joined_generation_to_condemn`) with the exact tuning closure (`dt_*`, `estimated_reclaim`, `generation_size`, `generation_unusable_fragmentation`, `get_total_gen_*`, `get_memory_info`, `try_get_new_free_region`, `min_*_threshold`) from `plan_phase.cpp`, `dynamic_tuning.cpp`, and `gcinternal.h`; no collection is routed |
 | `ManagedServerGCMark.cs` | Server post-mark cross-heap reconciliation (`sync_promoted_bytes`, `decide_on_promotion_surv`) for the `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` chain from `mark_phase.cpp`; no collection is routed |
-| `ManagedServerGCMarkPhase.cs` | Server mark slice plus the blocking `mark_phase` driver from the SVR compilation of `mark_phase.cpp`/`interface.cpp`: per-heap mark storage init/cleanup, the object-walk and marking leaves, `gc_mark`/`m_boundary`/promoted-byte accounting, the mark queue push/drain/overflow path, the exact/interior/pinned `promote` (`GCHeap::Promote`) and `pin_object` callbacks, the per-heap root/finalizer/strong+pinned handle scan entry point, the `MULTIPLE_HEAPS` `scan_dependent_handles` join wiring, the full `mark_phase` join sequence (`gc_join_begin_mark_phase` through `gc_join_null_dead_syncblk`) with `fire_mark_event` / `save_current_survived` / `update_old_card_survived`, and the cross-heap mark-list balancing (`target_mark_count_for_heap` / `equalize_mark_lists` / `sort_mark_list` / `append_to_mark_list`) plus promoted-byte balancing (`equalize_promoted_bytes` with the `set_heap_for_contained_basic_regions` / `unlink_first_rw_region` / `thread_rw_region_front` / `thread_start_region` region-threading helpers) wired into the driver; the `!full_p` cross-generation card scan stays deferred and no collection is routed |
+| `ManagedServerGCMarkPhase.cs` | Server mark slice plus the blocking `mark_phase` driver from the SVR compilation of `mark_phase.cpp`/`interface.cpp`: per-heap mark storage init/cleanup, the object-walk and marking leaves, `gc_mark`/`m_boundary`/promoted-byte accounting, the mark queue push/drain/overflow path, the exact/interior/pinned `promote` (`GCHeap::Promote`) and `pin_object` callbacks, the per-heap root/finalizer/strong+pinned handle scan entry point, the `MULTIPLE_HEAPS` `scan_dependent_handles` join wiring, the full `mark_phase` join sequence (`gc_join_begin_mark_phase` through `gc_join_null_dead_syncblk`) with `fire_mark_event` / `save_current_survived` / `update_old_card_survived`, the cross-heap mark-list balancing (`target_mark_count_for_heap` / `equalize_mark_lists` / `sort_mark_list` / `append_to_mark_list`) plus promoted-byte balancing (`equalize_promoted_bytes` with the `set_heap_for_contained_basic_regions` / `unlink_first_rw_region` / `thread_rw_region_front` / `thread_start_region` region-threading helpers), and the `!full_p` cross-generation card scan (in `ManagedServerGCCardScan.cs`) wired into the driver; no collection is routed |
+| `ManagedServerGCCardScan.cs` | Server foreground cross-generation dirty-card scan (`mark_through_cards_for_segments`, `mark_through_cards_for_uoh_objects`, `scan_cards_for_segment`, `find_uoh_object_for_card`, `scan_card_reference`) from the SVR compilation of `mark_phase.cpp`/`background.cpp` for SOH/LOH/POH: each server worker scans its own heap's older-than-condemned regions, promotes cross-generation children through `mark_object_simple`, and clears cards that no longer point across generations. The non-stealing per-heap path is translated (`FEATURE_CARD_MARKING_STEALING` is not defined for this port); the `MH_SC_MARK` card-mark stealing distribution and the relocate variant belong to deferred subsystems |
+| `ManagedServerGCBackgroundState.cs` | Minimal faithful `SERVER_GC` background sweep/mark-state predicates the card scan consults (`should_check_bgc_mark`, `fgc_should_consider_object`, `background_object_marked`, `mark_array_clear_marked`) plus `current_c_gc_state` (`PER_HEAP_ISOLATED`, shared) from `background.cpp`; `current_sweep_pos` / `current_sweep_seg` are the matching `PER_HEAP_FIELD_SINGLE_GC` instance state in `GCPriv.cs`. The rest of the server background collector (thread lifecycle, concurrent mark/revisit, region sweep) remains deferred |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
 For `gcload.cpp`, the part `Runtime.ManagedGC` actually reaches is now complete: the managed
@@ -209,20 +211,42 @@ without routing the overall collection:
   `equalize_promoted_bytes` in the `gc_join_null_dead_long_weak` region, using the
   `set_heap_for_contained_basic_regions` / `unlink_first_rw_region` / `thread_rw_region_front` /
   `thread_start_region` region-threading helpers to move regions between heaps by survivorship. The
-  `!full_p` cross-generation card marking is kept as a faithful DEFERRED call site;
-  `merge_mark_lists` is `#if !USE_REGIONS` and `mark_steal` is `MH_SC_MARK`, both excluded.
-  No collection routes the driver yet.
+  `!full_p` cross-generation card marking now runs the server foreground card scan
+  (`mark_through_cards_for_segments` for SOH plus `mark_through_cards_for_uoh_objects` for LOH and
+  POH, from `ManagedServerGCCardScan.cs`), bracketed by `save_current_survived` /
+  `update_old_card_survived`; `merge_mark_lists` is `#if !USE_REGIONS` and `mark_steal` is
+  `MH_SC_MARK`, both excluded. No collection routes the driver yet.
+- **The foreground cross-generation card scan.** `mark_through_cards_for_segments`
+  (`ManagedServerGCCardScan.cs`) walks each older-than-condemned SOH region this heap owns, and
+  `mark_through_cards_for_uoh_objects` does the same for the LOH and POH regions (POH is included
+  because `gcpriv.h` defines `ALLOW_REFERENCES_IN_POH`). `scan_cards_for_segment` finds set cards
+  with `find_card`, locates the first object covering each card with `find_first_object` /
+  `find_uoh_object_for_card`, and walks each object's references through `go_through_object` into
+  `scan_card_reference`, which promotes cross-generation children (those in a condemned generation)
+  via `mark_object_simple` and counts references that still cross generations so cards that no
+  longer do are cleared with `clear_cards`. The `BACKGROUND_GC` guards consult
+  `should_check_bgc_mark` / `fgc_should_consider_object`. `FEATURE_CARD_MARKING_STEALING` is not
+  defined for this port, so the non-stealing per-heap path is translated (no
+  `card_marking_enumerator`); `mark_object_fn` is always `mark_object_simple` and `relocating` is
+  always false, so `scan_card_reference` translates only the mark branch and the relocate variant
+  is left to the deferred server relocate/plan subsystem.
 
 The `PER_HEAP_FIELD_SINGLE_GC` / `MAINTAINED` / `DIAG_ONLY` mark state (`mark_queue`,
 `mark_stack_tos`/`bos`, `oldest_pinned_plug`, `num_pinned_objects`, `mark_stack_array`(`_length`),
 `mark_list`(`_index`/`_end`), `mark_list_piece_start`/`end`, `min`/`max_overflow_address`,
 `gen0_bricks_cleared`/`gen0_must_clear_bricks`) is instance-owned in the `MULTIPLE_HEAPS` build
 (static in WKS), while `gc_low`/`gc_high` stay `PER_HEAP_ISOLATED` as in `gcpriv.h` under
-`USE_REGIONS`. The `!full_p` cross-generation card scan (which needs the `should_check_bgc_mark` /
-`fgc_should_consider_object` background-sweep state that is a separate unported subsystem for the
-server build), the `merge_mark_lists` (`#if !USE_REGIONS`) mark-list merge, and the `mark_steal`
-(`MH_SC_MARK`) cross-heap stealing remain deferred (so the `mark_phase` driver stays unrouted), as
-does routing `GarbageCollect`. No collection entry point is routed by this slice.
+`USE_REGIONS`. The `!full_p` cross-generation card scan is now translated
+(`ManagedServerGCCardScan.cs`) and consults the minimal server background sweep/mark-state
+predicates (`should_check_bgc_mark` / `fgc_should_consider_object` in
+`ManagedServerGCBackgroundState.cs`, over the shared `current_c_gc_state` and the per-heap
+`current_sweep_pos` / `current_sweep_seg`); with the rest of the server background collector still
+deferred, `current_c_gc_state` is always `c_gc_state_free` at collection time, so the predicates
+report no background mark to consult, exactly as native when no background GC is running. The
+`merge_mark_lists` (`#if !USE_REGIONS`) mark-list merge and the `mark_steal` (`MH_SC_MARK`) plus
+`FEATURE_CARD_MARKING_STEALING` cross-heap card stealing remain deferred (so the `mark_phase`
+driver stays unrouted), as does routing `GarbageCollect`. No collection entry point is routed by
+this slice.
 
 `gcinterface.dac.h` is translated, including the `dac_generation` and `dac_gc_heap` views
 generated from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Pointer-sized arrays use

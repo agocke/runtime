@@ -710,6 +710,12 @@ internal unsafe partial struct gc_heap
     public static nuint Align(nuint bytes) =>
         Align(bytes, sizeof(byte*));
 
+    // gc.cpp AlignQword: rounds UOH object sizes up to an 8-byte boundary. FEATURE_STRUCTALIGN is
+    // not defined for this port, so this is the plain 8-byte round-up used by the card scan's LOH/
+    // POH object walk.
+    public static nuint AlignQword(nuint nbytes) =>
+        unchecked((nbytes + 7) & ~(nuint)7);
+
     public static int get_alignment_constant(bool small_object_p)
     {
         _ = small_object_p;

@@ -1605,7 +1605,9 @@ server GC worker runs it on its own heap, and it drives the complete join sequen
 root / finalizer-queue / handle scans (inlined so `BeforeGcScanRoots` fires once in the joined
 region as in native) each with `drain_mark_queue` and the `fire_mark_event` GCMarkWithType tail,
 the `!full_p` survivor bookkeeping (`save_current_survived` / `update_old_card_survived`, both newly
-translated from `plan_phase.cpp`), the `GcDhInitialScan` plus `scan_dependent_handles` cycle,
+translated from `plan_phase.cpp`) bracketing the cross-generation card scan
+(`mark_through_cards_for_segments` / `mark_through_cards_for_uoh_objects`), the `GcDhInitialScan`
+plus `scan_dependent_handles` cycle,
 `gc_join_null_dead_short_weak` (joined `AfterGcScanRoots`), `GcShortWeakPtrScan`,
 `gc_join_scan_finalization`, `ScanForFinalization` / `DiagWalkFReachableObjects` and the second
 `scan_dependent_handles`, `gc_join_null_dead_long_weak` (joined `sync_promoted_bytes` and
@@ -1614,9 +1616,9 @@ translated from `plan_phase.cpp`), the `GcDhInitialScan` plus `scan_dependent_ha
 promotion decision). `fire_mark_event` is the server copy of the WKS `FireMarkEvent`, and
 `syncblock_scan_p` is the function-static single-thread latch. No collection routes the driver yet.
 
-Two native steps whose cross-heap dependencies are not yet closed were originally kept as faithful,
-clearly marked DEFERRED call sites; the balancing pair is now translated and wired in, leaving only
-the card scan deferred. The cross-heap mark-list balancing (`target_mark_count_for_heap`,
+Two native steps whose cross-heap dependencies were not yet closed were originally kept as faithful,
+clearly marked DEFERRED call sites; both the balancing pair and the card scan are now translated and
+wired in. The cross-heap mark-list balancing (`target_mark_count_for_heap`,
 `equalize_mark_lists`, `sort_mark_list`, and the unconditionally-compiled `append_to_mark_list`
 `merge_mark_lists` helper) is translated from the `MULTIPLE_HEAPS` compilation of `mark_phase.cpp`:
 after `GcWeakPtrScan` every worker runs `sort_mark_list`, which fakes a mark-list overflow for
@@ -1634,26 +1636,39 @@ same storage the card-scan survivor arrays borrow at a disjoint point). The prom
 generation, computes per-heap survivorship, and moves regions between heaps by survivorship size
 class so each heap owns roughly the average, improving the plan/relocate work balance. The
 `_DEBUG` `committed_by_oh_per_heap` accounting is a `PER_HEAP_FIELD_DIAG_ONLY` subsystem this port
-does not maintain, so its assertions/updates are excluded exactly as elsewhere. The single
-remaining DEFERRED call site is the `!full_p` cross-generation card-marking block
-(`mark_through_cards_for_segments` / `mark_through_cards_for_uoh_objects`, which need the server
-card-scan plus `should_check_bgc_mark` / `fgc_should_consider_object` background-sweep state, an
-unported subsystem for the server build) with its `save_current_survived` /
-`update_old_card_survived` brackets translated. `merge_mark_lists` is
-`#if MULTIPLE_HEAPS && !USE_REGIONS` and so is excluded for the region build regardless (its sole
-consumption of `sort_mark_list`'s return value is elided); the `MH_SC_MARK` `mark_steal`, the
-`CARD_BUNDLE` r_join, the BGC background-root scan, and the `FEATURE_JAVAMARSHAL` bridge are
-excluded exactly as for the active configuration. Focused Foundation tests pin the driver method
+does not maintain, so its assertions/updates are excluded exactly as elsewhere. The `!full_p`
+cross-generation card-marking block (`mark_through_cards_for_segments` /
+`mark_through_cards_for_uoh_objects`, in `ManagedServerGCCardScan.cs`), with its
+`save_current_survived` / `update_old_card_survived` brackets, is now translated: each worker scans
+its own heap's older-than-condemned SOH regions plus its LOH and POH regions, promoting
+cross-generation children through `mark_object_simple` and clearing cards that no longer point
+across generations. It consults the minimal server background sweep/mark-state predicates
+(`should_check_bgc_mark` / `fgc_should_consider_object` in `ManagedServerGCBackgroundState.cs`, over
+the shared `PER_HEAP_ISOLATED` `current_c_gc_state` and the `PER_HEAP_FIELD_SINGLE_GC`
+`current_sweep_pos` / `current_sweep_seg`); because the server background collector is otherwise
+still deferred, `current_c_gc_state` is always `c_gc_state_free` at collection time, so the
+predicates report no background mark to consult, exactly as native when no background GC is running.
+`FEATURE_CARD_MARKING_STEALING` is not defined for this port, so the non-stealing per-heap path is
+translated (no `card_marking_enumerator`), and `relocating` is always false in the mark phase so the
+relocate variant of `scan_card_reference` belongs to the deferred server relocate/plan subsystem.
+`merge_mark_lists` is `#if MULTIPLE_HEAPS && !USE_REGIONS` and so is excluded for the region build
+regardless (its sole consumption of `sort_mark_list`'s return value is elided); the `MH_SC_MARK`
+`mark_steal`, the `FEATURE_CARD_MARKING_STEALING` card-mark stealing, the `CARD_BUNDLE` r_join, the
+BGC background-root scan, and the `FEATURE_JAVAMARSHAL` bridge are excluded exactly as for the
+active configuration. Focused Foundation tests pin the driver method
 surface and `mark_phase` (gc_heap*, int) signature, the static `syncblock_scan_p` latch, the full
-six-join sequence and every reused mark-core / scan / balancing call the driver makes (by resolving
-its IL call tokens, including `sort_mark_list` and `equalize_promoted_bytes`), the balancing method
+six-join sequence and every reused mark-core / scan / balancing / card-scan call the driver makes
+(by resolving its IL call tokens, including `sort_mark_list`, `equalize_promoted_bytes`, and
+`mark_through_cards_for_segments` / `mark_through_cards_for_uoh_objects`), the balancing method
 surface and `sort_mark_list` (gc_heap*) / `equalize_promoted_bytes` (gc_heap*, int) signatures, the
 instance-owned `mark_list_piece_start`/`end` fields, a behavior test of `target_mark_count_for_heap`
-even-split-with-remainder-on-last-heap, and that the still-deferred `merge_mark_lists`, `mark_steal`,
-and card-scan helpers remain unported.
+even-split-with-remainder-on-last-heap, the card-scan method surface and the `find_card` /
+`find_first_object` / `go_through_object` / `clear_cards` / `should_check_bgc_mark` /
+`fgc_should_consider_object` calls `scan_cards_for_segment` makes, the shared-vs-instance scoping of
+`current_c_gc_state` / `current_sweep_pos` / `current_sweep_seg` and the predicate signatures, and
+that the still-deferred `merge_mark_lists` and `mark_steal` remain unported.
 
-The `!full_p` cross-generation card scan (blocked on the unported server background-sweep state),
-`merge_mark_lists` (`#if !USE_REGIONS`), and `mark_steal` (`MH_SC_MARK`) remain deferred, so the
+`merge_mark_lists` (`#if !USE_REGIONS`) and `mark_steal` (`MH_SC_MARK`) remain deferred, so the
 driver stays unrouted.
 
 The earlier cross-heap post-mark reconciliation that runs in the joined region of `mark_phase`
@@ -1661,7 +1676,7 @@ after every heap finishes promoting its roots and cards (`ManagedServerGCMark.cs
 
 Production blockers remain in BGC servo tuning, dynamic heap-count changes after startup,
 diagnostic `saved_changed_segs` publication, condemnation-driven collection routing, the server
-`!full_p` cross-generation card scan (blocked on the unported server background-sweep state), and
+background collector (thread lifecycle, concurrent mark/revisit, region sweep), and
 server parallel collection closure.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC

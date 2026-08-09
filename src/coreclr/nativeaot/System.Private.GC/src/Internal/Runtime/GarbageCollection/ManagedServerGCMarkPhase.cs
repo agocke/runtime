@@ -26,8 +26,11 @@
 // No collection is routed by this slice. The cross-heap mark-list balancing (sort_mark_list /
 // equalize_mark_lists / append_to_mark_list / target_mark_count_for_heap) and promoted-byte
 // balancing (equalize_promoted_bytes plus its region-threading helpers) are now translated and
-// wired into the driver; merge_mark_lists (#if MULTIPLE_HEAPS && !USE_REGIONS) and mark_steal
-// (MH_SC_MARK) remain excluded/deferred, as does the cross-generation card scan. The scalar
+// wired into the driver, as is the !full_p cross-generation card scan
+// (mark_through_cards_for_segments / mark_through_cards_for_uoh_objects in ManagedServerGCCardScan.cs
+// with the minimal server sweep/mark-state predicates in ManagedServerGCBackgroundState.cs);
+// merge_mark_lists (#if MULTIPLE_HEAPS && !USE_REGIONS), mark_steal (MH_SC_MARK), and
+// FEATURE_CARD_MARKING_STEALING chunk stealing remain excluded/deferred. The scalar
 // TRACE_GC, SNOOP_STATS, HEAP_ANALYZE, COLLECTIBLE_CLASS, FEATURE_STRUCTALIGN, STRESS_PINNING, and
 // GC_CONFIG_DRIVEN branches are excluded exactly as for the active configuration.
 
@@ -2236,15 +2239,16 @@ internal unsafe partial struct gc_heap
     // GcWeakPtrScan. merge_mark_lists, the sole consumer of sort_mark_list's return value, is
     // #if MULTIPLE_HEAPS && !USE_REGIONS and so stays excluded for the region build.
     //
-    // One native step whose cross-heap dependencies are not yet closed is kept as a faithful,
-    // clearly marked DEFERRED call site: the !full_p cross-generation card-marking block
-    // (mark_through_cards_for_segments / mark_through_cards_for_uoh_objects) needs the server
-    // card-scan plus background-sweep state (should_check_bgc_mark / fgc_should_consider_object)
-    // which is a separate unported subsystem; the bracketing save_current_survived /
-    // update_old_card_survived are translated. The MH_SC_MARK mark_steal, the CARD_BUNDLE r_join,
-    // the BGC background-root scan, and the FEATURE_JAVAMARSHAL bridge, plus the HEAP_ANALYZE /
-    // SNOOP_STATS / FEATURE_EVENT_TRACE record_mark_time instrumentation, are excluded exactly as
-    // for the active configuration / deferred subsystems.
+    // The !full_p cross-generation card-marking block (mark_through_cards_for_segments /
+    // mark_through_cards_for_uoh_objects) is now translated and wired in: each worker scans its own
+    // heap's older-than-condemned SOH regions plus its LOH and POH regions, consulting the minimal
+    // server background sweep/mark-state predicates (should_check_bgc_mark /
+    // fgc_should_consider_object). The bracketing save_current_survived / update_old_card_survived
+    // fold the card-scan survivors into the per-region old-card accounting. The MH_SC_MARK
+    // mark_steal, FEATURE_CARD_MARKING_STEALING chunk distribution, the CARD_BUNDLE r_join, the BGC
+    // background-root scan, and the FEATURE_JAVAMARSHAL bridge, plus the HEAP_ANALYZE / SNOOP_STATS
+    // / FEATURE_EVENT_TRACE record_mark_time instrumentation, are excluded exactly as for the
+    // active configuration / deferred subsystems.
     public static void mark_phase(gc_heap* heap, int condemned_gen_number)
     {
         Debug.Assert(settings.concurrent == 0);
@@ -2346,13 +2350,21 @@ internal unsafe partial struct gc_heap
         {
             save_current_survived(heap);
 
-            // DEFERRED: mark_through_cards_for_segments (small objects) and
-            // mark_through_cards_for_uoh_objects (loh_generation, poh_generation). The server
-            // cross-generation card scan depends on the not-yet-ported server card-scan and
-            // background-sweep state (should_check_bgc_mark / fgc_should_consider_object and the
-            // survived-per-region card accounting). The bracketing survivor bookkeeping is
-            // translated so the card scan drops straight in when that subsystem lands: with no
-            // card survivors added, update_old_card_survived correctly leaves old_card at 0.
+            // Cross-generation card scan: promote objects in older-than-condemned regions that are
+            // referenced across generations. mark_object_simple is the promotion function and
+            // relocating is false in the mark phase. POH is scanned because gcpriv.h defines
+            // ALLOW_REFERENCES_IN_POH. The MH_SC_MARK card-mark stealing distribution, the CARD_-
+            // BUNDLE r_join/verify, and FEATURE_CARD_MARKING_STEALING remain excluded/deferred as
+            // for the active configuration.
+            mark_through_cards_for_segments(heap, relocating: false);
+            mark_through_cards_for_uoh_objects(
+                heap,
+                (int)gc_generation_num.loh_generation,
+                relocating: false);
+            mark_through_cards_for_uoh_objects(
+                heap,
+                (int)gc_generation_num.poh_generation,
+                relocating: false);
             drain_mark_queue(heap);
 
             update_old_card_survived(heap);

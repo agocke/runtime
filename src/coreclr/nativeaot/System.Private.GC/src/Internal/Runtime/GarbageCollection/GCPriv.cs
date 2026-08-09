@@ -1322,6 +1322,15 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint* old_card_survived_per_region;
         public static nuint total_promoted_bytes;
 #endif
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC current_sweep_pos / current_sweep_seg: this heap's
+        // cursor into the region it is background-sweeping, consulted by the foreground card scan's
+        // sweep/mark-state predicates. In the MULTIPLE_HEAPS build they are instance-owned so each
+        // server heap tracks its own sweep progress; in WKS they are declared static alongside the
+        // rest of the single-heap background state in BackgroundGC.cs.
+#if MULTIPLE_HEAPS && BACKGROUND_GC && USE_REGIONS
+        public byte* current_sweep_pos;
+        public heap_segment* current_sweep_seg;
+#endif
         public static int num_regions_freed_in_sweep;
         public static nuint end_gen0_region_space;
         public static nuint end_gen0_region_committed_space;
