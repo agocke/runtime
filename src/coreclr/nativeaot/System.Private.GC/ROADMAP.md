@@ -1899,15 +1899,24 @@ evaluated. The value cannot be an empty string.`); this reproduces intermittentl
 prior test-layout state and is not caused by the GC translation. Because this slice routes no
 collection, an end-to-end server run would not yet exercise the new sweep/segment-return leaves.
 
+The plan-time region-threading family `fix_generation_bounds` — `thread_final_regions` /
+`find_first_valid_region` / `reset_allocation_pointers` / `set_allocation_heap_segment` and the
+required BGC end-mark accounting (`should_update_end_mark_size` / `background_soh_size_end_mark`,
+instance-owned per heap) — is now closed in `ManagedServerGCFixGenerationBounds.cs`, translated from
+the SVR compilation of `plan_phase.cpp`, `allocation.cpp`, and `background.cpp`. It rebuilds every
+generation's start/tail region chain from the planned layout (returning empty regions to free,
+decommitting gen2+ tails, threading swept-in-plan free lists back, getting fresh regions for emptied
+generations, resetting condemned allocation pointers) and re-seats the ephemeral heap segment / alloc
+pointers. Because this slice routes no collection, the family does not yet run against a live heap.
+
 Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
 per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
 and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself — which now has both
 `allocate_in_condemned_generations` and `allocate_in_older_generation` for the SOH branches and
 `plan_loh` for the compacting LOH; the LOH compaction gating (`settings.loh_compaction` /
 `loh_compacted_p` / `loh_compaction_requested`) that selects `plan_loh` versus the now-translated
-`sweep_uoh_objects` fallback for the non-compacting LOH and for POH;
-and `fix_generation_bounds` — which needs `thread_final_regions` /
-`find_first_valid_region` / `reset_allocation_pointers` and the BGC end-mark accounting), the
+`sweep_uoh_objects` fallback for the non-compacting LOH and for POH; and the call to the
+now-translated `fix_generation_bounds` region-threading family), the
 `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
 `gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, the server
 `relocate_phase` / `compact_phase` / `make_free_lists` execution, BGC servo

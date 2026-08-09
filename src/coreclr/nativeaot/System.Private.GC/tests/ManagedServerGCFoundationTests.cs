@@ -2423,6 +2423,174 @@ public static class ManagedServerGCFoundationTests
         Assert.True(storesField, "initialize_freeable_segments_state must null this heap's freeable_uoh_segment.");
     }
 
+    [Fact]
+    public static void ServerFixGenerationBoundsSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type genType = GetType("Internal.Runtime.GarbageCollection.generation");
+        Type segType = GetType("Internal.Runtime.GarbageCollection.heap_segment");
+        Type bytePtr = typeof(byte).MakePointerType();
+        Type heapPtr = heap.MakePointerType();
+        Type genPtr = genType.MakePointerType();
+        Type segPtr = segType.MakePointerType();
+        Type intPtr = typeof(int).MakePointerType();
+
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // plan_phase.cpp / allocation.cpp / background.cpp plan-time region-threading family,
+        // translated for the server compilation.
+        foreach (string expected in new[]
+        {
+            "fix_generation_bounds",
+            "thread_final_regions",
+            "find_first_valid_region",
+            "reset_allocation_pointers",
+            "set_allocation_heap_segment",
+            "should_update_end_mark_size",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == expected);
+        }
+
+        // void gc_heap::fix_generation_bounds (int, generation*) -> void (gc_heap*, int, generation*).
+        Assert.Equal(
+            typeof(void),
+            GetMethod(
+                heap,
+                "fix_generation_bounds",
+                new[] { heapPtr, typeof(int), genPtr }).ReturnType);
+
+        // void gc_heap::thread_final_regions (bool) -> void (gc_heap*, bool).
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "thread_final_regions", new[] { heapPtr, typeof(bool) }).ReturnType);
+
+        // heap_segment* gc_heap::find_first_valid_region (heap_segment*, bool, int*) ->
+        // heap_segment* (gc_heap*, heap_segment*, bool, int*).
+        Assert.Equal(
+            segPtr,
+            GetMethod(
+                heap,
+                "find_first_valid_region",
+                new[] { heapPtr, segPtr, typeof(bool), intPtr }).ReturnType);
+
+        // void gc_heap::reset_allocation_pointers (generation*, uint8_t*) -> void (generation*, byte*).
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "reset_allocation_pointers", new[] { genPtr, bytePtr }).ReturnType);
+
+        // void gc_heap::set_allocation_heap_segment (generation*) -> void (generation*).
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "set_allocation_heap_segment", new[] { genPtr }).ReturnType);
+
+        // bool gc_heap::should_update_end_mark_size () -> bool (). PER_HEAP_ISOLATED_METHOD, so it
+        // stays static and takes no gc_heap*.
+        Assert.Equal(
+            typeof(bool),
+            GetMethod(heap, "should_update_end_mark_size", Type.EmptyTypes).ReturnType);
+    }
+
+    [Fact]
+    public static void ServerFixGenerationBoundsCallsClosedLeaves()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // fix_generation_bounds runs thread_final_regions and re-seats the ephemeral segment's alloc.
+        MethodInfo fix = heap.GetMethod(
+            "fix_generation_bounds",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] fixNames, _) = CollectCallTargets(fix, "thread_final_regions");
+        Assert.Contains("thread_final_regions", fixNames);
+
+        // thread_final_regions returns SIP regions, threads condemned regions via
+        // find_first_valid_region, gets fresh regions for empty gens, resets alloc pointers, and
+        // consults the BGC end-mark predicate.
+        MethodInfo tfr = heap.GetMethod(
+            "thread_final_regions",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] tfrNames, _) = CollectCallTargets(tfr, "find_first_valid_region");
+        foreach (string expected in new[]
+        {
+            "find_first_valid_region",
+            "return_free_region",
+            "thread_start_region",
+            "get_free_region",
+            "reset_allocation_pointers",
+            "should_update_end_mark_size",
+        })
+        {
+            Assert.Contains(expected, tfrNames);
+        }
+
+        // find_first_valid_region returns empty regions, sets plan/gen numbers, decommits gen2+ tails,
+        // threads swept-in-plan free lists, and clears the per-GC region flags.
+        MethodInfo ffvr = heap.GetMethod(
+            "find_first_valid_region",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] ffvrNames, _) = CollectCallTargets(ffvr, "return_free_region");
+        foreach (string expected in new[]
+        {
+            "return_free_region",
+            "set_region_gen_num",
+            "decommit_heap_segment_pages",
+            "clear_region_sweep_in_plan",
+            "clear_region_demoted",
+        })
+        {
+            Assert.Contains(expected, ffvrNames);
+        }
+
+        // reset_allocation_pointers re-seats the generation's allocation segment.
+        MethodInfo reset = heap.GetMethod(
+            "reset_allocation_pointers",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] resetNames, _) = CollectCallTargets(reset, "set_allocation_heap_segment");
+        Assert.Contains("set_allocation_heap_segment", resetNames);
+    }
+
+    [Fact]
+    public static void ServerEndMarkSizeIsInstanceOwned()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h marks background_soh_size_end_mark PER_HEAP_FIELD_DIAG_ONLY, so in the
+        // MULTIPLE_HEAPS build it is instance-owned (not static). thread_final_regions accumulates
+        // into this heap's field through the gc_heap* parameter.
+        FieldInfo instanceField = heap.GetField(
+            "background_soh_size_end_mark",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.NotNull(instanceField);
+        Assert.Null(heap.GetField(
+            "background_soh_size_end_mark",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        MethodInfo tfr = heap.GetMethod(
+            "thread_final_regions",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        byte[] il = tfr.GetMethodBody()!.GetILAsByteArray()!;
+        byte[] token = BitConverter.GetBytes(instanceField.MetadataToken);
+        bool storesField = false;
+        for (int i = 0; i <= il.Length - 5; i++)
+        {
+            // stfld <background_soh_size_end_mark>
+            if (il[i] == 0x7d &&
+                il[i + 1] == token[0] &&
+                il[i + 2] == token[1] &&
+                il[i + 3] == token[2] &&
+                il[i + 4] == token[3])
+            {
+                storesField = true;
+                break;
+            }
+        }
+
+        Assert.True(
+            storesField,
+            "thread_final_regions must accumulate into this heap's background_soh_size_end_mark.");
+    }
+
     private static (string[] Names, int NamedCount) CollectCallTargets(MethodInfo method, string countName)
     {
         byte[] il = method.GetMethodBody()!.GetILAsByteArray()!;

@@ -1504,6 +1504,15 @@ namespace Internal.Runtime.GarbageCollection
 #else
         public static nuint saved_pinned_plug_index;
 #endif
+        // gcpriv.h marks background_soh_size_end_mark PER_HEAP_FIELD_DIAG_ONLY, so it is
+        // instance-owned in the MULTIPLE_HEAPS build (static in WKS). thread_final_regions accumulates
+        // each server heap's max_generation size at the end of a background mark through the owning
+        // heap when should_update_end_mark_size() is true.
+#if MULTIPLE_HEAPS
+        public nuint background_soh_size_end_mark;
+#else
+        public static nuint background_soh_size_end_mark;
+#endif
         public static last_recorded_gc_info last_background_gc_info0;
         public static last_recorded_gc_info last_background_gc_info1;
         public static int last_background_gc_info_index;
