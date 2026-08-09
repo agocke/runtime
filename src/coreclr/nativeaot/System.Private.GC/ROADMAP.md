@@ -1674,10 +1674,46 @@ driver stays unrouted.
 The earlier cross-heap post-mark reconciliation that runs in the joined region of `mark_phase`
 after every heap finishes promoting its roots and cards (`ManagedServerGCMark.cs`) is unchanged.
 
-Production blockers remain in BGC servo tuning, dynamic heap-count changes after startup,
-diagnostic `saved_changed_segs` publication, condemnation-driven collection routing, the server
-background collector (thread lifecycle, concurrent mark/revisit, region sweep), and
-server parallel collection closure.
+The server plan phase now has its first executable slice: the dependency-closed compaction-vs-sweep
+decision family, translated from the SVR compilation of `plan_phase.cpp`
+(`ManagedServerGCPlanPhase.cs`). Once a server heap's plug/region planning has produced plan-allocated
+bounds, this is the prefix of `gc_heap::plan_phase` that decides whether the heap compacts or sweeps
+its condemned generations: the per-heap plan-size / planned-fragmentation accounting
+(`generation_plan_size`, `generation_sizes`, `generation_fragmentation`, `approximate_new_allocation`,
+`get_gen0_end_plan_space`, plus the pinned-plug-queue leaves `pinned_plug_of` / `pinned_len` that
+`generation_fragmentation` consults) and the compaction-policy deciders themselves
+(`decide_on_compaction_space`, `is_full_compacting_gc_productive`, the `ensure_gap_allocation` gate,
+and `decide_on_compacting`). Every function is `gc_heap`-parameterized and reads/writes the plan-space
+accounting through the heap. The `PER_HEAP_FIELD_SINGLE_GC[_ALLOC]` plan-space fields
+(`num_regions_freed_in_sweep`, `end_gen0_region_space`, `end_gen0_region_committed_space`,
+`gen0_pinned_free_space`, `gen0_large_chunk_found`, `sufficient_gen0_space_p`) are now instance-owned
+in the `MULTIPLE_HEAPS` build (static in WKS) so each heap decides on its own portion, and the
+`num_heaps` divisor in the high-memory reclaim thresholds is `n_heaps`, not `1`. The deciders reuse the
+generation-size, hard-limit, sufficient-space, end-space, and fragmentation-threshold leaves already
+translated for server in `ManagedServerGCCondemn.cs` (`generation_size`, `sufficient_space_regions`,
+`check_against_hard_limit`, `END_SPACE_AFTER_GC_FL`, `min_high_fragmentation_threshold`,
+`min_reclaim_fragmentation_threshold`, `get_gc_data_per_heap`), and record their compaction mechanism
+through `get_gc_data_per_heap(hp)->set_mechanism`. The `STRESS_HEAP` compaction force, the
+`!USE_REGIONS` ephemeral/low-ephemeral-space paths, and the `!USE_REGIONS` `last_gc_before_oom` reset
+are excluded exactly as for the active configuration. No collection is routed: the plug/region planning
+loop that fills in the plan-allocated bounds these deciders read, the `gc_join_decide_on_compaction`
+cross-heap join that consumes their result, and the relocate/compact/sweep execution that follows all
+remain deferred. Focused Foundation tests pin the decider method surface and the
+`decide_on_compacting` (`gc_heap*`, int, nuint, ref bool) / `decide_on_compaction_space` /
+`is_full_compacting_gc_productive` / `generation_fragmentation` / `pinned_plug_of` / `pinned_len`
+signatures, resolve the closed-leaf call tokens each decider makes, and verify the six plan-space
+fields are instance-owned in the server build.
+
+Production blockers remain in the per-heap plug/region planning loop (`should_sweep_in_plan`,
+`sweep_region_in_plan`, `process_last_np_surv_region`, `process_remaining_regions`, `plan_loh`,
+`fix_generation_bounds`, brick/tree threading) that feeds these deciders, the
+`gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
+`gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, the server
+`relocate_phase` / `compact_phase` / `make_free_lists` execution, a server `init_records` to reset the
+per-heap plan-space and `special_sweep_p` fields, BGC servo tuning, dynamic heap-count changes after
+startup, diagnostic `saved_changed_segs` publication, condemnation-driven collection routing, the
+server background collector (thread lifecycle, concurrent mark/revisit, region sweep), and server
+parallel collection closure.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.

@@ -116,6 +116,7 @@ Ported so far:
 | `ManagedServerGCMark.cs` | Server post-mark cross-heap reconciliation (`sync_promoted_bytes`, `decide_on_promotion_surv`) for the `SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` chain from `mark_phase.cpp`; no collection is routed |
 | `ManagedServerGCMarkPhase.cs` | Server mark slice plus the blocking `mark_phase` driver from the SVR compilation of `mark_phase.cpp`/`interface.cpp`: per-heap mark storage init/cleanup, the object-walk and marking leaves, `gc_mark`/`m_boundary`/promoted-byte accounting, the mark queue push/drain/overflow path, the exact/interior/pinned `promote` (`GCHeap::Promote`) and `pin_object` callbacks, the per-heap root/finalizer/strong+pinned handle scan entry point, the `MULTIPLE_HEAPS` `scan_dependent_handles` join wiring, the full `mark_phase` join sequence (`gc_join_begin_mark_phase` through `gc_join_null_dead_syncblk`) with `fire_mark_event` / `save_current_survived` / `update_old_card_survived`, the cross-heap mark-list balancing (`target_mark_count_for_heap` / `equalize_mark_lists` / `sort_mark_list` / `append_to_mark_list`) plus promoted-byte balancing (`equalize_promoted_bytes` with the `set_heap_for_contained_basic_regions` / `unlink_first_rw_region` / `thread_rw_region_front` / `thread_start_region` region-threading helpers), and the `!full_p` cross-generation card scan (in `ManagedServerGCCardScan.cs`) wired into the driver; no collection is routed |
 | `ManagedServerGCCardScan.cs` | Server foreground cross-generation dirty-card scan (`mark_through_cards_for_segments`, `mark_through_cards_for_uoh_objects`, `scan_cards_for_segment`, `find_uoh_object_for_card`, `scan_card_reference`) from the SVR compilation of `mark_phase.cpp`/`background.cpp` for SOH/LOH/POH: each server worker scans its own heap's older-than-condemned regions, promotes cross-generation children through `mark_object_simple`, and clears cards that no longer point across generations. The non-stealing per-heap path is translated (`FEATURE_CARD_MARKING_STEALING` is not defined for this port); the `MH_SC_MARK` card-mark stealing distribution and the relocate variant belong to deferred subsystems |
+| `ManagedServerGCPlanPhase.cs` | Server plan-phase compaction-vs-sweep decision family from the SVR compilation of `plan_phase.cpp`: the per-heap plan-size / planned-fragmentation accounting (`generation_plan_size`, `generation_sizes`, `generation_fragmentation`, `approximate_new_allocation`, `get_gen0_end_plan_space`, and the pinned-plug-queue leaves `pinned_plug_of` / `pinned_len`) and the compaction-policy deciders (`decide_on_compaction_space`, `is_full_compacting_gc_productive`, the `ensure_gap_allocation` gate, and `decide_on_compacting`). Each function is `gc_heap`-parameterized; the `PER_HEAP_FIELD_SINGLE_GC[_ALLOC]` plan-space fields (`num_regions_freed_in_sweep`, `end_gen0_region_space`, `end_gen0_region_committed_space`, `gen0_pinned_free_space`, `gen0_large_chunk_found`, `sufficient_gen0_space_p`) are instance-owned in `GCPriv.cs` for the `MULTIPLE_HEAPS` build and the `num_heaps` divisor is `n_heaps`. The generation-size, hard-limit, sufficient-space, end-space, and fragmentation-threshold leaves are reused from `ManagedServerGCCondemn.cs`. The plug/region planning loop that feeds the deciders, the `gc_join_decide_on_compaction` join, and the relocate/compact/sweep execution remain deferred; no collection is routed |
 | `ManagedServerGCBackgroundState.cs` | Minimal faithful `SERVER_GC` background sweep/mark-state predicates the card scan consults (`should_check_bgc_mark`, `fgc_should_consider_object`, `background_object_marked`, `mark_array_clear_marked`) plus `current_c_gc_state` (`PER_HEAP_ISOLATED`, shared) from `background.cpp`; `current_sweep_pos` / `current_sweep_seg` are the matching `PER_HEAP_FIELD_SINGLE_GC` instance state in `GCPriv.cs`. The rest of the server background collector (thread lifecycle, concurrent mark/revisit, region sweep) remains deferred |
 | `ManagedGCHandleManager.cs` | `objecthandle.cpp`, `gchandletable.cpp` (single-table subset) |
 
@@ -247,6 +248,24 @@ report no background mark to consult, exactly as native when no background GC is
 `FEATURE_CARD_MARKING_STEALING` cross-heap card stealing remain deferred (so the `mark_phase`
 driver stays unrouted), as does routing `GarbageCollect`. No collection entry point is routed by
 this slice.
+
+The first server plan-phase slice is the compaction-vs-sweep decision family
+(`ManagedServerGCPlanPhase.cs`), the dependency-closed prefix of `gc_heap::plan_phase` a server
+worker runs on its own heap once its plug/region planning has produced plan-allocated bounds. It
+translates the per-heap plan-size / planned-fragmentation accounting (`generation_plan_size`,
+`generation_sizes`, `generation_fragmentation`, `approximate_new_allocation`,
+`get_gen0_end_plan_space`, plus the `pinned_plug_of` / `pinned_len` pinned-plug-queue leaves) and the
+compaction-policy deciders (`decide_on_compaction_space`, `is_full_compacting_gc_productive`, the
+`ensure_gap_allocation` gate, and `decide_on_compacting`), reusing the generation-size, hard-limit,
+sufficient-space, end-space, and fragmentation-threshold leaves already translated for server in
+`ManagedServerGCCondemn.cs`. The `PER_HEAP_FIELD_SINGLE_GC[_ALLOC]` plan-space fields
+(`num_regions_freed_in_sweep`, `end_gen0_region_space`, `end_gen0_region_committed_space`,
+`gen0_pinned_free_space`, `gen0_large_chunk_found`, `sufficient_gen0_space_p`) are now instance-owned
+in the `MULTIPLE_HEAPS` build (static in WKS) so each heap decides on its own portion, and the
+`num_heaps` divisor in the high-memory reclaim thresholds is `n_heaps`. The plug/region planning loop
+that fills in the plan-allocated bounds these deciders read, the `gc_join_decide_on_compaction`
+cross-heap join, a server `init_records` to reset the per-heap plan-space and `special_sweep_p`
+fields, and the relocate/compact/sweep execution remain deferred; no collection is routed.
 
 `gcinterface.dac.h` is translated, including the `dac_generation` and `dac_gc_heap` views
 generated from `dac_generation_fields.h` and `dac_gcheap_fields.h`. Pointer-sized arrays use

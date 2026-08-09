@@ -1331,11 +1331,22 @@ namespace Internal.Runtime.GarbageCollection
         public byte* current_sweep_pos;
         public heap_segment* current_sweep_seg;
 #endif
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC[_ALLOC] plan-space accounting consumed by the plan
+        // phase's compaction-vs-sweep decision. These are static in WKS and instance-owned in the
+        // MULTIPLE_HEAPS build so each server heap decides on its own portion during the plan phase.
+#if MULTIPLE_HEAPS
+        public int num_regions_freed_in_sweep;
+        public nuint end_gen0_region_space;
+        public nuint end_gen0_region_committed_space;
+        public nuint gen0_pinned_free_space;
+        public bool gen0_large_chunk_found;
+#else
         public static int num_regions_freed_in_sweep;
         public static nuint end_gen0_region_space;
         public static nuint end_gen0_region_committed_space;
         public static nuint gen0_pinned_free_space;
         public static bool gen0_large_chunk_found;
+#endif
         public static reserved_region_array reserved_free_regions_sip;
         public static generation_region_count_array regions_per_gen;
         public static generation_region_count_array planned_regions_per_gen;
@@ -1387,7 +1398,13 @@ namespace Internal.Runtime.GarbageCollection
 #if BACKGROUND_GC
         public static heap_segment* freeable_soh_segment;
 #endif
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC sufficient_gen0_space_p: instance-owned per server heap
+        // (static in WKS) so decide_on_compaction_space records each heap's own result.
+#if MULTIPLE_HEAPS
+        public int sufficient_gen0_space_p;
+#else
         public static int sufficient_gen0_space_p;
+#endif
         public static int conserve_mem_setting;
         public static int loh_compaction_always_p;
         public static gc_loh_compaction_mode loh_compaction_mode;

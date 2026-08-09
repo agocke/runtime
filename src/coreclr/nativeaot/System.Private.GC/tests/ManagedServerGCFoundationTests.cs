@@ -991,6 +991,169 @@ public static class ManagedServerGCFoundationTests
             (nuint)method.Invoke(null, new object[] { total, count, number })!;
     }
 
+    [Fact]
+    public static void ServerPlanCompactionDecisionSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type gen = GetType("Internal.Runtime.GarbageCollection.generation");
+        Type mark = GetType("Internal.Runtime.GarbageCollection.mark");
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // The plan-phase compaction-vs-sweep decision leaves and the plan-size / pinned-plug helpers
+        // they consume are all present in the server build.
+        foreach (string method in new[]
+        {
+            "generation_plan_size",
+            "generation_sizes",
+            "generation_fragmentation",
+            "approximate_new_allocation",
+            "get_gen0_end_plan_space",
+            "decide_on_compaction_space",
+            "is_full_compacting_gc_productive",
+            "ensure_gap_allocation",
+            "decide_on_compacting",
+            "pinned_plug_of",
+            "pinned_len",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == method);
+        }
+
+        // decide_on_compacting (gc_heap*, int, nuint, ref bool) -> bool, exactly as
+        // BOOL gc_heap::decide_on_compacting (int condemned_gen_number, size_t fragmentation,
+        // BOOL& should_expand).
+        MethodInfo decide = heap.GetMethod(
+            "decide_on_compacting",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(bool), decide.ReturnType);
+        ParameterInfo[] decideParams = decide.GetParameters();
+        Assert.Equal(4, decideParams.Length);
+        Assert.Equal(heap.MakePointerType(), decideParams[0].ParameterType);
+        Assert.Equal(typeof(int), decideParams[1].ParameterType);
+        Assert.Equal(typeof(nuint), decideParams[2].ParameterType);
+        Assert.True(decideParams[3].ParameterType.IsByRef);
+        Assert.Equal(typeof(bool), decideParams[3].ParameterType.GetElementType());
+
+        // decide_on_compaction_space (gc_heap*) -> bool and is_full_compacting_gc_productive
+        // (gc_heap*) -> bool.
+        MethodInfo space = heap.GetMethod(
+            "decide_on_compaction_space",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(bool), space.ReturnType);
+        Assert.Single(space.GetParameters());
+        Assert.Equal(heap.MakePointerType(), space.GetParameters()[0].ParameterType);
+
+        MethodInfo productive = heap.GetMethod(
+            "is_full_compacting_gc_productive",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(bool), productive.ReturnType);
+        Assert.Single(productive.GetParameters());
+
+        // generation_fragmentation (gc_heap*, generation*, generation*, byte*) -> nuint.
+        MethodInfo frag = heap.GetMethod(
+            "generation_fragmentation",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(nuint), frag.ReturnType);
+        ParameterInfo[] fragParams = frag.GetParameters();
+        Assert.Equal(4, fragParams.Length);
+        Assert.Equal(heap.MakePointerType(), fragParams[0].ParameterType);
+        Assert.Equal(gen.MakePointerType(), fragParams[1].ParameterType);
+        Assert.Equal(gen.MakePointerType(), fragParams[2].ParameterType);
+        Assert.Equal(typeof(byte).MakePointerType(), fragParams[3].ParameterType);
+
+        // pinned_plug_of (gc_heap*, nuint) -> mark* and pinned_len (mark*) -> ref nuint.
+        MethodInfo plugOf = heap.GetMethod(
+            "pinned_plug_of",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(mark.MakePointerType(), plugOf.ReturnType);
+        Assert.Equal(heap.MakePointerType(), plugOf.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(nuint), plugOf.GetParameters()[1].ParameterType);
+
+        MethodInfo len = heap.GetMethod(
+            "pinned_len",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.True(len.ReturnType.IsByRef);
+        Assert.Equal(typeof(nuint), len.ReturnType.GetElementType());
+        Assert.Equal(mark.MakePointerType(), len.GetParameters()[0].ParameterType);
+    }
+
+    [Fact]
+    public static void ServerDecideOnCompactingCallsClosedLeaves()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo decide = heap.GetMethod(
+            "decide_on_compacting",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        // decide_on_compacting weighs the planned fragmentation against the compaction-space and
+        // productivity deciders, the high-memory reclaim thresholds, and the gap-allocation gate,
+        // recording its compaction reason through the per-heap gc_data_per_heap.
+        (string[] names, _) = CollectCallTargets(decide, "decide_on_compaction_space");
+        foreach (string expected in new[]
+        {
+            "generation_sizes",
+            "decide_on_compaction_space",
+            "is_full_compacting_gc_productive",
+            "ensure_gap_allocation",
+            "generation_size",
+            "generation_plan_size",
+            "min_high_fragmentation_threshold",
+            "min_reclaim_fragmentation_threshold",
+            "get_gc_data_per_heap",
+            "set_mechanism",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        // decide_on_compaction_space consults the new-allocation estimate, the sufficient-space
+        // predicate, the plan-space accumulator, and the basic free-region count.
+        MethodInfo space = heap.GetMethod(
+            "decide_on_compaction_space",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] spaceNames, _) = CollectCallTargets(space, "sufficient_space_regions");
+        foreach (string expected in new[]
+        {
+            "approximate_new_allocation",
+            "sufficient_space_regions",
+            "get_gen0_end_plan_space",
+            "get_num_free_regions",
+        })
+        {
+            Assert.Contains(expected, spaceNames);
+        }
+    }
+
+    [Fact]
+    public static void ServerPlanSpaceFieldsAreInstanceOwned()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC[_ALLOC] plan-space accounting is instance-owned in the
+        // MULTIPLE_HEAPS build so each server heap decides on its own portion during the plan phase.
+        foreach (string field in new[]
+        {
+            "num_regions_freed_in_sweep",
+            "end_gen0_region_space",
+            "end_gen0_region_committed_space",
+            "gen0_pinned_free_space",
+            "gen0_large_chunk_found",
+            "sufficient_gen0_space_p",
+        })
+        {
+            FieldInfo info = heap.GetField(
+                field,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.NotNull(info);
+            Assert.False(info.IsStatic);
+
+            Assert.Null(heap.GetField(
+                field,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+    }
+
     // Walk a method body collecting the simple names of its call/callvirt/newobj targets, and count
     // how many of them have a given name (used to count gc_t_join.join sites). Tokens are resolved
     // through the module so stray operand bytes that look like call opcodes are discarded.
