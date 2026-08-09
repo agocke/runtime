@@ -1963,6 +1963,25 @@ The `plan_phase` driver's `should_compact` branch is wired to run `relocate_phas
 `gcmemcopy` / `recover_saved_pinned_info (gc_heap*)` signatures, resolve their call tokens, and assert
 `compact_phase` does **not** call `relocate_phase` / `relocate_survivors` / `make_free_lists`.
 
+The server SOH mark-and-sweep execution (`ManagedServerGCSweep.cs`) now closes the sweep counterpart:
+the SVR compilation of `gc_heap::make_free_lists` (`sweep.cpp`) and its `make_free_list_in_brick`
+brick-tree walk — the method each server worker runs on its own heap when the plan phase decides to
+sweep rather than compact. `make_free_lists` walks each condemned generation's regions in address
+order, threading each brick's plug tree's inter-plug gaps onto their planned free lists (through the
+already-translated `thread_gap`), clearing the `SHORT_PLUGS` pad bit and the `DOUBLY_LINKED_FL`
+bgc-mark / free-obj-in-compact bits, fixing each brick entry to the highest processed plug (or `-1`),
+then re-threading the final region layout (`thread_final_regions(false)`) and resetting this heap's
+`ephemeral_heap_segment` / `alloc_allocated`. `special_sweep_p` (`PER_HEAP_FIELD_SINGLE_GC`) is reached
+through `hp->special_sweep_p`; `brick_table` stays process-wide, so `make_free_list_in_brick` stays
+static. The `plan_phase` driver's sweep branch is wired to run `make_free_lists` →
+`recover_saved_pinned_info` (deducting the recovered sweep size from gen2's `generation_free_obj_space`)
+→ `end_gen0_region_committed_space = get_gen0_end_space(memory_type_committed)` → the
+`gc_join_adjust_handle_age_sweep` join (running `GcPromotionsGranted` + `verify_region_to_generation_map`
+when `!special_sweep_p`) → `UpdatePromotedGenerations` / `clear_gen1_cards` when `!special_sweep_p`,
+completing the plan → relocate → compact/sweep execution closure. Focused Foundation tests pin the
+`make_free_lists (gc_heap*, int)` / `make_free_list_in_brick (byte*, make_free_args*)` signatures and
+the sweep-family call tokens, and confirm the plan_phase driver now calls the sweep tail.
+
 Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
 per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
 and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself — which now has both
@@ -1972,11 +1991,10 @@ and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself 
 `sweep_uoh_objects` fallback for the non-compacting LOH and for POH; and the call to the
 now-translated `fix_generation_bounds` region-threading family), the
 `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
-`gc_join_adjust_handle_age_sweep` plan-phase joins, and — now that the server `relocate_phase` and
-`compact_phase` execution is translated (the compact branch wired but the `plan_phase` driver still
-unrouted) — the routing of a collection entrypoint onto `plan_phase` plus the still-deferred server
-sweep branch `make_free_lists` execution (and its `gc_join_adjust_handle_age_sweep` /
-`recover_saved_pinned_info` / `GcPromotionsGranted` tail), BGC servo
+`gc_join_adjust_handle_age_sweep` plan-phase joins — all now translated and wired into the `plan_phase`
+driver's compact and sweep branches — so the remaining work is the **routing of a collection entrypoint
+onto `plan_phase`** (the `garbage_collect` → `gc1` → `plan_phase` closure, with the plan-phase
+`gc_join`s driving every worker), plus BGC servo
 tuning, dynamic heap-count changes after startup, diagnostic `saved_changed_segs` publication,
 condemnation-driven collection routing, the server background collector (thread lifecycle, concurrent
 mark/revisit, region sweep), and server parallel collection closure.

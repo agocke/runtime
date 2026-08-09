@@ -2740,21 +2740,13 @@ public static class ManagedServerGCFoundationTests
             "GcDemote",
             "thread_pinned_plug_gaps",
             "clear_gen1_cards",
+            // Sweep-branch execution wired in this slice.
+            "make_free_lists",
+            "recover_saved_pinned_info",
+            "verify_region_to_generation_map",
         })
         {
             Assert.Contains(expected, names);
-        }
-
-        // The compact branch is wired, but the sweep branch (make_free_lists) and its
-        // recover_saved_pinned_info tail remain deferred; plan_phase does not call them directly
-        // (recover_saved_pinned_info is only reached from inside compact_phase / the sweep branch).
-        foreach (string deferred in new[]
-        {
-            "make_free_lists",
-            "recover_saved_pinned_info",
-        })
-        {
-            Assert.DoesNotContain(deferred, names);
         }
     }
 
@@ -2803,6 +2795,109 @@ public static class ManagedServerGCFoundationTests
             Assert.NotNull(method);
             (string[] names, _) = CollectCallTargets(method, leaf);
             Assert.Empty(names);
+        }
+    }
+
+    [Fact]
+    public static void ServerMakeFreeListsHasNativeSignature()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // void gc_heap::make_free_lists (int condemned_gen_number), translated as a per-heap static
+        // taking the owning heap explicitly: make_free_lists (gc_heap*, int).
+        MethodInfo makeFree = heap.GetMethod(
+            "make_free_lists",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), makeFree.ReturnType);
+        ParameterInfo[] makeFreeParams = makeFree.GetParameters();
+        Assert.Equal(2, makeFreeParams.Length);
+        Assert.Equal(heap.MakePointerType(), makeFreeParams[0].ParameterType);
+        Assert.Equal(typeof(int), makeFreeParams[1].ParameterType);
+
+        // void gc_heap::make_free_list_in_brick (uint8_t* tree, make_free_args* args): the brick-tree
+        // walk it drives touches no per-heap state, so it stays static (tree, args).
+        Type makeFreeArgs = GetType("Internal.Runtime.GarbageCollection.gc_heap+make_free_args");
+        MethodInfo brick = heap.GetMethod(
+            "make_free_list_in_brick",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), brick.ReturnType);
+        ParameterInfo[] brickParams = brick.GetParameters();
+        Assert.Equal(2, brickParams.Length);
+        Assert.Equal(typeof(byte).MakePointerType(), brickParams[0].ParameterType);
+        Assert.Equal(makeFreeArgs.MakePointerType(), brickParams[1].ParameterType);
+
+        // special_sweep_p is PER_HEAP_FIELD_SINGLE_GC, so make_free_lists reaches it as an instance
+        // field on the server heap; ephemeral_heap_segment / alloc_allocated are per-heap too.
+        FieldInfo specialSweep = heap.GetField(
+            "special_sweep_p",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.NotNull(specialSweep);
+        Assert.Equal(typeof(bool), specialSweep.FieldType);
+        Assert.Null(heap.GetField(
+            "special_sweep_p",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        foreach (string perHeap in new[] { "ephemeral_heap_segment", "alloc_allocated" })
+        {
+            Assert.NotNull(heap.GetField(
+                perHeap,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        }
+    }
+
+    [Fact]
+    public static void ServerMakeFreeListsSequencesTranslatedHelpers()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo makeFree = heap.GetMethod(
+            "make_free_lists",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        // make_free_lists walks each condemned generation's regions, fixing brick entries and
+        // threading each brick's plug tree, then re-threads the final region layout and resets the
+        // ephemeral segment. It reuses the closed leaves below.
+        (string[] names, _) = CollectCallTargets(makeFree, "make_free_list_in_brick");
+        foreach (string expected in new[]
+        {
+            "get_stop_generation_index",
+            "generation_of",
+            "get_start_segment",
+            "get_soh_start_object",
+            "brick_of",
+            "get_plan_gen_num",
+            "make_free_list_in_brick",
+            "brick_address",
+            "set_brick",
+            "heap_segment_next_non_sip",
+            "check_seg_gen_num",
+            "thread_final_regions",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        // make_free_list_in_brick threads each inter-plug gap onto its planned free list and clears
+        // the plug's pad / DOUBLY_LINKED_FL bits; it does not allocate or relocate.
+        MethodInfo brick = heap.GetMethod(
+            "make_free_list_in_brick",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] brickNames, _) = CollectCallTargets(brick, "thread_gap");
+        foreach (string expected in new[]
+        {
+            "node_left_child",
+            "node_right_child",
+            "node_gap_size",
+            "is_plug_padded",
+            "clear_plug_padded",
+            "is_plug_bgc_mark_bit_set",
+            "clear_plug_bgc_mark_bit",
+            "is_free_obj_in_compact_bit_set",
+            "clear_free_obj_in_compact_bit",
+            "thread_gap",
+            "make_free_list_in_brick",
+        })
+        {
+            Assert.Contains(expected, brickNames);
         }
     }
 

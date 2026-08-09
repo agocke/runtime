@@ -31,15 +31,17 @@
 // FEATURE_EVENT_TRACE timing are excluded exactly as for the active configuration / deferred
 // subsystems.
 //
-// The driver now runs the full compact-branch execution (relocate_phase -> compact_phase ->
+// The driver now runs both the full compact-branch execution (relocate_phase -> compact_phase ->
 // fix_generation_bounds -> the gc_join_adjust_handle_age_compact join -> UpdatePromotedGenerations /
-// GcPromotionsGranted / GcDemote -> the pinned-gap threading -> clear_gen1_cards), but it is still not
-// routed by any collection entry point, so nothing runs against a live heap yet. The sweep branch
-// (make_free_lists / recover_saved_pinned_info and the gc_join_adjust_handle_age_sweep join) remains
-// deferred; gc_join_rearrange_segs_compaction is #ifndef USE_REGIONS and so does not exist in this
-// configuration, and the FEATURE_EVENT_TRACE timing / _DEBUG verify_committed_bytes / EE diagnostic
-// survivor walks in the compact tail are omitted with the deferred server event / heap-verify
-// integration.
+// GcPromotionsGranted / GcDemote -> the pinned-gap threading -> clear_gen1_cards) and the full
+// sweep-branch execution (make_free_lists (ManagedServerGCSweep.cs) -> recover_saved_pinned_info with
+// the gen2 free-object deduction -> end_gen0_region_committed_space -> the gc_join_adjust_handle_age_sweep
+// join running GcPromotionsGranted / verify_region_to_generation_map when !special_sweep_p ->
+// UpdatePromotedGenerations / clear_gen1_cards when !special_sweep_p), but it is still not routed by any
+// collection entry point, so nothing runs against a live heap yet. gc_join_rearrange_segs_compaction is
+// #ifndef USE_REGIONS and so does not exist in this configuration, and the FEATURE_EVENT_TRACE timing /
+// _DEBUG verify_committed_bytes / EE diagnostic survivor walks in the compact and sweep tails are
+// omitted with the deferred server event / heap-verify integration.
 
 #if SERVER_GC && MULTIPLE_HEAPS && USE_REGIONS
 
@@ -996,9 +998,58 @@ internal unsafe partial struct gc_heap
                 fix_older_allocation_area(hp, older_gen);
             }
 
-            // Mark-and-sweep execution (make_free_lists, recover_saved_pinned_info, the
-            // gc_join_adjust_handle_age_sweep join, GcPromotionsGranted, and clear_gen1_cards) is
-            // deferred; the sweep-branch state restoration above is complete to this boundary.
+            // GCToEEInterface::DiagWalkSurvivors is a diagnostic EE survivor walk deferred with the
+            // rest of the server event / EE diagnostic integration.
+
+            make_free_lists(hp, condemned_gen_number);
+            nuint total_recovered_sweep_size = recover_saved_pinned_info(hp);
+            if (total_recovered_sweep_size > 0)
+            {
+                generation* max_gen = generation_of(
+                    generation_table, (int)gc_generation_num.max_generation);
+                generation.generation_free_obj_space(max_gen) = unchecked(
+                    generation.generation_free_obj_space(max_gen) - total_recovered_sweep_size);
+            }
+
+            hp->end_gen0_region_committed_space =
+                get_gen0_end_space(hp, memory_type.memory_type_committed);
+
+            ScanContext sc = default;
+            sc.thread_number = hp->heap_number;
+            sc.thread_count = n_heaps;
+            sc.promotion = 0;
+            sc.concurrent = 0;
+
+            gc_t_join.join(hp, (int)gc_join_stage.gc_join_adjust_handle_age_sweep);
+            if (gc_t_join.joined())
+            {
+                // FEATURE_EVENT_TRACE gc_time_info[time_sweep] timing is deferred with the server
+                // event integration; the join still synchronizes every worker before promotions are
+                // granted.
+                if (!hp->special_sweep_p)
+                {
+                    GCScan.GcPromotionsGranted(
+                        condemned_gen_number,
+                        GCInterfaceOffsets.max_generation,
+                        &sc);
+                }
+
+                verify_region_to_generation_map();
+
+                gc_t_join.restart();
+            }
+
+            if (!hp->special_sweep_p)
+            {
+                hp->server_finalize_queue->UpdatePromotedGenerations(
+                    condemned_gen_number,
+                    1);
+            }
+
+            if (!hp->special_sweep_p)
+            {
+                clear_gen1_cards(hp);
+            }
         }
     }
 }
