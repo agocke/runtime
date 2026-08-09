@@ -1246,12 +1246,23 @@ namespace Internal.Runtime.GarbageCollection
 #endif
 
         // WKS makes this collector state static. It remains separate from the allocation-owned
-        // instance prefix until the complete native gc_heap layout is translated.
+        // instance prefix until the complete native gc_heap layout is translated. In the
+        // MULTIPLE_HEAPS build the gcpriv.h PER_HEAP_FIELD_SINGLE_GC mark-queue/pinned-stack
+        // cursors and the PER_HEAP_FIELD_DIAG_ONLY num_pinned_objects are instance-owned so each
+        // server heap marks its own portion of the roots and cards.
+#if MULTIPLE_HEAPS
+        public nuint mark_stack_tos;
+        public nuint mark_stack_bos;
+        public byte* oldest_pinned_plug;
+        public nuint num_pinned_objects;
+        public mark_queue_t mark_queue;
+#else
         public static nuint mark_stack_tos;
         public static nuint mark_stack_bos;
         public static byte* oldest_pinned_plug;
         public static nuint num_pinned_objects;
         public static mark_queue_t mark_queue;
+#endif
         public static CFinalize* finalize_queue;
 #if USE_REGIONS
         public static nuint region_count;
@@ -1268,13 +1279,30 @@ namespace Internal.Runtime.GarbageCollection
         public static byte*** g_mark_list_piece;
         public static nuint g_mark_list_piece_size;
         public static nuint g_mark_list_piece_total_size;
-#endif
         public static byte** mark_list;
         public static byte** mark_list_end;
         public static byte** mark_list_index;
-#if !MULTIPLE_HEAPS
         public static byte* shigh;
         public static byte* slow;
+#else
+        // gcpriv.h PER_HEAP_ISOLATED shared mark-list backing: one block partitioned across the
+        // heaps. sort_mark_list / merge_mark_lists across heaps remain deferred, so each heap
+        // marks into its own g_mark_list partition.
+        public static byte** g_mark_list;
+        public static byte** g_mark_list_copy;
+        public static nuint mark_list_size;
+        public static nuint g_mark_list_total_size;
+        public static bool mark_list_overflow;
+        public static byte*** g_mark_list_piece;
+        public static nuint g_mark_list_piece_size;
+        public static nuint g_mark_list_piece_total_size;
+        // gcpriv.h PER_HEAP find_object brick-clear flags, instance-owned in the server build.
+        public int gen0_bricks_cleared;
+        public int gen0_must_clear_bricks;
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC cursors into this heap's partition of g_mark_list.
+        public byte** mark_list;
+        public byte** mark_list_end;
+        public byte** mark_list_index;
 #endif
         // gcpriv.h PER_HEAP_FIELD_SINGLE_GC survived_per_region / old_card_survived_per_region /
         // total_promoted_bytes. These are static in WKS and per-heap in the MULTIPLE_HEAPS build so
@@ -1317,8 +1345,14 @@ namespace Internal.Runtime.GarbageCollection
             return ref reserved_free_regions_sip.element1;
         }
 #endif
+#if MULTIPLE_HEAPS
+        // gcpriv.h PER_HEAP_FIELD_MAINTAINED: each server heap owns its pinned/mark stack.
+        public nuint mark_stack_array_length;
+        public mark* mark_stack_array;
+#else
         public static nuint mark_stack_array_length;
         public static mark* mark_stack_array;
+#endif
         public const nuint LOH_PIN_QUEUE_LENGTH = 100;
         public const int LOH_PIN_DECAY = 10;
         public static nuint loh_pinned_queue_tos;
@@ -1326,8 +1360,14 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint loh_pinned_queue_length;
         public static int loh_pinned_queue_decay;
         public static mark* loh_pinned_queue;
+#if MULTIPLE_HEAPS
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC mark-overflow range, owned per server heap.
+        public byte* min_overflow_address;
+        public byte* max_overflow_address;
+#else
         public static byte* min_overflow_address;
         public static byte* max_overflow_address;
+#endif
         public static nuint alloc_contexts_used;
         public static heap_segment* freeable_uoh_segment;
 #if BACKGROUND_GC

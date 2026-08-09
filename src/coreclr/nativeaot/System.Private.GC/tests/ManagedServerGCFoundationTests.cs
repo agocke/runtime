@@ -440,6 +440,240 @@ public static class ManagedServerGCFoundationTests
         }
     }
 
+    [Fact]
+    public static void ServerMarkEngineSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        foreach (string method in new[]
+        {
+            // Object-walk and marking leaves.
+            "method_table",
+            "contain_pointers",
+            "contain_pointers_or_collectible",
+            "go_through_object",
+            "go_through_object_nostart",
+            "gc_mark",
+            "gc_mark1",
+            "m_boundary",
+            "m_boundary_fullgc",
+            "add_to_promoted_bytes",
+            "get_promoted_bytes",
+            "record_mark_stack_overflow",
+            "is_in_gc_range",
+            "is_in_condemned_gc",
+            "is_in_heap_range",
+            "is_in_find_object_range",
+            "heap_of",
+            "heap_of_gc",
+            "find_object",
+            // Per-heap mark storage init/cleanup.
+            "make_mark_list",
+            "initialize_shared_mark_list",
+            "destroy_shared_mark_list",
+            "make_mark_stack",
+            "initialize_mark_stack",
+            "reset_mark_stack",
+            "reset_pinned_queue",
+            "initialize_mark_phase_state",
+            "setup_mark_state_for_collection",
+            "free_server_mark_storage",
+            "get_total_heap_size",
+            // Mark queue push/drain/overflow.
+            "mark_object_simple",
+            "mark_object_simple1",
+            "mark_object",
+            "mark_through_object",
+            "drain_mark_queue",
+            "process_mark_overflow",
+            "process_mark_overflow_internal",
+            // Promotion callbacks and root/finalizer/handle scan entry points.
+            "promote",
+            "pin_object",
+            "mark_phase_scan_roots",
+            // Server join boundary wiring.
+            "scan_dependent_handles",
+        })
+        {
+            Assert.Contains(
+                heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static),
+                m => m.Name == method);
+        }
+    }
+
+    [Fact]
+    public static void PromoteMatchesNativeCallbackSignature()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type scanContext = GetType("Internal.Runtime.GarbageCollection.ScanContext");
+
+        MethodInfo promote = heap.GetMethod(
+            "promote",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        // GCHeap::Promote is passed to GcScanRoots/GcScanHandles as (byte**, ScanContext*, uint).
+        Assert.Equal(typeof(void), promote.ReturnType);
+        ParameterInfo[] parameters = promote.GetParameters();
+        Assert.Equal(3, parameters.Length);
+        Assert.True(parameters[0].ParameterType.IsPointer);
+        Assert.Equal(scanContext.MakePointerType(), parameters[1].ParameterType);
+        Assert.Equal(typeof(uint), parameters[2].ParameterType);
+    }
+
+    [Fact]
+    public static void PerHeapMarkStateIsInstanceOwned()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC / MAINTAINED / DIAG_ONLY mark state is instance-owned
+        // in the MULTIPLE_HEAPS build so each server heap marks its own portion.
+        foreach (string fieldName in new[]
+        {
+            "mark_queue",
+            "mark_stack_tos",
+            "mark_stack_bos",
+            "oldest_pinned_plug",
+            "num_pinned_objects",
+            "mark_stack_array",
+            "mark_stack_array_length",
+            "mark_list",
+            "mark_list_index",
+            "mark_list_end",
+            "min_overflow_address",
+            "max_overflow_address",
+            "gen0_bricks_cleared",
+            "gen0_must_clear_bricks",
+        })
+        {
+            FieldInfo field = heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.NotNull(field);
+            Assert.False(field.IsStatic);
+        }
+
+        // The mark-list backing is PER_HEAP_ISOLATED (shared across heaps), so it stays static.
+        foreach (string fieldName in new[]
+        {
+            "g_mark_list",
+            "g_mark_list_copy",
+            "mark_list_size",
+            "g_mark_list_total_size",
+        })
+        {
+            FieldInfo field = heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+            Assert.NotNull(field);
+            Assert.True(field.IsStatic);
+        }
+    }
+
+    [Fact]
+    public static void ServerJoinWiringSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // The gcinternal.h dependent-handle synchronization latches are GC-global statics.
+        foreach (string fieldName in new[]
+        {
+            "s_fUnpromotedHandles",
+            "s_fUnscannedPromotions",
+            "s_fScanRequired",
+        })
+        {
+            FieldInfo field = heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+            Assert.NotNull(field);
+            Assert.True(field.IsStatic);
+        }
+
+        Type scanContext = GetType("Internal.Runtime.GarbageCollection.ScanContext");
+        MethodInfo scan = heap.GetMethod(
+            "scan_dependent_handles",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        ParameterInfo[] parameters = scan.GetParameters();
+        Assert.Equal(4, parameters.Length);
+        Assert.Equal(heap.MakePointerType(), parameters[0].ParameterType);
+        Assert.Equal(typeof(int), parameters[1].ParameterType);
+        Assert.Equal(scanContext.MakePointerType(), parameters[2].ParameterType);
+        Assert.Equal(typeof(bool), parameters[3].ParameterType);
+    }
+
+    [Fact]
+    public static void MarkQueueMethodSurfaceIsPresent()
+    {
+        Type markQueue = GetType("Internal.Runtime.GarbageCollection.mark_queue_t");
+
+        Assert.NotNull(markQueue.GetMethod(
+            "initialize",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        Assert.NotNull(markQueue.GetMethod(
+            "get_next_marked",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        Assert.NotNull(markQueue.GetMethod(
+            "verify_empty",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+
+        MethodInfo[] queueMark = Array.FindAll(
+            markQueue.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance),
+            static m => m.Name == "queue_mark");
+        // The raw form and the (o, condemned_gen) range-checked form.
+        Assert.Equal(2, queueMark.Length);
+    }
+
+    [Fact]
+    public static unsafe void MarkQueueDefersMarkingAndMarksOnEviction()
+    {
+        // Behaviour test for the unmanaged 16-slot deferred-marking queue: an object pushed into a
+        // slot is only marked (and returned) when it is later evicted by a wrap-around push. This
+        // exercises the same queue_mark transition the server drain path relies on.
+        Type markQueue = GetType("Internal.Runtime.GarbageCollection.mark_queue_t");
+        object box = Activator.CreateInstance(markQueue)!;
+
+        MethodInfo queueMark = Array.Find(
+            markQueue.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance),
+            static m => m.Name == "queue_mark" && m.GetParameters().Length == 1)!;
+        Type bytePtrType = queueMark.GetParameters()[0].ParameterType;
+
+        // Two fake objects whose first pointer-sized word is the (unmarked) method-table slot.
+        nuint* obj1 = (nuint*)NativeMemory.AllocZeroed((nuint)sizeof(nuint));
+        nuint* obj2 = (nuint*)NativeMemory.AllocZeroed((nuint)sizeof(nuint));
+        try
+        {
+            *obj1 = 0x1000; // bit 0 clear == unmarked
+            *obj2 = 0x2000;
+
+            object? Push(void* p) =>
+                queueMark.Invoke(box, new[] { System.Reflection.Pointer.Box(p, bytePtrType) });
+
+            // First push evicts the empty slot 0 -> returns null.
+            Assert.True(IsNullPointer(Push(obj1)));
+
+            // Advance the ring back to slot 0 with 15 empty pushes.
+            for (int i = 0; i < 15; i++)
+            {
+                Assert.True(IsNullPointer(Push(null)));
+            }
+
+            // The 17th push at slot 0 evicts obj1, marks it, and returns it.
+            object? evicted = Push(obj2);
+            Assert.False(IsNullPointer(evicted));
+            Assert.Equal((nuint)obj1, (nuint)System.Reflection.Pointer.Unbox(evicted!));
+            Assert.Equal((nuint)0x1001, *obj1); // mark bit now set
+            Assert.Equal((nuint)0x2000, *obj2); // obj2 only queued, not yet marked
+        }
+        finally
+        {
+            NativeMemory.Free(obj1);
+            NativeMemory.Free(obj2);
+        }
+    }
+
+    private static unsafe bool IsNullPointer(object? boxedPointer) =>
+        boxedPointer is null || System.Reflection.Pointer.Unbox(boxedPointer) is null;
+
     private static Type GetType(string name) =>
         s_serverGC.GetType(name, throwOnError: true)!;
 

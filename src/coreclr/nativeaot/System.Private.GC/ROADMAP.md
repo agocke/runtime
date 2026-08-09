@@ -1567,26 +1567,41 @@ that consume these deciders remain deferred with collection routing, as does uni
 per-heap server free-region list with the shared region free-list path used by the
 `try_get_new_free_region` empty-region fallback.
 
-The server mark phase now has its first dependency-closed slice: the cross-heap post-mark
-reconciliation that runs in the joined region of `mark_phase` after every heap finishes promoting
-its roots and cards (`ManagedServerGCMark.cs`), plus the `gcinternal.h` `gc_join_stage` enum that
-names every parallel-phase join point. `sync_promoted_bytes` gathers each heap's per-region
-`survived_per_region` / `old_card_survived_per_region` totals into the owning region's
-`heap_segment` survived / old-card-survived fields (highest condemned generation down through
-`get_stop_generation_index`), and `decide_on_promotion_surv` scans each heap's
-`total_promoted_bytes` against the gen(n+1) demotion threshold. The `PER_HEAP_FIELD_SINGLE_GC`
-`survived_per_region`, `old_card_survived_per_region`, and `total_promoted_bytes` become
-instance-owned in the `MULTIPLE_HEAPS` build (static in WKS) so the cross-heap sums are correct.
-The `!MULTIPLE_HEAPS`, `TRACE_GC`, and `FEATURE_STRUCTALIGN` branches are excluded exactly as for
-the active configuration. Focused Foundation tests pin the `gc_join_stage` enum values, the two
-static reconciliation deciders and their signatures, and the instance ownership of the three
-per-heap counters. The per-heap marking, root/handle scanning, the `MULTIPLE_HEAPS`
-`scan_dependent_handles` join loop (`s_fUnscannedPromotions` / `s_fUnpromotedHandles` /
-`s_fScanRequired`, `gc_join_scan_dependent_handles` / `gc_join_rescan_dependent_handles`),
-`mark_steal`, `equalize_promoted_bytes` region rebalancing, `sort_mark_list` / `merge_mark_lists`,
-and the full `mark_phase` join sequence (`gc_join_begin_mark_phase` through
-`gc_join_null_dead_syncblk`) remain deferred with their mark-queue, `GCScan`, `process_mark_overflow`,
-and region-threading dependencies. No collection is routed by this slice.
+The server mark phase now has its first executable slice: a dependency-closed per-heap mark
+engine translated from the SVR compilation of `mark_phase.cpp` and `GCHeap::Promote`
+(`ManagedServerGCMarkPhase.cs`) that compiles and unit-tests without routing the overall
+collection. It provides per-heap mark storage initialization/cleanup (the `PER_HEAP_ISOLATED`
+`g_mark_list` backing via `initialize_shared_mark_list` / `destroy_shared_mark_list`, per-heap
+`initialize_mark_stack` / `make_mark_stack`, `initialize_mark_phase_state`,
+`setup_mark_state_for_collection`, and `free_server_mark_storage`, wired into server startup and
+teardown); the object-walk and marking leaves (`go_through_object` family, `gc_mark` / `gc_mark1`,
+the `MULTIPLE_HEAPS` `m_boundary` and empty `m_boundary_fullgc`, `add_to_promoted_bytes`, per-heap
+`get_promoted_bytes`, `record_mark_stack_overflow`); the exact/interior/pinned promotion callbacks
+(`promote` / `GCHeap::Promote` with `heap_of`, per-heap `find_object` / `clear_gen0_bricks`,
+`pin_object`, `mark_object`, `mark_through_object`); the mark queue push/drain/overflow path
+(`mark_queue_t` transitions, `mark_object_simple` / `mark_object_simple1` / `drain_mark_queue`,
+`process_mark_overflow` and the `n_heaps`-walking `process_mark_overflow_internal`); the per-heap
+root/finalizer/strong+pinned handle scan entry point (`mark_phase_scan_roots` calling
+`GcScanRoots`, the per-heap `server_finalize_queue->GcScanRoots`, and `GcScanHandles`); and the
+server join boundary wiring (`scan_dependent_handles` with the `s_fUnscannedPromotions` /
+`s_fUnpromotedHandles` / `s_fScanRequired` latches, the `gc_join_scan_dependent_handles` /
+`gc_join_rescan_dependent_handles` joins, and cross-heap overflow reconciliation). `GCScan.cs`,
+`HandleTableScan.cs`, and `GCBridge.cs` are shared into the server build behind feature guards by
+supplying the server `ManagedGCHeap.IsPromoted` / `GetPromotedBytesForHandleScan` /
+`ConcurrentCollectionInProgress` / `IsPromotedForBridge` / `DiagWalkObjectForBridge` members, so
+handle-table heap selection follows `sc->thread_number`. The `PER_HEAP_FIELD_SINGLE_GC` /
+`MAINTAINED` / `DIAG_ONLY` mark state becomes instance-owned in the `MULTIPLE_HEAPS` build while
+`gc_low`/`gc_high` stay `PER_HEAP_ISOLATED`. Focused Foundation tests pin the mark-engine method
+surface, the per-heap instance vs. shared-static field ownership, the `promote` and
+`scan_dependent_handles` signatures, the `mark_queue_t` method surface, and a behavior test of the
+16-slot deferred-marking queue's defer-then-mark-on-eviction transition. The cross-heap
+`sort_mark_list` / `merge_mark_lists` / `equalize_mark_lists`, `mark_steal`,
+`equalize_promoted_bytes` region rebalancing, and the full `mark_phase` join sequence
+(`gc_join_begin_mark_phase` through `gc_join_null_dead_syncblk`) that would route a collection
+remain deferred.
+
+The earlier cross-heap post-mark reconciliation that runs in the joined region of `mark_phase`
+after every heap finishes promoting its roots and cards (`ManagedServerGCMark.cs`) is unchanged.
 
 Production blockers remain in BGC servo tuning, dynamic heap-count changes after startup,
 diagnostic `saved_changed_segs` publication, condemnation-driven collection routing, and server

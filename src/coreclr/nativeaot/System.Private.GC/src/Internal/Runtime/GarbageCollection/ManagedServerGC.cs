@@ -59,6 +59,8 @@ internal struct ObjHeader
     private uint m_uSyncBlockValue;
 
     public uint GetBits() => m_uSyncBlockValue;
+    public void SetGCBit() =>
+        m_uSyncBlockValue |= BIT_SBLK_GC_RESERVE;
     public void SetFinalizerRun() =>
         m_uSyncBlockValue |= BIT_SBLK_FINALIZER_RUN;
     public void ClrFinalizerRun() =>
@@ -70,12 +72,33 @@ internal struct ObjHeader
 internal unsafe struct CObjectHeader
 {
     private const nuint SPECIAL_HEADER_BITS = 0x7;
+    public const nuint GC_MARKED = 0x1;
     private MethodTable* m_pEEType;
+
+    public MethodTable* RawGetMethodTable() => m_pEEType;
+
+    public void RawSetMethodTable(MethodTable* methodTable) => m_pEEType = methodTable;
 
     public MethodTable* GetMethodTable() =>
         (MethodTable*)((nuint)m_pEEType & ~SPECIAL_HEADER_BITS);
 
-    public int IsMarked() => ((nuint)m_pEEType & 1) != 0 ? 1 : 0;
+    public int IsMarked() => ((nuint)m_pEEType & GC_MARKED) != 0 ? 1 : 0;
+
+    public void SetMarked() =>
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | GC_MARKED));
+
+    public void ClearMarked() =>
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() & ~GC_MARKED));
+
+    public void SetPinned() => GetHeader()->SetGCBit();
+
+    public int IsPinned() =>
+        (GetHeader()->GetBits() & ObjHeader.BIT_SBLK_GC_RESERVE) != 0 ? 1 : 0;
+
+    public int ContainsGCPointers() => GetMethodTable()->ContainsGCPointers();
+
+    public int ContainsGCPointersOrCollectible() =>
+        GetMethodTable()->ContainsGCPointersOrCollectible();
 
     public int IsFree() =>
         GetMethodTable() ==
@@ -93,7 +116,7 @@ internal unsafe struct CObjectHeader
         *(uint*)((byte*)header + sizeof(nuint));
 }
 
-internal unsafe struct mark_queue_t
+internal unsafe partial struct mark_queue_t
 {
     [InlineArray(16)]
     internal struct slot_table_t
@@ -105,15 +128,6 @@ internal unsafe struct mark_queue_t
     public nuint curr_slot_index;
 }
 
-internal unsafe struct DhContext
-{
-    public byte m_fUnpromotedPrimaries;
-    public byte m_fPromoted;
-    public delegate*<byte**, ScanContext*, uint, void> m_pfnPromoteFunction;
-    public int m_iCondemned;
-    public int m_iMaxGen;
-    public ScanContext* m_pScanContext;
-}
 
 internal enum gc_dynamic_adaptation_mode
 {
@@ -758,13 +772,9 @@ internal unsafe partial struct gc_heap
 
     public static void initialize_mark_phase_state()
     {
-        mark_stack_tos = 0;
-        mark_stack_bos = 0;
-        oldest_pinned_plug = null;
-        num_pinned_objects = 0;
-        mark_queue = default;
-        min_overflow_address = (byte*)nuint.MaxValue;
-        max_overflow_address = null;
+        // The MULTIPLE_HEAPS mark-queue/pinned-stack/overflow state is gcpriv.h
+        // PER_HEAP_FIELD_SINGLE_GC, so it is reset per heap by the gc_heap* overload in
+        // ManagedServerGCMarkPhase.cs rather than through this shared static entry point.
     }
 
     public static void initialize_server_allocation_state(gc_heap* heap, int heapNumber)
@@ -816,6 +826,7 @@ internal unsafe partial struct gc_heap
         heap->generation_skip_ratio = 100;
         heap->last_gc_before_oom = 0;
         heap->gen_to_condemn_reasons = default;
+        initialize_mark_phase_state(heap);
     }
 
     private static void init_dynamic_data_for_server(gc_heap* heap)
@@ -1174,6 +1185,13 @@ internal static unsafe class ManagedGCRegionBootstrap
             return false;
         }
 
+        // Allocate the PER_HEAP_ISOLATED shared mark-list backing once for all heaps.
+        if (!gc_heap.initialize_shared_mark_list(heapCount))
+        {
+            Cleanup();
+            return false;
+        }
+
         for (int i = 0; i < heapCount; i++)
         {
             gc_heap* heap = (gc_heap*)SyncImports.ManagedGC_AllocZeroed(
@@ -1213,6 +1231,7 @@ internal static unsafe class ManagedGCRegionBootstrap
 
             heap->server_finalize_queue = CFinalize.Allocate();
             if (heap->server_finalize_queue is null ||
+                !gc_heap.initialize_mark_stack(heap) ||
                 !gc_heap.create_gc_thread(heap))
             {
                 Cleanup();
@@ -1300,6 +1319,7 @@ internal static unsafe class ManagedGCRegionBootstrap
                     continue;
                 }
                 CFinalize.Free(heap->server_finalize_queue);
+                gc_heap.free_server_mark_storage(heap);
                 if (heap->gc_done_event.IsValid())
                 {
                     heap->gc_done_event.CloseEvent();
@@ -1309,6 +1329,7 @@ internal static unsafe class ManagedGCRegionBootstrap
             SyncImports.ManagedGC_Free(gc_heap.g_heaps);
         }
 
+        gc_heap.destroy_shared_mark_list();
         gc_heap.g_heaps = null;
         gc_heap.n_heaps = 0;
         gc_heap.n_max_heaps = 0;
@@ -1590,6 +1611,67 @@ internal static unsafe class ManagedGCHeap
     }
 
     internal static int CurrentHomeHeapNumber => GetHomeHeapNumber(null);
+
+    // GCScan.cs / HandleTableScan.cs are shared into the server build; these supply the server
+    // forms of the WKS ManagedGCHeap members those files consume. Background collection is not
+    // routed for the server configuration, so the promoted check follows the blocking-GC path
+    // and no concurrent collection is ever in progress.
+    internal static bool IsPromoted(byte* obj) =>
+        !gc_heap.is_in_gc_range(obj) ||
+        !gc_heap.is_in_condemned_gc(obj) ||
+        ((CObjectHeader*)obj)->IsMarked() != 0;
+
+    internal static nuint GetPromotedBytesForHandleScan(int heap_index)
+    {
+        gc_heap* hp = gc_heap.g_heaps is null || (uint)heap_index >= (uint)gc_heap.n_heaps
+            ? null
+            : gc_heap.g_heaps[heap_index];
+        return hp is null ? 0 : gc_heap.get_promoted_bytes(hp);
+    }
+
+    internal static bool ConcurrentCollectionInProgress => false;
+
+    // GCBridge.cs (FEATURE_JAVAMARSHAL, defined globally for NativeAOT) is shared into the server
+    // build; these supply the server forms of the two ManagedGCHeap members it consumes.
+    internal static bool IsPromotedForBridge(byte* obj) => IsPromoted(obj);
+
+    private struct BridgeWalkContext
+    {
+        public delegate*<byte*, void*, byte> callback;
+        public void* context;
+    }
+
+    internal static void DiagWalkObjectForBridge(
+        byte* obj,
+        delegate*<byte*, void*, byte> callback,
+        void* context)
+    {
+        if (obj is null || gc_heap.contain_pointers(obj) == 0)
+        {
+            return;
+        }
+
+        BridgeWalkContext walkContext = new()
+        {
+            callback = callback,
+            context = context,
+        };
+        gc_heap.go_through_object_nostart(
+            gc_heap.method_table(obj),
+            obj,
+            gc_heap.size(obj),
+            &walkContext,
+            &BridgeWalkObjectReference);
+    }
+
+    private static void BridgeWalkObjectReference(byte** reference, void* context)
+    {
+        if (*reference is not null)
+        {
+            BridgeWalkContext* walkContext = (BridgeWalkContext*)context;
+            walkContext->callback(*reference, walkContext->context);
+        }
+    }
 
     private static nuint GetPromotedBytes(void* thisPtr, int heapIndex)
     {
