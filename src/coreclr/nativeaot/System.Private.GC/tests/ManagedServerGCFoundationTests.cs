@@ -671,6 +671,170 @@ public static class ManagedServerGCFoundationTests
         }
     }
 
+    [Fact]
+    public static void ServerMarkPhaseDriverSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // The blocking mark_phase driver plus the leaves it adds around the reused mark core.
+        foreach (string method in new[]
+        {
+            "mark_phase",
+            "fire_mark_event",
+            "save_current_survived",
+            "update_old_card_survived",
+        })
+        {
+            Assert.Contains(
+                heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static),
+                m => m.Name == method);
+        }
+
+        // mark_phase (gc_heap*, int) -> void, exactly as gc_heap::mark_phase (int condemned).
+        MethodInfo markPhase = heap.GetMethod(
+            "mark_phase",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), markPhase.ReturnType);
+        ParameterInfo[] parameters = markPhase.GetParameters();
+        Assert.Equal(2, parameters.Length);
+        Assert.Equal(heap.MakePointerType(), parameters[0].ParameterType);
+        Assert.Equal(typeof(int), parameters[1].ParameterType);
+
+        // mark_phase.cpp declares syncblock_scan_p as a function-static volatile int32.
+        FieldInfo syncblock = heap.GetField(
+            "syncblock_scan_p",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.NotNull(syncblock);
+        Assert.True(syncblock.IsStatic);
+        Assert.Equal(typeof(int), syncblock.FieldType);
+
+        FieldInfo finalizationPromoted = heap.GetField(
+            "finalization_promoted_bytes",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.False(finalizationPromoted.IsStatic);
+        Assert.Equal(typeof(nuint), finalizationPromoted.FieldType);
+    }
+
+    [Fact]
+    public static void ServerMarkPhaseDriverRunsFullJoinSequence()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo markPhase = heap.GetMethod(
+            "mark_phase",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        (string[] names, int joinCount) = CollectCallTargets(markPhase, "join");
+
+        // gc_join_begin_mark_phase, gc_join_scan_sizedref_done, gc_join_null_dead_short_weak,
+        // gc_join_scan_finalization, gc_join_null_dead_long_weak, gc_join_null_dead_syncblk.
+        Assert.Equal(6, joinCount);
+
+        foreach (string expected in new[]
+        {
+            // The join lifecycle.
+            "joined",
+            "restart",
+            // Range/mark-state setup in the joined begin_mark_phase region and per heap.
+            "get_used_region_count",
+            "grow_mark_list_piece",
+            "compute_gc_and_ephemeral_range",
+            "BeforeGcScanRoots",
+            "setup_mark_state_for_collection",
+            // Root, finalizer, and handle scans plus their drains and mark-event fires.
+            "GcScanSizedRefs",
+            "GcScanRoots",
+            "GcScanHandles",
+            "drain_mark_queue",
+            "fire_mark_event",
+            // The !full_p survivor bookkeeping that brackets the deferred card scan.
+            "save_current_survived",
+            "update_old_card_survived",
+            // Dependent handles, short/long weak, single-thread syncblk, finalization.
+            "GcDhInitialScan",
+            "scan_dependent_handles",
+            "AfterGcScanRoots",
+            "GcShortWeakPtrScan",
+            "ScanForFinalization",
+            "DiagWalkFReachableObjects",
+            "GcWeakPtrScan",
+            "GcWeakPtrScanBySingleThread",
+            // Cross-heap reconciliation and the promotion decision in the joined tail.
+            "sync_promoted_bytes",
+            "decide_on_promotion_surv",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerMarkPhaseDefersBalancingAndCardScan()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo[] methods =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // The cross-heap region/mark-list balancing and the server card scan remain deferred, so
+        // no method for them is ported yet and the driver cannot reference one.
+        foreach (string deferred in new[]
+        {
+            "equalize_promoted_bytes",
+            "sort_mark_list",
+            "merge_mark_lists",
+            "equalize_mark_lists",
+            "mark_steal",
+            "mark_through_cards_for_segments",
+            "mark_through_cards_for_uoh_objects",
+        })
+        {
+            Assert.DoesNotContain(methods, m => m.Name == deferred);
+        }
+    }
+
+    // Walk a method body collecting the simple names of its call/callvirt/newobj targets, and count
+    // how many of them have a given name (used to count gc_t_join.join sites). Tokens are resolved
+    // through the module so stray operand bytes that look like call opcodes are discarded.
+    private static (string[] Names, int NamedCount) CollectCallTargets(MethodInfo method, string countName)
+    {
+        byte[] il = method.GetMethodBody()!.GetILAsByteArray()!;
+        Module module = method.Module;
+        var names = new System.Collections.Generic.HashSet<string>();
+        int namedCount = 0;
+        for (int i = 0; i + 4 < il.Length; i++)
+        {
+            if (il[i] != 0x28 && il[i] != 0x6F && il[i] != 0x73)
+            {
+                continue;
+            }
+
+            int token = BitConverter.ToInt32(il, i + 1);
+            MethodBase resolved;
+            try
+            {
+                resolved = module.ResolveMethod(token);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (resolved is null)
+            {
+                continue;
+            }
+
+            names.Add(resolved.Name);
+            if (resolved.Name == countName)
+            {
+                namedCount++;
+            }
+        }
+
+        var array = new string[names.Count];
+        names.CopyTo(array);
+        return (array, namedCount);
+    }
+
     private static unsafe bool IsNullPointer(object? boxedPointer) =>
         boxedPointer is null || System.Reflection.Pointer.Unbox(boxedPointer) is null;
 

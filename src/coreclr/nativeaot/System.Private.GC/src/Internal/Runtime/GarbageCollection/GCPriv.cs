@@ -1382,7 +1382,11 @@ namespace Internal.Runtime.GarbageCollection
         public const int gc_type_blocking = 1;
         public static full_gc_count_array full_gc_counts;
         public static ulong loh_alloc_since_cg;
+#if MULTIPLE_HEAPS
+        public nuint finalization_promoted_bytes;
+#else
         public static nuint finalization_promoted_bytes;
+#endif
 #if !MULTIPLE_HEAPS
         public static gc_history_per_heap gc_data_per_heap;
 #if BACKGROUND_GC
@@ -1500,7 +1504,9 @@ namespace Internal.Runtime.GarbageCollection
             loh_compacted_p = 0;
             full_gc_counts = default;
             loh_alloc_since_cg = 0;
+#if !MULTIPLE_HEAPS
             finalization_promoted_bytes = 0;
+#endif
             last_ephemeral_gc_info = default;
             last_full_blocking_gc_info = default;
             suspended_start_time = 0;

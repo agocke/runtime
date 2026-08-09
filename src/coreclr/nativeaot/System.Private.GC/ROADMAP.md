@@ -1594,11 +1594,43 @@ handle-table heap selection follows `sc->thread_number`. The `PER_HEAP_FIELD_SIN
 `gc_low`/`gc_high` stay `PER_HEAP_ISOLATED`. Focused Foundation tests pin the mark-engine method
 surface, the per-heap instance vs. shared-static field ownership, the `promote` and
 `scan_dependent_handles` signatures, the `mark_queue_t` method surface, and a behavior test of the
-16-slot deferred-marking queue's defer-then-mark-on-eviction transition. The cross-heap
-`sort_mark_list` / `merge_mark_lists` / `equalize_mark_lists`, `mark_steal`,
-`equalize_promoted_bytes` region rebalancing, and the full `mark_phase` join sequence
-(`gc_join_begin_mark_phase` through `gc_join_null_dead_syncblk`) that would route a collection
-remain deferred.
+16-slot deferred-marking queue's defer-then-mark-on-eviction transition.
+
+The blocking server `mark_phase` driver now sits on top of that mark core (`mark_phase` in
+`ManagedServerGCMarkPhase.cs`), translated from the SVR compilation of `gc_heap::mark_phase`. Every
+server GC worker runs it on its own heap, and it drives the complete join sequence:
+`gc_join_begin_mark_phase` (joined region: `get_used_region_count` / `grow_mark_list_piece` /
+`compute_gc_and_ephemeral_range` / `BeforeGcScanRoots`, then `restart`), per-heap
+`setup_mark_state_for_collection`, the sized-ref scan with `gc_join_scan_sizedref_done`, the
+root / finalizer-queue / handle scans (inlined so `BeforeGcScanRoots` fires once in the joined
+region as in native) each with `drain_mark_queue` and the `fire_mark_event` GCMarkWithType tail,
+the `!full_p` survivor bookkeeping (`save_current_survived` / `update_old_card_survived`, both newly
+translated from `plan_phase.cpp`), the `GcDhInitialScan` plus `scan_dependent_handles` cycle,
+`gc_join_null_dead_short_weak` (joined `AfterGcScanRoots`), `GcShortWeakPtrScan`,
+`gc_join_scan_finalization`, `ScanForFinalization` / `DiagWalkFReachableObjects` and the second
+`scan_dependent_handles`, `gc_join_null_dead_long_weak` (joined `sync_promoted_bytes` and
+`syncblock_scan_p` reset), `GcWeakPtrScan`, the single-thread `syncblock_scan_p` gate around
+`GcWeakPtrScanBySingleThread`, and `gc_join_null_dead_syncblk` (joined `decide_on_promotion_surv`
+promotion decision). `fire_mark_event` is the server copy of the WKS `FireMarkEvent`, and
+`syncblock_scan_p` is the function-static single-thread latch. No collection routes the driver yet.
+
+Two native steps whose cross-heap dependencies are not yet closed are kept as faithful, clearly
+marked DEFERRED call sites: the `!full_p` cross-generation card-marking block
+(`mark_through_cards_for_segments` / `mark_through_cards_for_uoh_objects`, which need the server
+card-scan plus `should_check_bgc_mark` / `fgc_should_consider_object` background-sweep state, an
+unported subsystem) with its `save_current_survived` / `update_old_card_survived` brackets
+translated, and `equalize_promoted_bytes` (region rebalancing) plus `sort_mark_list` (per-heap
+mark-list sort with its cross-heap `equalize_mark_lists`) as the too-large cross-heap balancing
+steps. `merge_mark_lists` is `#if MULTIPLE_HEAPS && !USE_REGIONS` and so is excluded for the region
+build regardless; the `MH_SC_MARK` `mark_steal`, the `CARD_BUNDLE` r_join, the BGC background-root
+scan, and the `FEATURE_JAVAMARSHAL` bridge are excluded exactly as for the active configuration.
+Focused Foundation tests pin the driver method surface and `mark_phase` (gc_heap*, int) signature,
+the static `syncblock_scan_p` latch, the full six-join sequence and every reused mark-core / scan
+call the driver makes (by resolving its IL call tokens), and that the deferred balancing and
+card-scan helpers remain unported.
+
+The cross-heap `sort_mark_list` / `merge_mark_lists` / `equalize_mark_lists`, `mark_steal`, and
+`equalize_promoted_bytes` region rebalancing remain deferred, so the driver stays unrouted.
 
 The earlier cross-heap post-mark reconciliation that runs in the joined region of `mark_phase`
 after every heap finishes promoting its roots and cards (`ManagedServerGCMark.cs`) is unchanged.

@@ -517,6 +517,67 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    // ETW::GC_ROOT_KIND values (gcenv.base.h), passed straight through to the GCMarkWithType
+    // event so the tail of every scan reports how many bytes that root kind promoted.
+    private const int GC_ROOT_STACK = 0;
+    private const int GC_ROOT_FQ = 1;
+    private const int GC_ROOT_HANDLES = 2;
+    private const int GC_ROOT_OLDER = 3;
+    private const int GC_ROOT_SIZEDREF = 4;
+    private const int GC_ROOT_DH_HANDLES = 6;
+    private const int GC_ROOT_NEW_FQ = 7;
+
+    // fire_mark_event (mark_phase.cpp): report the delta of this heap's promoted bytes since the
+    // previous fire for a given root kind. Allocation-free; a no-op when the event is disabled.
+    public static void fire_mark_event(gc_heap* heap, int root_type, ref nuint last_promoted_bytes)
+    {
+        if (!GCEvents.GCEventEnabledGCMarkWithType())
+        {
+            return;
+        }
+
+        nuint current_promoted_bytes = get_promoted_bytes(heap);
+        nuint promoted_bytes = unchecked(current_promoted_bytes - last_promoted_bytes);
+        GCEvents.GCEventFireGCMarkWithType(
+            unchecked((uint)heap->heap_number),
+            unchecked((uint)root_type),
+            promoted_bytes);
+        last_promoted_bytes = current_promoted_bytes;
+    }
+
+    // save_current_survived / update_old_card_survived (plan_phase.cpp): snapshot this heap's
+    // per-region survivor counts before the cross-generation card scan, then fold the delta the
+    // card scan added into old_card_survived_per_region afterwards. The _DEBUG dprintf-only walk
+    // is excluded exactly as for the active configuration.
+    public static void save_current_survived(gc_heap* heap)
+    {
+        if (heap->survived_per_region is null)
+        {
+            return;
+        }
+
+        nuint region_info_to_copy = region_count * (nuint)sizeof(nuint);
+        NativeMemory.Copy(
+            heap->survived_per_region,
+            heap->old_card_survived_per_region,
+            region_info_to_copy);
+    }
+
+    public static void update_old_card_survived(gc_heap* heap)
+    {
+        if (heap->survived_per_region is null)
+        {
+            return;
+        }
+
+        for (nuint region_index = 0; region_index < region_count; region_index++)
+        {
+            heap->old_card_survived_per_region[(nint)region_index] = unchecked(
+                heap->survived_per_region[(nint)region_index] -
+                heap->old_card_survived_per_region[(nint)region_index]);
+        }
+    }
+
     public static bool is_in_gc_range(byte* o) => (gc_low <= o) && (o < gc_high);
 
     public static bool is_in_condemned_gc(byte* o)
@@ -1462,6 +1523,274 @@ internal unsafe partial struct gc_heap
                 }
             }
         }
+    }
+
+    // mark_phase.cpp declares this as a function-static VOLATILE(int32_t): the first server worker
+    // to finish (would-be) sorting its mark list scans the syncblk cache exactly once. The joined
+    // gc_join_null_dead_long_weak region resets it to 0 for every collection.
+    private static int syncblock_scan_p;
+
+    // ----------------------------------------------------------------------------------------
+    // The blocking server mark_phase driver, translated from the SVR compilation of
+    // gc_heap::mark_phase in mark_phase.cpp for the active SERVER_GC / MULTIPLE_HEAPS /
+    // USE_REGIONS chain. Every server GC worker runs this on its own heap; the gc_t_join calls
+    // keep the workers in lock-step at each phase boundary. It drives the already-translated mark
+    // core: the setup_mark_state_for_collection cursors, the promote callback and drain_mark_queue,
+    // the scan_dependent_handles join cycle, sync_promoted_bytes, and decide_on_promotion_surv.
+    // The root/finalizer/handle scans are inlined here (rather than calling mark_phase_scan_roots)
+    // so BeforeGcScanRoots fires once inside the joined gc_join_begin_mark_phase region exactly as
+    // in native, instead of per heap.
+    //
+    // The join sequence is complete: gc_join_begin_mark_phase, gc_join_scan_sizedref_done,
+    // gc_join_scan_dependent_handles / gc_join_rescan_dependent_handles (inside
+    // scan_dependent_handles), gc_join_null_dead_short_weak, gc_join_scan_finalization,
+    // gc_join_null_dead_long_weak, and gc_join_null_dead_syncblk. No collection routes this driver
+    // yet.
+    //
+    // Two native steps whose cross-heap dependencies are not yet closed are kept as faithful,
+    // clearly marked DEFERRED call sites:
+    //   * the !full_p cross-generation card-marking block
+    //     (mark_through_cards_for_segments / mark_through_cards_for_uoh_objects) needs the server
+    //     card-scan plus background-sweep state (should_check_bgc_mark / fgc_should_consider_object)
+    //     which is a separate unported subsystem; the bracketing save_current_survived /
+    //     update_old_card_survived are translated, and
+    //   * equalize_promoted_bytes (region rebalancing) and sort_mark_list (per-heap mark-list sort
+    //     with its cross-heap equalize_mark_lists) are the "too large" cross-heap balancing steps.
+    // merge_mark_lists is #if MULTIPLE_HEAPS && !USE_REGIONS in native and so is excluded for the
+    // region build regardless. The MH_SC_MARK mark_steal, the CARD_BUNDLE r_join, the BGC
+    // background-root scan, and the FEATURE_JAVAMARSHAL bridge, plus the HEAP_ANALYZE / SNOOP_STATS
+    // / FEATURE_EVENT_TRACE record_mark_time instrumentation, are excluded exactly as for the
+    // active configuration / deferred subsystems.
+    public static void mark_phase(gc_heap* heap, int condemned_gen_number)
+    {
+        Debug.Assert(settings.concurrent == 0);
+
+        ScanContext sc = default;
+        sc.init();
+        sc.thread_number = heap->heap_number;
+        sc.thread_count = n_heaps;
+        sc.promotion = 1;
+        sc.concurrent = 0;
+
+        bool full_p = condemned_gen_number == GCInterfaceOffsets.max_generation;
+
+        int gen_to_init = condemned_gen_number == GCInterfaceOffsets.max_generation
+            ? (int)gc_generation_num.total_generation_count - 1
+            : condemned_gen_number;
+        for (int gen_idx = 0; gen_idx <= gen_to_init; gen_idx++)
+        {
+            dynamic_data* dd = dynamic_data_of(heap, gen_idx);
+            dynamic_data.dd_begin_data_size(dd) = unchecked(
+                generation_size(heap, gen_idx) - dynamic_data.dd_fragmentation(dd));
+            dynamic_data.dd_survived_size(dd) = 0;
+            dynamic_data.dd_pinned_survived_size(dd) = 0;
+            dynamic_data.dd_artificial_pinned_survived_size(dd) = 0;
+            dynamic_data.dd_added_pinned_size(dd) = 0;
+            dynamic_data.dd_padding_size(dd) = 0;
+        }
+
+        if (heap->gen0_must_clear_bricks > 0)
+        {
+            heap->gen0_must_clear_bricks--;
+        }
+
+        nuint last_promoted_bytes = 0;
+        // init_promoted_bytes is #if !USE_REGIONS || _DEBUG; the region survivor storage is cleared
+        // by setup_mark_state_for_collection below, and the _DEBUG g_promoted cross-check counter is
+        // not part of this port.
+        reset_mark_stack(heap);
+
+        special_sweep_p = false;
+
+        gc_t_join.join(heap, (int)gc_join_stage.gc_join_begin_mark_phase);
+        if (gc_t_join.joined())
+        {
+            region_count = global_region_allocator.get_used_region_count();
+            grow_mark_list_piece();
+            compute_gc_and_ephemeral_range(heap, condemned_gen_number, end_of_gc_p: false);
+
+            GCToEEInterface.BeforeGcScanRoots(condemned_gen_number, is_bgc: 0, is_concurrent: 0);
+
+            gc_t_join.restart();
+        }
+
+        bool markStateReady = setup_mark_state_for_collection(heap);
+        Debug.Assert(markStateReady);
+
+        if (condemned_gen_number == GCInterfaceOffsets.max_generation)
+        {
+            GCScan.GcScanSizedRefs(
+                &promote,
+                condemned_gen_number,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+            drain_mark_queue(heap);
+            fire_mark_event(heap, GC_ROOT_SIZEDREF, ref last_promoted_bytes);
+
+            gc_t_join.join(heap, (int)gc_join_stage.gc_join_scan_sizedref_done);
+            if (gc_t_join.joined())
+            {
+                gc_t_join.restart();
+            }
+        }
+
+        GCScan.GcScanRoots(
+            &promote,
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+        drain_mark_queue(heap);
+        fire_mark_event(heap, GC_ROOT_STACK, ref last_promoted_bytes);
+
+        CFinalize* finalizeQueue = heap->server_finalize_queue;
+        if (finalizeQueue is not null)
+        {
+            finalizeQueue->GcScanRoots(&promote, heap->heap_number, null);
+            drain_mark_queue(heap);
+            fire_mark_event(heap, GC_ROOT_FQ, ref last_promoted_bytes);
+        }
+
+        GCScan.GcScanHandles(
+            &promote,
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+        drain_mark_queue(heap);
+        fire_mark_event(heap, GC_ROOT_HANDLES, ref last_promoted_bytes);
+
+        if (!full_p)
+        {
+            save_current_survived(heap);
+
+            // DEFERRED: mark_through_cards_for_segments (small objects) and
+            // mark_through_cards_for_uoh_objects (loh_generation, poh_generation). The server
+            // cross-generation card scan depends on the not-yet-ported server card-scan and
+            // background-sweep state (should_check_bgc_mark / fgc_should_consider_object and the
+            // survived-per-region card accounting). The bracketing survivor bookkeeping is
+            // translated so the card scan drops straight in when that subsystem lands: with no
+            // card survivors added, update_old_card_survived correctly leaves old_card at 0.
+            drain_mark_queue(heap);
+
+            update_old_card_survived(heap);
+            fire_mark_event(heap, GC_ROOT_OLDER, ref last_promoted_bytes);
+        }
+
+        // Dependent handles need the special algorithm in scan_dependent_handles. The initial scan
+        // runs unsynchronized without processing overflow; in the common case (no collectible
+        // dependent handles) it lets us optimize away the synchronized cycle.
+        GCScan.GcDhInitialScan(
+            &promote,
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+        scan_dependent_handles(heap, condemned_gen_number, &sc, initial_scan_p: true);
+        heap->mark_queue.verify_empty();
+        fire_mark_event(heap, GC_ROOT_DH_HANDLES, ref last_promoted_bytes);
+
+        gc_t_join.join(heap, (int)gc_join_stage.gc_join_null_dead_short_weak);
+        if (gc_t_join.joined())
+        {
+            GCToEEInterface.AfterGcScanRoots(
+                condemned_gen_number,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+            gc_t_join.restart();
+        }
+
+        // null out the target of short weakrefs that were not promoted.
+        GCScan.GcShortWeakPtrScan(
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+
+        gc_t_join.join(heap, (int)gc_join_stage.gc_join_scan_finalization);
+        if (gc_t_join.joined())
+        {
+            gc_t_join.restart();
+        }
+
+        nuint promoted_bytes_live = get_promoted_bytes(heap);
+
+        if (finalizeQueue is not null)
+        {
+            finalizeQueue->ScanForFinalization(&promote, condemned_gen_number, heap);
+            drain_mark_queue(heap);
+            fire_mark_event(heap, GC_ROOT_NEW_FQ, ref last_promoted_bytes);
+        }
+        GCToEEInterface.DiagWalkFReachableObjects(heap);
+
+        // Scan dependent handles again to promote any secondaries whose primaries were promoted for
+        // finalization; scan_dependent_handles also processes any remaining mark-stack overflow.
+        scan_dependent_handles(heap, condemned_gen_number, &sc, initial_scan_p: false);
+        heap->mark_queue.verify_empty();
+        fire_mark_event(heap, GC_ROOT_DH_HANDLES, ref last_promoted_bytes);
+
+        heap->total_promoted_bytes = get_promoted_bytes(heap);
+
+        gc_t_join.join(heap, (int)gc_join_stage.gc_join_null_dead_long_weak);
+        if (gc_t_join.joined())
+        {
+            sync_promoted_bytes();
+
+            // DEFERRED: equalize_promoted_bytes(settings.condemned_generation) roughly balances
+            // promoted bytes across heaps by moving regions between them, to load-balance the plan
+            // and relocate phases. It depends on the cross-heap unlink_first_rw_region /
+            // thread_start_region region-threading machinery that is not yet ported.
+            // sync_promoted_bytes above still folds every heap's per-region survivors into the
+            // owning region's segment fields.
+
+            syncblock_scan_p = 0;
+            gc_t_join.restart();
+        }
+
+        // null out the target of long weakrefs that were not promoted.
+        GCScan.GcWeakPtrScan(
+            condemned_gen_number,
+            GCInterfaceOffsets.max_generation,
+            &sc);
+
+        // DEFERRED: total_mark_list_size = sort_mark_list() sorts this heap's portion of the mark
+        // list for the plan phase; its cross-heap equalize_mark_lists is not yet ported.
+        // merge_mark_lists (which consumes total_mark_list_size) is #if MULTIPLE_HEAPS &&
+        // !USE_REGIONS and so is excluded for the region build regardless.
+
+        // First thread to finish (would-be) sorting scans the syncblk cache exactly once.
+        if (syncblock_scan_p == 0 &&
+            System.Threading.Interlocked.Increment(ref syncblock_scan_p) == 1)
+        {
+            GCScan.GcWeakPtrScanBySingleThread(
+                condemned_gen_number,
+                GCInterfaceOffsets.max_generation,
+                &sc);
+        }
+
+        gc_t_join.join(heap, (int)gc_join_stage.gc_join_null_dead_syncblk);
+        if (gc_t_join.joined())
+        {
+            // decide on promotion
+            if (settings.promotion == 0)
+            {
+                nuint m = 0;
+                for (int n = 0; n <= condemned_gen_number; n++)
+                {
+                    m = unchecked(
+                        m +
+                        dynamic_data.dd_min_size(dynamic_data_of(heap, n)) *
+                        (nuint)(n + 1) * 10 / 100);
+                }
+
+                settings.promotion = decide_on_promotion_surv(m) ? 1 : 0;
+            }
+
+            gc_t_join.restart();
+        }
+
+        // merge_mark_lists (total_mark_list_size) is #if MULTIPLE_HEAPS && !USE_REGIONS; excluded.
+
+        heap->finalization_promoted_bytes =
+            unchecked(heap->total_promoted_bytes - promoted_bytes_live);
+
+        heap->mark_queue.verify_empty();
     }
 }
 
