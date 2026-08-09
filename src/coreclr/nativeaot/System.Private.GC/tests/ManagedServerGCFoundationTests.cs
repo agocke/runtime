@@ -2693,7 +2693,9 @@ public static class ManagedServerGCFoundationTests
         // plan_phase drives the whole already-translated plan-phase family: the region-planning
         // consumers, the plug walk allocators / brick threading, the compaction-vs-sweep deciders,
         // the diagnostic leaves this task adds, and the LOH compaction gating / UOH sweep. It also
-        // closes the gc_join_decide_on_compaction join and reads/writes its per-GC reset fields.
+        // closes the gc_join_decide_on_compaction join and reads/writes its per-GC reset fields, and
+        // now runs the compact-branch execution (relocate_phase / compact_phase / fix_generation_bounds
+        // and the gc_join_adjust_handle_age_compact tail).
         (string[] names, _) = CollectCallTargets(plan, "sweep_uoh_objects");
         foreach (string expected in new[]
         {
@@ -2728,19 +2730,27 @@ public static class ManagedServerGCFoundationTests
             "join",
             "joined",
             "restart",
+            // Compact-branch execution wired in this slice.
+            "relocate_phase",
+            "compact_phase",
+            "fix_generation_bounds",
+            "get_gen0_end_space",
+            "UpdatePromotedGenerations",
+            "GcPromotionsGranted",
+            "GcDemote",
+            "thread_pinned_plug_gaps",
+            "clear_gen1_cards",
         })
         {
             Assert.Contains(expected, names);
         }
 
-        // The driver stops before the relocate / compact / sweep execution: it must not call the
-        // deferred relocate_phase / compact_phase / make_free_lists / fix_generation_bounds tail.
+        // The compact branch is wired, but the sweep branch (make_free_lists) and its
+        // recover_saved_pinned_info tail remain deferred; plan_phase does not call them directly
+        // (recover_saved_pinned_info is only reached from inside compact_phase / the sweep branch).
         foreach (string deferred in new[]
         {
-            "relocate_phase",
-            "compact_phase",
             "make_free_lists",
-            "fix_generation_bounds",
             "recover_saved_pinned_info",
         })
         {
@@ -2964,6 +2974,217 @@ public static class ManagedServerGCFoundationTests
         (string[] names, _) = CollectCallTargets(relocData, "relocate");
         Assert.Contains("relocate", names);
         Assert.Contains("seg_queue", names);
+    }
+
+    [Fact]
+    public static void ServerCompactPhaseHasNativeSignature()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // void gc_heap::compact_phase (int condemned_gen_number, uint8_t* first_condemned_address,
+        // BOOL clear_cards), translated as a per-heap static taking the owning heap explicitly:
+        // compact_phase (gc_heap*, int, byte*, int).
+        MethodInfo compact = heap.GetMethod(
+            "compact_phase",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), compact.ReturnType);
+        ParameterInfo[] p = compact.GetParameters();
+        Assert.Equal(4, p.Length);
+        Assert.Equal(heap.MakePointerType(), p[0].ParameterType);
+        Assert.Equal(typeof(int), p[1].ParameterType);
+        Assert.Equal(typeof(byte).MakePointerType(), p[2].ParameterType);
+        Assert.Equal(typeof(int), p[3].ParameterType);
+    }
+
+    [Fact]
+    public static void ServerCompactPhaseSequencesCompactExecution()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo compact = heap.GetMethod(
+            "compact_phase",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        // compact_phase opens with the gc_join_relocate_phase_done join, compacts the LOH plan
+        // (compact_loh), walks each condemned SOH region's brick tree (compact_in_brick), recovers the
+        // saved pinned-plug info (recover_saved_pinned_info), and finalizes each region's used pointer
+        // (clear_unused_bricks_after_compaction). The pinned-plug-queue leaves and get_start_segment
+        // are threaded through the owning heap.
+        (string[] names, _) = CollectCallTargets(compact, "compact_in_brick");
+        foreach (string expected in new[]
+        {
+            "join",
+            "joined",
+            "restart",
+            "compact_loh",
+            "reset_pinned_queue_bos",
+            "update_oldest_pinned_plug",
+            "expand_reused_seg_p",
+            "get_stop_generation_index",
+            "get_start_segment",
+            "compact_in_brick",
+            "recover_saved_pinned_info",
+            "clear_unused_bricks_after_compaction",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        // compact_phase runs after relocate_phase; it must not relocate references or run the sweep
+        // (make_free_lists) branch.
+        foreach (string deferred in new[]
+        {
+            "relocate_phase",
+            "relocate_survivors",
+            "make_free_lists",
+        })
+        {
+            Assert.DoesNotContain(deferred, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerCompactInBrickThreadsOwningHeapPinnedQueue()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // compact_in_brick (gc_heap*, byte*, compact_args*): walks a brick's plug tree in address
+        // order, threading the owning heap's pinned-plug queue (get_oldest_pinned_entry) as each
+        // oldest pin is reached, and compacts each plug through compact_plug.
+        MethodInfo inBrick = heap.GetMethod(
+            "compact_in_brick",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), inBrick.ReturnType);
+        ParameterInfo[] p = inBrick.GetParameters();
+        Assert.Equal(3, p.Length);
+        Assert.Equal(heap.MakePointerType(), p[0].ParameterType);
+        Assert.Equal(typeof(byte).MakePointerType(), p[1].ParameterType);
+
+        (string[] names, _) = CollectCallTargets(inBrick, "compact_plug");
+        foreach (string expected in new[]
+        {
+            "compact_plug",
+            "get_oldest_pinned_entry",
+            "compact_in_brick",
+            "node_left_child",
+            "node_right_child",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerCompactPlugMovesPlugThroughGcMemCopy()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // compact_plug (gc_heap*, byte*, nuint, int, compact_args*): moves a plug to its planned
+        // location through gcmemcopy and repairs the destination brick table (set_brick), swapping the
+        // saved pre/post-plug words around the move for shortened plugs.
+        MethodInfo plug = heap.GetMethod(
+            "compact_plug",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        ParameterInfo[] p = plug.GetParameters();
+        Assert.Equal(5, p.Length);
+        Assert.Equal(heap.MakePointerType(), p[0].ParameterType);
+
+        (string[] names, _) = CollectCallTargets(plug, "gcmemcopy");
+        foreach (string expected in new[]
+        {
+            "gcmemcopy",
+            "set_brick",
+            "brick_of",
+            "swap_pre_plug_and_saved",
+            "swap_post_plug_and_saved",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerGcMemCopyCarriesBookkeeping()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcmemcopy copies the mark bits during a concurrent mark (copy_mark_bits_for_addresses),
+        // consumes the DOUBLY_LINKED_FL bgc-mark / free-obj-in-compact bits, memcopies the plug, and
+        // copies or clears the cards (copy_cards_range).
+        MethodInfo memcopy = heap.GetMethod(
+            "gcmemcopy",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] names, _) = CollectCallTargets(memcopy, "copy_cards_range");
+        foreach (string expected in new[]
+        {
+            "memcopy",
+            "copy_cards_range",
+            "copy_mark_bits_for_addresses",
+            "is_plug_bgc_mark_bit_set",
+            "is_free_obj_in_compact_bit_set",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerCompactLohSlidesMarkedObjects()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // compact_loh (gc_heap*): slides every marked LOH object to its planned location through
+        // gcmemcopy, threading the pad gaps (thread_gap) and consuming this heap's LOH pinned queue
+        // (loh_deque_pinned_plug).
+        MethodInfo compactLoh = heap.GetMethod(
+            "compact_loh",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), compactLoh.ReturnType);
+        ParameterInfo[] p = compactLoh.GetParameters();
+        Assert.Single(p);
+        Assert.Equal(heap.MakePointerType(), p[0].ParameterType);
+
+        (string[] names, _) = CollectCallTargets(compactLoh, "gcmemcopy");
+        foreach (string expected in new[]
+        {
+            "gcmemcopy",
+            "thread_gap",
+            "loh_deque_pinned_plug",
+            "loh_node_relocation_distance",
+            "update_start_tail_regions",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerRecoverSavedPinnedInfoIsHeapParameterized()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // nuint gc_heap::recover_saved_pinned_info (): restores each pinned plug's saved pre/post-plug
+        // words, translated per-heap as recover_saved_pinned_info (gc_heap*) so it drains the owning
+        // heap's pinned-plug queue.
+        MethodInfo recover = heap.GetMethod(
+            "recover_saved_pinned_info",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(nuint), recover.ReturnType);
+        ParameterInfo[] p = recover.GetParameters();
+        Assert.Single(p);
+        Assert.Equal(heap.MakePointerType(), p[0].ParameterType);
+
+        (string[] names, _) = CollectCallTargets(recover, "recover_plug_info");
+        foreach (string expected in new[]
+        {
+            "reset_pinned_queue_bos",
+            "pinned_plug_que_empty_p",
+            "oldest_pin",
+            "recover_plug_info",
+            "deque_pinned_plug",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
     }
 
     private static unsafe bool IsNullPointer(object? boxedPointer) =>

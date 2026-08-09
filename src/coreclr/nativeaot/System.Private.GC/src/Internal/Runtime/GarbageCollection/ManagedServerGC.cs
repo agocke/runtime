@@ -106,8 +106,20 @@ internal unsafe struct CObjectHeader
     public void SetBGCMarkBit() =>
         RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | BGC_MARKED_BY_FGC));
 
+    public int IsBGCMarkBitSet() =>
+        ((nuint)RawGetMethodTable() & BGC_MARKED_BY_FGC) != 0 ? 1 : 0;
+
+    public void ClearBGCMarkBit() =>
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() & ~BGC_MARKED_BY_FGC));
+
     public void SetFreeObjInCompactBit() =>
         RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() | MAKE_FREE_OBJ_IN_COMPACT));
+
+    public int IsFreeObjInCompactBitSet() =>
+        ((nuint)RawGetMethodTable() & MAKE_FREE_OBJ_IN_COMPACT) != 0 ? 1 : 0;
+
+    public void ClearFreeObjInCompactBit() =>
+        RawSetMethodTable((MethodTable*)((nuint)RawGetMethodTable() & ~MAKE_FREE_OBJ_IN_COMPACT));
 
     public void SetPinned() => GetHeader()->SetGCBit();
 

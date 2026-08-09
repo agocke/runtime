@@ -1942,6 +1942,27 @@ finalization, and the `join` / `joined` / `restart`) and assert it does **not** 
 confirm `relocate_address` routes `loh_compacted_p` through `heap_segment_heap`, and check the card
 relocate branch and the finalization relocation are wired. No collection routes this driver.
 
+The server `compact_phase` execution (`ManagedServerGCCompact.cs`) now closes: the SVR compilation of
+`gc_heap::compact_phase` (`relocate_compact.cpp`) and the SOH/LOH compaction it drives — the
+`gc_join_relocate_phase_done` join (whose joined region runs the `FEATURE_EVENT_TRACE` timing capture,
+omitted with the deferred server event integration, and restarts), `compact_loh` (when this heap's
+per-GC `loh_compacted_p` is set), the per-region brick compaction walk `compact_in_brick` /
+`compact_plug` moving each plug through `gcmemcopy` / `memcopy` / `copy_cards_range` /
+`copy_mark_bits_for_addresses` (with the `DOUBLY_LINKED_FL` bgc-mark / free-obj-in-compact bit handling
+and the `FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP` dirty-region set), `recover_saved_pinned_info`,
+and the `clear_unused_bricks_after_compaction` used-pointer fixup. All per-GC / per-heap state
+(`loh_compacted_p`, the pinned-plug and LOH pinned queues, `oldest_pinned_plug`,
+`freeable_uoh_segment`) is reached through the `gc_heap*` parameter; `brick_table` / `set_brick` and
+`gcmemcopy`'s `current_c_gc_state` / `background_saved_*_address` stay process-wide/static.
+`expand_reused_seg_p` is `FALSE` under `USE_REGIONS`, so `args.check_gennum_p` is always 0 (asserted).
+The `plan_phase` driver's `should_compact` branch is wired to run `relocate_phase` → `compact_phase` →
+`fix_generation_bounds` → the `gc_join_adjust_handle_age_compact` join →
+`server_finalize_queue->UpdatePromotedGenerations` → `GcPromotionsGranted` / `GcDemote` →
+`thread_pinned_plug_gaps` → `clear_gen1_cards`. Focused Foundation tests pin the
+`compact_phase (gc_heap*, int, byte*, int)` / `compact_in_brick` / `compact_plug` / `compact_loh` /
+`gcmemcopy` / `recover_saved_pinned_info (gc_heap*)` signatures, resolve their call tokens, and assert
+`compact_phase` does **not** call `relocate_phase` / `relocate_survivors` / `make_free_lists`.
+
 Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
 per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
 and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself — which now has both
@@ -1951,11 +1972,11 @@ and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself 
 `sweep_uoh_objects` fallback for the non-compacting LOH and for POH; and the call to the
 now-translated `fix_generation_bounds` region-threading family), the
 `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
-`gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, and — now
-that the server `relocate_phase` driver is translated (unrouted) — the routing of a collection
-entrypoint onto `plan_phase` / `relocate_phase` plus the still-deferred server `compact_phase` /
-`make_free_lists` execution (and its `gc_join_relocate_phase_done` / `recover_saved_pinned_info` /
-`GcPromotionsGranted` / `GcDemote` tail), BGC servo
+`gc_join_adjust_handle_age_sweep` plan-phase joins, and — now that the server `relocate_phase` and
+`compact_phase` execution is translated (the compact branch wired but the `plan_phase` driver still
+unrouted) — the routing of a collection entrypoint onto `plan_phase` plus the still-deferred server
+sweep branch `make_free_lists` execution (and its `gc_join_adjust_handle_age_sweep` /
+`recover_saved_pinned_info` / `GcPromotionsGranted` tail), BGC servo
 tuning, dynamic heap-count changes after startup, diagnostic `saved_changed_segs` publication,
 condemnation-driven collection routing, the server background collector (thread lifecycle, concurrent
 mark/revisit, region sweep), and server parallel collection closure.

@@ -31,13 +31,15 @@
 // FEATURE_EVENT_TRACE timing are excluded exactly as for the active configuration / deferred
 // subsystems.
 //
-// The driver stops at the relocate / compact / make_free_lists boundary and is not routed by any
-// collection entry point. Consequently the joins that sit past that boundary -
-// gc_join_rearrange_segs_compaction (which is #ifndef USE_REGIONS and so does not exist in this
-// configuration anyway) and gc_join_adjust_handle_age_compact / gc_join_adjust_handle_age_sweep
-// (which follow relocate_phase / compact_phase / make_free_lists) - remain deferred, as do
-// relocate_phase / compact_phase / make_free_lists / recover_saved_pinned_info themselves and the
-// EE diagnostic survivor walks.
+// The driver now runs the full compact-branch execution (relocate_phase -> compact_phase ->
+// fix_generation_bounds -> the gc_join_adjust_handle_age_compact join -> UpdatePromotedGenerations /
+// GcPromotionsGranted / GcDemote -> the pinned-gap threading -> clear_gen1_cards), but it is still not
+// routed by any collection entry point, so nothing runs against a live heap yet. The sweep branch
+// (make_free_lists / recover_saved_pinned_info and the gc_join_adjust_handle_age_sweep join) remains
+// deferred; gc_join_rearrange_segs_compaction is #ifndef USE_REGIONS and so does not exist in this
+// configuration, and the FEATURE_EVENT_TRACE timing / _DEBUG verify_committed_bytes / EE diagnostic
+// survivor walks in the compact tail are omitted with the deferred server event / heap-verify
+// integration.
 
 #if SERVER_GC && MULTIPLE_HEAPS && USE_REGIONS
 
@@ -904,10 +906,59 @@ internal unsafe partial struct gc_heap
                 fix_older_allocation_area(hp, older_gen);
             }
 
-            // Relocate / compact execution (relocate_phase, compact_phase, fix_generation_bounds,
-            // the gc_join_adjust_handle_age_compact join, GcPromotionsGranted / GcDemote, the pinned
-            // gap threading, and clear_gen1_cards) is deferred; the compaction-decision phase
-            // ordering above is complete to this boundary.
+            // GCToEEInterface::DiagWalkSurvivors is a diagnostic EE survivor walk deferred with the
+            // rest of the server event / EE diagnostic integration.
+
+            relocate_phase(hp, condemned_gen_number, first_condemned_address);
+            compact_phase(
+                hp,
+                condemned_gen_number,
+                first_condemned_address,
+                settings.demotion == 0 && settings.promotion != 0 ? 1 : 0);
+            fix_generation_bounds(hp, condemned_gen_number, consing_gen);
+            Debug.Assert(
+                generation.generation_allocation_limit(generation_of(generation_table, 0)) ==
+                generation.generation_allocation_pointer(generation_of(generation_table, 0)));
+
+            hp->end_gen0_region_committed_space =
+                get_gen0_end_space(hp, memory_type.memory_type_committed);
+
+            gc_t_join.join(hp, (int)gc_join_stage.gc_join_adjust_handle_age_compact);
+            if (gc_t_join.joined())
+            {
+                // FEATURE_EVENT_TRACE gc_time_info[time_compact] timing and the _DEBUG
+                // verify_committed_bytes check are deferred with the server event / heap-verify
+                // integration; the join still synchronizes every worker before promotions are granted.
+                gc_t_join.restart();
+            }
+
+            hp->server_finalize_queue->UpdatePromotedGenerations(
+                condemned_gen_number,
+                settings.demotion == 0 && settings.promotion != 0 ? 1 : 0);
+
+            ScanContext sc = default;
+            sc.thread_number = hp->heap_number;
+            sc.thread_count = n_heaps;
+            sc.promotion = 0;
+            sc.concurrent = 0;
+            if (settings.promotion != 0 && settings.demotion == 0)
+            {
+                GCScan.GcPromotionsGranted(
+                    condemned_gen_number,
+                    GCInterfaceOffsets.max_generation,
+                    &sc);
+            }
+            else if (settings.demotion != 0)
+            {
+                GCScan.GcDemote(
+                    condemned_gen_number,
+                    GCInterfaceOffsets.max_generation,
+                    &sc);
+            }
+
+            thread_pinned_plug_gaps(hp);
+
+            clear_gen1_cards(hp);
         }
         else
         {
