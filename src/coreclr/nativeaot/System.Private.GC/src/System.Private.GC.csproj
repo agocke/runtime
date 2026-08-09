@@ -158,6 +158,7 @@
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCPlanRegions.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCPlanSweep.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCPlanUOH.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCRelocate.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\MarkPhase.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\NoGC.cs" Condition="'$(ManagedGCServerBuild)' != 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ObjectHandle.cs" />

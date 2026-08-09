@@ -1909,6 +1909,39 @@ decommitting gen2+ tails, threading swept-in-plan free lists back, getting fresh
 generations, resetting condemned allocation pointers) and re-seats the ephemeral heap segment / alloc
 pointers. Because this slice routes no collection, the family does not yet run against a live heap.
 
+The server `relocate_phase` driver (`ManagedServerGCRelocate.cs`) now closes: the SVR compilation of
+`gc_heap::relocate_phase` (`relocate_compact.cpp`) plus `GCHeap::Relocate` (`interface.cpp`) and the
+`MULTIPLE_HEAPS` `CFinalize::RelocateFinalizationData` (`finalization.cpp`) for the active
+`SERVER_GC` / `MULTIPLE_HEAPS` / `USE_REGIONS` chain, the method each server worker runs on its own
+heap after the plan phase. It sequences the exact `!FEATURE_CARD_MARKING_STEALING` relocation order:
+the `gc_join_begin_relocate_phase` join (whose joined region runs the `_DEBUG`
+`verify_region_to_generation_map` no-op and restarts), `GCScan.GcScanRoots(relocate)`, the
+cross-generation card relocate scan (`mark_through_cards_for_segments` / `mark_through_cards_for_uoh_objects`
+with `relocating = true` for SOH plus LOH/POH when the collection is ephemeral) or the
+`loh_compacted_p ? relocate_in_loh_compact : relocate_in_uoh_objects` LOH/POH relocation for a
+`max_generation` collection, `relocate_survivors` over each condemned region's brick relocation tree
+(`relocate_survivors_in_brick` / `relocate_survivors_in_plug` and the shortened-plug helpers),
+`server_finalize_queue->RelocateFinalizationData`, and `GCScan.GcScanHandles(relocate)`. The reference
+fixup leaf `relocate_address` is heap-agnostic apart from its `FEATURE_LOH_COMPACTION` fallback, which
+consults the *owning* heap's per-GC `loh_compacted_p` through `heap_segment_heap(pSegment)` — the
+`MULTIPLE_HEAPS` native branch — instead of the WKS static field; `gc_low` / `gc_high` stay
+`PER_HEAP_ISOLATED` so `is_in_gc_range` is shared, and the brick relocation tree (`brick_table`) is a
+single process-wide array, matching native under `USE_REGIONS`. The `relocate` callback resolves the
+object's owning heap through `heap_of` for the interior LOH `find_object` path. `loh_compacted_p`
+(`PER_HEAP_FIELD_SINGLE_GC`) is instance-owned per heap. The relocate variant of the server foreground
+card scan is enabled: `scan_card_reference` (`ManagedServerGCCardScan.cs`) now rewrites the child
+through `relocate_address` and re-reads its planned generation, previously deferred. The
+`FEATURE_EVENT_TRACE` `loh_compact_info` reference counting is omitted (native's
+`!informational_event_enabled_p` path), matching the deferred server event integration;
+`verify_pins_with_post_plug_info` / `verify_region_to_generation_map` are `_DEBUG` / `VERIFY_HEAP`
+verification bodies this port does not build, so they are guarded no-ops. Focused Foundation tests pin
+the `relocate_phase (gc_heap*, int, byte*)` signature, resolve the relocate-family call tokens
+`relocate_phase` makes (roots/handles, card relocate scan, LOH/POH and SOH survivor relocation,
+finalization, and the `join` / `joined` / `restart`) and assert it does **not** call the deferred
+`compact_phase` / `make_free_lists` / `recover_saved_pinned_info` / `fix_generation_bounds` tail,
+confirm `relocate_address` routes `loh_compacted_p` through `heap_segment_heap`, and check the card
+relocate branch and the finalization relocation are wired. No collection routes this driver.
+
 Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
 per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
 and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself — which now has both
@@ -1918,8 +1951,11 @@ and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself 
 `sweep_uoh_objects` fallback for the non-compacting LOH and for POH; and the call to the
 now-translated `fix_generation_bounds` region-threading family), the
 `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
-`gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, the server
-`relocate_phase` / `compact_phase` / `make_free_lists` execution, BGC servo
+`gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, and — now
+that the server `relocate_phase` driver is translated (unrouted) — the routing of a collection
+entrypoint onto `plan_phase` / `relocate_phase` plus the still-deferred server `compact_phase` /
+`make_free_lists` execution (and its `gc_join_relocate_phase_done` / `recover_saved_pinned_info` /
+`GcPromotionsGranted` / `GcDemote` tail), BGC servo
 tuning, dynamic heap-count changes after startup, diagnostic `saved_changed_segs` publication,
 condemnation-driven collection routing, the server background collector (thread lifecycle, concurrent
 mark/revisit, region sweep), and server parallel collection closure.

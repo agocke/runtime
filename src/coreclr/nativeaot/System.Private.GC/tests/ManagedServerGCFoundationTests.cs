@@ -2796,6 +2796,176 @@ public static class ManagedServerGCFoundationTests
         }
     }
 
+    [Fact]
+    public static void ServerRelocatePhaseHasNativeSignature()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // void gc_heap::relocate_phase (int condemned_gen_number, uint8_t* first_condemned_address),
+        // translated as a per-heap static taking the owning heap explicitly:
+        // relocate_phase (gc_heap*, int, byte*).
+        MethodInfo reloc = heap.GetMethod(
+            "relocate_phase",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), reloc.ReturnType);
+        ParameterInfo[] relocParams = reloc.GetParameters();
+        Assert.Equal(3, relocParams.Length);
+        Assert.Equal(heap.MakePointerType(), relocParams[0].ParameterType);
+        Assert.Equal(typeof(int), relocParams[1].ParameterType);
+        Assert.Equal(typeof(byte).MakePointerType(), relocParams[2].ParameterType);
+    }
+
+    [Fact]
+    public static void ServerRelocatePhaseSequencesTranslatedHelpers()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo reloc = heap.GetMethod(
+            "relocate_phase",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        // relocate_phase drives the whole already-translated relocate family: root/handle relocation
+        // through the GCHeap::Relocate callback, the cross-generation card relocate scan, the LOH/POH
+        // and SOH survivor relocation, the finalization relocation, and the gc_join_begin_relocate_
+        // phase join.
+        (string[] names, _) = CollectCallTargets(reloc, "relocate_survivors");
+        foreach (string expected in new[]
+        {
+            "GcScanRoots",
+            "GcScanHandles",
+            "mark_through_cards_for_segments",
+            "mark_through_cards_for_uoh_objects",
+            "relocate_in_loh_compact",
+            "relocate_in_uoh_objects",
+            "relocate_survivors",
+            "RelocateFinalizationData",
+            "verify_region_to_generation_map",
+            "join",
+            "joined",
+            "restart",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        // relocate_phase stops before the compact / sweep execution: it must not call the deferred
+        // compact_phase / make_free_lists / recover_saved_pinned_info / fix_generation_bounds tail.
+        foreach (string deferred in new[]
+        {
+            "compact_phase",
+            "make_free_lists",
+            "recover_saved_pinned_info",
+            "fix_generation_bounds",
+            "compact_loh",
+        })
+        {
+            Assert.DoesNotContain(deferred, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerRelocateAddressRoutesOwningHeapLohCompactedFlag()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // relocate_address looks each address up in the shared brick relocation tree; its
+        // FEATURE_LOH_COMPACTION fallback consults the *owning* heap's per-GC loh_compacted_p through
+        // heap_segment_heap, not the current worker's, so the callee set must include heap_segment_heap
+        // and the brick-tree leaves.
+        MethodInfo relocAddr = heap.GetMethod(
+            "relocate_address",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        ParameterInfo[] p = relocAddr.GetParameters();
+        Assert.Single(p);
+        Assert.Equal(typeof(byte).MakePointerType().MakePointerType(), p[0].ParameterType);
+
+        (string[] names, _) = CollectCallTargets(relocAddr, "heap_segment_heap");
+        foreach (string expected in new[]
+        {
+            "heap_segment_heap",
+            "tree_search",
+            "should_check_brick_for_reloc",
+            "loh_node_relocation_distance",
+            "try_get_region_segment",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        // loh_compacted_p is PER_HEAP_FIELD_SINGLE_GC, so it is instance-owned on the server heap.
+        FieldInfo instanceField = heap.GetField(
+            "loh_compacted_p",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.NotNull(instanceField);
+        Assert.Null(heap.GetField(
+            "loh_compacted_p",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+    }
+
+    [Fact]
+    public static void ServerRelocateCallbackResolvesOwningHeap()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // The GCHeap::Relocate callback resolves the object's owning heap (heap_of) for the interior
+        // LOH find_object path, then relocates through relocate_address.
+        MethodInfo relocate = heap.GetMethod(
+            "relocate",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] names, _) = CollectCallTargets(relocate, "relocate_address");
+        foreach (string expected in new[]
+        {
+            "heap_of",
+            "find_object",
+            "relocate_address",
+            "loh_object_p",
+            "is_in_find_object_range",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerCardScanRelocateBranchRelocatesReferences()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // The server foreground card scan's per-slot body now translates the relocate branch: when
+        // relocating it rewrites the child through relocate_address and re-reads its planned
+        // generation number through get_region_plan_gen_num (the mark branch still uses
+        // mark_object_simple).
+        MethodInfo scan = heap.GetMethod(
+            "scan_card_reference",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] names, _) = CollectCallTargets(scan, "relocate_address");
+        foreach (string expected in new[]
+        {
+            "relocate_address",
+            "get_region_plan_gen_num",
+            "mark_object_simple",
+            "get_region_gen_num",
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+    }
+
+    [Fact]
+    public static void ServerFinalizationRelocationIsWired()
+    {
+        Type finalize = GetType("Internal.Runtime.GarbageCollection.CFinalize");
+
+        // CFinalize::RelocateFinalizationData relocates every finalizable object through the
+        // GCHeap::Relocate callback; for MULTIPLE_HEAPS it no longer short-circuits.
+        MethodInfo relocData = finalize.GetMethod(
+            "RelocateFinalizationData",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.NotNull(relocData);
+        (string[] names, _) = CollectCallTargets(relocData, "relocate");
+        Assert.Contains("relocate", names);
+        Assert.Contains("seg_queue", names);
+    }
+
     private static unsafe bool IsNullPointer(object? boxedPointer) =>
         boxedPointer is null || System.Reflection.Pointer.Unbox(boxedPointer) is null;
 

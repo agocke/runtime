@@ -25,8 +25,6 @@
 
 #if SERVER_GC && MULTIPLE_HEAPS && USE_REGIONS
 
-using System.Diagnostics;
-
 namespace Internal.Runtime.GarbageCollection;
 
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
@@ -45,10 +43,11 @@ internal unsafe partial struct gc_heap
         public nuint cross_generation_pointers;
     }
 
-    // mark_through_cards_helper's per-slot body: promote a cross-generation child (into a
-    // condemned generation) and count references that still cross into a younger generation than
-    // the region being scanned. Only the mark (non-relocating) branch is translated because the
-    // server relocate/plan card scan is deferred.
+    // mark_through_cards_helper's per-slot body: promote (mark branch) or relocate (relocate branch)
+    // a cross-generation child (into a condemned generation) and count references that still cross
+    // into a younger generation than the region being scanned. The relocate branch is enabled by the
+    // server relocate slice (ManagedServerGCRelocate.cs): it rewrites the child through
+    // relocate_address and re-reads its planned generation number.
     private static void scan_card_reference(byte** slot, void* context_pointer)
     {
         card_scan_context* context = (card_scan_context*)context_pointer;
@@ -63,12 +62,18 @@ internal unsafe partial struct gc_heap
             return;
         }
 
-        Debug.Assert(context->relocating == 0);
-
         int child_gen = get_region_gen_num(child);
         if (child_gen <= context->condemned_gen)
         {
-            mark_object_simple(context->heap, slot);
+            if (context->relocating != 0)
+            {
+                relocate_address(slot);
+                child_gen = get_region_plan_gen_num(*slot);
+            }
+            else
+            {
+                mark_object_simple(context->heap, slot);
+            }
         }
 
         if (child_gen < context->parent_gen)

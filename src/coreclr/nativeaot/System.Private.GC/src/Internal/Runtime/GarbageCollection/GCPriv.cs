@@ -4850,19 +4850,18 @@ namespace Internal.Runtime.GarbageCollection
         // Relocates all of the objects in the finalization array.
         public void RelocateFinalizationData(int gen, gc_heap* heap)
         {
-#if MULTIPLE_HEAPS
-            if (m_Array is null)
-            {
-                return;
-            }
-            _ = gen;
-            _ = heap;
-            return;
-#else
             ScanContext scanContext = default;
             scanContext.promotion = 0;
+#if MULTIPLE_HEAPS
+            // finalization.cpp CFinalize::RelocateFinalizationData: for MULTIPLE_HEAPS the scan
+            // context carries this heap's index and the heap count so gc_heap.relocate can resolve
+            // the object's owning heap.
+            scanContext.thread_number = heap->heap_number;
+            scanContext.thread_count = gc_heap.n_heaps;
+#else
             _ = heap;
             scanContext.thread_count = 1;
+#endif
 
             uint segment = gen_segment(gen);
 
@@ -4875,7 +4874,6 @@ namespace Internal.Runtime.GarbageCollection
                     gc_heap.relocate(current, &scanContext);
                 }
             }
-#endif
         }
 
         public void UpdatePromotedGenerations(int gen, int gen_0_empty_p)
