@@ -1347,18 +1347,47 @@ namespace Internal.Runtime.GarbageCollection
         public static nuint gen0_pinned_free_space;
         public static bool gen0_large_chunk_found;
 #endif
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC / PER_HEAP_FIELD_DIAG_ONLY plug/region planning state.
+        // These are static in WKS and instance-owned in the MULTIPLE_HEAPS build so each server heap
+        // plans its own condemned regions. enable_special_regions_p is PER_HEAP_ISOLATED_FIELD_INIT_ONLY,
+        // so it stays static in both builds.
+#if MULTIPLE_HEAPS
+        public reserved_region_array reserved_free_regions_sip;
+        public generation_region_count_array regions_per_gen;
+        public generation_region_count_array planned_regions_per_gen;
+        public generation_region_count_array sip_maxgen_regions_per_gen;
+        public bool decide_promote_gen1_pins_p;
+        public bool special_sweep_p;
+        public nuint maxgen_pinned_compact_before_advance;
+        public int new_gen0_regions_in_plns;
+        public int new_regions_in_prr;
+        public int new_regions_in_threading;
+#else
         public static reserved_region_array reserved_free_regions_sip;
         public static generation_region_count_array regions_per_gen;
         public static generation_region_count_array planned_regions_per_gen;
         public static generation_region_count_array sip_maxgen_regions_per_gen;
         public static bool decide_promote_gen1_pins_p;
-        public static bool enable_special_regions_p;
         public static bool special_sweep_p;
         public static nuint maxgen_pinned_compact_before_advance;
         public static int new_gen0_regions_in_plns;
         public static int new_regions_in_prr;
         public static int new_regions_in_threading;
+#endif
+        public static bool enable_special_regions_p;
 
+#if MULTIPLE_HEAPS
+        public static ref heap_segment* reserved_free_region_sip(gc_heap* hp, int generation)
+        {
+            Debug.Assert(generation >= 0 && generation < GCInterfaceOffsets.max_generation);
+            if (generation == 0)
+            {
+                return ref hp->reserved_free_regions_sip.element0;
+            }
+
+            return ref hp->reserved_free_regions_sip.element1;
+        }
+#else
         public static ref heap_segment* reserved_free_region_sip(int generation)
         {
             Debug.Assert(generation >= 0 && generation < GCInterfaceOffsets.max_generation);
@@ -1369,6 +1398,7 @@ namespace Internal.Runtime.GarbageCollection
 
             return ref reserved_free_regions_sip.element1;
         }
+#endif
 #endif
 #if MULTIPLE_HEAPS
         // gcpriv.h PER_HEAP_FIELD_MAINTAINED: each server heap owns its pinned/mark stack.
@@ -1424,7 +1454,11 @@ namespace Internal.Runtime.GarbageCollection
         public static gc_history_per_heap bgc_data_per_heap;
 #endif
 #endif
+#if MULTIPLE_HEAPS
+        public fgm_history fgm_result;
+#else
         public static fgm_history fgm_result;
+#endif
         public static gc_history_global gc_data_global;
 #if BACKGROUND_GC
         public static gc_history_global bgc_data_global;
@@ -1596,17 +1630,21 @@ namespace Internal.Runtime.GarbageCollection
             gen0_must_clear_bricks = 0;
 #endif
 #if USE_REGIONS
+            enable_special_regions_p = GCConfig.GetGCEnableSpecialRegions() != 0;
+#if !MULTIPLE_HEAPS
+            // In the MULTIPLE_HEAPS build these are instance-owned per server heap and are reset
+            // per-collection by init_records / mark_phase / the plan-phase driver, not here.
             reserved_free_regions_sip = default;
             regions_per_gen = default;
             planned_regions_per_gen = default;
             sip_maxgen_regions_per_gen = default;
             decide_promote_gen1_pins_p = true;
-            enable_special_regions_p = GCConfig.GetGCEnableSpecialRegions() != 0;
             special_sweep_p = false;
             maxgen_pinned_compact_before_advance = 0;
             new_gen0_regions_in_plns = 0;
             new_regions_in_prr = 0;
             new_regions_in_threading = 0;
+#endif
 #endif
 #if USE_REGIONS
             initialize_concurrent_gc();
@@ -1629,7 +1667,9 @@ namespace Internal.Runtime.GarbageCollection
                 gc_data_global = default;
             }
 
+#if !MULTIPLE_HEAPS
             fgm_result = default;
+#endif
 
             gc_history_per_heap* current_gc_data_per_heap =
                 (gc_history_per_heap*)Unsafe.AsPointer(ref gc_data_per_heap);

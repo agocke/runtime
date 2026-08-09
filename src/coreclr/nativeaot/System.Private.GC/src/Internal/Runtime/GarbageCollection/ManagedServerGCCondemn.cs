@@ -890,7 +890,7 @@ internal unsafe partial struct gc_heap
         {
             if (check_memory)
             {
-                fgm_result.available_pagefile_mb = (nuint)(available_page_file / (1024 * 1024));
+                hp->fgm_result.available_pagefile_mb = (nuint)(available_page_file / (1024 * 1024));
             }
 
             local_condemn_reasons->set_gen(gc_condemn_reason_gen.gen_final_per_heap, (uint)n);

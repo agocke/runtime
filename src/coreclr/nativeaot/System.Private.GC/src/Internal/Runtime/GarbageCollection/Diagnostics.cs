@@ -805,9 +805,16 @@ internal unsafe partial struct gc_heap
                     (int)gc_generation_num.soh_gen0)) / 2;
         }
 
+        ref fgm_history currentFgmResult = ref
+#if MULTIPLE_HEAPS
+            context->hp->fgm_result;
+#else
+            fgm_result;
+#endif
+
         if (reason == oom_reason.oom_budget &&
-            fgm_result.loh_p == 0 &&
-            fgm_result.fgm != failure_get_memory.fgm_no_failure)
+            currentFgmResult.loh_p == 0 &&
+            currentFgmResult.fgm != failure_get_memory.fgm_no_failure)
         {
             reason = oom_reason.oom_low_mem;
         }
@@ -829,10 +836,10 @@ internal unsafe partial struct gc_heap
         oom_info.reserved = reserved;
         oom_info.allocated = allocated;
         oom_info.gc_index = settings.gc_index;
-        oom_info.fgm = fgm_result.fgm;
-        oom_info.size = fgm_result.size;
-        oom_info.available_pagefile_mb = fgm_result.available_pagefile_mb;
-        oom_info.loh_p = fgm_result.loh_p;
-        fgm_result.fgm = failure_get_memory.fgm_no_failure;
+        oom_info.fgm = currentFgmResult.fgm;
+        oom_info.size = currentFgmResult.size;
+        oom_info.available_pagefile_mb = currentFgmResult.available_pagefile_mb;
+        oom_info.loh_p = currentFgmResult.loh_p;
+        currentFgmResult.fgm = failure_get_memory.fgm_no_failure;
     }
 }

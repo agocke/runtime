@@ -2288,7 +2288,7 @@ internal unsafe partial struct gc_heap
         // not part of this port.
         reset_mark_stack(heap);
 
-        special_sweep_p = false;
+        heap->special_sweep_p = false;
 
         gc_t_join.join(heap, (int)gc_join_stage.gc_join_begin_mark_phase);
         if (gc_t_join.joined())

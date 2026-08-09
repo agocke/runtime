@@ -267,7 +267,7 @@ internal unsafe partial struct gc_heap
             ? 0.0f
             : (float)fragmentation / (float)gen_sizes;
 
-        if (special_sweep_p)
+        if (hp->special_sweep_p)
         {
             return false;
         }

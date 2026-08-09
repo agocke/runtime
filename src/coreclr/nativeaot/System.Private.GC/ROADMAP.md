@@ -1704,16 +1704,44 @@ remain deferred. Focused Foundation tests pin the decider method surface and the
 signatures, resolve the closed-leaf call tokens each decider makes, and verify the six plan-space
 fields are instance-owned in the server build.
 
-Production blockers remain in the per-heap plug/region planning loop (`should_sweep_in_plan`,
-`sweep_region_in_plan`, `process_last_np_surv_region`, `process_remaining_regions`, `plan_loh`,
-`fix_generation_bounds`, brick/tree threading) that feeds these deciders, the
-`gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
+The per-heap plug/region planning loop (`ManagedServerGCPlanRegions.cs`) now produces those
+plan-allocated bounds. It translates, from the SVR compilation of `plan_phase.cpp`, the pinned-plug-queue
+consumers (`pinned_plug_que_empty_p`, `oldest_pin`, `deque_pinned_plug`, `set_new_pin_info`), the
+linear-walk leaf `find_next_marked` and the saved-allocated snapshot `save_allocated`, the plan-space
+and demotion attribution leaves (`update_planned_gen0_free_space`, `attribute_pin_higher_gen_alloc`,
+`decide_on_gen1_pin_promotion`, `decide_on_demotion_pin_surv`, `skip_pins_in_alloc_region`), the
+region-planning deciders `should_sweep_in_plan` / `sweep_region_in_plan`, the consing-region walkers
+`process_last_np_surv_region` / `process_remaining_regions`, the `clear_gen1_cards` region-prep leaf,
+and a per-heap `init_records` reset of the plan-space accounting. Each function reaches the owning heap
+through its `gc_heap*` parameter, so the `PER_HEAP_FIELD_SINGLE_GC` / `PER_HEAP_FIELD_DIAG_ONLY`
+region-planning state (`regions_per_gen`, `planned_regions_per_gen`, `sip_maxgen_regions_per_gen`,
+`reserved_free_regions_sip`, `decide_promote_gen1_pins_p`, `special_sweep_p`,
+`maxgen_pinned_compact_before_advance`, `new_gen0_regions_in_plns`, `new_regions_in_prr`) is instance-owned
+in the `MULTIPLE_HEAPS` build (static in WKS); the shared `set_region_plan_gen_num` routes
+`planned_regions_per_gen` through `heap_segment_heap(region)`, and `mark_phase` / `decide_on_compacting`
+reach `special_sweep_p` through the heap. `enable_special_regions_p` stays static
+(`PER_HEAP_ISOLATED_FIELD_INIT_ONLY`). The `sweep_region_in_plan` `_DEBUG` survivor assert uses the
+`MULTIPLE_HEAPS` `<=` (equalized-survivor upper bound) form. Fixed along the way: server `pinned_plug(m)`
+now returns `m->first` per `gcinternal.h` (was `first + len`, which silently diverged the shared
+`get_plug_start_in_saved` from WKS), and `ObjHeader.ClrGCBit` is added for the `clear_pinned` step in
+`sweep_region_in_plan`. Focused Foundation tests pin the planning-loop method surface and the
+`should_sweep_in_plan` / `sweep_region_in_plan` / `process_remaining_regions` /
+`process_last_np_surv_region` / pinned-queue-consumer signatures, resolve the closed-leaf call tokens
+`process_remaining_regions` / `sweep_region_in_plan` / `should_sweep_in_plan` make, verify the nine
+region-planning fields are instance-owned (and `enable_special_regions_p` is not), and check
+`pinned_plug` returns the plug address. No collection is routed.
+
+Production blockers remain in the `plan_phase` driver that sequences these helpers (including
+`allocate_in_condemned_generations`, the brick/tree threading, `plan_loh` / `plan_poh` — which need
+`grow_heap_segment` / `grow_mark_stack` — and `fix_generation_bounds` — which needs
+`thread_final_regions` / `find_first_valid_region` / `reset_allocation_pointers` and the BGC end-mark
+accounting), the `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
 `gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, the server
-`relocate_phase` / `compact_phase` / `make_free_lists` execution, a server `init_records` to reset the
-per-heap plan-space and `special_sweep_p` fields, BGC servo tuning, dynamic heap-count changes after
-startup, diagnostic `saved_changed_segs` publication, condemnation-driven collection routing, the
-server background collector (thread lifecycle, concurrent mark/revisit, region sweep), and server
-parallel collection closure.
+`relocate_phase` / `compact_phase` / `make_free_lists` execution, the plan-phase driver's own reset of
+the region-planning counters (`memset (regions_per_gen ...)`, `decide_promote_gen1_pins_p`), BGC servo
+tuning, dynamic heap-count changes after startup, diagnostic `saved_changed_segs` publication,
+condemnation-driven collection routing, the server background collector (thread lifecycle, concurrent
+mark/revisit, region sweep), and server parallel collection closure.
 
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.

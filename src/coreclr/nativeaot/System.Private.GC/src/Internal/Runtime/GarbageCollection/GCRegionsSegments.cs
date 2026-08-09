@@ -1326,10 +1326,18 @@ internal unsafe partial struct gc_heap
         if (replace_p)
         {
             int original_plan_gen_num = heap_segment.heap_segment_plan_gen_num(region);
+#if MULTIPLE_HEAPS
+            heap_segment.heap_segment_heap(region)->planned_regions_per_gen[original_plan_gen_num]--;
+#else
             planned_regions_per_gen[original_plan_gen_num]--;
+#endif
         }
 
+#if MULTIPLE_HEAPS
+        heap_segment.heap_segment_heap(region)->planned_regions_per_gen[plan_gen_num]++;
+#else
         planned_regions_per_gen[plan_gen_num]++;
+#endif
         heap_segment.heap_segment_plan_gen_num(region) = plan_gen_num;
 
         byte* region_start = get_region_start(region);

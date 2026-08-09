@@ -61,6 +61,8 @@ internal struct ObjHeader
     public uint GetBits() => m_uSyncBlockValue;
     public void SetGCBit() =>
         m_uSyncBlockValue |= BIT_SBLK_GC_RESERVE;
+    public void ClrGCBit() =>
+        m_uSyncBlockValue &= ~BIT_SBLK_GC_RESERVE;
     public void SetFinalizerRun() =>
         m_uSyncBlockValue |= BIT_SBLK_FINALIZER_RUN;
     public void ClrFinalizerRun() =>
@@ -759,8 +761,10 @@ internal unsafe partial struct gc_heap
         }
     }
 
+    // gcinternal.h pinned_plug(m) returns m->first (the plug address). The pinned-plug free-space
+    // length is carried separately in m->len and read through pinned_len.
     public static byte* pinned_plug(mark* entry) =>
-        entry->first + (nint)entry->len;
+        entry->first;
 
     public static void initialize_loh_pinned_queue_state()
     {

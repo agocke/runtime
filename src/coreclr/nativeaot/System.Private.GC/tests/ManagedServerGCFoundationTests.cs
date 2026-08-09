@@ -1154,7 +1154,261 @@ public static class ManagedServerGCFoundationTests
         }
     }
 
-    // Walk a method body collecting the simple names of its call/callvirt/newobj targets, and count
+    [Fact]
+    public static void ServerPlanRegionLoopSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type gen = GetType("Internal.Runtime.GarbageCollection.generation");
+        Type mark = GetType("Internal.Runtime.GarbageCollection.mark");
+        Type segment = GetType("Internal.Runtime.GarbageCollection.heap_segment");
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // The per-heap plug/region planning helpers that produce the plan-allocated bounds the
+        // compaction-vs-sweep deciders consume are all present in the server build.
+        foreach (string method in new[]
+        {
+            "pinned_plug_que_empty_p",
+            "oldest_pin",
+            "deque_pinned_plug",
+            "set_new_pin_info",
+            "find_next_marked",
+            "save_allocated",
+            "update_planned_gen0_free_space",
+            "attribute_pin_higher_gen_alloc",
+            "decide_on_gen1_pin_promotion",
+            "skip_pins_in_alloc_region",
+            "decide_on_demotion_pin_surv",
+            "should_sweep_in_plan",
+            "sweep_region_in_plan",
+            "process_last_np_surv_region",
+            "process_remaining_regions",
+            "clear_gen1_cards",
+            "init_records",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == method);
+        }
+
+        // should_sweep_in_plan (gc_heap*, heap_segment*) -> bool.
+        MethodInfo sip = heap.GetMethod(
+            "should_sweep_in_plan",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(bool), sip.ReturnType);
+        ParameterInfo[] sipParams = sip.GetParameters();
+        Assert.Equal(2, sipParams.Length);
+        Assert.Equal(heap.MakePointerType(), sipParams[0].ParameterType);
+        Assert.Equal(segment.MakePointerType(), sipParams[1].ParameterType);
+
+        // sweep_region_in_plan (gc_heap*, heap_segment*, int, ref byte**, byte**) -> void, exactly
+        // as void gc_heap::sweep_region_in_plan (heap_segment* region, BOOL use_mark_list,
+        // uint8_t**& mark_list_next, uint8_t** mark_list_index).
+        MethodInfo sweep = heap.GetMethod(
+            "sweep_region_in_plan",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), sweep.ReturnType);
+        ParameterInfo[] sweepParams = sweep.GetParameters();
+        Assert.Equal(5, sweepParams.Length);
+        Assert.Equal(heap.MakePointerType(), sweepParams[0].ParameterType);
+        Assert.Equal(segment.MakePointerType(), sweepParams[1].ParameterType);
+        Assert.Equal(typeof(int), sweepParams[2].ParameterType);
+        Assert.True(sweepParams[3].ParameterType.IsByRef);
+        Assert.Equal(typeof(byte).MakePointerType().MakePointerType(), sweepParams[4].ParameterType);
+
+        // process_remaining_regions (gc_heap*, int, generation*) -> void.
+        MethodInfo prr = heap.GetMethod(
+            "process_remaining_regions",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), prr.ReturnType);
+        ParameterInfo[] prrParams = prr.GetParameters();
+        Assert.Equal(3, prrParams.Length);
+        Assert.Equal(heap.MakePointerType(), prrParams[0].ParameterType);
+        Assert.Equal(typeof(int), prrParams[1].ParameterType);
+        Assert.Equal(gen.MakePointerType(), prrParams[2].ParameterType);
+
+        // process_last_np_surv_region (gc_heap*, generation*, int, int) -> void.
+        MethodInfo plns = heap.GetMethod(
+            "process_last_np_surv_region",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(void), plns.ReturnType);
+        ParameterInfo[] plnsParams = plns.GetParameters();
+        Assert.Equal(4, plnsParams.Length);
+        Assert.Equal(heap.MakePointerType(), plnsParams[0].ParameterType);
+        Assert.Equal(gen.MakePointerType(), plnsParams[1].ParameterType);
+        Assert.Equal(typeof(int), plnsParams[2].ParameterType);
+        Assert.Equal(typeof(int), plnsParams[3].ParameterType);
+
+        // The pinned-queue consumers take the heap so they consume that heap's own mark_stack queue:
+        // pinned_plug_que_empty_p (gc_heap*) -> int, deque_pinned_plug (gc_heap*) -> nuint,
+        // oldest_pin (gc_heap*) -> mark*, set_new_pin_info (mark*, byte*) -> void.
+        MethodInfo empty = heap.GetMethod(
+            "pinned_plug_que_empty_p",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(int), empty.ReturnType);
+        Assert.Equal(heap.MakePointerType(), empty.GetParameters()[0].ParameterType);
+
+        MethodInfo deque = heap.GetMethod(
+            "deque_pinned_plug",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(nuint), deque.ReturnType);
+        Assert.Equal(heap.MakePointerType(), deque.GetParameters()[0].ParameterType);
+
+        MethodInfo oldest = heap.GetMethod(
+            "oldest_pin",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(mark.MakePointerType(), oldest.ReturnType);
+        Assert.Equal(heap.MakePointerType(), oldest.GetParameters()[0].ParameterType);
+    }
+
+    [Fact]
+    public static void ServerProcessRemainingRegionsCallsClosedLeaves()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // process_remaining_regions consumes the pinned-plug queue in address order, decides the plan
+        // generation of each remaining region, and asks for new regions (falling back to special
+        // sweep) so every condemned generation ends up with at least one region.
+        MethodInfo prr = heap.GetMethod(
+            "process_remaining_regions",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] prrNames, _) = CollectCallTargets(prr, "deque_pinned_plug");
+        foreach (string expected in new[]
+        {
+            "pinned_plug_que_empty_p",
+            "oldest_pin",
+            "deque_pinned_plug",
+            "set_new_pin_info",
+            "update_planned_gen0_free_space",
+            "decide_on_demotion_pin_surv",
+            "decide_on_gen1_pin_promotion",
+            "skip_pins_in_alloc_region",
+            "heap_segment_next_non_sip",
+            "heap_segment_non_sip",
+            "get_new_region",
+        })
+        {
+            Assert.Contains(expected, prrNames);
+        }
+
+        // sweep_region_in_plan rebuilds the region's free list from its unmarked gaps and records its
+        // final allocated / plan-allocated bounds.
+        MethodInfo sweep = heap.GetMethod(
+            "sweep_region_in_plan",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] sweepNames, _) = CollectCallTargets(sweep, "find_next_marked");
+        foreach (string expected in new[]
+        {
+            "set_region_sweep_in_plan",
+            "find_next_marked",
+            "make_unused_array",
+            "fix_brick_to_highest",
+            "save_allocated",
+        })
+        {
+            Assert.Contains(expected, sweepNames);
+        }
+
+        // should_sweep_in_plan reaches the owning heap's SIP counters and reserved free region, and
+        // reads survival ratios to decide whether a region is swept in place.
+        MethodInfo sip = heap.GetMethod(
+            "should_sweep_in_plan",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] sipNames, _) = CollectCallTargets(sip, "get_free_region");
+        foreach (string expected in new[]
+        {
+            "get_region_gen_num",
+            "get_plan_gen_num",
+            "set_region_plan_gen_num",
+            "get_free_region",
+            "reserved_free_region_sip",
+        })
+        {
+            Assert.Contains(expected, sipNames);
+        }
+    }
+
+    [Fact]
+    public static void ServerPlanRegionFieldsAreInstanceOwned()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC / PER_HEAP_FIELD_DIAG_ONLY region-planning state is
+        // instance-owned in the MULTIPLE_HEAPS build so each server heap plans its own condemned
+        // regions.
+        foreach (string field in new[]
+        {
+            "reserved_free_regions_sip",
+            "regions_per_gen",
+            "planned_regions_per_gen",
+            "sip_maxgen_regions_per_gen",
+            "decide_promote_gen1_pins_p",
+            "special_sweep_p",
+            "maxgen_pinned_compact_before_advance",
+            "new_gen0_regions_in_plns",
+            "new_regions_in_prr",
+            "fgm_result",
+        })
+        {
+            FieldInfo info = heap.GetField(
+                field,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.NotNull(info);
+            Assert.False(info.IsStatic);
+
+            Assert.Null(heap.GetField(
+                field,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        // enable_special_regions_p is PER_HEAP_ISOLATED_FIELD_INIT_ONLY, so it stays static.
+        FieldInfo special = heap.GetField(
+            "enable_special_regions_p",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.NotNull(special);
+        Assert.True(special.IsStatic);
+    }
+
+    [Fact]
+    public static unsafe void ServerPinnedPlugReturnsPlugAddress()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type markType = GetType("Internal.Runtime.GarbageCollection.mark");
+
+        // gcinternal.h pinned_plug(m) returns m->first (the plug address), not first + len. Confirm
+        // the server helper matches by reading a synthetic mark back through the collector.
+        int markSize = Marshal.SizeOf(markType);
+        IntPtr buffer = Marshal.AllocHGlobal(markSize);
+        try
+        {
+            for (int i = 0; i < markSize; i++)
+            {
+                Marshal.WriteByte(buffer, i, 0);
+            }
+
+            FieldInfo firstField = markType.GetField(
+                "first",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            FieldInfo lenField = markType.GetField(
+                "len",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+            var plug = (IntPtr)0x4000;
+            var len = (IntPtr)0x200;
+            Marshal.WriteIntPtr(buffer + (int)Marshal.OffsetOf(markType, firstField.Name), plug);
+            Marshal.WriteIntPtr(buffer + (int)Marshal.OffsetOf(markType, lenField.Name), len);
+
+            MethodInfo pinnedPlug = heap.GetMethod(
+                "pinned_plug",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+            object result = pinnedPlug.Invoke(null, new object[] { Pointer.Box((void*)buffer, markType.MakePointerType()) })!;
+            Assert.Equal(plug, (IntPtr)Pointer.Unbox(result));
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
     // how many of them have a given name (used to count gc_t_join.join sites). Tokens are resolved
     // through the module so stray operand bytes that look like call opcodes are discarded.
     private static (string[] Names, int NamedCount) CollectCallTargets(MethodInfo method, string countName)
