@@ -1410,11 +1410,23 @@ namespace Internal.Runtime.GarbageCollection
 #endif
         public const nuint LOH_PIN_QUEUE_LENGTH = 100;
         public const int LOH_PIN_DECAY = 10;
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC loh_pinned_queue_tos / loh_pinned_queue_bos and
+        // PER_HEAP_FIELD_MAINTAINED loh_pinned_queue_length / loh_pinned_queue_decay /
+        // loh_pinned_queue. These are static in WKS and instance-owned in the MULTIPLE_HEAPS build
+        // so each server heap plans its own LOH pinned queue during the plan phase (plan_loh).
+#if MULTIPLE_HEAPS
+        public nuint loh_pinned_queue_tos;
+        public nuint loh_pinned_queue_bos;
+        public nuint loh_pinned_queue_length;
+        public int loh_pinned_queue_decay;
+        public mark* loh_pinned_queue;
+#else
         public static nuint loh_pinned_queue_tos;
         public static nuint loh_pinned_queue_bos;
         public static nuint loh_pinned_queue_length;
         public static int loh_pinned_queue_decay;
         public static mark* loh_pinned_queue;
+#endif
 #if MULTIPLE_HEAPS
         // gcpriv.h PER_HEAP_FIELD_SINGLE_GC mark-overflow range, owned per server heap.
         public byte* min_overflow_address;
@@ -1604,7 +1616,13 @@ namespace Internal.Runtime.GarbageCollection
             is_restricted_physical_mem = 0;
             hard_limit_config_p = false;
             reserved_memory_limit = 0;
+#if !MULTIPLE_HEAPS
+            // In the MULTIPLE_HEAPS build the loh_pinned_queue_* fields are instance-owned
+            // (reset per heap by initialize_loh_pinned_queue_state(hp) during heap creation,
+            // matching native's PER_HEAP_FIELD classification), so the static reset only applies
+            // to the WKS build's single heap.
             initialize_loh_pinned_queue_state();
+#endif
             alloc_contexts_used = 0;
             freeable_uoh_segment = null;
 #if BACKGROUND_GC

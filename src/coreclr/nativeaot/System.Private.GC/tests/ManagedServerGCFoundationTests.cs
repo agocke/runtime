@@ -2042,8 +2042,216 @@ public static class ManagedServerGCFoundationTests
         }
     }
 
-    // how many of them have a given name (used to count gc_t_join.join sites). Tokens are resolved
-    // through the module so stray operand bytes that look like call opcodes are discarded.
+    [Fact]
+    public static void ServerPlanLohSurfaceIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type genType = GetType("Internal.Runtime.GarbageCollection.generation");
+        Type markType = GetType("Internal.Runtime.GarbageCollection.mark");
+        Type bytePtr = typeof(byte).MakePointerType();
+        Type heapPtr = heap.MakePointerType();
+        Type genPtr = genType.MakePointerType();
+        Type markPtr = markType.MakePointerType();
+
+        MethodInfo[] statics =
+            heap.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        // plan_phase.cpp FEATURE_LOH_COMPACTION planning family, every method reaching its heap
+        // through the gc_heap* parameter (the WKS statics are instance-owned in the server build).
+        foreach (string expected in new[]
+        {
+            "plan_loh",
+            "loh_allocate_in_condemned",
+            "loh_size_fit_p",
+            "loh_enque_pinned_plug",
+            "loh_set_allocator_next_pin",
+            "loh_deque_pinned_plug",
+            "loh_oldest_pin",
+            "loh_pinned_plug_que_empty_p",
+            "loh_pinned_plug_of",
+            "decay_loh_pinned_queue",
+        })
+        {
+            Assert.Contains(statics, m => m.Name == expected);
+        }
+
+        // BOOL gc_heap::plan_loh () -> bool plan_loh (gc_heap*).
+        MethodInfo planLoh = GetMethod(heap, "plan_loh", new[] { heapPtr });
+        Assert.Equal(typeof(bool), planLoh.ReturnType);
+
+        // uint8_t* gc_heap::loh_allocate_in_condemned (size_t size) -> byte* (gc_heap*, nuint).
+        MethodInfo aic = GetMethod(heap, "loh_allocate_in_condemned", new[] { heapPtr, typeof(nuint) });
+        Assert.Equal(bytePtr, aic.ReturnType);
+
+        // BOOL gc_heap::loh_size_fit_p (size_t, uint8_t*, uint8_t*, bool) ->
+        // bool (nuint, byte*, byte*, bool). No gc_heap*: it is a pure pointer-arithmetic leaf.
+        MethodInfo sizeFit = GetMethod(
+            heap,
+            "loh_size_fit_p",
+            new[] { typeof(nuint), bytePtr, bytePtr, typeof(bool) });
+        Assert.Equal(typeof(bool), sizeFit.ReturnType);
+
+        // BOOL gc_heap::loh_enque_pinned_plug (uint8_t*, size_t) -> int (gc_heap*, byte*, nuint).
+        MethodInfo enque = GetMethod(
+            heap,
+            "loh_enque_pinned_plug",
+            new[] { heapPtr, bytePtr, typeof(nuint) });
+        Assert.Equal(typeof(int), enque.ReturnType);
+
+        // mark* gc_heap::loh_pinned_plug_of (size_t bos) -> mark* (gc_heap*, nuint).
+        MethodInfo plugOf = GetMethod(heap, "loh_pinned_plug_of", new[] { heapPtr, typeof(nuint) });
+        Assert.Equal(markPtr, plugOf.ReturnType);
+
+        // size_t gc_heap::loh_deque_pinned_plug () -> nuint (gc_heap*).
+        MethodInfo deque = GetMethod(heap, "loh_deque_pinned_plug", new[] { heapPtr });
+        Assert.Equal(typeof(nuint), deque.ReturnType);
+
+        // mark* gc_heap::loh_oldest_pin () -> mark* (gc_heap*).
+        Assert.Equal(markPtr, GetMethod(heap, "loh_oldest_pin", new[] { heapPtr }).ReturnType);
+
+        // BOOL gc_heap::loh_pinned_plug_que_empty_p () -> int (gc_heap*).
+        Assert.Equal(
+            typeof(int),
+            GetMethod(heap, "loh_pinned_plug_que_empty_p", new[] { heapPtr }).ReturnType);
+
+        // void gc_heap::loh_set_allocator_next_pin () -> void (gc_heap*).
+        Assert.Equal(
+            typeof(void),
+            GetMethod(heap, "loh_set_allocator_next_pin", new[] { heapPtr }).ReturnType);
+
+        _ = genPtr;
+    }
+
+    [Fact]
+    public static void ServerPlanLohCallsClosedLeaves()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // plan_loh drives the pinned-queue enqueue, the condemned allocator, the relocation-distance
+        // record, and the UOH start-object leaf; every token resolves within the closed family.
+        MethodInfo planLoh = heap.GetMethod(
+            "plan_loh",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] planNames, _) = CollectCallTargets(planLoh, "loh_allocate_in_condemned");
+        foreach (string expected in new[]
+        {
+            "loh_allocate_in_condemned",
+            "loh_enque_pinned_plug",
+            "loh_pinned_plug_que_empty_p",
+            "loh_pinned_plug_of",
+            "loh_deque_pinned_plug",
+            "loh_set_node_relocation_distance",
+            "get_uoh_start_object",
+            "heap_segment_rw",
+        })
+        {
+            Assert.Contains(expected, planNames);
+        }
+
+        // loh_allocate_in_condemned fits the plug, consumes pins, and grows / rolls over LOH regions.
+        MethodInfo aic = heap.GetMethod(
+            "loh_allocate_in_condemned",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] aicNames, _) = CollectCallTargets(aic, "grow_heap_segment");
+        foreach (string expected in new[]
+        {
+            "loh_size_fit_p",
+            "grow_heap_segment",
+            "loh_set_allocator_next_pin",
+            "loh_pinned_plug_que_empty_p",
+            "loh_pinned_plug_of",
+            "loh_deque_pinned_plug",
+            "loh_oldest_pin",
+        })
+        {
+            Assert.Contains(expected, aicNames);
+        }
+
+        // loh_enque_pinned_plug grows the queue and positions the allocator on the next pin.
+        MethodInfo enque = heap.GetMethod(
+            "loh_enque_pinned_plug",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] enqueNames, _) = CollectCallTargets(enque, "grow_mark_stack");
+        foreach (string expected in new[] { "grow_mark_stack", "loh_set_allocator_next_pin" })
+        {
+            Assert.Contains(expected, enqueNames);
+        }
+
+        // decay_loh_pinned_queue frees the queue through the free-heap import once decayed.
+        MethodInfo decay = heap.GetMethod(
+            "decay_loh_pinned_queue",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        (string[] decayNames, _) = CollectCallTargets(decay, "ManagedGC_Free");
+        Assert.Contains("ManagedGC_Free", decayNames);
+    }
+
+    [Theory]
+    // sizeof(loh_padding_obj) aligns to 0x20, so the end-of-window pad is one padding object (0x20)
+    // and a mid-window pad is two (0x40). A 0x18 plug fits only when the window minus its pad covers it.
+    [InlineData(0x18u, 0x40u, true, true)]   // end: 0x40 - 0x20 = 0x20 >= 0x18
+    [InlineData(0x18u, 0x38u, true, true)]   // end: 0x38 - 0x20 = 0x18 >= 0x18
+    [InlineData(0x18u, 0x30u, true, false)]  // end: 0x30 - 0x20 = 0x10 <  0x18
+    [InlineData(0x18u, 0x80u, false, true)]  // mid: 0x80 - 0x40 = 0x40 >= 0x18
+    [InlineData(0x18u, 0x40u, false, false)] // mid: 0x40 - 0x40 = 0    <  0x18
+    public static unsafe void ServerLohSizeFitPMeasuresPlanWindow(
+        uint size,
+        uint gap,
+        bool endP,
+        bool expected)
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        MethodInfo sizeFit = heap.GetMethod(
+            "loh_size_fit_p",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var basePtr = (nuint)0x40000;
+        Type bytePtr = typeof(byte).MakePointerType();
+        object result = sizeFit.Invoke(
+            null,
+            new object[]
+            {
+                (nuint)size,
+                Pointer.Box((void*)basePtr, bytePtr),
+                Pointer.Box((void*)(basePtr + gap), bytePtr),
+                endP,
+            })!;
+
+        Assert.Equal(expected, (bool)result);
+    }
+
+    [Fact]
+    public static void ServerLohPinnedQueueIsInstanceOwned()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h marks loh_pinned_queue_tos/bos PER_HEAP_FIELD_SINGLE_GC and
+        // loh_pinned_queue_length/decay/loh_pinned_queue PER_HEAP_FIELD_MAINTAINED, so in the
+        // MULTIPLE_HEAPS build each server heap owns its own LOH pinned queue (instance, not static).
+        foreach (string fieldName in new[]
+        {
+            "loh_pinned_queue_tos",
+            "loh_pinned_queue_bos",
+            "loh_pinned_queue_length",
+            "loh_pinned_queue_decay",
+            "loh_pinned_queue",
+        })
+        {
+            Assert.NotNull(heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+            Assert.Null(heap.GetField(
+                fieldName,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        // gc.cpp init_gc_heap resets the queue per heap; the reset leaf now takes the gc_heap*.
+        MethodInfo init = GetMethod(
+            heap,
+            "initialize_loh_pinned_queue_state",
+            new[] { heap.MakePointerType() });
+        Assert.Equal(typeof(void), init.ReturnType);
+    }
+
     private static (string[] Names, int NamedCount) CollectCallTargets(MethodInfo method, string countName)
     {
         byte[] il = method.GetMethodBody()!.GetILAsByteArray()!;

@@ -809,13 +809,16 @@ internal unsafe partial struct gc_heap
     public static byte* pinned_plug(mark* entry) =>
         entry->first;
 
-    public static void initialize_loh_pinned_queue_state()
+    // gc.cpp init_gc_heap: reset this heap's LOH pinned-queue state. The tos/bos cursors and the
+    // maintained length/decay/queue pointer are PER_HEAP_FIELD in the MULTIPLE_HEAPS build, so each
+    // server heap owns its own queue (plan_loh grows and decays it independently per heap).
+    public static void initialize_loh_pinned_queue_state(gc_heap* hp)
     {
-        loh_pinned_queue_tos = 0;
-        loh_pinned_queue_bos = 0;
-        loh_pinned_queue_length = 0;
-        loh_pinned_queue_decay = LOH_PIN_DECAY;
-        loh_pinned_queue = null;
+        hp->loh_pinned_queue_tos = 0;
+        hp->loh_pinned_queue_bos = 0;
+        hp->loh_pinned_queue_length = 0;
+        hp->loh_pinned_queue_decay = LOH_PIN_DECAY;
+        hp->loh_pinned_queue = null;
     }
 
     public static void initialize_concurrent_gc()
@@ -1257,6 +1260,7 @@ internal static unsafe class ManagedGCRegionBootstrap
 
             gc_heap.g_heaps[i] = heap;
             gc_heap.initialize_server_allocation_state(heap, i);
+            gc_heap.initialize_loh_pinned_queue_state(heap);
             if (!heap->gc_done_event.CreateManualEventNoThrow(initialState: false))
             {
                 Cleanup();

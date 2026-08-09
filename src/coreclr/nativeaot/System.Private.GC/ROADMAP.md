@@ -1821,6 +1821,46 @@ pin the `allocate_in_older_generation` (`gc_heap*`, `generation*`, `nuint`, int,
 exercise the `make_unused_array` / `unused_array_size` round-trip behaviorally, and verify
 `gen2_removed_no_undo` / `saved_pinned_plug_index` are instance-owned. No collection is routed.
 
+The large-object (LOH) plan family (`ManagedServerGCPlanUOH.cs`) closes the UOH-compaction planner.
+Translated from the SVR compilation of the `FEATURE_LOH_COMPACTION` block of `plan_phase.cpp`, it is the
+planner the `plan_phase` driver runs for the large object heap when a `max_generation` collection
+decides to compact it: `plan_loh` (allocate the pinned queue if needed, reset every LOH region's
+plan-allocated tail, walk each LOH object relocating non-pinned survivors through
+`loh_allocate_in_condemned` while enqueuing pins, record each object's relocation distance with
+`loh_set_node_relocation_distance`, then drain the queue advancing the allocation pointer past every
+pin; returns `false` — fall back to sweeping — on any allocation failure); `loh_allocate_in_condemned`
+(fit the padded plug with `loh_size_fit_p`, consume the next queued pin, and grow / roll over the LOH
+region through `grow_heap_segment` as needed); `loh_size_fit_p` (does a padded plug fit between an
+allocation pointer and limit, with one `loh_padding_obj` at the end or two mid-window); the LOH
+pinned-plug queue leaves (`loh_pinned_plug_que_empty_p` / `loh_pinned_plug_of` / `loh_oldest_pin` /
+`loh_deque_pinned_plug` / `loh_enque_pinned_plug` / `loh_set_allocator_next_pin`); and
+`decay_loh_pinned_queue` (the driver's non-compacting decay, decrementing the queue's decay counter
+and freeing the queue once idle). Every function is `gc_heap`-parameterized. The LOH pinned queue
+(`loh_pinned_queue` / `loh_pinned_queue_length` `PER_HEAP_FIELD_MAINTAINED`, `loh_pinned_queue_tos` /
+`loh_pinned_queue_bos` `PER_HEAP_FIELD_SINGLE_GC`, plus the maintained `loh_pinned_queue_decay`) is now
+instance-owned for `MULTIPLE_HEAPS` in `GCPriv.cs` — static in WKS — so each server heap plans its own
+LOH; `initialize_loh_pinned_queue_state` takes the `gc_heap*` and is called per heap during heap
+creation, matching native `init_gc_heap`, while the WKS static reset stays gated on `!MULTIPLE_HEAPS` in
+`initialize_gc_static_state`. `grow_mark_stack` (`ManagedServerGCPlanBrick.cs`), `grow_heap_segment`
+(`ManagedServerGCPlanCondemned.cs`), `get_uoh_start_object` / `heap_segment_rw`
+(`GCRegionsSegments.cs`), `loh_set_node_relocation_distance` / `loh_padding_obj` (`GCPriv.cs`), and
+`pinned_plug` / `size` / `AlignQword` / `get_alignment_constant` (`ManagedServerGC.cs`) are reused as-is.
+Focused Foundation tests pin the `plan_loh` / `loh_allocate_in_condemned` / `loh_size_fit_p` /
+`loh_enque_pinned_plug` / `loh_pinned_plug_of` / `loh_deque_pinned_plug` / `loh_oldest_pin` /
+`loh_pinned_plug_que_empty_p` / `loh_set_allocator_next_pin` signatures, resolve the closed-leaf call
+tokens `plan_loh` / `loh_allocate_in_condemned` / `loh_enque_pinned_plug` / `decay_loh_pinned_queue`
+make, exercise `loh_size_fit_p` behaviorally across the end-of-window and mid-window pad, and verify the
+`loh_pinned_queue_*` fields are instance-owned. No collection is routed.
+
+The plan-time UOH *sweep* leaf `sweep_uoh_objects` — which the `plan_phase` driver uses for POH (which
+is never compacted, so `plan_poh` is just this sweep) and for a non-compacting LOH — is **not** in this
+slice. It mutates `freeable_uoh_segment` (`PER_HEAP_FIELD_MAINTAINED`); making that field per-heap drags
+in the `rearrange_uoh_segments` / `rearrange_small_heap_segments` / `delay_free_segments`
+segment-return family and its `gc_heap*` threading through the WKS collection drivers
+(`garbage_collect_background`, `gc1`) that currently take no `hp` — a separate coherent unit. Its other
+leaves (`thread_gap`, `uoh_object_marked`, `update_start_tail_regions`, `allocator.clear`) would be
+re-translated there.
+
 The dedicated server smoke test (`src/tests/nativeaot/SmokeTests/ManagedGCServer`) still cannot be
 built through the `src/tests` harness: `src/tests/Common/dirs.proj` fails with
 `MSB4184: The expression "[System.IO.File]::ReadAllText('')" cannot be evaluated. The value cannot be
@@ -1831,9 +1871,11 @@ builds and links into `clr.aot` cleanly.
 Production blockers remain in the `plan_phase` driver that sequences these helpers (including its own
 per-GC reset of the region-planning counters `memset (regions_per_gen ...)` / `decide_promote_gen1_pins_p`
 and of `gen2_removed_no_undo` / `saved_pinned_plug_index`; the plug walk itself — which now has both
-`allocate_in_condemned_generations` and `allocate_in_older_generation` for the SOH branches;
-`plan_loh` / `plan_poh` — which need
-`grow_heap_segment` — and `fix_generation_bounds` — which needs `thread_final_regions` /
+`allocate_in_condemned_generations` and `allocate_in_older_generation` for the SOH branches and
+`plan_loh` for the compacting LOH; the LOH compaction gating (`settings.loh_compaction` /
+`loh_compacted_p` / `loh_compaction_requested`) and the `sweep_uoh_objects` fallback for the
+non-compacting LOH and for POH — which needs the per-heap `freeable_uoh_segment` segment-return family;
+and `fix_generation_bounds` — which needs `thread_final_regions` /
 `find_first_valid_region` / `reset_allocation_pointers` and the BGC end-mark accounting), the
 `gc_join_decide_on_compaction` / `gc_join_rearrange_segs_compaction` /
 `gc_join_adjust_handle_age_compact` / `gc_join_adjust_handle_age_sweep` plan-phase joins, the server
