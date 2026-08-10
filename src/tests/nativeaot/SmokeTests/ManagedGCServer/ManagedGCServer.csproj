@@ -13,6 +13,12 @@
     <CLRTestEnvironmentVariable Include="DOTNET_GCHeapCount" Value="2" />
     <CLRTestEnvironmentVariable Include="DOTNET_GCRegionSize" Value="1000000" />
     <CLRTestEnvironmentVariable Include="DOTNET_GCRegionRange" Value="80000000" />
-    <CLRTestEnvironmentVariable Include="DOTNET_gcConcurrent" Value="0" />
+    <!-- Run with concurrent (background) GC enabled so CI exercises the server background collector
+         (garbage_collect_background / the dedicated bgc workers) via the non-blocking gen2 requests in
+         BackgroundModeCollectionsCompleteWithSurvivors. The forced gen0/gen1/gen2 tests still take the
+         blocking path (GC.Collect(..., blocking: true) is not a background request), so this single
+         run covers both. Override locally (e.g. DOTNET_gcConcurrent=0 when launching the test binary
+         directly) to regress the blocking-only path. -->
+    <CLRTestEnvironmentVariable Include="DOTNET_gcConcurrent" Value="1" />
   </ItemGroup>
 </Project>

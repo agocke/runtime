@@ -1,18 +1,17 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// Slice A of the SERVER_GC / MULTIPLE_HEAPS / USE_REGIONS background collector: the PER_HEAP and
-// PER_HEAP_ISOLATED background-GC thread/join/event state and lifecycle from the SVR compilation of
-// background.cpp (create_bgc_threads_support / create_bgc_thread / prepare_bgc_thread /
-// bgc_thread_stub / bgc_thread_function) and gcpriv.h field ownership.
+// The SERVER_GC / MULTIPLE_HEAPS / USE_REGIONS background collector's PER_HEAP and
+// PER_HEAP_ISOLATED thread/join/event state and lifecycle from the SVR compilation of background.cpp
+// (create_bgc_threads_support / create_bgc_thread / prepare_bgc_thread / bgc_thread_stub /
+// bgc_thread_function) and gcpriv.h field ownership.
 //
-// Only initialization and cleanup are wired: create_bgc_threads_support runs from the server init
-// path (behind the concurrent-GC config) and destroy_background_gc runs from Cleanup. No collection
-// is routed to this path yet -- current_c_gc_state stays c_gc_state_free and gc_background_running
-// stays 0 (both live in GCRegionsSegments.cs / ManagedServerGCBackgroundState.cs), the worker idle
-// loop is never entered, and no bgc worker thread is ever created (prepare_bgc_thread, which spawns
-// them lazily on the first background collection in native, is not called). The concurrent
-// mark/revisit/sweep body and the join stages it drives are deferred to later slices.
+// create_bgc_threads_support runs from the server init path (behind the concurrent-GC config) and
+// destroy_background_gc runs from Cleanup. The dedicated background workers are created lazily on the
+// first non-blocking gen2 request (prepare_bgc_thread, on the triggering thread) and run the initial
+// stop-the-world mark (bgc_thread_function -> background_mark_phase in ManagedServerGCBackgroundMark.cs),
+// coordinated by the triggering worker through start_c_gc / wait_to_proceed. The concurrent
+// mark/revisit/sweep body and the live restart_vm remain gated to the concurrent-mark slice.
 //
 // gcpriv.h scoping is preserved:
 //   * bgc_start_event / background_gc_done_event / ee_proceed_event / bgc_threads_sync_event,
@@ -26,6 +25,7 @@
 #if SERVER_GC && MULTIPLE_HEAPS && USE_REGIONS
 
 using System.Diagnostics;
+using System.Threading;
 
 namespace Internal.Runtime.GarbageCollection;
 
@@ -106,7 +106,7 @@ internal unsafe partial struct gc_heap
 
     // background.cpp gc_heap::create_bgc_thread: spawn this heap's background worker as a GC-special
     // server thread (the same non-suspendable thread kind used for the foreground workers) running
-    // bgc_thread_stub over this heap. Not called in this slice.
+    // bgc_thread_stub over this heap.
     private static bool create_bgc_thread(gc_heap* gh)
     {
         Debug.Assert(background_gc_done_event.IsValid());
@@ -116,14 +116,23 @@ internal unsafe partial struct gc_heap
             gh->bgc_thread_running = ManagedGC_CreateServerThread(&bgc_thread_stub, gh, name);
         }
 
-        return gh->bgc_thread_running != 0;
+        if (gh->bgc_thread_running != 0)
+        {
+            // Count the background worker into the same pool as the foreground workers so Cleanup's
+            // join (server_gc_threads_exited >= server_gc_threads_created) waits for it to exit.
+            Interlocked.Increment(ref server_gc_threads_created);
+            Interlocked.Increment(ref total_bgc_threads);
+            return true;
+        }
+
+        return false;
     }
 
     // background.cpp gc_heap::prepare_bgc_thread: lazily create this heap's background worker under
     // its timeout critical section. Native additionally distinguishes a live Thread* handle from the
     // running flag; this port tracks only bgc_thread_running (the server, like its foreground
     // workers, does not retain a managed Thread* handle), so the two native checks collapse into one.
-    // Not called in this slice.
+    // Called on the triggering thread on the first non-blocking gen2 request.
     private static bool prepare_bgc_thread(gc_heap* gh)
     {
         bool success = false;
@@ -160,52 +169,92 @@ internal unsafe partial struct gc_heap
         bgc_thread_function(heap);
     }
 
-    // background.cpp gc_heap::bgc_thread_function: the per-heap background worker idle loop. It parks
-    // on the shared bgc_start_event; when woken with settings.concurrent set it would run the
-    // concurrent collection, and on a wait timeout with keep_bgc_threads_p clear it retires the
-    // worker. The concurrent collection body (do_background_gc / background_mark_phase /
-    // background_sweep and the bgc_t_join coordination) is deferred to later slices, and because no
-    // worker is created and bgc_start_event is never set in this slice, the loop is never entered.
+    // background.cpp gc_heap::bgc_thread_function: the per-heap background worker loop. Each worker
+    // parks on the shared bgc_start_event; when woken for a background collection (settings.concurrent
+    // set and not shutting down) it runs the initial stop-the-world mark over its own heap and rejoins
+    // the other workers through bgc_t_join. Like the foreground workers it holds the managed-GC
+    // critical region (DoNotTriggerGc) for its whole lifetime so it is never hijacked while running
+    // collector code with the EE suspended. It exits when Cleanup sets server_gc_shutdown and wakes it.
+    //
+    // This slice runs only the initial mark on the background workers; the concurrent
+    // mark/revisit/background sweep and the live restart_vm remain gated (the reclamation still
+    // completes through the foreground blocking path once the workers hand control back).
     private static void bgc_thread_function(gc_heap* hp)
     {
         Debug.Assert(background_gc_done_event.IsValid());
         Debug.Assert(bgc_start_event.IsValid());
 
-        while (true)
+        heap_select.init_cpu_mapping(hp->heap_number);
+
+        GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+
+        while (Volatile.Read(ref server_gc_shutdown) == 0)
         {
-            enable_preemptive();
+            bgc_start_event.Wait(GCEnv.INFINITE, alertable: false);
 
-            uint result = bgc_start_event.Wait(GCEnv.INFINITE, alertable: false);
-
-            if (result == GCEnv.WAIT_TIMEOUT)
-            {
-                bool doExit = false;
-                hp->bgc_threads_timeout_cs.Enter();
-                if (keep_bgc_threads_p == 0)
-                {
-                    hp->bgc_thread_running = 0;
-                    doExit = true;
-                }
-                hp->bgc_threads_timeout_cs.Leave();
-
-                if (doExit)
-                {
-                    break;
-                }
-
-                continue;
-            }
-
-            // Signalled with no concurrent work to do -> the worker exits (native break).
-            if (settings.concurrent == 0)
+            if (Volatile.Read(ref server_gc_shutdown) != 0)
             {
                 break;
             }
 
-            // Deferred: run the concurrent background collection over this heap and rejoin the other
-            // workers through bgc_t_join. Landing this is the subject of the following slices.
-            break;
+            // Woken with no concurrent work to do -> loop back and wait again.
+            if (settings.concurrent == 0)
+            {
+                continue;
+            }
+
+            // Initial stop-the-world background mark over this heap. The EE was already suspended by
+            // the foreground worker that triggered the collection, so the background workers only mark.
+            background_mark_phase(hp);
+
+            // The reclamation completes through the foreground blocking path this slice, which does
+            // not run background_sweep, so drop the bits this heap set.
+            clear_bgc_mark_array(hp);
+
+            bgc_t_join.join(hp, (int)gc_join_stage.gc_join_done);
+            if (bgc_t_join.joined())
+            {
+                // Reset the manual bgc_start_event so the workers park again on the next iteration
+                // rather than immediately re-triggering (native resets it in this same joined block).
+                bgc_start_event.Reset();
+
+                // Revert the published concurrent write-barrier state so the foreground blocking
+                // mark/plan/sweep takes its ordinary (non-BGC) branches, then hand control back to
+                // the foreground triggering worker parked in wait_to_proceed.
+                current_c_gc_state = c_gc_state.c_gc_state_free;
+                cm_in_progress = 0;
+                set_background_state(bgc_state.bgc_not_in_process);
+                settings.background_p = 0;
+                settings.concurrent = 0;
+                background_gc_done_event.Set();
+                bgc_t_join.restart();
+                ee_proceed_event.Set();
+            }
         }
+
+        criticalRegion.Exit();
+        Interlocked.Increment(ref server_gc_threads_exited);
+    }
+
+    // background.cpp gc_heap::start_c_gc: wake the background workers for a new background collection.
+    // Waits for the previous collection's done event (created signaled), resets it, then sets
+    // bgc_start_event to release every parked background worker.
+    private static void start_c_gc()
+    {
+        Debug.Assert(background_gc_done_event.IsValid());
+        Debug.Assert(bgc_start_event.IsValid());
+
+        background_gc_done_event.Wait(GCEnv.INFINITE, alertable: false);
+        background_gc_done_event.Reset();
+        bgc_start_event.Set();
+    }
+
+    // background.cpp gc_heap::wait_to_proceed: the foreground triggering worker parks here until the
+    // background workers finish the initial mark and signal ee_proceed_event.
+    private static void wait_to_proceed()
+    {
+        Debug.Assert(ee_proceed_event.IsValid());
+        ee_proceed_event.Wait(GCEnv.INFINITE, alertable: false);
     }
 
     // background.cpp gc_heap::initialize_background_gc (support half). Slice A creates the background
@@ -260,7 +309,15 @@ internal unsafe partial struct gc_heap
         heap->bgc_thread_running = 0;
         if (GCConfig.GetConcurrentGC() != 0)
         {
-            return heap->bgc_threads_timeout_cs.Initialize();
+            if (!heap->bgc_threads_timeout_cs.Initialize())
+            {
+                return false;
+            }
+
+            // Allocate this heap's background mark stack once (the initial-mark scan reuses it every
+            // background collection). Failure fails GC initialization, matching native's
+            // create_bgc_thread_support treating the background support as required.
+            return allocate_background_mark_stack(heap);
         }
 
         return true;
@@ -272,6 +329,7 @@ internal unsafe partial struct gc_heap
     // uninitialized storage.
     public static void destroy_background_gc_per_heap(gc_heap* heap)
     {
+        free_background_mark_stack(heap);
         if (heap->bgc_threads_timeout_cs.IsInitialized)
         {
             heap->bgc_threads_timeout_cs.Destroy();

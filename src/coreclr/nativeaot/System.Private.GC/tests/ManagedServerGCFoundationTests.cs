@@ -354,6 +354,189 @@ public static class ManagedServerGCFoundationTests
     }
 
     [Fact]
+    public static void ServerBackgroundInitialMarkRoutingApiMatchesNative()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // Slice B routing surface: the non-blocking request entry, the joined-worker kickoff, and the
+        // cross-heap initial-mark join sequence.
+        MethodInfo gcb = heap.GetMethod(
+            "garbage_collect_background",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(int), gcb.ReturnType);
+        ParameterInfo[] gcbParams = gcb.GetParameters();
+        Assert.Equal(3, gcbParams.Length);
+        Assert.Equal(typeof(int), gcbParams[0].ParameterType);   // generation
+        Assert.Equal(typeof(byte), gcbParams[1].ParameterType);  // low_memory_p
+        Assert.Equal(typeof(int), gcbParams[2].ParameterType);   // mode
+
+        // server_background_gc_kickoff returns bool: it commits every heap's mark array first (native
+        // do_concurrent_p gate) and returns false to fall back to a blocking collection if any commit
+        // fails, publishing no background state/count in that case.
+        MethodInfo kickoff = heap.GetMethod(
+            "server_background_gc_kickoff",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(bool), kickoff.ReturnType);
+        Assert.Empty(kickoff.GetParameters());
+
+        Assert.NotNull(heap.GetMethod(
+            "concurrent_gc_enabled",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        // The kickoff aligns bgc_t_join's participant count with the active heap count before waking
+        // the workers; the join exposes update_n_threads/get_num_threads for that alignment.
+        Type tJoinAlign = GetType("Internal.Runtime.GarbageCollection.t_join");
+        Assert.NotNull(tJoinAlign.GetMethod(
+            "update_n_threads",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        Assert.NotNull(tJoinAlign.GetMethod(
+            "get_num_threads",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+
+        // commit_mark_array_bgc_init is the per-heap gate; it returns bool so a failure can be
+        // detected and unwound.
+        MethodInfo commit = heap.GetMethod(
+            "commit_mark_array_bgc_init",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(bool), commit.ReturnType);
+        Assert.Equal(heap.MakePointerType(), commit.GetParameters()[0].ParameterType);
+
+        // background_gc_requested is the PER_HEAP_ISOLATED request flag the joined worker consumes.
+        Assert.NotNull(heap.GetField(
+            "background_gc_requested",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        // gc_type_background == 2 matches background.cpp; the server build takes it from GCPriv.cs.
+        Type heapPriv = heap;
+        Assert.Equal(2, GetConstant(heapPriv, "gc_type_background"));
+
+        // The initial-mark join sequence runs the two native background STW join stages and publishes
+        // the concurrent write-barrier state (c_gc_state_marking) it records. Assert the join stages
+        // it depends on exist with the native values.
+        Type joinStage = GetType("Internal.Runtime.GarbageCollection.gc_join_stage");
+        Assert.Equal(19, (int)Enum.Parse(joinStage, "gc_join_restart_ee"));
+        Assert.Equal(31, (int)Enum.Parse(joinStage, "gc_join_after_reset"));
+
+        Type cGcState = GetType("Internal.Runtime.GarbageCollection.c_gc_state");
+        Assert.Equal(0, (int)Enum.Parse(cGcState, "c_gc_state_marking"));
+        Assert.Equal(2, (int)Enum.Parse(cGcState, "c_gc_state_free"));
+
+        // The background state machine transitions the kickoff/initial-mark drive.
+        Type bgcState = GetType("Internal.Runtime.GarbageCollection.bgc_state");
+        Assert.Equal(0, (int)Enum.Parse(bgcState, "bgc_not_in_process"));
+        Assert.Equal(1, (int)Enum.Parse(bgcState, "bgc_initialized"));
+        Assert.Equal(2, (int)Enum.Parse(bgcState, "bgc_reset_ww"));
+        Assert.Equal(3, (int)Enum.Parse(bgcState, "bgc_mark_handles"));
+    }
+
+    [Fact]
+    public static void ServerBackgroundMarkPrimitivesMatchNative()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // Per-heap background mark stack + marked-byte accumulator are instance-owned (native scopes
+        // background_mark_stack_array / _tos / bpromoted_bytes per heap), not static.
+        foreach (string instanceField in new[]
+        {
+            "background_mark_stack_array",
+            "background_mark_stack_array_length",
+            "background_mark_stack_tos",
+            "background_mark_stack_overflow",
+            "bpromoted_bytes",
+        })
+        {
+            Assert.NotNull(heap.GetField(
+                instanceField,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+            Assert.Null(heap.GetField(
+                instanceField,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        // The marking primitives and the initial-mark scan.
+        foreach (string method in new[]
+        {
+            "background_promote",
+            "push_background_mark",
+            "background_mark_reference",
+            "drain_background_mark_stack",
+            "scan_marked_objects_for_overflow",
+            "background_mark_phase",
+            "commit_mark_array_bgc_init",
+            "clear_bgc_mark_array",
+            "allocate_background_mark_stack",
+            "free_background_mark_stack",
+        })
+        {
+            Assert.NotNull(heap.GetMethod(
+                method,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        // background_promote is the GcScanRoots/GcScanHandles promote callback: (byte**, ScanContext*, uint).
+        MethodInfo promote = heap.GetMethod(
+            "background_promote",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        ParameterInfo[] pp = promote.GetParameters();
+        Assert.Equal(3, pp.Length);
+        Assert.Equal(typeof(byte).MakePointerType().MakePointerType(), pp[0].ParameterType);
+        Assert.Equal(typeof(uint), pp[2].ParameterType);
+
+        // background_mark_phase / drain / clear each operate on one heap.
+        foreach (string method in new[] { "background_mark_phase", "drain_background_mark_stack", "clear_bgc_mark_array" })
+        {
+            MethodInfo m = heap.GetMethod(
+                method,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+            Assert.Equal(heap.MakePointerType(), m.GetParameters()[0].ParameterType);
+        }
+
+        // gc_join_begin_mark_phase and gc_join_null_dead_short_weak bracket the initial-mark scan
+        // (BeforeGcScanRoots / AfterGcScanRoots) alongside the two write-barrier publication joins.
+        Type joinStage2 = GetType("Internal.Runtime.GarbageCollection.gc_join_stage");
+        Assert.Equal(3, (int)Enum.Parse(joinStage2, "gc_join_begin_mark_phase"));
+        Assert.Equal(7, (int)Enum.Parse(joinStage2, "gc_join_null_dead_short_weak"));
+        Assert.Equal(1, (int)Enum.Parse(joinStage2, "gc_join_done"));
+    }
+
+    [Fact]
+    public static void ServerBackgroundDedicatedWorkerLifecycleIsPresent()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // The dedicated background workers run the initial mark: creation, wake (start_c_gc), the
+        // foreground hand-off wait (wait_to_proceed), and the worker loop.
+        foreach (string method in new[]
+        {
+            "create_bgc_thread",
+            "prepare_bgc_thread",
+            "bgc_thread_stub",
+            "bgc_thread_function",
+            "start_c_gc",
+            "wait_to_proceed",
+        })
+        {
+            Assert.NotNull(heap.GetMethod(
+                method,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        // total_bgc_threads counts the dedicated workers (PER_HEAP_ISOLATED shared static).
+        Assert.NotNull(heap.GetField(
+            "total_bgc_threads",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        // The workers are counted into the same pool as the foreground workers so Cleanup's join
+        // waits for them.
+        Assert.NotNull(heap.GetField(
+            "server_gc_threads_created",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        Assert.NotNull(heap.GetField(
+            "server_gc_threads_exited",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+    }
+
+    [Fact]
     public static void GcDoneHandshakeStateAndCoordinationArePresent()
     {
         Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");

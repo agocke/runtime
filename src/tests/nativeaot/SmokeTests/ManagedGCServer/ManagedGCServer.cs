@@ -40,6 +40,40 @@ internal static class ManagedGCServerSmoke
 
         int heapCount = GetHeapCount();
         int workerCount = GetWorkerThreadCount();
+
+        // Fixed single active heap (an explicit one-heap server: heaps == workers == 1). The
+        // multi-heap topology asserts below do not apply, but the background collection path still
+        // must work with a single dedicated background worker and a single-participant bgc_t_join.
+        // This exercises the commit-array gate and the join participant-count alignment at the
+        // kickoff. The dynamic-adaptation (active heaps < worker pool) topology is intentionally not
+        // exercised here because dynamic adaptation is independently unsupported by this managed
+        // server port (it faults even for blocking collections); the join alignment for that case is
+        // covered by the ServerBackgroundInitialMarkRoutingApiMatchesNative Foundation assertions.
+        if (heapCount == 1 && workerCount == heapCount)
+        {
+            if (!BackgroundModeCollectionsCompleteWithSurvivors(heapCount))
+            {
+                return 9;
+            }
+            if (!ForcedCollectionsPreserveSurvivors())
+            {
+                return 4;
+            }
+            if (!WeakReferencesTrackReclamation())
+            {
+                return 5;
+            }
+            if (!FinalizationRunsForDeadObjects())
+            {
+                return 7;
+            }
+
+            Console.WriteLine(
+                "Managed server GC (single active heap) passed background-mode and forced " +
+                "collections.");
+            return 100;
+        }
+
         if (heapCount < 2 || workerCount != heapCount)
         {
             Console.WriteLine(
@@ -423,16 +457,23 @@ internal static class ManagedGCServerSmoke
         return true;
     }
 
-    // Background/non-blocking GC.Collect requests must complete correctly on the server while a
-    // mutator keeps allocating. This exercises the non-blocking induced-collection request path
-    // (GCCollectionMode.Default with blocking:false, which requests a background gen2 collection),
-    // allocation running concurrently with the collection request, completion/waits (the collection
-    // count must advance), and survivor/weak-reference correctness across the collections.
+    // Background/non-blocking GC.Collect requests must be routed onto the server background pipeline
+    // and complete correctly while a mutator keeps allocating. This exercises the non-blocking
+    // induced-collection request path (GCCollectionMode.Default with blocking:false, which the server
+    // routes to garbage_collect_background: the background collection kickoff, the cross-heap
+    // bgc_t_join initial-mark stages, and the background state-machine / concurrent write-barrier
+    // state publication), allocation running concurrently with the collection request, completion
+    // (each non-blocking request must advance the gen2 collection count on its own), and
+    // survivor/weak-reference correctness across the collections.
     //
-    // NOTE: the server background (concurrent) collector is not yet routed, so a background request
-    // is currently serviced by a blocking collection. This test validates the request handling,
-    // allocation-during-collection, and survivor semantics that must continue to hold once the
-    // concurrent server BGC path lands; it does not assert that marking ran concurrently.
+    // NOTE: this Slice C routes the initial stop-the-world background mark onto dedicated background
+    // worker threads: every non-blocking gen2 request lazily prepares/wakes the per-heap bgc workers,
+    // which scan stack roots, finalizer roots, strong/pinned handles and dependent handles into the
+    // background mark array under the native bgc_t_join ordering. The live-concurrent restart, the
+    // software-write-watch publication, and the concurrent sweep remain gated, so the reclamation
+    // completes through the blocking path. The test therefore asserts that the non-blocking request
+    // path actually performs a collection (the gen2 count advances from non-blocking requests alone)
+    // and preserves survivors/weak refs, rather than asserting that marking ran concurrently.
     private static bool BackgroundModeCollectionsCompleteWithSurvivors(int heapCount)
     {
         const int LiveCount = 256;
@@ -470,6 +511,28 @@ internal static class ManagedGCServerSmoke
         });
         mutator.Start();
 
+        // Phase 1: only non-blocking / background gen2 requests. Each one is routed onto the server
+        // background pipeline and must perform a real collection, so the gen2 count must advance by
+        // roughly the number of requests -- proving the non-blocking path collects rather than
+        // silently no-opping.
+        int nonBlockingRounds = 8;
+        int gen2BeforeNonBlocking = GC.CollectionCount(2);
+        for (int round = 0; round < nonBlockingRounds; round++)
+        {
+            GC.Collect(2, GCCollectionMode.Default, blocking: false);
+        }
+        int gen2AfterNonBlocking = GC.CollectionCount(2);
+        if (gen2AfterNonBlocking - gen2BeforeNonBlocking < nonBlockingRounds)
+        {
+            Volatile.Write(ref stop, 1);
+            mutator.Join();
+            Console.WriteLine(
+                $"Non-blocking gen2 requests did not each advance the count " +
+                $"({gen2BeforeNonBlocking} -> {gen2AfterNonBlocking} over {nonBlockingRounds} requests).");
+            return false;
+        }
+
+        // Phase 2: mixed non-blocking + blocking requests interleaved with finalization.
         int gen2Before = GC.CollectionCount(2);
         for (int round = 0; round < 12; round++)
         {

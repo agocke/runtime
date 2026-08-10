@@ -146,6 +146,8 @@
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGC.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCBackgroundState.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCBackgroundThreads.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCBackground.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
+    <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCBackgroundMark.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCCardScan.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCCompact.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />
     <Compile Include="Internal\Runtime\GarbageCollection\ManagedServerGCCondemn.cs" Condition="'$(ManagedGCServerBuild)' == 'true'" />

@@ -290,7 +290,27 @@ internal unsafe partial struct gc_heap
                 settings.condemned_generation,
                 GCInterfaceOffsets.max_generation);
 
-            if (settings.condemned_generation == GCInterfaceOffsets.max_generation)
+            // Slice B/C: a non-blocking gen2 request routed through garbage_collect_background sets
+            // background_gc_requested. On the joined worker, once the condemned generation has
+            // settled to max_generation, run the background collection kickoff. It commits every
+            // heap's mark array first (native collect.cpp do_concurrent_p gate); if any commit fails
+            // it publishes no background state/count and returns false, so the collection falls back
+            // to the ordinary blocking path here.
+            bool backgroundRequested =
+                System.Threading.Volatile.Read(ref background_gc_requested) != 0 &&
+                settings.condemned_generation == GCInterfaceOffsets.max_generation;
+
+            if (backgroundRequested && !server_background_gc_kickoff())
+            {
+                backgroundRequested = false;
+            }
+
+            // A background (non-blocking gen2) collection counts as a background collection
+            // (full_gc_counts[gc_type_background], incremented in server_background_gc_kickoff), not a
+            // blocking one. A normal (non-background) or fell-back max-generation collection counts as
+            // blocking.
+            if (settings.condemned_generation == GCInterfaceOffsets.max_generation &&
+                !backgroundRequested)
             {
                 full_gc_counts[gc_type_blocking]++;
             }

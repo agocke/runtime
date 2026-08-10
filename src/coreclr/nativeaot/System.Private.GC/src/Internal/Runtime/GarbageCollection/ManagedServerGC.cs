@@ -1370,6 +1370,12 @@ internal static unsafe class ManagedGCRegionBootstrap
         {
             gc_heap.ee_suspend_event.Set();
         }
+        // Wake any parked background workers so they observe the shutdown flag and exit; they are
+        // counted in server_gc_threads_created, so the join below waits for them too.
+        if (gc_heap.bgc_start_event.IsValid())
+        {
+            gc_heap.bgc_start_event.Set();
+        }
 
         int expectedThreads =
             Volatile.Read(ref gc_heap.server_gc_threads_created);
@@ -2284,6 +2290,19 @@ internal static unsafe class ManagedGCHeap
             : (generation < GCInterfaceOffsets.max_generation
                 ? generation
                 : GCInterfaceOffsets.max_generation);
+
+        // Slice B: a non-blocking gen2 request is routed to the translated background pipeline. When
+        // garbage_collect_background accepts it (concurrent GC enabled and the background support
+        // created), the initial stop-the-world background mark runs across all heaps and the
+        // reclamation completes through the blocking path; otherwise it returns notimpl and the
+        // request falls through to the ordinary blocking foreground loop below.
+        if (((collection_mode)mode & collection_mode.collection_non_blocking) != 0 &&
+            gc_heap.garbage_collect_background(generation, low_memory_p, mode) ==
+                gc_heap.background_collection_s_ok)
+        {
+            criticalRegion.Exit();
+            return S_OK;
+        }
 
         gc_reason reason;
         if (low_memory_p != 0)

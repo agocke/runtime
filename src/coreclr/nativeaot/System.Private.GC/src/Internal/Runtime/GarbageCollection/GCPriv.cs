@@ -1336,6 +1336,16 @@ namespace Internal.Runtime.GarbageCollection
         // Static in WKS (single-heap background state in BackgroundGC.cs); instance-owned here.
         public int bgc_thread_running;
         public CLRCriticalSection bgc_threads_timeout_cs;
+        // gcpriv.h PER_HEAP_FIELD background mark stack: each server heap (i.e. each background
+        // worker) owns its own mark stack, overflow flag and marked-byte accumulator, the way native
+        // scopes background_mark_stack_array / background_mark_stack_tos / bpromoted_bytes per heap.
+        // Static in WKS (single-heap state in BackgroundGC.cs). The background mark array itself is a
+        // single process-wide table under USE_REGIONS (shared, set atomically), so it is not here.
+        public byte** background_mark_stack_array;
+        public nuint background_mark_stack_array_length;
+        public nuint background_mark_stack_tos;
+        public int background_mark_stack_overflow;
+        public nuint bpromoted_bytes;
 #endif
         // gcpriv.h PER_HEAP_FIELD_SINGLE_GC[_ALLOC] plan-space accounting consumed by the plan
         // phase's compaction-vs-sweep decision. These are static in WKS and instance-owned in the
@@ -1489,6 +1499,11 @@ namespace Internal.Runtime.GarbageCollection
 #endif
         public const int gc_type_compacting = 0;
         public const int gc_type_blocking = 1;
+#if MULTIPLE_HEAPS
+        // WKS defines this in BackgroundGC.cs; the server excludes that file, so the server build
+        // takes the constant here. Kept identical to background.cpp gc_type_background.
+        public const int gc_type_background = 2;
+#endif
         public static full_gc_count_array full_gc_counts;
         // gcpriv.h PER_HEAP_FIELD_SINGLE_GC_ALLOC loh_alloc_since_cg: instance-owned per server heap
         // (static in WKS) so plan_phase's compaction join resets each heap's own LOH allocation
