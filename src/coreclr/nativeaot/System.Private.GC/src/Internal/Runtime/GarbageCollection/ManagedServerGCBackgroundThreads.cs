@@ -186,7 +186,10 @@ internal unsafe partial struct gc_heap
 
         heap_select.init_cpu_mapping(hp->heap_number);
 
-        GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+        // Uncounted DoNotTriggerGc for the worker lifetime (see gc_thread_function): the background
+        // worker must not contribute to g_managedGCCriticalRegionCount or the final-mark re-suspend's
+        // ManagedGC_PrepareForSuspension would deadlock on the parked worker pool.
+        ManagedGC_EnterServerGCThread();
 
         while (Volatile.Read(ref server_gc_shutdown) == 0)
         {
@@ -232,7 +235,7 @@ internal unsafe partial struct gc_heap
             }
         }
 
-        criticalRegion.Exit();
+        ManagedGC_ExitServerGCThread();
         Interlocked.Increment(ref server_gc_threads_exited);
     }
 

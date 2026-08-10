@@ -1065,6 +1065,18 @@ internal unsafe partial struct gc_heap
         void* context,
         byte* name);
 
+    // clrgc.managed.cpp: a GC-special server worker (foreground or background) enters DoNotTriggerGc
+    // for its whole lifetime without contributing to g_managedGCCriticalRegionCount, so the
+    // background collection's ManagedGC_PrepareForSuspension can drain that count to the caller's own
+    // contribution instead of deadlocking on the parked worker pool.
+    [RuntimeImport("*", "ManagedGC_EnterServerGCThread")]
+    [MethodImpl(MethodImplOptions.InternalCall)]
+    public static extern void ManagedGC_EnterServerGCThread();
+
+    [RuntimeImport("*", "ManagedGC_ExitServerGCThread")]
+    [MethodImpl(MethodImplOptions.InternalCall)]
+    public static extern void ManagedGC_ExitServerGCThread();
+
     public static bool create_gc_thread(gc_heap* heap)
     {
         fixed (byte* name = ".NET Server GC\0"u8)
@@ -1622,7 +1634,8 @@ internal static unsafe class ManagedGCHeap
             status = try_allocate_more_space(
                 context, size, flags, generationNumber, uoh, heap, &result, &oosEphemeralTried);
         }
-        while (status == server_allocation_state.a_state_retry_allocate &&
+        while ((status == server_allocation_state.a_state_retry_allocate ||
+                status == server_allocation_state.a_state_check_and_wait_for_bgc) &&
                retryCount++ < AllocationRetryMaxCount);
 
         return status == server_allocation_state.a_state_can_allocate ? result : null;
@@ -1639,6 +1652,51 @@ internal static unsafe class ManagedGCHeap
         a_state_can_allocate,
         a_state_cant_allocate,
         a_state_retry_allocate,
+        a_state_check_and_wait_for_bgc,
+    }
+
+    // allocation.cpp gc_heap::background_gc_wait: a mutator that cannot allocate while a background
+    // collection is running waits here for that collection to finish instead of triggering a
+    // foreground collection (which would spin cooperatively in enter_gc_lock and stall the BGC's own
+    // re-suspend). The wait is preemptive so GCToEEInterface.SuspendEE can walk this thread while it
+    // blocks: the mutator reached the allocator through ManagedGC_EnterAllocationHelper, which holds
+    // the managed-GC critical region (DoNotTriggerGc) and published a stable deferred RhpGcAlloc
+    // transition frame. GCHeapCriticalRegion.Suspend releases that critical-region count (so the BGC
+    // re-suspend's ManagedGC_PrepareForSuspension does not deadlock waiting on this parked mutator)
+    // and enable_preemptive publishes the deferred frame; both are restored after the wait. Mirrors
+    // WKS BackgroundGC.background_gc_wait.
+    private static uint background_gc_wait(uint timeout = GCEnv.INFINITE)
+    {
+        if (!gc_heap.background_gc_done_event.IsValid())
+        {
+            return GCEnv.WAIT_OBJECT_0;
+        }
+
+        int suspendedCriticalRegion = GCHeapCriticalRegion.Suspend();
+        bool toggled = gc_heap.enable_preemptive();
+
+        uint result = gc_heap.background_gc_done_event.Wait(timeout, alertable: false);
+
+        if (toggled)
+        {
+            gc_heap.disable_preemptive(restore_cooperative: true);
+        }
+        GCHeapCriticalRegion.Resume(suspendedCriticalRegion);
+
+        return result;
+    }
+
+    // allocation.cpp gc_heap::check_and_wait_for_bgc / wait_for_background: if a background collection
+    // is in progress, release this generation's more-space lock, wait preemptively for the background
+    // collection to finish, and report the a_state_check_and_wait_for_bgc state so the retry loop
+    // re-evaluates the freed/swept space. The lock is intentionally not re-acquired here (like
+    // trigger_gc_for_alloc): the retry re-enters it on the next try_allocate_more_space call.
+    private static server_allocation_state check_and_wait_for_bgc(GCSpinLock* msl)
+    {
+        GCSpinLock.leave(msl);
+        System.Threading.Interlocked.Increment(ref gc_heap.s_bgc_alloc_wait_count);
+        background_gc_wait();
+        return server_allocation_state.a_state_check_and_wait_for_bgc;
     }
 
     // allocation.cpp gc_heap::new_allocation_allowed (MULTIPLE_HEAPS body): a generation may still be
@@ -1722,6 +1780,14 @@ internal static unsafe class ManagedGCHeap
         // triggers this budget collection at gen 0 (trigger_gc_for_alloc(0, ...)) for both SOH and UOH.
         if (!new_allocation_allowed(heap, generationNumber))
         {
+            // A background collection is running: wait for it preemptively instead of triggering a
+            // foreground collection (which enters gc_lock cooperatively and would stall the BGC's own
+            // re-suspend). After it finishes the retry re-evaluates the reset budget.
+            if (gc_heap.background_running_p())
+            {
+                return check_and_wait_for_bgc(allocationLock);
+            }
+
             trigger_gc_for_alloc(
                 allocationLock,
                 0,
@@ -1757,13 +1823,21 @@ internal static unsafe class ManagedGCHeap
                  (nuint)(commitEnd - commitStart))))
         {
             // The generation's allocation segment cannot satisfy this request (region exhausted or
-            // the OS refused the commit). Native allocate_soh/allocate_uoh drive a collection for the
-            // out-of-segment reason and retry; the collection frees/sweeps regions so the refill can
-            // succeed. reason_oos_* must condemn at least gen1 (generation_to_condemn asserts n >= 1):
+            // the OS refused the commit). If a background collection is running, wait for it
+            // preemptively (the concurrent sweep frees regions) instead of triggering a foreground
+            // collection through gc_lock. Otherwise native allocate_soh/allocate_uoh drive a
+            // collection for the out-of-segment reason and retry; the collection frees/sweeps regions
+            // so the refill can succeed. reason_oos_* must condemn at least gen1
+            // (generation_to_condemn asserts n >= 1):
             //   * UOH (reason_oos_loh): trigger_full_compact_gc condemns max_generation (gen2).
             //   * SOH (reason_oos_soh): trigger_ephemeral_gc condemns max_generation - 1 (gen1) first,
             //     then allocate_soh escalates to trigger_full_compact_gc (gen2) if the ephemeral
             //     collection did not free enough. The escalation is tracked across retries here.
+            if (gc_heap.background_running_p())
+            {
+                return check_and_wait_for_bgc(allocationLock);
+            }
+
             if (uoh)
             {
                 trigger_gc_for_alloc(

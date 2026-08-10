@@ -253,6 +253,24 @@ extern "C" void ManagedGC_CompleteSuspension()
     VolatileStore(&g_managedGCSuspensionPending, 0);
 }
 
+// A GC-special server worker (foreground or background) executes managed collector code while the EE
+// is suspended, so it must hold DoNotTriggerGc for its whole lifetime to avoid being hijacked or
+// triggering a GC. It must NOT, however, contribute to g_managedGCCriticalRegionCount: that count is
+// what ManagedGC_PrepareForSuspension drains down to the caller's own contribution before a
+// background collection re-suspends the EE. If the parked worker threads each held a counted critical
+// region, PrepareForSuspension (invoked by one of those very workers) could never see the count reach
+// its own contribution and would spin forever. Entering DoNotTriggerGc without touching the count
+// gives the worker its protection while keeping it invisible to the suspension handshake.
+extern "C" void ManagedGC_EnterServerGCThread()
+{
+    ThreadStore::GetCurrentThread()->SetDoNotTriggerGc();
+}
+
+extern "C" void ManagedGC_ExitServerGCThread()
+{
+    ThreadStore::GetCurrentThread()->ClearDoNotTriggerGc();
+}
+
 extern "C" void ManagedGC_EnterAllocationHelper()
 {
     if (t_managedGCAllocationHelperDepth++ == 0)

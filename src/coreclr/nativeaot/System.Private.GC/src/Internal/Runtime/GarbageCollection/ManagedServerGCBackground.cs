@@ -48,6 +48,10 @@ namespace Internal.Runtime.GarbageCollection;
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
 internal unsafe partial struct gc_heap
 {
+    // Number of times a mutator parked in check_and_wait_for_bgc's preemptive background allocation
+    // wait. Diagnostic counter for the allocation-path background-wait unblocker.
+    public static int s_bgc_alloc_wait_count;
+
     // IGCHeap collect return codes (background.cpp / gcinterface.h). WKS defines these in Collect.cs,
     // which the server build excludes, so the server takes them here.
     public const int background_collection_s_ok = 0;

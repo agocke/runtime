@@ -537,6 +537,50 @@ public static class ManagedServerGCFoundationTests
     }
 
     [Fact]
+    public static void ServerBackgroundAllocationWaitApiMatchesNative()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        Type managedHeap = GetType("Internal.Runtime.GarbageCollection.ManagedGCHeap");
+
+        // allocation.cpp check_and_wait_for_bgc / wait_for_background / background_gc_wait: a mutator
+        // that cannot allocate while a background collection is running must wait for it preemptively
+        // (releasing its managed-GC critical-region count) instead of triggering a foreground
+        // collection that spins cooperatively in enter_gc_lock. Both helpers live on the server heap.
+        MethodInfo backgroundGcWait = managedHeap.GetMethod(
+            "background_gc_wait",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(uint), backgroundGcWait.ReturnType);
+
+        Assert.NotNull(managedHeap.GetMethod(
+            "check_and_wait_for_bgc",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        // allocation_state gained a_state_check_and_wait_for_bgc, the state the wait returns so the
+        // allocate_more_space retry loop re-evaluates the freed/swept space.
+        Type allocState = managedHeap.GetNestedType(
+            "server_allocation_state",
+            BindingFlags.Public | BindingFlags.NonPublic)!;
+        Assert.Contains("a_state_check_and_wait_for_bgc", Enum.GetNames(allocState));
+
+        // A GC-special server worker (foreground or background) holds DoNotTriggerGc without
+        // contributing to g_managedGCCriticalRegionCount, so the background final-mark re-suspend's
+        // ManagedGC_PrepareForSuspension can drain that count to the caller's own contribution rather
+        // than deadlocking on the parked worker pool.
+        Assert.NotNull(heap.GetMethod(
+            "ManagedGC_EnterServerGCThread",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        Assert.NotNull(heap.GetMethod(
+            "ManagedGC_ExitServerGCThread",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        // Diagnostic counter for the number of mutators that parked in the preemptive background
+        // allocation wait.
+        Assert.NotNull(heap.GetField(
+            "s_bgc_alloc_wait_count",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+    }
+
+    [Fact]
     public static void GcDoneHandshakeStateAndCoordinationArePresent()
     {
         Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");

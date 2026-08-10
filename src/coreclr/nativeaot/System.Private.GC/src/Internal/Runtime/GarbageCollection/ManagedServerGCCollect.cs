@@ -87,10 +87,19 @@ internal unsafe partial struct gc_heap
 
         GcCondemnedGeneration = gen;
 
+        // Release this triggering thread's managed-GC critical region (held by the GarbageCollect
+        // vtable's GCHeapCriticalRegion.Enter) while it is parked in wait_for_gc_done. A background
+        // collection re-suspends the EE from a worker via ManagedGC_PrepareForSuspension, which drains
+        // g_managedGCCriticalRegionCount down to the worker's own contribution; if this parked
+        // triggering thread kept its count, that drain could never complete. The thread is preemptive
+        // and parked on an event here, so it needs neither DoNotTriggerGc nor the count until it
+        // resumes. Harmless for the blocking path (its SuspendEE does not consult the count).
+        int suspendedCriticalRegion = GCHeapCriticalRegion.Suspend();
         bool cooperative_mode = enable_preemptive();
         ee_suspend_event.Set();
         wait_for_gc_done();
         disable_preemptive(cooperative_mode);
+        GCHeapCriticalRegion.Resume(suspendedCriticalRegion);
 
         GCToEEInterface.EnableFinalization(
             settings.concurrent == 0 && settings.found_finalizers != 0 ? (byte)1 : (byte)0);
@@ -110,9 +119,12 @@ internal unsafe partial struct gc_heap
         // native and never trigger a GC), it must never observe a GC poll or be hijacked while the
         // runtime is suspended -- including while it is parked waiting for the next collection, so
         // that it is already protected the instant it wakes into cooperative managed code. It
-        // therefore enters the managed-GC critical region (DoNotTriggerGc) once for its whole
-        // lifetime, matching the DoNotTriggerGc the WKS foreground path holds while it drives a GC.
-        GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+        // therefore enters DoNotTriggerGc once for its whole lifetime. It uses the uncounted
+        // server-GC-thread entry rather than GCHeapCriticalRegion so it does not contribute to
+        // g_managedGCCriticalRegionCount: a background collection's ManagedGC_PrepareForSuspension
+        // must drain that count to the triggering worker's own contribution, which the parked worker
+        // pool would otherwise make impossible.
+        ManagedGC_EnterServerGCThread();
 
         while (Volatile.Read(ref server_gc_shutdown) == 0)
         {
@@ -208,7 +220,7 @@ internal unsafe partial struct gc_heap
             }
         }
 
-        criticalRegion.Exit();
+        ManagedGC_ExitServerGCThread();
         Interlocked.Increment(ref server_gc_threads_exited);
     }
 
