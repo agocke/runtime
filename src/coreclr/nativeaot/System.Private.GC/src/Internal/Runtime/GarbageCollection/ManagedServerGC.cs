@@ -1596,6 +1596,108 @@ internal static unsafe class ManagedGCHeap
             }
         }
 
+        // allocation.cpp gc_heap::allocate_more_space: retry try_allocate_more_space while it reports
+        // that a collection ran (or is running) and the request must be re-evaluated against the
+        // post-GC budget/regions. Bounded so a request that can never be satisfied (true OOM) returns
+        // null instead of looping forever.
+        byte* result = null;
+        server_allocation_state status = server_allocation_state.a_state_start;
+        int retryCount = 0;
+        // allocate_soh's a_state machine drives a reason_oos_soh request through an ephemeral (gen1)
+        // collection first and escalates to a full (gen2) collection only if the ephemeral one did not
+        // free enough. That escalation state must persist across the retries below, so it lives here.
+        bool oosEphemeralTried = false;
+        do
+        {
+            status = try_allocate_more_space(
+                context, size, flags, generationNumber, uoh, heap, &result, &oosEphemeralTried);
+        }
+        while (status == server_allocation_state.a_state_retry_allocate &&
+               retryCount++ < AllocationRetryMaxCount);
+
+        return status == server_allocation_state.a_state_can_allocate ? result : null;
+    }
+
+    // Bounds allocate_more_space's retry loop so a request that no collection can satisfy falls out to
+    // an OOM (null) return rather than spinning on GarbageCollectGenerationServer forever.
+    private const int AllocationRetryMaxCount = 64;
+
+    // allocation.cpp allocation_state, reduced to the states this blocking server slow path produces.
+    private enum server_allocation_state
+    {
+        a_state_start,
+        a_state_can_allocate,
+        a_state_cant_allocate,
+        a_state_retry_allocate,
+    }
+
+    // allocation.cpp gc_heap::new_allocation_allowed (MULTIPLE_HEAPS body): a generation may still be
+    // allocated into while its budget (dd_new_allocation, decremented by each context refill) is
+    // non-negative. The WKS-only pause-mode/time-slice heuristics are not part of the server path.
+    private static bool new_allocation_allowed(gc_heap* heap, int gen_number) =>
+        dynamic_data.dd_new_allocation(gc_heap.dynamic_data_of(heap, gen_number)) >= 0;
+
+    // allocation.cpp allocate_soh / allocate_uoh out-of-segment (reason_oos_*) initial condemned
+    // generation. reason_oos_loh (UOH) runs trigger_full_compact_gc, which condemns max_generation
+    // (gen2). reason_oos_soh (SOH) runs trigger_ephemeral_gc first, which condemns max_generation - 1
+    // (gen1), and allocate_soh escalates to trigger_full_compact_gc (max_generation, gen2) when the
+    // ephemeral collection did not free enough. generation_to_condemn asserts these are >= 1, so an
+    // out-of-segment trigger is never paired with gen 0. Kept as a pure helper so the mapping is unit
+    // testable independently of a live heap.
+    internal static int oos_collection_generation(bool uoh, bool ephemeralTried) =>
+        (uoh || ephemeralTried)
+            ? GCInterfaceOffsets.max_generation
+            : (int)gc_generation_num.soh_gen1;
+
+    // allocation.cpp gc_heap::trigger_gc_for_alloc / trigger_ephemeral_gc / trigger_full_compact_gc:
+    // release the more-space lock across the collection (both the MULTIPLE_HEAPS SOH branch and the
+    // BGC-compiled UOH branch leave/re-acquire it), then run the blocking server collection at the
+    // requested initial condemned generation. The budget path passes gen 0 (reason_alloc_*); the
+    // out-of-segment path passes gen1 for reason_oos_soh's ephemeral collection (trigger_ephemeral_gc
+    // condemns max_generation - 1) and gen2 for the full escalation and reason_oos_loh
+    // (trigger_full_compact_gc condemns max_generation). generation_to_condemn asserts n >= 1 for the
+    // reason_oos_* reasons, so those must never be paired with gen 0.
+    //
+    // The triggering mutator reached here through ManagedGC_EnterAllocationHelper, so it holds the
+    // managed-GC critical region (DoNotTriggerGc); it is deliberately kept held.
+    // GarbageCollectGenerationServer publishes this thread's deferred RhpGcAlloc transition frame via
+    // enable_preemptive before it wakes heap 0, so SuspendEE caches that stable frame and treats the
+    // thread as suspended without redirecting it. Clearing the critical region here instead would let
+    // another heap's SuspendEE redirect this thread while it runs cooperative managed collector code
+    // (e.g. GarbageCollectGenerationServer's already-collected early-return path, which never goes
+    // preemptive); the server mark phase would then unwind that interrupted frame up into the native
+    // GcAllocInternal->Alloc boundary and fail CalculateCurrentMethodState.
+    private static void trigger_gc_for_alloc(GCSpinLock* msl, int gen, gc_reason reason)
+    {
+        GCSpinLock.leave(msl);
+        gc_heap.GarbageCollectGenerationServer((uint)gen, reason);
+    }
+
+    // allocation.cpp gc_heap::try_allocate_more_space. Acquires the more-space lock, triggers a
+    // collection when the generation budget is exhausted or the allocation segment cannot satisfy the
+    // request, and otherwise refills the allocation context from that segment. Returns the allocation
+    // state consumed by allocate_more_space; on success *result points at the newly reserved object.
+    //
+    // Native's leading `if (gc_started) { wait_for_gc_done(); return retry; }` is intentionally not
+    // translated: native runs this in C++ so the wait creates no managed frames, but here Alloc runs
+    // in cooperative managed code entered from the native GcAllocInternal helper. Calling
+    // wait_for_gc_done once the suspension trap is already set routes through RhpWaitForGC2, which
+    // publishes a fresh transition frame deep inside the managed allocator; the server mark phase then
+    // walks up from it into the GcAllocInternal->Alloc boundary (no transition frame) and fails
+    // CalculateCurrentMethodState. An in-progress collection already forces this thread to a safe
+    // point through the allocation-helper critical region (ManagedGC_EnterAllocationHelper) and the
+    // more-space lock's ManagedGC_AllowForegroundGC cooperation, both of which wait on the stable
+    // deferred RhpGcAlloc frame, so the explicit pre-check is unnecessary here.
+    private static server_allocation_state try_allocate_more_space(
+        gc_alloc_context* context,
+        nuint size,
+        uint flags,
+        int generationNumber,
+        bool uoh,
+        gc_heap* heap,
+        byte** result,
+        bool* oosEphemeralTried)
+    {
         GCSpinLock* allocationLock = generationNumber == 0
             ? &heap->more_space_lock_soh
             : &heap->more_space_lock_uoh;
@@ -1603,17 +1705,20 @@ internal static unsafe class ManagedGCHeap
 
         nuint alignedMinObjSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
 
-        // The exhausted SOH context has an unused tail [alloc_ptr, alloc_limit] that is smaller than
-        // the requested object. Because the new context is taken from the segment frontier (past every
-        // other thread's slice), that tail would otherwise be left as zero-initialized committed space
-        // in the middle of the region and make the collector's plan-phase heap walk read a null
-        // MethodTable. Turn it into a walkable free object before moving on, matching how the native
-        // allocator (adjust_limit_clr) retires an allocation context: the free object spans the tail
-        // plus the Align(min_obj_size) that was reserved below alloc_limit.
-        if (!uoh && context->alloc_ptr is not null)
+        // allocation.cpp try_allocate_more_space budget check: each context refill below decrements
+        // this generation's dd_new_allocation. Once it goes negative, run a blocking collection for
+        // the allocation reason (reason_alloc_soh / reason_alloc_loh) before serving more space. The
+        // collection resets the budget (compute_new_dynamic_data), so the retry then proceeds. Native
+        // triggers this budget collection at gen 0 (trigger_gc_for_alloc(0, ...)) for both SOH and UOH.
+        if (!new_allocation_allowed(heap, generationNumber))
         {
-            nuint tailSize = (nuint)(context->alloc_limit - context->alloc_ptr);
-            gc_heap.make_unused_array(context->alloc_ptr, tailSize + alignedMinObjSize);
+            trigger_gc_for_alloc(
+                allocationLock,
+                0,
+                generationNumber == 0
+                    ? gc_reason.reason_alloc_soh
+                    : gc_reason.reason_alloc_loh);
+            return server_allocation_state.a_state_retry_allocate;
         }
 
         generation* gen = gc_heap.generation_of(
@@ -1641,8 +1746,33 @@ internal static unsafe class ManagedGCHeap
                  commitStart,
                  (nuint)(commitEnd - commitStart))))
         {
-            GCSpinLock.leave(allocationLock);
-            return null;
+            // The generation's allocation segment cannot satisfy this request (region exhausted or
+            // the OS refused the commit). Native allocate_soh/allocate_uoh drive a collection for the
+            // out-of-segment reason and retry; the collection frees/sweeps regions so the refill can
+            // succeed. reason_oos_* must condemn at least gen1 (generation_to_condemn asserts n >= 1):
+            //   * UOH (reason_oos_loh): trigger_full_compact_gc condemns max_generation (gen2).
+            //   * SOH (reason_oos_soh): trigger_ephemeral_gc condemns max_generation - 1 (gen1) first,
+            //     then allocate_soh escalates to trigger_full_compact_gc (gen2) if the ephemeral
+            //     collection did not free enough. The escalation is tracked across retries here.
+            if (uoh)
+            {
+                trigger_gc_for_alloc(
+                    allocationLock,
+                    oos_collection_generation(uoh: true, ephemeralTried: false),
+                    gc_reason.reason_oos_loh);
+            }
+            else
+            {
+                int oosGeneration = oos_collection_generation(
+                    uoh: false, ephemeralTried: *oosEphemeralTried);
+                *oosEphemeralTried = true;
+                trigger_gc_for_alloc(
+                    allocationLock,
+                    oosGeneration,
+                    gc_reason.reason_oos_soh);
+            }
+
+            return server_allocation_state.a_state_retry_allocate;
         }
 
         byte* limit = allocationEnd;
@@ -1703,6 +1833,26 @@ internal static unsafe class ManagedGCHeap
             }
         }
 
+        // The exhausted SOH context has an unused tail [alloc_ptr, alloc_limit] smaller than the
+        // requested object. Because the new context is taken from the segment frontier (past every
+        // other thread's slice), that tail would otherwise be left as zero-initialized committed space
+        // in the middle of the region and make the collector's plan-phase heap walk read a null
+        // MethodTable. Turn it into a walkable free object before installing the new context, matching
+        // how the native allocator (adjust_limit_clr) retires an allocation context: the free object
+        // spans the tail plus the Align(min_obj_size) that was reserved below alloc_limit. Done only
+        // on this success path; when the code above bails to a collection instead, that collection's
+        // fix_allocation_contexts retires this context.
+        if (!uoh && context->alloc_ptr is not null)
+        {
+            nuint tailSize = (nuint)(context->alloc_limit - context->alloc_ptr);
+            gc_heap.make_unused_array(context->alloc_ptr, tailSize + alignedMinObjSize);
+        }
+
+        // allocation.cpp adjust_limit_clr found_fit: charge the granted span against this
+        // generation's allocation budget so a later refill triggers a collection when it runs out.
+        dynamic_data.dd_new_allocation(gc_heap.dynamic_data_of(heap, generationNumber)) -=
+            (nint)quantum;
+
         if (generationNumber == 0)
         {
             heap->alloc_allocated = limit;
@@ -1726,7 +1876,8 @@ internal static unsafe class ManagedGCHeap
         System.Threading.Interlocked.Add(
             ref s_totalAllocatedBytes,
             unchecked((long)(uoh ? size : quantum)));
-        return start;
+        *result = start;
+        return server_allocation_state.a_state_can_allocate;
     }
 
     private static void FixAllocContext(

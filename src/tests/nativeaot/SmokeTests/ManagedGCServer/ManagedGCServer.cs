@@ -91,6 +91,11 @@ internal static class ManagedGCServerSmoke
             return 6;
         }
 
+        if (!AllocationPressureTriggersCollections(heapCount))
+        {
+            return 8;
+        }
+
         if (!FinalizationRunsForDeadObjects())
         {
             return 7;
@@ -98,8 +103,8 @@ internal static class ManagedGCServerSmoke
 
         Console.WriteLine(
             $"Managed server GC passed with {heapCount} heaps, {usedHeaps.Count} selected home " +
-            $"heaps, forced gen0/gen1/gen2 collections, and {Volatile.Read(ref s_finalizedCount)} " +
-            "finalizers observed.");
+            $"heaps, forced gen0/gen1/gen2 collections, allocation-triggered collections, and " +
+            $"{Volatile.Read(ref s_finalizedCount)} finalizers observed.");
         return 100;
     }
 
@@ -309,6 +314,106 @@ internal static class ManagedGCServerSmoke
             }
         }
         _ = heapCount;
+        return true;
+    }
+
+    // Allocation pressure alone (no explicit GC.Collect) must drive the collector: the server
+    // allocation slow path triggers GarbageCollectGenerationServer when a generation's budget is
+    // exhausted. Verify collection counts advance under sustained allocation across all worker
+    // threads/heaps, and that a live graph survives the collections the allocator triggered.
+    private static bool AllocationPressureTriggersCollections(int heapCount)
+    {
+        int gen0Before = GC.CollectionCount(0);
+
+        // A live graph that must survive every collection the allocator triggers below. Kept in a
+        // rooted array (not on the allocating threads' stacks) so survival is unambiguous.
+        const int LiveCount = 256;
+        Payload[] live = new Payload[LiveCount];
+        for (int i = 0; i < LiveCount; i++)
+        {
+            Payload p = new() { Tag = i };
+            p.Data = new byte[128 + (i & 127)];
+            p.Data[0] = unchecked((byte)i);
+            live[i] = p;
+        }
+        byte[] lohSurvivor = new byte[100_000];
+        lohSurvivor[0] = 0x5A;
+        lohSurvivor[lohSurvivor.Length - 1] = 0xA5;
+        object weakKept = new Payload { Tag = -7 };
+        WeakReference keptRef = new(weakKept);
+
+        // Spread sustained allocation over the worker threads so multiple heaps and per-thread
+        // allocation contexts drive their own budgets. No thread calls GC.Collect.
+        bool[] results = new bool[ThreadCount];
+        Thread[] mutators = new Thread[ThreadCount];
+        for (int t = 0; t < ThreadCount; t++)
+        {
+            int threadIndex = t;
+            mutators[t] = new Thread(() =>
+            {
+                // Enough dead allocation to overrun the gen0 budget many times over.
+                for (int round = 0; round < 2048; round++)
+                {
+                    for (int k = 0; k < 64; k++)
+                    {
+                        byte[] garbage = new byte[128 + ((threadIndex + k) & 255)];
+                        garbage[0] = unchecked((byte)(threadIndex + k));
+                    }
+                }
+                results[threadIndex] = true;
+            });
+            mutators[t].Start();
+        }
+
+        for (int t = 0; t < mutators.Length; t++)
+        {
+            mutators[t].Join();
+        }
+
+        int gen0After = GC.CollectionCount(0);
+        if (gen0After <= gen0Before)
+        {
+            Console.WriteLine(
+                $"Allocation pressure did not trigger any gen0 collection ({gen0Before} -> {gen0After}).");
+            return false;
+        }
+
+        for (int t = 0; t < results.Length; t++)
+        {
+            if (!results[t])
+            {
+                Console.WriteLine($"Allocation-pressure mutator {t} did not complete.");
+                return false;
+            }
+        }
+
+        // The rooted live graph must be intact after the allocator-driven collections.
+        for (int i = 0; i < LiveCount; i++)
+        {
+            Payload p = live[i];
+            if (p is null || p.Tag != i || p.Data.Length != 128 + (i & 127) ||
+                p.Data[0] != unchecked((byte)i))
+            {
+                Console.WriteLine($"Live object {i} corrupted after allocation-triggered collections.");
+                return false;
+            }
+        }
+        if (lohSurvivor.Length != 100_000 || lohSurvivor[0] != 0x5A ||
+            lohSurvivor[lohSurvivor.Length - 1] != 0xA5)
+        {
+            Console.WriteLine("LOH survivor corrupted after allocation-triggered collections.");
+            return false;
+        }
+        if (!keptRef.IsAlive || !ReferenceEquals(keptRef.Target, weakKept))
+        {
+            Console.WriteLine("Weak reference to a live object cleared by allocation-triggered collection.");
+            return false;
+        }
+
+        _ = heapCount;
+        GC.KeepAlive(live);
+        GC.KeepAlive(lohSurvivor);
+        GC.KeepAlive(weakKept);
         return true;
     }
 

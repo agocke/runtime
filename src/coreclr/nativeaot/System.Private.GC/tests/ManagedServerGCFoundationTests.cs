@@ -127,6 +127,37 @@ public static class ManagedServerGCFoundationTests
     }
 
     [Fact]
+    public static void OutOfSegmentAllocationTriggersCondemnAtLeastGen1()
+    {
+        // allocation.cpp allocate_soh/allocate_uoh drive out-of-segment (reason_oos_*) collections at
+        // a higher initial generation than the gen0 budget triggers: reason_oos_soh runs an ephemeral
+        // gen1 collection (trigger_ephemeral_gc, max_generation - 1) and escalates to a full gen2
+        // collection (trigger_full_compact_gc, max_generation) when the ephemeral one did not free
+        // enough; reason_oos_loh always runs the full gen2 collection. generation_to_condemn asserts
+        // the reason_oos_* initial generation is >= 1, so gen0 must never be used for these reasons.
+        Type managedHeap = GetType("Internal.Runtime.GarbageCollection.ManagedGCHeap");
+        MethodInfo oosGen = managedHeap.GetMethod(
+            "oos_collection_generation",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        // SOH ephemeral (first out-of-segment attempt) condemns gen1.
+        int sohEphemeral = (int)oosGen.Invoke(null, new object[] { false, false })!;
+        Assert.Equal(1, sohEphemeral);
+
+        // SOH escalation (ephemeral already tried) condemns gen2.
+        int sohFull = (int)oosGen.Invoke(null, new object[] { false, true })!;
+        Assert.Equal(2, sohFull);
+
+        // UOH always condemns gen2.
+        Assert.Equal(2, (int)oosGen.Invoke(null, new object[] { true, false })!);
+        Assert.Equal(2, (int)oosGen.Invoke(null, new object[] { true, true })!);
+
+        // Every out-of-segment initial generation must satisfy generation_to_condemn's n >= 1 assert.
+        Assert.True(sohEphemeral >= 1);
+        Assert.True(sohFull >= 1);
+    }
+
+    [Fact]
     public static void ServerJoinBarrierMatchesNativeShape()
     {
         Type joinConstants = GetType(
