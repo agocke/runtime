@@ -380,12 +380,32 @@ internal unsafe partial struct gc_heap
         sizes[(int)bookkeeping_element.card_table_element] = card_table_info.size_card_of(start, end);
         sizes[(int)bookkeeping_element.brick_table_element] = card_table_info.size_brick_of(start, end);
         sizes[(int)bookkeeping_element.card_bundle_table_element] = card_table_info.size_card_bundle_of(start, end);
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP && BACKGROUND_GC
+        // card_table.cpp get_card_table_element_sizes: the software-write-watch table is only carved
+        // (and committed / grown / initialized) when concurrent GC is available, gated identically to
+        // make_card_table's InitializeUntranslatedTable so the layout stays self-consistent.
+        if (sww_bookkeeping_enabled())
+        {
+            sizes[(int)bookkeeping_element.software_write_watch_table_element] =
+                SoftwareWriteWatch.GetTableByteSize(start, end);
+        }
+#endif
         sizes[(int)bookkeeping_element.region_to_generation_table_element] = size_region_to_generation_table_of(start, end);
         sizes[(int)bookkeeping_element.seg_mapping_table_element] = size_seg_mapping_table_of(start, end);
 #if BACKGROUND_GC
         sizes[(int)bookkeeping_element.mark_array_element] = card_table_info.size_mark_array_of(start, end);
 #endif
     }
+
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP && BACKGROUND_GC
+    // card_table.cpp gates the software-write-watch table carve/init on gc_can_use_concurrent. The
+    // server keeps gc_can_use_concurrent false (so it does not perturb condemn/pause decisions) but
+    // still runs concurrent GC when configured, so also honor the concurrent-GC config directly. Both
+    // get_card_table_element_sizes and make_card_table use this single predicate so the reserved layout
+    // and the initialized table pointer always agree.
+    internal static bool sww_bookkeeping_enabled() =>
+        gc_can_use_concurrent || GCConfig.GetConcurrentGC() != 0;
+#endif
 
     private static void get_card_table_element_layout(byte* start, byte* end, nuint* layout)
     {
@@ -591,6 +611,22 @@ internal unsafe partial struct gc_heap
             (uint*)(mem + (nint)card_table_element_layout[(int)bookkeeping_element.mark_array_element]);
 #endif
 
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP && BACKGROUND_GC
+        // card_table.cpp make_card_table: publish the software-write-watch table pointer over the whole
+        // reserved heap range [start, end]. The table byte for any address is committed by
+        // inplace_commit_card_table (the software_write_watch_table_element is inside its
+        // card_table..seg_mapping commit range) and grown with the heap by on_used_changed, so it covers
+        // regions committed later during a concurrent-mark window. Without this the write barrier's
+        // SwitchToWriteWatch would target a null table and fault on the first mutator write in the
+        // window (the prior SWW crash).
+        if (sww_bookkeeping_enabled())
+        {
+            SoftwareWriteWatch.InitializeUntranslatedTable(
+                mem + (nint)card_table_element_layout[(int)bookkeeping_element.software_write_watch_table_element],
+                start);
+        }
+#endif
+
         return card_table_info.translate_card_table(ct);
     }
 
@@ -647,6 +683,12 @@ internal unsafe partial struct gc_heap
         mark_array = null;
         lowest_address = null;
         highest_address = null;
+#endif
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP && BACKGROUND_GC
+        // The bookkeeping backing the software-write-watch table has been released; drop the published
+        // table pointer so a subsequent make_card_table (re-bootstrap) initializes it afresh rather than
+        // asserting on a stale non-null table.
+        SoftwareWriteWatch.StaticClose();
 #endif
     }
 

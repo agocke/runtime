@@ -364,22 +364,27 @@ internal unsafe partial struct gc_heap
         }
 
         // gc_join_restart_ee: marking is complete; enter the concurrent-mark state and open the
-        // window. The joined worker sets current_c_gc_state = marking and gc_background_running, then
-        // restart_vm signals the parked foreground triggering worker (ee_proceed_event), which performs
-        // the actual RestartEE (gc_thread_function) that starts the mutators. Mutators then run and
-        // allocate while current_c_gc_state == marking (a gen0 exhaustion parks them in the background
-        // allocation wait, the observable progress the milestone requires) until heap 0 re-suspends the
-        // EE for the blocking reclamation.
-        //
-        // Software-write-watch publication is intentionally not performed for this window: the
-        // reclamation is a fresh blocking gc1 that discards the background marks, so nothing consumes
-        // the write-watch/card state, and switching the write barrier to the concurrent SWW flavor for
-        // a window whose results are thrown away only adds risk. Publishing SWW belongs with the
-        // concurrent region sweep, which is deferred to a later slice.
+        // window. The joined worker resets and publishes software write watch (the EE is still
+        // suspended here, so EnableForGCHeap's suspended-runtime precondition holds), sets
+        // current_c_gc_state = marking and gc_background_running, then restart_vm signals the parked
+        // foreground triggering worker (ee_proceed_event), which performs the actual RestartEE
+        // (gc_thread_function) that starts the mutators. Mutators then run and allocate while
+        // current_c_gc_state == marking; every reference store they make dirties the software
+        // write-watch table, which the final revisit (in the re-suspend) consumes to complete the mark
+        // array. The write-watch table is initialized over the whole reserved range in make_card_table
+        // and grown with the heap, so it covers regions committed during this window.
         bgc_t_join.join(hp, (int)gc_join_stage.gc_join_restart_ee);
         if (bgc_t_join.joined())
         {
             set_background_state(bgc_state.bgc_reset_ww);
+            for (int i = 0; i < n_heaps; i++)
+            {
+                reset_software_write_watch(g_heaps[i]);
+            }
+            if (SoftwareWriteWatch.GetTable() is not null)
+            {
+                SoftwareWriteWatch.EnableForGCHeap();
+            }
             current_c_gc_state = c_gc_state.c_gc_state_marking;
             cm_in_progress = 1;
             gc_background_running = 1;

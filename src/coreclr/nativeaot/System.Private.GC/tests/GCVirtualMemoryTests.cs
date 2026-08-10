@@ -1723,6 +1723,13 @@ public sealed unsafe class GCVirtualMemoryTests
 #if BACKGROUND_GC
             gc_heap.mark_array = _oldMarkArray;
 #endif
+#if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP && BACKGROUND_GC
+            // make_card_table now publishes the software-write-watch table (when concurrent GC is
+            // configured, which is the default). The bookkeeping backing it was released above, so drop
+            // the published pointer to restore the null pre-scope state; otherwise the next scope's
+            // InitializeUntranslatedTable asserts on a stale non-null table.
+            SoftwareWriteWatch.StaticClose();
+#endif
         }
     }
 

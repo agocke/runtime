@@ -35,10 +35,13 @@
 //   * The actual root / finalizer / handle scan into the background mark array (needs the per-heap
 //     background marking primitives -- background_promote, the per-heap background mark stack,
 //     drain_background_mark_stack -- which are still WKS-only in BackgroundGC.cs).
-//   * The live software-write-watch / write-barrier publication (SoftwareWriteWatch.EnableForGCHeap)
-//     and the restart_vm into a running c_gc_state_marking window: the concurrent state is published
-//     and recorded here, then reverted before the blocking reclamation so the blocking path is not
-//     perturbed.
+//   * The software-write-watch table is now initialized over the whole reserved range in
+//     make_card_table (when concurrent GC is configured) and published/reset at the window open
+//     (SoftwareWriteWatch.EnableForGCHeap after reset_software_write_watch) and disabled at the
+//     re-suspend, so mutator reference stores during the live c_gc_state_marking window are recorded
+//     in the write-watch table. The concurrent revisit that would consume that dirty state into a
+//     complete mark array (revisit_written_pages / cross-heap overflow) remains deferred -- the
+//     reclamation is still the proven blocking mark/plan/sweep, which discards the background marks.
 //   * The concurrent mark / revisit / background sweep and their bgc_t_join stages.
 
 #if SERVER_GC && MULTIPLE_HEAPS && USE_REGIONS
@@ -99,6 +102,38 @@ internal unsafe partial struct gc_heap
         for (int i = 0; i < n_heaps; i++)
         {
             set_gc_done(g_heaps[i]);
+        }
+    }
+
+    // background.cpp gc_heap::reset_write_watch / reset_software_write_watch: clear the software
+    // write-watch dirty state over this heap's committed regions so the concurrent window starts from a
+    // clean slate; only pages the mutators dirty during the window remain marked, which the final
+    // revisit consumes. Only meaningful when the write-watch table is present (initialized in
+    // make_card_table when concurrent GC is configured).
+    private static void reset_software_write_watch(gc_heap* hp)
+    {
+        if (SoftwareWriteWatch.GetTable() is null)
+        {
+            return;
+        }
+
+        generation* generationTable = generation_table_of(hp);
+        for (int genNumber = 0;
+             genNumber < (int)gc_generation_num.total_generation_count;
+             genNumber++)
+        {
+            generation* gen = generation_of(generationTable, genNumber);
+            for (heap_segment* segment = generation.generation_start_segment_rw(gen);
+                 segment is not null;
+                 segment = heap_segment.heap_segment_next(segment))
+            {
+                byte* start = heap_segment.heap_segment_mem(segment);
+                byte* end = heap_segment.heap_segment_committed(segment);
+                if (start < end)
+                {
+                    SoftwareWriteWatch.ClearDirty(start, unchecked((nuint)(end - start)));
+                }
+            }
         }
     }
 

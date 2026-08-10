@@ -237,7 +237,13 @@ internal unsafe partial struct gc_heap
                 bgc_suspend_EE();
 
                 // Publish the end of the concurrent window before releasing the other workers into
-                // the blocking reclamation (settings.concurrent must be 0 for gc1).
+                // the blocking reclamation (settings.concurrent must be 0 for gc1). Disable the
+                // software-write-watch write barrier now the EE is re-suspended (its precondition):
+                // the dirty state it accumulated during the window is drained by the final revisit.
+                if (SoftwareWriteWatch.IsEnabledForGCHeap())
+                {
+                    SoftwareWriteWatch.DisableForGCHeap();
+                }
                 current_c_gc_state = c_gc_state.c_gc_state_free;
                 cm_in_progress = 0;
                 set_background_state(bgc_state.bgc_final_marking);
