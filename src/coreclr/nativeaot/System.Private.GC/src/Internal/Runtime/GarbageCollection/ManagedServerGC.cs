@@ -1185,7 +1185,8 @@ internal static unsafe class ManagedGCRegionBootstrap
         gc_heap.gc_thread_no_affinitize_p = GCConfig.GetNoAffinitize() != 0;
 
         if (!heap_select.init(heapCount) ||
-            !gc_heap.create_thread_support(heapCount))
+            !gc_heap.create_thread_support(heapCount) ||
+            !gc_heap.initialize_background_gc(heapCount))
         {
             Cleanup();
             return false;
@@ -1267,7 +1268,8 @@ internal static unsafe class ManagedGCRegionBootstrap
             gc_heap.initialize_server_allocation_state(heap, i);
             gc_heap.initialize_loh_pinned_queue_state(heap);
             gc_heap.initialize_freeable_segments_state(heap);
-            if (!heap->gc_done_event.CreateManualEventNoThrow(initialState: false))
+            if (!gc_heap.initialize_background_gc_per_heap(heap) ||
+                !heap->gc_done_event.CreateManualEventNoThrow(initialState: false))
             {
                 Cleanup();
                 return false;
@@ -1387,6 +1389,7 @@ internal static unsafe class ManagedGCRegionBootstrap
                 }
                 CFinalize.Free(heap->server_finalize_queue);
                 gc_heap.free_server_mark_storage(heap);
+                gc_heap.destroy_background_gc_per_heap(heap);
                 if (heap->gc_done_event.IsValid())
                 {
                     heap->gc_done_event.CloseEvent();
@@ -1404,6 +1407,7 @@ internal static unsafe class ManagedGCRegionBootstrap
         gc_heap.server_gc_threads_created = 0;
         gc_heap.server_gc_threads_exited = 0;
         gc_heap.destroy_thread_support();
+        gc_heap.destroy_background_gc();
         heap_select.destroy();
         gc_heap.free_initial_regions();
         gc_heap.free_region_bookkeeping();

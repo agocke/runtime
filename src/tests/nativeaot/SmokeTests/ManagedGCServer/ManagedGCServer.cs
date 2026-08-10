@@ -96,6 +96,11 @@ internal static class ManagedGCServerSmoke
             return 8;
         }
 
+        if (!BackgroundModeCollectionsCompleteWithSurvivors(heapCount))
+        {
+            return 9;
+        }
+
         if (!FinalizationRunsForDeadObjects())
         {
             return 7;
@@ -103,7 +108,8 @@ internal static class ManagedGCServerSmoke
 
         Console.WriteLine(
             $"Managed server GC passed with {heapCount} heaps, {usedHeaps.Count} selected home " +
-            $"heaps, forced gen0/gen1/gen2 collections, allocation-triggered collections, and " +
+            $"heaps, forced gen0/gen1/gen2 collections, allocation-triggered collections, " +
+            $"background-mode collection requests, and " +
             $"{Volatile.Read(ref s_finalizedCount)} finalizers observed.");
         return 100;
     }
@@ -407,6 +413,113 @@ internal static class ManagedGCServerSmoke
         if (!keptRef.IsAlive || !ReferenceEquals(keptRef.Target, weakKept))
         {
             Console.WriteLine("Weak reference to a live object cleared by allocation-triggered collection.");
+            return false;
+        }
+
+        _ = heapCount;
+        GC.KeepAlive(live);
+        GC.KeepAlive(lohSurvivor);
+        GC.KeepAlive(weakKept);
+        return true;
+    }
+
+    // Background/non-blocking GC.Collect requests must complete correctly on the server while a
+    // mutator keeps allocating. This exercises the non-blocking induced-collection request path
+    // (GCCollectionMode.Default with blocking:false, which requests a background gen2 collection),
+    // allocation running concurrently with the collection request, completion/waits (the collection
+    // count must advance), and survivor/weak-reference correctness across the collections.
+    //
+    // NOTE: the server background (concurrent) collector is not yet routed, so a background request
+    // is currently serviced by a blocking collection. This test validates the request handling,
+    // allocation-during-collection, and survivor semantics that must continue to hold once the
+    // concurrent server BGC path lands; it does not assert that marking ran concurrently.
+    private static bool BackgroundModeCollectionsCompleteWithSurvivors(int heapCount)
+    {
+        const int LiveCount = 256;
+        Payload[] live = new Payload[LiveCount];
+        for (int i = 0; i < LiveCount; i++)
+        {
+            Payload p = new() { Tag = i };
+            p.Data = new byte[128 + (i & 127)];
+            p.Data[0] = unchecked((byte)i);
+            if (i > 0 && (i & 1) == 0)
+            {
+                p.Next = live[i - 1];
+            }
+            live[i] = p;
+        }
+        byte[] lohSurvivor = new byte[100_000];
+        lohSurvivor[0] = 0x3C;
+        lohSurvivor[lohSurvivor.Length - 1] = 0xC3;
+        object weakKept = new Payload { Tag = -11 };
+        WeakReference keptRef = new(weakKept);
+        WeakReference deadRef = MakeDeadWeakReference();
+
+        int stop = 0;
+        Thread mutator = new(() =>
+        {
+            while (Volatile.Read(ref stop) == 0)
+            {
+                for (int k = 0; k < 128; k++)
+                {
+                    byte[] garbage = new byte[64 + (k & 127)];
+                    garbage[0] = unchecked((byte)k);
+                }
+                Thread.Yield();
+            }
+        });
+        mutator.Start();
+
+        int gen2Before = GC.CollectionCount(2);
+        for (int round = 0; round < 12; round++)
+        {
+            // Non-blocking / background gen2 collection request.
+            GC.Collect(2, GCCollectionMode.Default, blocking: false);
+            // A blocking request too, to exercise the mixed foreground/background request handling.
+            GC.Collect(2, GCCollectionMode.Default, blocking: true);
+            GC.WaitForPendingFinalizers();
+        }
+        int gen2After = GC.CollectionCount(2);
+
+        Volatile.Write(ref stop, 1);
+        mutator.Join();
+
+        if (gen2After <= gen2Before)
+        {
+            Console.WriteLine(
+                $"Background-mode gen2 collections did not advance the count ({gen2Before} -> {gen2After}).");
+            return false;
+        }
+
+        for (int i = 0; i < LiveCount; i++)
+        {
+            Payload p = live[i];
+            if (p is null || p.Tag != i || p.Data.Length != 128 + (i & 127) ||
+                p.Data[0] != unchecked((byte)i))
+            {
+                Console.WriteLine($"Survivor {i} corrupted after background-mode collections.");
+                return false;
+            }
+            if (i > 0 && (i & 1) == 0 && !ReferenceEquals(p.Next, live[i - 1]))
+            {
+                Console.WriteLine($"Survivor {i} lost its cross-object reference after background-mode collections.");
+                return false;
+            }
+        }
+        if (lohSurvivor.Length != 100_000 || lohSurvivor[0] != 0x3C ||
+            lohSurvivor[lohSurvivor.Length - 1] != 0xC3)
+        {
+            Console.WriteLine("LOH survivor corrupted after background-mode collections.");
+            return false;
+        }
+        if (!keptRef.IsAlive || !ReferenceEquals(keptRef.Target, weakKept))
+        {
+            Console.WriteLine("Weak reference to a live object cleared by background-mode collection.");
+            return false;
+        }
+        if (deadRef.IsAlive)
+        {
+            Console.WriteLine("Weak reference to a dead object not cleared by background-mode collection.");
             return false;
         }
 

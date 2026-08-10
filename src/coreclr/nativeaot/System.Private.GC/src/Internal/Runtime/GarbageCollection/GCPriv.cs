@@ -1330,6 +1330,12 @@ namespace Internal.Runtime.GarbageCollection
 #if MULTIPLE_HEAPS && BACKGROUND_GC && USE_REGIONS
         public byte* current_sweep_pos;
         public heap_segment* current_sweep_seg;
+        // gcpriv.h PER_HEAP_FIELD_MAINTAINED BOOL bgc_thread_running and PER_HEAP_FIELD_INIT_ONLY
+        // CLRCriticalSection bgc_threads_timeout_cs: each server heap owns its background worker's
+        // running state and the critical section guarding that worker's lazy creation/teardown.
+        // Static in WKS (single-heap background state in BackgroundGC.cs); instance-owned here.
+        public int bgc_thread_running;
+        public CLRCriticalSection bgc_threads_timeout_cs;
 #endif
         // gcpriv.h PER_HEAP_FIELD_SINGLE_GC[_ALLOC] plan-space accounting consumed by the plan
         // phase's compaction-vs-sweep decision. These are static in WKS and instance-owned in the

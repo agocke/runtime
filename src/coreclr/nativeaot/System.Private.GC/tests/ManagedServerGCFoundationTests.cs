@@ -228,6 +228,132 @@ public static class ManagedServerGCFoundationTests
     }
 
     [Fact]
+    public static void ServerBackgroundGcFieldOwnershipMatchesNative()
+    {
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        // gcpriv.h PER_HEAP_FIELD background worker state is instance-owned per server heap.
+        foreach (string instanceField in new[] { "bgc_thread_running", "bgc_threads_timeout_cs" })
+        {
+            Assert.NotNull(heap.GetField(
+                instanceField,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+            Assert.Null(heap.GetField(
+                instanceField,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        // gcpriv.h PER_HEAP_ISOLATED background events / flags / join are shared statics.
+        foreach (string isolatedField in new[]
+        {
+            "bgc_start_event",
+            "background_gc_done_event",
+            "ee_proceed_event",
+            "bgc_threads_sync_event",
+            "do_ephemeral_gc_p",
+            "do_concurrent_p",
+            "cm_in_progress",
+            "dont_restart_ee_p",
+            "keep_bgc_threads_p",
+            "total_bgc_threads",
+            "bgc_t_join",
+        })
+        {
+            Assert.NotNull(heap.GetField(
+                isolatedField,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+            Assert.Null(heap.GetField(
+                isolatedField,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        }
+
+        // bgc_t_join is a second t_join instance, parallel to gc_t_join.
+        Type tJoin = GetType("Internal.Runtime.GarbageCollection.t_join");
+        Assert.Equal(
+            tJoin,
+            heap.GetField(
+                "bgc_t_join",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.FieldType);
+    }
+
+    [Fact]
+    public static void ServerBackgroundGcSupportLifecycleApiIsPresent()
+    {
+        // The live event/join creation (create_bgc_threads_support / destroy_background_gc) and the
+        // bgc_t_join participant count are exercised end-to-end by the ManagedGCServer smoke under
+        // DOTNET_gcConcurrent=1, where the GC dll is the system module and its event ECalls resolve.
+        // The Foundation reflection host cannot invoke those ECalls, so here we assert the background
+        // thread/join lifecycle surface (creation, idle loop, shutdown, per-heap init/cleanup) is
+        // present with the expected shapes.
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+
+        foreach (string method in new[]
+        {
+            "create_bgc_threads_support",
+            "create_bgc_thread",
+            "prepare_bgc_thread",
+            "bgc_thread_stub",
+            "bgc_thread_function",
+            "initialize_background_gc",
+            "destroy_background_gc",
+            "initialize_background_gc_per_heap",
+            "destroy_background_gc_per_heap",
+            "set_background_state",
+        })
+        {
+            Assert.NotNull(heap.GetMethod(
+                method,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        }
+
+        // create_bgc_threads_support / initialize_background_gc take the heap (participant) count.
+        MethodInfo support = heap.GetMethod(
+            "create_bgc_threads_support",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Single(support.GetParameters());
+        Assert.Equal(typeof(int), support.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(bool), support.ReturnType);
+
+        // Per-heap background init must be fallible so a failed bgc_threads_timeout_cs allocation
+        // propagates out of ManagedServerGC.Initialize instead of being ignored.
+        MethodInfo perHeapInit = heap.GetMethod(
+            "initialize_background_gc_per_heap",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(typeof(bool), perHeapInit.ReturnType);
+
+        // CLRCriticalSection exposes an initialized-state check so the per-heap teardown never
+        // Destroy()s (or Enter/Leave) uninitialized storage.
+        Type clrCriticalSection = GetType("Internal.Runtime.GarbageCollection.CLRCriticalSection");
+        PropertyInfo isInitialized = clrCriticalSection.GetProperty(
+            "IsInitialized",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.NotNull(isInitialized);
+        Assert.Equal(typeof(bool), isInitialized.PropertyType);
+
+        // A zero-initialized (never-Initialized) critical section must report not-initialized so the
+        // teardown skips it.
+        object freshCs = Activator.CreateInstance(clrCriticalSection)!;
+        Assert.False((bool)isInitialized.GetValue(freshCs)!);
+
+        // Cleanup is single-owned by destroy_background_gc: create_bgc_threads_support does not close
+        // the events it created on failure. That is only safe because a zero-initialized/uncreated
+        // GCEvent reports IsValid()==false, so destroy_background_gc closes each created event exactly
+        // once and skips the uncreated ones. Assert that invariant here.
+        Type gcEvent = GetType("Internal.Runtime.GarbageCollection.GCEvent");
+        MethodInfo eventIsValid = gcEvent.GetMethod(
+            "IsValid",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+        object freshEvent = Activator.CreateInstance(gcEvent)!;
+        Assert.False((bool)eventIsValid.Invoke(freshEvent, null)!);
+
+        // bgc_t_join exposes the participant-count accessor the later background phases read.
+        Type tJoin = GetType("Internal.Runtime.GarbageCollection.t_join");
+        Assert.NotNull(tJoin.GetMethod(
+            "get_num_threads",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+    }
+
+    [Fact]
     public static void GcDoneHandshakeStateAndCoordinationArePresent()
     {
         Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");

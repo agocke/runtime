@@ -21,9 +21,9 @@ namespace Internal.Runtime.GarbageCollection
             _entered = entered;
         }
 
-        [RuntimeImport(RuntimeLibrary, "ManagedGC_EnterCriticalRegion")]
+        [RuntimeImport(RuntimeLibrary, "ManagedGC_TryEnterCriticalRegion")]
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int ManagedGC_EnterCriticalRegion();
+        private static extern int ManagedGC_TryEnterCriticalRegion();
 
         [RuntimeImport(RuntimeLibrary, "ManagedGC_ExitCriticalRegion")]
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -37,9 +37,31 @@ namespace Internal.Runtime.GarbageCollection
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void ManagedGC_ResumeCriticalRegion(int suspended);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static GCHeapCriticalRegion Enter() =>
-            new GCHeapCriticalRegion(ManagedGC_EnterCriticalRegion());
+        // Take the managed-GC critical region without ever spinning in native code while a suspension
+        // is pending. ManagedGC_TryEnterCriticalRegion returns 1 (owned) / 0 (nested) immediately, or
+        // -1 when a suspension is pending -- in which case it has changed no thread state and never
+        // transitioned the thread's GC mode (so no possibly-invalid deferred transition frame is
+        // published). We retry from this ordinary managed loop, whose back-edge is a GC safe point, so
+        // a pending SuspendEE can hijack this cooperative thread instead of the thread spinning in
+        // native code. NoInlining keeps this a real, poll-bearing frame for every caller.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static GCHeapCriticalRegion Enter()
+        {
+            int entered;
+            while ((entered = ManagedGC_TryEnterCriticalRegion()) < 0)
+            {
+                // Pure managed back-edge spin. ManagedGC_TryEnterCriticalRegion is a fast flag read;
+                // this thread therefore spends its time at the call-return / loop-back GC safe points
+                // of this method (cooperative, never transitioning GC mode on a possibly-invalid
+                // deferred frame), where a pending SuspendEE hijacks/redirects it or its back-edge GC
+                // poll self-suspends it on a valid poll-site frame. Do NOT call a blocking native
+                // routine (e.g. sched_yield) here: that would park the thread in non-hijackable native
+                // code and starve SuspendEE, deadlocking against the suspension that must clear the
+                // pending flag.
+            }
+
+            return new GCHeapCriticalRegion(entered);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Exit() =>

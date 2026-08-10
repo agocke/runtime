@@ -104,6 +104,64 @@ static void ManagedGC_EnterOwnedCriticalRegion(Thread* thread)
     }
 }
 
+// Non-spinning attempt to take ownership of the managed-GC critical region. Unlike
+// ManagedGC_EnterOwnedCriticalRegion it NEVER transitions the thread's GC mode, so it is safe to
+// call from a caller whose deferred transition frame may be invalid (e.g. the GC's own managed code
+// reached through GCHeapCriticalRegion.Enter). Returns true and leaves DoNotTriggerGc set (with the
+// critical-region count incremented) on success; returns false and changes nothing when a suspension
+// is pending, so the managed caller can retry from a GC safe point where SuspendEE can hijack it.
+static bool ManagedGC_TryEnterOwnedCriticalRegion(Thread* thread)
+{
+    if (VolatileLoad(&g_managedGCSuspensionPending) != 0)
+    {
+        return false;
+    }
+
+    thread->SetDoNotTriggerGc();
+    PalInterlockedIncrement(&g_managedGCCriticalRegionCount);
+    MemoryBarrier();
+
+    // Re-check: PrepareForSuspension may have set the flag between our first read and our commit.
+    // If so, roll the ownership back so PrepareForSuspension's count wait can complete, and report
+    // retry.
+    if (VolatileLoad(&g_managedGCSuspensionPending) != 0)
+    {
+        thread->ClearDoNotTriggerGc();
+        PalInterlockedDecrement(&g_managedGCCriticalRegionCount);
+        return false;
+    }
+
+    return true;
+}
+
+// Non-spinning try-enter used by GCHeapCriticalRegion.Enter's managed retry loop. Returns:
+//    1 : this call took ownership of the managed-GC critical region
+//    0 : nested -- the thread already holds DoNotTriggerGc, so this is a no-op enter
+//   -1 : suspension pending -- the managed loop must yield at a GC safe point and retry
+// It never sets DoNotTriggerGc / increments the count until the suspension flag is observed clear,
+// and never transitions the thread to preemptive mode, so no invalid deferred transition frame is
+// ever published here.
+extern "C" int32_t ManagedGC_TryEnterCriticalRegion()
+{
+    Thread* thread = ThreadStore::GetCurrentThread();
+    if (thread->IsDoNotTriggerGcSet())
+    {
+        return 0;
+    }
+
+    if (!ManagedGC_TryEnterOwnedCriticalRegion(thread))
+    {
+        return -1;
+    }
+
+    // Match ManagedGC_EnterCriticalRegion: record that this thread now owns the (non-allocation-helper)
+    // critical region so ManagedGC_SuspendCriticalRegion releases it and ManagedGC_PrepareForSuspension
+    // accounts for it in ownedCount. Omitting this leaves the count held while ownedCount reads 0, which
+    // deadlocks PrepareForSuspension against the owner's own suspension.
+    t_managedGCOwnsCriticalRegion = true;
+    return 1;
+}
+
 extern "C" UInt32_BOOL ManagedGC_EnterCriticalRegion()
 {
     Thread* thread = ThreadStore::GetCurrentThread();
@@ -202,6 +260,16 @@ extern "C" void ManagedGC_EnterAllocationHelper()
         Thread* thread = ThreadStore::GetCurrentThread();
         if (!thread->IsDoNotTriggerGcSet())
         {
+            // Unlike GCHeapCriticalRegion.Enter (which reaches ManagedGC_TryEnterCriticalRegion from
+            // the GC's own managed code, where the deferred transition frame may be invalid), this
+            // helper is only ever reached through the allocation entry points -- RhpGcAlloc's
+            // SetDeferredTransitionFrame and RhAllocateNewArray/RhAllocateNewObject's
+            // DeferTransitionFrame -- which always publish a valid deferred transition frame before
+            // GcAllocInternal runs. The suspension-pending wait inside ManagedGC_EnterOwnedCriticalRegion
+            // therefore transitions to preemptive on a valid frame, so it never caches an invalid
+            // frame and cannot deadlock PrepareForSuspension (it holds no critical-region count while
+            // it waits). Keeping the direct native wait here avoids restructuring the native
+            // GcAllocInternal entry into a managed retry boundary.
             ManagedGC_EnterOwnedCriticalRegion(thread);
             t_managedGCAllocationHelperOwnsCriticalRegion = true;
         }

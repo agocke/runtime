@@ -36,6 +36,14 @@ namespace Internal.Runtime.GarbageCollection
         /// </summary>
         private void* m_cs;
 
+        /// <summary>
+        /// True once <see cref="Initialize"/> has successfully allocated the backing mutex. The
+        /// storage is zero-initialized (<c>m_cs == null</c>) until then and again after
+        /// <see cref="Destroy"/>, so this mirrors the class's own valid-state invariant and lets
+        /// callers avoid Destroy/Enter/Leave on an uninitialized critical section.
+        /// </summary>
+        public readonly bool IsInitialized => m_cs != null;
+
         /// <summary>Initialize the critical section.</summary>
         public partial bool Initialize();
 
