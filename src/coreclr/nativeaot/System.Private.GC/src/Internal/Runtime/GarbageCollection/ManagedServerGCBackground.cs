@@ -43,25 +43,83 @@
 
 #if SERVER_GC && MULTIPLE_HEAPS && USE_REGIONS
 
+using System.Runtime.CompilerServices;
+using System.Threading;
+
 namespace Internal.Runtime.GarbageCollection;
 
 #pragma warning disable CS8981 // Native type names are intentionally preserved.
 internal unsafe partial struct gc_heap
 {
+    // clrgc.managed.cpp: the suspension handshake used by bgc_suspend_EE to re-suspend the EE for the
+    // background final mark while cooperative mutators may be inside managed allocation helpers. WKS
+    // declares these in BackgroundGC.cs, which the server build excludes.
+    [System.Runtime.RuntimeImport("*", "ManagedGC_PrepareForSuspension")]
+    [MethodImpl(MethodImplOptions.InternalCall)]
+    private static extern void ManagedGC_PrepareForSuspension();
+
+    [System.Runtime.RuntimeImport("*", "ManagedGC_CompleteSuspension")]
+    [MethodImpl(MethodImplOptions.InternalCall)]
+    private static extern void ManagedGC_CompleteSuspension();
+
     // Number of times a mutator parked in check_and_wait_for_bgc's preemptive background allocation
     // wait. Diagnostic counter for the allocation-path background-wait unblocker.
     public static int s_bgc_alloc_wait_count;
+
+    // Number of background collections that have fully completed (re-suspended and reclaimed). Unlike
+    // full_gc_counts[gc_type_background], which advances at kickoff, this advances only when a
+    // background collection finishes, so the smoke can prove re-suspension completes repeatedly.
+    public static int s_bgc_completed_count;
+
+    // Set by the foreground worker (gc_thread_function) once it has restarted the EE to open the
+    // concurrent window; read by the bgc workers so their re-suspension does not race ahead of the
+    // restart into a double-suspend.
+    public static int bgc_ee_restarted;
+
+    // How long the bgc workers hold the concurrent window open before re-suspending (milliseconds),
+    // so a mutator can make observable progress while current_c_gc_state == c_gc_state_marking. Small
+    // and bounded: this milestone reclaims through the blocking fallback after the window.
+    private const uint bgc_window_hold_ms = 15;
+
+    // background.cpp gc_heap::bgc_suspend_EE (MULTIPLE_HEAPS): re-suspend the EE for the background
+    // final mark. Uses the ManagedGC_PrepareForSuspension handshake so a cooperative mutator inside a
+    // managed allocation helper (or parked in the preemptive background allocation wait) does not
+    // stall the suspend. The caller (heap 0) holds gc_lock.
+    private static void bgc_suspend_EE()
+    {
+        for (int i = 0; i < n_heaps; i++)
+        {
+            reset_gc_done(g_heaps[i]);
+        }
+        gc_started = 1;
+        ManagedGC_PrepareForSuspension();
+        GCToEEInterface.SuspendEE(SUSPEND_REASON.SUSPEND_FOR_GC_PREP);
+        ManagedGC_CompleteSuspension();
+        gc_started = 0;
+        for (int i = 0; i < n_heaps; i++)
+        {
+            set_gc_done(g_heaps[i]);
+        }
+    }
 
     // IGCHeap collect return codes (background.cpp / gcinterface.h). WKS defines these in Collect.cs,
     // which the server build excludes, so the server takes them here.
     public const int background_collection_s_ok = 0;
     public const int background_collection_e_notimpl = unchecked((int)0x80004001);
 
-    // background.cpp: a non-blocking gen2 request that reaches garbage_collect_background sets this so
-    // the joined worker in garbage_collect runs the background kickoff. It is written by the
-    // triggering thread before it wakes heap 0 (under the GC lock, which serializes collections) and
-    // consumed by the joined worker, which captures it into settings.background_p and clears it.
-    public static int background_gc_requested;
+    // Published under gc_lock by the triggering thread of the actual collection and read by the joined
+    // server worker's kickoff decision in garbage_collect. 1 iff this collection is a background
+    // (non-blocking gen2) kickoff; 0 for a blocking / foreground collection. Because gc_lock serializes
+    // collections, exactly one triggering thread publishes this per collection and the worker reads it
+    // after gc_start_event, so it needs no per-thread ownership.
+    //
+    // This replaces the old global background_gc_requested bit. That bit was written around the whole
+    // GarbageCollectGenerationServer call by *every* background caller, so a second concurrent
+    // non-blocking request could observe it set (by itself or by the in-flight kickoff) and wrongly
+    // bypass the background wait, starting a second kickoff while one was already running -> deadlock.
+    // The kickoff/coalesce decision is now made under gc_lock from the explicit backgroundKickoff
+    // parameter and background_running_p (see GarbageCollectGenerationServer), not from a shared bit.
+    public static int gc_is_background_kickoff;
 
     // gcpriv.h gc_heap::concurrent_gc_enabled. The server keeps gc_can_use_concurrent false so it
     // does not perturb condemn/pause decisions; background eligibility is gated on the concurrent-GC
@@ -71,6 +129,10 @@ internal unsafe partial struct gc_heap
     {
         return GCConfig.GetConcurrentGC() != 0 && bgc_start_event.IsValid();
     }
+
+    // Observability for the smoke: whether this run will route non-blocking gen2 requests through the
+    // background collector. Mirrors the garbage_collect_background eligibility gate.
+    public static bool background_gc_available() => concurrent_gc_enabled();
 
     // background.cpp gc_heap::garbage_collect_background prologue (server, bounded). Decides whether a
     // non-blocking request is a background-eligible gen2 collection and, if so, routes it through the
@@ -99,6 +161,14 @@ internal unsafe partial struct gc_heap
             return background_collection_e_notimpl;
         }
 
+        // A background collection returns to the caller while it is still running concurrently (the
+        // bgc workers own the window / reclamation). A second non-blocking request while one is in
+        // progress is a no-op, matching native background_running_p short-circuit.
+        if (background_running_p())
+        {
+            return background_collection_s_ok;
+        }
+
         gc_reason reason = low_memory_p != 0
             ? gc_reason.reason_lowmemory
             : gc_reason.reason_induced_noforce;
@@ -114,21 +184,16 @@ internal unsafe partial struct gc_heap
             }
         }
 
-        dynamic_data* dd = dynamic_data_of(g_heaps[0], GCInterfaceOffsets.max_generation);
-        nuint collectionCountAtEntry = dynamic_data.dd_collection_count(dd);
-
-        System.Threading.Volatile.Write(ref background_gc_requested, 1);
-        while (true)
-        {
-            nuint currentCount = GarbageCollectGenerationServer(
-                (uint)GCInterfaceOffsets.max_generation, reason);
-
-            if (collectionCountAtEntry != currentCount)
-            {
-                break;
-            }
-        }
-        System.Threading.Volatile.Write(ref background_gc_requested, 0);
+        // Trigger the background collection. Coalescing is handled under gc_lock inside
+        // GarbageCollectGenerationServer: only the first request that observes no background collection
+        // running (background_running_p) becomes the kickoff; a concurrent second request observes it
+        // running under the lock and returns (coalesces) rather than starting another. Passing
+        // backgroundKickoff: true both exempts this candidate kickoff from the background wait and,
+        // when it wins, publishes gc_is_background_kickoff for the joined worker. The triggering thread
+        // returns as soon as the bgc workers open the concurrent window; the collection then runs
+        // asynchronously to completion on the bgc workers, so this does not wait for it.
+        GarbageCollectGenerationServer(
+            (uint)GCInterfaceOffsets.max_generation, reason, backgroundKickoff: true);
 
         return background_collection_s_ok;
     }
@@ -156,7 +221,6 @@ internal unsafe partial struct gc_heap
         {
             if (!commit_mark_array_bgc_init(g_heaps[i]))
             {
-                System.Threading.Volatile.Write(ref background_gc_requested, 0);
                 return false;
             }
         }
@@ -180,7 +244,6 @@ internal unsafe partial struct gc_heap
         bgc_t_join.update_n_threads(n_heaps);
 
         set_background_state(bgc_state.bgc_initialized);
-        System.Threading.Volatile.Write(ref background_gc_requested, 0);
 
         // Hand the initial stop-the-world mark off to the dedicated background workers and park this
         // (foreground heap 0) worker until they finish. The EE is already suspended, so the workers

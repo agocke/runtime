@@ -293,7 +293,7 @@ internal unsafe partial struct gc_heap
             bgc_t_join.restart();
         }
 
-        // Stack roots.
+        // Stack roots (stop-the-world: the EE is still suspended here).
         GCScan.GcScanRoots(
             &background_promote,
             GCInterfaceOffsets.max_generation,
@@ -311,27 +311,20 @@ internal unsafe partial struct gc_heap
 
         GCEvents.GCEventFireBGC1stNonConEnd();
 
-        // gc_join_restart_ee: the joined worker publishes the concurrent write-barrier state. The
-        // live restart_vm / software-write-watch reset is gated; the state is recorded and reverted
-        // by the caller once every heap has finished the initial mark.
-        bgc_t_join.join(hp, (int)gc_join_stage.gc_join_restart_ee);
-        if (bgc_t_join.joined())
-        {
-            set_background_state(bgc_state.bgc_reset_ww);
-            cm_in_progress = 1;
-            bgc_t_join.restart();
-        }
-
-        // gc_join_after_reset: publish bgc_mark_handles and enter the concurrent-mark state.
+        // Strong + pinned handles, then dependent handles. Scanned stop-the-world (before the window
+        // opens): this slice defers the concurrent region sweep, so the background marks are discarded
+        // and the reclamation is a fresh blocking gc1. Scanning the handle table / dependent handles
+        // while mutators concurrently mutate references would need the full concurrent write-barrier /
+        // card-revisit machinery that is not part of this slice; performing them here, before the
+        // window, keeps the window free of scan/mutator races. The window that follows exists only to
+        // let mutators run while current_c_gc_state == marking.
         bgc_t_join.join(hp, (int)gc_join_stage.gc_join_after_reset);
         if (bgc_t_join.joined())
         {
             set_background_state(bgc_state.bgc_mark_handles);
-            current_c_gc_state = c_gc_state.c_gc_state_marking;
             bgc_t_join.restart();
         }
 
-        // Strong + pinned handles.
         GCScan.GcScanHandles(
             &background_promote,
             GCInterfaceOffsets.max_generation,
@@ -339,7 +332,7 @@ internal unsafe partial struct gc_heap
             &sc);
         drain_background_mark_stack(hp);
 
-        // Dependent handles: the initial unsynchronized scan, then rescan while any remain unpromoted.
+        // Dependent handles: the initial scan, then rescan while any remain unpromoted.
         GCScan.GcDhInitialScan(
             &background_promote,
             GCInterfaceOffsets.max_generation,
@@ -359,6 +352,7 @@ internal unsafe partial struct gc_heap
         GCEvents.GCEventFireBGC1stConEnd();
 
         // Balance BeforeGcScanRoots with AfterGcScanRoots (the runtime brackets a root scan pair).
+        // Still stop-the-world.
         bgc_t_join.join(hp, (int)gc_join_stage.gc_join_null_dead_short_weak);
         if (bgc_t_join.joined())
         {
@@ -366,6 +360,30 @@ internal unsafe partial struct gc_heap
                 GCInterfaceOffsets.max_generation,
                 GCInterfaceOffsets.max_generation,
                 &sc);
+            bgc_t_join.restart();
+        }
+
+        // gc_join_restart_ee: marking is complete; enter the concurrent-mark state and open the
+        // window. The joined worker sets current_c_gc_state = marking and gc_background_running, then
+        // restart_vm signals the parked foreground triggering worker (ee_proceed_event), which performs
+        // the actual RestartEE (gc_thread_function) that starts the mutators. Mutators then run and
+        // allocate while current_c_gc_state == marking (a gen0 exhaustion parks them in the background
+        // allocation wait, the observable progress the milestone requires) until heap 0 re-suspends the
+        // EE for the blocking reclamation.
+        //
+        // Software-write-watch publication is intentionally not performed for this window: the
+        // reclamation is a fresh blocking gc1 that discards the background marks, so nothing consumes
+        // the write-watch/card state, and switching the write barrier to the concurrent SWW flavor for
+        // a window whose results are thrown away only adds risk. Publishing SWW belongs with the
+        // concurrent region sweep, which is deferred to a later slice.
+        bgc_t_join.join(hp, (int)gc_join_stage.gc_join_restart_ee);
+        if (bgc_t_join.joined())
+        {
+            set_background_state(bgc_state.bgc_reset_ww);
+            current_c_gc_state = c_gc_state.c_gc_state_marking;
+            cm_in_progress = 1;
+            gc_background_running = 1;
+            restart_vm();
             bgc_t_join.restart();
         }
     }

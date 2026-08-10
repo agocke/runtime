@@ -148,6 +148,31 @@ namespace Internal.Runtime.GarbageCollection
                 ref gc_heap.server_gc_threads_created) -
             System.Threading.Volatile.Read(
                 ref gc_heap.server_gc_threads_exited);
+
+        // s_bgc_completed_count: the number of background collections that have fully completed
+        // (re-suspended + reclaimed). Advances once per completed background collection, so the smoke
+        // uses it to prove re-suspension completes repeatedly.
+        [RuntimeExport("ManagedServerGC_GetBackgroundCollectionCount")]
+        internal static int ManagedServerGC_GetBackgroundCollectionCount() =>
+            System.Threading.Volatile.Read(ref gc_heap.s_bgc_completed_count);
+
+        // s_bgc_alloc_wait_count: the number of times a mutator parked in the preemptive background
+        // allocation wait, which happens only while a background collection is running (gen0 exhausted
+        // during the concurrent window with current_c_gc_state == c_gc_state_marking). A positive
+        // value proves mutators made allocation progress while marking was active.
+        [RuntimeExport("ManagedServerGC_GetBackgroundAllocWaitCount")]
+        internal static int ManagedServerGC_GetBackgroundAllocWaitCount() =>
+            System.Threading.Volatile.Read(ref gc_heap.s_bgc_alloc_wait_count);
+
+        // Whether concurrent/background GC is enabled and available for this run. Mirrors the server's
+        // background eligibility gate (concurrent_gc_enabled): the concurrent-GC config is on and the
+        // background support has been created. When disabled, non-blocking gen2 requests take the
+        // blocking path and no background collection occurs, so the smoke's background-specific
+        // assertions must be skipped. (The server keeps gc_can_use_concurrent false so it does not
+        // perturb condemn/pause decisions, so that flag must not be used here.)
+        [RuntimeExport("ManagedServerGC_IsBackgroundGCEnabled")]
+        internal static int ManagedServerGC_IsBackgroundGCEnabled() =>
+            gc_heap.background_gc_available() ? 1 : 0;
 #endif
     }
 }

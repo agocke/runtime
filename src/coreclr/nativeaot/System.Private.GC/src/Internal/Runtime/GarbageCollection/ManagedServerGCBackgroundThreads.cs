@@ -206,32 +206,98 @@ internal unsafe partial struct gc_heap
                 continue;
             }
 
-            // Initial stop-the-world background mark over this heap. The EE was already suspended by
-            // the foreground worker that triggered the collection, so the background workers only mark.
+            // Initial stop-the-world background mark over this heap. All marking (roots, finalizer,
+            // handles, dependent handles) completes stop-the-world; at gc_join_restart_ee the joined
+            // worker enters the concurrent-mark state (current_c_gc_state == marking) + gc_background_running
+            // and restart_vm signals the foreground worker to RestartEE, opening the window in which
+            // mutators run (and park in the background allocation wait) until heap 0 re-suspends.
             background_mark_phase(hp);
 
-            // The reclamation completes through the foreground blocking path this slice, which does
-            // not run background_sweep, so drop the bits this heap set.
-            clear_bgc_mark_array(hp);
+            // Re-suspend for the final mark / reclamation (background.cpp gc_join_suspend_ee). Only
+            // heap 0 drives bgc_suspend_EE (under gc_lock); the others wait on bgc_threads_sync_event.
+            bgc_t_join.join(hp, (int)gc_join_stage.gc_join_suspend_ee);
+            if (bgc_t_join.joined())
+            {
+                bgc_threads_sync_event.Reset();
+                bgc_t_join.restart();
+            }
 
+            if (hp->heap_number == 0)
+            {
+                // Do not re-suspend until the foreground worker has actually restarted the EE
+                // (avoids a double-suspend), then hold the window so mutators make observable progress
+                // while current_c_gc_state == c_gc_state_marking.
+                while (Volatile.Read(ref bgc_ee_restarted) == 0)
+                {
+                    GCToOSInterface.YieldThread(0);
+                }
+                GCToOSInterface.Sleep(bgc_window_hold_ms);
+
+                enter_gc_lock();
+                bgc_suspend_EE();
+
+                // Publish the end of the concurrent window before releasing the other workers into
+                // the blocking reclamation (settings.concurrent must be 0 for gc1).
+                current_c_gc_state = c_gc_state.c_gc_state_free;
+                cm_in_progress = 0;
+                set_background_state(bgc_state.bgc_final_marking);
+                settings.concurrent = 0;
+                settings.background_p = 0;
+
+                bgc_threads_sync_event.Set();
+            }
+            else
+            {
+                bgc_threads_sync_event.Wait(GCEnv.INFINITE, alertable: false);
+            }
+
+            // Fallback reclamation on the bgc worker pool (EE re-suspended). Discard the background
+            // marks and run the proven blocking mark/plan/sweep, which advances the collection count
+            // and reclaims correctly regardless of the concurrent mark. The concurrent region sweep
+            // that would consume the background marks directly is deferred.
+            clear_bgc_mark_array(hp);
+            hp->alloc_contexts_used = 0;
+            fix_allocation_contexts(hp, for_gc_p: true);
+            clear_gen0_bricks(hp);
+            init_records(hp);
+            gc1(hp);
+
+            // Synchronize all workers, then publish the shared end-of-collection bookkeeping on the
+            // joined worker. The EE restart and gc_lock release, however, must run on heap 0: the
+            // matching bgc_suspend_EE (SuspendEE -> ThreadStore lock) and enter_gc_lock above were done
+            // by heap 0, and both the ThreadStore mutex and gc_lock require the same thread to release
+            // them. Running RestartEE on the arbitrary joined worker leaves the ThreadStore lock owned
+            // by heap 0 and deadlocks the next collection's SuspendEE.
             bgc_t_join.join(hp, (int)gc_join_stage.gc_join_done);
             if (bgc_t_join.joined())
             {
-                // Reset the manual bgc_start_event so the workers park again on the next iteration
-                // rather than immediately re-triggering (native resets it in this same joined block).
+                // Reset the manual bgc_start_event so the workers park again next iteration.
                 bgc_start_event.Reset();
 
-                // Revert the published concurrent write-barrier state so the foreground blocking
-                // mark/plan/sweep takes its ordinary (non-BGC) branches, then hand control back to
-                // the foreground triggering worker parked in wait_to_proceed.
-                current_c_gc_state = c_gc_state.c_gc_state_free;
-                cm_in_progress = 0;
+                do_post_gc(hp);
                 set_background_state(bgc_state.bgc_not_in_process);
-                settings.background_p = 0;
-                settings.concurrent = 0;
-                background_gc_done_event.Set();
+                gc_background_running = 0;
+                Volatile.Write(ref bgc_ee_restarted, 0);
+                gc_started = 0;
                 bgc_t_join.restart();
-                ee_proceed_event.Set();
+            }
+
+            if (hp->heap_number == 0)
+            {
+                GCToEEInterface.RestartEE(1);
+                leave_gc_lock();
+
+                // Queue any finalizable objects the fallback gc1 discovered to the finalizer thread,
+                // matching WKS complete_background_gc / native. The foreground triggering worker's
+                // EnableFinalization in GarbageCollectGenerationServer is gated on settings.concurrent
+                // == 0, so for a background collection it passed 0 (the window was still concurrent when
+                // that thread returned) and did not queue these; this heap-0 completion is the single
+                // place that does it. settings.concurrent was reset to 0 during the re-suspend above.
+                GCToEEInterface.EnableFinalization(
+                    settings.found_finalizers != 0 ? (byte)1 : (byte)0);
+
+                background_gc_done_event.Set();
+                Interlocked.Increment(ref s_bgc_completed_count);
             }
         }
 
@@ -258,6 +324,14 @@ internal unsafe partial struct gc_heap
     {
         Debug.Assert(ee_proceed_event.IsValid());
         ee_proceed_event.Wait(GCEnv.INFINITE, alertable: false);
+    }
+
+    // gc.cpp gc_heap::restart_vm: signal the parked foreground triggering worker to proceed (it
+    // performs the actual RestartEE that opens the concurrent window). Does not itself restart the EE.
+    private static void restart_vm()
+    {
+        Debug.Assert(ee_proceed_event.IsValid());
+        ee_proceed_event.Set();
     }
 
     // background.cpp gc_heap::initialize_background_gc (support half). Slice A creates the background

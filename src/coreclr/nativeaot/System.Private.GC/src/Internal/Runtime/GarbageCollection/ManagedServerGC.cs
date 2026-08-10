@@ -1665,7 +1665,7 @@ internal static unsafe class ManagedGCHeap
     // re-suspend's ManagedGC_PrepareForSuspension does not deadlock waiting on this parked mutator)
     // and enable_preemptive publishes the deferred frame; both are restored after the wait. Mirrors
     // WKS BackgroundGC.background_gc_wait.
-    private static uint background_gc_wait(uint timeout = GCEnv.INFINITE)
+    internal static uint background_gc_wait(uint timeout = GCEnv.INFINITE)
     {
         if (!gc_heap.background_gc_done_event.IsValid())
         {

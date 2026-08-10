@@ -401,9 +401,11 @@ public static class ManagedServerGCFoundationTests
         Assert.Equal(typeof(bool), commit.ReturnType);
         Assert.Equal(heap.MakePointerType(), commit.GetParameters()[0].ParameterType);
 
-        // background_gc_requested is the PER_HEAP_ISOLATED request flag the joined worker consumes.
+        // gc_is_background_kickoff is the per-collection flag the triggering thread publishes under
+        // gc_lock and the joined worker consumes to decide the kickoff. (It replaces the old global
+        // background_gc_requested bit, which could not distinguish a coalescing second request.)
         Assert.NotNull(heap.GetField(
-            "background_gc_requested",
+            "gc_is_background_kickoff",
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
 
         // gc_type_background == 2 matches background.cpp; the server build takes it from GCPriv.cs.

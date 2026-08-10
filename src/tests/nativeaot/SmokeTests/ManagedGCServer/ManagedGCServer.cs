@@ -30,6 +30,23 @@ internal static class ManagedGCServerSmoke
         ~Finalizable() => Interlocked.Increment(ref s_finalizedCount);
     }
 
+    private static int s_bgcFinalizerRuns;
+
+    private sealed class BackgroundFinalizable
+    {
+        ~BackgroundFinalizable() => Interlocked.Increment(ref s_bgcFinalizerRuns);
+    }
+
+    // Allocate a finalizable object and drop the only reference to it. Kept non-inlined so the local
+    // does not remain reachable from the caller's frame: the object must be dead (but still registered
+    // for finalization) by the time the next background collection runs.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void AllocateDeadBackgroundFinalizable()
+    {
+        BackgroundFinalizable dead = new();
+        GC.KeepAlive(dead);
+    }
+
     private static int Main()
     {
         if (!GCSettings.IsServerGC)
@@ -66,6 +83,14 @@ internal static class ManagedGCServerSmoke
             if (!FinalizationRunsForDeadObjects())
             {
                 return 7;
+            }
+            if (!BackgroundCollectionQueuesFinalizers())
+            {
+                return 10;
+            }
+            if (!ConcurrentBackgroundRequestsCoalesce(heapCount))
+            {
+                return 11;
             }
 
             Console.WriteLine(
@@ -138,6 +163,16 @@ internal static class ManagedGCServerSmoke
         if (!FinalizationRunsForDeadObjects())
         {
             return 7;
+        }
+
+        if (!BackgroundCollectionQueuesFinalizers())
+        {
+            return 10;
+        }
+
+        if (!ConcurrentBackgroundRequestsCoalesce(heapCount))
+        {
+            return 11;
         }
 
         Console.WriteLine(
@@ -466,14 +501,20 @@ internal static class ManagedGCServerSmoke
     // (each non-blocking request must advance the gen2 collection count on its own), and
     // survivor/weak-reference correctness across the collections.
     //
-    // NOTE: this Slice C routes the initial stop-the-world background mark onto dedicated background
-    // worker threads: every non-blocking gen2 request lazily prepares/wakes the per-heap bgc workers,
-    // which scan stack roots, finalizer roots, strong/pinned handles and dependent handles into the
-    // background mark array under the native bgc_t_join ordering. The live-concurrent restart, the
-    // software-write-watch publication, and the concurrent sweep remain gated, so the reclamation
-    // completes through the blocking path. The test therefore asserts that the non-blocking request
-    // path actually performs a collection (the gen2 count advances from non-blocking requests alone)
-    // and preserves survivors/weak refs, rather than asserting that marking ran concurrently.
+    // NOTE: this slice enables the real foreground/background handoff. A non-blocking gen2 request
+    // routes to the server background collector, which does the initial mark, opens a concurrent
+    // window (restart_vm publishes software-write-watch + gc_background_running and restarts the EE),
+    // lets mutators run while current_c_gc_state == c_gc_state_marking, then re-suspends via
+    // bgc_suspend_EE (PrepareForSuspension) and reclaims (the concurrent region sweep is deferred, so
+    // the reclamation falls back to the blocking mark/plan/sweep on the bgc workers). The request
+    // returns as soon as the window opens, so the collection completes asynchronously; concurrent
+    // requests coalesce into a single background collection (native background_running_p semantics).
+    //
+    // The test proves the milestone: (1) re-suspension completes repeatedly -- the background
+    // collection count advances once per request when each is allowed to complete; and (2) mutators
+    // make allocation progress while marking is active -- the background allocation-wait counter
+    // advances (a mutator can only park in that preemptive wait while a background collection is
+    // running, i.e. during the concurrent window). Survivors / weak refs / finalization stay correct.
     private static bool BackgroundModeCollectionsCompleteWithSurvivors(int heapCount)
     {
         const int LiveCount = 256;
@@ -511,25 +552,77 @@ internal static class ManagedGCServerSmoke
         });
         mutator.Start();
 
-        // Phase 1: only non-blocking / background gen2 requests. Each one is routed onto the server
-        // background pipeline and must perform a real collection, so the gen2 count must advance by
-        // roughly the number of requests -- proving the non-blocking path collects rather than
-        // silently no-opping.
-        int nonBlockingRounds = 8;
-        int gen2BeforeNonBlocking = GC.CollectionCount(2);
-        for (int round = 0; round < nonBlockingRounds; round++)
+        // Phase 1: prove re-suspension completes repeatedly. Each non-blocking gen2 request drives one
+        // background collection; wait for it to finish (the background collection count advances) before
+        // the next, so requests do not coalesce. The count must advance once per request.
+        //
+        // When concurrent/background GC is disabled (DOTNET_gcConcurrent=0), non-blocking gen2 requests
+        // take the blocking path instead, so no background collection occurs. In that mode we fall back
+        // to asserting that the gen2 collection count advances (the requests still collect) and skip the
+        // background-specific counters, which stay 0 by design.
+        bool backgroundEnabled = IsBackgroundGCEnabled() != 0;
+        int backgroundRounds = 8;
+        int bgcBefore = GetBackgroundCollectionCount();
+        int gen2BeforeRounds = GC.CollectionCount(2);
+        int completedRounds = 0;
+        for (int round = 0; round < backgroundRounds; round++)
         {
+            int c = GetBackgroundCollectionCount();
             GC.Collect(2, GCCollectionMode.Default, blocking: false);
+
+            if (!backgroundEnabled)
+            {
+                continue;
+            }
+
+            // Wait for this background collection to re-suspend and complete (count advances).
+            int spins = 0;
+            while (GetBackgroundCollectionCount() == c && spins < 4000)
+            {
+                Thread.Sleep(1);
+                spins++;
+            }
+            if (GetBackgroundCollectionCount() > c)
+            {
+                completedRounds++;
+            }
         }
-        int gen2AfterNonBlocking = GC.CollectionCount(2);
-        if (gen2AfterNonBlocking - gen2BeforeNonBlocking < nonBlockingRounds)
+        int bgcAfter = GetBackgroundCollectionCount();
+        int allocWaits = GetBackgroundAllocWaitCount();
+
+        if (!backgroundEnabled)
         {
-            Volatile.Write(ref stop, 1);
-            mutator.Join();
-            Console.WriteLine(
-                $"Non-blocking gen2 requests did not each advance the count " +
-                $"({gen2BeforeNonBlocking} -> {gen2AfterNonBlocking} over {nonBlockingRounds} requests).");
-            return false;
+            // Blocking-path fallback: the non-blocking requests must have still collected.
+            if (GC.CollectionCount(2) - gen2BeforeRounds < backgroundRounds)
+            {
+                Volatile.Write(ref stop, 1);
+                mutator.Join();
+                Console.WriteLine(
+                    "Non-blocking gen2 requests did not advance the count with background GC disabled " +
+                    $"({gen2BeforeRounds} -> {GC.CollectionCount(2)} over {backgroundRounds} requests).");
+                return false;
+            }
+        }
+        else
+        {
+            if (completedRounds < backgroundRounds || bgcAfter - bgcBefore < backgroundRounds)
+            {
+                Volatile.Write(ref stop, 1);
+                mutator.Join();
+                Console.WriteLine(
+                    $"Background collections did not re-suspend/complete repeatedly: {completedRounds}/" +
+                    $"{backgroundRounds} rounds, background count {bgcBefore} -> {bgcAfter}.");
+                return false;
+            }
+            if (allocWaits <= 0)
+            {
+                Volatile.Write(ref stop, 1);
+                mutator.Join();
+                Console.WriteLine(
+                    "No mutator made allocation progress while marking was active " +
+                    "(background allocation-wait counter is 0).");
+                return false;
+            }
         }
 
         // Phase 2: mixed non-blocking + blocking requests interleaved with finalization.
@@ -614,6 +707,123 @@ internal static class ManagedGCServerSmoke
         return false;
     }
 
+    // A finalizable object that is dead before a non-blocking (background) gen2 request must be queued
+    // to the finalizer thread by that background collection's own completion -- not by some later
+    // unrelated collection. This exercises the server background completion's EnableFinalization (which
+    // mirrors WKS complete_background_gc): the fallback gc1 discovers the dead object's finalizer and
+    // sets settings.found_finalizers, and heap 0's completion must EnableFinalization so the finalizer
+    // thread runs it. The test never calls GC.Collect after the request, so the only collection that
+    // can reclaim the object and drive its finalization is the background one.
+    private static bool BackgroundCollectionQueuesFinalizers()
+    {
+        if (IsBackgroundGCEnabled() == 0)
+        {
+            // Concurrent GC disabled: non-blocking requests take the blocking path, whose finalization
+            // is already covered by FinalizationRunsForDeadObjects.
+            return true;
+        }
+
+        // Drain any finalizers left pending by earlier phases so the counter reflects only this test.
+        GC.WaitForPendingFinalizers();
+        int before = Volatile.Read(ref s_bgcFinalizerRuns);
+
+        // Create the dead finalizable object *before* the request.
+        AllocateDeadBackgroundFinalizable();
+
+        // Non-blocking (background) gen2 request. It returns as soon as the concurrent window opens; the
+        // collection completes asynchronously on the background workers.
+        GC.Collect(2, GCCollectionMode.Default, blocking: false);
+
+        // Wait for the background completion to queue and the finalizer thread to run the finalizer.
+        // Deliberately no GC.Collect *and* no GC.WaitForPendingFinalizers here: the finalization must be
+        // driven solely by the background collection's completion signalling the finalizer thread
+        // (EnableFinalization). GC.WaitForPendingFinalizers would itself wake the finalizer thread and
+        // mask a missing EnableFinalization, so only a plain sleep/poll is used.
+        for (int attempt = 0; attempt < 300; attempt++)
+        {
+            if (Volatile.Read(ref s_bgcFinalizerRuns) > before)
+            {
+                return true;
+            }
+            Thread.Sleep(10);
+        }
+
+        Console.WriteLine(
+            "Background collection did not queue the dead finalizable object for finalization " +
+            $"({before} -> {Volatile.Read(ref s_bgcFinalizerRuns)}) without a later GC.");
+        return false;
+    }
+
+    // Multiple threads issue non-blocking gen2 (background) requests concurrently. Many of these land
+    // while a background collection is already running -- in the live concurrent window -- exercising
+    // the under-gc_lock coalesce path in GarbageCollectGenerationServer: a second concurrent request
+    // must observe background_running_p under the lock and return (coalesce) instead of starting a
+    // second kickoff. Without that fix (when a global request bit exempted every caller from the
+    // background wait) two concurrent requests both bypassed the wait and started overlapping kickoffs,
+    // deadlocking; this test then hangs (the threads never join) and the harness times out.
+    private static bool ConcurrentBackgroundRequestsCoalesce(int heapCount)
+    {
+        if (IsBackgroundGCEnabled() == 0)
+        {
+            // Concurrent GC disabled: non-blocking requests take the blocking path; there is no
+            // background collection to coalesce against.
+            return true;
+        }
+
+        int before = GetBackgroundCollectionCount();
+        int requesters = (heapCount < 4 ? 4 : heapCount) * 2;
+        int go = 0;
+        Thread[] threads = new Thread[requesters];
+        for (int t = 0; t < requesters; t++)
+        {
+            threads[t] = new Thread(() =>
+            {
+                // Release all requester threads at once so they arrive at garbage_collect_background
+                // concurrently and repeatedly race at the start of each background collection -- the
+                // exact window where a second request can observe background_running_p flip on.
+                while (Volatile.Read(ref go) == 0)
+                {
+                    Thread.SpinWait(64);
+                }
+                for (int i = 0; i < 200; i++)
+                {
+                    GC.Collect(2, GCCollectionMode.Default, blocking: false);
+                    // A tiny allocation staggers the requests without piling on mutator pressure during
+                    // the live window (which is orthogonal to the coalesce race under test).
+                    byte[] garbage = new byte[64];
+                    garbage[0] = unchecked((byte)i);
+                }
+            });
+        }
+
+        for (int t = 0; t < requesters; t++)
+        {
+            threads[t].Start();
+        }
+        Volatile.Write(ref go, 1);
+        for (int t = 0; t < requesters; t++)
+        {
+            threads[t].Join();
+        }
+
+        // Reaching here means the concurrent requests coalesced without deadlocking. Let the last
+        // kicked-off background collection finish (poll without issuing any new GC), then require that
+        // at least one background collection completed.
+        for (int attempt = 0; attempt < 300 && GetBackgroundCollectionCount() <= before; attempt++)
+        {
+            Thread.Sleep(10);
+        }
+        int after = GetBackgroundCollectionCount();
+        if (after <= before)
+        {
+            Console.WriteLine(
+                "Concurrent non-blocking gen2 requests did not complete any background collection " +
+                $"({before} -> {after}).");
+            return false;
+        }
+        return true;
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void AllocateFinalizables(int count)
     {
@@ -661,4 +871,13 @@ internal static class ManagedGCServerSmoke
 
     [DllImport("*", EntryPoint = "ManagedServerGC_GetWorkerThreadCount")]
     private static extern int GetWorkerThreadCount();
+
+    [DllImport("*", EntryPoint = "ManagedServerGC_GetBackgroundCollectionCount")]
+    private static extern int GetBackgroundCollectionCount();
+
+    [DllImport("*", EntryPoint = "ManagedServerGC_GetBackgroundAllocWaitCount")]
+    private static extern int GetBackgroundAllocWaitCount();
+
+    [DllImport("*", EntryPoint = "ManagedServerGC_IsBackgroundGCEnabled")]
+    private static extern int IsBackgroundGCEnabled();
 }

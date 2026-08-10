@@ -54,14 +54,50 @@ internal unsafe partial struct gc_heap
     public static gc_reason gc_trigger_reason;
 
     // interface.cpp GCHeap::GarbageCollectGeneration, MULTIPLE_HEAPS path. Runs on the user thread
-    // that requested the collection.
-    public static nuint GarbageCollectGenerationServer(uint gen, gc_reason reason)
+    // that requested the collection. backgroundKickoff is true only for a non-blocking gen2 request
+    // routed through garbage_collect_background; every other (blocking / induced / allocation) caller
+    // leaves it false.
+    public static nuint GarbageCollectGenerationServer(uint gen, gc_reason reason, bool backgroundKickoff = false)
     {
         gc_heap* hpt = g_heaps[0];
         dynamic_data* dd = dynamic_data_of(hpt, (int)gen);
         nuint localCount = dynamic_data.dd_collection_count(dd);
 
-        enter_gc_lock();
+        // Coalesce / serialize against an in-progress background collection, decided *under* gc_lock so
+        // it is race-free. The kickoff publishes gc_background_running while it still holds gc_lock (the
+        // foreground worker sets it during the initial mark and only releases gc_lock afterwards, when
+        // it opens the window), so any request that acquires gc_lock after a kickoff observes
+        // background_running_p; a check before enter_gc_lock would race the flag turning on while this
+        // thread is parked on the lock.
+        //
+        //   * A non-blocking gen2 request (backgroundKickoff) that finds a background collection already
+        //     running returns immediately -- it coalesces into that collection (native
+        //     background_running_p short-circuit) rather than starting a second kickoff. This is the
+        //     critical fix: the decision uses the explicit parameter + background_running_p under the
+        //     lock, never a global request bit that every caller sets.
+        //   * A foreground (blocking / induced / allocation) collection instead waits for the background
+        //     collection to finish first: running it concurrently would contend gc_lock with the
+        //     background re-suspend (bgc_suspend_EE) and stomp the shared settings through
+        //     init_mechanisms. The wait releases gc_lock first, so it never blocks on
+        //     background_gc_done_event while holding the lock the background completion needs.
+        //   * The first background request (or any request that finds no background collection running)
+        //     falls through and becomes the actual collection.
+        while (true)
+        {
+            enter_gc_lock();
+            if (background_running_p())
+            {
+                nuint runningCount = dynamic_data.dd_collection_count(dd);
+                leave_gc_lock();
+                if (backgroundKickoff)
+                {
+                    return runningCount;
+                }
+                ManagedGCHeap.background_gc_wait();
+                continue;
+            }
+            break;
+        }
 
         // Don't trigger another GC if one was already in progress while waiting for the lock.
         nuint colCount = dynamic_data.dd_collection_count(dd);
@@ -86,6 +122,12 @@ internal unsafe partial struct gc_heap
         gc_started = 1;
 
         GcCondemnedGeneration = gen;
+
+        // Publish whether this collection is a background kickoff for the joined server worker's kickoff
+        // decision in garbage_collect. Written under gc_lock before the worker is woken (below), read
+        // after gc_start_event, so it is serialized with the collection like GcCondemnedGeneration.
+        System.Threading.Volatile.Write(
+            ref gc_is_background_kickoff, backgroundKickoff ? 1 : 0);
 
         // Release this triggering thread's managed-GC critical region (held by the GarbageCollect
         // vtable's GCHeapCriticalRegion.Enter) while it is parked in wait_for_gc_done. A background
@@ -188,6 +230,14 @@ internal unsafe partial struct gc_heap
                 gc_started = 0;
 
                 GCToEEInterface.RestartEE(1);
+
+                // Background collection: this RestartEE opens the concurrent window. Signal the bgc
+                // workers that the EE is now running so their re-suspension (bgc_suspend_EE) does not
+                // race ahead of it into a double-suspend.
+                if (proceed_with_gc_p && settings.concurrent != 0)
+                {
+                    Volatile.Write(ref bgc_ee_restarted, 1);
+                }
 
                 leave_gc_lock();
 
@@ -302,14 +352,14 @@ internal unsafe partial struct gc_heap
                 settings.condemned_generation,
                 GCInterfaceOffsets.max_generation);
 
-            // Slice B/C: a non-blocking gen2 request routed through garbage_collect_background sets
-            // background_gc_requested. On the joined worker, once the condemned generation has
-            // settled to max_generation, run the background collection kickoff. It commits every
-            // heap's mark array first (native collect.cpp do_concurrent_p gate); if any commit fails
-            // it publishes no background state/count and returns false, so the collection falls back
-            // to the ordinary blocking path here.
+            // Slice B/C: a non-blocking gen2 request routed through garbage_collect_background publishes
+            // gc_is_background_kickoff (under gc_lock, by the triggering thread). On the joined worker,
+            // once the condemned generation has settled to max_generation, run the background collection
+            // kickoff. It commits every heap's mark array first (native collect.cpp do_concurrent_p
+            // gate); if any commit fails it publishes no background state/count and returns false, so the
+            // collection falls back to the ordinary blocking path here.
             bool backgroundRequested =
-                System.Threading.Volatile.Read(ref background_gc_requested) != 0 &&
+                System.Threading.Volatile.Read(ref gc_is_background_kickoff) != 0 &&
                 settings.condemned_generation == GCInterfaceOffsets.max_generation;
 
             if (backgroundRequested && !server_background_gc_kickoff())
@@ -332,6 +382,16 @@ internal unsafe partial struct gc_heap
         }
 
         descr_generations();
+
+        // Background collection: the kickoff opened the initial mark on the dedicated bgc workers and
+        // (once they restart the EE via restart_vm) this foreground worker returns without running the
+        // blocking gc1. The bgc workers own the rest of the collection -- the concurrent window,
+        // re-suspension, and reclamation. gc_thread_function then skips do_post_gc (settings.concurrent
+        // != 0) but still restarts the EE and releases gc_lock, which is what opens the window.
+        if (settings.concurrent != 0)
+        {
+            return;
+        }
 
         gc1(hp);
     }
