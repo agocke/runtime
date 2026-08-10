@@ -1439,7 +1439,16 @@ namespace Internal.Runtime.GarbageCollection
         public static byte* min_overflow_address;
         public static byte* max_overflow_address;
 #endif
+#if MULTIPLE_HEAPS
+        // gcpriv.h PER_HEAP_FIELD_SINGLE_GC: each server heap counts the allocation contexts it
+        // fixed during its own collection (fix_alloc_context increments the owning heap's counter,
+        // heap_of(alloc_ptr)), and reads it back in gc1 to size the next allocation quantum. It is
+        // reset per heap in garbage_collect, so it must be instance-owned rather than shared across
+        // the concurrently running server workers.
+        public nuint alloc_contexts_used;
+#else
         public static nuint alloc_contexts_used;
+#endif
         // gcpriv.h PER_HEAP_FIELD_MAINTAINED freeable_uoh_segment / freeable_soh_segment: the
         // plan-time UOH sweep and the background/compaction segment-return paths thread emptied
         // regions onto these per-heap lists, which rearrange_uoh_segments / rearrange_small_heap_segments
@@ -1664,7 +1673,12 @@ namespace Internal.Runtime.GarbageCollection
             // to the WKS build's single heap.
             initialize_loh_pinned_queue_state();
 #endif
+#if !MULTIPLE_HEAPS
+            // In the MULTIPLE_HEAPS build alloc_contexts_used is instance-owned (reset per heap in
+            // garbage_collect, matching native's PER_HEAP_FIELD_SINGLE_GC classification), so the
+            // static reset only applies to the WKS build's single heap.
             alloc_contexts_used = 0;
+#endif
 #if !MULTIPLE_HEAPS
             // In the MULTIPLE_HEAPS build freeable_uoh_segment / freeable_soh_segment are
             // instance-owned (reset per heap by initialize_freeable_segments_state(hp) during heap
@@ -4781,8 +4795,6 @@ namespace Internal.Runtime.GarbageCollection
             int gen,
             gc_heap* heap)
         {
-            _ = heap;
-
             ScanContext scanContext = default;
             scanContext.promotion = 1;
             scanContext.thread_count = 1;
@@ -4802,7 +4814,18 @@ namespace Internal.Runtime.GarbageCollection
                         byte* obj = *current;
                         CObjectHeader* objectHeader = (CObjectHeader*)obj;
 
-                        if (objectHeader->IsMarked() == 0)
+                        // finalization.cpp CFinalize::ScanForFinalization tests
+                        // !g_theGCHeap->IsPromoted(obj), not the raw mark bit. GCHeap::IsPromoted2
+                        // (USE_REGIONS) treats an object outside the condemned range as promoted
+                        // (live) even when it carries no mark bit, so an ephemeral collection must
+                        // not resurrect a still-live older-generation finalizable object whose queue
+                        // entry has not yet been aged out of a condemned generation's segment. Using
+                        // only IsMarked would move that live object onto the ready-to-finalize list,
+                        // run its finalizer, and leave a marked survivor behind. Call
+                        // ManagedGCHeap.IsPromoted (the managed g_theGCHeap->IsPromoted) so the
+                        // region/condemned-range predicates are applied exactly as in native.
+                        bool promoted = ManagedGCHeap.IsPromoted(obj);
+                        if (!promoted)
                         {
                             Debug.Assert(objectHeader->GetMethodTable()->HasFinalizer() != 0);
 
@@ -4840,7 +4863,14 @@ namespace Internal.Runtime.GarbageCollection
 
             if (finalizedFound)
             {
-                GcScanRoots(promote, 0, null);
+                // finalization.cpp CFinalize::ScanForFinalization promotes the ready-to-finalize
+                // objects on the heap whose queue is being scanned. Under MULTIPLE_HEAPS this must be
+                // heap->heap_number (not a hardcoded 0) so the promote callback marks them into the
+                // scanning worker's own mark queue, which that worker then drains. Hardcoding 0 marked
+                // every heap's finalization survivors into heap 0's queue, so a non-zero heap's worker
+                // never drained them, leaving a ready-to-finalize object unmarked and reclaimed while
+                // still on the finalizer list (observed as heap corruption once finalizers ran).
+                GcScanRoots(promote, heap is not null ? heap->heap_number : 0, null);
                 gc_heap.settings.found_finalizers = 1;
             }
 

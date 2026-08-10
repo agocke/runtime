@@ -467,7 +467,7 @@ internal unsafe partial struct gc_heap
             {
                 if (init_table_for_region(0, region))
                 {
-                    return_free_region(region);
+                    return_free_region(hp, region);
                 }
                 else
                 {

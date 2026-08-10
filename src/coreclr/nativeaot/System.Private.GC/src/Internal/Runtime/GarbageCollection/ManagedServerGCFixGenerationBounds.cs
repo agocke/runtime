@@ -127,7 +127,7 @@ internal unsafe partial struct gc_heap
             {
                 heap_segment* region_to_delete = current_region;
                 current_region = heap_segment.heap_segment_next(current_region);
-                return_free_region(region_to_delete);
+                return_free_region(hp, region_to_delete);
                 (*num_returned_regions)++;
 
                 if (current_region is null)
@@ -200,7 +200,7 @@ internal unsafe partial struct gc_heap
             heap_segment* reserved_free_region = reserved_free_region_sip(hp, i);
             if (reserved_free_region is not null)
             {
-                return_free_region(reserved_free_region);
+                return_free_region(hp, reserved_free_region);
             }
         }
 

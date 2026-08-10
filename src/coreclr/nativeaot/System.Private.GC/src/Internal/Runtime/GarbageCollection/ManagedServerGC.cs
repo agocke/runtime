@@ -894,7 +894,11 @@ internal unsafe partial struct gc_heap
 
         GCSpinLock.initialize(&heap->more_space_lock_soh);
         GCSpinLock.initialize(&heap->more_space_lock_uoh);
-        init_dynamic_data_for_server(heap);
+        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
+        {
+            *dynamic_data_of(heap, i) = default;
+        }
+        init_dynamic_data(heap);
         heap->allocation_quantum = 32 * 1024;
         heap->heap_number = heapNumber;
         heap->server_free_regions = default;
@@ -908,24 +912,6 @@ internal unsafe partial struct gc_heap
         heap->last_gc_before_oom = 0;
         heap->gen_to_condemn_reasons = default;
         initialize_mark_phase_state(heap);
-    }
-
-    private static void init_dynamic_data_for_server(gc_heap* heap)
-    {
-        ulong now = GCCommon.GetHighPrecisionTimeStamp();
-        generation* generationTable = generation_table_of(heap);
-        for (int i = 0; i < (int)gc_generation_num.total_generation_count; i++)
-        {
-            dynamic_data* data = dynamic_data_of(heap, i);
-            *data = default;
-            data->min_size = i == 0 ? 256 * 1024u : 3 * 1024 * 1024u;
-            data->gc_clock = 0;
-            data->time_clock = now;
-            data->previous_time_clock = now;
-            data->new_allocation = unchecked((nint)data->min_size);
-            data->gc_new_allocation = data->new_allocation;
-            data->desired_allocation = unchecked((nuint)data->new_allocation);
-        }
     }
 
     public static gc_heap* heap_of_context(gc_alloc_context* context)
@@ -954,13 +940,7 @@ internal unsafe partial struct gc_heap
         }
 
         GCToOSInterface.BoostThreadPriority();
-        heap_select.init_cpu_mapping(heap->heap_number);
-        while (Volatile.Read(ref server_gc_shutdown) == 0)
-        {
-            gc_start_event.Wait(GCEnv.INFINITE, alertable: false);
-        }
-
-        Interlocked.Increment(ref server_gc_threads_exited);
+        gc_thread_function(heap);
     }
 
     public static bool create_thread_support(int heapCount)
@@ -1384,6 +1364,10 @@ internal static unsafe class ManagedGCRegionBootstrap
         {
             gc_heap.gc_start_event.Set();
         }
+        if (gc_heap.ee_suspend_event.IsValid())
+        {
+            gc_heap.ee_suspend_event.Set();
+        }
 
         int expectedThreads =
             Volatile.Read(ref gc_heap.server_gc_threads_created);
@@ -1483,6 +1467,7 @@ internal static unsafe class ManagedGCHeap
         s_vtable.IGCHeap.GetTotalAllocatedBytes = &GetTotalAllocatedBytes;
         s_vtable.IGCHeap.GetMemoryInfo = &GetMemoryInfo;
         s_vtable.IGCHeap.GetMaxGeneration = &GetMaxGeneration;
+        s_vtable.IGCHeap.GarbageCollect = &GarbageCollect;
         s_vtable.IGCHeap.SetFinalizationRun = &SetFinalizationRun;
         s_vtable.IGCHeap.RegisterForFinalization = &RegisterForFinalization;
         s_vtable.IGCHeap.Initialize = &Initialize;
@@ -1497,6 +1482,7 @@ internal static unsafe class ManagedGCHeap
         s_vtable.IGCHeap.GetCurrentObjSize = &GetCurrentObjSize;
         s_vtable.IGCHeap.RuntimeStructuresValid = &RuntimeStructuresValid;
         s_vtable.IGCHeap.SetSuspensionPending = &SetSuspensionPending;
+        s_vtable.IGCHeap.SetGCInProgress = &SetGCInProgress;
         s_vtable.IGCHeap.SetYieldProcessorScalingFactor = &SetYieldProcessorScalingFactor;
         s_vtable.IGCHeap.Shutdown = &Shutdown;
         s_vtable.IGCHeap.Alloc = &Alloc;
@@ -1594,8 +1580,16 @@ internal static unsafe class ManagedGCHeap
         if (!uoh)
         {
             byte* current = context->alloc_ptr;
+            nuint remaining = current is not null
+                ? (nuint)(context->alloc_limit - current)
+                : 0;
+            // Only take the fast path when the leftover is either an exact fit or still large enough
+            // to hold a minimum free object. This keeps the context tail fillable (0 or >= min object
+            // size) so the slow-path transition below never leaves an unwalkable sub-min-object gap.
+            nuint fastAlignedMinObjSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
             if (current is not null &&
-                size <= (nuint)(context->alloc_limit - current))
+                size <= remaining &&
+                (remaining - size == 0 || remaining - size >= fastAlignedMinObjSize))
             {
                 context->alloc_ptr = current + size;
                 return current;
@@ -1606,6 +1600,22 @@ internal static unsafe class ManagedGCHeap
             ? &heap->more_space_lock_soh
             : &heap->more_space_lock_uoh;
         GCSpinLock.enter(allocationLock);
+
+        nuint alignedMinObjSize = gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
+
+        // The exhausted SOH context has an unused tail [alloc_ptr, alloc_limit] that is smaller than
+        // the requested object. Because the new context is taken from the segment frontier (past every
+        // other thread's slice), that tail would otherwise be left as zero-initialized committed space
+        // in the middle of the region and make the collector's plan-phase heap walk read a null
+        // MethodTable. Turn it into a walkable free object before moving on, matching how the native
+        // allocator (adjust_limit_clr) retires an allocation context: the free object spans the tail
+        // plus the Align(min_obj_size) that was reserved below alloc_limit.
+        if (!uoh && context->alloc_ptr is not null)
+        {
+            nuint tailSize = (nuint)(context->alloc_limit - context->alloc_ptr);
+            gc_heap.make_unused_array(context->alloc_ptr, tailSize + alignedMinObjSize);
+        }
+
         generation* gen = gc_heap.generation_of(
             gc_heap.generation_table_of(heap),
             generationNumber);
@@ -1613,8 +1623,15 @@ internal static unsafe class ManagedGCHeap
             generation.generation_allocation_segment(gen);
         byte* start = heap_segment.heap_segment_allocated(segment);
         byte* end = heap_segment.heap_segment_reserved(segment) -
-            (nint)gc_heap.Align((nuint)GCInterfaceOffsets.min_obj_size);
-        nuint quantum = uoh ? size : (size > heap->allocation_quantum ? size : heap->allocation_quantum);
+            (nint)alignedMinObjSize;
+        // gc_heap::adjust_limit_clr reserves Align(min_obj_size) below alloc_limit so a retired
+        // context can always be turned into a walkable free object without running past the frontier;
+        // the SOH quantum must therefore leave room for the object and that reserve.
+        nuint quantum = uoh
+            ? size
+            : (size + alignedMinObjSize > heap->allocation_quantum
+                ? size + alignedMinObjSize
+                : heap->allocation_quantum);
         byte* allocationEnd = start + (nint)quantum;
         byte* commitStart = gc_heap.align_lower_page(start);
         byte* commitEnd = gc_heap.align_on_page(allocationEnd);
@@ -1634,13 +1651,71 @@ internal static unsafe class ManagedGCHeap
             heap_segment.heap_segment_committed(segment) = commitEnd;
         }
         heap_segment.heap_segment_allocated(segment) = limit;
+
+        // VirtualCommit only zero-initializes freshly committed pages. A region recycled after a
+        // sweep (init_heap_segment existing_region_p) is already committed and still holds stale
+        // object data, and heap_segment_used tracks how far the region has ever been dirtied. Clear
+        // the newly exposed allocation-context memory up to that high-water mark and advance it,
+        // exactly as gc_heap::adjust_limit_clr does on the WKS path. Without this, allocations served
+        // from a reused region return non-zeroed memory (observed as garbage in freshly allocated
+        // objects after a collection, e.g. a non-null slot in a just-allocated reference array).
+        {
+            byte* clearStart = (byte*)unchecked((nuint)start - (nuint)sizeof(nuint));
+            byte* memStart = heap_segment.heap_segment_mem(segment);
+            if (clearStart < memStart)
+            {
+                clearStart = memStart;
+            }
+
+            byte* usedPtr = heap_segment.heap_segment_used(segment);
+            byte* clearEnd;
+            if (limit <= usedPtr)
+            {
+                clearEnd = limit;
+            }
+            else
+            {
+                clearEnd = usedPtr;
+                heap_segment.heap_segment_used(segment) = limit;
+            }
+
+            if (clearStart < clearEnd)
+            {
+                // This clear runs on the mutator's own allocation thread while it holds
+                // DoNotTriggerGc (ManagedGC_EnterAllocationHelper). It must stay in cooperative
+                // mode: gc_heap.memclr routes large clears through Unsafe.InitBlockUnaligned ->
+                // SpanHelpers.ZeroMemoryNative, a P/Invoke that switches the thread to preemptive
+                // and publishes a transition frame. SuspendEE would cache that transient frame as a
+                // suspension point, but a DoNotTriggerGc thread ignores the trap on return and keeps
+                // running, so the cached frame goes stale and the server mark phase walks reclaimed
+                // stack. Clear inline (bounded by the allocation quantum) so no transition occurs.
+                byte* clearPtr = clearStart;
+                while ((nuint)(clearEnd - clearPtr) >= (nuint)sizeof(nuint))
+                {
+                    *(nuint*)clearPtr = 0;
+                    clearPtr += sizeof(nuint);
+                }
+                while (clearPtr < clearEnd)
+                {
+                    *clearPtr = 0;
+                    clearPtr++;
+                }
+            }
+        }
+
         if (generationNumber == 0)
         {
             heap->alloc_allocated = limit;
             context->alloc_ptr = start + (nint)size;
-            context->alloc_limit = limit;
-            context->alloc_bytes = unchecked(context->alloc_bytes + (long)quantum);
-            heap->total_alloc_bytes_soh += quantum;
+            // Reserve Align(min_obj_size) below the frontier so fix_allocation_context can retire
+            // this context into a walkable free object that ends exactly at the frontier.
+            context->alloc_limit = limit - (nint)alignedMinObjSize;
+            // Account only the usable span (quantum minus the reserved aligned min-object tail), as
+            // gc_heap::set_alloc_context_limit / adjust_limit_clr do for SOH generations; the reserve
+            // is never handed out to allocations. UOH (below) has no reserve and accounts the full size.
+            nuint usableBytes = quantum - alignedMinObjSize;
+            context->alloc_bytes = unchecked(context->alloc_bytes + (long)usableBytes);
+            heap->total_alloc_bytes_soh += usableBytes;
         }
         else
         {
@@ -1661,10 +1736,15 @@ internal static unsafe class ManagedGCHeap
         void* heap)
     {
         _ = thisPtr;
-        _ = arg;
-        _ = heap;
-        context->alloc_ptr = null;
-        context->alloc_limit = null;
+        GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+        // Turn the unused tail of the retiring allocation context into a walkable free object on the
+        // heap that owns its memory, so the plan-phase heap walk does not run off the end of the
+        // last written object into zero-initialized committed space. Mirrors GCHeap::FixAllocContext.
+        gc_heap.fix_alloc_context_for_heap(
+            context,
+            arg is not null,
+            (gc_heap*)heap);
+        criticalRegion.Exit();
     }
 
     private static byte IsThreadUsingAllocationContextHeap(
@@ -1766,6 +1846,16 @@ internal static unsafe class ManagedGCHeap
     private static byte RegisterForFinalization(void* thisPtr, int gen, byte* obj)
     {
         _ = thisPtr;
+
+        // interface.cpp GCHeap::RegisterForFinalization normalizes the caller's gen == -1 sentinel
+        // (RhRegisterForFinalization always passes -1) to generation 0 before indexing the finalize
+        // queue. Without this, CFinalize.gen_segment(-1) resolves to the ready-to-finalize segment,
+        // so every finalizable object would be registered as already ready to run its finalizer.
+        if (gen == -1)
+        {
+            gen = 0;
+        }
+
         heap_segment* segment = ManagedGCRegionBootstrap.FindSegment(
             obj,
             smallHeapOnly: false);
@@ -2021,10 +2111,110 @@ internal static unsafe class ManagedGCHeap
     private static void SetReservedVMLimit(void* thisPtr, nuint limit) =>
         gc_heap.reserved_memory_limit = limit;
     private static uint GetMaxGeneration(void* thisPtr) => MaxGeneration;
-    private static uint GetCondemnedGeneration(void* thisPtr) => uint.MaxValue;
-    private static int CollectionCount(void* thisPtr, int generation, int kind) => 0;
-    private static uint GetGcCount(void* thisPtr) => 0;
-    private static byte IsGCInProgressHelper(void* thisPtr, byte considerStart) => 0;
+    private static uint GetCondemnedGeneration(void* thisPtr) =>
+        unchecked((uint)gc_heap.settings.condemned_generation);
+
+    // gcinterface.h IGCHeap::GarbageCollect. Routes GC.Collect through the server blocking
+    // collection pipeline (GCHeap::GarbageCollect / GarbageCollectTry / GarbageCollectGeneration,
+    // MULTIPLE_HEAPS path). Optimized / aggressive / non-blocking modes and background waits are
+    // deferred with the rest of the server BGC / dynamic-tuning integration; a forced blocking
+    // gen0/gen1/gen2 collection is routed.
+    private static int GarbageCollect(void* thisPtr, int generation, byte low_memory_p, int mode)
+    {
+        _ = thisPtr;
+        GCHeapCriticalRegion criticalRegion = GCHeapCriticalRegion.Enter();
+
+        int gen = generation < 0
+            ? GCInterfaceOffsets.max_generation
+            : (generation < GCInterfaceOffsets.max_generation
+                ? generation
+                : GCInterfaceOffsets.max_generation);
+
+        gc_reason reason;
+        if (low_memory_p != 0)
+        {
+            reason = ((collection_mode)mode & collection_mode.collection_blocking) != 0
+                ? gc_reason.reason_lowmemory_blocking
+                : gc_reason.reason_lowmemory;
+        }
+        else
+        {
+            reason = gc_reason.reason_induced;
+            if (((collection_mode)mode & collection_mode.collection_aggressive) != 0)
+            {
+                reason = gc_reason.reason_induced_aggressive;
+            }
+            else if (((collection_mode)mode & collection_mode.collection_compacting) != 0)
+            {
+                reason = gc_reason.reason_induced_compacting;
+            }
+            else if (((collection_mode)mode & collection_mode.collection_non_blocking) != 0)
+            {
+                reason = gc_reason.reason_induced_noforce;
+            }
+        }
+
+        dynamic_data* dd = gc_heap.dynamic_data_of(gc_heap.g_heaps[0], gen);
+        nuint collectionCountAtEntry = dynamic_data.dd_collection_count(dd);
+        nuint blockingCountAtEntry = gc_heap.full_gc_counts[gc_heap.gc_type_blocking];
+
+        while (true)
+        {
+            nuint currentCount = gc_heap.GarbageCollectGenerationServer((uint)gen, reason);
+
+            if (((collection_mode)mode & collection_mode.collection_blocking) != 0 &&
+                gen == GCInterfaceOffsets.max_generation &&
+                gc_heap.full_gc_counts[gc_heap.gc_type_blocking] == blockingCountAtEntry)
+            {
+                continue;
+            }
+
+            if (collectionCountAtEntry == currentCount)
+            {
+                continue;
+            }
+
+            break;
+        }
+
+        criticalRegion.Exit();
+        return S_OK;
+    }
+
+    private static int CollectionCount(void* thisPtr, int generation, int kind)
+    {
+        _ = thisPtr;
+        if (kind != 0)
+        {
+            // Background/foreground GC counts are deferred with the server BGC integration.
+            return 0;
+        }
+
+        if (gc_heap.g_heaps is null ||
+            gc_heap.n_heaps == 0 ||
+            (uint)generation > (uint)GCInterfaceOffsets.max_generation)
+        {
+            return 0;
+        }
+
+        return unchecked((int)dynamic_data.dd_collection_count(
+            gc_heap.dynamic_data_of(gc_heap.g_heaps[0], generation)));
+    }
+
+    private static uint GetGcCount(void* thisPtr)
+    {
+        _ = thisPtr;
+        return unchecked((uint)gc_heap.settings.gc_index);
+    }
+
+    private static byte IsGCInProgressHelper(void* thisPtr, byte considerStart) =>
+        Volatile.Read(ref gc_heap.gc_started) != 0 || Volatile.Read(ref s_gcInProgress) != 0
+            ? (byte)1
+            : (byte)0;
+
+    private static byte s_gcInProgress;
+    private static void SetGCInProgress(void* thisPtr, byte fInProgress) =>
+        Volatile.Write(ref s_gcInProgress, fInProgress);
     private static uint WaitUntilGCComplete(void* thisPtr, byte considerStart) => 0;
     private static void WaitUntilConcurrentGCComplete(void* thisPtr) { }
     private static int WaitUntilConcurrentGCCompleteAsync(void* thisPtr, int timeout) => S_OK;

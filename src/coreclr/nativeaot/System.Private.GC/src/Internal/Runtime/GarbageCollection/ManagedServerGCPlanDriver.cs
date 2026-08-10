@@ -108,38 +108,12 @@ internal unsafe partial struct gc_heap
     {
     }
 
-    // mark_phase.cpp binary_search: find the first slot in the sorted [left, right) mark-list range
-    // whose entry is not less than e.
-    private static byte** binary_search(byte** left, byte** right, byte* e)
-    {
-        if (left == right)
-        {
-            return left;
-        }
-
-        Debug.Assert(left < right);
-        byte** a = left;
-        nuint l = 0;
-        nuint r = (nuint)(right - left);
-        while ((r - l) >= 2)
-        {
-            nuint m = l + ((r - l) / 2);
-            Debug.Assert(l < m && m < r);
-            if (a[m] < e)
-            {
-                l = m;
-            }
-            else
-            {
-                r = m;
-            }
-        }
-
-        return a[l] < e ? a + (nint)l + 1 : a + (nint)l;
-    }
-
-    // mark_phase.cpp USE_REGIONS get_region_mark_list: binary-search this heap's sorted mark list for
-    // the [start, end) region range, returning the region's first entry and writing its end pointer.
+    // mark_phase.cpp USE_REGIONS && MULTIPLE_HEAPS get_region_mark_list: the marked objects that fall
+    // in the region starting at 'start' were produced by every server worker, so sort_mark_list binned
+    // each heap's sorted portion into per-region pieces (mark_list_piece_start/end[region]). Merge every
+    // heap's piece for this region into this heap's g_mark_list_copy partition (a k-way merge), so the
+    // plan-phase walk sees objects marked by other workers too. A single source is used in place with no
+    // copy; overflowing the copy partition falls back to walking the region without the mark list.
     private static byte** get_region_mark_list(
         gc_heap* hp,
         ref int use_mark_list,
@@ -147,9 +121,112 @@ internal unsafe partial struct gc_heap
         byte* end,
         byte*** mark_list_end_ptr)
     {
-        _ = use_mark_list;
-        *mark_list_end_ptr = binary_search(hp->mark_list, hp->mark_list_index, end);
-        return binary_search(hp->mark_list, *mark_list_end_ptr, start);
+        _ = end;
+        nuint source_number = get_basic_region_index_for_address(start);
+
+        byte*** source = stackalloc byte**[GCToOSInterface.MAX_SUPPORTED_HEAPS];
+        byte*** source_end = stackalloc byte**[GCToOSInterface.MAX_SUPPORTED_HEAPS];
+        int source_count = 0;
+
+        for (int i = 0; i < n_heaps; i++)
+        {
+            gc_heap* heap = g_heaps[i];
+            if (heap->mark_list_piece_start[(nint)source_number] <
+                heap->mark_list_piece_end[(nint)source_number])
+            {
+                source[source_count] = heap->mark_list_piece_start[(nint)source_number];
+                source_end[source_count] = heap->mark_list_piece_end[(nint)source_number];
+                if (source_count < GCToOSInterface.MAX_SUPPORTED_HEAPS)
+                {
+                    source_count++;
+                }
+            }
+        }
+
+        hp->mark_list = g_mark_list_copy + (nint)((nuint)hp->heap_number * mark_list_size);
+        hp->mark_list_index = hp->mark_list;
+        hp->mark_list_end = hp->mark_list + (nint)(mark_list_size - 1);
+
+        if (source_count == 0)
+        {
+            // nothing to do
+        }
+        else if (source_count == 1)
+        {
+            hp->mark_list = source[0];
+            hp->mark_list_index = source_end[0];
+            hp->mark_list_end = hp->mark_list_index;
+        }
+        else
+        {
+            while (source_count > 1)
+            {
+                // find the lowest and second lowest value in the sources we're merging from
+                int lowest_source = 0;
+                byte* lowest = *source[0];
+                byte* second_lowest = *source[1];
+                for (int i = 1; i < source_count; i++)
+                {
+                    if (lowest > *source[i])
+                    {
+                        second_lowest = lowest;
+                        lowest = *source[i];
+                        lowest_source = i;
+                    }
+                    else if (second_lowest > *source[i])
+                    {
+                        second_lowest = *source[i];
+                    }
+                }
+
+                // find the point in the lowest source where it either runs out or is not <= second_lowest
+                byte** x;
+                if (source_end[lowest_source][-1] <= second_lowest)
+                {
+                    x = source_end[lowest_source];
+                }
+                else
+                {
+                    for (x = source[lowest_source];
+                         x < source_end[lowest_source] && *x <= second_lowest;
+                         x++)
+                    {
+                    }
+                }
+
+                append_to_mark_list(hp, source[lowest_source], x);
+                if (hp->mark_list_index > hp->mark_list_end)
+                {
+                    use_mark_list = 0;
+                    return null;
+                }
+
+                source[lowest_source] = x;
+
+                // check whether this source is now exhausted
+                if (x >= source_end[lowest_source])
+                {
+                    // keep the non-empty sources packed at the front
+                    if (lowest_source < source_count - 1)
+                    {
+                        source[lowest_source] = source[source_count - 1];
+                        source_end[lowest_source] = source_end[source_count - 1];
+                    }
+                    source_count--;
+                }
+            }
+
+            // we're left with just one source that we copy
+            append_to_mark_list(hp, source[0], source_end[0]);
+            if (hp->mark_list_index > hp->mark_list_end)
+            {
+                use_mark_list = 0;
+                return null;
+            }
+        }
+
+        *mark_list_end_ptr = hp->mark_list_index;
+        return hp->mark_list;
     }
 
     // gc_heap::plan_phase (SERVER_GC / MULTIPLE_HEAPS / USE_REGIONS). Runs on each server worker's
@@ -775,6 +852,24 @@ internal unsafe partial struct gc_heap
         {
             settings.loh_compaction = 0;
         }
+
+        // COMPATIBILITY GATE (temporary): force every routed server blocking collection onto the
+        // sweep path instead of compact. The full compaction path above/below (decide_on_compacting,
+        // relocate_phase, compact_phase, fix_generation_bounds) remains translated and intact; it is
+        // only gated off here. The reason is that the managed NativeAOT server trigger path cannot yet
+        // reliably RELOCATE a root that the triggering (user) thread holds only in a callee-saved
+        // register: promotion (mark) reads and marks such a root correctly, but the relocate scan of
+        // that same preemptively-parked thread never rewrites it, so a compacting collection leaves a
+        // stale root pointing at a slot the compactor has reused (observed as a live WeakReference
+        // being cleared, or an intermittent access violation). Sweeping does not move objects, so no
+        // root relocation is required and live objects -- including register-only roots -- stay valid.
+        // The gate is applied at the per-heap decision point before the gc_join_decide_on_compaction
+        // join so that every heap independently agrees on policy_sweep, the joined pol_max reduction
+        // below still sees a uniform decision, and the join sequence is unchanged. It also overrides
+        // the forced/aggressive compacting reasons (induced-compacting, gen0 reduction, high memory
+        // load, LOH forced) so those safely sweep for now rather than entering compact.
+        should_compact = false;
+        should_expand = false;
 
         hp->gc_policy = should_compact && should_expand
             ? policy_expand

@@ -24,9 +24,9 @@
 //     freeable segments to the free-region pool. freeable_uoh_segment / freeable_soh_segment are
 //     PER_HEAP_FIELD_MAINTAINED, so they are instance-owned for MULTIPLE_HEAPS (static in WKS) and
 //     reached through the gc_heap* parameter here; the static WKS versions stay in GCRegionsSegments.cs
-//     under !MULTIPLE_HEAPS. return_free_region / free_regions remain shared/static for now (their
-//     PER_HEAP conversion is a separate deferred unit), so the return path still targets the shared
-//     free-region pool.
+//     under !MULTIPLE_HEAPS. return_free_region is likewise PER_HEAP under MULTIPLE_HEAPS: the server
+//     overload targets the returning worker's own server_free_regions lists (the WKS static overload
+//     stays for the single-heap build).
 //
 // make_unused_array / size / AlignQword / Align / get_alignment_constant / pinned_plug
 // (ManagedServerGC.cs), heap_segment_rw / get_uoh_start_object / decommit_heap_segment_pages /
@@ -251,7 +251,7 @@ internal unsafe partial struct gc_heap
         while (seg is not null)
         {
             heap_segment* next_seg = heap_segment.heap_segment_next(seg);
-            return_free_region(seg);
+            return_free_region(hp, seg);
             seg = next_seg;
         }
 
@@ -267,7 +267,7 @@ internal unsafe partial struct gc_heap
         while (seg is not null)
         {
             heap_segment* next_seg = heap_segment.heap_segment_next(seg);
-            return_free_region(seg);
+            return_free_region(hp, seg);
             seg = next_seg;
         }
 

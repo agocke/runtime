@@ -66,6 +66,20 @@ internal unsafe partial struct gc_heap
         return (region_free_list*)Unsafe.AsPointer(ref free_regions[kind]);
     }
 
+    // regions_segments.cpp: free_regions is PER_HEAP_FIELD_MAINTAINED_ALLOC under MULTIPLE_HEAPS, so
+    // the server compilation reaches the owning heap's per-heap free-region lists (server_free_regions)
+    // instead of the shared static array; the workstation build keeps the single static array.
+    public static region_free_list* free_regions_of(gc_heap* hp, int kind)
+    {
+        Debug.Assert(kind >= (int)free_region_kind.basic_free_region && kind < (int)free_region_kind.count_free_region_kinds);
+#if MULTIPLE_HEAPS
+        return (region_free_list*)Unsafe.AsPointer(ref hp->server_free_regions[kind]);
+#else
+        _ = hp;
+        return (region_free_list*)Unsafe.AsPointer(ref free_regions[kind]);
+#endif
+    }
+
     public static bool allocate_initial_regions(int number_of_heaps)
     {
         const nuint InitialRegionsPerHeap = (nuint)gc_generation_num.total_generation_count * 2;
@@ -163,24 +177,38 @@ internal unsafe partial struct gc_heap
         }
         else
         {
-            generation* generation_table = generation_table_of(hp);
+            // collect.cpp gc_heap::compute_gc_and_ephemeral_range: ephemeral_low/high and gc_low/high
+            // are PER_HEAP_ISOLATED (shared) under USE_REGIONS, so they must span the union of every
+            // heap's ephemeral / condemned regions. For MULTIPLE_HEAPS the native code iterates all
+            // heaps, which makes the shared result idempotent regardless of which worker computes it;
+            // iterating only the current heap would leave the shared value covering a single heap and
+            // corrupt is_in_gc_range for objects owned by the others.
             for (int gen_number = (int)gc_generation_num.soh_gen0;
                  gen_number <= (int)gc_generation_num.soh_gen1;
                  gen_number++)
             {
-                generation* gen = generation_of(generation_table, gen_number);
-                for (heap_segment* region = generation.generation_start_segment(gen);
-                     region is not null;
-                     region = heap_segment.heap_segment_next(region))
+#if MULTIPLE_HEAPS
+                for (int i = 0; i < n_heaps; i++)
                 {
-                    byte* region_start = get_region_start(region);
-                    byte* region_end = heap_segment.heap_segment_reserved(region);
-                    ephemeral_low = ephemeral_low < region_start ? ephemeral_low : region_start;
-                    ephemeral_high = ephemeral_high > region_end ? ephemeral_high : region_end;
-                    if (gen_number <= condemned_gen_number)
+                    gc_heap* heap = g_heaps[i];
+#else
+                {
+                    gc_heap* heap = hp;
+#endif
+                    generation* gen = generation_of(generation_table_of(heap), gen_number);
+                    for (heap_segment* region = generation.generation_start_segment(gen);
+                         region is not null;
+                         region = heap_segment.heap_segment_next(region))
                     {
-                        gc_low = gc_low < region_start ? gc_low : region_start;
-                        gc_high = gc_high > region_end ? gc_high : region_end;
+                        byte* region_start = get_region_start(region);
+                        byte* region_end = heap_segment.heap_segment_reserved(region);
+                        ephemeral_low = ephemeral_low < region_start ? ephemeral_low : region_start;
+                        ephemeral_high = ephemeral_high > region_end ? ephemeral_high : region_end;
+                        if (gen_number <= condemned_gen_number)
+                        {
+                            gc_low = gc_low < region_start ? gc_low : region_start;
+                            gc_high = gc_high > region_end ? gc_high : region_end;
+                        }
                     }
                 }
             }
@@ -803,7 +831,7 @@ internal unsafe partial struct gc_heap
         if (gen_number <= GCInterfaceOffsets.max_generation)
         {
             Debug.Assert(size == 0);
-            region = region_free_list.unlink_region_front(free_regions_of((int)free_region_kind.basic_free_region));
+            region = region_free_list.unlink_region_front(free_regions_of(hp, (int)free_region_kind.basic_free_region));
         }
         else
         {
@@ -812,12 +840,12 @@ internal unsafe partial struct gc_heap
             Debug.Assert(size >= LARGE_REGION_SIZE);
             if (size == LARGE_REGION_SIZE)
             {
-                region = region_free_list.unlink_region_front(free_regions_of((int)free_region_kind.large_free_region));
+                region = region_free_list.unlink_region_front(free_regions_of(hp, (int)free_region_kind.large_free_region));
             }
             else
             {
                 region = region_free_list.unlink_smallest_region(
-                    free_regions_of((int)free_region_kind.huge_free_region),
+                    free_regions_of(hp, (int)free_region_kind.huge_free_region),
                     size);
                 if (region is null)
                 {
@@ -2264,6 +2292,19 @@ internal unsafe partial struct gc_heap
 
     public static void return_free_region(heap_segment* region)
     {
+        return_free_region_core(region, (region_free_list*)Unsafe.AsPointer(ref free_regions[0]));
+    }
+
+    // regions_segments.cpp gc_heap::return_free_region: free_regions is PER_HEAP under MULTIPLE_HEAPS,
+    // so the returning worker adds the region to *its own* free-region lists (server_free_regions), not
+    // the shared static array.
+    public static void return_free_region(gc_heap* hp, heap_segment* region)
+    {
+        return_free_region_core(region, free_regions_of(hp, (int)free_region_kind.basic_free_region));
+    }
+
+    private static void return_free_region_core(heap_segment* region, region_free_list* free_regions_array)
+    {
         gc_oh_num oh = heap_segment.heap_segment_oh(region);
         nuint committed = (nuint)(heap_segment.heap_segment_committed(region) - get_region_start(region));
         if (committed > 0)
@@ -2277,7 +2318,7 @@ internal unsafe partial struct gc_heap
 
         clear_region_info(region);
 
-        region_free_list.add_region_descending(region, (region_free_list*)Unsafe.AsPointer(ref free_regions[0]));
+        region_free_list.add_region_descending(region, free_regions_array);
 
         byte* region_start = get_region_start(region);
         byte* region_end = heap_segment.heap_segment_reserved(region);

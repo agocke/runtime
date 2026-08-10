@@ -87,6 +87,15 @@ public static class ManagedServerGCFoundationTests
         Assert.NotNull(heap.GetField(
             "alloc_context_count",
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        // alloc_contexts_used is PER_HEAP_FIELD_SINGLE_GC in native: each server worker resets and
+        // increments its own heap's counter concurrently, so it must be an instance field (not the
+        // shared static used by the WKS build).
+        Assert.NotNull(heap.GetField(
+            "alloc_contexts_used",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+        Assert.Null(heap.GetField(
+            "alloc_contexts_used",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
         Assert.NotNull(heap.GetField(
             "gc_done_event",
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
@@ -96,6 +105,25 @@ public static class ManagedServerGCFoundationTests
         Assert.NotNull(heap.GetField(
             "g_heaps",
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+    }
+
+    [Fact]
+    public static void BalancedStaticDataUsesMultipleHeapsGen0Budget()
+    {
+        // dynamic_tuning.cpp static_data_table: the balanced gen0 limit/max_limit are 20.0f/40.0f
+        // under MULTIPLE_HEAPS (9.0f/20.0f only in the WKS build). The server build is MULTIPLE_HEAPS.
+        Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
+        heap.GetMethod(
+            "initialize_static_data_table",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, null);
+
+        object balancedGen0 = heap.GetField(
+            "static_data_table_balanced0",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+
+        Type staticData = GetType("Internal.Runtime.GarbageCollection.static_data");
+        Assert.Equal(20.0f, GetField<float>(staticData, balancedGen0, "limit"));
+        Assert.Equal(40.0f, GetField<float>(staticData, balancedGen0, "max_limit"));
     }
 
     [Fact]
@@ -2755,9 +2783,10 @@ public static class ManagedServerGCFoundationTests
     {
         Type heap = GetType("Internal.Runtime.GarbageCollection.gc_heap");
 
-        // get_region_mark_list (gc_heap*, ref int, byte*, byte*, byte***) -> byte** binary-searches
-        // this heap's own sorted mark list, so it takes the owning heap explicitly (the WKS overload
-        // reads the static mark_list). It calls binary_search.
+        // get_region_mark_list (gc_heap*, ref int, byte*, byte*, byte***) -> byte** performs the
+        // MULTIPLE_HEAPS k-way merge of every heap's mark_list_piece_start/end for the region into
+        // this heap's g_mark_list_copy partition, so it takes the owning heap explicitly (the WKS
+        // overload binary-searches the static mark_list). It calls append_to_mark_list.
         MethodInfo regionList = heap.GetMethod(
             "get_region_mark_list",
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -2768,8 +2797,8 @@ public static class ManagedServerGCFoundationTests
         Assert.True(regionParams[1].ParameterType.IsByRef);
         Assert.Equal(typeof(int), regionParams[1].ParameterType.GetElementType());
 
-        (string[] names, _) = CollectCallTargets(regionList, "binary_search");
-        Assert.Contains("binary_search", names);
+        (string[] names, _) = CollectCallTargets(regionList, "append_to_mark_list");
+        Assert.Contains("append_to_mark_list", names);
     }
 
     [Fact]

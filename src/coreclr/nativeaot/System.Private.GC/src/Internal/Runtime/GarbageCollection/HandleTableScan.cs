@@ -51,7 +51,8 @@ internal static unsafe class HandleTableScan
             1,
             condemned,
             max_gen,
-            flags);
+            flags,
+            sc);
 
         type = (uint)HandleType.HNDTYPE_ASYNCPINNED;
         TraceHandleTables(
@@ -62,7 +63,8 @@ internal static unsafe class HandleTableScan
             1,
             condemned,
             max_gen,
-            flags);
+            flags,
+            sc);
 
         TraceVariableHandles(
             &PinObject,
@@ -101,7 +103,8 @@ internal static unsafe class HandleTableScan
                     : 2u,
             condemned,
             max_gen,
-            flags);
+            flags,
+            sc);
 
         TraceVariableHandles(
             &PromoteObject,
@@ -123,7 +126,8 @@ internal static unsafe class HandleTableScan
                 1,
                 condemned,
                 max_gen,
-                flags);
+                flags,
+                sc);
         }
     }
 
@@ -161,7 +165,8 @@ internal static unsafe class HandleTableScan
 #endif
             max_gen,
             max_gen,
-            HandleTableConstants.HNDGCF_NORMAL);
+            HandleTableConstants.HNDGCF_NORMAL,
+            sc);
 
         TraceVariableHandles(
             &ScanPointerForProfilerAndETW,
@@ -194,7 +199,8 @@ internal static unsafe class HandleTableScan
             max_gen,
             max_gen,
             HandleTableConstants.HNDGCF_EXTRAINFO |
-                HandleTableConstants.HNDGCF_NORMAL);
+                HandleTableConstants.HNDGCF_NORMAL,
+            sc);
     }
 
     private struct DiagDependentScanInfo
@@ -332,7 +338,8 @@ internal static unsafe class HandleTableScan
                 HandleTableConstants.HNDGCF_EXTRAINFO |
                     (context->m_pScanContext->concurrent != 0
                         ? HandleTableConstants.HNDGCF_ASYNC
-                        : HandleTableConstants.HNDGCF_NORMAL));
+                        : HandleTableConstants.HNDGCF_NORMAL),
+                        context->m_pScanContext);
 
             if (context->m_fPromoted != 0)
             {
@@ -370,7 +377,8 @@ internal static unsafe class HandleTableScan
             3,
             condemned,
             max_gen,
-            flags);
+            flags,
+            sc);
 
         TraceVariableHandles(
             checkPromoted,
@@ -396,7 +404,8 @@ internal static unsafe class HandleTableScan
             HandleTableConstants.HNDGCF_EXTRAINFO |
                 (sc->concurrent != 0
                     ? HandleTableConstants.HNDGCF_ASYNC
-                    : HandleTableConstants.HNDGCF_NORMAL));
+                    : HandleTableConstants.HNDGCF_NORMAL),
+                    sc);
     }
 
     public static void Ref_CheckAlive(
@@ -421,7 +430,8 @@ internal static unsafe class HandleTableScan
             2,
             condemned,
             max_gen,
-            flags);
+            flags,
+            sc);
 
         TraceVariableHandles(
             checkPromoted,
@@ -474,7 +484,8 @@ internal static unsafe class HandleTableScan
             max_gen,
             sc->concurrent != 0
                 ? HandleTableConstants.HNDGCF_ASYNC
-                : HandleTableConstants.HNDGCF_NORMAL);
+                : HandleTableConstants.HNDGCF_NORMAL,
+                sc);
 
         TraceVariableHandles(
             &UpdatePointer,
@@ -514,7 +525,8 @@ internal static unsafe class HandleTableScan
             2,
             condemned,
             max_gen,
-            flags);
+            flags,
+            sc);
 
         TraceVariableHandles(
             &UpdatePointerPinned,
@@ -546,7 +558,8 @@ internal static unsafe class HandleTableScan
             HandleTableConstants.HNDGCF_EXTRAINFO |
                 (sc->concurrent != 0
                     ? HandleTableConstants.HNDGCF_ASYNC
-                    : HandleTableConstants.HNDGCF_NORMAL));
+                    : HandleTableConstants.HNDGCF_NORMAL),
+                    sc);
     }
 
     public static void Ref_ScanWeakInteriorPointersForRelocation(
@@ -569,7 +582,8 @@ internal static unsafe class HandleTableScan
             HandleTableConstants.HNDGCF_EXTRAINFO |
                 (sc->concurrent != 0
                     ? HandleTableConstants.HNDGCF_ASYNC
-                    : HandleTableConstants.HNDGCF_NORMAL));
+                    : HandleTableConstants.HNDGCF_NORMAL),
+                    sc);
     }
 
     public static void Ref_AgeHandles(int condemned, int max_gen, ScanContext* sc)
@@ -612,7 +626,8 @@ internal static unsafe class HandleTableScan
 #endif
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_AGE);
+            HandleTableConstants.HNDGCF_AGE,
+            sc);
     }
 
     public static void Ref_RejuvenateHandles(int condemned, int max_gen, ScanContext* sc)
@@ -826,7 +841,8 @@ internal static unsafe class HandleTableScan
         uint typeCount,
         int condemned,
         int max_gen,
-        uint flags)
+        uint flags,
+        ScanContext* sc)
     {
         HandleTableMap* walk = (HandleTableMap*)Unsafe.AsPointer(ref ObjectHandle.g_HandleTableMap);
         while (walk != null)
@@ -841,7 +857,13 @@ internal static unsafe class HandleTableScan
                     {
                         HandleTable** pTable = pBucket->pTable;
                         int uCPUlimit = ObjectHandle.getNumberOfSlots();
-                        for (int uCPUindex = 0; uCPUindex < uCPUlimit; uCPUindex++)
+                        // objecthandle.cpp: each GC worker scans a disjoint stride of the per-CPU
+                        // handle tables (start = its heap number, step = the heap count). Scanning
+                        // every slot on every worker concurrently races the block scans and
+                        // nondeterministically drops handles.
+                        int uCPUindex = sc is not null ? ObjectHandle.getSlotNumber(sc) : 0;
+                        int uCPUstep = sc is not null ? ObjectHandle.getThreadCount(sc) : 1;
+                        for (; uCPUindex < uCPUlimit; uCPUindex += uCPUstep)
                         {
                             HandleTable* table = pTable[uCPUindex];
                             if (table is not null)
@@ -898,7 +920,8 @@ internal static unsafe class HandleTableScan
             1,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_EXTRAINFO | flags);
+            HandleTableConstants.HNDGCF_EXTRAINFO | flags,
+            sc);
     }
 
     private static void VariableTraceDispatcher(
@@ -943,7 +966,8 @@ internal static unsafe class HandleTableScan
             HandleTableConstants.HNDGCF_EXTRAINFO |
                 (sc->concurrent != 0
                     ? HandleTableConstants.HNDGCF_ASYNC
-                    : HandleTableConstants.HNDGCF_NORMAL));
+                    : HandleTableConstants.HNDGCF_NORMAL),
+                    sc);
     }
 
     public static void Ref_NullBridgeObjectsWeakRefs(
@@ -990,7 +1014,8 @@ internal static unsafe class HandleTableScan
             1,
             condemned,
             max_gen,
-            HandleTableConstants.HNDGCF_EXTRAINFO);
+            HandleTableConstants.HNDGCF_EXTRAINFO,
+            sc);
 
         MarkCrossReferencesArgs* args =
             GCBridge.ProcessBridgeObjects();

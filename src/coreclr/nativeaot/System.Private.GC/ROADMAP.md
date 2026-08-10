@@ -1999,6 +1999,457 @@ tuning, dynamic heap-count changes after startup, diagnostic `saved_changed_segs
 condemnation-driven collection routing, the server background collector (thread lifecycle, concurrent
 mark/revisit, region sweep), and server parallel collection closure.
 
+The server blocking collection entrypoint chain is now **routed** (`ManagedServerGCCollect.cs`,
+`ManagedServerGCStaticData.cs`, `ManagedServerGCDynamicData.cs`), translated from the SVR compilation of
+`collect.cpp` / `init.cpp` / `interface.cpp`: `IGCHeap::GarbageCollect` →
+`GarbageCollectGenerationServer` (`GCHeap::GarbageCollect` / `GarbageCollectTry` /
+`GarbageCollectGeneration`, `MULTIPLE_HEAPS` path) takes the `gc_lock`, resets every heap's
+`gc_done_event`, sets `gc_started` / `GcCondemnedGeneration`, wakes heap 0 through `ee_suspend_event`,
+and blocks in `wait_for_gc_done`; `gc_thread_function` is the real per-heap worker loop (heap 0 suspends
+the EE and starts the other workers through `gc_start_event`, each worker runs `garbage_collect` on its
+own heap, heap 0 restarts the EE, drops `gc_lock`, and signals `gc_done`); `garbage_collect` fixes
+allocation contexts (`fix_allocation_contexts` / `fix_allocation_context` / `fix_youngest_allocation_area`,
+routed per owning heap through `heap_of(alloc_ptr)` exactly like `GCHeap::FixAllocContext`), joins at
+`gc_join_generation_determined` for the cross-heap condemned-generation agreement
+(`joined_generation_to_condemn`), publishes the settings, and calls `gc1`; `gc1` runs `mark_phase` →
+`plan_phase` (relocate/compact or sweep) → the dynamic-data recompute (`compute_new_dynamic_data` /
+`compute_in` / `desired_new_allocation` / `update_collection_counts`) and joins at `gc_join_done` for the
+cross-heap desired-size equalization (`exponential_smoothing` / `joined_youngest_desired`),
+`compute_gc_and_ephemeral_range` + `stomp_write_barrier_ephemeral`, and `gen0_must_clear_bricks`
+distribution. Per-heap `dd->sdata` initialization (`init_dynamic_data` / `set_static_data` /
+`init_static_data` / the `static_data_table`) is translated so the condemnation tuning finds a non-null
+`sdata`. The GC worker threads run the whole collection inside the managed-GC critical region
+(`DoNotTriggerGc`); `RestrictedCallouts::InvokeGcCallouts` (reached by `GcStartWork` / `GcDone` /
+`AfterGcScanRoots`) was corrected to **save and restore** `TSF_DoNotTriggerGc` rather than clearing it
+unconditionally, so a non-suspender worker keeps its poll exemption across those EE callbacks. The
+server `IGCHeap` now wires `GarbageCollect`, `SetGCInProgress`, `CollectionCount`, `GetGcCount`, and a
+gap-filling `FixAllocContext`.
+
+`ManagedGCServer` smoke was upgraded to allocate live/dead SOH objects plus LOH/POH survivors, force
+blocking gen0/gen1/gen2 `GC.Collect`, and validate survivors/data/cross-references, weak-reference
+clearing, multi-heap/multi-thread stability, and finalization. The routed collection drives
+condemnation, the full `mark_phase` join sequence, and `plan_phase`. Six server defects were fixed:
+
+1. **Heap-walkability (allocation tail).** The server bump allocator now fills the exhausted allocation
+   context's unused tail with a free object when it transitions to a fresh context (previously left as
+   zero-initialized committed space in the middle of a region) and keeps the context remainder at `0` or
+   `>= min_obj_size`, and routes `fix_allocation_contexts` / the thread-exit `FixAllocContext` per
+   *owning* heap through `heap_of(alloc_ptr)` exactly like `GCHeap::FixAllocContext`.
+
+2. **Residual forced-gen2 heap-walk crash (`alloc_limit` reserve).** Root-caused: native
+   `adjust_limit_clr` sets `alloc_limit = start + limit_size - Align(min_obj_size)`, reserving
+   `Align(min_obj_size)` below the committed frontier, so that `fix_allocation_context`'s fill branch
+   (`make_unused_array(alloc_ptr, (alloc_limit - alloc_ptr) + Align(min_obj_size))`) lands exactly at the
+   frontier. The server allocator set `alloc_limit = allocationEnd` with no reserve, so a thread-exit
+   `fix_allocation_context` fill overshot `min_obj_size` bytes past the frontier and clobbered the
+   adjacent thread's object header (null `MethodTable` → linear-walk crash). Only manifested on shared
+   (multi-thread) heaps. Fixed by reserving `Align(min_obj_size)` on `alloc_limit`, sizing the acquired
+   `quantum` to `max(size + Align(min_obj_size), allocation_quantum)`, and filling `tailSize +
+   Align(min_obj_size)` on the slow-path transition. Verified: a deterministic *threads-allocate-dead,
+   exit, then forced gen2* repro passes, and single-allocating-thread gen0/gen1/gen2 pass at any heap
+   count. This closed the null-`MethodTable` plan-walk crash.
+
+3. **Multi-heap ephemeral condemned-range union (`compute_gc_and_ephemeral_range`).** Under
+   `USE_REGIONS`, `gc_low`/`gc_high` and `ephemeral_low`/`ephemeral_high` are `PER_HEAP_ISOLATED`
+   (shared). Native `compute_gc_and_ephemeral_range` iterates **all** heaps
+   (`for (i = 0; i < n_heaps; i++) hp = g_heaps[i]`) to compute the *union* of every heap's condemned /
+   ephemeral region spans, which makes the shared result idempotent regardless of which worker computes
+   it. The port dropped the all-heaps loop and iterated only the passed-in heap, so the shared value
+   ended up covering a single heap and `is_in_gc_range` (the gate in `mark_object` and `relocate_address`)
+   mis-classified objects owned by the other heaps. Restored the `#if MULTIPLE_HEAPS` all-heaps loop.
+
+4. **`CFinalize::ScanForFinalization` promotion test (`IsPromoted` vs raw mark bit).** Native
+   `finalization.cpp` tests `!g_theGCHeap->IsPromoted(obj)` before moving a finalizable object to the
+   ready-to-finalize list. `GCHeap::IsPromoted2` (USE_REGIONS) is
+   `is_in_gc_range(o) ? (is_in_condemned_gc(o) ? is_mark_set(o) : true) : true` — i.e. an object outside
+   the condemned range counts as promoted (live) even with no mark bit. The port instead tested only
+   `IsMarked() == 0`, which drops the `is_in_gc_range && is_in_condemned_gc` guard: during an ephemeral
+   collection a still-live *older-generation* finalizable object (never marked because its region is not
+   condemned) whose queue entry had not yet been aged out of a condemned generation's segment was moved
+   onto the ready list, promoted every subsequent GC by `GcScanRoots`, and — because the finalizer never
+   drained cleanly — surfaced as a marked survivor (`LowLevelLock` at a fixed address, re-marked from
+   `drain_mark_queue` every collection). Replaced the raw-mark-bit test with a call to
+   `ManagedGCHeap.IsPromoted(obj)` — the managed `g_theGCHeap->IsPromoted` that native `CFinalize`
+   itself calls — whose USE_REGIONS body is `!is_in_gc_range(obj) || !is_in_condemned_gc(obj) ||
+   IsMarked() != 0` in both the WKS and server builds. (This is the faithful translation and it also
+   lets the WKS `CFinalize` Foundation tests, which link the mark-bit-only test-host `IsPromoted`,
+   exercise the raw-mark-bit path they assert while production keeps the region-aware semantics.)
+   Region-ownership tracing (`heap_segment_heap`, per-heap `generation_start_segment` chains,
+   `plan_phase` condemned-region reset) proved the region was correctly owned by heap 0, in heap 0's gen
+   chain, and *was* reset/walked by plan (the plug-walk clear fired) — disproving a region-threading
+   ownership defect; the object was simply being re-queued as finalizable when it should not have been.
+
+5. **Cross-worker mark-list merge (`get_region_mark_list`, MULTIPLE_HEAPS).** The mark-list-driven
+   ephemeral `plan_phase` walk (used when `condemned < max_generation`) skips unmarked gaps region by
+   region using the sorted mark list. Native `mark_phase.cpp` has two forms of `get_region_mark_list`:
+   the non-MULTIPLE_HEAPS one binary-searches this heap's own sorted list, while the MULTIPLE_HEAPS one
+   does a k-way merge of **every** heap's `mark_list_piece_start/end[region]` (populated by
+   `sort_mark_list`) into this heap's `g_mark_list_copy` partition. The port had only translated the
+   binary-search-only form, so an ephemeral plan on a region owned by one heap never saw the objects
+   that a *different* worker had marked in that region: those cross-worker survivors were treated as
+   gaps, not walked, not relocated/plan-cleared, and their references left dangling — the actual root of
+   the `__Array<Object>` dangling cross-generational reference. Translated the MULTIPLE_HEAPS merge
+   (`get_region_mark_list` + reuse of the already-translated `append_to_mark_list`), including the
+   copy-partition overflow fallback that turns `use_mark_list` off. This is the primary fix that made
+   multi-heap forced gen0/gen1/gen2 pass.
+
+6. **Per-heap free-region ownership (`get_free_region` / `return_free_region`).** Native
+   `free_regions[count_free_region_kinds]` is `PER_HEAP_FIELD_MAINTAINED_ALLOC` (per-heap), and the port
+   already carried the per-heap `hp->server_free_regions`, but `get_free_region` / `return_free_region`
+   still used the shared static `free_regions`. A worker therefore returned freed regions to the shared
+   list while reading from it too, so with more heaps regions were effectively leaked/mis-shared,
+   destabilizing collections at higher heap counts. Added an hp-aware `free_regions_of(hp, kind)` and a
+   server `return_free_region(hp, region)` overload (both selecting `hp->server_free_regions` under
+   `MULTIPLE_HEAPS`, the static array otherwise), routed `get_free_region` through it, and updated the
+   server call sites (`ManagedServerGCCondemn`, `ManagedServerGCFixGenerationBounds`,
+   `ManagedServerGCPlanSweep`). The WKS single-heap path is unchanged.
+
+**With fixes 1–6, multi-heap forced gen0/gen1/gen2 collections pass** — validated 3/3 at
+`DOTNET_GCHeapCount` = 2, 4, 8, and 16 (live/dead SOH + LOH + POH survivors, cross-reference integrity).
+
+**Compaction gate (temporary): routed server blocking collections sweep, not compact.** Because the
+routed server trigger path cannot yet reliably move a root the triggering (user) thread holds only in a
+callee-saved register (see the remaining gap below), an explicit compatibility gate was added at the
+per-heap compaction decision in `plan_phase` (`ManagedServerGCPlanDriver.cs`, immediately before
+`hp->gc_policy` is assigned and the `gc_join_decide_on_compaction` join): `should_compact` and
+`should_expand` are forced to `false` so every heap independently selects `policy_sweep`. This is applied
+before the join, so the joined `pol_max` reduction still sees a uniform decision and the join sequence is
+unchanged; it also overrides the forced/aggressive compacting reasons (induced-compacting, gen0
+reduction, high memory load, LOH forced) so those safely sweep for now. The full compaction path
+(`decide_on_compacting`, `relocate_phase`, `compact_phase`, `fix_generation_bounds`) remains translated
+and intact — only gated off. Sweeping does not move objects, so it removes the compaction-path memory
+corruption (the intermittent access violations seen when a stale register root was left pointing at a
+compacted-over slot). It does **not**, however, make `WeakReferencesTrackReclamation` pass: forcing sweep
+proved the residual failure is **mark-side, not relocation** (see below).
+
+**CONFIRMED root cause and fix (supersedes the register-root / handle-scan hypotheses above).**
+Differential runtime instrumentation (native root-scan probes plus managed `promote`, short-weak
+`CheckPromoted`, and a gdb hardware watchpoint on the live `WeakReference`'s handle slot; all since
+removed) established the actual mechanism: the live target *and* the `WeakReference` wrapper object are
+both promoted and marked in every collection. The weak handle is not cleared by the weak scan at all —
+the gdb watchpoint caught it being zeroed on the **.NET Finalizer thread** by
+`WeakReference.Finalize -> DestroyHandleOfUnknownTypeCore -> TableFreeSingleHandleToCache`. The
+`WeakReference` object itself was being **finalized** even though it is live, and its finalizer frees the
+weak handle.
+
+The defect is in the **server** `IGCHeap.RegisterForFinalization` (`ManagedServerGC.cs`). The runtime
+always calls `RegisterForFinalization(-1, obj)` (`GCHelpers.cpp`), where `gen == -1` is the "current
+generation" sentinel that `interface.cpp GCHeap::RegisterForFinalization` (and the WKS managed port)
+normalize to `0`. The server override skipped that normalization and passed `-1` straight to
+`CFinalize.RegisterForFinalization`, where `gen_segment(-1) = total_generation_count =
+CriticalFinalizerListSeg`. Every finalizable object was therefore registered **directly onto the
+ready-to-finalize segment**, so its finalizer ran at the next collection regardless of reachability —
+clearing live `WeakReference`s (and, generally, finalizing live objects). **Fix:** normalize `gen == -1`
+to `0` in the server `RegisterForFinalization`, matching WKS/native.
+
+A second, related server defect surfaced once finalization actually ran: `CFinalize.ScanForFinalization`
+promoted the ready-to-finalize objects via `GcScanRoots(promote, 0, null)` with a **hardcoded heap 0**
+(a WKS assumption; the `heap` parameter was ignored). Under `MULTIPLE_HEAPS`, a non-zero heap's worker
+marked its finalization survivors into heap 0's mark queue, which that worker never drains, leaving a
+ready-to-finalize object unmarked and reclaimed while still on the finalizer list (heap corruption once
+finalizers ran). **Fix:** promote on `heap->heap_number` (null-guarded for the Foundation test mock,
+which passes a null heap; WKS resolves to `0`, unchanged).
+
+With both fixes, `WeakReferencesTrackReclamation` passes and the smoke's survivor + weak-reference
+coverage is green 3/3 at `DOTNET_GCHeapCount` = 2, 4, 8, 16. The earlier "register-only root is not
+relocated" narrative (and the compaction gate's stated rationale) is **superseded**: `promote`/relocate
+were never the problem for this test. The compaction gate is retained for now only because enabling
+compaction is independently less stable than sweep (below).
+
+**Remaining gap (next blocker): concurrent-collection and finalization-lifecycle stress corruption.**
+Fixing the finalization registration unblocks the two smoke phases that previously never ran (execution
+stopped at the weak-reference failure): `MultiThreadedCollectionsAreStable` (a dedicated collector thread
+continuously forcing blocking gen2 collections while four mutators allocate) and
+`FinalizationRunsForDeadObjects` (256 finalizables finalized across repeated forced full collections plus
+`WaitForPendingFinalizers`). Both intermittently corrupt the heap (nondeterministic access violation or
+hang, manifesting as an object header pointing at a code address). The corruption reproduces with sweep
+(and is worse with compaction), is independent of the finalization *registration* fix (the multi-thread
+phase allocates only non-finalizable `Payload`/`byte[]`), and points at the server GC's handling of
+mutators suspended mid-allocation under sustained collection and/or the finalizer-thread vs GC
+finalize-queue lifecycle. This is the next slice to translate/harden; the survivor, weak-reference, and
+Foundation coverage remain green.
+
+**Suspension handshake (attempted, then REVERTED — proven harmful under MT stress).** A prior iteration
+made server GC workers hold `TSF_DoNotTriggerGc` uncounted (`ManagedGC_EnterServerGCThread` /
+`ManagedGC_ExitServerGCThread` in `clrgc.managed.cpp`) so they do not block
+`ManagedGC_PrepareForSuspension`, and had heap 0 bracket its `SuspendEE` with
+`ManagedGC_PrepareForSuspension()` / `ManagedGC_CompleteSuspension()` (with the triggering thread suspending
+its own counted `GCHeapCriticalRegion` around the wait to avoid deadlocking Prepare). It passed all
+deterministic suites and the survivor/weak-reference smoke, but **did not** fix the
+`MultiThreadedCollectionsAreStable` / `FinalizationRunsForDeadObjects` stress corruption -- and targeted
+crash diagnostics proved it actively introduced a *new* failure mode, so it was reverted.
+
+**Diagnosis of the multi-thread `StackFrameIterator::CalculateCurrentMethodState` failfast (this
+iteration).** Comprehensive instrumentation at the failfast and in `Thread::CacheTransitionFrameForSuspend`
+(since removed) captured the target thread's ids/flags/alloc-context, its chosen transition frame and its
+source, and the frame's raw fields. The chosen (cached) transition frame was garbage -- `m_RIP` a stack
+address, `m_FramePointer` a heap pointer, `m_Flags == 0`, `m_pThread` mismatched -- and the cache-time probe
+showed it was **already invalid when `SuspendAllThreads` cached it** (`INVALID-AT-CACHE`). The affected
+threads had `TSF_SuspensionTrapped` set at scan time but not at cache time, i.e. they had been cached as
+preemptive and then re-entered managed code, overwriting the stack the cached pointer referenced.
+Classification: **(b) a stale/invalid transition frame after a direct managed-GC callback.** Removing only
+`ManagedGC_PrepareForSuspension` / `CompleteSuspension` made the garbage frames vanish entirely. Root cause:
+`PrepareForSuspension` sets `g_managedGCSuspensionPending`, which drives
+`ManagedGC_EnterOwnedCriticalRegion`'s preemptive-spin (`EnablePreemptiveMode` -> spin ->
+`DisablePreemptiveMode`); `EnablePreemptiveMode` publishes `m_pTransitionFrame = m_pDeferredTransitionFrame`,
+but the managed-GC critical-region / allocation-helper entry points do **not** establish a valid
+`m_pDeferredTransitionFrame`, so a garbage frame is published and then cached by suspension. That spin path
+had never been exercised before, because the server blocking collector was the first code to call
+`PrepareForSuspension` at all. The proven fix was to revert the handshake; the server collector returns to
+the counted-`GCHeapCriticalRegion` worker lifetime with a plain `SuspendEE` (no Prepare/Complete), which is
+green on every deterministic suite (Foundation WKS 2411/2417, Server 92/92 Release+Debug; WKS smoke;
+`clr.aot`) and the survivor + weak-reference smoke (3/3 at heap counts 2/4/8/16).
+
+**Stress corruption root cause FOUND and FIXED: the server allocator handed out non-zeroed memory.**
+The `SharedArrayPool` "dangling reference" was not a reclaimed object at all. Tracing it (a warm-up of
+`ArrayPool<char>.Shared` before the stress phase kept the pool weak-reference alive across it, so the pool
+root was fine) showed the crash was the *first* allocation after the phase reading a freshly-allocated
+`SharedArrayPoolPartitions?[]` whose slots held garbage instead of null. A direct probe confirmed it:
+**every** fresh array allocated after `MultiThreadedCollectionsAreStable` contained stale bytes
+(`nonZeroArrays=64/64`). The defect is in the server allocation-context refill (`ManagedGCHeap.Alloc` in
+`ManagedServerGC.cs`): it advances the region frontier and `VirtualCommit`s pages, but `VirtualCommit` only
+zero-initializes *freshly* committed pages. A region recycled after a sweep (`init_heap_segment` with
+`existing_region_p`) is already committed and still holds stale object data, and the managed refill --
+unlike the WKS path's `adjust_limit_clr` -- never consulted `heap_segment_used` nor `memclr`'d the reused
+span, so it published dirty memory as a zero-initialized allocation context. **Fix:** clear the newly
+exposed context memory up to the segment's `heap_segment_used` high-water mark and advance it, exactly as
+`adjust_limit_clr` does, before publishing the context.
+
+With this one fix the fresh-allocation zero check passes cleanly, the **finalization** stress phase passes
+**15/15**, and the server smoke's survivor + weak-reference + finalization coverage passes **5/5 at heap
+counts 2/4/8/16**. Foundation WKS (2411 Release / 2417 Debug) and Server (92/92 Release+Debug), the WKS
+smoke, and `clr.aot` remain green; the fix is server-only and does not touch the WKS `adjust_limit_clr`.
+
+**RESOLVED — the `MultiThreadedCollectionsAreStable` race was a P/Invoke inside the server allocator's
+cooperative-mode zeroing.** That phase (a dedicated collector thread forcing back-to-back blocking gen2
+collections while four mutators allocate) crashed intermittently (~40%) *during* the phase, always as a
+`StackFrameIterator::CalculateCurrentMethodState` fail-fast / access violation while a server worker's
+`mark_phase` scanned a mutator's roots. Low-overhead per-scan instrumentation (logging each scanned
+thread's cached vs. live vs. deferred transition frame, plus the cache/reset lifecycle) proved the scan
+walked a **stale cached transition frame**: the failing mutator was in *cooperative* mode at scan time
+(`m_pTransitionFrame == NULL`) yet had a cached frame that was *deeper* than — and did not match — its
+current live frame. Resolving the cached frame's RIP (ASLR disabled) pointed at
+`SpanHelpers.ZeroMemoryNative` (`SpanHelpers.ByteMemOps.cs`), a **QCall/P/Invoke**.
+
+Root cause: the server allocator's context-refill zeroing fix (`ManagedGCHeap.Alloc`, mirroring
+`adjust_limit_clr`) called `gc_heap.memclr` → `GCCommon.MemSet` → `Unsafe.InitBlockUnaligned`, which for
+clears larger than `ZeroMemoryNativeThreshold` (1024 bytes) routes through
+`SpanHelpers.ClearWithoutReferences` → `ZeroMemoryNative`. That P/Invoke switches the thread to
+*preemptive* mode and publishes a transition frame — but the mutator is holding `DoNotTriggerGc` here
+(via `ManagedGC_EnterAllocationHelper`). `SuspendEE`/`CacheTransitionFrameForSuspend` caches that
+transient preemptive frame and treats the thread as suspended, yet a `DoNotTriggerGc` thread ignores the
+suspension trap on P/Invoke return, so it keeps running, unwinds past the cached frame, and re-parks at a
+shallower frame. The server `mark_phase` root scan (a non-owning worker walking the cached frame) then
+reads reclaimed stack → fail-fast. The native C++ GC never hits this because its allocator is native and
+performs no GC-mode transition during the allocation critical region; the managed WKS smoke does not hit
+it because its single collector scans itself (the suspending thread uses the deferred frame, not the
+cached frame).
+
+Fix (smallest mechanical, managed-only): the server alloc-path clear now zeroes the (allocation-quantum
+bounded) context memory with an inline cooperative `nuint`/byte store loop instead of `gc_heap.memclr`,
+so no P/Invoke and no GC-mode transition occurs while the mutator holds `DoNotTriggerGc`. `gc_heap.memclr`
+remains for GC-worker paths (GC-special threads are never scanned as mutators, so a memset P/Invoke there
+is harmless). With the fix the full smoke passes 140/140 consecutively (heap 2 ×80, heaps 4/8/16 ×20
+each) where it was ~60%; all deterministic suites remain green. The same latent pattern exists in the WKS
+`adjust_limit_clr` path but is out of scope here (WKS smoke passes) and is noted below as a follow-up.
+
+**Root cause (live diagnostics) — the server handle-table weak scan was unpartitioned; a residual
+handle-table-core scan bug remains.** Targeted per-object instrumentation (correlating the exact
+`WeakReference` target address through `promote`, the short-weak `CheckPromoted`, and the handle-table
+slot scan; since removed) **overturned the register-root/mark hypothesis entirely**: `promote` sees and
+marks the live target on the triggering thread's stack in *both* collections (`promCount=1`,
+`markBeforeShort=1`), and the object is genuinely marked before the weak scan. The clearing happens in
+the **short-weak handle scan**: in the failing runs the target's weak handle is simply never handed to
+`CheckPromoted` (`checkCount=0`).
+
+The first, primary defect was found and **fixed**: `HandleTableScan.TraceHandleTables` scanned **every**
+per-CPU handle-table slot on **every** server GC worker (a plain `for (uCPUindex = 0; uCPUindex <
+getNumberOfSlots(); uCPUindex++)` with no `ScanContext`), so all N workers walked the same handle blocks
+concurrently and raced the block scans, nondeterministically dropping a handle. Native `objecthandle.cpp`
+instead strides each worker across a disjoint partition: `uCPUindex = getSlotNumber(sc)` (=
+`IsServerHeap() ? sc->thread_number : 0`), `uCPUstep = getThreadCount(sc)` (= `sc->thread_count`).
+`getSlotNumber`/`getThreadCount` were added to `ObjectHandle`, `TraceHandleTables` now takes the
+`ScanContext*` and strides the slot loop, and all 18 call sites pass their `sc`. This eliminated the race
+in the clean case: an isolated repro of the failing pattern went from intermittent to **20/20 passing**,
+and the WKS and server Foundation suites still pass (no regression).
+
+A **second, distinct residual** remains, and per-object live diagnostics have now **identified it
+precisely** — correcting the earlier guess that it was a `handletablecore.cpp` scan defect. With the
+partition fix in place, the handle-table-core scan path was compared address-by-address against native
+(`FullSegmentIterator`/`StandardSegmentIterator`, `SegmentResortChains`, `SegmentScanByTypeMap` over
+`[0, bEmptyLine)`, `SegmentInsertBlockFromFreeList`/`SegmentRemoveFreeBlocks`, `ScanConsecutiveHandles`)
+and **matches native**. Instrumenting the exact `kept` weak handle in the *loaded* full-smoke case
+showed: `kept` never moves (the sweep gate holds — its address is stable across both collects); its
+short-weak handle **is** enumerated by the scan (`visited=1`); and it is nulled because
+`ManagedGCHeap.IsPromoted(kept)` returns false — i.e. **`kept` is genuinely unmarked** at the short-weak
+scan (`c0slotVal` becomes `0`, `alive=False`). The handle-table scan is therefore behaving **correctly**:
+it nulls an unpromoted short weak reference. The real fault is upstream in the **mark**: `kept`, rooted
+only by the triggering thread's callee-saved register (it is used live-to-end but not touched between the
+collects), is nondeterministically not enumerated by the server mark root scan of that preemptively
+parked thread, so it is never marked and the weak handle is legitimately cleared. This is the same
+**register-root scan miss** documented below (a runtime `Thread::GcScanRoots`/`EnumGcRefs`
+enumeration issue for the triggering thread), **not** a handle-table-core defect. This is the current
+blocker for the end-to-end server smoke.
+
+**Root-scan partition / topology ruled out (three further experiments).** The register-root miss was
+initially suspected to be a partition artifact (a non-owning worker walking the triggering thread's frame
+because its home heap ≠ 0). This was **disproved**: (a) instrumenting the inducing thread's
+allocation-context home heap (`gc_reserved_2`) in the failing loaded case shows it is **already heap 0**,
+so worker 0 — a dedicated server thread, not the inducing thread — is the one scanning it and missing the
+register root cross-thread; (b) a narrow workaround that temporarily forces `gc_reserved_2 = g_heaps[0]`
+across the collection (leaving `gc_reserved_1`/allocation heap untouched) is therefore a no-op and does
+not help (0/24 loaded heap-2 runs pass); and (c) running heap 0's collection **inline on the inducing
+thread** — so it is both the suspending thread (`GetTransitionFrame` returns its deferred `RhCollect`
+frame) *and*, being home heap 0, the worker that scans its own partition, i.e. it scans its **own** stack
+exactly as the WKS foreground collector does — *also* fails (0/24), even with the handle-scan partition
+fix in place. So even a WKS-identical self-scan of the inducing thread's deferred frame does not recover
+its callee-saved-register root under the concurrent multi-heap server collection — independent of
+home-heap routing and of whether the thread is the suspender. All three experiments were reverted; the
+handle-scan partition fix is retained.
+
+**Control experiment — the defect is in the managed server GC, not the runtime/compiler/test.** The
+exact `WeakReferencesTrackReclamation` pattern (same `Payload`, allocations, two forced blocking gen2
+collects, weak checks, `GC.KeepAlive` placement), preceded by a loaded stage (survivor sets, LOH/POH,
+~256 `WeakReference`s to grow the handle table across segments, and four mutator threads churning under
+six forced gen2 collects), was compiled Release NativeAOT under the **stock C++ NativeAOT GC** (no
+`IlcManagedServerGC`) in a temporary standalone project and repeated 40× per process:
+
+- Stock **server** GC, `DOTNET_GCHeapCount=2`: **24/24 processes pass**.
+- Stock **server** GC, `DOTNET_GCHeapCount=4`: **20/20 pass**.
+- Stock **workstation** GC: **20/20 pass**.
+- Managed **server** GC (same pattern, loaded, heap 2): **0/24 pass**.
+
+Because the stock C++ GC uses the **same** runtime `Thread::GcScanRoots`/`EnumGcRefs`, the same JIT/AOT
+codegen and GC info, and the same `RhCollect` transition-frame machinery, and it scans the inducing
+thread's callee-saved-register root correctly, the miss is **not** a runtime, compiler, GC-info, or
+test-authoring bug — it is a defect in **how the managed server GC drives the collection**. The residual
+difference between the two is that the managed GC runs *managed* code on the inducing thread
+(`GarbageCollectGenerationServer` reached through the `RhCollect` -> managed-`GarbageCollect`
+reverse-p/invoke, then `enable_preemptive`) before/where its transition frame is captured for the
+worker scan, whereas the stock GC's inducing-thread path from `RhCollect` onward is native. The next step
+is to instrument the runtime's `EnumGcRefs`/`GcScanRootsWorker` callback counts and transition-frame
+source (deferred vs cached) for the inducing thread under both GCs to pin the exact frame/register where
+the managed scan diverges. Production was not altered for the control (the temporary standalone project
+was removed); the partition fix and sweep gate remain.
+
+**Superseded gap — the triggering thread's register-held root is not reliably scanned.** The upgraded
+`ManagedGCServer` smoke runs the gen0/gen1/gen2 survivor stage reliably but the full sequence still fails
+in `WeakReferencesTrackReclamation`: a `WeakReference` to a still-live object is cleared across two
+back-to-back forced gen2 collections. It reproduced at `DOTNET_GCHeapCount=1`, so it is independent of
+the multi-heap fixes above and of `get_region_mark_list` (unused for full gen2), and the WKS `ManagedGC`
+smoke passes the *identical* pattern. Four experiments narrowed the cause precisely and **corrected the
+original relocation hypothesis** (all four are now themselves superseded by the live-diagnostics finding
+above, which showed the mark side is correct and the fault is in the weak-handle scan):
+
+- Re-routing the triggering thread's wait through the native `ManagedGC_WaitUntilGCComplete` helper (a
+  stable native `PInvokeTransitionFrame`, no scannable managed frame above it — exactly like native's
+  C++ `wait_for_gc_done`) changed nothing, ruling out frozen-frame instability from the managed wait
+  loop. (That change was reverted.)
+- Forcing every collection to **sweep** (the gate above) — so no object ever moves — *also* leaves the
+  live weak target cleared. Since relocation is entirely out of the picture under sweep, the defect
+  cannot be relocation. Combined with the earlier result that a marked object is never wrongly nulled
+  (`CheckPromoted`/`IsPromoted` matches native `IsPromoted2`, and the "marked-but-nulled" probe never
+  fired), the object is simply **not marked** in the collection that clears it: the triggering thread's
+  register-held root is not reliably enumerated by the mark root scan of that preemptively-parked thread.
+  A stack-slot root (e.g. the `live[]` array in `ForcedCollectionsPreserveSurvivors`) is scanned and
+  survives; the same object kept only in a callee-saved register is intermittently missed.
+- Suspending the triggering thread's `GCHeapCriticalRegion` (clearing `TSF_DoNotTriggerGc` via
+  `GCHeapCriticalRegion.Suspend`/`Resume` around the preemptive wait, as BackgroundGC wraps around its
+  own suspension) so the parked thread is scanned as an ordinary mutator rather than a do-not-trigger
+  runtime thread *also* changed nothing — the register root is still missed. This rules out
+  `DoNotTriggerGc` on the triggering thread as the cause. The complementary half of that protocol — the
+  suspending worker calling `ManagedGC_PrepareForSuspension`/`CompleteSuspension` around `SuspendEE`
+  (as BackgroundGC does) — **cannot** be applied to the server as a narrow fix: `PrepareForSuspension`
+  spins until `g_managedGCCriticalRegionCount == ownedCount` (≤ 1), but at heap 0's `SuspendEE` the
+  other N−1 workers are parked in `gc_start_event.Wait()` still holding their own lifetime critical
+  regions, so the count never drops and it would deadlock (even at heap 2). Wiring it in would require a
+  coordinated all-worker suspension handshake, i.e. a suspension-model redesign, not a mechanical fix.
+- Running heap 0's collection **inline on the triggering thread** (so it calls `SuspendEE` itself and
+  therefore becomes `ThreadStore::GetSuspendingThread()`, while heaps 1..N-1 stay parallel workers woken
+  through `gc_start_event`) *also* changed nothing. This directly targeted
+  `Thread::GetTransitionFrame`, which returns the precisely-scanned `m_pDeferredTransitionFrame` (the
+  `RhCollect` `DeferTransitionFrame`) only for the suspending thread and the cached frame for everyone
+  else — exactly the WKS topology. The refactor was verified to be active (`SuspendAllThreads` sets
+  `RhpSuspendingThread` to the triggering thread and skips caching its frame; `RhCollect` defers the app
+  transition frame), the joins stayed exact (count-based, `n_heaps` callers), and it neither hung nor
+  deadlocked — yet the register root was still missed (and it was marginally *less* stable than the
+  dispatched topology). So even placing the triggering thread in the suspending-thread role that WKS
+  relies on does not recover its callee-saved-register root under the multi-heap server scan. (That
+  large refactor was reverted.)
+
+The failure is timing-dependent (occasionally the pattern passes), and every mechanical topology/frame
+approach tried (native wait helper, sweep-only, `DoNotTriggerGc` suspend, inline suspending-thread) has
+left the parked triggering thread's callee-saved-register root un-enumerated by the mark scan while its
+stack-slot roots are found. The remaining suspect is the runtime `Thread::GcScanRoots` / `EnumGcRefs`
+register-root enumeration for that thread under a *cross-thread* multi-heap server scan (a non-owning
+worker walking the suspending thread's deferred frame), which WKS never exercises because its single
+collector scans itself. Resolving it requires live (gdb) debugging of that enumeration rather than a
+mechanical GC-translation change, and must not regress the validated multi-heap collections. This is the
+current blocker for the end-to-end server smoke.
+
+The paragraphs below retain the earlier (now superseded) relocation-centric write-up for reference.
+
+**Superseded note — a register-only root of the triggering thread is not relocated.** The upgraded
+`ManagedGCServer` smoke now runs the gen0/gen1/gen2 survivor stage reliably but the full sequence fails
+in `WeakReferencesTrackReclamation`: a `WeakReference` to a still-live object is cleared across two
+back-to-back forced gen2 collections. It reproduced at `DOTNET_GCHeapCount=1`, so it is independent of
+the multi-heap fixes above and of `get_region_mark_list` (unused for full gen2), and the WKS `ManagedGC`
+smoke passes the *identical* pattern. The failure is timing-dependent: sometimes it surfaces as the clean
+weak-reference clear, and sometimes — because an unrelocated stale root is left pointing at a slot the
+compactor has since reused — as an intermittent access violation / segfault later in the run. Both are
+the same defect (a live root of the triggering thread left unrelocated), not two separate bugs.
+
+The native server GC user thread runs the *identical* trigger sequence (`interface.cpp`
+`GCHeap::GarbageCollectGeneration`, MULTIPLE_HEAPS: `enable_preemptive()` → `ee_suspend_event.Set()` →
+`wait_for_gc_done()`); the sole divergence is that native's `wait_for_gc_done` is **C++**, so nothing
+scannable sits above the user thread's frozen transition frame, whereas the port's `enable_preemptive` /
+`ee_suspend_event.Set` / `wait_for_gc_done` are **managed** methods that execute above it.
+
+The defect was narrowed by address-tracking the live object through a collection (temporary
+instrumentation, since removed): the object is promoted (marked) exactly once by the first collection's
+mark root scan (`prom=1`) and is **never relocated** (`reloc=0`), so it does not move; the second
+collection's mark scan then no longer finds the root and clears it. The failing root is a stack local
+held only in a callee-saved register across the two collects (a stack-slot array such as the `live[]`
+set in `ForcedCollectionsPreserveSurvivors` relocates correctly; the same object kept only in a register
+does not). Candidate causes that were **ruled out**: the weak handle itself (`CheckPromoted` /
+`IsPromoted` — a "marked-but-nulled" probe never fired and the `IsPromoted` predicate matches native
+`IsPromoted2`); the mark-vs-relocate root-scan setup (both build the same `ScanContext` — `promotion`
+aside — and call `GCScan.GcScanRoots` per heap with `thread_number = heap_number`, so main's home-heap
+partition is covered in both phases); and the thread partition (`IsThreadUsingAllocationContextHeap`
+matches native `GCHeap::IsThreadUsingAllocationContextHeap` exactly).
+
+The triggering thread parks itself **preemptive** (`enable_preemptive` → `wait_for_gc_done`, blocking on
+`gc_done_event`) while the server workers run the collection, so its roots are scanned by a *worker*
+from its frozen `PInvokeTransitionFrame` via the runtime's `Thread::GcScanRoots` /
+`GcScanRootsWorker` / `EnumGcRefs` — the **same** runtime path native NativeAOT server GC uses (the
+managed port replaces only `System.Private.GC`, not `Runtime/thread.cpp`). WKS instead scans the
+triggering thread **cooperatively** (the collecting thread walks its own live stack/registers), which is
+why WKS relocates the register root and server does not. The narrowed invariant is therefore: *for the
+preemptive triggering thread, a callee-saved-register root is read correctly during the mark scan but
+its updated address is not written back during the relocate scan of the same frozen frame.*
+
+The hypothesis that the *managed* wait loop above the transition frame was destabilizing the scan was
+**tested and disproved**: the triggering-thread wait was reimplemented to call the native
+`ManagedGC_WaitUntilGCComplete` helper (the same RuntimeImport the WKS allocation-waiter path uses),
+which toggles preemptive mode from native code and spins on `gc_started` / `s_gcInProgress` /
+`g_wait_for_gc_event` with **no scannable managed frame above the `PInvokeTransitionFrame`** — exactly
+like native's C++ `wait_for_gc_done`. This produced the **identical** failure (weak-reference clear plus
+the same intermittent crashes), conclusively ruling out the wait mechanism and frozen-frame stability as
+the cause, and localizing the defect to the relocate phase's treatment of the triggering thread's
+register-held root specifically (mark reports and marks it; relocate never invokes its callback on it).
+That change was reverted since it did not help. Resolving this cleanly requires live debugging of
+`EnumGcRefs`' relocate-vs-mark report for a callee-saved-register root of a preemptively-parked thread
+(whether the relocate callback receives the register's writable spill slot) rather than a further
+mechanical GC-translation change, and it must not regress the validated multi-heap collections. This is
+the current blocker for the end-to-end server smoke. Other deferred gaps: BGC (background collector, concurrent
+mark/revisit/sweep); dynamic heap-count resize after startup; the server event / diagnostics integration
+(ETW pre/post-GC counters, private/committed-usage events, full-GC notifications, profiler survivor
+walks, `record_gc_info`, `add_to_history_per_heap`, `distribute_free_regions` / `age_free_regions` /
+`decommit_ephemeral_segment_pages` region-return maintenance); provisional-mode servo tuning; and
+allocation-triggered (non-forced) server collection routing. (Note: the WKS `ManagedGC` smoke passes in
+**Release**; in **Debug** it hits a pre-existing GC-bootstrap issue where `Debug.Assert` inside
+`SetFree`/`make_unused_array` triggers a class constructor during allocation — unrelated to these fixes.)
+
 **Complete when:** background GC, finalization, dynamic tuning, workstation GC, and server GC
 match the native collector's synchronization and scheduling behavior.
 

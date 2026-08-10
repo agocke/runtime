@@ -58,6 +58,25 @@ namespace Internal.Runtime.GarbageCollection
 #endif
         }
 
+        // objecthandle.cpp getSlotNumber / getThreadCount: the per-heap partition the GC handle
+        // scan uses so that each server GC worker walks a disjoint stride of the per-CPU handle
+        // tables (scanning them all on every worker races the concurrent block scans).
+        public static int getSlotNumber(ScanContext* sc)
+        {
+#if MULTIPLE_HEAPS
+            return sc->thread_number;
+#else
+            _ = sc;
+            return 0;
+#endif
+        }
+
+        public static int getThreadCount(ScanContext* sc)
+        {
+            int count = sc->thread_count;
+            return count > 0 ? count : 1;
+        }
+
         public static bool Ref_Initialize()
         {
             Debug.Assert(g_HandleTableMap.pBuckets == null);
