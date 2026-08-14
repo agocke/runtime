@@ -17,11 +17,15 @@ namespace ILCompiler
     {
         private EcmaModule _module;
         private InstructionSetSupport _instructionSetSupport;
+        private readonly Logger _logger;
+        private readonly bool _resilient;
 
-        public ReadyToRunLibraryRootProvider(EcmaModule module)
+        public ReadyToRunLibraryRootProvider(EcmaModule module, Logger logger, bool resilient)
         {
             _module = module;
             _instructionSetSupport = ((ReadyToRunCompilerContext)module.Context).InstructionSetSupport;
+            _logger = logger;
+            _resilient = resilient;
         }
 
         public void AddCompilationRoots(IRootingServiceProvider rootProvider)
@@ -68,10 +72,11 @@ namespace ILCompiler
                         rootProvider.AddCompilationRoot(methodToRoot, rootMinimalDependencies: false, reason: reason);
                     }
                 }
-                catch (TypeSystemException)
+                catch (TypeSystemException ex) when (_resilient)
                 {
                     // Individual methods can fail to load types referenced in their signatures.
                     // Skip them in library mode since they're not going to be callable.
+                    _logger.Writer.WriteLine($"Warning: Method `{methodToRoot.Name.ToString()}` was not rooted because: {ex.Message}");
                     continue;
                 }
             }

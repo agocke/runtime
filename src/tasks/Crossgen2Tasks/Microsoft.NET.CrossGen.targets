@@ -25,6 +25,8 @@ Copyright (c) .NET Foundation. All rights reserved.
     <PublishReadyToRunUseRuntimePackOptimizationData Condition="'$(PublishReadyToRunUseRuntimePackOptimizationData)' == ''">true</PublishReadyToRunUseRuntimePackOptimizationData>
     <PublishReadyToRunPerfmapFormatVersion Condition="'$(PublishReadyToRunPerfmapFormatVersion)' == ''">1</PublishReadyToRunPerfmapFormatVersion>
     <PublishReadyToRunContainerFormat Condition="'$(PublishReadyToRunContainerFormat)' == ''">pe</PublishReadyToRunContainerFormat>
+    <PublishReadyToRunResilient Condition="'$(PublishReadyToRunResilient)' == ''">true</PublishReadyToRunResilient>
+    <PublishReadyToRunCrossgen2ExtraArgs Condition="'$(PublishReadyToRunResilient)' != 'false'">$(PublishReadyToRunCrossgen2ExtraArgs);--resilient</PublishReadyToRunCrossgen2ExtraArgs>
 
     <PublishReadyToRunEmitSymbols Condition="'$(PublishReadyToRunEmitSymbols)' == '' and $(RuntimeIdentifier.StartsWith('ios-'))">false</PublishReadyToRunEmitSymbols>
     <PublishReadyToRunEmitSymbols Condition="'$(PublishReadyToRunEmitSymbols)' == '' and $(RuntimeIdentifier.StartsWith('tvos-'))">false</PublishReadyToRunEmitSymbols>

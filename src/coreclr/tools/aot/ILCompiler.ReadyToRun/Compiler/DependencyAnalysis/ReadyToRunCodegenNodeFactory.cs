@@ -81,6 +81,10 @@ namespace ILCompiler.DependencyAnalysis
 
         public CompilerTypeSystemContext TypeSystemContext { get; }
 
+        public bool IsResilient { get; }
+
+        public Logger Logger { get; }
+
         public TargetDetails Target { get; }
 
         public ReadyToRunContainerFormat Format { get; }
@@ -279,10 +283,14 @@ namespace ILCompiler.DependencyAnalysis
             ReadyToRunContainerFormat format,
             ulong imageBase,
             EcmaModule associatedModule,
+            bool resilient,
+            Logger logger,
             int genericCycleDepthCutoff, int genericCycleBreadthCutoff)
         {
             OptimizationFlags = nodeFactoryOptimizationFlags;
             TypeSystemContext = context;
+            IsResilient = resilient;
+            Logger = logger;
             CompilationModuleGroup = compilationModuleGroup;
             ProfileDataManager = profileDataManager;
             Target = context.Target;

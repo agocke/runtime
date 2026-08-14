@@ -135,9 +135,9 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                     }
                 }
             }
-            catch (TypeSystemException)
+            catch (TypeSystemException ex) when (factory.IsResilient)
             {
-                // TODO: https://github.com/dotnet/runtime/issues/132338 - Gate this recovery on --resilient and report a warning.
+                factory.Logger.Writer.WriteLine($"Warning: Virtual method dependency discovery for type `{_type}` was incomplete because: {ex.Message}");
             }
 
             return result;
@@ -190,8 +190,9 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                 factory.DetectGenericCycles(method, method);
                 return factory.CompiledMethodNode(method);
             }
-            catch (TypeSystemException)
+            catch (TypeSystemException ex) when (factory.IsResilient)
             {
+                factory.Logger.Writer.WriteLine($"Warning: Virtual method implementation `{method.Name.ToString()}` was not compiled because: {ex.Message}");
                 return null;
             }
         }

@@ -68,8 +68,9 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                     factory.DetectGenericCycles(_method.Method, canonMethod);
                     list.Add(factory.CompiledMethodNode(canonMethod), "Virtual function dependency on cross module inlineable method");
                 }
-                catch (TypeSystemException)
+                catch (TypeSystemException ex) when (factory.IsResilient)
                 {
+                    factory.Logger.Writer.WriteLine($"Warning: Dependency on method `{canonMethod.Name.ToString()}` was omitted because: {ex.Message}");
                 }
             }
 

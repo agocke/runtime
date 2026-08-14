@@ -326,6 +326,8 @@ namespace ILCompiler
 
         private void RunSingleCompilation(Dictionary<string, string> inFilePaths, InstructionSetSupport instructionSetSupport, string compositeRootPath, Dictionary<string, string> unrootedInputFilePaths, HashSet<ModuleDesc> versionBubbleModulesHash, ReadyToRunCompilerContext typeSystemContext, Logger logger)
         {
+            bool resilient = Get(_command.Resilient);
+
             //
             // Initialize output filename
             //
@@ -573,22 +575,22 @@ namespace ILCompiler
                         // For normal compilations add compilation roots.
                         foreach (var module in rootingModules)
                         {
-                            compilationRoots.Add(new ReadyToRunProfilingRootProvider(module, profileDataManager));
+                            compilationRoots.Add(new ReadyToRunProfilingRootProvider(module, profileDataManager, logger, resilient));
                             // If we're doing partial precompilation, only use profile data.
                             if (!partial)
                             {
                                 if (ReadyToRunVisibilityRootProvider.UseVisibilityBasedRootProvider(module))
                                 {
-                                    compilationRoots.Add(new ReadyToRunVisibilityRootProvider(module));
+                                    compilationRoots.Add(new ReadyToRunVisibilityRootProvider(module, logger, resilient));
 
-                                    if (ReadyToRunXmlRootProvider.TryCreateRootProviderFromEmbeddedDescriptorFile(module, out ReadyToRunXmlRootProvider xmlProvider))
+                                    if (ReadyToRunXmlRootProvider.TryCreateRootProviderFromEmbeddedDescriptorFile(module, logger, resilient, out ReadyToRunXmlRootProvider xmlProvider))
                                     {
                                         compilationRoots.Add(xmlProvider);
                                     }
                                 }
                                 else
                                 {
-                                    compilationRoots.Add(new ReadyToRunLibraryRootProvider(module));
+                                    compilationRoots.Add(new ReadyToRunLibraryRootProvider(module, logger, resilient));
                                 }
                             }
 
@@ -681,7 +683,7 @@ namespace ILCompiler
                         .UseBackendOptions(Get(_command.CodegenOptions))
                         .UseLogger(logger)
                         .UseParallelism(Get(_command.Parallelism))
-                        .UseResilience(Get(_command.Resilient))
+                        .UseResilience(resilient)
                         .UseDependencyTracking(trackingLevel)
                         .UseCompilationRoots(compilationRoots)
                         .UseOptimizationMode(optimizationMode);

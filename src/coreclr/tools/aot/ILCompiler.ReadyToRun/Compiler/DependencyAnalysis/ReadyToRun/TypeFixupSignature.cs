@@ -248,8 +248,9 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                                     factory.DetectGenericCycles(type, method);
                                     dependencies.Add(factory.CompiledMethodNode(method), $"AsyncStateMachineBox Method on type {type.ToString()}");
                                 }
-                                catch (TypeSystemException)
+                                catch (TypeSystemException ex) when (factory.IsResilient)
                                 {
+                                    factory.Logger.Writer.WriteLine($"Warning: Dependency on method `{method.Name.ToString()}` was omitted because: {ex.Message}");
                                 }
                                 break;
                         }

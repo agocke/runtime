@@ -53,8 +53,9 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                     {
                         factory.DetectGenericCycles(_method.Method, canonMethod);
                     }
-                    catch (TypeSystemException)
+                    catch (TypeSystemException ex) when (factory.IsResilient)
                     {
+                        factory.Logger.Writer.WriteLine($"Warning: Dependency on method `{canonMethod.Name.ToString()}` was omitted because: {ex.Message}");
                         useDependency = false;
                     }
                     if (useDependency)

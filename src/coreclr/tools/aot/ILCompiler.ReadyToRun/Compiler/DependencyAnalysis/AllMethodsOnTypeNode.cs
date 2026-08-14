@@ -45,8 +45,9 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                         context.DetectGenericCycles(Type, method);
                         dependencies.Add(context.CompiledMethodNode(method), $"Method on type {Type.ToString()}");
                     }
-                    catch (TypeSystemException)
+                    catch (TypeSystemException ex) when (context.IsResilient)
                     {
+                        context.Logger.Writer.WriteLine($"Warning: Dependency on method `{method.Name.ToString()}` was omitted because: {ex.Message}");
                     }
                 }
             }

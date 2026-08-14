@@ -94,6 +94,16 @@ internal sealed class CrossgenCompilation(string name, List<CrossgenAssembly> as
     /// </summary>
     public Action<ReadyToRunReader>? Validate { get; init; }
 
+    /// <summary>
+    /// Whether crossgen2 is expected to complete successfully.
+    /// </summary>
+    public bool ExpectSuccess { get; init; } = true;
+
+    /// <summary>
+    /// Optional validator for the crossgen2 process result.
+    /// </summary>
+    public Action<R2RCompilationResult>? ValidateResult { get; init; }
+
     public string Name => name;
 
     public bool IsComposite => Options.Contains(Crossgen2Option.Composite);
@@ -213,11 +223,12 @@ internal sealed class R2RTestRunner
 
             foreach(var compilation in testCase.Compilations)
             {
-                string outputPath = RunCrossgenCompilation(
-                    testCase.Name, compilation, driver, compilation.FilePath, refPaths, assemblyPaths);
+                string? outputPath = RunCrossgenCompilation(
+                    compilation, driver, compilation.FilePath, refPaths, assemblyPaths);
 
                 if (compilation.Validate is not null)
                 {
+                    Assert.NotNull(outputPath);
                     Assert.True(File.Exists(outputPath), $"R2R image not found: {outputPath}");
                     _output.WriteLine($"  Validating R2R image: {outputPath}");
                     var reader = new ReadyToRunReader(new SimpleAssemblyResolver(_paths), outputPath);
@@ -270,8 +281,7 @@ internal sealed class R2RTestRunner
         }
     }
 
-    private static string RunCrossgenCompilation(
-        string testName,
+    private static string? RunCrossgenCompilation(
         CrossgenCompilation compilation,
         R2RDriver driver,
         string outputFile,
@@ -324,10 +334,13 @@ internal sealed class R2RTestRunner
         args.Add($"--out");
         args.Add($"{outputFile}");
         var result = driver.Compile(args);
-        Assert.True(result.Success,
-            $"crossgen2 failed for '{testName}':\n{result.StandardError}\n{result.StandardOutput}");
+        compilation.ValidateResult?.Invoke(result);
 
-        return outputFile;
+        Assert.True(
+            result.Success == compilation.ExpectSuccess,
+            $"crossgen2 {(compilation.ExpectSuccess ? "failed" : "succeeded unexpectedly")} for '{compilation.Name}':\n{result.StandardError}\n{result.StandardOutput}");
+
+        return result.Success ? outputFile : null;
     }
 
     private static void AddRefArgs(List<string> args, List<string> refPaths)

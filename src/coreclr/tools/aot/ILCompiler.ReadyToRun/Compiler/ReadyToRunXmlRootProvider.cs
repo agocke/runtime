@@ -23,26 +23,30 @@ namespace ILCompiler
     {
         private readonly TypeSystemContext _context;
         private readonly Stream _documentStream;
+        private readonly Logger _logger;
         private readonly ManifestResource _resource;
         private readonly ModuleDesc _owningModule;
+        private readonly bool _resilient;
         private readonly string _xmlDocumentLocation;
 
-        public ReadyToRunXmlRootProvider(Stream documentStream, ManifestResource resource, ModuleDesc owningModule, string xmlDocumentLocation)
+        public ReadyToRunXmlRootProvider(Stream documentStream, Logger logger, ManifestResource resource, ModuleDesc owningModule, bool resilient, string xmlDocumentLocation)
         {
             _context = owningModule.Context;
             _documentStream = documentStream;
+            _logger = logger;
             _resource = resource;
             _owningModule = owningModule;
+            _resilient = resilient;
             _xmlDocumentLocation = xmlDocumentLocation;
         }
 
         public void AddCompilationRoots(IRootingServiceProvider rootProvider)
         {
-            CompilationRootProvider root = new CompilationRootProvider(rootProvider, _context, _documentStream, _resource, _owningModule, _xmlDocumentLocation);
+            CompilationRootProvider root = new CompilationRootProvider(rootProvider, _context, _documentStream, _logger, _resource, _owningModule, _resilient, _xmlDocumentLocation);
             root.ProcessXml();
         }
 
-        public static bool TryCreateRootProviderFromEmbeddedDescriptorFile(EcmaModule module, out ReadyToRunXmlRootProvider provider)
+        public static bool TryCreateRootProviderFromEmbeddedDescriptorFile(EcmaModule module, Logger logger, bool resilient, out ReadyToRunXmlRootProvider provider)
         {
             PEMemoryBlock resourceDirectory = module.PEReader.GetSectionData(module.PEReader.PEHeaders.CorHeader.ResourcesDirectory.RelativeVirtualAddress);
 
@@ -68,7 +72,7 @@ namespace ILCompiler
                         ms = new UnmanagedMemoryStream(reader.CurrentPointer, length);
                     }
 
-                    provider = new ReadyToRunXmlRootProvider(ms, resource, module, "resource " + resourceName + " in " + module.ToString());
+                    provider = new ReadyToRunXmlRootProvider(ms, logger, resource, module, resilient, "resource " + resourceName + " in " + module.ToString());
                     return true;
                 }
             }
@@ -80,14 +84,18 @@ namespace ILCompiler
         {
             private const string NamespaceElementName = "namespace";
             private const string _preserve = "preserve";
+            private readonly Logger _logger;
             private readonly IRootingServiceProvider _rootingServiceProvider;
             private InstructionSetSupport _instructionSetSupport;
+            private readonly bool _resilient;
 
-            public CompilationRootProvider(IRootingServiceProvider provider, TypeSystemContext context, Stream documentStream, ManifestResource resource, ModuleDesc owningModule, string xmlDocumentLocation)
+            public CompilationRootProvider(IRootingServiceProvider provider, TypeSystemContext context, Stream documentStream, Logger logger, ManifestResource resource, ModuleDesc owningModule, bool resilient, string xmlDocumentLocation)
                 : base(null , context, documentStream, resource, owningModule, xmlDocumentLocation, ImmutableDictionary<string, bool>.Empty)
             {
+                _logger = logger;
                 _rootingServiceProvider = provider;
                 _instructionSetSupport = ((ReadyToRunCompilerContext)owningModule.Context).InstructionSetSupport;
+                _resilient = resilient;
             }
 
             public void ProcessXml() => ProcessXml(false);
@@ -150,10 +158,11 @@ namespace ILCompiler
                         _rootingServiceProvider.AddCompilationRoot(methodToRoot, rootMinimalDependencies: false, reason: "Linker XML descriptor");
                     }
                 }
-                catch (TypeSystemException)
+                catch (TypeSystemException ex) when (_resilient)
                 {
                     // Individual methods can fail to load types referenced in their signatures.
                     // Skip them in library mode since they're not going to be callable.
+                    _logger.Writer.WriteLine($"Warning: Method `{methodToRoot.Name.ToString()}` was not rooted because: {ex.Message}");
                     return;
                 }
             }

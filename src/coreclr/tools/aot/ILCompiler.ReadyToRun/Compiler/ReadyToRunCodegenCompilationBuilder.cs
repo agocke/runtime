@@ -279,6 +279,8 @@ namespace ILCompiler
                 _format,
                 _imageBase,
                 automaticTypeValidation ? singleModule : null,
+                resilient: _resilient,
+                logger: _logger,
                 genericCycleDepthCutoff: _genericCycleDetectionDepthCutoff,
                 genericCycleBreadthCutoff: _genericCycleDetectionBreadthCutoff
                 );

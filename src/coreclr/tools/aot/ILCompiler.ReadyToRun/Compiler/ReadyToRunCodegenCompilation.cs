@@ -550,6 +550,8 @@ namespace ILCompiler
                 format: componentFormat,
                 imageBase: _nodeFactory.ImageBase,
                 associatedModule: automaticTypeValidation ? inputModule : null,
+                resilient: _nodeFactory.IsResilient,
+                logger: _nodeFactory.Logger,
                 genericCycleDepthCutoff: -1, // We don't need generic cycle detection when rewriting component assemblies
                 genericCycleBreadthCutoff: -1); // as we're not actually compiling anything
 
@@ -990,11 +992,10 @@ namespace ILCompiler
                         }
                     }
                 }
-                catch (TypeSystemException ex)
+                catch (TypeSystemException ex) when (_resilient)
                 {
                     // If compilation fails, don't emit code for this method. It will be Jitted at runtime
-                    if (Logger.IsVerbose)
-                        Logger.Writer.WriteLine($"Warning: Method `{method}` was not compiled because: {ex.Message}");
+                    Logger.Writer.WriteLine($"Warning: Method `{method.Name.ToString()}` was not compiled because: {ex.Message}");
                 }
                 catch (RequiresRuntimeJitException ex)
                 {
@@ -1004,7 +1005,7 @@ namespace ILCompiler
                 catch (CodeGenerationFailedException ex) when (_resilient)
                 {
                     if (Logger.IsVerbose)
-                        Logger.Writer.WriteLine($"Warning: Method `{method}` was not compiled because `{ex.Message}` requires runtime JIT");
+                        Logger.Writer.WriteLine($"Warning: Method `{method.Name.ToString()}` was not compiled because `{ex.Message}` requires runtime JIT");
                 }
             }
         }

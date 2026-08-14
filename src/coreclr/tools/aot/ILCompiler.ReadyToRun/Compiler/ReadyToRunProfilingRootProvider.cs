@@ -20,12 +20,16 @@ namespace ILCompiler
         private EcmaModule _module;
         private IEnumerable<MethodDesc> _profileData;
         private InstructionSetSupport _instructionSetSupport;
+        private readonly Logger _logger;
+        private readonly bool _resilient;
 
-        public ReadyToRunProfilingRootProvider(EcmaModule module, ProfileDataManager profileDataManager)
+        public ReadyToRunProfilingRootProvider(EcmaModule module, ProfileDataManager profileDataManager, Logger logger, bool resilient)
         {
             _module = module;
             _profileData = profileDataManager.GetInputProfileDataMethodsForModule(module);
             _instructionSetSupport = ((ReadyToRunCompilerContext)module.Context).InstructionSetSupport;
+            _logger = logger;
+            _resilient = resilient;
         }
 
         public void AddCompilationRoots(IRootingServiceProvider rootProvider)
@@ -69,10 +73,11 @@ namespace ILCompiler
                         rootProvider.AddCompilationRoot(method, rootMinimalDependencies: true, reason: "Profile triggered method");
                     }
                 }
-                catch (TypeSystemException)
+                catch (TypeSystemException ex) when (_resilient)
                 {
                     // Individual methods can fail to load types referenced in their signatures.
                     // Skip them in library mode since they're not going to be callable.
+                    _logger.Writer.WriteLine($"Warning: Method `{method.Name.ToString()}` was not rooted because: {ex.Message}");
                     continue;
                 }
             }

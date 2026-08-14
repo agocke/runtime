@@ -1895,14 +1895,26 @@ public class R2RTestSuites
             SourceResourceNames = ["MissingVirtualSignature/Input.cs"],
             References = [missingDependency],
         };
+        var crossgenInput = new CrossgenAssembly(input);
 
         new R2RTestRunner(_output).Run(new R2RTestCase(
             nameof(MissingVirtualSignature),
             [
-                new(nameof(MissingVirtualSignature), [new CrossgenAssembly(input)])
+                new("FailFast", [crossgenInput])
                 {
                     AdditionalArgs = ["--parallelism", "1"],
+                    ExpectSuccess = false,
+                    ValidateResult = result => Assert.Contains(missingDependency.AssemblyName, result.StandardOutput + result.StandardError),
+                },
+                new("Resilient", [crossgenInput])
+                {
+                    AdditionalArgs = ["--resilient", "--parallelism", "1"],
                     Validate = Validate,
+                    ValidateResult = result =>
+                    {
+                        Assert.Contains("Virtual method dependency discovery", result.StandardOutput + result.StandardError);
+                        Assert.Contains(missingDependency.AssemblyName, result.StandardOutput + result.StandardError);
+                    },
                 },
             ]));
 
