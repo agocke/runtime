@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using ILCompiler.Dataflow;
 using ILCompiler.DependencyAnalysisFramework;
 using Internal.IL;
@@ -128,66 +129,185 @@ namespace ILCompiler.Compiler.Tests
         }
 
         [Fact]
-        public void DependencyAnalyzerComputesDeferredStaticDependenciesBeforeDynamicDependencies()
+        public void DependencyAnalyzerParallelWavesMatchSerialAnalysis()
         {
-            var deferredNode = new DeferredTestDependencyNode();
-            var rootNode = new TestDependencyNode(deferredNode);
-            var analyzer = new DependencyAnalyzer<NoLogStrategy<string>, string>(
-                "context",
-                Comparer<DependencyNodeCore<string>>.Create((left, right) => string.CompareOrdinal(left.ToString(), right.ToString())));
-            analyzer.ComputeDependencyRoutine += nodes =>
-            {
-                Assert.Same(deferredNode, Assert.Single(nodes));
-                deferredNode.SetDependenciesComputed();
-            };
+            AnalysisResult serial = RunAnalysis(parallelism: 1);
+            AnalysisResult parallel = RunAnalysis(parallelism: 4);
 
-            analyzer.AddRoot(rootNode, "root");
-            analyzer.ComputeMarkedNodes();
-
-            Assert.True(deferredNode.DynamicDependenciesQueried);
+            Assert.Equal(
+                new[] { "conditional", "deferred", "deferredTarget", "dynamic", "root", "target1", "target2", "trigger1", "trigger2" },
+                serial.MarkedNodes);
+            Assert.Equal(serial.MarkedNodes, parallel.MarkedNodes);
+            Assert.Equal(new[] { 0, 1 }, serial.DynamicSearchStarts);
+            Assert.Equal(serial.DynamicSearchStarts, parallel.DynamicSearchStarts);
+            Assert.All(serial.MarkingThreadIds, threadId => Assert.Equal(serial.MarkingThreadIds[0], threadId));
+            Assert.All(parallel.MarkingThreadIds, threadId => Assert.Equal(parallel.MarkingThreadIds[0], threadId));
         }
 
-        private sealed class TestDependencyNode : DependencyNodeCore<string>
+        private static AnalysisResult RunAnalysis(int parallelism)
         {
-            private readonly DependencyNodeCore<string> _dependency;
+            var markingThreadIds = new List<int>();
+            var dynamicSearchStarts = new List<int>();
 
-            public TestDependencyNode(DependencyNodeCore<string> dependency)
+            var trigger1 = new TestDependencyNode("trigger1", markingThreadIds, interestingForDynamicDependencyAnalysis: true);
+            var trigger2 = new TestDependencyNode("trigger2", markingThreadIds, interestingForDynamicDependencyAnalysis: true);
+            var target2 = new TestDependencyNode("target2", markingThreadIds);
+            var target1 = new TestDependencyNode("target1", markingThreadIds, staticDependencies: new[] { trigger2 });
+            var conditional = new TestDependencyNode("conditional", markingThreadIds);
+            var dynamic = new DynamicTestDependencyNode(
+                "dynamic",
+                markingThreadIds,
+                dynamicSearchStarts,
+                new Dictionary<TestDependencyNode, TestDependencyNode>
+                {
+                    [trigger1] = target1,
+                    [trigger2] = target2,
+                });
+            var deferredTarget = new TestDependencyNode("deferredTarget", markingThreadIds);
+            var deferred = new DeferredTestDependencyNode("deferred", markingThreadIds, deferredTarget);
+            var root = new TestDependencyNode(
+                "root",
+                markingThreadIds,
+                staticDependencies: new TestDependencyNode[] { dynamic, trigger1, deferred },
+                conditionalDependencies: new[] { (conditional, trigger2) });
+
+            var analyzer = new DependencyAnalyzer<NoLogStrategy<string>, string>(
+                "context",
+                Comparer<DependencyNodeCore<string>>.Create((left, right) => string.CompareOrdinal(left.ToString(), right.ToString())),
+                parallelism);
+            analyzer.ComputeDependencyRoutine += nodes =>
             {
-                _dependency = dependency;
+                foreach (DependencyNodeCore<string> node in nodes)
+                {
+                    if (node is DeferredTestDependencyNode deferredNode)
+                    {
+                        deferredNode.SetDependenciesComputed();
+                    }
+                }
+            };
+            analyzer.AddRoot(root, "root");
+            analyzer.ComputeMarkedNodes();
+
+            var markedNodeNames = new string[analyzer.MarkedNodeList.Length];
+            for (int i = 0; i < markedNodeNames.Length; i++)
+            {
+                markedNodeNames[i] = analyzer.MarkedNodeList[i].ToString();
             }
 
-            public override bool InterestingForDynamicDependencyAnalysis => false;
+            return new AnalysisResult(markedNodeNames, dynamicSearchStarts.ToArray(), markingThreadIds.ToArray());
+        }
+
+        private class TestDependencyNode : DependencyNodeCore<string>
+        {
+            private readonly string _name;
+            private readonly List<int> _markingThreadIds;
+            private readonly TestDependencyNode[] _staticDependencies;
+            private readonly (TestDependencyNode Node, TestDependencyNode Condition)[] _conditionalDependencies;
+            private readonly bool _interestingForDynamicDependencyAnalysis;
+
+            public TestDependencyNode(
+                string name,
+                List<int> markingThreadIds,
+                TestDependencyNode[] staticDependencies = null,
+                (TestDependencyNode Node, TestDependencyNode Condition)[] conditionalDependencies = null,
+                bool interestingForDynamicDependencyAnalysis = false)
+            {
+                _name = name;
+                _markingThreadIds = markingThreadIds;
+                _staticDependencies = staticDependencies ?? Array.Empty<TestDependencyNode>();
+                _conditionalDependencies = conditionalDependencies ?? Array.Empty<(TestDependencyNode, TestDependencyNode)>();
+                _interestingForDynamicDependencyAnalysis = interestingForDynamicDependencyAnalysis;
+            }
+
+            public override bool InterestingForDynamicDependencyAnalysis => _interestingForDynamicDependencyAnalysis;
             public override bool HasDynamicDependencies => false;
-            public override bool HasConditionalStaticDependencies => false;
+            public override bool HasConditionalStaticDependencies => _conditionalDependencies.Length != 0;
             public override bool StaticDependenciesAreComputed => true;
 
             public override void AddStaticDependencies(DependencySink<string> sink, string context)
             {
-                sink.Add(_dependency, "static");
+                foreach (TestDependencyNode dependency in _staticDependencies)
+                {
+                    sink.Add(dependency, "static");
+                }
             }
 
-            protected override string GetName(string context) => nameof(TestDependencyNode);
+            public override void AddConditionalDependencies(DependencySink<string> sink, string context)
+            {
+                foreach ((TestDependencyNode node, TestDependencyNode condition) in _conditionalDependencies)
+                {
+                    sink.Add(node, condition, "conditional");
+                }
+            }
+
+            protected override void OnMarked(string context)
+            {
+                _markingThreadIds.Add(Environment.CurrentManagedThreadId);
+            }
+
+            protected override string GetName(string context) => _name;
+            public override string ToString() => _name;
         }
 
-        private sealed class DeferredTestDependencyNode : DependencyNodeCore<string>
+        private sealed class DynamicTestDependencyNode : TestDependencyNode
         {
+            private readonly List<int> _searchStarts;
+            private readonly Dictionary<TestDependencyNode, TestDependencyNode> _dependencies;
+            private bool _staticDependenciesProduced;
+
+            public DynamicTestDependencyNode(
+                string name,
+                List<int> markingThreadIds,
+                List<int> searchStarts,
+                Dictionary<TestDependencyNode, TestDependencyNode> dependencies)
+                : base(name, markingThreadIds)
+            {
+                _searchStarts = searchStarts;
+                _dependencies = dependencies;
+            }
+
+            public override bool HasDynamicDependencies => _staticDependenciesProduced;
+
+            public override void AddStaticDependencies(DependencySink<string> sink, string context)
+            {
+                _staticDependenciesProduced = true;
+            }
+
+            public override void SearchDynamicDependencies(List<DependencyNodeCore<string>> markedNodes, int firstNode, DependencySink<string> sink, string context)
+            {
+                _searchStarts.Add(firstNode);
+                for (int i = firstNode; i < markedNodes.Count; i++)
+                {
+                    if (markedNodes[i] is TestDependencyNode interestingNode &&
+                        _dependencies.TryGetValue(interestingNode, out TestDependencyNode dependency))
+                    {
+                        sink.Add(dependency, interestingNode, "dynamic");
+                    }
+                }
+            }
+        }
+
+        private sealed class DeferredTestDependencyNode : TestDependencyNode
+        {
+            private readonly TestDependencyNode _dependency;
             private bool _dependenciesComputed;
 
-            public bool DynamicDependenciesQueried { get; private set; }
-            public override bool InterestingForDynamicDependencyAnalysis => false;
+            public DeferredTestDependencyNode(string name, List<int> markingThreadIds, TestDependencyNode dependency)
+                : base(name, markingThreadIds)
+            {
+                _dependency = dependency;
+            }
+
+            public override bool StaticDependenciesAreComputed => _dependenciesComputed;
 
             public override bool HasDynamicDependencies
             {
                 get
                 {
                     Assert.True(_dependenciesComputed);
-                    DynamicDependenciesQueried = true;
                     return false;
                 }
             }
-
-            public override bool HasConditionalStaticDependencies => false;
-            public override bool StaticDependenciesAreComputed => _dependenciesComputed;
 
             public void SetDependenciesComputed()
             {
@@ -196,9 +316,22 @@ namespace ILCompiler.Compiler.Tests
 
             public override void AddStaticDependencies(DependencySink<string> sink, string context)
             {
+                sink.Add(_dependency, "deferred");
+            }
+        }
+
+        private sealed class AnalysisResult
+        {
+            public AnalysisResult(string[] markedNodes, int[] dynamicSearchStarts, int[] markingThreadIds)
+            {
+                MarkedNodes = markedNodes;
+                DynamicSearchStarts = dynamicSearchStarts;
+                MarkingThreadIds = markingThreadIds;
             }
 
-            protected override string GetName(string context) => nameof(DeferredTestDependencyNode);
+            public string[] MarkedNodes { get; }
+            public int[] DynamicSearchStarts { get; }
+            public int[] MarkingThreadIds { get; }
         }
 
         private static MethodDesc GetMethodFromAttribute(CustomAttributeValue attr)

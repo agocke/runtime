@@ -88,7 +88,7 @@ namespace ILCompiler
 
         protected DependencyAnalyzerBase<NodeFactory> CreateDependencyGraph(NodeFactory factory, IComparer<DependencyNodeCore<NodeFactory>> comparer = null)
         {
-            return _dependencyTrackingLevel.CreateDependencyGraph(factory, comparer);
+            return _dependencyTrackingLevel.CreateDependencyGraph(factory, comparer, _parallelism);
         }
 
         public abstract ICompilation ToCompilation();

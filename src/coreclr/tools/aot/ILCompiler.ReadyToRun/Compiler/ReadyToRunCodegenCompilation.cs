@@ -554,7 +554,7 @@ namespace ILCompiler
                 genericCycleBreadthCutoff: -1); // as we're not actually compiling anything
 
             IComparer<DependencyNodeCore<NodeFactory>> comparer = new SortableDependencyNode.ObjectNodeComparer(CompilerComparer.Instance);
-            DependencyAnalyzerBase<NodeFactory> componentGraph = new DependencyAnalyzer<NoLogStrategy<NodeFactory>, NodeFactory>(componentFactory, comparer);
+            DependencyAnalyzerBase<NodeFactory> componentGraph = new DependencyAnalyzer<NoLogStrategy<NodeFactory>, NodeFactory>(componentFactory, comparer, _parallelism);
 
             componentGraph.AddRoot(componentFactory.Header, "Component module R2R header");
             OwnerCompositeExecutableNode ownerExecutableNode = new OwnerCompositeExecutableNode(ownerExecutableName);

@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using Internal.Runtime;
 using Internal.Text;
 using Internal.TypeSystem;
@@ -15,8 +16,19 @@ namespace ILCompiler.DependencyAnalysis
     public class SealedVTableNode : ObjectNode, ISymbolDefinitionNode
     {
         private readonly TypeDesc _type;
-        private List<SealedVTableEntry> _sealedVTableEntries;
-        private DependencyList _nonRelocationDependencies;
+        private SealedVTableData _sealedVTableData;
+
+        private sealed class SealedVTableData
+        {
+            public SealedVTableData(List<SealedVTableEntry> entries, DependencyList nonRelocationDependencies)
+            {
+                Entries = entries;
+                NonRelocationDependencies = nonRelocationDependencies;
+            }
+
+            public List<SealedVTableEntry> Entries { get; }
+            public DependencyList NonRelocationDependencies { get; }
+        }
 
         public SealedVTableNode(TypeDesc type)
         {
@@ -51,10 +63,11 @@ namespace ILCompiler.DependencyAnalysis
         {
             get
             {
-                if (_sealedVTableEntries == null)
+                SealedVTableData data = Volatile.Read(ref _sealedVTableData);
+                if (data is null)
                     throw new NotSupportedException();
 
-                return _sealedVTableEntries.Count;
+                return data.Entries.Count;
             }
         }
 
@@ -70,12 +83,13 @@ namespace ILCompiler.DependencyAnalysis
         /// </summary>
         public int ComputeSealedVTableSlot(MethodDesc method)
         {
-            if (_sealedVTableEntries == null)
+            SealedVTableData data = Volatile.Read(ref _sealedVTableData);
+            if (data is null)
                 throw new NotSupportedException();
 
-            for (int i = 0; i < _sealedVTableEntries.Count; i++)
+            for (int i = 0; i < data.Entries.Count; i++)
             {
-                if (_sealedVTableEntries[i].Matches(method))
+                if (data.Entries[i].Matches(method))
                     return i;
             }
 
@@ -84,12 +98,13 @@ namespace ILCompiler.DependencyAnalysis
 
         public int ComputeDefaultInterfaceMethodSlot(MethodDesc method, DefType interfaceOnDefinition)
         {
-            if (_sealedVTableEntries == null)
+            SealedVTableData data = Volatile.Read(ref _sealedVTableData);
+            if (data is null)
                 throw new NotSupportedException();
 
-            for (int i = 0; i < _sealedVTableEntries.Count; i++)
+            for (int i = 0; i < data.Entries.Count; i++)
             {
-                if (_sealedVTableEntries[i].Matches(method, interfaceOnDefinition))
+                if (data.Entries[i].Matches(method, interfaceOnDefinition))
                     return i;
             }
 
@@ -99,7 +114,7 @@ namespace ILCompiler.DependencyAnalysis
         public bool BuildSealedVTableSlots(NodeFactory factory, bool relocsOnly)
         {
             // Sealed vtable already built
-            if (_sealedVTableEntries != null)
+            if (Volatile.Read(ref _sealedVTableData) is not null)
                 return true;
 
             DefType declType = _type.GetClosestDefType();
@@ -110,7 +125,8 @@ namespace ILCompiler.DependencyAnalysis
             if (relocsOnly && !declTypeVTable.HasKnownVirtualMethodUse)
                 return false;
 
-            _sealedVTableEntries = new List<SealedVTableEntry>();
+            var sealedVTableEntries = new List<SealedVTableEntry>();
+            DependencyList nonRelocationDependencies = null;
 
             // Interfaces don't have any instance virtual slots with the exception of interfaces that provide
             // IDynamicInterfaceCastable implementation.
@@ -141,7 +157,7 @@ namespace ILCompiler.DependencyAnalysis
                     else
                         node = factory.MethodEntrypoint(implMethod.GetCanonMethodTarget(CanonicalFormKind.Specific), unboxingStub: !implMethod.Signature.IsStatic && declType.IsValueType);
 
-                    _sealedVTableEntries.Add(SealedVTableEntry.FromVirtualMethod(implMethod, node));
+                    sealedVTableEntries.Add(SealedVTableEntry.FromVirtualMethod(implMethod, node));
                 }
             }
 
@@ -201,7 +217,7 @@ namespace ILCompiler.DependencyAnalysis
                                 else
                                     node = factory.MethodEntrypoint(targetMethod.GetCanonMethodTarget(CanonicalFormKind.Specific), unboxingStub: !targetMethod.Signature.IsStatic && declType.IsValueType);
 
-                                _sealedVTableEntries.Add(SealedVTableEntry.FromVirtualMethod(targetMethod, node));
+                                sealedVTableEntries.Add(SealedVTableEntry.FromVirtualMethod(targetMethod, node));
                             }
                         }
                     }
@@ -225,8 +241,8 @@ namespace ILCompiler.DependencyAnalysis
                                 // The above thunk will index into interface list to find the right context. Make sure to keep all interfaces prior to this one
                                 for (int i = 0; i <= providingInterfaceIndex; i++)
                                 {
-                                    _nonRelocationDependencies ??= new DependencyList();
-                                    _nonRelocationDependencies.Add(factory.InterfaceUse(declTypeRuntimeInterfaces[i].GetTypeDefinition()), "Interface with shared default methods folows this");
+                                    nonRelocationDependencies ??= new DependencyList();
+                                    nonRelocationDependencies.Add(factory.InterfaceUse(declTypeRuntimeInterfaces[i].GetTypeDefinition()), "Interface with shared default methods folows this");
                                 }
                             }
 
@@ -236,12 +252,16 @@ namespace ILCompiler.DependencyAnalysis
                             else
                                 node = factory.MethodEntrypoint(canonImplMethod, unboxingStub: implMethod.OwningType.IsValueType && !implMethod.Signature.IsStatic);
 
-                            _sealedVTableEntries.Add(SealedVTableEntry.FromDefaultInterfaceMethod(implMethod, providingInterfaceDefinitionType, node));
+                            sealedVTableEntries.Add(SealedVTableEntry.FromDefaultInterfaceMethod(implMethod, providingInterfaceDefinitionType, node));
                         }
                     }
                 }
             }
 
+            Interlocked.CompareExchange(
+                ref _sealedVTableData,
+                new SealedVTableData(sealedVTableEntries, nonRelocationDependencies),
+                null);
             return true;
         }
 
@@ -249,17 +269,20 @@ namespace ILCompiler.DependencyAnalysis
         {
             BuildSealedVTableSlots(factory, relocsOnly: true);
 
-            if (_nonRelocationDependencies is not null)
+            DependencySink<NodeFactory> result = sink;
+            SealedVTableData data = Volatile.Read(ref _sealedVTableData);
+            if (data?.NonRelocationDependencies is not null)
             {
-                sink.AddRange(_nonRelocationDependencies);
+                result.AddRange(data.NonRelocationDependencies);
             }
 
             // When building the sealed vtable, we consult the vtable layout of these types
             TypeDesc declType = _type.GetClosestDefType();
-            sink.Add(factory.VTable(declType), "VTable of the type");
+            result.Add(factory.VTable(declType), "VTable of the type");
 
             foreach (var interfaceType in declType.RuntimeInterfaces)
-                sink.Add(factory.VTable(interfaceType), "VTable of the interface");
+                result.Add(factory.VTable(interfaceType), "VTable of the interface");
+
         }
 
         public override ObjectData GetData(NodeFactory factory, bool relocsOnly)
@@ -270,13 +293,14 @@ namespace ILCompiler.DependencyAnalysis
 
             if (BuildSealedVTableSlots(factory, relocsOnly))
             {
+                SealedVTableData data = Volatile.Read(ref _sealedVTableData);
                 bool isSharedDynamicInterfaceCastableImpl = _type.IsInterface
                     && _type.IsCanonicalSubtype(CanonicalFormKind.Any)
                     && ((MetadataType)_type).IsDynamicInterfaceCastableImplementation();
 
-                for (int i = 0; i < _sealedVTableEntries.Count; i++)
+                for (int i = 0; i < data.Entries.Count; i++)
                 {
-                    IMethodNode relocTarget = _sealedVTableEntries[i].Target;
+                    IMethodNode relocTarget = data.Entries[i].Target;
 
                     int delta = isSharedDynamicInterfaceCastableImpl ? DispatchMapCodePointerFlags.RequiresInstantiatingThunkFlag : 0;
 
