@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Internal.Text;
 using Internal.TypeSystem;
+using ILCompiler.DependencyAnalysisFramework;
 
 namespace ILCompiler.DependencyAnalysis
 {
@@ -42,14 +43,14 @@ namespace ILCompiler.DependencyAnalysis
         public override bool IsShareable => true;
         public override bool StaticDependenciesAreComputed => true;
 
-        protected override DependencyList ComputeNonRelocationBasedDependencies(NodeFactory factory)
+        protected override void ComputeNonRelocationBasedDependencies(DependencySink<NodeFactory> sink, NodeFactory factory)
         {
             ISymbolDefinitionNode node = _inlinedThreadStatics ?? factory.TypeThreadStaticsSymbol(_type);
 
-            return new DependencyList
+            sink.AddRange(new DependencyList
             {
                 new DependencyListEntry(node, "Thread static storage")
-            };
+            }); return;
         }
 
         protected override ObjectData GetDehydratableData(NodeFactory factory, bool relocsOnly = false)

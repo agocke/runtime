@@ -16,11 +16,11 @@
     <Configurations>Debug;Release;Checked</Configurations>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="ComputedStaticDependencyNode.cs" />
     <Compile Include="DependencyAnalyzer.cs" />
     <Compile Include="DependencyAnalyzerBase.cs" />
     <Compile Include="DependencyNode.cs" />
     <Compile Include="DependencyNodeCore.cs" />
+    <Compile Include="DependencySink.cs" />
     <Compile Include="DgmlWriter.cs" />
     <Compile Include="EventSourceLogStrategy.cs" />
     <Compile Include="FirstMarkLogStrategy.cs" />

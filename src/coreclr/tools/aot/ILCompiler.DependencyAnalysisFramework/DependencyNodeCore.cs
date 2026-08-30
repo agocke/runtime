@@ -1,11 +1,27 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable enable
+
 using System;
 using System.Collections.Generic;
 
 namespace ILCompiler.DependencyAnalysisFramework
 {
+    public interface IDependencySink<DependencyContextType>
+    {
+        void Add(DependencyNodeCore<DependencyContextType> node, string reason);
+        void Add(object node, string reason);
+        void Add(DependencyNodeCore<DependencyContextType>.DependencyListEntry dependency);
+        void AddRange(IEnumerable<DependencyNodeCore<DependencyContextType>.DependencyListEntry> dependencies);
+    }
+
+    public interface IConditionalDependencySink<DependencyContextType>
+    {
+        void Add(DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry dependency);
+        void AddRange(IEnumerable<DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry> dependencies);
+    }
+
     public abstract class DependencyNodeCore<DependencyContextType> : DependencyNode, IDependencyNode<DependencyContextType>
     {
         public struct DependencyListEntry
@@ -28,7 +44,7 @@ namespace ILCompiler.DependencyAnalysisFramework
             public string Reason;
         }
 
-        public class DependencyList : List<DependencyListEntry>
+        public class DependencyList : List<DependencyListEntry>, IDependencySink<DependencyContextType>
         {
             public DependencyList() { }
 
@@ -37,22 +53,45 @@ namespace ILCompiler.DependencyAnalysisFramework
             {
             }
 
-            public void Add(DependencyNodeCore<DependencyContextType> node,
-                                       string reason)
+            public virtual void Add(DependencyNodeCore<DependencyContextType> node,
+                                    string reason)
             {
-                this.Add(new DependencyListEntry(node, reason));
+                Add(new DependencyListEntry(node, reason));
             }
 
-            public void Add(object node, string reason)
+            public virtual void Add(object node, string reason)
             {
-                this.Add(new DependencyListEntry((DependencyNodeCore<DependencyContextType>)node, reason));
+                Add(new DependencyListEntry((DependencyNodeCore<DependencyContextType>)node, reason));
+            }
+
+            public new virtual void Add(DependencyListEntry dependency)
+            {
+                base.Add(dependency);
+            }
+
+            public new virtual void AddRange(IEnumerable<DependencyListEntry> dependencies)
+            {
+                base.AddRange(dependencies);
+            }
+        }
+
+        public class CombinedDependencyList : List<CombinedDependencyListEntry>, IConditionalDependencySink<DependencyContextType>
+        {
+            public new virtual void Add(CombinedDependencyListEntry dependency)
+            {
+                base.Add(dependency);
+            }
+
+            public new virtual void AddRange(IEnumerable<CombinedDependencyListEntry> dependencies)
+            {
+                base.AddRange(dependencies);
             }
         }
 
         public struct CombinedDependencyListEntry : IEquatable<CombinedDependencyListEntry>
         {
             public CombinedDependencyListEntry(DependencyNodeCore<DependencyContextType> node,
-                                               DependencyNodeCore<DependencyContextType> otherReasonNode,
+                                               DependencyNodeCore<DependencyContextType>? otherReasonNode,
                                                string reason)
             {
                 Node = node;
@@ -61,20 +100,20 @@ namespace ILCompiler.DependencyAnalysisFramework
             }
 
             public CombinedDependencyListEntry(object node,
-                                               object otherReasonNode,
+                                               object? otherReasonNode,
                                                string reason)
             {
                 Node = (DependencyNodeCore<DependencyContextType>)node;
-                OtherReasonNode = (DependencyNodeCore<DependencyContextType>)otherReasonNode;
+                OtherReasonNode = (DependencyNodeCore<DependencyContextType>?)otherReasonNode;
                 Reason = reason;
             }
 
             // Used by HashSet, so must have good Equals/GetHashCode
             public readonly DependencyNodeCore<DependencyContextType> Node;
-            public readonly DependencyNodeCore<DependencyContextType> OtherReasonNode;
+            public readonly DependencyNodeCore<DependencyContextType>? OtherReasonNode;
             public readonly string Reason;
 
-            public override bool Equals(object obj)
+            public override bool Equals(object? obj)
             {
                 return obj is CombinedDependencyListEntry && Equals((CombinedDependencyListEntry)obj);
             }
@@ -123,11 +162,15 @@ namespace ILCompiler.DependencyAnalysisFramework
 
         public virtual int DependencyPhaseForDeferredStaticComputation { get; }
 
-        public abstract IEnumerable<DependencyListEntry> GetStaticDependencies(DependencyContextType context);
+        public abstract void AddStaticDependencies(DependencySink<DependencyContextType> sink, DependencyContextType context);
 
-        public abstract IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(DependencyContextType context);
+        public virtual void AddConditionalDependencies(DependencySink<DependencyContextType> sink, DependencyContextType context)
+        {
+        }
 
-        public abstract IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<DependencyContextType>> markedNodes, int firstNode, DependencyContextType context);
+        public virtual void SearchDynamicDependencies(List<DependencyNodeCore<DependencyContextType>> markedNodes, int firstNode, DependencySink<DependencyContextType> sink, DependencyContextType context)
+        {
+        }
 
         internal void CallOnMarked(DependencyContextType context)
         {

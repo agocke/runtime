@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using ILCompiler.DependencyAnalysis.ReadyToRun;
 using Internal.Text;
+using ILCompiler.DependencyAnalysisFramework;
 
 namespace ILCompiler.DependencyAnalysis
 {
@@ -19,12 +20,12 @@ namespace ILCompiler.DependencyAnalysis
 
         protected override string GetName(NodeFactory factory) => $"Embedded pointer to {Target.GetMangledName(factory.NameMangler)}";
 
-        public override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory factory)
+        public override void AddStaticDependencies(DependencySink<NodeFactory> sink, NodeFactory factory)
         {
-            return new[]
+            sink.AddRange(new[]
             {
                 new DependencyListEntry(Target, "reloc"),
-            };
+            }); return;
         }
 
         public override void EncodeData(ref ObjectDataBuilder dataBuilder, NodeFactory factory, bool relocsOnly)

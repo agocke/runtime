@@ -36,7 +36,7 @@ namespace ILCompiler.DependencyAnalysis
 
         public override bool StaticDependenciesAreComputed => _dependencies != null;
 
-        public override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory context) => _dependencies;
+        public override void AddStaticDependencies(DependencySink<NodeFactory> sink, NodeFactory context) => sink.AddRange(_dependencies);
 
         void INodeWithDeferredDependencies.ComputeDependencies(NodeFactory factory)
         {
@@ -345,7 +345,7 @@ namespace ILCompiler.DependencyAnalysis
         public override bool InterestingForDynamicDependencyAnalysis => false;
         public override bool HasDynamicDependencies => false;
         public override bool HasConditionalStaticDependencies => false;
-        public override IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(NodeFactory factory) => null;
-        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory factory) => null;
+        public override void AddConditionalDependencies(DependencySink<NodeFactory> sink, NodeFactory factory) { }
+        public override void SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, DependencySink<NodeFactory> sink, NodeFactory factory) { }
     }
 }

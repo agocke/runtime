@@ -13,6 +13,7 @@ using Internal.TypeSystem;
 
 using DependencyList = ILCompiler.DependencyAnalysisFramework.DependencyNodeCore<ILCompiler.DependencyAnalysis.NodeFactory>.DependencyList;
 using MultiValue = ILLink.Shared.DataFlow.ValueSet<ILLink.Shared.DataFlow.SingleValue>;
+using ILCompiler.DependencyAnalysisFramework;
 
 #nullable enable
 
@@ -21,7 +22,7 @@ namespace ILCompiler.Dataflow
     internal static class GenericArgumentDataFlow
     {
         public static void ProcessGenericArgumentDataFlow(
-            ref DependencyList dependencies,
+            IDependencySink<NodeFactory> dependencies,
             NodeFactory factory,
             in MessageOrigin origin,
             TypeDesc type,
@@ -30,7 +31,7 @@ namespace ILCompiler.Dataflow
             bool suppressAotAnalysisWarnings = false)
         {
             ProcessGenericArgumentDataFlow(
-                ref dependencies,
+                dependencies,
                 factory,
                 origin,
                 type,
@@ -40,13 +41,13 @@ namespace ILCompiler.Dataflow
                 suppressAotAnalysisWarnings);
         }
 
-        public static void ProcessGenericArgumentDataFlow(ref DependencyList dependencies, NodeFactory factory, in MessageOrigin origin, TypeDesc type, MethodDesc contextMethod)
+        public static void ProcessGenericArgumentDataFlow(IDependencySink<NodeFactory> dependencies, NodeFactory factory, in MessageOrigin origin, TypeDesc type, MethodDesc contextMethod)
         {
-            ProcessGenericArgumentDataFlow(ref dependencies, factory, origin, type, contextMethod.OwningType.Instantiation, contextMethod.Instantiation);
+            ProcessGenericArgumentDataFlow(dependencies, factory, origin, type, contextMethod.OwningType.Instantiation, contextMethod.Instantiation);
         }
 
         public static void ProcessGenericArgumentDataFlow(
-            ref DependencyList dependencies,
+            IDependencySink<NodeFactory> dependencies,
             NodeFactory factory,
             in MessageOrigin origin,
             TypeDesc type,
@@ -88,10 +89,7 @@ namespace ILCompiler.Dataflow
 
             if (reflectionMarker.Dependencies.Count > 0)
             {
-                if (dependencies == null)
-                    dependencies = reflectionMarker.Dependencies;
-                else
-                    dependencies.AddRange(reflectionMarker.Dependencies);
+                dependencies.AddRange(reflectionMarker.Dependencies);
             }
         }
 

@@ -22,15 +22,15 @@ namespace ILCompiler.DependencyAnalysis
             _fileName = fileName;
         }
 
-        public override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory factory)
+        public override void AddStaticDependencies(DependencySink<NodeFactory> sink, NodeFactory factory)
         {
             using (Stream fs = File.OpenRead(_fileName))
             {
 #if ILTRIM
-                return DescriptorMarker.GetDependencies(factory.Logger, factory, fs, default, default, _fileName, factory.Settings.FeatureSettings);
+                sink.AddRange(DescriptorMarker.GetDependencies(factory.Logger, factory, fs, default, default, _fileName, factory.Settings.FeatureSettings)); return;
 #else
                 var metadataManager = (UsageBasedMetadataManager)factory.MetadataManager;
-                return DescriptorMarker.GetDependencies(metadataManager.Logger, factory, fs, default, default, _fileName, metadataManager.FeatureSwitches);
+                sink.AddRange(DescriptorMarker.GetDependencies(metadataManager.Logger, factory, fs, default, default, _fileName, metadataManager.FeatureSwitches)); return;
 #endif
             }
         }
@@ -44,8 +44,8 @@ namespace ILCompiler.DependencyAnalysis
         public override bool HasDynamicDependencies => false;
         public override bool HasConditionalStaticDependencies => false;
         public override bool StaticDependenciesAreComputed => true;
-        public override IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(NodeFactory context) => null;
-        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory context) => null;
+        public override void AddConditionalDependencies(DependencySink<NodeFactory> sink, NodeFactory context) { }
+        public override void SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, DependencySink<NodeFactory> sink, NodeFactory context) { }
 #if !ILTRIM
         void ICompilationRootProvider.AddCompilationRoots(IRootingServiceProvider rootProvider) => rootProvider.AddCompilationRoot(this, "Descriptor from command line");
 #endif
