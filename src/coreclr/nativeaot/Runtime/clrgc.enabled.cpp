@@ -14,6 +14,13 @@
 
 #include "gctoeeinterface.standalone.inl"
 
+extern "C" void CSharpGC_VersionInfo(VersionInfo* info);
+extern "C" HRESULT CSharpGC_Initialize(
+    /* In  */ IGCToCLR* clrToGC,
+    /* Out */ IGCHeap** gcHeap,
+    /* Out */ IGCHandleManager** gcHandleManager,
+    /* Out */ GcDacVars* gcDacVars);
+
 enum GC_LOAD_STATUS {
     GC_LOAD_STATUS_BEFORE_START,
     GC_LOAD_STATUS_START,
@@ -47,10 +54,63 @@ void InitializeGCEventLock()
 }
 
 HRESULT InitializeStandaloneGC();
+HRESULT InitializeCSharpGC();
 
 HRESULT InitializeGCSelector()
 {
+    bool useCSharpGC = false;
+    if (RhConfig::Environment::TryGetBooleanValue("GCUseCSharp", &useCSharpGC) && useCSharpGC)
+    {
+        return InitializeCSharpGC();
+    }
+
     return InitializeStandaloneGC();
+}
+
+HRESULT InitializeCSharpGC()
+{
+    IGCHeap* heap = nullptr;
+    IGCHandleManager* manager = nullptr;
+    IGCToCLR* gcToClr = new (nothrow) standalone::GCToEEInterface();
+    if (!gcToClr)
+    {
+        return E_OUTOFMEMORY;
+    }
+
+    g_gc_load_status = GC_LOAD_STATUS_GET_VERSIONINFO;
+    g_gc_version_info.MajorVersion = EE_INTERFACE_MAJOR_VERSION;
+    g_gc_version_info.MinorVersion = 0;
+    g_gc_version_info.BuildVersion = 0;
+    CSharpGC_VersionInfo(&g_gc_version_info);
+    g_gc_load_status = GC_LOAD_STATUS_CALL_VERSIONINFO;
+
+    if (g_gc_version_info.MajorVersion < GC_INTERFACE_MAJOR_VERSION)
+    {
+        LOG((LF_GC, LL_FATALERROR, "GC initialization failed with the Standalone GC reported a major version lower than what the runtime requires.\n"));
+        return E_FAIL;
+    }
+
+    g_gc_load_status = GC_LOAD_STATUS_GET_INITIALIZE;
+    HRESULT initResult = CSharpGC_Initialize(gcToClr, &heap, &manager, &g_gc_dac_vars);
+    if (initResult == S_OK)
+    {
+        g_pGCHeap = heap;
+        {
+            CrstHolder lh(&g_eventStashLock);
+            g_pGCHeap->ControlEvents(g_stashedKeyword, g_stashedLevel);
+            g_pGCHeap->ControlPrivateEvents(g_stashedPrivateKeyword, g_stashedPrivateLevel);
+            g_gcEventTracingInitialized = TRUE;
+        }
+        g_pGCHandleManager = manager;
+        g_gcDacGlobals = &g_gc_dac_vars;
+        LOG((LF_GC, LL_INFO100, "GC load successful\n"));
+    }
+    else
+    {
+        LOG((LF_GC, LL_FATALERROR, "GC initialization failed with HR = 0x%X\n", initResult));
+    }
+
+    return initResult;
 }
 
 HRESULT InitializeStandaloneGC()

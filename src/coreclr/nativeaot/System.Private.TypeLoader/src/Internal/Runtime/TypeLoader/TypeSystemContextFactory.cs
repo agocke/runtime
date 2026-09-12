@@ -55,7 +55,7 @@ namespace Internal.Runtime.TypeLoader
         public static void Recycle(TypeSystemContext context)
         {
             // Only cache a reasonably small context that is still in Gen0
-            if (context.LoadFactor > 200 || GC.GetGeneration(context) > 0)
+            if (context.LoadFactor > 200 || System.GC.GetGeneration(context) > 0)
                 return;
 
             // Flush the type system context from all types being recycled

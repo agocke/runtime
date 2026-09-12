@@ -117,6 +117,19 @@
     </Compile>
     <Compile Include="Internal\Runtime\Dispatch.cs" />
     <Compile Include="Internal\Runtime\FrozenObjectHeapManager.cs" />
+    <Compile Include="Internal\Runtime\GC\GCInterface.cs" />
+    <Compile Include="Internal\Runtime\GC\GCExternalInterfaces.cs" />
+    <Compile Include="Internal\Runtime\GC\GCInternalTypes.cs" />
+    <Compile Include="Internal\Runtime\GC\IGCToCLR.cs" />
+    <Compile Include="Internal\Runtime\GC\GCEnvironment.cs" />
+    <Compile Include="Internal\Runtime\GC\GCInterlocked.cs" />
+    <Compile Include="Internal\Runtime\GC\GCSync.cs" />
+    <Compile Include="Internal\Runtime\GC\GCToOSInterface.cs" />
+    <Compile Include="Internal\Runtime\GC\GCToOSInterface.Unix.cs" />
+    <Compile Include="Internal\Runtime\GC\GCToOSInterface.Windows.cs" />
+    <Compile Include="Internal\Runtime\GC\GCCommon.cs" />
+    <Compile Include="Internal\Runtime\GC\GCConfig.cs" />
+    <Compile Include="Internal\Runtime\GC\GCBootstrap.cs" />
     <Compile Include="Internal\Runtime\ThreadStatics.cs" />
     <Compile Include="Internal\Runtime\CompilerHelpers\StartupCode\StartupCodeHelpers.Extensions.cs" />
     <Compile Include="Internal\Runtime\CompilerHelpers\InteropHelpers.cs" />
