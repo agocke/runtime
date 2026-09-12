@@ -9,6 +9,8 @@ namespace Internal.Runtime.GC
     {
         public static bool Initialize() => false;
         public static void Shutdown() { }
+        public static void* AllocateUnmanaged(nuint size) => null;
+        public static void FreeUnmanaged(void* address) { }
         public static void* VirtualReserve(nuint size, nuint alignment, uint flags, ushort node = NUMA_NODE_UNDEFINED) => null;
         public static bool VirtualRelease(void* address, nuint size) => false;
         public static bool VirtualCommit(void* address, nuint size, ushort node = NUMA_NODE_UNDEFINED) => false;

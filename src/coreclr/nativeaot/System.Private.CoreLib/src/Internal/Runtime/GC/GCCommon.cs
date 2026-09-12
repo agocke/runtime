@@ -34,6 +34,10 @@ namespace Internal.Runtime.GC
         public static int g_fSuspensionPending;
         public static MethodTable* g_gc_pFreeObjectMethodTable;
         public static uint g_max_generation;
+        public static GCEventLevel g_publicEventLevel;
+        public static GCEventKeyword g_publicEventKeywords;
+        public static GCEventLevel g_privateEventLevel;
+        public static GCEventKeyword g_privateEventKeywords;
 
         private const uint MaxSavedChangedSegments = 128;
         private static ChangedSegmentStore s_changedSegmentStore;
@@ -41,11 +45,40 @@ namespace Internal.Runtime.GC
         public static void Initialize()
         {
             g_max_generation = (uint)gc_generation_num.max_generation;
+            g_publicEventLevel = GCEventLevel.GCEventLevel_None;
+            g_publicEventKeywords = GCEventKeyword.GCEventKeyword_None;
+            g_privateEventLevel = GCEventLevel.GCEventLevel_None;
+            g_privateEventKeywords = GCEventKeyword.GCEventKeyword_None;
             s_savedChangedSegmentsCount = ulong.MaxValue;
             fixed (ulong* storage = s_changedSegmentStore.data)
             {
                 storage[0] = 0;
             }
+        }
+
+        public static void SetPublicEventStatus(GCEventKeyword keywords, GCEventLevel level)
+        {
+            g_publicEventKeywords = keywords;
+            g_publicEventLevel = level;
+        }
+
+        public static void SetPrivateEventStatus(GCEventKeyword keywords, GCEventLevel level)
+        {
+            g_privateEventKeywords = keywords;
+            g_privateEventLevel = level;
+        }
+
+        public static void PublishWriteBarrier(WriteBarrierParameters* parameters)
+        {
+            if (g_theGCToCLR is not null && g_theGCToCLR->Vtable is not null)
+            {
+                g_theGCToCLR->Vtable->StompWriteBarrier(g_theGCToCLR, parameters);
+            }
+
+            g_gc_card_table = parameters->card_table;
+            g_gc_card_bundle_table = parameters->card_bundle_table;
+            g_gc_lowest_address = parameters->lowest_address;
+            g_gc_highest_address = parameters->highest_address;
         }
 
         public static void RecordChangedSegment(byte* start, byte* end, nuint currentGcIndex, bgc_state currentBgcState, changed_seg_state changedState)

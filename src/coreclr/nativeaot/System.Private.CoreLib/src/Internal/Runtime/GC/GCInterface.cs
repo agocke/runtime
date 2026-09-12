@@ -3,6 +3,8 @@
 
 #pragma warning disable CA1823, CS0169
 
+using System.Runtime.CompilerServices;
+
 namespace Internal.Runtime.GC
 {
     internal enum GCInterfaceVersionConstants : uint
@@ -253,21 +255,22 @@ namespace Internal.Runtime.GC
         public IGCHandleManagerVtable* Vtable;
     }
 
+    // These implementation slots intentionally use raw managed function pointers. Linux x64 uses the platform ABI for these blittable signatures; nested callbacks remain unmanaged.
     internal unsafe struct IGCHeapVtable
     {
-        public delegate* unmanaged<IGCHeap*, nuint, bool> IsValidSegmentSize;
-        public delegate* unmanaged<IGCHeap*, nuint, bool> IsValidGen0MaxSize;
-        public delegate* unmanaged<IGCHeap*, bool, nuint> GetValidSegmentSize;
-        public delegate* unmanaged<IGCHeap*, nuint, void> SetReservedVMLimit;
-        public delegate* unmanaged<IGCHeap*, void> WaitUntilConcurrentGCComplete;
-        public delegate* unmanaged<IGCHeap*, bool> IsConcurrentGCInProgress;
-        public delegate* unmanaged<IGCHeap*, void> TemporaryEnableConcurrentGC;
-        public delegate* unmanaged<IGCHeap*, void> TemporaryDisableConcurrentGC;
-        public delegate* unmanaged<IGCHeap*, bool> IsConcurrentGCEnabled;
-        public delegate* unmanaged<IGCHeap*, int, int> WaitUntilConcurrentGCCompleteAsync;
-        public delegate* unmanaged<IGCHeap*, nuint> GetNumberOfFinalizable;
-        public delegate* unmanaged<IGCHeap*, Object*> GetNextFinalizable;
-        public delegate* unmanaged<
+        public delegate*<IGCHeap*, nuint, bool> IsValidSegmentSize;
+        public delegate*<IGCHeap*, nuint, bool> IsValidGen0MaxSize;
+        public delegate*<IGCHeap*, bool, nuint> GetValidSegmentSize;
+        public delegate*<IGCHeap*, nuint, void> SetReservedVMLimit;
+        public delegate*<IGCHeap*, void> WaitUntilConcurrentGCComplete;
+        public delegate*<IGCHeap*, bool> IsConcurrentGCInProgress;
+        public delegate*<IGCHeap*, void> TemporaryEnableConcurrentGC;
+        public delegate*<IGCHeap*, void> TemporaryDisableConcurrentGC;
+        public delegate*<IGCHeap*, bool> IsConcurrentGCEnabled;
+        public delegate*<IGCHeap*, int, int> WaitUntilConcurrentGCCompleteAsync;
+        public delegate*<IGCHeap*, nuint> GetNumberOfFinalizable;
+        public delegate*<IGCHeap*, Object*> GetNextFinalizable;
+        public delegate*<
             IGCHeap*,
             ulong*,
             ulong*,
@@ -287,104 +290,104 @@ namespace Internal.Runtime.GC
             ulong*,
             int,
             void> GetMemoryInfo;
-        public delegate* unmanaged<IGCHeap*, uint> GetMemoryLoad;
-        public delegate* unmanaged<IGCHeap*, int> GetGcLatencyMode;
-        public delegate* unmanaged<IGCHeap*, int, int> SetGcLatencyMode;
-        public delegate* unmanaged<IGCHeap*, int> GetLOHCompactionMode;
-        public delegate* unmanaged<IGCHeap*, int, void> SetLOHCompactionMode;
-        public delegate* unmanaged<IGCHeap*, uint, uint, bool> RegisterForFullGCNotification;
-        public delegate* unmanaged<IGCHeap*, bool> CancelFullGCNotification;
-        public delegate* unmanaged<IGCHeap*, int, int> WaitForFullGCApproach;
-        public delegate* unmanaged<IGCHeap*, int, int> WaitForFullGCComplete;
-        public delegate* unmanaged<IGCHeap*, Object*, uint> WhichGeneration;
-        public delegate* unmanaged<IGCHeap*, int, int, int> CollectionCount;
-        public delegate* unmanaged<IGCHeap*, ulong, bool, ulong, bool, int> StartNoGCRegion;
-        public delegate* unmanaged<IGCHeap*, int> EndNoGCRegion;
-        public delegate* unmanaged<IGCHeap*, nuint> GetTotalBytesInUse;
-        public delegate* unmanaged<IGCHeap*, ulong> GetTotalAllocatedBytes;
-        public delegate* unmanaged<IGCHeap*, int, bool, int, int> GarbageCollect;
-        public delegate* unmanaged<IGCHeap*, uint> GetMaxGeneration;
-        public delegate* unmanaged<IGCHeap*, Object*, void> SetFinalizationRun;
-        public delegate* unmanaged<IGCHeap*, int, Object*, bool> RegisterForFinalization;
-        public delegate* unmanaged<IGCHeap*, int> GetLastGCPercentTimeInGC;
-        public delegate* unmanaged<IGCHeap*, int, nuint> GetLastGCGenerationSize;
-        public delegate* unmanaged<IGCHeap*, int> Initialize;
-        public delegate* unmanaged<IGCHeap*, Object*, bool> IsPromoted;
-        public delegate* unmanaged<IGCHeap*, void*, bool, bool> IsHeapPointer;
-        public delegate* unmanaged<IGCHeap*, uint> GetCondemnedGeneration;
-        public delegate* unmanaged<IGCHeap*, bool, bool> IsGCInProgressHelper;
-        public delegate* unmanaged<IGCHeap*, uint> GetGcCount;
-        public delegate* unmanaged<IGCHeap*, gc_alloc_context*, int, bool> IsThreadUsingAllocationContextHeap;
-        public delegate* unmanaged<IGCHeap*, Object*, bool> IsEphemeral;
-        public delegate* unmanaged<IGCHeap*, bool, uint> WaitUntilGCComplete;
-        public delegate* unmanaged<IGCHeap*, gc_alloc_context*, void*, void*, void> FixAllocContext;
-        public delegate* unmanaged<IGCHeap*, nuint> GetCurrentObjSize;
-        public delegate* unmanaged<IGCHeap*, bool, void> SetGCInProgress;
-        public delegate* unmanaged<IGCHeap*, bool> RuntimeStructuresValid;
-        public delegate* unmanaged<IGCHeap*, bool, void> SetSuspensionPending;
-        public delegate* unmanaged<IGCHeap*, float, void> SetYieldProcessorScalingFactor;
-        public delegate* unmanaged<IGCHeap*, void> Shutdown;
-        public delegate* unmanaged<IGCHeap*, int, nuint> GetLastGCStartTime;
-        public delegate* unmanaged<IGCHeap*, int, nuint> GetLastGCDuration;
-        public delegate* unmanaged<IGCHeap*, nuint> GetNow;
-        public delegate* unmanaged<IGCHeap*, gc_alloc_context*, nuint, uint, Object*> Alloc;
-        public delegate* unmanaged<IGCHeap*, byte*, void> PublishObject;
-        public delegate* unmanaged<IGCHeap*, void> SetWaitForGCEvent;
-        public delegate* unmanaged<IGCHeap*, void> ResetWaitForGCEvent;
-        public delegate* unmanaged<IGCHeap*, Object*, bool> IsLargeObject;
-        public delegate* unmanaged<IGCHeap*, Object*, void> ValidateObjectMember;
-        public delegate* unmanaged<IGCHeap*, Object*, Object*> NextObj;
-        public delegate* unmanaged<IGCHeap*, void*, bool, Object*> GetContainingObject;
-        public delegate* unmanaged<IGCHeap*, Object*, delegate* unmanaged<Object*, void*, bool>, void*, void> DiagWalkObject;
-        public delegate* unmanaged<IGCHeap*, Object*, delegate* unmanaged<Object*, byte**, void*, bool>, void*, void> DiagWalkObject2;
-        public delegate* unmanaged<IGCHeap*, delegate* unmanaged<Object*, void*, bool>, void*, int, bool, void> DiagWalkHeap;
-        public delegate* unmanaged<IGCHeap*, void*, delegate* unmanaged<byte*, byte*, nint, void*, bool, bool, void>, void*, walk_surv_type, int, void> DiagWalkSurvivorsWithType;
-        public delegate* unmanaged<IGCHeap*, void*, delegate* unmanaged<bool, void*, void>, void> DiagWalkFinalizeQueue;
-        public delegate* unmanaged<IGCHeap*, delegate* unmanaged<Object**, ScanContext*, uint, void>, ScanContext*, void> DiagScanFinalizeQueue;
-        public delegate* unmanaged<IGCHeap*, delegate* unmanaged<Object**, Object*, uint, ScanContext*, bool, void>, int, ScanContext*, void> DiagScanHandles;
-        public delegate* unmanaged<IGCHeap*, delegate* unmanaged<Object**, Object*, uint, ScanContext*, bool, void>, int, ScanContext*, void> DiagScanDependentHandles;
-        public delegate* unmanaged<IGCHeap*, delegate* unmanaged<void*, int, byte*, byte*, byte*, void>, void*, void> DiagDescrGenerations;
-        public delegate* unmanaged<IGCHeap*, void> DiagTraceGCSegments;
-        public delegate* unmanaged<IGCHeap*, EtwGCSettingsInfo*, void> DiagGetGCSettings;
-        public delegate* unmanaged<IGCHeap*, gc_alloc_context*, bool> StressHeap;
-        public delegate* unmanaged<IGCHeap*, segment_info*, gc_heap_segment_stub*> RegisterFrozenSegment;
-        public delegate* unmanaged<IGCHeap*, gc_heap_segment_stub*, void> UnregisterFrozenSegment;
-        public delegate* unmanaged<IGCHeap*, Object*, bool> IsInFrozenSegment;
-        public delegate* unmanaged<IGCHeap*, GCEventKeyword, GCEventLevel, void> ControlEvents;
-        public delegate* unmanaged<IGCHeap*, GCEventKeyword, GCEventLevel, void> ControlPrivateEvents;
-        public delegate* unmanaged<IGCHeap*, Object*, byte**, byte**, byte**, uint> GetGenerationWithRange;
-        public delegate* unmanaged<IGCHeap*, long> GetTotalPauseDuration;
-        public delegate* unmanaged<IGCHeap*, void*, delegate* unmanaged<void*, byte*, byte*, GCConfigurationType, long, void>, void> EnumerateConfigurationValues;
-        public delegate* unmanaged<IGCHeap*, gc_heap_segment_stub*, byte*, byte*, void> UpdateFrozenSegment;
-        public delegate* unmanaged<IGCHeap*, int> RefreshMemoryLimit;
-        public delegate* unmanaged<IGCHeap*, NoGCRegionCallbackFinalizerWorkItem*, ulong, enable_no_gc_region_callback_status> EnableNoGCRegionCallback;
-        public delegate* unmanaged<IGCHeap*, FinalizerWorkItem*> GetExtraWorkForFinalization;
-        public delegate* unmanaged<IGCHeap*, int, ulong> GetGenerationBudget;
-        public delegate* unmanaged<IGCHeap*, nuint> GetLOHThreshold;
-        public delegate* unmanaged<IGCHeap*, delegate* unmanaged<Object*, void*, bool>, void*, int, bool, void> DiagWalkHeapWithACHandling;
-        public delegate* unmanaged<IGCHeap*, nuint, void*, void> NullBridgeObjectsWeakRefs;
+        public delegate*<IGCHeap*, uint> GetMemoryLoad;
+        public delegate*<IGCHeap*, int> GetGcLatencyMode;
+        public delegate*<IGCHeap*, int, int> SetGcLatencyMode;
+        public delegate*<IGCHeap*, int> GetLOHCompactionMode;
+        public delegate*<IGCHeap*, int, void> SetLOHCompactionMode;
+        public delegate*<IGCHeap*, uint, uint, bool> RegisterForFullGCNotification;
+        public delegate*<IGCHeap*, bool> CancelFullGCNotification;
+        public delegate*<IGCHeap*, int, int> WaitForFullGCApproach;
+        public delegate*<IGCHeap*, int, int> WaitForFullGCComplete;
+        public delegate*<IGCHeap*, Object*, uint> WhichGeneration;
+        public delegate*<IGCHeap*, int, int, int> CollectionCount;
+        public delegate*<IGCHeap*, ulong, bool, ulong, bool, int> StartNoGCRegion;
+        public delegate*<IGCHeap*, int> EndNoGCRegion;
+        public delegate*<IGCHeap*, nuint> GetTotalBytesInUse;
+        public delegate*<IGCHeap*, ulong> GetTotalAllocatedBytes;
+        public delegate*<IGCHeap*, int, bool, int, int> GarbageCollect;
+        public delegate*<IGCHeap*, uint> GetMaxGeneration;
+        public delegate*<IGCHeap*, Object*, void> SetFinalizationRun;
+        public delegate*<IGCHeap*, int, Object*, bool> RegisterForFinalization;
+        public delegate*<IGCHeap*, int> GetLastGCPercentTimeInGC;
+        public delegate*<IGCHeap*, int, nuint> GetLastGCGenerationSize;
+        public delegate*<IGCHeap*, int> Initialize;
+        public delegate*<IGCHeap*, Object*, bool> IsPromoted;
+        public delegate*<IGCHeap*, void*, bool, bool> IsHeapPointer;
+        public delegate*<IGCHeap*, uint> GetCondemnedGeneration;
+        public delegate*<IGCHeap*, bool, bool> IsGCInProgressHelper;
+        public delegate*<IGCHeap*, uint> GetGcCount;
+        public delegate*<IGCHeap*, gc_alloc_context*, int, bool> IsThreadUsingAllocationContextHeap;
+        public delegate*<IGCHeap*, Object*, bool> IsEphemeral;
+        public delegate*<IGCHeap*, bool, uint> WaitUntilGCComplete;
+        public delegate*<IGCHeap*, gc_alloc_context*, void*, void*, void> FixAllocContext;
+        public delegate*<IGCHeap*, nuint> GetCurrentObjSize;
+        public delegate*<IGCHeap*, bool, void> SetGCInProgress;
+        public delegate*<IGCHeap*, bool> RuntimeStructuresValid;
+        public delegate*<IGCHeap*, bool, void> SetSuspensionPending;
+        public delegate*<IGCHeap*, float, void> SetYieldProcessorScalingFactor;
+        public delegate*<IGCHeap*, void> Shutdown;
+        public delegate*<IGCHeap*, int, nuint> GetLastGCStartTime;
+        public delegate*<IGCHeap*, int, nuint> GetLastGCDuration;
+        public delegate*<IGCHeap*, nuint> GetNow;
+        public delegate*<IGCHeap*, gc_alloc_context*, nuint, uint, Object*> Alloc;
+        public delegate*<IGCHeap*, byte*, void> PublishObject;
+        public delegate*<IGCHeap*, void> SetWaitForGCEvent;
+        public delegate*<IGCHeap*, void> ResetWaitForGCEvent;
+        public delegate*<IGCHeap*, Object*, bool> IsLargeObject;
+        public delegate*<IGCHeap*, Object*, void> ValidateObjectMember;
+        public delegate*<IGCHeap*, Object*, Object*> NextObj;
+        public delegate*<IGCHeap*, void*, bool, Object*> GetContainingObject;
+        public delegate*<IGCHeap*, Object*, delegate* unmanaged[SuppressGCTransition]<Object*, void*, bool>, void*, void> DiagWalkObject;
+        public delegate*<IGCHeap*, Object*, delegate* unmanaged[SuppressGCTransition]<Object*, byte**, void*, bool>, void*, void> DiagWalkObject2;
+        public delegate*<IGCHeap*, delegate* unmanaged[SuppressGCTransition]<Object*, void*, bool>, void*, int, bool, void> DiagWalkHeap;
+        public delegate*<IGCHeap*, void*, delegate* unmanaged[SuppressGCTransition]<byte*, byte*, nint, void*, bool, bool, void>, void*, walk_surv_type, int, void> DiagWalkSurvivorsWithType;
+        public delegate*<IGCHeap*, void*, delegate* unmanaged[SuppressGCTransition]<bool, void*, void>, void> DiagWalkFinalizeQueue;
+        public delegate*<IGCHeap*, delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void>, ScanContext*, void> DiagScanFinalizeQueue;
+        public delegate*<IGCHeap*, delegate* unmanaged[SuppressGCTransition]<Object**, Object*, uint, ScanContext*, bool, void>, int, ScanContext*, void> DiagScanHandles;
+        public delegate*<IGCHeap*, delegate* unmanaged[SuppressGCTransition]<Object**, Object*, uint, ScanContext*, bool, void>, int, ScanContext*, void> DiagScanDependentHandles;
+        public delegate*<IGCHeap*, delegate* unmanaged[SuppressGCTransition]<void*, int, byte*, byte*, byte*, void>, void*, void> DiagDescrGenerations;
+        public delegate*<IGCHeap*, void> DiagTraceGCSegments;
+        public delegate*<IGCHeap*, EtwGCSettingsInfo*, void> DiagGetGCSettings;
+        public delegate*<IGCHeap*, gc_alloc_context*, bool> StressHeap;
+        public delegate*<IGCHeap*, segment_info*, gc_heap_segment_stub*> RegisterFrozenSegment;
+        public delegate*<IGCHeap*, gc_heap_segment_stub*, void> UnregisterFrozenSegment;
+        public delegate*<IGCHeap*, Object*, bool> IsInFrozenSegment;
+        public delegate*<IGCHeap*, GCEventKeyword, GCEventLevel, void> ControlEvents;
+        public delegate*<IGCHeap*, GCEventKeyword, GCEventLevel, void> ControlPrivateEvents;
+        public delegate*<IGCHeap*, Object*, byte**, byte**, byte**, uint> GetGenerationWithRange;
+        public delegate*<IGCHeap*, long> GetTotalPauseDuration;
+        public delegate*<IGCHeap*, void*, delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*, GCConfigurationType, long, void>, void> EnumerateConfigurationValues;
+        public delegate*<IGCHeap*, gc_heap_segment_stub*, byte*, byte*, void> UpdateFrozenSegment;
+        public delegate*<IGCHeap*, int> RefreshMemoryLimit;
+        public delegate*<IGCHeap*, NoGCRegionCallbackFinalizerWorkItem*, ulong, enable_no_gc_region_callback_status> EnableNoGCRegionCallback;
+        public delegate*<IGCHeap*, FinalizerWorkItem*> GetExtraWorkForFinalization;
+        public delegate*<IGCHeap*, int, ulong> GetGenerationBudget;
+        public delegate*<IGCHeap*, nuint> GetLOHThreshold;
+        public delegate*<IGCHeap*, delegate* unmanaged[SuppressGCTransition]<Object*, void*, bool>, void*, int, bool, void> DiagWalkHeapWithACHandling;
+        public delegate*<IGCHeap*, nuint, void*, void> NullBridgeObjectsWeakRefs;
     }
 
     internal unsafe struct IGCHandleManagerVtable
     {
-        public delegate* unmanaged<IGCHandleManager*, bool> Initialize;
-        public delegate* unmanaged<IGCHandleManager*, void> Shutdown;
-        public delegate* unmanaged<IGCHandleManager*, IGCHandleStore*> GetGlobalHandleStore;
-        public delegate* unmanaged<IGCHandleManager*, IGCHandleStore*> CreateHandleStore;
-        public delegate* unmanaged<IGCHandleManager*, IGCHandleStore*, void> DestroyHandleStore;
-        public delegate* unmanaged<IGCHandleManager*, Object*, HandleType, OBJECTHANDLE__*> CreateGlobalHandleOfType;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, OBJECTHANDLE__*> CreateDuplicateHandle;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, HandleType, void> DestroyHandleOfType;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, void> DestroyHandleOfUnknownType;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, HandleType, void*, void> SetExtraInfoForHandle;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, void*> GetExtraInfoFromHandle;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, Object*, void> StoreObjectInHandle;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, Object*, bool> StoreObjectInHandleIfNull;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, Object*, void> SetDependentHandleSecondary;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, Object*> GetDependentHandleSecondary;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, Object*, Object*, Object*> InterlockedCompareExchangeObjectInHandle;
-        public delegate* unmanaged<IGCHandleManager*, OBJECTHANDLE__*, HandleType> HandleFetchType;
-        public delegate* unmanaged<IGCHandleManager*, delegate* unmanaged<Object**, nuint*, nuint, nuint, void>, nuint, nuint, void> TraceRefCountedHandles;
+        public delegate*<IGCHandleManager*, bool> Initialize;
+        public delegate*<IGCHandleManager*, void> Shutdown;
+        public delegate*<IGCHandleManager*, IGCHandleStore*> GetGlobalHandleStore;
+        public delegate*<IGCHandleManager*, IGCHandleStore*> CreateHandleStore;
+        public delegate*<IGCHandleManager*, IGCHandleStore*, void> DestroyHandleStore;
+        public delegate*<IGCHandleManager*, Object*, HandleType, OBJECTHANDLE__*> CreateGlobalHandleOfType;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, OBJECTHANDLE__*> CreateDuplicateHandle;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, HandleType, void> DestroyHandleOfType;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, void> DestroyHandleOfUnknownType;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, HandleType, void*, void> SetExtraInfoForHandle;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, void*> GetExtraInfoFromHandle;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, Object*, void> StoreObjectInHandle;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, Object*, bool> StoreObjectInHandleIfNull;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, Object*, void> SetDependentHandleSecondary;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, Object*> GetDependentHandleSecondary;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, Object*, Object*, Object*> InterlockedCompareExchangeObjectInHandle;
+        public delegate*<IGCHandleManager*, OBJECTHANDLE__*, HandleType> HandleFetchType;
+        public delegate*<IGCHandleManager*, delegate* unmanaged[SuppressGCTransition]<Object**, nuint*, nuint, nuint, void>, nuint, nuint, void> TraceRefCountedHandles;
     }
 
     internal unsafe struct GCExports

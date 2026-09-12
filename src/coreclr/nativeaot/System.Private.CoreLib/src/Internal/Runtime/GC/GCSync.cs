@@ -4,6 +4,8 @@
 #if TARGET_UNIX
 
 using System;
+using System.Runtime;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 #pragma warning disable IDE0060
@@ -19,62 +21,81 @@ namespace Internal.Runtime.GC
             public nint tv_nsec;
         }
 
-        [LibraryImport("libc", EntryPoint = "pthread_self")]
-        internal static partial nuint pthread_self();
+        [RuntimeImport("*", "pthread_self")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern nuint pthread_self();
 
-        [LibraryImport("libc", EntryPoint = "pthread_equal")]
-        internal static partial int pthread_equal(nuint thread1, nuint thread2);
+        [RuntimeImport("*", "pthread_equal")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_equal(nuint thread1, nuint thread2);
 
-        [LibraryImport("libc", EntryPoint = "pthread_mutexattr_init")]
-        internal static partial int pthread_mutexattr_init(byte* attributes);
+        [RuntimeImport("*", "pthread_mutexattr_init")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_mutexattr_init(byte* attributes);
 
-        [LibraryImport("libc", EntryPoint = "pthread_mutexattr_settype")]
-        internal static partial int pthread_mutexattr_settype(byte* attributes, int kind);
+        [RuntimeImport("*", "pthread_mutexattr_settype")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_mutexattr_settype(byte* attributes, int kind);
 
-        [LibraryImport("libc", EntryPoint = "pthread_mutexattr_destroy")]
-        internal static partial int pthread_mutexattr_destroy(byte* attributes);
+        [RuntimeImport("*", "pthread_mutexattr_destroy")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_mutexattr_destroy(byte* attributes);
 
-        [LibraryImport("libc", EntryPoint = "pthread_mutex_init")]
-        internal static partial int pthread_mutex_init(byte* mutex, byte* attributes);
+        [RuntimeImport("*", "pthread_mutex_init")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_mutex_init(byte* mutex, byte* attributes);
 
-        [LibraryImport("libc", EntryPoint = "pthread_mutex_destroy")]
-        internal static partial int pthread_mutex_destroy(byte* mutex);
+        [RuntimeImport("*", "pthread_mutex_destroy")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_mutex_destroy(byte* mutex);
 
-        [LibraryImport("libc", EntryPoint = "pthread_mutex_lock")]
-        internal static partial int pthread_mutex_lock(byte* mutex);
+        [RuntimeImport("*", "pthread_mutex_lock")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_mutex_lock(byte* mutex);
 
-        [LibraryImport("libc", EntryPoint = "pthread_mutex_unlock")]
-        internal static partial int pthread_mutex_unlock(byte* mutex);
+        [RuntimeImport("*", "pthread_mutex_unlock")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_mutex_unlock(byte* mutex);
 
-        [LibraryImport("libc", EntryPoint = "pthread_condattr_init")]
-        internal static partial int pthread_condattr_init(byte* attributes);
+        [RuntimeImport("*", "pthread_condattr_init")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_condattr_init(byte* attributes);
 
-        [LibraryImport("libc", EntryPoint = "pthread_condattr_setclock")]
-        internal static partial int pthread_condattr_setclock(byte* attributes, int clockId);
+        [RuntimeImport("*", "pthread_condattr_setclock")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_condattr_setclock(byte* attributes, int clockId);
 
-        [LibraryImport("libc", EntryPoint = "pthread_cond_init")]
-        internal static partial int pthread_cond_init(byte* condition, byte* attributes);
+        [RuntimeImport("*", "pthread_cond_init")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_cond_init(byte* condition, byte* attributes);
 
-        [LibraryImport("libc", EntryPoint = "pthread_cond_destroy")]
-        internal static partial int pthread_cond_destroy(byte* condition);
+        [RuntimeImport("*", "pthread_cond_destroy")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_cond_destroy(byte* condition);
 
-        [LibraryImport("libc", EntryPoint = "pthread_cond_wait")]
-        internal static partial int pthread_cond_wait(byte* condition, byte* mutex);
+        [RuntimeImport("*", "pthread_cond_wait")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_cond_wait(byte* condition, byte* mutex);
 
-        [LibraryImport("libc", EntryPoint = "pthread_cond_timedwait")]
-        internal static partial int pthread_cond_timedwait(byte* condition, byte* mutex, Timespec* abstime);
+        [RuntimeImport("*", "pthread_cond_timedwait")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_cond_timedwait(byte* condition, byte* mutex, Timespec* abstime);
 
-        [LibraryImport("libc", EntryPoint = "pthread_cond_broadcast")]
-        internal static partial int pthread_cond_broadcast(byte* condition);
+        [RuntimeImport("*", "pthread_cond_broadcast")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int pthread_cond_broadcast(byte* condition);
 
-        [LibraryImport("libc", EntryPoint = "clock_gettime")]
-        internal static partial int clock_gettime(int clockId, Timespec* time);
+        [RuntimeImport("*", "clock_gettime")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int clock_gettime(int clockId, Timespec* time);
 
-        [LibraryImport("libc", EntryPoint = "malloc")]
-        internal static partial void* malloc(nuint size);
+        [RuntimeImport("*", "malloc")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern void* malloc(nuint size);
 
-        [LibraryImport("libc", EntryPoint = "free")]
-        internal static partial void free(void* pointer);
+        [RuntimeImport("*", "free")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern void free(void* pointer);
     }
 
     internal unsafe partial struct EEThreadId

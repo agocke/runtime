@@ -35,20 +35,25 @@ namespace Internal.Runtime.GC
         [LibraryImport("libc", EntryPoint = "sched_yield")]
         internal static partial int sched_yield();
 
-        [LibraryImport("libc", EntryPoint = "madvise")]
-        internal static partial int madvise(void* address, nuint size, int advice);
+        [RuntimeImport("*", "madvise")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int madvise(void* address, nuint size, int advice);
 
-        [LibraryImport("libc", EntryPoint = "mmap")]
-        internal static partial void* mmap(void* address, nuint size, int protection, int flags, int fd, nint offset);
+        [RuntimeImport("*", "mmap")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern void* mmap(void* address, nuint size, int protection, int flags, int fd, nint offset);
 
-        [LibraryImport("libc", EntryPoint = "munmap")]
-        internal static partial int munmap(void* address, nuint size);
+        [RuntimeImport("*", "munmap")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int munmap(void* address, nuint size);
 
-        [LibraryImport("libc", EntryPoint = "mprotect")]
-        internal static partial int mprotect(void* address, nuint size, int protection);
+        [RuntimeImport("*", "mprotect")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int mprotect(void* address, nuint size, int protection);
 
-        [LibraryImport("libc", EntryPoint = "sched_getaffinity")]
-        internal static partial int sched_getaffinity(int pid, nuint size, byte* mask);
+        [RuntimeImport("*", "sched_getaffinity")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern int sched_getaffinity(int pid, nuint size, byte* mask);
 
         [LibraryImport("libc", EntryPoint = "raise")]
         internal static partial int raise(int signal);
@@ -56,14 +61,17 @@ namespace Internal.Runtime.GC
         [LibraryImport("libc", EntryPoint = "getrlimit")]
         internal static partial int getrlimit(int resource, Rlimit* limit);
 
-        [LibraryImport("libc", EntryPoint = "free")]
-        internal static partial void free(void* pointer);
+        [RuntimeImport("*", "free")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern void free(void* pointer);
 
-        [LibraryImport("libc", EntryPoint = "malloc")]
-        internal static partial void* malloc(nuint size);
+        [RuntimeImport("*", "malloc")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern void* malloc(nuint size);
 
-        [LibraryImport("libc", EntryPoint = "sysconf")]
-        internal static partial long sysconf(int name);
+        [RuntimeImport("*", "sysconf")]
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern long sysconf(int name);
 
         [StructLayout(LayoutKind.Sequential)]
         internal struct Rlimit
@@ -75,7 +83,19 @@ namespace Internal.Runtime.GC
 
     internal unsafe partial struct GCToOSInterface
     {
+#if TARGET_LINUX
+        private const int SC_PAGESIZE = 30;
+        private const int SC_NPROCESSORS_ONLN = 84;
         private const int SC_PHYS_PAGES = 85;
+#elif TARGET_APPLE
+        private const int SC_PAGESIZE = 29;
+        private const int SC_NPROCESSORS_ONLN = 58;
+        private const int SC_PHYS_PAGES = 200;
+#else
+        private const int SC_PAGESIZE = -1;
+        private const int SC_NPROCESSORS_ONLN = -1;
+        private const int SC_PHYS_PAGES = -1;
+#endif
         private const int MADV_DONTDUMP = 16;
         private const int MADV_DODUMP = 17;
         private const int MADV_FREE = 8;
@@ -88,12 +108,16 @@ namespace Internal.Runtime.GC
         private const int PROT_WRITE = 2;
         private const int SIGTRAP = 5;
         private const int RLIMIT_AS = 9;
-        private const int SC_NPROCESSORS_ONLN = 84;
         private const int CPU_SETSIZE = 1024;
 
         public static bool Initialize()
         {
-            long pageSize = Interop.Sys.SysConf(Interop.Sys.SysConfName._SC_PAGESIZE);
+            if (!IsSupportedUnixTarget())
+            {
+                return false;
+            }
+
+            long pageSize = GCUnixImports.sysconf(SC_PAGESIZE);
             long totalCpuCount = GCUnixImports.sysconf(SC_NPROCESSORS_ONLN);
             int configuredCpuCount = GCUnixImports.minipal_get_cpu_max_possible_count();
             if (configuredCpuCount == -1)
@@ -177,6 +201,21 @@ namespace Internal.Runtime.GC
 
             s_totalPhysicalMemSize = (ulong)physicalPages * s_pageSize;
             return true;
+        }
+
+        private static bool IsSupportedUnixTarget()
+        {
+            return SC_PAGESIZE >= 0;
+        }
+
+        public static void* AllocateUnmanaged(nuint size)
+        {
+            return GCUnixImports.malloc(size);
+        }
+
+        public static void FreeUnmanaged(void* address)
+        {
+            GCUnixImports.free(address);
         }
 
         public static void Shutdown()

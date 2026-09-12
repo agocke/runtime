@@ -8,6 +8,8 @@ namespace Internal.Runtime.GC
 {
     internal unsafe struct ObjHeader
     {
+        public const uint BIT_SBLK_FINALIZER_RUN = 0x40000000;
+
         public uint m_uAlignpad;
         public uint m_uSyncBlockValue;
 

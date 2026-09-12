@@ -64,6 +64,12 @@ namespace Internal.Runtime.GC
             }
 
             GCCommon.g_theGCToCLR = clrToGC;
+            int initializationResult = GCWksInitialization.Initialize();
+            if (initializationResult != 0)
+            {
+                return initializationResult;
+            }
+
             InitializeVtables();
             fixed (IGCHeap* heap = &s_heap)
             fixed (IGCHandleManager* handleManager = &s_handleManager)
@@ -72,8 +78,7 @@ namespace Internal.Runtime.GC
                 *gcHandleManager = handleManager;
             }
 
-            // E_NOTIMPL prevents the native startup path from publishing these probe objects.
-            return E_NOTIMPL;
+            return 0;
         }
 
         private static void InitializeVtables()
@@ -88,15 +93,15 @@ namespace Internal.Runtime.GC
             }
 
             s_heapVtable = default;
-            s_heapVtable.IsValidSegmentSize = &Stub_IsValidSegmentSize;
-            s_heapVtable.IsValidGen0MaxSize = &Stub_IsValidGen0MaxSize;
-            s_heapVtable.GetValidSegmentSize = &Stub_GetValidSegmentSize;
+            s_heapVtable.IsValidSegmentSize = &GCWksInitialization.IsValidSegmentSize;
+            s_heapVtable.IsValidGen0MaxSize = &GCWksInitialization.IsValidGen0MaxSize;
+            s_heapVtable.GetValidSegmentSize = &GCWksInitialization.GetValidSegmentSize;
             s_heapVtable.SetReservedVMLimit = &Stub_SetReservedVMLimit;
             s_heapVtable.WaitUntilConcurrentGCComplete = &Stub_WaitUntilConcurrentGCComplete;
             s_heapVtable.IsConcurrentGCInProgress = &Stub_IsConcurrentGCInProgress;
             s_heapVtable.TemporaryEnableConcurrentGC = &Stub_TemporaryEnableConcurrentGC;
             s_heapVtable.TemporaryDisableConcurrentGC = &Stub_TemporaryDisableConcurrentGC;
-            s_heapVtable.IsConcurrentGCEnabled = &Stub_IsConcurrentGCEnabled;
+            s_heapVtable.IsConcurrentGCEnabled = &GCWksInitialization.IsConcurrentGCEnabled;
             s_heapVtable.WaitUntilConcurrentGCCompleteAsync = &Stub_WaitUntilConcurrentGCCompleteAsync;
             s_heapVtable.GetNumberOfFinalizable = &Stub_GetNumberOfFinalizable;
             s_heapVtable.GetNextFinalizable = &Stub_GetNextFinalizable;
@@ -117,18 +122,18 @@ namespace Internal.Runtime.GC
             s_heapVtable.GetTotalBytesInUse = &Stub_GetTotalBytesInUse;
             s_heapVtable.GetTotalAllocatedBytes = &Stub_GetTotalAllocatedBytes;
             s_heapVtable.GarbageCollect = &Stub_GarbageCollect;
-            s_heapVtable.GetMaxGeneration = &Stub_GetMaxGeneration;
-            s_heapVtable.SetFinalizationRun = &Stub_SetFinalizationRun;
-            s_heapVtable.RegisterForFinalization = &Stub_RegisterForFinalization;
+            s_heapVtable.GetMaxGeneration = &GCWksInitialization.GetMaxGeneration;
+            s_heapVtable.SetFinalizationRun = &GCWksInitialization.SetFinalizationRun;
+            s_heapVtable.RegisterForFinalization = &GCWksInitialization.RegisterForFinalization;
             s_heapVtable.GetLastGCPercentTimeInGC = &Stub_GetLastGCPercentTimeInGC;
             s_heapVtable.GetLastGCGenerationSize = &Stub_GetLastGCGenerationSize;
-            s_heapVtable.Initialize = &Stub_Initialize;
+            s_heapVtable.Initialize = &GCWksInitialization.InitializeHeap;
             s_heapVtable.IsPromoted = &Stub_IsPromoted;
             s_heapVtable.IsHeapPointer = &Stub_IsHeapPointer;
             s_heapVtable.GetCondemnedGeneration = &Stub_GetCondemnedGeneration;
             s_heapVtable.IsGCInProgressHelper = &Stub_IsGCInProgressHelper;
             s_heapVtable.GetGcCount = &Stub_GetGcCount;
-            s_heapVtable.IsThreadUsingAllocationContextHeap = &Stub_IsThreadUsingAllocationContextHeap;
+            s_heapVtable.IsThreadUsingAllocationContextHeap = &GCWksInitialization.IsThreadUsingAllocationContextHeap;
             s_heapVtable.IsEphemeral = &Stub_IsEphemeral;
             s_heapVtable.WaitUntilGCComplete = &Stub_WaitUntilGCComplete;
             s_heapVtable.FixAllocContext = &Stub_FixAllocContext;
@@ -137,12 +142,12 @@ namespace Internal.Runtime.GC
             s_heapVtable.RuntimeStructuresValid = &Stub_RuntimeStructuresValid;
             s_heapVtable.SetSuspensionPending = &Stub_SetSuspensionPending;
             s_heapVtable.SetYieldProcessorScalingFactor = &Stub_SetYieldProcessorScalingFactor;
-            s_heapVtable.Shutdown = &Stub_Shutdown;
+            s_heapVtable.Shutdown = &GCWksInitialization.Shutdown;
             s_heapVtable.GetLastGCStartTime = &Stub_GetLastGCStartTime;
             s_heapVtable.GetLastGCDuration = &Stub_GetLastGCDuration;
             s_heapVtable.GetNow = &Stub_GetNow;
-            s_heapVtable.Alloc = &Stub_Alloc;
-            s_heapVtable.PublishObject = &Stub_PublishObject;
+            s_heapVtable.Alloc = &GCWksInitialization.Alloc;
+            s_heapVtable.PublishObject = &GCWksInitialization.PublishObject;
             s_heapVtable.SetWaitForGCEvent = &Stub_SetWaitForGCEvent;
             s_heapVtable.ResetWaitForGCEvent = &Stub_ResetWaitForGCEvent;
             s_heapVtable.IsLargeObject = &Stub_IsLargeObject;
@@ -161,44 +166,43 @@ namespace Internal.Runtime.GC
             s_heapVtable.DiagTraceGCSegments = &Stub_DiagTraceGCSegments;
             s_heapVtable.DiagGetGCSettings = &Stub_DiagGetGCSettings;
             s_heapVtable.StressHeap = &Stub_StressHeap;
-            s_heapVtable.RegisterFrozenSegment = &Stub_RegisterFrozenSegment;
-            s_heapVtable.UnregisterFrozenSegment = &Stub_UnregisterFrozenSegment;
-            s_heapVtable.IsInFrozenSegment = &Stub_IsInFrozenSegment;
-            s_heapVtable.ControlEvents = &Stub_ControlEvents;
-            s_heapVtable.ControlPrivateEvents = &Stub_ControlPrivateEvents;
+            s_heapVtable.RegisterFrozenSegment = &GCWksInitialization.RegisterFrozenSegment;
+            s_heapVtable.UnregisterFrozenSegment = &GCWksInitialization.UnregisterFrozenSegment;
+            s_heapVtable.IsInFrozenSegment = &GCWksInitialization.IsInFrozenSegment;
+            s_heapVtable.ControlEvents = &GCWksInitialization.ControlEvents;
+            s_heapVtable.ControlPrivateEvents = &GCWksInitialization.ControlPrivateEvents;
             s_heapVtable.GetGenerationWithRange = &Stub_GetGenerationWithRange;
             s_heapVtable.GetTotalPauseDuration = &Stub_GetTotalPauseDuration;
             s_heapVtable.EnumerateConfigurationValues = &Stub_EnumerateConfigurationValues;
-            s_heapVtable.UpdateFrozenSegment = &Stub_UpdateFrozenSegment;
+            s_heapVtable.UpdateFrozenSegment = &GCWksInitialization.UpdateFrozenSegment;
             s_heapVtable.RefreshMemoryLimit = &Stub_RefreshMemoryLimit;
             s_heapVtable.EnableNoGCRegionCallback = &Stub_EnableNoGCRegionCallback;
             s_heapVtable.GetExtraWorkForFinalization = &Stub_GetExtraWorkForFinalization;
             s_heapVtable.GetGenerationBudget = &Stub_GetGenerationBudget;
-            s_heapVtable.GetLOHThreshold = &Stub_GetLOHThreshold;
+            s_heapVtable.GetLOHThreshold = &GCWksInitialization.GetLOHThreshold;
             s_heapVtable.DiagWalkHeapWithACHandling = &Stub_DiagWalkHeapWithACHandling;
             s_heapVtable.NullBridgeObjectsWeakRefs = &Stub_NullBridgeObjectsWeakRefs;
             s_handleManagerVtable = default;
-            s_handleManagerVtable.Initialize = &Stub_Initialize;
-            s_handleManagerVtable.Shutdown = &Stub_Shutdown;
-            s_handleManagerVtable.GetGlobalHandleStore = &Stub_GetGlobalHandleStore;
-            s_handleManagerVtable.CreateHandleStore = &Stub_CreateHandleStore;
-            s_handleManagerVtable.DestroyHandleStore = &Stub_DestroyHandleStore;
-            s_handleManagerVtable.CreateGlobalHandleOfType = &Stub_CreateGlobalHandleOfType;
-            s_handleManagerVtable.CreateDuplicateHandle = &Stub_CreateDuplicateHandle;
-            s_handleManagerVtable.DestroyHandleOfType = &Stub_DestroyHandleOfType;
-            s_handleManagerVtable.DestroyHandleOfUnknownType = &Stub_DestroyHandleOfUnknownType;
-            s_handleManagerVtable.SetExtraInfoForHandle = &Stub_SetExtraInfoForHandle;
-            s_handleManagerVtable.GetExtraInfoFromHandle = &Stub_GetExtraInfoFromHandle;
-            s_handleManagerVtable.StoreObjectInHandle = &Stub_StoreObjectInHandle;
-            s_handleManagerVtable.StoreObjectInHandleIfNull = &Stub_StoreObjectInHandleIfNull;
-            s_handleManagerVtable.SetDependentHandleSecondary = &Stub_SetDependentHandleSecondary;
-            s_handleManagerVtable.GetDependentHandleSecondary = &Stub_GetDependentHandleSecondary;
-            s_handleManagerVtable.InterlockedCompareExchangeObjectInHandle = &Stub_InterlockedCompareExchangeObjectInHandle;
-            s_handleManagerVtable.HandleFetchType = &Stub_HandleFetchType;
-            s_handleManagerVtable.TraceRefCountedHandles = &Stub_TraceRefCountedHandles;
+            s_handleManagerVtable.Initialize = &GCHandleTables.ManagerInitialize;
+            s_handleManagerVtable.Shutdown = &GCHandleTables.ManagerShutdown;
+            s_handleManagerVtable.GetGlobalHandleStore = &GCHandleTables.ManagerGetGlobalHandleStore;
+            s_handleManagerVtable.CreateHandleStore = &GCHandleTables.ManagerCreateHandleStore;
+            s_handleManagerVtable.DestroyHandleStore = &GCHandleTables.ManagerDestroyHandleStore;
+            s_handleManagerVtable.CreateGlobalHandleOfType = &GCHandleTables.ManagerCreateGlobalHandleOfType;
+            s_handleManagerVtable.CreateDuplicateHandle = &GCHandleTables.ManagerCreateDuplicateHandle;
+            s_handleManagerVtable.DestroyHandleOfType = &GCHandleTables.ManagerDestroyHandleOfType;
+            s_handleManagerVtable.DestroyHandleOfUnknownType = &GCHandleTables.ManagerDestroyHandleOfUnknownType;
+            s_handleManagerVtable.SetExtraInfoForHandle = &GCHandleTables.ManagerSetExtraInfoForHandle;
+            s_handleManagerVtable.GetExtraInfoFromHandle = &GCHandleTables.ManagerGetExtraInfoFromHandle;
+            s_handleManagerVtable.StoreObjectInHandle = &GCHandleTables.ManagerStoreObjectInHandle;
+            s_handleManagerVtable.StoreObjectInHandleIfNull = &GCHandleTables.ManagerStoreObjectInHandleIfNull;
+            s_handleManagerVtable.SetDependentHandleSecondary = &GCHandleTables.ManagerSetDependentHandleSecondary;
+            s_handleManagerVtable.GetDependentHandleSecondary = &GCHandleTables.ManagerGetDependentHandleSecondary;
+            s_handleManagerVtable.InterlockedCompareExchangeObjectInHandle = &GCHandleTables.ManagerInterlockedCompareExchangeObjectInHandle;
+            s_handleManagerVtable.HandleFetchType = &GCHandleTables.ManagerHandleFetchType;
+            s_handleManagerVtable.TraceRefCountedHandles = &GCHandleTables.ManagerTraceRefCountedHandles;
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsValidSegmentSize(IGCHeap* p0, nuint p1)
         {
             _ = p0;
@@ -207,7 +211,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsValidGen0MaxSize(IGCHeap* p0, nuint p1)
         {
             _ = p0;
@@ -216,7 +219,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetValidSegmentSize(IGCHeap* p0, bool p1)
         {
             _ = p0;
@@ -225,7 +227,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetReservedVMLimit(IGCHeap* p0, nuint p1)
         {
             _ = p0;
@@ -233,14 +234,12 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_WaitUntilConcurrentGCComplete(IGCHeap* p0)
         {
             _ = p0;
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsConcurrentGCInProgress(IGCHeap* p0)
         {
             _ = p0;
@@ -248,21 +247,18 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_TemporaryEnableConcurrentGC(IGCHeap* p0)
         {
             _ = p0;
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_TemporaryDisableConcurrentGC(IGCHeap* p0)
         {
             _ = p0;
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsConcurrentGCEnabled(IGCHeap* p0)
         {
             _ = p0;
@@ -270,7 +266,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_WaitUntilConcurrentGCCompleteAsync(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -279,7 +274,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetNumberOfFinalizable(IGCHeap* p0)
         {
             _ = p0;
@@ -287,7 +281,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static Object* Stub_GetNextFinalizable(IGCHeap* p0)
         {
             _ = p0;
@@ -295,7 +288,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_GetMemoryInfo(IGCHeap* p0, ulong* p1, ulong* p2, ulong* p3, ulong* p4, ulong* p5, ulong* p6, ulong* p7, ulong* p8, ulong* p9, ulong* p10, uint* p11, uint* p12, bool* p13, bool* p14, ulong* p15, ulong* p16, int p17)
         {
             _ = p0;
@@ -319,7 +311,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static uint Stub_GetMemoryLoad(IGCHeap* p0)
         {
             _ = p0;
@@ -327,7 +318,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_GetGcLatencyMode(IGCHeap* p0)
         {
             _ = p0;
@@ -335,7 +325,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_SetGcLatencyMode(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -344,7 +333,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_GetLOHCompactionMode(IGCHeap* p0)
         {
             _ = p0;
@@ -352,7 +340,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetLOHCompactionMode(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -360,7 +347,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_RegisterForFullGCNotification(IGCHeap* p0, uint p1, uint p2)
         {
             _ = p0;
@@ -370,7 +356,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_CancelFullGCNotification(IGCHeap* p0)
         {
             _ = p0;
@@ -378,7 +363,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_WaitForFullGCApproach(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -387,7 +371,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_WaitForFullGCComplete(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -396,7 +379,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static uint Stub_WhichGeneration(IGCHeap* p0, Object* p1)
         {
             _ = p0;
@@ -405,7 +387,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_CollectionCount(IGCHeap* p0, int p1, int p2)
         {
             _ = p0;
@@ -415,7 +396,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_StartNoGCRegion(IGCHeap* p0, ulong p1, bool p2, ulong p3, bool p4)
         {
             _ = p0;
@@ -427,7 +407,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_EndNoGCRegion(IGCHeap* p0)
         {
             _ = p0;
@@ -435,7 +414,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetTotalBytesInUse(IGCHeap* p0)
         {
             _ = p0;
@@ -443,7 +421,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static ulong Stub_GetTotalAllocatedBytes(IGCHeap* p0)
         {
             _ = p0;
@@ -451,7 +428,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_GarbageCollect(IGCHeap* p0, int p1, bool p2, int p3)
         {
             _ = p0;
@@ -462,7 +438,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static uint Stub_GetMaxGeneration(IGCHeap* p0)
         {
             _ = p0;
@@ -470,7 +445,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetFinalizationRun(IGCHeap* p0, Object* p1)
         {
             _ = p0;
@@ -478,7 +452,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_RegisterForFinalization(IGCHeap* p0, int p1, Object* p2)
         {
             _ = p0;
@@ -488,7 +461,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_GetLastGCPercentTimeInGC(IGCHeap* p0)
         {
             _ = p0;
@@ -496,7 +468,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetLastGCGenerationSize(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -505,7 +476,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_Initialize(IGCHeap* p0)
         {
             _ = p0;
@@ -513,7 +483,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsPromoted(IGCHeap* p0, Object* p1)
         {
             _ = p0;
@@ -522,7 +491,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsHeapPointer(IGCHeap* p0, void* p1, bool p2)
         {
             _ = p0;
@@ -532,7 +500,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static uint Stub_GetCondemnedGeneration(IGCHeap* p0)
         {
             _ = p0;
@@ -540,7 +507,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsGCInProgressHelper(IGCHeap* p0, bool p1)
         {
             _ = p0;
@@ -549,7 +515,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static uint Stub_GetGcCount(IGCHeap* p0)
         {
             _ = p0;
@@ -557,7 +522,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsThreadUsingAllocationContextHeap(IGCHeap* p0, gc_alloc_context* p1, int p2)
         {
             _ = p0;
@@ -567,7 +531,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsEphemeral(IGCHeap* p0, Object* p1)
         {
             _ = p0;
@@ -576,7 +539,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static uint Stub_WaitUntilGCComplete(IGCHeap* p0, bool p1)
         {
             _ = p0;
@@ -585,7 +547,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_FixAllocContext(IGCHeap* p0, gc_alloc_context* p1, void* p2, void* p3)
         {
             _ = p0;
@@ -595,7 +556,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetCurrentObjSize(IGCHeap* p0)
         {
             _ = p0;
@@ -603,7 +563,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetGCInProgress(IGCHeap* p0, bool p1)
         {
             _ = p0;
@@ -611,7 +570,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_RuntimeStructuresValid(IGCHeap* p0)
         {
             _ = p0;
@@ -619,7 +577,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetSuspensionPending(IGCHeap* p0, bool p1)
         {
             _ = p0;
@@ -627,7 +584,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetYieldProcessorScalingFactor(IGCHeap* p0, float p1)
         {
             _ = p0;
@@ -635,14 +591,12 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_Shutdown(IGCHeap* p0)
         {
             _ = p0;
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetLastGCStartTime(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -651,7 +605,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetLastGCDuration(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -660,7 +613,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetNow(IGCHeap* p0)
         {
             _ = p0;
@@ -668,7 +620,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static Object* Stub_Alloc(IGCHeap* p0, gc_alloc_context* p1, nuint p2, uint p3)
         {
             _ = p0;
@@ -679,7 +630,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_PublishObject(IGCHeap* p0, byte* p1)
         {
             _ = p0;
@@ -687,21 +637,18 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetWaitForGCEvent(IGCHeap* p0)
         {
             _ = p0;
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_ResetWaitForGCEvent(IGCHeap* p0)
         {
             _ = p0;
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsLargeObject(IGCHeap* p0, Object* p1)
         {
             _ = p0;
@@ -710,7 +657,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_ValidateObjectMember(IGCHeap* p0, Object* p1)
         {
             _ = p0;
@@ -718,7 +664,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static Object* Stub_NextObj(IGCHeap* p0, Object* p1)
         {
             _ = p0;
@@ -727,7 +672,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static Object* Stub_GetContainingObject(IGCHeap* p0, void* p1, bool p2)
         {
             _ = p0;
@@ -737,8 +681,7 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagWalkObject(IGCHeap* p0, Object* p1, delegate* unmanaged<Object*, void*, bool> p2, void* p3)
+        private static void Stub_DiagWalkObject(IGCHeap* p0, Object* p1, delegate* unmanaged[SuppressGCTransition]<Object*, void*, bool> p2, void* p3)
         {
             _ = p0;
             _ = p1;
@@ -747,8 +690,7 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagWalkObject2(IGCHeap* p0, Object* p1, delegate* unmanaged<Object*, byte**, void*, bool> p2, void* p3)
+        private static void Stub_DiagWalkObject2(IGCHeap* p0, Object* p1, delegate* unmanaged[SuppressGCTransition]<Object*, byte**, void*, bool> p2, void* p3)
         {
             _ = p0;
             _ = p1;
@@ -757,8 +699,7 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagWalkHeap(IGCHeap* p0, delegate* unmanaged<Object*, void*, bool> p1, void* p2, int p3, bool p4)
+        private static void Stub_DiagWalkHeap(IGCHeap* p0, delegate* unmanaged[SuppressGCTransition]<Object*, void*, bool> p1, void* p2, int p3, bool p4)
         {
             _ = p0;
             _ = p1;
@@ -768,8 +709,7 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagWalkSurvivorsWithType(IGCHeap* p0, void* p1, delegate* unmanaged<byte*, byte*, nint, void*, bool, bool, void> p2, void* p3, walk_surv_type p4, int p5)
+        private static void Stub_DiagWalkSurvivorsWithType(IGCHeap* p0, void* p1, delegate* unmanaged[SuppressGCTransition]<byte*, byte*, nint, void*, bool, bool, void> p2, void* p3, walk_surv_type p4, int p5)
         {
             _ = p0;
             _ = p1;
@@ -780,8 +720,7 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagWalkFinalizeQueue(IGCHeap* p0, void* p1, delegate* unmanaged<bool, void*, void> p2)
+        private static void Stub_DiagWalkFinalizeQueue(IGCHeap* p0, void* p1, delegate* unmanaged[SuppressGCTransition]<bool, void*, void> p2)
         {
             _ = p0;
             _ = p1;
@@ -789,8 +728,7 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagScanFinalizeQueue(IGCHeap* p0, delegate* unmanaged<Object**, ScanContext*, uint, void> p1, ScanContext* p2)
+        private static void Stub_DiagScanFinalizeQueue(IGCHeap* p0, delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> p1, ScanContext* p2)
         {
             _ = p0;
             _ = p1;
@@ -798,18 +736,7 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagScanHandles(IGCHeap* p0, delegate* unmanaged<Object**, Object*, uint, ScanContext*, bool, void> p1, int p2, ScanContext* p3)
-        {
-            _ = p0;
-            _ = p1;
-            _ = p2;
-            _ = p3;
-            FailFast();
-        }
-
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagScanDependentHandles(IGCHeap* p0, delegate* unmanaged<Object**, Object*, uint, ScanContext*, bool, void> p1, int p2, ScanContext* p3)
+        private static void Stub_DiagScanHandles(IGCHeap* p0, delegate* unmanaged[SuppressGCTransition]<Object**, Object*, uint, ScanContext*, bool, void> p1, int p2, ScanContext* p3)
         {
             _ = p0;
             _ = p1;
@@ -818,8 +745,16 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagDescrGenerations(IGCHeap* p0, delegate* unmanaged<void*, int, byte*, byte*, byte*, void> p1, void* p2)
+        private static void Stub_DiagScanDependentHandles(IGCHeap* p0, delegate* unmanaged[SuppressGCTransition]<Object**, Object*, uint, ScanContext*, bool, void> p1, int p2, ScanContext* p3)
+        {
+            _ = p0;
+            _ = p1;
+            _ = p2;
+            _ = p3;
+            FailFast();
+        }
+
+        private static void Stub_DiagDescrGenerations(IGCHeap* p0, delegate* unmanaged[SuppressGCTransition]<void*, int, byte*, byte*, byte*, void> p1, void* p2)
         {
             _ = p0;
             _ = p1;
@@ -827,14 +762,12 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_DiagTraceGCSegments(IGCHeap* p0)
         {
             _ = p0;
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_DiagGetGCSettings(IGCHeap* p0, EtwGCSettingsInfo* p1)
         {
             _ = p0;
@@ -842,7 +775,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_StressHeap(IGCHeap* p0, gc_alloc_context* p1)
         {
             _ = p0;
@@ -851,7 +783,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static gc_heap_segment_stub* Stub_RegisterFrozenSegment(IGCHeap* p0, segment_info* p1)
         {
             _ = p0;
@@ -860,7 +791,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_UnregisterFrozenSegment(IGCHeap* p0, gc_heap_segment_stub* p1)
         {
             _ = p0;
@@ -868,7 +798,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_IsInFrozenSegment(IGCHeap* p0, Object* p1)
         {
             _ = p0;
@@ -877,7 +806,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_ControlEvents(IGCHeap* p0, GCEventKeyword p1, GCEventLevel p2)
         {
             _ = p0;
@@ -886,7 +814,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_ControlPrivateEvents(IGCHeap* p0, GCEventKeyword p1, GCEventLevel p2)
         {
             _ = p0;
@@ -895,7 +822,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static uint Stub_GetGenerationWithRange(IGCHeap* p0, Object* p1, byte** p2, byte** p3, byte** p4)
         {
             _ = p0;
@@ -907,7 +833,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static long Stub_GetTotalPauseDuration(IGCHeap* p0)
         {
             _ = p0;
@@ -915,8 +840,7 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_EnumerateConfigurationValues(IGCHeap* p0, void* p1, delegate* unmanaged<void*, byte*, byte*, GCConfigurationType, long, void> p2)
+        private static void Stub_EnumerateConfigurationValues(IGCHeap* p0, void* p1, delegate* unmanaged[SuppressGCTransition]<void*, byte*, byte*, GCConfigurationType, long, void> p2)
         {
             _ = p0;
             _ = p1;
@@ -924,7 +848,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_UpdateFrozenSegment(IGCHeap* p0, gc_heap_segment_stub* p1, byte* p2, byte* p3)
         {
             _ = p0;
@@ -934,7 +857,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static int Stub_RefreshMemoryLimit(IGCHeap* p0)
         {
             _ = p0;
@@ -942,7 +864,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static enable_no_gc_region_callback_status Stub_EnableNoGCRegionCallback(IGCHeap* p0, NoGCRegionCallbackFinalizerWorkItem* p1, ulong p2)
         {
             _ = p0;
@@ -952,7 +873,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static FinalizerWorkItem* Stub_GetExtraWorkForFinalization(IGCHeap* p0)
         {
             _ = p0;
@@ -960,7 +880,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static ulong Stub_GetGenerationBudget(IGCHeap* p0, int p1)
         {
             _ = p0;
@@ -969,7 +888,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static nuint Stub_GetLOHThreshold(IGCHeap* p0)
         {
             _ = p0;
@@ -977,8 +895,7 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_DiagWalkHeapWithACHandling(IGCHeap* p0, delegate* unmanaged<Object*, void*, bool> p1, void* p2, int p3, bool p4)
+        private static void Stub_DiagWalkHeapWithACHandling(IGCHeap* p0, delegate* unmanaged[SuppressGCTransition]<Object*, void*, bool> p1, void* p2, int p3, bool p4)
         {
             _ = p0;
             _ = p1;
@@ -988,7 +905,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_NullBridgeObjectsWeakRefs(IGCHeap* p0, nuint p1, void* p2)
         {
             _ = p0;
@@ -997,7 +913,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_Initialize(IGCHandleManager* p0)
         {
             _ = p0;
@@ -1005,14 +920,12 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_Shutdown(IGCHandleManager* p0)
         {
             _ = p0;
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static IGCHandleStore* Stub_GetGlobalHandleStore(IGCHandleManager* p0)
         {
             _ = p0;
@@ -1020,7 +933,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static IGCHandleStore* Stub_CreateHandleStore(IGCHandleManager* p0)
         {
             _ = p0;
@@ -1028,7 +940,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_DestroyHandleStore(IGCHandleManager* p0, IGCHandleStore* p1)
         {
             _ = p0;
@@ -1036,7 +947,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static OBJECTHANDLE__* Stub_CreateGlobalHandleOfType(IGCHandleManager* p0, Object* p1, HandleType p2)
         {
             _ = p0;
@@ -1046,7 +956,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static OBJECTHANDLE__* Stub_CreateDuplicateHandle(IGCHandleManager* p0, OBJECTHANDLE__* p1)
         {
             _ = p0;
@@ -1055,7 +964,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_DestroyHandleOfType(IGCHandleManager* p0, OBJECTHANDLE__* p1, HandleType p2)
         {
             _ = p0;
@@ -1064,7 +972,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_DestroyHandleOfUnknownType(IGCHandleManager* p0, OBJECTHANDLE__* p1)
         {
             _ = p0;
@@ -1072,7 +979,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetExtraInfoForHandle(IGCHandleManager* p0, OBJECTHANDLE__* p1, HandleType p2, void* p3)
         {
             _ = p0;
@@ -1082,7 +988,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static void* Stub_GetExtraInfoFromHandle(IGCHandleManager* p0, OBJECTHANDLE__* p1)
         {
             _ = p0;
@@ -1091,7 +996,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_StoreObjectInHandle(IGCHandleManager* p0, OBJECTHANDLE__* p1, Object* p2)
         {
             _ = p0;
@@ -1100,7 +1004,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static bool Stub_StoreObjectInHandleIfNull(IGCHandleManager* p0, OBJECTHANDLE__* p1, Object* p2)
         {
             _ = p0;
@@ -1110,7 +1013,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static void Stub_SetDependentHandleSecondary(IGCHandleManager* p0, OBJECTHANDLE__* p1, Object* p2)
         {
             _ = p0;
@@ -1119,7 +1021,6 @@ namespace Internal.Runtime.GC
             FailFast();
         }
 
-        [UnmanagedCallersOnly]
         private static Object* Stub_GetDependentHandleSecondary(IGCHandleManager* p0, OBJECTHANDLE__* p1)
         {
             _ = p0;
@@ -1128,7 +1029,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static Object* Stub_InterlockedCompareExchangeObjectInHandle(IGCHandleManager* p0, OBJECTHANDLE__* p1, Object* p2, Object* p3)
         {
             _ = p0;
@@ -1139,7 +1039,6 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
         private static HandleType Stub_HandleFetchType(IGCHandleManager* p0, OBJECTHANDLE__* p1)
         {
             _ = p0;
@@ -1148,8 +1047,7 @@ namespace Internal.Runtime.GC
             return default;
         }
 
-        [UnmanagedCallersOnly]
-        private static void Stub_TraceRefCountedHandles(IGCHandleManager* p0, delegate* unmanaged<Object**, nuint*, nuint, nuint, void> p1, nuint p2, nuint p3)
+        private static void Stub_TraceRefCountedHandles(IGCHandleManager* p0, delegate* unmanaged[SuppressGCTransition]<Object**, nuint*, nuint, nuint, void> p1, nuint p2, nuint p3)
         {
             _ = p0;
             _ = p1;

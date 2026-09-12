@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 #pragma warning disable CA1822, CA1823, CS0169
@@ -160,58 +161,58 @@ namespace Internal.Runtime.GC
 
     internal unsafe struct IGCToCLRVtable
     {
-        public delegate* unmanaged<IGCToCLR*, SUSPEND_REASON, void> SuspendEE;
-        public delegate* unmanaged<IGCToCLR*, bool, void> RestartEE;
-        public delegate* unmanaged<IGCToCLR*, delegate* unmanaged<Object**, ScanContext*, uint, void>, int, int, ScanContext*, void> GcScanRoots;
-        public delegate* unmanaged<IGCToCLR*, int, int, void> GcStartWork;
-        public delegate* unmanaged<IGCToCLR*, int, bool, bool, void> BeforeGcScanRoots;
-        public delegate* unmanaged<IGCToCLR*, int, int, ScanContext*, void> AfterGcScanRoots;
-        public delegate* unmanaged<IGCToCLR*, int, void> GcDone;
-        public delegate* unmanaged<IGCToCLR*, Object*, bool> RefCountedHandleCallbacks;
-        public delegate* unmanaged<IGCToCLR*, delegate* unmanaged<Object**, nuint*, nuint, nuint, void>, nuint, nuint, void> SyncBlockCacheWeakPtrScan;
-        public delegate* unmanaged<IGCToCLR*, int, void> SyncBlockCacheDemote;
-        public delegate* unmanaged<IGCToCLR*, int, void> SyncBlockCachePromotionsGranted;
-        public delegate* unmanaged<IGCToCLR*, uint> GetActiveSyncBlockCount;
-        public delegate* unmanaged<IGCToCLR*, bool> IsPreemptiveGCDisabled;
-        public delegate* unmanaged<IGCToCLR*, bool> EnablePreemptiveGC;
-        public delegate* unmanaged<IGCToCLR*, void> DisablePreemptiveGC;
-        public delegate* unmanaged<IGCToCLR*, Thread*> GetThread;
-        public delegate* unmanaged<IGCToCLR*, gc_alloc_context*> GetAllocContext;
-        public delegate* unmanaged<IGCToCLR*, delegate* unmanaged<gc_alloc_context*, void*, void>, void*, void> GcEnumAllocContexts;
-        public delegate* unmanaged<IGCToCLR*, Object*, byte*> GetLoaderAllocatorObjectForGC;
-        public delegate* unmanaged<IGCToCLR*, delegate* unmanaged<void*, void>, void*, bool, byte*, bool> CreateThread;
-        public delegate* unmanaged<IGCToCLR*, int, bool, void> DiagGCStart;
-        public delegate* unmanaged<IGCToCLR*, void> DiagUpdateGenerationBounds;
-        public delegate* unmanaged<IGCToCLR*, nuint, int, int, bool, void> DiagGCEnd;
-        public delegate* unmanaged<IGCToCLR*, void*, void> DiagWalkFReachableObjects;
-        public delegate* unmanaged<IGCToCLR*, void*, bool, void> DiagWalkSurvivors;
-        public delegate* unmanaged<IGCToCLR*, void*, int, void> DiagWalkUOHSurvivors;
-        public delegate* unmanaged<IGCToCLR*, void*, void> DiagWalkBGCSurvivors;
-        public delegate* unmanaged<IGCToCLR*, WriteBarrierParameters*, void> StompWriteBarrier;
-        public delegate* unmanaged<IGCToCLR*, bool, void> EnableFinalization;
-        public delegate* unmanaged<IGCToCLR*, uint, void> HandleFatalError;
-        public delegate* unmanaged<IGCToCLR*, Object*, bool> EagerFinalized;
-        public delegate* unmanaged<IGCToCLR*, MethodTable*> GetFreeObjectMethodTable;
-        public delegate* unmanaged<IGCToCLR*, byte*, byte*, bool*, bool> GetBooleanConfigValue;
-        public delegate* unmanaged<IGCToCLR*, byte*, byte*, long*, bool> GetIntConfigValue;
-        public delegate* unmanaged<IGCToCLR*, byte*, byte*, byte**, bool> GetStringConfigValue;
-        public delegate* unmanaged<IGCToCLR*, byte*, void> FreeStringConfigValue;
-        public delegate* unmanaged<IGCToCLR*, bool> IsGCThread;
-        public delegate* unmanaged<IGCToCLR*, bool> WasCurrentThreadCreatedByGC;
-        public delegate* unmanaged<IGCToCLR*, Object*, ScanContext*, delegate* unmanaged<Object**, ScanContext*, uint, void>, void> WalkAsyncPinnedForPromotion;
-        public delegate* unmanaged<IGCToCLR*, Object*, void*, delegate* unmanaged<Object*, Object*, void*, void>, void> WalkAsyncPinned;
-        public delegate* unmanaged<IGCToCLR*, IGCToCLREventSink*> EventSink;
-        public delegate* unmanaged<IGCToCLR*, uint> GetTotalNumSizedRefHandles;
-        public delegate* unmanaged<IGCToCLR*, int, bool> AnalyzeSurvivorsRequested;
-        public delegate* unmanaged<IGCToCLR*, nuint, int, ulong, delegate* unmanaged<void>, void> AnalyzeSurvivorsFinished;
-        public delegate* unmanaged<IGCToCLR*, void> VerifySyncTableEntry;
-        public delegate* unmanaged<IGCToCLR*, int, int, int, int, void> UpdateGCEventStatus;
-        public delegate* unmanaged<IGCToCLR*, uint, uint, StressLogMsg*, void> LogStressMsg;
-        public delegate* unmanaged<IGCToCLR*, uint> GetCurrentProcessCpuCount;
-        public delegate* unmanaged<IGCToCLR*, int, byte*, byte*, byte*, void> DiagAddNewRegion;
-        public delegate* unmanaged<IGCToCLR*, byte*, void> LogErrorToHost;
-        public delegate* unmanaged<IGCToCLR*, Thread*, ulong> GetThreadOSThreadId;
-        public delegate* unmanaged<IGCToCLR*, MarkCrossReferencesArgs*, void> TriggerClientBridgeProcessing;
-        public delegate* unmanaged<IGCToCLR*, bool> IsClientBridgeProcessingActive;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, SUSPEND_REASON, void> SuspendEE;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool, void> RestartEE;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void>, int, int, ScanContext*, void> GcScanRoots;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, int, void> GcStartWork;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, bool, bool, void> BeforeGcScanRoots;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, int, ScanContext*, void> AfterGcScanRoots;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, void> GcDone;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, bool> RefCountedHandleCallbacks;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate* unmanaged[SuppressGCTransition]<Object**, nuint*, nuint, nuint, void>, nuint, nuint, void> SyncBlockCacheWeakPtrScan;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, void> SyncBlockCacheDemote;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, void> SyncBlockCachePromotionsGranted;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, uint> GetActiveSyncBlockCount;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool> IsPreemptiveGCDisabled;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool> EnablePreemptiveGC;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, void> DisablePreemptiveGC;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Thread*> GetThread;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, gc_alloc_context*> GetAllocContext;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate* unmanaged[SuppressGCTransition]<gc_alloc_context*, void*, void>, void*, void> GcEnumAllocContexts;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, byte*> GetLoaderAllocatorObjectForGC;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate* unmanaged[SuppressGCTransition]<void*, void>, void*, bool, byte*, bool> CreateThread;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, bool, void> DiagGCStart;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, void> DiagUpdateGenerationBounds;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, nuint, int, int, bool, void> DiagGCEnd;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, void*, void> DiagWalkFReachableObjects;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, void*, bool, void> DiagWalkSurvivors;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, void*, int, void> DiagWalkUOHSurvivors;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, void*, void> DiagWalkBGCSurvivors;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, WriteBarrierParameters*, void> StompWriteBarrier;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool, void> EnableFinalization;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, uint, void> HandleFatalError;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, bool> EagerFinalized;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, MethodTable*> GetFreeObjectMethodTable;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, byte*, byte*, bool*, bool> GetBooleanConfigValue;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, byte*, byte*, long*, bool> GetIntConfigValue;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, byte*, byte*, byte**, bool> GetStringConfigValue;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, byte*, void> FreeStringConfigValue;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool> IsGCThread;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool> WasCurrentThreadCreatedByGC;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, ScanContext*, delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void>, void> WalkAsyncPinnedForPromotion;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, void*, delegate* unmanaged[SuppressGCTransition]<Object*, Object*, void*, void>, void> WalkAsyncPinned;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, IGCToCLREventSink*> EventSink;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, uint> GetTotalNumSizedRefHandles;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, bool> AnalyzeSurvivorsRequested;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, nuint, int, ulong, delegate* unmanaged[SuppressGCTransition]<void>, void> AnalyzeSurvivorsFinished;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, void> VerifySyncTableEntry;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, int, int, int, void> UpdateGCEventStatus;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, uint, uint, StressLogMsg*, void> LogStressMsg;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, uint> GetCurrentProcessCpuCount;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, byte*, byte*, byte*, void> DiagAddNewRegion;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, byte*, void> LogErrorToHost;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Thread*, ulong> GetThreadOSThreadId;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, MarkCrossReferencesArgs*, void> TriggerClientBridgeProcessing;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool> IsClientBridgeProcessingActive;
     }
 }

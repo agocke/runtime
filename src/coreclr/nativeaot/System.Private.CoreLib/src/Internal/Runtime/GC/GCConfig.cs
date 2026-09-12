@@ -65,6 +65,12 @@ namespace Internal.Runtime.GC
         private static long s_gcGen1MaxBudget, s_UpdatedGCGen1MaxBudget; private static bool s_gcGen1MaxBudgetProvided;
         private static long s_gcHeapHardLimit, s_UpdatedGCHeapHardLimit; private static bool s_gcHeapHardLimitProvided;
         private static long s_gcHeapHardLimitPercent, s_UpdatedGCHeapHardLimitPercent; private static bool s_gcHeapHardLimitPercentProvided;
+        private static long s_gcHeapHardLimitSOH, s_UpdatedGCHeapHardLimitSOH; private static bool s_gcHeapHardLimitSOHProvided;
+        private static long s_gcHeapHardLimitLOH, s_UpdatedGCHeapHardLimitLOH; private static bool s_gcHeapHardLimitLOHProvided;
+        private static long s_gcHeapHardLimitPOH, s_UpdatedGCHeapHardLimitPOH; private static bool s_gcHeapHardLimitPOHProvided;
+        private static long s_gcHeapHardLimitSOHPercent, s_UpdatedGCHeapHardLimitSOHPercent; private static bool s_gcHeapHardLimitSOHPercentProvided;
+        private static long s_gcHeapHardLimitLOHPercent, s_UpdatedGCHeapHardLimitLOHPercent; private static bool s_gcHeapHardLimitLOHPercentProvided;
+        private static long s_gcHeapHardLimitPOHPercent, s_UpdatedGCHeapHardLimitPOHPercent; private static bool s_gcHeapHardLimitPOHPercentProvided;
         private static long s_gcTotalPhysicalMemory, s_UpdatedGCTotalPhysicalMemory; private static bool s_gcTotalPhysicalMemoryProvided;
         private static long s_gcRegionRange, s_UpdatedGCRegionRange; private static bool s_gcRegionRangeProvided;
         private static long s_gcRegionSize, s_UpdatedGCRegionSize; private static bool s_gcRegionSizeProvided;
@@ -112,6 +118,12 @@ namespace Internal.Runtime.GC
             Initialize(ref s_gcGen1MaxBudget, ref s_gcGen1MaxBudgetProvided, ref s_UpdatedGCGen1MaxBudget, 0);
             Initialize(ref s_gcHeapHardLimit, ref s_gcHeapHardLimitProvided, ref s_UpdatedGCHeapHardLimit, 0);
             Initialize(ref s_gcHeapHardLimitPercent, ref s_gcHeapHardLimitPercentProvided, ref s_UpdatedGCHeapHardLimitPercent, 0);
+            Initialize(ref s_gcHeapHardLimitSOH, ref s_gcHeapHardLimitSOHProvided, ref s_UpdatedGCHeapHardLimitSOH, 0);
+            Initialize(ref s_gcHeapHardLimitLOH, ref s_gcHeapHardLimitLOHProvided, ref s_UpdatedGCHeapHardLimitLOH, 0);
+            Initialize(ref s_gcHeapHardLimitPOH, ref s_gcHeapHardLimitPOHProvided, ref s_UpdatedGCHeapHardLimitPOH, 0);
+            Initialize(ref s_gcHeapHardLimitSOHPercent, ref s_gcHeapHardLimitSOHPercentProvided, ref s_UpdatedGCHeapHardLimitSOHPercent, 0);
+            Initialize(ref s_gcHeapHardLimitLOHPercent, ref s_gcHeapHardLimitLOHPercentProvided, ref s_UpdatedGCHeapHardLimitLOHPercent, 0);
+            Initialize(ref s_gcHeapHardLimitPOHPercent, ref s_gcHeapHardLimitPOHPercentProvided, ref s_UpdatedGCHeapHardLimitPOHPercent, 0);
             Initialize(ref s_gcTotalPhysicalMemory, ref s_gcTotalPhysicalMemoryProvided, ref s_UpdatedGCTotalPhysicalMemory, 0);
             Initialize(ref s_gcRegionRange, ref s_gcRegionRangeProvided, ref s_UpdatedGCRegionRange, 0);
             Initialize(ref s_gcRegionSize, ref s_gcRegionSizeProvided, ref s_UpdatedGCRegionSize, 0);
@@ -120,6 +132,189 @@ namespace Internal.Runtime.GC
             Initialize(ref s_gcWriteBarrier, ref s_gcWriteBarrierProvided, ref s_UpdatedGCWriteBarrier, 0);
             Initialize(ref s_gcSpinCountUnit, ref s_gcSpinCountUnitProvided, ref s_UpdatedGCSpinCountUnit, 0);
             Initialize(ref s_gcDynamicAdaptationMode, ref s_gcDynamicAdaptationModeProvided, ref s_UpdatedGCDynamicAdaptationMode, 1);
+
+            IGCToCLR* callback = GCCommon.g_theGCToCLR;
+            if (callback is null || callback->Vtable is null)
+            {
+                return;
+            }
+
+            if (callback->Vtable->GetBooleanConfigValue is not null)
+            {
+                byte* privateKey = stackalloc byte[9];
+                privateKey[0] = (byte)'g';
+                privateKey[1] = (byte)'c';
+                privateKey[2] = (byte)'S';
+                privateKey[3] = (byte)'e';
+                privateKey[4] = (byte)'r';
+                privateKey[5] = (byte)'v';
+                privateKey[6] = (byte)'e';
+                privateKey[7] = (byte)'r';
+                privateKey[8] = 0;
+                byte* publicKey = stackalloc byte[17];
+                publicKey[0] = (byte)'S';
+                publicKey[1] = (byte)'y';
+                publicKey[2] = (byte)'s';
+                publicKey[3] = (byte)'t';
+                publicKey[4] = (byte)'e';
+                publicKey[5] = (byte)'m';
+                publicKey[6] = (byte)'.';
+                publicKey[7] = (byte)'G';
+                publicKey[8] = (byte)'C';
+                publicKey[9] = (byte)'.';
+                publicKey[10] = (byte)'S';
+                publicKey[11] = (byte)'e';
+                publicKey[12] = (byte)'r';
+                publicKey[13] = (byte)'v';
+                publicKey[14] = (byte)'e';
+                publicKey[15] = (byte)'r';
+                publicKey[16] = 0;
+                bool value = s_serverGC;
+                if (callback->Vtable->GetBooleanConfigValue(callback, privateKey, publicKey, &value))
+                {
+                    s_serverGC = value;
+                    s_serverGCProvided = true;
+                    s_UpdatedServerGC = value;
+                }
+            }
+
+            if (callback->Vtable->GetBooleanConfigValue is not null)
+            {
+                byte* privateKey = stackalloc byte[13];
+                privateKey[0] = (byte)'g';
+                privateKey[1] = (byte)'c';
+                privateKey[2] = (byte)'C';
+                privateKey[3] = (byte)'o';
+                privateKey[4] = (byte)'n';
+                privateKey[5] = (byte)'c';
+                privateKey[6] = (byte)'u';
+                privateKey[7] = (byte)'r';
+                privateKey[8] = (byte)'r';
+                privateKey[9] = (byte)'e';
+                privateKey[10] = (byte)'n';
+                privateKey[11] = (byte)'t';
+                privateKey[12] = 0;
+                byte* publicKey = stackalloc byte[21];
+                publicKey[0] = (byte)'S';
+                publicKey[1] = (byte)'y';
+                publicKey[2] = (byte)'s';
+                publicKey[3] = (byte)'t';
+                publicKey[4] = (byte)'e';
+                publicKey[5] = (byte)'m';
+                publicKey[6] = (byte)'.';
+                publicKey[7] = (byte)'G';
+                publicKey[8] = (byte)'C';
+                publicKey[9] = (byte)'.';
+                publicKey[10] = (byte)'C';
+                publicKey[11] = (byte)'o';
+                publicKey[12] = (byte)'n';
+                publicKey[13] = (byte)'c';
+                publicKey[14] = (byte)'u';
+                publicKey[15] = (byte)'r';
+                publicKey[16] = (byte)'r';
+                publicKey[17] = (byte)'e';
+                publicKey[18] = (byte)'n';
+                publicKey[19] = (byte)'t';
+                publicKey[20] = 0;
+                bool value = s_concurrentGC;
+                if (callback->Vtable->GetBooleanConfigValue(callback, privateKey, publicKey, &value))
+                {
+                    s_concurrentGC = value;
+                    s_concurrentGCProvided = true;
+                    s_UpdatedConcurrentGC = value;
+                }
+            }
+
+            if (callback->Vtable->GetIntConfigValue is not null)
+            {
+                byte* privateKey = stackalloc byte[15];
+                privateKey[0] = (byte)'G';
+                privateKey[1] = (byte)'C';
+                privateKey[2] = (byte)'L';
+                privateKey[3] = (byte)'O';
+                privateKey[4] = (byte)'H';
+                privateKey[5] = (byte)'T';
+                privateKey[6] = (byte)'h';
+                privateKey[7] = (byte)'r';
+                privateKey[8] = (byte)'e';
+                privateKey[9] = (byte)'s';
+                privateKey[10] = (byte)'h';
+                privateKey[11] = (byte)'o';
+                privateKey[12] = (byte)'l';
+                privateKey[13] = (byte)'d';
+                privateKey[14] = 0;
+                long value = s_lohThreshold;
+                byte* publicKey = stackalloc byte[23];
+                publicKey[0] = (byte)'S';
+                publicKey[1] = (byte)'y';
+                publicKey[2] = (byte)'s';
+                publicKey[3] = (byte)'t';
+                publicKey[4] = (byte)'e';
+                publicKey[5] = (byte)'m';
+                publicKey[6] = (byte)'.';
+                publicKey[7] = (byte)'G';
+                publicKey[8] = (byte)'C';
+                publicKey[9] = (byte)'.';
+                publicKey[10] = (byte)'L';
+                publicKey[11] = (byte)'O';
+                publicKey[12] = (byte)'H';
+                publicKey[13] = (byte)'T';
+                publicKey[14] = (byte)'h';
+                publicKey[15] = (byte)'r';
+                publicKey[16] = (byte)'e';
+                publicKey[17] = (byte)'s';
+                publicKey[18] = (byte)'h';
+                publicKey[19] = (byte)'o';
+                publicKey[20] = (byte)'l';
+                publicKey[21] = (byte)'d';
+                publicKey[22] = 0;
+                if (callback->Vtable->GetIntConfigValue(callback, privateKey, publicKey, &value))
+                {
+                    s_lohThreshold = value;
+                    s_lohThresholdProvided = true;
+                    s_UpdatedLOHThreshold = value;
+                }
+            }
+
+            if (callback->Vtable->GetIntConfigValue is not null)
+            {
+                byte* privateKey = stackalloc byte[14];
+                privateKey[0] = (byte)'G';
+                privateKey[1] = (byte)'C';
+                privateKey[2] = (byte)'S';
+                privateKey[3] = (byte)'e';
+                privateKey[4] = (byte)'g';
+                privateKey[5] = (byte)'m';
+                privateKey[6] = (byte)'e';
+                privateKey[7] = (byte)'n';
+                privateKey[8] = (byte)'t';
+                privateKey[9] = (byte)'S';
+                privateKey[10] = (byte)'i';
+                privateKey[11] = (byte)'z';
+                privateKey[12] = (byte)'e';
+                privateKey[13] = 0;
+                long value = s_segmentSize;
+                if (callback->Vtable->GetIntConfigValue(callback, privateKey, null, &value))
+                {
+                    s_segmentSize = value;
+                    s_segmentSizeProvided = true;
+                    s_UpdatedSegmentSize = value;
+                }
+            }
+
+            ReadHardLimitConfiguration(callback);
+        }
+
+        public static bool HasUnsupportedHardLimitConfiguration()
+        {
+            return s_gcHeapHardLimit != 0
+                || s_gcHeapHardLimitPercent != 0
+                || s_gcHeapHardLimitSOH != 0
+                || s_gcHeapHardLimitLOH != 0
+                || s_gcHeapHardLimitPOH != 0
+                || s_gcHeapHardLimitSOHPercent != 0
+                || s_gcHeapHardLimitLOHPercent != 0
+                || s_gcHeapHardLimitPOHPercent != 0;
         }
 
         private static void Initialize(ref bool value, ref bool provided, ref bool updated, bool defaultValue)
@@ -203,6 +398,176 @@ namespace Internal.Runtime.GC
         public static long GetSegmentSize() => s_segmentSize;
         public static long GetSegmentSize(long value) => Get(s_segmentSize, s_segmentSizeProvided, value);
         public static void SetSegmentSize(long value) => s_UpdatedSegmentSize = value;
+
+        private static void ReadIntConfigValue(IGCToCLR* callback, byte* privateKey, byte* publicKey, ref long value, ref bool provided, ref long updated)
+        {
+            if (callback is null || callback->Vtable is null || callback->Vtable->GetIntConfigValue is null)
+            {
+                return;
+            }
+
+            fixed (long* valuePointer = &value)
+            {
+                if (callback->Vtable->GetIntConfigValue(callback, privateKey, publicKey, valuePointer))
+                {
+                    provided = true;
+                    updated = value;
+                }
+            }
+        }
+
+        private static void ReadHardLimitConfiguration(IGCToCLR* callback)
+        {
+            byte* privateKey = stackalloc byte[32];
+            byte* publicKey = stackalloc byte[40];
+
+            privateKey[0] = (byte)'G';
+            privateKey[1] = (byte)'C';
+            privateKey[2] = (byte)'H';
+            privateKey[3] = (byte)'e';
+            privateKey[4] = (byte)'a';
+            privateKey[5] = (byte)'p';
+            privateKey[6] = (byte)'H';
+            privateKey[7] = (byte)'a';
+            privateKey[8] = (byte)'r';
+            privateKey[9] = (byte)'d';
+            privateKey[10] = (byte)'L';
+            privateKey[11] = (byte)'i';
+            privateKey[12] = (byte)'m';
+            privateKey[13] = (byte)'i';
+            privateKey[14] = (byte)'t';
+            privateKey[15] = 0;
+            publicKey[0] = (byte)'S';
+            publicKey[1] = (byte)'y';
+            publicKey[2] = (byte)'s';
+            publicKey[3] = (byte)'t';
+            publicKey[4] = (byte)'e';
+            publicKey[5] = (byte)'m';
+            publicKey[6] = (byte)'.';
+            publicKey[7] = (byte)'G';
+            publicKey[8] = (byte)'C';
+            publicKey[9] = (byte)'.';
+            publicKey[10] = (byte)'H';
+            publicKey[11] = (byte)'e';
+            publicKey[12] = (byte)'a';
+            publicKey[13] = (byte)'p';
+            publicKey[14] = (byte)'H';
+            publicKey[15] = (byte)'a';
+            publicKey[16] = (byte)'r';
+            publicKey[17] = (byte)'d';
+            publicKey[18] = (byte)'L';
+            publicKey[19] = (byte)'i';
+            publicKey[20] = (byte)'m';
+            publicKey[21] = (byte)'i';
+            publicKey[22] = (byte)'t';
+            publicKey[23] = 0;
+            ReadIntConfigValue(callback, privateKey, publicKey, ref s_gcHeapHardLimit, ref s_gcHeapHardLimitProvided, ref s_UpdatedGCHeapHardLimit);
+
+            privateKey[15] = (byte)'S';
+            privateKey[16] = (byte)'O';
+            privateKey[17] = (byte)'H';
+            privateKey[18] = 0;
+            publicKey[23] = (byte)'S';
+            publicKey[24] = (byte)'O';
+            publicKey[25] = (byte)'H';
+            publicKey[26] = 0;
+            ReadIntConfigValue(callback, privateKey, publicKey, ref s_gcHeapHardLimitSOH, ref s_gcHeapHardLimitSOHProvided, ref s_UpdatedGCHeapHardLimitSOH);
+
+            privateKey[15] = (byte)'L';
+            privateKey[16] = (byte)'O';
+            privateKey[17] = (byte)'H';
+            privateKey[18] = 0;
+            publicKey[23] = (byte)'L';
+            publicKey[24] = (byte)'O';
+            publicKey[25] = (byte)'H';
+            publicKey[26] = 0;
+            ReadIntConfigValue(callback, privateKey, publicKey, ref s_gcHeapHardLimitLOH, ref s_gcHeapHardLimitLOHProvided, ref s_UpdatedGCHeapHardLimitLOH);
+
+            privateKey[15] = (byte)'P';
+            privateKey[16] = (byte)'O';
+            privateKey[17] = (byte)'H';
+            privateKey[18] = 0;
+            publicKey[23] = (byte)'P';
+            publicKey[24] = (byte)'O';
+            publicKey[25] = (byte)'H';
+            publicKey[26] = 0;
+            ReadIntConfigValue(callback, privateKey, publicKey, ref s_gcHeapHardLimitPOH, ref s_gcHeapHardLimitPOHProvided, ref s_UpdatedGCHeapHardLimitPOH);
+
+            privateKey[15] = (byte)'P';
+            privateKey[16] = (byte)'e';
+            privateKey[17] = (byte)'r';
+            privateKey[18] = (byte)'c';
+            privateKey[19] = (byte)'e';
+            privateKey[20] = (byte)'n';
+            privateKey[21] = (byte)'t';
+            privateKey[22] = 0;
+            publicKey[23] = (byte)'P';
+            publicKey[24] = (byte)'e';
+            publicKey[25] = (byte)'r';
+            publicKey[26] = (byte)'c';
+            publicKey[27] = (byte)'e';
+            publicKey[28] = (byte)'n';
+            publicKey[29] = (byte)'t';
+            publicKey[30] = 0;
+            ReadIntConfigValue(callback, privateKey, publicKey, ref s_gcHeapHardLimitPercent, ref s_gcHeapHardLimitPercentProvided, ref s_UpdatedGCHeapHardLimitPercent);
+
+            privateKey[15] = (byte)'S';
+            privateKey[16] = (byte)'O';
+            privateKey[17] = (byte)'H';
+            privateKey[18] = (byte)'P';
+            privateKey[19] = (byte)'e';
+            privateKey[20] = (byte)'r';
+            privateKey[21] = (byte)'c';
+            privateKey[22] = (byte)'e';
+            privateKey[23] = (byte)'n';
+            privateKey[24] = (byte)'t';
+            privateKey[25] = 0;
+            publicKey[23] = (byte)'S';
+            publicKey[24] = (byte)'O';
+            publicKey[25] = (byte)'H';
+            publicKey[26] = (byte)'P';
+            publicKey[27] = (byte)'e';
+            publicKey[28] = (byte)'r';
+            publicKey[29] = (byte)'c';
+            publicKey[30] = (byte)'e';
+            publicKey[31] = (byte)'n';
+            publicKey[32] = (byte)'t';
+            publicKey[33] = 0;
+            ReadIntConfigValue(callback, privateKey, publicKey, ref s_gcHeapHardLimitSOHPercent, ref s_gcHeapHardLimitSOHPercentProvided, ref s_UpdatedGCHeapHardLimitSOHPercent);
+
+            privateKey[15] = (byte)'L';
+            privateKey[16] = (byte)'O';
+            privateKey[17] = (byte)'H';
+            privateKey[18] = (byte)'P';
+            publicKey[23] = (byte)'L';
+            publicKey[24] = (byte)'O';
+            publicKey[25] = (byte)'H';
+            ReadIntConfigValue(callback, privateKey, publicKey, ref s_gcHeapHardLimitLOHPercent, ref s_gcHeapHardLimitLOHPercentProvided, ref s_UpdatedGCHeapHardLimitLOHPercent);
+
+            privateKey[15] = (byte)'P';
+            privateKey[16] = (byte)'O';
+            privateKey[17] = (byte)'H';
+            privateKey[18] = (byte)'P';
+            privateKey[19] = (byte)'e';
+            privateKey[20] = (byte)'r';
+            privateKey[21] = (byte)'c';
+            privateKey[22] = (byte)'e';
+            privateKey[23] = (byte)'n';
+            privateKey[24] = (byte)'t';
+            privateKey[25] = 0;
+            publicKey[23] = (byte)'P';
+            publicKey[24] = (byte)'O';
+            publicKey[25] = (byte)'H';
+            publicKey[26] = (byte)'P';
+            publicKey[27] = (byte)'e';
+            publicKey[28] = (byte)'r';
+            publicKey[29] = (byte)'c';
+            publicKey[30] = (byte)'e';
+            publicKey[31] = (byte)'n';
+            publicKey[32] = (byte)'t';
+            publicKey[33] = 0;
+            ReadIntConfigValue(callback, privateKey, publicKey, ref s_gcHeapHardLimitPOHPercent, ref s_gcHeapHardLimitPOHPercentProvided, ref s_UpdatedGCHeapHardLimitPOHPercent);
+        }
         public static long GetLatencyMode() => s_latencyMode;
         public static long GetLatencyMode(long value) => Get(s_latencyMode, s_latencyModeProvided, value);
         public static void SetLatencyMode(long value) => s_UpdatedLatencyMode = value;

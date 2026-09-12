@@ -130,6 +130,8 @@ namespace Internal.Runtime.GC
 
         public static uint TotalCpuCount => s_totalCpuCount;
 
+        public static void YieldProcessor() => System.Runtime.RuntimeImports.RhSpinWait(1);
+
         public static bool ParseGCHeapAffinitizeRangesEntry(byte** configString, nuint* startIndex, nuint* endIndex)
         {
             if (configString is null || *configString is null)
