@@ -99,6 +99,20 @@ if(FEATURE_PERFTRACING)
 endif()
 target_link_libraries(Runtime.WorkstationGC PRIVATE aotminipal nativeaot_cdac_contract_descriptor nativeaot_gc_wks_descriptor)
 
+set(CSHARP_GC_COMMON_RUNTIME_SOURCES ${COMMON_RUNTIME_SOURCES})
+list(FILTER CSHARP_GC_COMMON_RUNTIME_SOURCES EXCLUDE REGEX "gcload\\.cpp$")
+
+add_library(Runtime.CSharpGC STATIC
+    ${CSHARP_GC_COMMON_RUNTIME_SOURCES}
+    ${FULL_RUNTIME_SOURCES}
+    ${NATIVEAOT_PRIVATE_LIBUNWIND_OBJECT}
+    ${RUNTIME_ARCH_ASM_OBJECTS})
+target_compile_definitions(Runtime.CSharpGC PRIVATE FEATURE_CSHARP_GC_ONLY)
+if(FEATURE_PERFTRACING)
+  add_dependencies(Runtime.CSharpGC aot_eventing_headers)
+endif()
+target_link_libraries(Runtime.CSharpGC PRIVATE aotminipal nativeaot_cdac_contract_descriptor)
+
 add_library(Runtime.ServerGC STATIC
     ${COMMON_RUNTIME_SOURCES}
     ${FULL_RUNTIME_SOURCES}
@@ -118,10 +132,16 @@ add_library(standalonegc-enabled STATIC ${STANDALONEGC_ENABLED_SOURCES})
 if(FEATURE_PERFTRACING)
   add_dependencies(standalonegc-enabled aot_eventing_headers)
 endif()
+add_library(csharpgc-enabled STATIC ${STANDALONEGC_ENABLED_SOURCES})
+target_compile_definitions(csharpgc-enabled PRIVATE FEATURE_CSHARP_GC_ONLY)
+if(FEATURE_PERFTRACING)
+  add_dependencies(csharpgc-enabled aot_eventing_headers)
+endif()
 if(FEATURE_EVENT_TRACE)
   if(CLR_CMAKE_TARGET_WIN32)
     add_dependencies(standalonegc-disabled aot_etw_headers)
     add_dependencies(standalonegc-enabled aot_etw_headers)
+    add_dependencies(csharpgc-enabled aot_etw_headers)
   endif()
 endif()
 
@@ -181,12 +201,15 @@ add_library(Runtime.AsmHelpers OBJECT ${RUNTIME_SOURCES_ARCH_ASM})
 add_dependencies(Runtime.AsmHelpers RuntimeAsmHelpers)
 
 target_link_libraries(Runtime.WorkstationGC PRIVATE Runtime.AsmHelpers)
+target_link_libraries(Runtime.CSharpGC PRIVATE Runtime.AsmHelpers)
 target_link_libraries(Runtime.ServerGC PRIVATE Runtime.AsmHelpers)
 
 install_static_library(Runtime.WorkstationGC aotsdk nativeaot)
+install_static_library(Runtime.CSharpGC aotsdk nativeaot)
 install_static_library(Runtime.ServerGC aotsdk nativeaot)
 install_static_library(standalonegc-disabled aotsdk nativeaot)
 install_static_library(standalonegc-enabled aotsdk nativeaot)
+install_static_library(csharpgc-enabled aotsdk nativeaot)
 install_static_library(aotminipal aotsdk nativeaot)
 if (CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
   install_static_library(Runtime.VxsortEnabled aotsdk nativeaot)

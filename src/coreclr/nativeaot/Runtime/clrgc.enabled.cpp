@@ -53,11 +53,16 @@ void InitializeGCEventLock()
     g_eventStashLock.Init(CrstGcEvent);
 }
 
-HRESULT InitializeStandaloneGC();
 HRESULT InitializeCSharpGC();
+#ifndef FEATURE_CSHARP_GC_ONLY
+HRESULT InitializeStandaloneGC();
+#endif // FEATURE_CSHARP_GC_ONLY
 
 HRESULT InitializeGCSelector()
 {
+#ifdef FEATURE_CSHARP_GC_ONLY
+    return InitializeCSharpGC();
+#else
     bool useCSharpGC = false;
     if (RhConfig::Environment::TryGetBooleanValue("GCUseCSharp", &useCSharpGC) && useCSharpGC)
     {
@@ -65,6 +70,7 @@ HRESULT InitializeGCSelector()
     }
 
     return InitializeStandaloneGC();
+#endif // FEATURE_CSHARP_GC_ONLY
 }
 
 HRESULT InitializeCSharpGC()
@@ -113,6 +119,7 @@ HRESULT InitializeCSharpGC()
     return initResult;
 }
 
+#ifndef FEATURE_CSHARP_GC_ONLY
 HRESULT InitializeStandaloneGC()
 {
     return GCHeapUtilities::InitializeStandaloneGC();
@@ -296,6 +303,7 @@ HRESULT GCHeapUtilities::InitializeStandaloneGC()
 
     return initResult;
 }
+#endif // FEATURE_CSHARP_GC_ONLY
 
 void GCHeapUtilities::RecordEventStateChange(bool isPublicProvider, GCEventKeyword keywords, GCEventLevel level)
 {

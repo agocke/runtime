@@ -115,12 +115,12 @@ namespace Internal.Runtime.GC
             s_heapVtable.CancelFullGCNotification = &Stub_CancelFullGCNotification;
             s_heapVtable.WaitForFullGCApproach = &Stub_WaitForFullGCApproach;
             s_heapVtable.WaitForFullGCComplete = &Stub_WaitForFullGCComplete;
-            s_heapVtable.WhichGeneration = &Stub_WhichGeneration;
+            s_heapVtable.WhichGeneration = &GCWksInitialization.WhichGeneration;
             s_heapVtable.CollectionCount = &Stub_CollectionCount;
             s_heapVtable.StartNoGCRegion = &Stub_StartNoGCRegion;
             s_heapVtable.EndNoGCRegion = &Stub_EndNoGCRegion;
-            s_heapVtable.GetTotalBytesInUse = &Stub_GetTotalBytesInUse;
-            s_heapVtable.GetTotalAllocatedBytes = &Stub_GetTotalAllocatedBytes;
+            s_heapVtable.GetTotalBytesInUse = &GCWksInitialization.GetTotalBytesInUse;
+            s_heapVtable.GetTotalAllocatedBytes = &GCWksInitialization.GetTotalAllocatedBytes;
             s_heapVtable.GarbageCollect = &Stub_GarbageCollect;
             s_heapVtable.GetMaxGeneration = &GCWksInitialization.GetMaxGeneration;
             s_heapVtable.SetFinalizationRun = &GCWksInitialization.SetFinalizationRun;
@@ -171,7 +171,7 @@ namespace Internal.Runtime.GC
             s_heapVtable.IsInFrozenSegment = &GCWksInitialization.IsInFrozenSegment;
             s_heapVtable.ControlEvents = &GCWksInitialization.ControlEvents;
             s_heapVtable.ControlPrivateEvents = &GCWksInitialization.ControlPrivateEvents;
-            s_heapVtable.GetGenerationWithRange = &Stub_GetGenerationWithRange;
+            s_heapVtable.GetGenerationWithRange = &GCWksInitialization.GetGenerationWithRange;
             s_heapVtable.GetTotalPauseDuration = &Stub_GetTotalPauseDuration;
             s_heapVtable.EnumerateConfigurationValues = &Stub_EnumerateConfigurationValues;
             s_heapVtable.UpdateFrozenSegment = &GCWksInitialization.UpdateFrozenSegment;

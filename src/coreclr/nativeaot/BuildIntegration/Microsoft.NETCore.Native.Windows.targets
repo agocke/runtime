@@ -21,12 +21,14 @@ The .NET Foundation licenses this file to you under the MIT license.
     <LibrarySuffix>.lib</LibrarySuffix>
     <FullRuntimeName>Runtime.WorkstationGC</FullRuntimeName>
     <FullRuntimeName Condition="'$(ServerGarbageCollection)' == 'true' or '$(IlcLinkServerGC)' == 'true'">Runtime.ServerGC</FullRuntimeName>
+    <FullRuntimeName Condition="'$(IlcUseCSharpGC)' == 'true'">Runtime.CSharpGC</FullRuntimeName>
     <BootstrapperName>bootstrapper</BootstrapperName>
     <BootstrapperName Condition="'$(NativeLib)' != '' or '$(CustomNativeMain)' == 'true'">bootstrapperdll</BootstrapperName>
     <VxSortSupportName>Runtime.VxsortDisabled</VxSortSupportName>
     <VxSortSupportName Condition="'$(OptimizationPreference)' == 'Speed' or '$(IlcEnableVxsort)' == 'true'">Runtime.VxsortEnabled</VxSortSupportName>
     <StandaloneGCSupportName>standalonegc-disabled</StandaloneGCSupportName>
     <StandaloneGCSupportName Condition="'$(IlcStandaloneGCSupport)' == 'true'">standalonegc-enabled</StandaloneGCSupportName>
+    <StandaloneGCSupportName Condition="'$(IlcUseCSharpGC)' == 'true'">csharpgc-enabled</StandaloneGCSupportName>
     <EntryPointSymbol Condition="'$(EntryPointSymbol)' == ''">wmainCRTStartup</EntryPointSymbol>
     <LinkerSubsystem Condition="'$(OutputType)' == 'WinExe' and '$(LinkerSubsystem)' == ''">WINDOWS</LinkerSubsystem>
     <LinkerSubsystem Condition="'$(OutputType)' == 'Exe' and '$(LinkerSubsystem)' == ''">CONSOLE</LinkerSubsystem>

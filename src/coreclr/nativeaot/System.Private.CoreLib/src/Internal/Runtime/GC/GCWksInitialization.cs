@@ -30,14 +30,14 @@ namespace Internal.Runtime.GC
         private const int FinalizerCriticalListSegment = (int)gc_generation_num.total_generation_count;
         private const int FinalizerListSegment = FinalizerCriticalListSegment + 1;
         private const int FinalizerFreeListSegment = FinalizerListSegment + (FinalizationExtraSegmentCount - 1);
-        private const uint UnsupportedAllocationFlags =
-            (uint)(GC_ALLOC_FLAGS.GC_ALLOC_LARGE_OBJECT_HEAP |
-                   GC_ALLOC_FLAGS.GC_ALLOC_ALIGN8_BIAS);
+        private static readonly nuint LohPaddingSize = 4 * (nuint)sizeof(void*);
+        private const uint UnsupportedAllocationFlags = (uint)GC_ALLOC_FLAGS.GC_ALLOC_ALIGN8_BIAS;
         private const uint SupportedAllocationFlags =
             (uint)(GC_ALLOC_FLAGS.GC_ALLOC_FINALIZE |
                    GC_ALLOC_FLAGS.GC_ALLOC_CONTAINS_REF |
                    GC_ALLOC_FLAGS.GC_ALLOC_ALIGN8 |
                    GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL |
+                   GC_ALLOC_FLAGS.GC_ALLOC_LARGE_OBJECT_HEAP |
                    GC_ALLOC_FLAGS.GC_ALLOC_PINNED_OBJECT_HEAP);
 
         private static nuint s_sohSegmentSize;
@@ -63,6 +63,8 @@ namespace Internal.Runtime.GC
         private static generation s_pohGeneration;
         private static frozen_segment_entry* s_frozenSegmentLookup;
         private static CFinalize* s_finalizeQueue;
+        private static ulong s_totalAllocatedBytesSoh;
+        private static ulong s_totalAllocatedBytesUoh;
 
         public static int Initialize()
         {
@@ -173,6 +175,63 @@ namespace Internal.Runtime.GC
         {
             _ = heap;
             return s_lohThreshold;
+        }
+
+        public static uint WhichGeneration(IGCHeap* heap, Object* obj)
+        {
+            _ = heap;
+            return GetGenerationWithRangeCore(obj, null, null, null);
+        }
+
+        public static nuint GetTotalBytesInUse(IGCHeap* heap)
+        {
+            _ = heap;
+            if (s_sohAllocationLockInitialized)
+            {
+                s_sohAllocationLock.Enter();
+            }
+
+            if (s_uohAllocationLockInitialized)
+            {
+                s_uohAllocationLock.Enter();
+            }
+
+            fixed (heap_segment* sohSegment = &s_sohSegment)
+            fixed (heap_segment* lohSegment = &s_lohSegment)
+            fixed (heap_segment* pohSegment = &s_pohSegment)
+            {
+                nuint total = GetSegmentBytesInUse(
+                    sohSegment,
+                    s_generation0.free_obj_space + s_generation1.free_obj_space + s_generation2.free_obj_space,
+                    s_generation0.free_list_space + s_generation1.free_list_space + s_generation2.free_list_space);
+                total += GetSegmentBytesInUse(lohSegment, s_lohGeneration.free_obj_space, s_lohGeneration.free_list_space);
+                total += GetSegmentBytesInUse(pohSegment, s_pohGeneration.free_obj_space, s_pohGeneration.free_list_space);
+
+                if (s_uohAllocationLockInitialized)
+                {
+                    s_uohAllocationLock.Leave();
+                }
+
+                if (s_sohAllocationLockInitialized)
+                {
+                    s_sohAllocationLock.Leave();
+                }
+
+                return total;
+            }
+        }
+
+        public static ulong GetTotalAllocatedBytes(IGCHeap* heap)
+        {
+            _ = heap;
+            return System.Threading.Volatile.Read(ref s_totalAllocatedBytesSoh) +
+                System.Threading.Volatile.Read(ref s_totalAllocatedBytesUoh);
+        }
+
+        public static uint GetGenerationWithRange(IGCHeap* heap, Object* obj, byte** start, byte** allocated, byte** reserved)
+        {
+            _ = heap;
+            return GetGenerationWithRangeCore(obj, start, allocated, reserved);
         }
 
         public static void ControlEvents(IGCHeap* heap, GCEventKeyword keywords, GCEventLevel level)
@@ -347,9 +406,12 @@ namespace Internal.Runtime.GC
                 alignedSize = MinObjectSize;
             }
 
-            if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_PINNED_OBJECT_HEAP) != 0)
+            uint userOldHeapFlags = (uint)(GC_ALLOC_FLAGS.GC_ALLOC_LARGE_OBJECT_HEAP |
+                                           GC_ALLOC_FLAGS.GC_ALLOC_PINNED_OBJECT_HEAP);
+            if ((flags & userOldHeapFlags) != 0)
             {
-                return RegisterAllocatedObject(AllocPohObject(alignedSize, flags), size, flags);
+                bool pinned = (flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_PINNED_OBJECT_HEAP) != 0;
+                return RegisterAllocatedObject(AllocUohObject(context, alignedSize, flags, pinned), size, flags);
             }
 
             byte* allocation = context->alloc_ptr;
@@ -446,18 +508,27 @@ namespace Internal.Runtime.GC
                 ? (requestedWithTail < AllocationQuantum ? AllocationQuantum : requestedWithTail)
                 : requestedWithTail;
 
-            if (!CommitForAllocation(allocation, grantSize))
+            fixed (heap_segment* sohSegment = &s_sohSegment)
             {
-                return null;
+                if (!CommitForAllocation(sohSegment, allocation, grantSize, s_generation0.allocation_start))
+                {
+                    return null;
+                }
             }
 
             byte* grantEnd = allocation + grantSize;
             byte* limit = grantEnd - MinObjectSize;
 
+            if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL) == 0)
+            {
+                ClearMemory(allocation, grantSize);
+            }
+
             if (abandonedPreviousContext)
             {
                 FormatUnusedArray(previousAllocation, abandonedObjectSize);
                 context->alloc_bytes -= (long)unused;
+                s_totalAllocatedBytesSoh -= unused;
                 s_generation0.free_obj_space += abandonedObjectSize;
             }
             else if (contiguousAllocationContext)
@@ -469,6 +540,7 @@ namespace Internal.Runtime.GC
             context->alloc_ptr = contiguousAllocationContext ? previousAllocation : allocation;
             context->alloc_limit = limit;
             context->alloc_bytes += (long)(grantSize - MinObjectSize);
+            s_totalAllocatedBytesSoh += grantSize - MinObjectSize;
             s_sohSegment.allocated = grantEnd;
             if (s_sohSegment.used < grantEnd)
             {
@@ -476,6 +548,7 @@ namespace Internal.Runtime.GC
             }
 
             byte* result = context->alloc_ptr;
+            ClearSyncBlock(result);
             context->alloc_ptr += alignedSize;
             context->alloc_count++;
             return (Object*)result;
@@ -768,10 +841,19 @@ namespace Internal.Runtime.GC
                 InitializeGeneration(generation0, 0, soh, generation0Start);
                 soh->allocated = allocationStart;
                 soh->used = allocationStart;
+                FormatUnusedArray(generation2Start, MinObjectSize);
+                FormatUnusedArray(generation1Start, MinObjectSize);
+                FormatUnusedArray(generation0Start, MinObjectSize);
+                generation2->free_obj_space = MinObjectSize;
+                generation1->free_obj_space = MinObjectSize;
+                generation0->free_obj_space = MinObjectSize;
 
                 InitializeGeneration(lohGeneration, 3, loh, lohBase + sizeof(heap_segment));
                 InitializeGeneration(pohGeneration, 4, poh, pohBase + sizeof(heap_segment));
             }
+
+            s_totalAllocatedBytesSoh = 0;
+            s_totalAllocatedBytesUoh = 0;
 
             if (!InitializeCardTable())
             {
@@ -849,7 +931,7 @@ namespace Internal.Runtime.GC
             return RegisterForFinalizationCore(generation, obj, 0);
         }
 
-        private static Object* AllocPohObject(nuint size, uint flags)
+        private static Object* AllocUohObject(gc_alloc_context* context, nuint size, uint flags, bool pinned)
         {
             if (size >= (nuint.MaxValue >> 1) - 7 - MinObjectSize)
             {
@@ -858,52 +940,68 @@ namespace Internal.Runtime.GC
 
             s_uohAllocationLock.Enter();
 
-            byte* allocation = s_pohSegment.allocated;
-            if (allocation is null ||
-                !TryAlignUp(allocation, (nuint)sizeof(void*), out byte* alignedAllocation) ||
-                alignedAllocation > s_pohSegment.reserved ||
-                size > (nuint)(s_pohSegment.reserved - alignedAllocation))
+            fixed (heap_segment* lohSegment = &s_lohSegment)
+            fixed (heap_segment* pohSegment = &s_pohSegment)
+            fixed (generation* lohGeneration = &s_lohGeneration)
+            fixed (generation* pohGeneration = &s_pohGeneration)
             {
-                s_uohAllocationLock.Leave();
-                return null;
-            }
-
-            byte* end = alignedAllocation + size;
-            if (end > s_pohSegment.committed)
-            {
-                if (!TryAlignUp((nuint)end, GCPageSize, out nuint committedEnd) ||
-                    committedEnd > (nuint)s_pohSegment.reserved ||
-                    !GCToOSInterface.VirtualCommit(s_pohSegment.committed, committedEnd - (nuint)s_pohSegment.committed))
+                heap_segment* segment = pinned ? pohSegment : lohSegment;
+                generation* generation = pinned ? pohGeneration : lohGeneration;
+                nuint padding = pinned ? 0 : LohPaddingSize;
+                if (size > nuint.MaxValue - padding)
                 {
                     s_uohAllocationLock.Leave();
                     return null;
                 }
 
-                s_pohSegment.committed = (byte*)committedEnd;
+                byte* allocation = segment->allocated;
+                if (allocation is null ||
+                    !TryAlignUp(allocation, (nuint)sizeof(void*), out byte* alignedAllocation) ||
+                    alignedAllocation > segment->reserved ||
+                    size + padding > (nuint)(segment->reserved - alignedAllocation))
+                {
+                    s_uohAllocationLock.Leave();
+                    return null;
+                }
+
+                byte* objectAllocation = alignedAllocation + padding;
+                byte* end = objectAllocation + size;
+                if (!CommitForAllocation(segment, alignedAllocation, size + padding, segment->mem))
+                {
+                    s_uohAllocationLock.Leave();
+                    return null;
+                }
+
+                if (padding != 0)
+                {
+                    FormatUnusedArray(alignedAllocation, padding);
+                    generation->free_obj_space += padding;
+                }
+
+                segment->allocated = end;
+                if (segment->used < end)
+                {
+                    segment->used = end;
+                }
+
+                generation->end_seg_allocated += size + padding;
+                generation->allocation_size += size;
+                context->alloc_bytes_uoh += (long)size;
+                s_totalAllocatedBytesUoh += size;
+
+                ClearSyncBlock(objectAllocation);
+                if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL) == 0)
+                {
+                    nuint headerSize = 2 * (nuint)sizeof(void*);
+                    if (size > headerSize)
+                    {
+                        ClearMemory(objectAllocation + headerSize, size - headerSize);
+                    }
+                }
+
+                s_uohAllocationLock.Leave();
+                return (Object*)objectAllocation;
             }
-
-            s_pohSegment.allocated = end;
-            if (s_pohSegment.used < end)
-            {
-                s_pohSegment.used = end;
-            }
-
-            s_pohGeneration.end_seg_allocated += size;
-            s_pohGeneration.allocation_size += size;
-
-            gc_alloc_context allocationContext = default;
-            allocationContext.alloc_ptr = alignedAllocation;
-            allocationContext.alloc_limit = end;
-            allocationContext.alloc_bytes_uoh = (long)size;
-
-            *((nuint*)(alignedAllocation - sizeof(void*))) = 0;
-            if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL) == 0)
-            {
-                ClearMemory(alignedAllocation, size);
-            }
-
-            s_uohAllocationLock.Leave();
-            return (Object*)allocationContext.alloc_ptr;
         }
 
         private static Object* RegisterAllocatedObject(Object* allocation, nuint size, uint flags)
@@ -1152,6 +1250,100 @@ namespace Internal.Runtime.GC
             }
         }
 
+        private static void ClearSyncBlock(byte* allocation)
+        {
+            *((nuint*)(allocation - sizeof(void*))) = 0;
+        }
+
+        private static uint GetGenerationWithRangeCore(Object* obj, byte** start, byte** allocated, byte** reserved)
+        {
+            if (obj is null)
+            {
+                return int.MaxValue;
+            }
+
+            nuint address = (nuint)obj;
+            if (address < (nuint)s_heapBase || address >= (nuint)s_heapEnd || IsInFrozenSegment(null, obj))
+            {
+                return int.MaxValue;
+            }
+
+            if (IsAddressInSegment(address, s_lohSegment))
+            {
+                SetGenerationRange(start, allocated, reserved, s_lohSegment.mem, s_lohSegment.allocated, s_lohSegment.reserved);
+                return (uint)gc_generation_num.loh_generation;
+            }
+
+            if (IsAddressInSegment(address, s_pohSegment))
+            {
+                SetGenerationRange(start, allocated, reserved, s_pohSegment.mem, s_pohSegment.allocated, s_pohSegment.reserved);
+                return (uint)gc_generation_num.poh_generation;
+            }
+
+            if (!IsAddressInSegment(address, s_sohSegment))
+            {
+                return int.MaxValue;
+            }
+
+            byte* end = s_sohSegment.allocated;
+            byte* rangeReserved = s_sohSegment.reserved;
+            for (int generation = 0; generation < (int)gc_generation_num.max_generation; generation++)
+            {
+                byte* generationStart = GetGenerationAllocationStart(generation);
+                if ((byte*)obj >= generationStart)
+                {
+                    SetGenerationRange(start, allocated, reserved, generationStart, end, rangeReserved);
+                    return (uint)generation;
+                }
+
+                end = rangeReserved = generationStart;
+            }
+
+            SetGenerationRange(start, allocated, reserved, s_sohSegment.mem, end, rangeReserved);
+            return (uint)gc_generation_num.max_generation;
+        }
+
+        private static byte* GetGenerationAllocationStart(int generation)
+        {
+            return generation switch
+            {
+                0 => s_generation0.allocation_start,
+                1 => s_generation1.allocation_start,
+                _ => s_generation2.allocation_start,
+            };
+        }
+
+        private static void SetGenerationRange(byte** start, byte** allocated, byte** reserved, byte* rangeStart, byte* rangeAllocated, byte* rangeReserved)
+        {
+            if (start is not null)
+            {
+                *start = rangeStart;
+            }
+
+            if (allocated is not null)
+            {
+                *allocated = rangeAllocated;
+            }
+
+            if (reserved is not null)
+            {
+                *reserved = rangeReserved;
+            }
+        }
+
+        private static nuint GetSegmentBytesInUse(heap_segment* segment, nuint freeObjectSpace, nuint freeListSpace)
+        {
+            if (segment->allocated <= segment->mem)
+            {
+                return 0;
+            }
+
+            nuint size = (nuint)(segment->allocated - segment->mem);
+            nuint free = freeObjectSpace + freeListSpace;
+
+            return free < size ? size - free : 0;
+        }
+
         private static void InitializeSegment(heap_segment* segment, byte* baseAddress, nuint size)
         {
             *segment = default;
@@ -1391,38 +1583,38 @@ namespace Internal.Runtime.GC
             return true;
         }
 
-        private static bool CommitForAllocation(byte* allocation, nuint size)
+        private static bool CommitForAllocation(heap_segment* segment, byte* allocation, nuint size, byte* minimumAllocation)
         {
-            if (allocation < s_generation0.allocation_start || allocation > s_sohSegment.reserved)
+            if (allocation < minimumAllocation || allocation > segment->reserved)
             {
                 return false;
             }
 
-            if (size > (nuint)(s_sohSegment.reserved - allocation))
+            if (size > (nuint)(segment->reserved - allocation))
             {
                 return false;
             }
 
             byte* requiredEnd = allocation + size;
             if (!TryAlignUp(requiredEnd, GCToOSInterface.PageSize, out byte* commitEnd) ||
-                commitEnd > s_sohSegment.reserved)
+                commitEnd > segment->reserved)
             {
                 return false;
             }
 
-            if (commitEnd <= s_sohSegment.committed)
+            if (commitEnd <= segment->committed)
             {
                 return true;
             }
 
-            nuint commitSize = (nuint)(commitEnd - s_sohSegment.committed);
-            bool committed = GCToOSInterface.VirtualCommit(s_sohSegment.committed, commitSize);
+            nuint commitSize = (nuint)(commitEnd - segment->committed);
+            bool committed = GCToOSInterface.VirtualCommit(segment->committed, commitSize);
             if (!committed)
             {
                 return false;
             }
 
-            s_sohSegment.committed = commitEnd;
+            segment->committed = commitEnd;
             return true;
         }
 

@@ -39,12 +39,14 @@ GPTR_IMPL(GcDacVars, g_gcDacGlobals);
 
 // GC entrypoints for the linked-in GC. These symbols are invoked
 // directly if we are not using a standalone GC.
+#ifndef FEATURE_CSHARP_GC_ONLY
 extern "C" HRESULT LOCALGC_CALLCONV GC_Initialize(
     /* In  */ IGCToCLR* clrToGC,
     /* Out */ IGCHeap** gcHeap,
     /* Out */ IGCHandleManager** gcHandleManager,
     /* Out */ GcDacVars* gcDacVars
 );
+#endif // FEATURE_CSHARP_GC_ONLY
 
 #ifndef DACCESS_COMPILE
 
@@ -55,15 +57,16 @@ HRESULT GCHeapUtilities::InitializeGC()
     return InitializeGCSelector();
 }
 
+#ifndef FEATURE_CSHARP_GC_ONLY
+// Initializes a non-standalone GC. The protocol for initializing a non-standalone GC
+// is similar to loading a standalone one, except that the GC_VersionInfo and
+// GC_Initialize symbols are linked to directory and thus don't need to be loaded.
+//
 HRESULT InitializeDefaultGC()
 {
     return GCHeapUtilities::InitializeDefaultGC();
 }
 
-// Initializes a non-standalone GC. The protocol for initializing a non-standalone GC
-// is similar to loading a standalone one, except that the GC_VersionInfo and
-// GC_Initialize symbols are linked to directory and thus don't need to be loaded.
-//
 HRESULT GCHeapUtilities::InitializeDefaultGC()
 {
     // we should only call this once on startup. Attempting to load a GC
@@ -89,5 +92,6 @@ HRESULT GCHeapUtilities::InitializeDefaultGC()
 
     return initResult;
 }
+#endif // FEATURE_CSHARP_GC_ONLY
 
 #endif // DACCESS_COMPILE

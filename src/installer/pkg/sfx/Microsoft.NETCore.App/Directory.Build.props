@@ -152,12 +152,14 @@
     <PlatformManifestFileEntry Include="libbootstrapperdll.o" IsNative="true" />
     <PlatformManifestFileEntry Include="libeventpipe-disabled.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libeventpipe-enabled.a" IsNative="true" />
+    <PlatformManifestFileEntry Include="libRuntime.CSharpGC.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libRuntime.ServerGC.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libRuntime.WorkstationGC.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libRuntime.VxSortDisabled.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libRuntime.VxSortEnabled.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libstandalonegc-disabled.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libstandalonegc-enabled.a" IsNative="true" />
+    <PlatformManifestFileEntry Include="libcsharpgc-enabled.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libaotminipal.a" IsNative="true" />
     <PlatformManifestFileEntry Include="libstdc++compat.a" IsNative="true" />
     <!-- NativeAOT/Windows specific files -->
@@ -166,12 +168,14 @@
     <PlatformManifestFileEntry Include="dllmain.obj" IsNative="true" />
     <PlatformManifestFileEntry Include="eventpipe-disabled.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="eventpipe-enabled.lib" IsNative="true" />
+    <PlatformManifestFileEntry Include="Runtime.CSharpGC.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="Runtime.ServerGC.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="Runtime.WorkstationGC.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="Runtime.VxsortEnabled.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="Runtime.VxsortDisabled.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="standalonegc-disabled.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="standalonegc-enabled.lib" IsNative="true" />
+    <PlatformManifestFileEntry Include="csharpgc-enabled.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="System.Globalization.Native.Aot.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="System.IO.Compression.Native.Aot.lib" IsNative="true" />
     <PlatformManifestFileEntry Include="aotminipal.lib" IsNative="true" />
