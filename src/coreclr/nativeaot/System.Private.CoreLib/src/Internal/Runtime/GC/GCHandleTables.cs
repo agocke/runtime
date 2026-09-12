@@ -24,6 +24,10 @@ namespace Internal.Runtime.GC
         private const byte BlockInvalid = 0xFF;
         private const byte InternalDataBlockType = HandleMaxPublicTypes;
         private const uint HandleTableCount = 1;
+        private const uint VHT_WEAK_SHORT = 0x00000100;
+        private const uint VHT_WEAK_LONG = 0x00000200;
+        private const uint VHT_STRONG = 0x00000400;
+        private const uint VHT_PINNED = 0x00000800;
 
         private static IGCHandleStoreVtable s_storeVtable;
         private static GCHandleStore s_globalStore;
@@ -443,10 +447,738 @@ namespace Internal.Runtime.GC
             nuint param2)
         {
             _ = manager;
-            _ = callback;
-            _ = param1;
-            _ = param2;
-            FailFast();
+            if (callback is null)
+            {
+                return;
+            }
+
+            ScanRefCountedHandles(callback, param1, param2);
+        }
+
+        public static void ScanForPromotion(
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext,
+            int condemnedGeneration,
+            int maxGeneration)
+        {
+            ScanHandleType(HandleType.HNDTYPE_PINNED, callback, scanContext, (uint)GCInterfaceConstants.GC_CALL_PINNED);
+            ScanAsyncPinnedHandles(callback, scanContext);
+            ScanVariableHandles(callback, scanContext, VHT_PINNED, (uint)GCInterfaceConstants.GC_CALL_PINNED);
+
+            ScanHandleType(HandleType.HNDTYPE_STRONG, callback, scanContext, 0);
+            if (condemnedGeneration < maxGeneration)
+            {
+                ScanHandleType(HandleType.HNDTYPE_SIZEDREF, callback, scanContext, 0);
+            }
+
+            ScanVariableHandles(callback, scanContext, VHT_STRONG, 0);
+
+            IGCToCLR* gcToClr = GCCommon.g_theGCToCLR;
+            if (gcToClr is not null &&
+                gcToClr->Vtable is not null &&
+                gcToClr->Vtable->RefCountedHandleCallbacks is not null)
+            {
+                ScanRefCountedHandlesForPromotion(callback, scanContext, gcToClr);
+            }
+        }
+
+        public static void ScanSizedRefForPromotion(
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext)
+        {
+            ScanHandleType(HandleType.HNDTYPE_SIZEDREF, callback, scanContext, 0);
+        }
+
+        public static void ClearUnpromotedHandles(HandleType type)
+        {
+            ClearUnpromotedHandleType(type);
+            if (type == HandleType.HNDTYPE_WEAK_SHORT)
+            {
+                ClearUnpromotedVariableHandles(VHT_WEAK_SHORT);
+            }
+
+            if (type == HandleType.HNDTYPE_WEAK_LONG)
+            {
+                ClearUnpromotedHandleType(HandleType.HNDTYPE_REFCOUNTED);
+                ClearUnpromotedHandleType(HandleType.HNDTYPE_WEAK_INTERIOR_POINTER);
+                ClearUnpromotedVariableHandles(VHT_WEAK_LONG);
+            }
+        }
+
+        public static void ClearUnpromotedDependentHandles()
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                ClearUnpromotedDependentBlocks(segment);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ScanHandleType(
+            HandleType type,
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext,
+            uint flags)
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                ScanBlock(segment, type, callback, scanContext, flags);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ScanBlock(
+            HandleTableSegment* segment,
+            HandleType type,
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext,
+            uint flags)
+        {
+            for (int block = 0; block < HandleBlocksPerSegment; block++)
+            {
+                if (segment->BlockType[block] != (byte)type)
+                {
+                    continue;
+                }
+
+                if (!EnsureBlockCommitted(segment, block))
+                {
+                    FailFast();
+                    return;
+                }
+
+                uint lowerMask = segment->FreeMask[block * 2];
+                uint upperMask = segment->FreeMask[(block * 2) + 1];
+                for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                {
+                    bool free = slot < 32
+                        ? (lowerMask & (1u << slot)) != 0
+                        : (upperMask & (1u << (slot - 32))) != 0;
+                    if (!free)
+                    {
+                        OBJECTHANDLE__* handle = SlotAddress(segment, block, slot);
+                        callback((Object**)handle, scanContext, flags);
+                    }
+                }
+            }
+        }
+
+        private static void ScanVariableHandles(
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext,
+            uint variableType,
+            uint flags)
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                ScanVariableBlocks(segment, callback, scanContext, variableType, flags);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ScanVariableBlocks(
+            HandleTableSegment* segment,
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext,
+            uint variableType,
+            uint flags)
+        {
+            for (int block = 0; block < HandleBlocksPerSegment; block++)
+            {
+                if (segment->BlockType[block] != (byte)HandleType.HNDTYPE_VARIABLE ||
+                    !EnsureBlockCommitted(segment, block))
+                {
+                    continue;
+                }
+
+                void** extraInfo = null;
+                byte dataBlock = segment->UserData[block];
+                if (dataBlock != BlockInvalid && EnsureBlockCommitted(segment, dataBlock))
+                {
+                    extraInfo = (void**)SlotAddress(segment, dataBlock, 0);
+                }
+
+                uint lowerMask = segment->FreeMask[block * 2];
+                uint upperMask = segment->FreeMask[(block * 2) + 1];
+                for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                {
+                    bool free = slot < 32
+                        ? (lowerMask & (1u << slot)) != 0
+                        : (upperMask & (1u << (slot - 32))) != 0;
+                    if (free || extraInfo is null || (((nuint)extraInfo[slot] & variableType) == 0))
+                    {
+                        continue;
+                    }
+
+                    callback((Object**)SlotAddress(segment, block, slot), scanContext, flags);
+                }
+            }
+        }
+
+        private static void ScanRefCountedHandles(
+            delegate* unmanaged[SuppressGCTransition]<Object**, nuint*, nuint, nuint, void> callback,
+            nuint param1,
+            nuint param2)
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                for (int block = 0; block < HandleBlocksPerSegment; block++)
+                                {
+                                    if (segment->BlockType[block] != (byte)HandleType.HNDTYPE_REFCOUNTED)
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!EnsureBlockCommitted(segment, block))
+                                    {
+                                        FailFast();
+                                        return;
+                                    }
+
+                                    uint lowerMask = segment->FreeMask[block * 2];
+                                    uint upperMask = segment->FreeMask[(block * 2) + 1];
+                                    for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                                    {
+                                        bool free = slot < 32
+                                            ? (lowerMask & (1u << slot)) != 0
+                                            : (upperMask & (1u << (slot - 32))) != 0;
+                                        if (!free)
+                                        {
+                                            callback((Object**)SlotAddress(segment, block, slot), null, param1, param2);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ScanRefCountedHandlesForPromotion(
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext,
+            IGCToCLR* gcToClr)
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                for (int block = 0; block < HandleBlocksPerSegment; block++)
+                                {
+                                    if (segment->BlockType[block] != (byte)HandleType.HNDTYPE_REFCOUNTED)
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!EnsureBlockCommitted(segment, block))
+                                    {
+                                        FailFast();
+                                        return;
+                                    }
+
+                                    uint lowerMask = segment->FreeMask[block * 2];
+                                    uint upperMask = segment->FreeMask[(block * 2) + 1];
+                                    for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                                    {
+                                        bool free = slot < 32
+                                            ? (lowerMask & (1u << slot)) != 0
+                                            : (upperMask & (1u << (slot - 32))) != 0;
+                                        if (free)
+                                        {
+                                            continue;
+                                        }
+
+                                        OBJECTHANDLE__* handle = SlotAddress(segment, block, slot);
+                                        Object* obj = FetchObject(handle);
+                                        if (obj is not null &&
+                                            gcToClr->Vtable->RefCountedHandleCallbacks(gcToClr, obj))
+                                        {
+                                            callback((Object**)handle, scanContext, 0);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ScanAsyncPinnedHandles(
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext)
+        {
+            IGCToCLR* gcToClr = GCCommon.g_theGCToCLR;
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                for (int block = 0; block < HandleBlocksPerSegment; block++)
+                                {
+                                    if (segment->BlockType[block] != (byte)HandleType.HNDTYPE_ASYNCPINNED)
+                                    {
+                                        continue;
+                                    }
+
+                                    ScanAsyncPinnedBlock(segment, block, callback, scanContext, gcToClr);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ScanAsyncPinnedBlock(
+            HandleTableSegment* segment,
+            int block,
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext,
+            IGCToCLR* gcToClr)
+        {
+            if (!EnsureBlockCommitted(segment, block))
+            {
+                FailFast();
+                return;
+            }
+
+            uint lowerMask = segment->FreeMask[block * 2];
+            uint upperMask = segment->FreeMask[(block * 2) + 1];
+            for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+            {
+                bool free = slot < 32
+                    ? (lowerMask & (1u << slot)) != 0
+                    : (upperMask & (1u << (slot - 32))) != 0;
+                if (!free)
+                {
+                    ScanAsyncPinnedHandle(
+                        SlotAddress(segment, block, slot),
+                        callback,
+                        scanContext,
+                        gcToClr);
+                }
+            }
+        }
+
+        private static void ScanAsyncPinnedHandle(
+            OBJECTHANDLE__* handle,
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext,
+            IGCToCLR* gcToClr)
+        {
+            callback((Object**)handle, scanContext, 0);
+            Object* obj = FetchObject(handle);
+            if (obj is not null &&
+                gcToClr is not null &&
+                gcToClr->Vtable is not null &&
+                gcToClr->Vtable->WalkAsyncPinnedForPromotion is not null)
+            {
+                gcToClr->Vtable->WalkAsyncPinnedForPromotion(
+                    gcToClr,
+                    obj,
+                    scanContext,
+                    callback);
+            }
+        }
+
+        private static void ClearUnpromotedHandleType(HandleType type)
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                ClearUnpromotedBlocks(segment, type);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ClearUnpromotedDependentBlocks(HandleTableSegment* segment)
+        {
+            for (int block = 0; block < HandleBlocksPerSegment; block++)
+            {
+                if (segment->BlockType[block] != (byte)HandleType.HNDTYPE_DEPENDENT ||
+                    !EnsureBlockCommitted(segment, block))
+                {
+                    continue;
+                }
+
+                byte dataBlock = segment->UserData[block];
+                if (dataBlock == BlockInvalid || !EnsureBlockCommitted(segment, dataBlock))
+                {
+                    FailFast();
+                    return;
+                }
+
+                void** secondarySlots = (void**)SlotAddress(segment, dataBlock, 0);
+                uint lowerMask = segment->FreeMask[block * 2];
+                uint upperMask = segment->FreeMask[(block * 2) + 1];
+                for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                {
+                    bool free = slot < 32
+                        ? (lowerMask & (1u << slot)) != 0
+                        : (upperMask & (1u << (slot - 32))) != 0;
+                    if (free)
+                    {
+                        continue;
+                    }
+
+                    OBJECTHANDLE__* handle = SlotAddress(segment, block, slot);
+                    Object* primary = FetchObject(handle);
+                    if (!GCWksInitialization.IsPromotedObject(primary))
+                    {
+                        StoreObject(handle, null);
+                        secondarySlots[slot] = null;
+                    }
+                }
+            }
+        }
+
+        private static void ClearUnpromotedVariableHandles(uint variableType)
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                ClearUnpromotedVariableBlocks(segment, variableType);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ClearUnpromotedVariableBlocks(HandleTableSegment* segment, uint variableType)
+        {
+            for (int block = 0; block < HandleBlocksPerSegment; block++)
+            {
+                if (segment->BlockType[block] != (byte)HandleType.HNDTYPE_VARIABLE ||
+                    !EnsureBlockCommitted(segment, block))
+                {
+                    continue;
+                }
+
+                byte dataBlock = segment->UserData[block];
+                if (dataBlock == BlockInvalid || !EnsureBlockCommitted(segment, dataBlock))
+                {
+                    FailFast();
+                    return;
+                }
+
+                void** extraInfo = (void**)SlotAddress(segment, dataBlock, 0);
+                uint lowerMask = segment->FreeMask[block * 2];
+                uint upperMask = segment->FreeMask[(block * 2) + 1];
+                for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                {
+                    bool free = slot < 32
+                        ? (lowerMask & (1u << slot)) != 0
+                        : (upperMask & (1u << (slot - 32))) != 0;
+                    Object* obj = FetchObject(SlotAddress(segment, block, slot));
+                    if (!free &&
+                        ((nuint)extraInfo[slot] & variableType) != 0 &&
+                        obj is not null &&
+                        !GCWksInitialization.IsPromotedObject(obj))
+                    {
+                        StoreObject(SlotAddress(segment, block, slot), null);
+                    }
+                }
+            }
+        }
+
+        private static void ClearUnpromotedBlocks(HandleTableSegment* segment, HandleType type)
+        {
+            for (int block = 0; block < HandleBlocksPerSegment; block++)
+            {
+                if (segment->BlockType[block] != (byte)type || !EnsureBlockCommitted(segment, block))
+                {
+                    continue;
+                }
+
+                uint lowerMask = segment->FreeMask[block * 2];
+                uint upperMask = segment->FreeMask[(block * 2) + 1];
+                for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                {
+                    bool free = slot < 32
+                        ? (lowerMask & (1u << slot)) != 0
+                        : (upperMask & (1u << (slot - 32))) != 0;
+                    if (!free)
+                    {
+                        OBJECTHANDLE__* handle = SlotAddress(segment, block, slot);
+                        Object* obj = FetchObject(handle);
+                        if (obj is not null && !GCWksInitialization.IsPromotedObject(obj))
+                        {
+                            StoreObject(handle, null);
+                        }
+                    }
+                }
+            }
+        }
+
+        public static bool ScanDependentHandlesForPromotion(
+            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext)
+        {
+            bool promoted = false;
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                HandleTableMap* map = mapStorage;
+                while (map is not null)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList; segment is not null; segment = segment->NextSegment)
+                            {
+                                for (int block = 0; block < HandleBlocksPerSegment; block++)
+                                {
+                                    if (segment->BlockType[block] != (byte)HandleType.HNDTYPE_DEPENDENT)
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!EnsureBlockCommitted(segment, block))
+                                    {
+                                        FailFast();
+                                        return promoted;
+                                    }
+
+                                    uint lowerMask = segment->FreeMask[block * 2];
+                                    uint upperMask = segment->FreeMask[(block * 2) + 1];
+                                    for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                                    {
+                                        bool free = slot < 32
+                                            ? (lowerMask & (1u << slot)) != 0
+                                            : (upperMask & (1u << (slot - 32))) != 0;
+                                        if (free)
+                                        {
+                                            continue;
+                                        }
+
+                                        OBJECTHANDLE__* handle = SlotAddress(segment, block, slot);
+                                        Object* primary = (Object*)*(nint*)handle;
+                                        if (primary is null)
+                                        {
+                                            continue;
+                                        }
+
+                                        void** secondarySlot = FetchExtraInfoSlot(handle, HandleType.HNDTYPE_DEPENDENT);
+                                        if (secondarySlot is null || *secondarySlot is null)
+                                        {
+                                            continue;
+                                        }
+
+                                        if (GCWksInitialization.IsPromotedObject(primary))
+                                        {
+                                            Object** secondary = (Object**)secondarySlot;
+                                            bool wasPromoted = GCWksInitialization.IsPromotedObject((Object*)*secondarySlot);
+                                            callback(secondary, scanContext, 0);
+                                            promoted |= !wasPromoted && *secondary is not null &&
+                                                GCWksInitialization.IsPromotedObject(*secondary);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    map = map->Next;
+                }
+            }
+
+            return promoted;
         }
 
         private static OBJECTHANDLE__* CreateHandle(GCHandleStore* store, Object* value, HandleType type, void* extraInfo)

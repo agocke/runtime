@@ -128,6 +128,8 @@
     <Compile Include="Internal\Runtime\GC\GCToOSInterface.cs" />
     <Compile Include="Internal\Runtime\GC\GCToOSInterface.Unix.cs" />
     <Compile Include="Internal\Runtime\GC\GCWksInitialization.cs" />
+    <Compile Include="Internal\Runtime\GC\GCWksMarking.cs" />
+    <Compile Include="Internal\Runtime\GC\GCWksPlanning.cs" />
     <Compile Include="Internal\Runtime\GC\GCToOSInterface.Windows.cs" />
     <Compile Include="Internal\Runtime\GC\GCCommon.cs" />
     <Compile Include="Internal\Runtime\GC\GCConfig.cs" />

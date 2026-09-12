@@ -302,9 +302,106 @@ namespace Internal.Runtime.GC
         public void* m_impl;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct mark
     {
-        private byte _opaque;
+        public byte* first;
+        public nuint len;
+        public gap_reloc_pair saved_pre_plug;
+        public gap_reloc_pair saved_pre_plug_reloc;
+        public gap_reloc_pair saved_post_plug;
+        public gap_reloc_pair saved_post_plug_reloc;
+        public byte* saved_pre_plug_info_reloc_start;
+        public byte* saved_post_plug_info_start;
+        public byte* allocation_context_start_region;
+        public int saved_pre_p;
+        public int saved_post_p;
+        public gap_reloc_pair saved_post_plug_debug;
+
+        public static nuint GetMaxShortBits()
+        {
+            return (nuint)(sizeof(gap_reloc_pair) / sizeof(byte*));
+        }
+
+        public static nuint GetPreShortStartBit()
+        {
+            return (nuint)(sizeof(int) * 8 - 1) - GetMaxShortBits();
+        }
+
+        public bool PreShortP()
+        {
+            return (saved_pre_p & (1 << (sizeof(int) * 8 - 1))) != 0;
+        }
+
+        public void SetPreShort()
+        {
+            saved_pre_p |= 1 << (sizeof(int) * 8 - 1);
+        }
+
+        public void SetPreShortBit(nuint bit)
+        {
+            saved_pre_p |= 1 << (int)(GetPreShortStartBit() + bit);
+        }
+
+        public bool PreShortBitP(nuint bit)
+        {
+            return (saved_pre_p & (1 << (int)(GetPreShortStartBit() + bit))) != 0;
+        }
+
+        public void SetPreShortCollectible()
+        {
+            saved_pre_p |= 2;
+        }
+
+        public bool PreShortCollectibleP()
+        {
+            return (saved_pre_p & 2) != 0;
+        }
+
+        public static nuint GetPostShortStartBit()
+        {
+            return (nuint)(sizeof(int) * 8 - 1) - GetMaxShortBits();
+        }
+
+        public bool PostShortP()
+        {
+            return (saved_post_p & (1 << (sizeof(int) * 8 - 1))) != 0;
+        }
+
+        public void SetPostShort()
+        {
+            saved_post_p |= 1 << (sizeof(int) * 8 - 1);
+        }
+
+        public void SetPostShortBit(nuint bit)
+        {
+            saved_post_p |= 1 << (int)(GetPostShortStartBit() + bit);
+        }
+
+        public bool PostShortBitP(nuint bit)
+        {
+            return (saved_post_p & (1 << (int)(GetPostShortStartBit() + bit))) != 0;
+        }
+
+        public void SetPostShortCollectible()
+        {
+            saved_post_p |= 2;
+        }
+
+        public bool PostShortCollectibleP()
+        {
+            return (saved_post_p & 2) != 0;
+        }
+
+        public bool HasPrePlugInfo()
+        {
+            return saved_pre_p != 0;
+        }
+
+        public bool HasPostPlugInfo()
+        {
+            return saved_post_p != 0;
+        }
     }
 
     internal unsafe struct CObjectHeader
@@ -514,6 +611,8 @@ namespace Internal.Runtime.GC
         public nuint pinned_allocation_compact_size;
         public nuint pinned_allocation_sweep_size;
         public int gen_num;
+        public int set_bgc_mark_bit_p;
+        public byte* last_free_list_allocated;
     }
 
     internal unsafe struct static_data
@@ -800,6 +899,7 @@ namespace Internal.Runtime.GC
         public byte* skew;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct pair
     {
         public short left;
@@ -838,6 +938,7 @@ namespace Internal.Runtime.GC
         public plug m_plug;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct gap_reloc_pair
     {
         public nuint gap;

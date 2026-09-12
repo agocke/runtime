@@ -133,6 +133,11 @@ namespace Internal.Runtime.GC
             return (m_flagsOrComponentSize.m_flags & MTFlag_HasComponentSize) != 0;
         }
 
+        public uint GetNumComponents(Object* obj)
+        {
+            return ((ArrayBase*)obj)->m_dwLength;
+        }
+
         public bool HasFinalizer()
         {
             return (m_flagsOrComponentSize.m_flags & MTFlag_HasFinalizer) != 0;

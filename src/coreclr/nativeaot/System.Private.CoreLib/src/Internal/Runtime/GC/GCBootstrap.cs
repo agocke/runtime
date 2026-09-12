@@ -128,7 +128,7 @@ namespace Internal.Runtime.GC
             s_heapVtable.GetLastGCPercentTimeInGC = &Stub_GetLastGCPercentTimeInGC;
             s_heapVtable.GetLastGCGenerationSize = &Stub_GetLastGCGenerationSize;
             s_heapVtable.Initialize = &GCWksInitialization.InitializeHeap;
-            s_heapVtable.IsPromoted = &Stub_IsPromoted;
+            s_heapVtable.IsPromoted = &GCWksInitialization.IsPromoted;
             s_heapVtable.IsHeapPointer = &Stub_IsHeapPointer;
             s_heapVtable.GetCondemnedGeneration = &Stub_GetCondemnedGeneration;
             s_heapVtable.IsGCInProgressHelper = &Stub_IsGCInProgressHelper;

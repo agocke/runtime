@@ -129,6 +129,8 @@ namespace Internal.Runtime.GC
 
     internal unsafe struct Object
     {
+        public const nuint GC_MARKED = 1;
+
         public MethodTable* m_pMethTab;
 
         public ObjHeader* GetHeader()
@@ -152,6 +154,21 @@ namespace Internal.Runtime.GC
         public void RawSetMethodTable(MethodTable* pMT)
         {
             m_pMethTab = pMT;
+        }
+
+        public void SetMarked()
+        {
+            m_pMethTab = (MethodTable*)((nuint)m_pMethTab | GC_MARKED);
+        }
+
+        public bool IsMarked()
+        {
+            return ((nuint)m_pMethTab & GC_MARKED) != 0;
+        }
+
+        public void ClearMarked()
+        {
+            m_pMethTab = (MethodTable*)((nuint)m_pMethTab & ~GC_MARKED);
         }
     }
 

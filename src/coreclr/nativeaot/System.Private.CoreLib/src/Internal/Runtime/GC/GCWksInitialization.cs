@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GC
 {
-    internal static unsafe class GCWksInitialization
+    internal static unsafe partial class GCWksInitialization
     {
         private const int S_OK = 0;
         private const int E_FAIL = unchecked((int)0x80004005);
