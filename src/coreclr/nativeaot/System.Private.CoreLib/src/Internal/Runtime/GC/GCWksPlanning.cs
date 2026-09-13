@@ -19,13 +19,22 @@ namespace Internal.Runtime.GC
         {
             // This is the segment-GC/WKS portion of gc_heap::plan_phase, beginning at
             // plan_phase.cpp:3315. The selected non-region generation-start,
-            // ephemeral-boundary, and survivor-accounting block is translated through
-            // plan_phase.cpp:4046. The explicit E_NOTIMPL boundary is before the first
-            // destination allocation at plan_phase.cpp:4059.
+            // ephemeral-boundary, survivor-accounting, allocate-in-condemned,
+            // convert-to-pinned/new-address, brick-table, relocation-tree,
+            // post-plug metadata, and exhausted-segment handling is translated
+            // through the !USE_REGIONS segment transition at plan_phase.cpp:3813.
+            // The translated boundary is after plan_generation_starts at
+            // plan_phase.cpp:4364, before unrelated growth-statistics and
+            // compaction-decision logic.
             generation* condemnedGenerationState = GetGeneration(condemnedGeneration);
             if (condemnedGenerationState is null)
             {
                 return E_FAIL;
+            }
+
+            if (s_brickTable is null || GCCommon.g_gc_lowest_address is null)
+            {
+                return E_NOTIMPL;
             }
 
             s_demotionLow = (byte*)nuint.MaxValue;
@@ -175,9 +184,33 @@ namespace Internal.Runtime.GC
             {
                 if (x >= end)
                 {
-                    // The selected source next mutates segment allocation and brick
-                    // state at plan_phase.cpp:3773; stop before that boundary.
-                    return E_NOTIMPL;
+                    if (!useMarkList)
+                    {
+                        System.Diagnostics.Debug.Assert(x == end);
+                    }
+
+                    System.Diagnostics.Debug.Assert(segment->allocated == end);
+                    SaveAllocated(segment);
+                    segment->allocated = plugEnd;
+                    currentBrick = UpdateBrickTable(
+                        tree,
+                        currentBrick,
+                        x,
+                        plugEnd);
+                    sequenceNumber = 0;
+                    tree = null;
+
+                    heap_segment* nextSegment = segment->next;
+                    if (nextSegment is not null)
+                    {
+                        segment = nextSegment;
+                        end = segment->allocated;
+                        plugEnd = x = segment->mem;
+                        currentBrick = GetBrickIndex(x);
+                        continue;
+                    }
+
+                    break;
                 }
 
                 while (x < end && ((Object*)x)->IsMarked())
@@ -297,7 +330,7 @@ namespace Internal.Runtime.GC
                             {
                                 System.Diagnostics.Debug.Assert(!savedLastNonPinnedPlug);
 
-                                if (lastPinnedPlug is not null)
+                                if (lastPinnedPlugState)
                                 {
                                     mergeWithLastPin = true;
                                 }
@@ -321,10 +354,6 @@ namespace Internal.Runtime.GC
                     _ = addedPinningSize;
                     _ = savedLastObjectInPlug;
                     _ = activeOldGenerationNumber;
-                    _ = currentBrick;
-                    _ = tree;
-                    _ = sequenceNumber;
-                    _ = lastNode;
                     _ = numPinnedPlugsInPlug;
 
                     if (allocateFirstGenerationStart)
@@ -333,6 +362,7 @@ namespace Internal.Runtime.GC
                         int result = PlanGenerationStart(
                             condemnedGenerationState,
                             consingGeneration,
+                            promotion,
                             plugStart);
                         if (result != S_OK)
                         {
@@ -366,9 +396,154 @@ namespace Internal.Runtime.GC
 
                     activeOldGenerationData->survived_size += ps;
 
-                    // The selected allocator dependency begins at
-                    // plan_phase.cpp:4059. Do not approximate its destination choice.
-                    return E_NOTIMPL;
+                    bool convertToPinned = false;
+                    if (!pinnedPlug)
+                    {
+                        if (allocateInCondemned)
+                        {
+                            int allocationResult = AllocateInCondemnedGenerations(
+                                consingGeneration,
+                                ps,
+                                activeOldGenerationNumber,
+                                promotion,
+                                out newAddress,
+                                out convertToPinned,
+                                nonPinnedBeforePinned ? plugEnd : null,
+                                segment,
+                                plugStart);
+                            if (allocationResult != S_OK)
+                            {
+                                return allocationResult;
+                            }
+                        }
+                        else
+                        {
+                            // The older-generation allocator is outside this selected
+                            // initial full-gen2 transliteration.
+                            return E_NOTIMPL;
+                        }
+
+                        if (convertToPinned)
+                        {
+                            if (!lastNonPinnedPlug || lastPinnedPlugState)
+                            {
+                                return E_FAIL;
+                            }
+
+                            ConvertToPinnedPlug(
+                                ref lastNonPinnedPlug,
+                                ref lastPinnedPlugState,
+                                ref pinnedPlug,
+                                ps,
+                                ref artificialPinnedSize);
+                            EnquePinnedPlug(plugStart, false, null);
+                            lastPinnedPlug = plugStart;
+                        }
+                        else if (newAddress is null)
+                        {
+                            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+                            {
+                                System.Diagnostics.Debug.Assert(
+                                    consingGeneration->allocation_segment == ephemeralSegment);
+                                System.Diagnostics.Debug.Assert(
+                                    consingGeneration->allocation_context.alloc_ptr +
+                                        (nint)GCEnvironment.AlignUp(
+                                            ps,
+                                            (nuint)sizeof(void*)) <
+                                    ephemeralSegment->allocated);
+                                System.Diagnostics.Debug.Assert(
+                                    consingGeneration->allocation_context.alloc_ptr +
+                                        (nint)GCEnvironment.AlignUp(
+                                            ps,
+                                            (nuint)sizeof(void*)) >
+                                    ephemeralSegment->allocated +
+                                        (nint)GCEnvironment.AlignUp(
+                                            MinObjectSize,
+                                            (nuint)sizeof(void*)));
+                            }
+                        }
+                        else if (IsPlugPadded(plugStart))
+                        {
+                            activeOldGenerationData->padding_size +=
+                                GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*));
+                        }
+
+                    }
+
+                    if (pinnedPlug)
+                    {
+                        if (mergeWithLastPin)
+                        {
+                            MergeWithLastPinnedPlug(lastPinnedPlug, ps);
+                        }
+                        else
+                        {
+                            if (lastPinnedPlug != plugStart)
+                            {
+                                return E_FAIL;
+                            }
+
+                            SetPinnedInfo(plugStart, ps, consingGeneration);
+                        }
+
+                        newAddress = plugStart;
+                        activeOldGenerationData->pinned_survived_size += ps;
+                        activeOldGenerationData->added_pinned_size += addedPinningSize;
+                        activeOldGenerationData->artificial_pinned_survived_size += artificialPinnedSize;
+                    }
+
+                    if (!mergeWithLastPin)
+                    {
+                        if (currentBrick != GetBrickIndex(plugStart))
+                        {
+                            currentBrick = UpdateBrickTable(
+                                tree,
+                                currentBrick,
+                                plugStart,
+                                savedPlugEnd);
+                            sequenceNumber = 0;
+                            tree = null;
+                        }
+
+                        SetNodeRelocationDistance(
+                            plugStart,
+                            (nint)(newAddress - plugStart));
+                        if (lastNode is not null &&
+                            GetNodeRelocationDistance(lastNode) ==
+                                GetNodeRelocationDistance(plugStart) +
+                                GetNodeGapSize(plugStart))
+                        {
+                            SetNodeLeft(plugStart);
+                        }
+
+                        if (sequenceNumber == 0)
+                        {
+                            tree = plugStart;
+                        }
+
+                        tree = InsertNode(
+                            plugStart,
+                            ++sequenceNumber,
+                            tree,
+                            lastNode);
+                        lastNode = plugStart;
+
+                        if (!pinnedPlug &&
+                            s_markStackTos > 0)
+                        {
+                            mark* lastMark = &s_markStack[s_markStackTos - 1];
+                            if (lastMark->HasPostPlugInfo())
+                            {
+                                byte* postPlugInfoStart = lastMark->saved_post_plug_info_start;
+                                gap_reloc_pair* currentPlugGapStart =
+                                    (gap_reloc_pair*)(plugStart - sizeof(plug_and_gap));
+                                if ((byte*)currentPlugGapStart == postPlugInfoStart)
+                                {
+                                    lastMark->saved_post_plug_debug = *currentPlugGapStart;
+                                }
+                            }
+                        }
+                    }
                 }
 
                 x = FindNextMarked(x, end, s_useMarkList, ref markListNext, markListIndex);
@@ -377,15 +552,181 @@ namespace Internal.Runtime.GC
                     return E_FAIL;
                 }
             }
+
+            while (!PinnedPlugQueueEmpty())
+            {
+                if (promotion)
+                {
+                    mark* oldestPinnedPlug = OldestPin();
+                    if (oldestPinnedPlug is null)
+                    {
+                        return E_FAIL;
+                    }
+
+                    fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+                    {
+                        if (oldestPinnedPlug->first >= ephemeralSegment->mem &&
+                            oldestPinnedPlug->first < ephemeralSegment->reserved)
+                        {
+                            int ensureResult = EnsureEphemeralHeapSegment(
+                                consingGeneration,
+                                out consingGeneration);
+                            if (ensureResult != S_OK)
+                            {
+                                return ensureResult;
+                            }
+
+                            while (activeNewGenerationNumber > 0)
+                            {
+                                activeNewGenerationNumber--;
+
+                                if (activeNewGenerationNumber ==
+                                    (int)gc_generation_num.max_generation - 1)
+                                {
+                                    generation* maxGeneration =
+                                        GetGeneration((int)gc_generation_num.max_generation);
+                                    if (maxGeneration is null)
+                                    {
+                                        return E_FAIL;
+                                    }
+
+                                    s_maxgenPinnedCompactBeforeAdvance =
+                                        maxGeneration->pinned_allocation_compact_size;
+                                    if (s_decidePromoteGen1Pins)
+                                    {
+                                        // advance_pins_for_demotion remains outside
+                                        // this selected translation boundary.
+                                        return E_NOTIMPL;
+                                    }
+                                }
+
+                                generation* generationState =
+                                    GetGeneration(activeNewGenerationNumber);
+                                if (generationState is null)
+                                {
+                                    return E_FAIL;
+                                }
+
+                                int planResult = PlanGenerationStart(
+                                    generationState,
+                                    consingGeneration,
+                                    promotion,
+                                    null);
+                                if (planResult != S_OK)
+                                {
+                                    return planResult;
+                                }
+
+                                if (s_demotionLow == (byte*)nuint.MaxValue)
+                                {
+                                    s_demotionLow = oldestPinnedPlug->first;
+                                }
+
+                                System.Diagnostics.Debug.Assert(
+                                    generationState->plan_allocation_start is not null);
+                            }
+                        }
+                    }
+                }
+
+                if (PinnedPlugQueueEmpty())
+                {
+                    break;
+                }
+
+                nuint entry = DequeuePinnedPlug();
+                mark* pinnedPlugEntry = PinnedPlugOf(entry);
+                if (pinnedPlugEntry is null)
+                {
+                    return E_FAIL;
+                }
+
+                byte* plug = pinnedPlugEntry->first;
+                nuint length = pinnedPlugEntry->len;
+                heap_segment* allocationSegment =
+                    consingGeneration->allocation_segment;
+                if (allocationSegment is null)
+                {
+                    return E_FAIL;
+                }
+
+                heap_segment* pinnedAllocationSegment = allocationSegment;
+                while (plug < consingGeneration->allocation_context.alloc_ptr ||
+                       plug >= pinnedAllocationSegment->allocated)
+                {
+                    System.Diagnostics.Debug.Assert(
+                        plug < pinnedAllocationSegment->mem ||
+                        plug > pinnedAllocationSegment->reserved);
+                    if (pinnedAllocationSegment->next is null ||
+                        consingGeneration->allocation_context.alloc_ptr < pinnedAllocationSegment->mem ||
+                        consingGeneration->allocation_context.alloc_ptr > pinnedAllocationSegment->committed)
+                    {
+                        return E_FAIL;
+                    }
+
+                    pinnedAllocationSegment->plan_allocated =
+                        consingGeneration->allocation_context.alloc_ptr;
+                    pinnedAllocationSegment = pinnedAllocationSegment->next;
+                    consingGeneration->allocation_segment = pinnedAllocationSegment;
+                    consingGeneration->allocation_context.alloc_ptr = pinnedAllocationSegment->mem;
+                }
+
+                SetNewPinInfo(
+                    pinnedPlugEntry,
+                    consingGeneration->allocation_context.alloc_ptr);
+                System.Diagnostics.Debug.Assert(
+                    pinnedPlugEntry->len == 0 ||
+                    pinnedPlugEntry->len >= GCEnvironment.AlignUp(
+                        MinObjectSize,
+                        (nuint)sizeof(void*)));
+
+                consingGeneration->allocation_context.alloc_ptr = plug + length;
+                consingGeneration->allocation_context.alloc_limit =
+                    consingGeneration->allocation_context.alloc_ptr;
+
+                int fromGenerationNumber = GetObjectGenerationNumber(plug);
+                if (fromGenerationNumber != (int)gc_generation_num.max_generation &&
+                    promotion)
+                {
+                    generation* sweepGeneration =
+                        GetGeneration(fromGenerationNumber + 1);
+                    if (sweepGeneration is null)
+                    {
+                        return E_FAIL;
+                    }
+
+                    sweepGeneration->pinned_allocation_sweep_size += length;
+                }
+            }
+
+            int planStartsResult = PlanGenerationStarts(
+                condemnedGeneration,
+                ref consingGeneration,
+                promotion);
+            if (planStartsResult != S_OK)
+            {
+                return planStartsResult;
+            }
+
+            // Translation boundary: plan_phase.cpp:4364, before
+            // descr_generations("AP") and subsequent growth-statistics and
+            // compaction-decision logic.
+            return E_NOTIMPL;
         }
 
         private const nuint DemotionPlugLengthThreshold = 6 * 1024 * 1024;
+        private const int UsePaddingFront = 1;
+        private const int UsePaddingTail = 2;
+        private const nuint DesiredPlugLength = 1000;
 
         private static int PlanGenerationStart(
             generation* generationState,
             generation* consingGeneration,
+            bool promotion,
             byte* nextPlugToAllocate)
         {
+            // This follows plan_phase.cpp:1823 into the selected
+            // allocate_in_condemned_generations implementation.
             if (generationState is null || consingGeneration is null)
             {
                 return E_FAIL;
@@ -426,10 +767,784 @@ namespace Internal.Runtime.GC
                 }
             }
 
-            // allocate_in_condemned_generations is the first unavailable allocator
-            // dependency in this transliteration.
-            _ = nextPlugToAllocate;
-            return E_NOTIMPL;
+            int allocationResult = AllocateInCondemnedGenerations(
+                consingGeneration,
+                GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*)),
+                -1,
+                promotion,
+                out byte* planAllocationStart,
+                out bool ignoredConvertToPinned,
+                null,
+                null,
+                null);
+            if (allocationResult != S_OK)
+            {
+                return allocationResult;
+            }
+
+            generationState->plan_allocation_start = planAllocationStart;
+            generationState->plan_allocation_start_size =
+                GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*));
+
+            byte* allocationPointer = consingGeneration->allocation_context.alloc_ptr;
+            byte* allocationLimit = consingGeneration->allocation_context.alloc_limit;
+            if (allocationPointer is null || allocationLimit is null)
+            {
+                return E_FAIL;
+            }
+
+            nuint allocationLeft = allocationLimit >= allocationPointer
+                ? (nuint)(allocationLimit - allocationPointer)
+                : 0;
+            if (nextPlugToAllocate is not null)
+            {
+                if (nextPlugToAllocate < allocationPointer)
+                {
+                    return E_FAIL;
+                }
+
+                nuint distanceToNextPlug = (nuint)(nextPlugToAllocate - allocationPointer);
+                if (allocationLeft > distanceToNextPlug)
+                {
+                    allocationLeft = distanceToNextPlug;
+                }
+            }
+
+            if (allocationLeft < generationState->plan_allocation_start_size)
+            {
+                generationState->plan_allocation_start_size += allocationLeft;
+                consingGeneration->allocation_context.alloc_ptr += (nint)allocationLeft;
+            }
+
+            _ = ignoredConvertToPinned;
+            return S_OK;
+        }
+
+        private static int PlanGenerationStarts(
+            int condemnedGeneration,
+            ref generation* consingGeneration,
+            bool promotion)
+        {
+            if (consingGeneration is null)
+            {
+                return E_FAIL;
+            }
+
+            int generationNumber = condemnedGeneration;
+            while (generationNumber >= 0)
+            {
+                if (generationNumber < (int)gc_generation_num.max_generation)
+                {
+                    int ensureResult = EnsureEphemeralHeapSegment(
+                        consingGeneration,
+                        out consingGeneration);
+                    if (ensureResult != S_OK)
+                    {
+                        return ensureResult;
+                    }
+
+                    if (consingGeneration is null)
+                    {
+                        return E_FAIL;
+                    }
+                }
+
+                generation* generationState = GetGeneration(generationNumber);
+                if (generationState is null)
+                {
+                    return E_FAIL;
+                }
+
+                if (generationState->plan_allocation_start is null)
+                {
+                    int planResult = PlanGenerationStart(
+                        generationState,
+                        consingGeneration,
+                        promotion,
+                        null);
+                    if (planResult != S_OK)
+                    {
+                        return planResult;
+                    }
+
+                    System.Diagnostics.Debug.Assert(
+                        generationState->plan_allocation_start is not null);
+                    if (generationState->plan_allocation_start is null)
+                    {
+                        return E_FAIL;
+                    }
+                }
+
+                generationNumber--;
+            }
+
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                ephemeralSegment->plan_allocated =
+                    consingGeneration->allocation_context.alloc_ptr;
+            }
+
+            return S_OK;
+        }
+
+        // allocation.cpp:5446-5742, selected WKS !USE_REGIONS/SHORT_PLUGS path.
+        private static int AllocateInCondemnedGenerations(
+            generation* generationState,
+            nuint size,
+            int fromGenerationNumber,
+            bool promotion,
+            out byte* result,
+            out bool convertToPinned,
+            byte* nextPinnedPlug,
+            heap_segment* currentSegment,
+            byte* oldLocation)
+        {
+            result = null;
+            convertToPinned = false;
+            if (generationState is null)
+            {
+                return E_FAIL;
+            }
+
+            nuint alignedMinimumObjectSize =
+                GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*));
+            size = GCEnvironment.AlignUp(size, (nuint)sizeof(void*));
+            if (size < alignedMinimumObjectSize)
+            {
+                return E_FAIL;
+            }
+
+            int toGenerationNumber = fromGenerationNumber;
+            if (fromGenerationNumber != (int)gc_generation_num.max_generation)
+            {
+                toGenerationNumber = fromGenerationNumber + (promotion ? 1 : 0);
+            }
+
+            int paddingInFront = oldLocation is not null &&
+                                 toGenerationNumber != (int)gc_generation_num.max_generation
+                ? UsePaddingFront
+                : 0;
+
+            nuint minSegmentSize = s_sohSegmentSize < s_minUohSegmentSize
+                ? s_sohSegmentSize
+                : s_minUohSegmentSize;
+            if ((paddingInFront & UsePaddingFront) != 0 &&
+                size + alignedMinimumObjectSize >
+                minSegmentSize - (nuint)sizeof(aligned_plug_and_gap))
+            {
+                paddingInFront = 0;
+            }
+
+            if (fromGenerationNumber != -1 &&
+                fromGenerationNumber != (int)gc_generation_num.max_generation &&
+                promotion)
+            {
+                generation* destinationGeneration = GetGeneration(toGenerationNumber);
+                if (destinationGeneration is null)
+                {
+                    return E_FAIL;
+                }
+
+                destinationGeneration->condemned_allocated += size;
+                destinationGeneration->allocation_size += size;
+            }
+
+            while (true)
+            {
+                heap_segment* segment = generationState->allocation_segment;
+                if (segment is null)
+                {
+                    return E_FAIL;
+                }
+
+                int usePadding =
+                    (generationState->allocation_context.alloc_limit != segment->plan_allocated
+                        ? UsePaddingTail
+                        : 0) |
+                    paddingInFront;
+                if (!SizeFits(
+                        size,
+                        generationState->allocation_context.alloc_ptr,
+                        generationState->allocation_context.alloc_limit,
+                        oldLocation,
+                        usePadding))
+                {
+                    if (!PinnedPlugQueueEmpty() &&
+                        generationState->allocation_context.alloc_limit == OldestPin()->first)
+                    {
+                        nuint entry = DequeuePinnedPlug();
+                        mark* pinnedPlugEntry = PinnedPlugOf(entry);
+                        if (pinnedPlugEntry is null)
+                        {
+                            return E_FAIL;
+                        }
+
+                        nuint pinnedLength = pinnedPlugEntry->len;
+                        byte* pinnedPlug = pinnedPlugEntry->first;
+                        SetNewPinInfo(
+                            pinnedPlugEntry,
+                            generationState->allocation_context.alloc_ptr);
+                        System.Diagnostics.Debug.Assert(
+                            pinnedPlugEntry->len == 0 ||
+                            pinnedPlugEntry->len >= alignedMinimumObjectSize);
+
+                        generationState->allocation_context.alloc_ptr = pinnedPlug + pinnedLength;
+                        generationState->allocation_context_start_region =
+                            generationState->allocation_context.alloc_ptr;
+                        generationState->allocation_context.alloc_limit =
+                            segment->plan_allocated;
+                        SetAllocatorNextPin(generationState);
+
+                        int attributeResult = AttributePinHigherGenerationAllocation(
+                            pinnedPlug,
+                            pinnedLength,
+                            promotion);
+                        if (attributeResult != S_OK)
+                        {
+                            return attributeResult;
+                        }
+
+                        continue;
+                    }
+
+                    if (generationState->allocation_context.alloc_limit != segment->plan_allocated)
+                    {
+                        generationState->allocation_context.alloc_limit = segment->plan_allocated;
+                    }
+                    else if (segment->plan_allocated != segment->committed)
+                    {
+                        segment->plan_allocated = segment->committed;
+                        generationState->allocation_context.alloc_limit =
+                            segment->plan_allocated;
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.Assert(
+                            generationState != GetGeneration((int)gc_generation_num.soh_gen0));
+
+                        if (SizeFits(
+                                size,
+                                generationState->allocation_context.alloc_ptr,
+                                segment->reserved,
+                                oldLocation,
+                                UsePaddingTail | paddingInFront) &&
+                            GrowHeapSegment(
+                                segment,
+                                generationState->allocation_context.alloc_ptr,
+                                oldLocation,
+                                size,
+                                paddingInFront != 0))
+                        {
+                            segment->plan_allocated = segment->committed;
+                            generationState->allocation_context.alloc_limit =
+                                segment->plan_allocated;
+                        }
+                        else
+                        {
+                            heap_segment* nextSegment = segment->next;
+                            if (generationState->allocation_context.alloc_ptr < segment->mem ||
+                                generationState->allocation_context.alloc_ptr > segment->committed)
+                            {
+                                return E_FAIL;
+                            }
+
+                            if (!PinnedPlugQueueEmpty() &&
+                                OldestPin()->first < segment->allocated &&
+                                OldestPin()->first >= generationState->allocation_context.alloc_ptr)
+                            {
+                                FailFast();
+                                return E_FAIL;
+                            }
+
+                            segment->plan_allocated =
+                                generationState->allocation_context.alloc_ptr;
+                            if (nextSegment is null)
+                            {
+                                // Native returns null only for the generation-0 gap
+                                // at the end of the non-region segment chain.
+                                return S_OK;
+                            }
+
+                            InitAllocationInfo(generationState, nextSegment);
+                        }
+                    }
+
+                    SetAllocatorNextPin(generationState);
+                    continue;
+                }
+
+                if (generationState->allocation_context.alloc_ptr <
+                    generationState->allocation_segment->mem)
+                {
+                    return E_FAIL;
+                }
+
+                result = generationState->allocation_context.alloc_ptr;
+                nuint padding = 0;
+                byte* allocationStart = generationState->allocation_context_start_region;
+                if ((paddingInFront & UsePaddingFront) != 0 &&
+                    oldLocation is not null &&
+                    allocationStart is not null &&
+                    ((nuint)(result - allocationStart) == 0 ||
+                     (nuint)(result - allocationStart) >= DesiredPlugLength))
+                {
+                    nint distance = (nint)(oldLocation - result);
+                    if (distance != 0)
+                    {
+                        if (distance > 0 && (nuint)distance < alignedMinimumObjectSize)
+                        {
+                            FailFast();
+                            return E_FAIL;
+                        }
+
+                        padding = alignedMinimumObjectSize;
+                        SetPlugPadded(oldLocation);
+                    }
+                }
+
+                if (nextPinnedPlug is not null &&
+                    padding != 0 &&
+                    generationState->allocation_segment == currentSegment)
+                {
+                    System.Diagnostics.Debug.Assert(oldLocation is not null);
+                    nint distanceToNextPin =
+                        (nint)(nextPinnedPlug -
+                        (generationState->allocation_context.alloc_ptr +
+                         (nint)size +
+                         (nint)padding));
+                    if (distanceToNextPin >= 0 &&
+                        (nuint)distanceToNextPin < alignedMinimumObjectSize)
+                    {
+                        ClearPlugPadded(oldLocation);
+                        padding = 0;
+                        convertToPinned = true;
+                        result = null;
+                        return S_OK;
+                    }
+                }
+
+                if (oldLocation is null || padding != 0)
+                {
+                    generationState->allocation_context_start_region =
+                        generationState->allocation_context.alloc_ptr;
+                }
+
+                generationState->allocation_context.alloc_ptr +=
+                    (nint)(size + padding);
+                if (padding != 0 && toGenerationNumber >= 0)
+                {
+                    generation* destinationGeneration = GetGeneration(toGenerationNumber);
+                    if (destinationGeneration is null)
+                    {
+                        return E_FAIL;
+                    }
+
+                    destinationGeneration->free_obj_space += padding;
+                }
+
+                result += (nint)padding;
+                return S_OK;
+            }
+        }
+
+        private static bool SizeFits(
+            nuint size,
+            byte* allocationPointer,
+            byte* allocationLimit,
+            byte* oldLocation,
+            int usePadding)
+        {
+            bool alreadyPadded = false;
+            nuint alignedMinimumObjectSize =
+                GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*));
+            if (oldLocation is not null && (usePadding & UsePaddingFront) != 0)
+            {
+                allocationPointer += (nint)alignedMinimumObjectSize;
+                alreadyPadded = true;
+            }
+
+            if (oldLocation is not null &&
+                !SameLargeAlignment(oldLocation, allocationPointer))
+            {
+                size += SwitchAlignmentSize(alreadyPadded);
+            }
+
+            if (allocationLimit < allocationPointer)
+            {
+                return false;
+            }
+
+            nuint available = (nuint)(allocationLimit - allocationPointer);
+            if (oldLocation is not null)
+            {
+                return available >=
+                           size +
+                           (((usePadding & UsePaddingTail) != 0)
+                               ? alignedMinimumObjectSize
+                               : 0) ||
+                       ((usePadding & UsePaddingFront) == 0 &&
+                        allocationPointer + (nint)size == allocationLimit);
+            }
+
+            System.Diagnostics.Debug.Assert(size == alignedMinimumObjectSize);
+            return available >= size;
+        }
+
+        private static bool GrowHeapSegment(
+            heap_segment* segment,
+            byte* allocation,
+            byte* oldLocation,
+            nuint size,
+            bool padFront)
+        {
+            if (segment is null || allocation is null)
+            {
+                return false;
+            }
+
+            nuint alignedMinimumObjectSize =
+                GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*));
+            if (oldLocation is not null && padFront)
+            {
+                allocation += (nint)alignedMinimumObjectSize;
+            }
+
+            if (oldLocation is not null &&
+                !SameLargeAlignment(oldLocation, allocation))
+            {
+                size += SwitchAlignmentSize(padFront);
+            }
+
+            byte* highAddress = allocation + (nint)size;
+            nuint pageSize = GCToOSInterface.GetPageSize();
+            byte* commitEnd = GCEnvironment.AlignUp(highAddress, pageSize);
+            if (commitEnd > segment->reserved)
+            {
+                return false;
+            }
+
+            if (commitEnd <= segment->committed)
+            {
+                return true;
+            }
+
+            nuint commitSize = (nuint)(commitEnd - segment->committed);
+            nuint minimumCommit = pageSize * 16;
+            if (commitSize < minimumCommit)
+            {
+                commitSize = minimumCommit;
+            }
+
+            nuint remaining = (nuint)(segment->reserved - segment->committed);
+            if (commitSize > remaining)
+            {
+                commitSize = remaining;
+            }
+
+            if (commitSize == 0 ||
+                !GCToOSInterface.VirtualCommit(segment->committed, commitSize))
+            {
+                return false;
+            }
+
+            segment->committed += (nint)commitSize;
+            return highAddress <= segment->committed;
+        }
+
+        private static void InitAllocationInfo(generation* generationState, heap_segment* segment)
+        {
+            generationState->allocation_segment = segment;
+            generationState->allocation_context.alloc_ptr = segment->mem;
+            generationState->allocation_context.alloc_limit = segment->mem;
+            generationState->allocation_context_start_region = segment->mem;
+        }
+
+        private static int AttributePinHigherGenerationAllocation(
+            byte* plug,
+            nuint length,
+            bool promotion)
+        {
+            if (!promotion)
+            {
+                return S_OK;
+            }
+
+            int fromGenerationNumber = GetObjectGenerationNumber(plug);
+            if (fromGenerationNumber == (int)gc_generation_num.max_generation)
+            {
+                return S_OK;
+            }
+
+            generation* sweepGeneration = GetGeneration(fromGenerationNumber + 1);
+            if (sweepGeneration is null)
+            {
+                return E_FAIL;
+            }
+
+            sweepGeneration->pinned_allocation_sweep_size += length;
+            int toGenerationNumber = GetObjectPlanGenerationNumber(plug);
+            if (fromGenerationNumber < toGenerationNumber)
+            {
+                generation* compactGeneration = GetGeneration(toGenerationNumber);
+                if (compactGeneration is null)
+                {
+                    return E_FAIL;
+                }
+
+                compactGeneration->pinned_allocation_compact_size += length;
+            }
+
+            return S_OK;
+        }
+
+        private static bool SameLargeAlignment(byte* first, byte* second)
+        {
+            _ = first;
+            _ = second;
+            return true;
+        }
+
+        private static nuint SwitchAlignmentSize(bool alreadyPadded)
+        {
+            return alreadyPadded
+                ? (nuint)sizeof(void*)
+                : GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*)) |
+                  (nuint)sizeof(void*);
+        }
+
+        private static bool IsPlugPadded(byte* plug)
+        {
+            return plug is not null && ((Object*)plug)->IsMarked();
+        }
+
+        private static void SetPlugPadded(byte* plug)
+        {
+            if (plug is not null)
+            {
+                ((Object*)plug)->SetMarked();
+            }
+        }
+
+        private static void ClearPlugPadded(byte* plug)
+        {
+            if (plug is not null)
+            {
+                ((Object*)plug)->ClearMarked();
+            }
+        }
+
+        private static nint GetNodeRelocationDistance(byte* node)
+        {
+            return (((plug_and_reloc*)node)[-1].reloc & ~((nint)3));
+        }
+
+        private static void SetNodeRelocationDistance(byte* node, nint value)
+        {
+            System.Diagnostics.Debug.Assert((value & 3) == 0);
+            nint* place = &(((plug_and_reloc*)node)[-1].reloc);
+            *place &= 1;
+            *place |= value;
+        }
+
+        private static nint GetNodeGapSize(byte* node)
+        {
+            return ((plug_and_gap*)node)[-1].gap;
+        }
+
+        private static void SetNodeLeft(byte* node)
+        {
+            ((plug_and_reloc*)node)[-1].reloc |= 2;
+        }
+
+        private static nint GetNodeLeftChild(byte* node)
+        {
+            return ((plug_and_pair*)node)[-1].m_pair.left;
+        }
+
+        private static nint GetNodeRightChild(byte* node)
+        {
+            return ((plug_and_pair*)node)[-1].m_pair.right;
+        }
+
+        private static void SetNodeLeftChild(byte* node, nint value)
+        {
+            System.Diagnostics.Debug.Assert(value > -(nint)BrickSize);
+            System.Diagnostics.Debug.Assert(value < (nint)BrickSize);
+            System.Diagnostics.Debug.Assert((value & ((nint)sizeof(void*) - 1)) == 0);
+            ((plug_and_pair*)node)[-1].m_pair.left = (short)value;
+        }
+
+        private static void SetNodeRightChild(byte* node, nint value)
+        {
+            System.Diagnostics.Debug.Assert(value > -(nint)BrickSize);
+            System.Diagnostics.Debug.Assert(value < (nint)BrickSize);
+            System.Diagnostics.Debug.Assert((value & ((nint)sizeof(void*) - 1)) == 0);
+            ((plug_and_pair*)node)[-1].m_pair.right = (short)value;
+        }
+
+        private static bool PowerOfTwo(nuint value)
+        {
+            return value != 0 && (value & (value - 1)) == 0;
+        }
+
+        private static nuint LogCount(nuint value)
+        {
+            System.Diagnostics.Debug.Assert(value < 0x10000);
+            nuint count = (value & 0x5555) + ((value >> 1) & 0x5555);
+            count = (count & 0x3333) + ((count >> 2) & 0x3333);
+            count = (count & 0x0F0F) + ((count >> 4) & 0x0F0F);
+            return (count & 0x00FF) + ((count >> 8) & 0x00FF);
+        }
+
+        private static byte* InsertNode(
+            byte* newNode,
+            nuint sequenceNumber,
+            byte* tree,
+            byte* lastNode)
+        {
+            if (PowerOfTwo(sequenceNumber))
+            {
+                SetNodeLeftChild(newNode, (nint)(tree - newNode));
+                tree = newNode;
+            }
+            else if ((sequenceNumber & 1) != 0)
+            {
+                SetNodeRightChild(lastNode, (nint)(newNode - lastNode));
+            }
+            else
+            {
+                byte* earlierNode = tree;
+                nuint imax = LogCount(sequenceNumber) - 2;
+                for (nuint i = 0; i != imax; i++)
+                {
+                    earlierNode += GetNodeRightChild(earlierNode);
+                }
+
+                nint temporaryOffset = GetNodeRightChild(earlierNode);
+                System.Diagnostics.Debug.Assert(temporaryOffset != 0);
+                SetNodeLeftChild(newNode, (nint)(earlierNode + temporaryOffset - newNode));
+                SetNodeRightChild(earlierNode, (nint)(newNode - earlierNode));
+            }
+
+            return tree;
+        }
+
+        private static void SetBrick(nuint index, nint value)
+        {
+            if (s_brickTable is null)
+            {
+                FailFast();
+                return;
+            }
+
+            if (value < -32767)
+            {
+                value = -32767;
+            }
+
+            System.Diagnostics.Debug.Assert(value < 32767);
+            s_brickTable[index] = value >= 0
+                ? (short)(value + 1)
+                : (short)value;
+        }
+
+        private static byte* BrickAddress(nuint brick)
+        {
+            return GCCommon.g_gc_lowest_address + (nint)(brick * BrickSize);
+        }
+
+        private static nuint UpdateBrickTable(
+            byte* tree,
+            nuint currentBrick,
+            byte* x,
+            byte* plugEnd)
+        {
+            if (tree is not null)
+            {
+                SetBrick(
+                    currentBrick,
+                    (nint)(tree - BrickAddress(currentBrick)));
+            }
+            else
+            {
+                SetBrick(currentBrick, -1);
+            }
+
+            nuint b = currentBrick + 1;
+            nint offset = 0;
+            nuint lastBrick = GetBrickIndex(plugEnd - 1);
+            currentBrick = GetBrickIndex(x - 1);
+            while (b <= currentBrick)
+            {
+                if (b <= lastBrick)
+                {
+                    SetBrick(b, --offset);
+                }
+                else
+                {
+                    SetBrick(b, -1);
+                }
+
+                b++;
+            }
+
+            return GetBrickIndex(x);
+        }
+
+        private static void MergeWithLastPinnedPlug(byte* lastPinnedPlug, nuint plugSize)
+        {
+            if (lastPinnedPlug is null)
+            {
+                return;
+            }
+
+            if (s_markStackTos == 0)
+            {
+                FailFast();
+                return;
+            }
+
+            mark* lastMark = &s_markStack[s_markStackTos - 1];
+            if (lastMark->first != lastPinnedPlug)
+            {
+                FailFast();
+                return;
+            }
+
+            if (lastMark->saved_post_p != 0)
+            {
+                lastMark->saved_post_p = 0;
+                *(gap_reloc_pair*)(
+                    lastMark->first + lastMark->len - sizeof(plug_and_gap)) =
+                    lastMark->saved_post_plug;
+            }
+
+            lastMark->len += plugSize;
+        }
+
+        private static int GetObjectPlanGenerationNumber(byte* address)
+        {
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                if (address >= ephemeralSegment->mem &&
+                    address < ephemeralSegment->reserved)
+                {
+                    for (int generationNumber = 0;
+                         generationNumber < (int)gc_generation_num.max_generation;
+                         generationNumber++)
+                    {
+                        generation* generationState = GetGeneration(generationNumber);
+                        if (generationState is not null &&
+                            generationState->plan_allocation_start is not null &&
+                            address >= generationState->plan_allocation_start)
+                        {
+                            return generationNumber;
+                        }
+                    }
+                }
+            }
+
+            return (int)gc_generation_num.max_generation;
         }
 
         private static int ProcessEphemeralBoundaries(
@@ -560,6 +1675,7 @@ namespace Internal.Runtime.GC
                     int result = PlanGenerationStart(
                         nextGeneration,
                         consingGeneration,
+                        promotion,
                         address);
                     if (result != S_OK)
                     {

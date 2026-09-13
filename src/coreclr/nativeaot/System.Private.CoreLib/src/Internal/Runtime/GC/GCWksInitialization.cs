@@ -46,6 +46,7 @@ namespace Internal.Runtime.GC
         private static byte* s_heapBase;
         private static byte* s_heapEnd;
         private static uint* s_cardTable;
+        private static short* s_brickTable;
         private static uint* s_cardBundleTable;
         private static CLRCriticalSection s_sohAllocationLock;
         private static bool s_sohAllocationLockInitialized;
@@ -1578,6 +1579,7 @@ namespace Internal.Runtime.GC
             info->highest_address = s_heapEnd;
             info->brick_table = (short*)(bookkeeping + brickOffset);
             info->card_bundle_table = untranslatedCardBundleTable;
+            s_brickTable = info->brick_table;
             s_cardTable = (uint*)((byte*)untranslatedCardTable - ((((nuint)s_heapBase / CardSize) / CardWordWidth) * sizeof(uint)));
             s_cardBundleTable = (uint*)((byte*)untranslatedCardBundleTable -
                 ((((nuint)s_heapBase / CardBundleWordCoverage) * sizeof(uint))));
