@@ -5,6 +5,27 @@ namespace Internal.Runtime.GC
 {
     internal static unsafe partial class GCWksInitialization
     {
+        // Translation plan:
+        // 1. Initialize gc_mechanisms and the dynamic/static tuning data needed by
+        //    decide_on_compacting.
+        // 2. Finish the full-gen2 planning decision and UOH planning paths.
+        // 3. Translate a complete non-compacting sweep and free-list rebuild path.
+        // 4. Translate relocation and compaction, including roots, handles, and
+        //    finalization queues.
+        // 5. Add collection orchestration and wire GarbageCollect only after marking,
+        //    planning, and one complete post-plan path can run without returning from
+        //    partially mutated heap state.
+        //
+        // Translation workflow:
+        // - Generate mechanical drafts with cpp_to_unsafe_csharp.py using the selected
+        //   clrgc_gc_wks compilation command.
+        // - Have a Luna agent integrate each draft into the unmanaged C# collector.
+        // - Review every slice against the authoritative native source. Prefer literal
+        //   transliteration over cleanup or independent behavior changes.
+        // - Keep collector-owned state in pointers, unmanaged structs, and static
+        //   unmanaged storage; do not introduce managed objects or collections.
+        // - Validate coherent slices with git diff --check and
+        //   ./build.sh clr.aot+libs -rc checked.
         private static int RunPlanPhaseCore(int condemnedGeneration, bool promotion)
         {
             if (condemnedGeneration != (int)gc_generation_num.max_generation)
@@ -21,11 +42,10 @@ namespace Internal.Runtime.GC
             // plan_phase.cpp:3315. The selected non-region generation-start,
             // ephemeral-boundary, survivor-accounting, allocate-in-condemned,
             // convert-to-pinned/new-address, brick-table, relocation-tree,
-            // post-plug metadata, and exhausted-segment handling is translated
-            // through the !USE_REGIONS segment transition at plan_phase.cpp:3813.
-            // The translated boundary is after plan_generation_starts at
-            // plan_phase.cpp:4364, before unrelated growth-statistics and
-            // compaction-decision logic.
+            // post-plug metadata, exhausted-segment handling, and fragmentation
+            // calculation are translated through plan_phase.cpp:4484.
+            // The next boundary is before decide_on_compacting and UOH
+            // sweep/compaction decisions.
             generation* condemnedGenerationState = GetGeneration(condemnedGeneration);
             if (condemnedGenerationState is null)
             {
@@ -708,12 +728,152 @@ namespace Internal.Runtime.GC
                 return planStartsResult;
             }
 
-            // Translation boundary: plan_phase.cpp:4364, before
-            // descr_generations("AP") and subsequent growth-statistics and
-            // compaction-decision logic.
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                nuint fragmentation = GenerationFragmentation(
+                    condemnedGenerationState,
+                    consingGeneration,
+                    ephemeralSegment->allocated);
+                _ = fragmentation;
+            }
+
+            // Translation boundary: plan_phase.cpp:4484, before
+            // decide_on_compacting and the UOH sweep/compaction decisions.
             return E_NOTIMPL;
         }
 
+        // plan_phase.cpp:7711-7784, selected WKS !USE_REGIONS path.
+        private static nuint GenerationFragmentation(
+            generation* generationState,
+            generation* consingGeneration,
+            byte* end)
+        {
+            if (generationState is null ||
+                consingGeneration is null ||
+                end is null)
+            {
+                FailFast();
+                return 0;
+            }
+
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                if (ephemeralSegment->mem is null ||
+                    ephemeralSegment->allocated is null ||
+                    ephemeralSegment->reserved is null)
+                {
+                    FailFast();
+                    return 0;
+                }
+
+                nint fragmentation = 0;
+                byte* allocation = consingGeneration->allocation_context.alloc_ptr;
+                if (IsAddressInSegment(allocation, ephemeralSegment))
+                {
+                    if (allocation <= ephemeralSegment->allocated)
+                    {
+                        fragmentation = (nint)(end - allocation);
+                    }
+                }
+                else
+                {
+                    fragmentation =
+                        (nint)(ephemeralSegment->allocated - ephemeralSegment->mem);
+                }
+
+                heap_segment* segment = generationState->start_segment;
+                if (segment is null)
+                {
+                    FailFast();
+                    return 0;
+                }
+
+                while (segment != ephemeralSegment)
+                {
+                    if (segment->allocated is null ||
+                        segment->plan_allocated is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    fragmentation +=
+                        (nint)(segment->allocated - segment->plan_allocated);
+                    segment = segment->next;
+                    if (segment is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+                }
+
+                nuint bos = 0;
+                while (bos < s_markStackBos)
+                {
+                    if (s_markStack is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    mark* pinnedPlug = PinnedPlugOf(bos);
+                    if (pinnedPlug is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    fragmentation += (nint)pinnedPlug->len;
+                    bos++;
+                }
+
+                return (nuint)fragmentation;
+            }
+        }
+
+        // plan_phase.cpp:7790-7827, selected WKS !USE_REGIONS path.
+        private static nuint GenerationSizes(generation* gen, bool use_saved_p)
+        {
+            _ = use_saved_p;
+
+            nuint result = 0;
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                if (gen->start_segment == ephemeralSegment)
+                {
+                    result = (nuint)(ephemeralSegment->allocated - gen->allocation_start);
+                }
+                else
+                {
+                    heap_segment* segment = gen->start_segment;
+                    while (segment is not null &&
+                           (segment->flags & HeapSegmentInRange) == 0)
+                    {
+                        segment = segment->next;
+                    }
+
+                    if (segment is null)
+                    {
+                        GCToOSInterface.DebugBreak();
+                    }
+
+                    while (segment is not null)
+                    {
+                        result += (nuint)(segment->allocated - segment->mem);
+                        segment = segment->next;
+                        while (segment is not null &&
+                               (segment->flags & HeapSegmentInRange) == 0)
+                        {
+                            segment = segment->next;
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private const nuint HeapSegmentInRange = 2;
         private const nuint DemotionPlugLengthThreshold = 6 * 1024 * 1024;
         private const int UsePaddingFront = 1;
         private const int UsePaddingTail = 2;
@@ -2130,47 +2290,188 @@ namespace Internal.Runtime.GC
             return generationState->free_list_allocated;
         }
 
-        private static nuint GetGenerationSize(int generationNumber)
+        // plan_phase.cpp:7574-7623, selected WKS !USE_REGIONS path.
+        private static nuint GenerationPlanSize(int generationNumber)
         {
             generation* generationState = GetGeneration(generationNumber);
             if (generationState is null)
             {
+                FailFast();
                 return 0;
-            }
-
-            if (generationNumber == 0)
-            {
-                byte* allocated = generationState->start_segment->allocated;
-                byte* start = generationState->allocation_start;
-                nuint size = allocated >= start ? (nuint)(allocated - start) : 0;
-                return size < MinObjectSize ? MinObjectSize : size;
             }
 
             fixed (heap_segment* ephemeralSegment = &s_sohSegment)
             {
-                if (generationState->start_segment == ephemeralSegment)
+                if (generationNumber == 0)
+                {
+                    if (ephemeralSegment->plan_allocated is null ||
+                        generationState->plan_allocation_start is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    nint size = (nint)(ephemeralSegment->plan_allocated -
+                        generationState->plan_allocation_start);
+                    nint minimumSize = (nint)GCEnvironment.AlignUp(
+                        MinObjectSize,
+                        (nuint)sizeof(void*));
+                    return (nuint)(size > minimumSize ? size : minimumSize);
+                }
+
+                heap_segment* segment = HeapSegmentRw(generationState->start_segment);
+                if (segment == ephemeralSegment)
                 {
                     generation* youngerGeneration = GetGeneration(generationNumber - 1);
-                    return youngerGeneration->allocation_start >= generationState->allocation_start
-                        ? (nuint)(youngerGeneration->allocation_start - generationState->allocation_start)
-                        : 0;
-                }
-            }
+                    if (youngerGeneration is null ||
+                        generationState->plan_allocation_start is null ||
+                        youngerGeneration->plan_allocation_start is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
 
-            nuint result = 0;
-            for (heap_segment* segment = generationState->start_segment;
-                segment is not null;
-                segment = segment->next)
-            {
-                if (segment->allocated < segment->mem)
+                    return (nuint)(youngerGeneration->plan_allocation_start -
+                        generationState->plan_allocation_start);
+                }
+
+                nuint generationSize = 0;
+                if (segment is null)
                 {
+                    FailFast();
                     return 0;
                 }
 
-                result += (nuint)(segment->allocated - segment->mem);
+                while (segment is not null && segment != ephemeralSegment)
+                {
+                    if (segment->plan_allocated is null ||
+                        segment->mem is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    generationSize += (nuint)(segment->plan_allocated - segment->mem);
+                    segment = HeapSegmentNextRw(segment);
+                }
+
+                if (segment is not null)
+                {
+                    generation* youngerGeneration = GetGeneration(generationNumber - 1);
+                    if (youngerGeneration is null ||
+                        youngerGeneration->plan_allocation_start is null ||
+                        ephemeralSegment->mem is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    generationSize += (nuint)(youngerGeneration->plan_allocation_start -
+                        ephemeralSegment->mem);
+                }
+
+                return generationSize;
+            }
+        }
+
+        // plan_phase.cpp:7625-7675, selected WKS !USE_REGIONS path.
+        private static nuint GenerationSize(int generationNumber)
+        {
+            generation* generationState = GetGeneration(generationNumber);
+            if (generationState is null)
+            {
+                FailFast();
+                return 0;
             }
 
-            return result;
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                if (generationNumber == 0)
+                {
+                    if (ephemeralSegment->allocated is null ||
+                        generationState->allocation_start is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    nint size = (nint)(ephemeralSegment->allocated -
+                        generationState->allocation_start);
+                    nint minimumSize = (nint)GCEnvironment.AlignUp(
+                        MinObjectSize,
+                        (nuint)sizeof(void*));
+                    return (nuint)(size > minimumSize ? size : minimumSize);
+                }
+
+                heap_segment* segment = HeapSegmentRw(generationState->start_segment);
+                if (segment == ephemeralSegment)
+                {
+                    generation* youngerGeneration = GetGeneration(generationNumber - 1);
+                    if (youngerGeneration is null ||
+                        generationState->allocation_start is null ||
+                        youngerGeneration->allocation_start is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    return (nuint)(youngerGeneration->allocation_start -
+                        generationState->allocation_start);
+                }
+
+                nuint generationSize = 0;
+                if (segment is null)
+                {
+                    FailFast();
+                    return 0;
+                }
+
+                while (segment is not null && segment != ephemeralSegment)
+                {
+                    if (segment->allocated is null ||
+                        segment->mem is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    generationSize += (nuint)(segment->allocated - segment->mem);
+                    segment = HeapSegmentNextRw(segment);
+                }
+
+                if (segment is not null)
+                {
+                    generation* youngerGeneration = GetGeneration(generationNumber - 1);
+                    if (youngerGeneration is null ||
+                        youngerGeneration->allocation_start is null ||
+                        ephemeralSegment->mem is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    generationSize += (nuint)(youngerGeneration->allocation_start -
+                        ephemeralSegment->mem);
+                }
+
+                return generationSize;
+            }
+        }
+
+        private static heap_segment* HeapSegmentRw(heap_segment* segment)
+        {
+            while (segment is not null &&
+                (segment->flags & HeapSegmentReadOnly) != 0)
+            {
+                segment = segment->next;
+            }
+
+            return segment;
+        }
+
+        private static heap_segment* HeapSegmentNextRw(heap_segment* segment)
+        {
+            return HeapSegmentRw(segment->next);
         }
 
         private static int GetStopGenerationIndex(int condemnedGeneration)
