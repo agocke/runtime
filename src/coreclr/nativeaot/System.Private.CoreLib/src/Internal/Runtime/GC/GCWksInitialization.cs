@@ -61,6 +61,10 @@ namespace Internal.Runtime.GC
         private static generation s_generation2;
         private static generation s_lohGeneration;
         private static generation s_pohGeneration;
+        private static DynamicDataArray5 s_dynamicDataTable;
+        private static byte* s_demotionLow;
+        private static nuint s_maxgenPinnedCompactBeforeAdvance;
+        private static bool s_decidePromoteGen1Pins;
         private static frozen_segment_entry* s_frozenSegmentLookup;
         private static CFinalize* s_finalizeQueue;
         private static ulong s_totalAllocatedBytesSoh;

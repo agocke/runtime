@@ -5,28 +5,31 @@ namespace Internal.Runtime.GC
 {
     internal static unsafe partial class GCWksInitialization
     {
-        private static int RunPlanPhaseCore(int condemnedGeneration)
+        private static int RunPlanPhaseCore(int condemnedGeneration, bool promotion)
         {
             if (condemnedGeneration != (int)gc_generation_num.max_generation)
             {
                 return E_NOTIMPL;
             }
 
-            return PlanPhase(condemnedGeneration);
+            return PlanPhase(condemnedGeneration, promotion);
         }
 
-        private static int PlanPhase(int condemnedGeneration)
+        private static int PlanPhase(int condemnedGeneration, bool promotion)
         {
             // This is the segment-GC/WKS portion of gc_heap::plan_phase, beginning at
-            // plan_phase.cpp:3315. The current source-ordered boundaries are before
-            // save_allocated at plan_phase.cpp:3773 for an exhausted segment and
-            // before new_address at plan_phase.cpp:3987 after the marked-plug scan.
+            // plan_phase.cpp:3315. The selected non-region generation-start,
+            // ephemeral-boundary, and survivor-accounting block is translated through
+            // plan_phase.cpp:4046. The explicit E_NOTIMPL boundary is before the first
+            // destination allocation at plan_phase.cpp:4059.
             generation* condemnedGenerationState = GetGeneration(condemnedGeneration);
             if (condemnedGenerationState is null)
             {
                 return E_FAIL;
             }
 
+            s_demotionLow = (byte*)nuint.MaxValue;
+            s_maxgenPinnedCompactBeforeAdvance = 0;
             s_savedPinnedPlugIndex = nuint.MaxValue;
 
             bool useMarkList = false;
@@ -93,13 +96,18 @@ namespace Internal.Runtime.GC
             // WKS variant, so the native plan_phase body continues directly here.
             int condemnedGenerationNumber = condemnedGeneration;
             int bottomGeneration = 0;
-            bool allocateInCondemned = true;
+            bool allocateInCondemned =
+                condemnedGenerationNumber == (int)gc_generation_num.max_generation ||
+                !promotion;
             int activeOldGenerationNumber = condemnedGenerationNumber;
-            int activeNewGenerationNumber = condemnedGenerationNumber;
+            int activeNewGenerationNumber = allocateInCondemned
+                ? condemnedGenerationNumber
+                : condemnedGenerationNumber + 1;
             generation* olderGeneration = null;
             generation* consingGeneration = condemnedGenerationState;
             bool allocateFirstGenerationStart = allocateInCondemned;
             bool decidePromoteGen1Pins = false;
+            s_decidePromoteGen1Pins = decidePromoteGen1Pins;
 
             heap_segment* segment = condemnedSegment;
             byte* end = segment->allocated;
@@ -161,9 +169,7 @@ namespace Internal.Runtime.GC
                 condemnedGenerationNumber--;
             }
 
-            _ = activeNewGenerationNumber;
             _ = olderGeneration;
-            _ = decidePromoteGen1Pins;
 
             while (true)
             {
@@ -320,9 +326,48 @@ namespace Internal.Runtime.GC
                     _ = sequenceNumber;
                     _ = lastNode;
                     _ = numPinnedPlugsInPlug;
-                    // E_NOTIMPL boundary before #ifndef USE_REGIONS at plan_phase.cpp:4026;
-                    // the next selected statement is if (allocate_first_generation_start),
-                    // calling plan_generation_start at plan_phase.cpp:4030.
+
+                    if (allocateFirstGenerationStart)
+                    {
+                        allocateFirstGenerationStart = false;
+                        int result = PlanGenerationStart(
+                            condemnedGenerationState,
+                            consingGeneration,
+                            plugStart);
+                        if (result != S_OK)
+                        {
+                            return result;
+                        }
+                    }
+
+                    fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+                    {
+                        if (segment == ephemeralSegment)
+                        {
+                            int result = ProcessEphemeralBoundaries(
+                                plugStart,
+                                promotion,
+                                ref activeNewGenerationNumber,
+                                ref activeOldGenerationNumber,
+                                ref consingGeneration,
+                                ref allocateInCondemned);
+                            if (result != S_OK)
+                            {
+                                return result;
+                            }
+                        }
+                    }
+
+                    dynamic_data* activeOldGenerationData = GetDynamicData(activeOldGenerationNumber);
+                    if (activeOldGenerationData is null)
+                    {
+                        return E_FAIL;
+                    }
+
+                    activeOldGenerationData->survived_size += ps;
+
+                    // The selected allocator dependency begins at
+                    // plan_phase.cpp:4059. Do not approximate its destination choice.
                     return E_NOTIMPL;
                 }
 
@@ -332,6 +377,289 @@ namespace Internal.Runtime.GC
                     return E_FAIL;
                 }
             }
+        }
+
+        private const nuint DemotionPlugLengthThreshold = 6 * 1024 * 1024;
+
+        private static int PlanGenerationStart(
+            generation* generationState,
+            generation* consingGeneration,
+            byte* nextPlugToAllocate)
+        {
+            if (generationState is null || consingGeneration is null)
+            {
+                return E_FAIL;
+            }
+
+            if (sizeof(void*) == 8 &&
+                generationState == GetGeneration((int)gc_generation_num.soh_gen0))
+            {
+                fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+                {
+                    nuint markStackLargeBos = s_markStackBos;
+                    while (markStackLargeBos < s_markStackTos)
+                    {
+                        if (s_markStack[markStackLargeBos].len > DemotionPlugLengthThreshold)
+                        {
+                            while (s_markStackBos <= markStackLargeBos)
+                            {
+                                nuint entry = DequeuePinnedPlug();
+                                mark* pinnedPlugEntry = PinnedPlugOf(entry);
+                                nuint length = pinnedPlugEntry->len;
+                                byte* plug = pinnedPlugEntry->first;
+                                pinnedPlugEntry->len = (nuint)(
+                                    plug - consingGeneration->allocation_context.alloc_ptr);
+                                System.Diagnostics.Debug.Assert(
+                                    s_markStack[entry].len == 0 ||
+                                    s_markStack[entry].len >= GCEnvironment.AlignUp(
+                                        MinObjectSize,
+                                        (nuint)sizeof(void*)));
+                                consingGeneration->allocation_context.alloc_ptr = plug + length;
+                                consingGeneration->allocation_context.alloc_limit =
+                                    ephemeralSegment->plan_allocated;
+                                SetAllocatorNextPin(consingGeneration);
+                            }
+                        }
+
+                        markStackLargeBos++;
+                    }
+                }
+            }
+
+            // allocate_in_condemned_generations is the first unavailable allocator
+            // dependency in this transliteration.
+            _ = nextPlugToAllocate;
+            return E_NOTIMPL;
+        }
+
+        private static int ProcessEphemeralBoundaries(
+            byte* address,
+            bool promotion,
+            ref int activeNewGenerationNumber,
+            ref int activeOldGenerationNumber,
+            ref generation* consingGeneration,
+            ref bool allocateInCondemned)
+        {
+            while (activeOldGenerationNumber > 0)
+            {
+                generation* youngerGeneration = GetGeneration(activeOldGenerationNumber - 1);
+                if (youngerGeneration is null)
+                {
+                    return E_FAIL;
+                }
+
+                if (address < youngerGeneration->allocation_start)
+                {
+                    break;
+                }
+
+                if (activeOldGenerationNumber <=
+                    (promotion
+                        ? (int)gc_generation_num.max_generation - 1
+                        : (int)gc_generation_num.max_generation))
+                {
+                    activeNewGenerationNumber--;
+                }
+
+                activeOldGenerationNumber--;
+                System.Diagnostics.Debug.Assert(
+                    !promotion || activeNewGenerationNumber > 0);
+
+                if (activeNewGenerationNumber == (int)gc_generation_num.max_generation - 1)
+                {
+                    while (!PinnedPlugQueueEmpty())
+                    {
+                        mark* oldestEntry = OldestPin();
+                        if (oldestEntry is null ||
+                            (oldestEntry->first >= s_sohSegment.mem &&
+                             oldestEntry->first < s_sohSegment.reserved))
+                        {
+                            break;
+                        }
+
+                        nuint entry = DequeuePinnedPlug();
+                        mark* pinnedPlugEntry = PinnedPlugOf(entry);
+                        byte* plug = pinnedPlugEntry->first;
+                        nuint length = pinnedPlugEntry->len;
+                        heap_segment* allocationSegment =
+                            consingGeneration->allocation_segment;
+                        if (allocationSegment is null)
+                        {
+                            return E_FAIL;
+                        }
+
+                        heap_segment* segment = allocationSegment;
+                        while (plug < consingGeneration->allocation_context.alloc_ptr ||
+                               plug >= segment->allocated)
+                        {
+                            if (consingGeneration->allocation_context.alloc_ptr < segment->mem ||
+                                consingGeneration->allocation_context.alloc_ptr > segment->committed ||
+                                segment->next is null)
+                            {
+                                return E_FAIL;
+                            }
+
+                            segment->plan_allocated =
+                                consingGeneration->allocation_context.alloc_ptr;
+                            segment = segment->next;
+                            consingGeneration->allocation_segment = segment;
+                            consingGeneration->allocation_context.alloc_ptr = segment->mem;
+                        }
+
+                        SetNewPinInfo(
+                            pinnedPlugEntry,
+                            consingGeneration->allocation_context.alloc_ptr);
+                        System.Diagnostics.Debug.Assert(
+                            pinnedPlugEntry->len == 0 ||
+                            pinnedPlugEntry->len >= GCEnvironment.AlignUp(
+                                MinObjectSize,
+                                (nuint)sizeof(void*)));
+                        consingGeneration->allocation_context.alloc_ptr = plug + length;
+                        consingGeneration->allocation_context.alloc_limit =
+                            consingGeneration->allocation_context.alloc_ptr;
+                    }
+
+                    allocateInCondemned = true;
+                    int result = EnsureEphemeralHeapSegment(
+                        consingGeneration,
+                        out generation* ensuredConsingGeneration);
+                    if (result != S_OK)
+                    {
+                        return result;
+                    }
+
+                    consingGeneration = ensuredConsingGeneration;
+                }
+
+                if (activeNewGenerationNumber != (int)gc_generation_num.max_generation)
+                {
+                    if (activeNewGenerationNumber ==
+                        (int)gc_generation_num.max_generation - 1)
+                    {
+                        generation* maxGeneration =
+                            GetGeneration((int)gc_generation_num.max_generation);
+                        if (maxGeneration is null)
+                        {
+                            return E_FAIL;
+                        }
+
+                        s_maxgenPinnedCompactBeforeAdvance =
+                            maxGeneration->pinned_allocation_compact_size;
+                        if (s_decidePromoteGen1Pins)
+                        {
+                            return E_NOTIMPL;
+                        }
+                    }
+
+                    generation* nextGeneration = GetGeneration(activeNewGenerationNumber);
+                    if (nextGeneration is null)
+                    {
+                        return E_FAIL;
+                    }
+
+                    int result = PlanGenerationStart(
+                        nextGeneration,
+                        consingGeneration,
+                        address);
+                    if (result != S_OK)
+                    {
+                        return result;
+                    }
+
+                    if (s_demotionLow == (byte*)nuint.MaxValue &&
+                        !PinnedPlugQueueEmpty())
+                    {
+                        byte* pinnedPlug = OldestPin()->first;
+                        if (GetObjectGenerationNumber(pinnedPlug) > 0)
+                        {
+                            s_demotionLow = pinnedPlug;
+                        }
+                    }
+
+                    System.Diagnostics.Debug.Assert(
+                        nextGeneration->plan_allocation_start is not null);
+                }
+            }
+
+            return S_OK;
+        }
+
+        private static int EnsureEphemeralHeapSegment(
+            generation* consingGeneration,
+            out generation* ensuredConsingGeneration)
+        {
+            ensuredConsingGeneration = null;
+            if (consingGeneration is null ||
+                consingGeneration->allocation_segment is null)
+            {
+                return E_FAIL;
+            }
+
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                if (consingGeneration->allocation_segment == ephemeralSegment)
+                {
+                    ensuredConsingGeneration = consingGeneration;
+                    return S_OK;
+                }
+
+                heap_segment* segment = consingGeneration->allocation_segment;
+                if (consingGeneration->allocation_context.alloc_ptr < segment->mem ||
+                    consingGeneration->allocation_context.alloc_ptr > segment->committed)
+                {
+                    return E_FAIL;
+                }
+
+                segment->plan_allocated =
+                    consingGeneration->allocation_context.alloc_ptr;
+
+                generation* newConsingGeneration =
+                    GetGeneration((int)gc_generation_num.max_generation - 1);
+                if (newConsingGeneration is null)
+                {
+                    return E_FAIL;
+                }
+
+                newConsingGeneration->allocation_context.alloc_ptr = ephemeralSegment->mem;
+                newConsingGeneration->allocation_context.alloc_limit = ephemeralSegment->mem;
+                newConsingGeneration->allocation_context_start_region = ephemeralSegment->mem;
+                newConsingGeneration->allocation_segment = ephemeralSegment;
+                ensuredConsingGeneration = newConsingGeneration;
+            }
+
+            return S_OK;
+        }
+
+        private static dynamic_data* GetDynamicData(int generationNumber)
+        {
+            if ((uint)generationNumber >= (uint)gc_generation_num.total_generation_count)
+            {
+                return null;
+            }
+
+            fixed (DynamicDataArray5* dynamicDataTable = &s_dynamicDataTable)
+            {
+                return generationNumber switch
+                {
+                    0 => &dynamicDataTable->Item0,
+                    1 => &dynamicDataTable->Item1,
+                    2 => &dynamicDataTable->Item2,
+                    3 => &dynamicDataTable->Item3,
+                    4 => &dynamicDataTable->Item4,
+                    _ => null,
+                };
+            }
+        }
+
+        private static void SetNewPinInfo(mark* entry, byte* pinFreeSpaceStart)
+        {
+            entry->len = (nuint)(entry->first - pinFreeSpaceStart);
+            entry->allocation_context_start_region = pinFreeSpaceStart;
+        }
+
+        private static int GetObjectGenerationNumber(byte* address)
+        {
+            return (int)WhichGeneration(null, (Object*)address);
         }
 
         private static void ConvertToPinnedPlug(
