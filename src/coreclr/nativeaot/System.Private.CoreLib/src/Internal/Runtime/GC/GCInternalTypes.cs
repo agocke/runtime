@@ -627,6 +627,21 @@ namespace Internal.Runtime.GC
         public nuint gc_clock;
     }
 
+    internal unsafe struct StaticDataArray5
+    {
+        public static_data Item0;
+        public static_data Item1;
+        public static_data Item2;
+        public static_data Item3;
+        public static_data Item4;
+    }
+
+    internal unsafe struct StaticDataTable2
+    {
+        public StaticDataArray5 Item0;
+        public StaticDataArray5 Item1;
+    }
+
     internal unsafe struct DynamicDataArray5
     {
         public dynamic_data Item0;

@@ -456,7 +456,7 @@ namespace Internal.Runtime.GC
         }
 
         public static void ScanForPromotion(
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext,
             int condemnedGeneration,
             int maxGeneration)
@@ -483,7 +483,7 @@ namespace Internal.Runtime.GC
         }
 
         public static void ScanSizedRefForPromotion(
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext)
         {
             ScanHandleType(HandleType.HNDTYPE_SIZEDREF, callback, scanContext, 0);
@@ -541,7 +541,7 @@ namespace Internal.Runtime.GC
 
         private static void ScanHandleType(
             HandleType type,
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext,
             uint flags)
         {
@@ -580,7 +580,7 @@ namespace Internal.Runtime.GC
         private static void ScanBlock(
             HandleTableSegment* segment,
             HandleType type,
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext,
             uint flags)
         {
@@ -614,7 +614,7 @@ namespace Internal.Runtime.GC
         }
 
         private static void ScanVariableHandles(
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext,
             uint variableType,
             uint flags)
@@ -653,7 +653,7 @@ namespace Internal.Runtime.GC
 
         private static void ScanVariableBlocks(
             HandleTableSegment* segment,
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext,
             uint variableType,
             uint flags)
@@ -753,7 +753,7 @@ namespace Internal.Runtime.GC
         }
 
         private static void ScanRefCountedHandlesForPromotion(
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext,
             IGCToCLR* gcToClr)
         {
@@ -823,7 +823,7 @@ namespace Internal.Runtime.GC
         }
 
         private static void ScanAsyncPinnedHandles(
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext)
         {
             IGCToCLR* gcToClr = GCCommon.g_theGCToCLR;
@@ -870,7 +870,7 @@ namespace Internal.Runtime.GC
         private static void ScanAsyncPinnedBlock(
             HandleTableSegment* segment,
             int block,
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext,
             IGCToCLR* gcToClr)
         {
@@ -900,7 +900,7 @@ namespace Internal.Runtime.GC
 
         private static void ScanAsyncPinnedHandle(
             OBJECTHANDLE__* handle,
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext,
             IGCToCLR* gcToClr)
         {
@@ -1095,7 +1095,7 @@ namespace Internal.Runtime.GC
         }
 
         public static bool ScanDependentHandlesForPromotion(
-            delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void> callback,
+            delegate*<Object**, ScanContext*, uint, void> callback,
             ScanContext* scanContext)
         {
             bool promoted = false;

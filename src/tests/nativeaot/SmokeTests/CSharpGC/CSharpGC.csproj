@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <CLRTestPriority>0</CLRTestPriority>
+    <IlcStandaloneGCSupport>true</IlcStandaloneGCSupport>
+    <RequiresProcessIsolation>true</RequiresProcessIsolation>
+    <ReferenceXUnitWrapperGenerator>false</ReferenceXUnitWrapperGenerator>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="CSharpGC.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <CLRTestEnvironmentVariable Include="DOTNET_GCUseCSharp" Value="1" />
+  </ItemGroup>
+</Project>

@@ -168,13 +168,13 @@ namespace Internal.Runtime.GC
     {
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, SUSPEND_REASON, void> SuspendEE;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool, void> RestartEE;
-        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void>, int, int, ScanContext*, void> GcScanRoots;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate*<Object**, ScanContext*, uint, void>, int, int, ScanContext*, void> GcScanRoots;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, int, void> GcStartWork;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, bool, bool, void> BeforeGcScanRoots;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, int, ScanContext*, void> AfterGcScanRoots;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, void> GcDone;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, bool> RefCountedHandleCallbacks;
-        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate* unmanaged[SuppressGCTransition]<Object**, nuint*, nuint, nuint, void>, nuint, nuint, void> SyncBlockCacheWeakPtrScan;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate*<Object**, nuint*, nuint, nuint, void>, nuint, nuint, void> SyncBlockCacheWeakPtrScan;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, void> SyncBlockCacheDemote;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, void> SyncBlockCachePromotionsGranted;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, uint> GetActiveSyncBlockCount;
@@ -183,7 +183,7 @@ namespace Internal.Runtime.GC
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, void> DisablePreemptiveGC;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Thread*> GetThread;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, gc_alloc_context*> GetAllocContext;
-        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate* unmanaged[SuppressGCTransition]<gc_alloc_context*, void*, void>, void*, void> GcEnumAllocContexts;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate*<gc_alloc_context*, void*, void>, void*, void> GcEnumAllocContexts;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, byte*> GetLoaderAllocatorObjectForGC;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, delegate* unmanaged[SuppressGCTransition]<void*, void>, void*, bool, byte*, bool> CreateThread;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, int, bool, void> DiagGCStart;
@@ -204,7 +204,7 @@ namespace Internal.Runtime.GC
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, byte*, void> FreeStringConfigValue;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool> IsGCThread;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, bool> WasCurrentThreadCreatedByGC;
-        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, ScanContext*, delegate* unmanaged[SuppressGCTransition]<Object**, ScanContext*, uint, void>, void> WalkAsyncPinnedForPromotion;
+        public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, ScanContext*, delegate*<Object**, ScanContext*, uint, void>, void> WalkAsyncPinnedForPromotion;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, Object*, void*, delegate* unmanaged[SuppressGCTransition]<Object*, Object*, void*, void>, void> WalkAsyncPinned;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, IGCToCLREventSink*> EventSink;
         public delegate* unmanaged[SuppressGCTransition]<IGCToCLR*, uint> GetTotalNumSizedRefHandles;

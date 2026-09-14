@@ -87,14 +87,17 @@ namespace Internal.Runtime.GC
         private const int SC_PAGESIZE = 30;
         private const int SC_NPROCESSORS_ONLN = 84;
         private const int SC_PHYS_PAGES = 85;
+        private const int SC_AVPHYS_PAGES = 86;
 #elif TARGET_APPLE
         private const int SC_PAGESIZE = 29;
         private const int SC_NPROCESSORS_ONLN = 58;
         private const int SC_PHYS_PAGES = 200;
+        private const int SC_AVPHYS_PAGES = -1;
 #else
         private const int SC_PAGESIZE = -1;
         private const int SC_NPROCESSORS_ONLN = -1;
         private const int SC_PHYS_PAGES = -1;
+        private const int SC_AVPHYS_PAGES = -1;
 #endif
         private const int MADV_DONTDUMP = 16;
         private const int MADV_DODUMP = 17;
@@ -453,20 +456,37 @@ namespace Internal.Runtime.GC
 
         public static void GetMemoryStatus(ulong restrictedLimit, uint* memoryLoad, ulong* availablePhysical, ulong* availablePageFile)
         {
+            ulong available = 0;
+            uint load = 0;
+
+#if TARGET_LINUX
+            long availablePages = GCUnixImports.sysconf(SC_AVPHYS_PAGES);
+            if (availablePages > 0)
+            {
+                available = (ulong)availablePages * s_pageSize;
+            }
+#endif
+
+            ulong total = restrictedLimit != 0
+                ? restrictedLimit
+                : s_totalPhysicalMemSize;
+            if (total > available)
+            {
+                load = (uint)(((total - available) * 100) / total);
+            }
+
             if (memoryLoad is not null)
             {
-                *memoryLoad = 0;
+                *memoryLoad = load;
             }
             if (availablePhysical is not null)
             {
-                *availablePhysical = 0;
+                *availablePhysical = available;
             }
             if (availablePageFile is not null)
             {
                 *availablePageFile = 0;
             }
-
-            DebugBreak();
         }
 
         public static nuint GetPageSize()

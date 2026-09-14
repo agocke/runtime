@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -8,6 +9,17 @@ namespace Internal.Runtime.GC
 {
     internal static unsafe partial class GCWksInitialization
     {
+        private static class GCRuntimeImports
+        {
+            [RuntimeImport("*", "RhpSetThreadDoNotTriggerGC")]
+            [MethodImpl(MethodImplOptions.InternalCall)]
+            internal static extern void SetThreadDoNotTriggerGC();
+
+            [RuntimeImport("*", "RhpClearThreadDoNotTriggerGC")]
+            [MethodImpl(MethodImplOptions.InternalCall)]
+            internal static extern void ClearThreadDoNotTriggerGC();
+        }
+
         private const int S_OK = 0;
         private const int E_FAIL = unchecked((int)0x80004005);
         private const int E_NOTIMPL = unchecked((int)0x80004001);
@@ -62,7 +74,16 @@ namespace Internal.Runtime.GC
         private static generation s_generation2;
         private static generation s_lohGeneration;
         private static generation s_pohGeneration;
+        private static StaticDataTable2 s_staticDataTable;
         private static DynamicDataArray5 s_dynamicDataTable;
+        private static GcMechanisms s_settings;
+        private static gc_latency_level s_latencyLevel;
+        private static uint s_highMemoryLoadThreshold;
+        private static uint s_veryHighMemoryLoadThreshold;
+        private static ulong s_totalPhysicalMemory;
+        private static bool s_isRestrictedPhysicalMemory;
+        private static ulong s_memoryOnePercent;
+        private static bool s_lastGcBeforeOom;
         private static byte* s_demotionLow;
         private static nuint s_maxgenPinnedCompactBeforeAdvance;
         private static bool s_decidePromoteGen1Pins;
@@ -70,6 +91,10 @@ namespace Internal.Runtime.GC
         private static CFinalize* s_finalizeQueue;
         private static ulong s_totalAllocatedBytesSoh;
         private static ulong s_totalAllocatedBytesUoh;
+        private static int s_collectionInProgress;
+        private static bool s_gcInProgress;
+        private static GCEvent s_waitForGCEvent;
+        private static bool s_waitForGCEventInitialized;
 
         public static int Initialize()
         {
@@ -110,11 +135,21 @@ namespace Internal.Runtime.GC
                 return E_NOTIMPL;
             }
 
+            if (!s_waitForGCEvent.CreateManualEventNoThrow(initialState: true))
+            {
+                return E_FAIL;
+            }
+            s_waitForGCEventInitialized = true;
+
             s_sohSegmentSize = ComputeValidSegmentSize(false);
             s_minUohSegmentSize = ComputeValidSegmentSize(true);
 
             long lohThreshold = GCConfig.GetLOHThreshold();
             s_lohThreshold = lohThreshold < (long)LargeObjectSize ? LargeObjectSize : (nuint)lohThreshold;
+
+            InitializeGcMechanisms();
+            InitializeMemoryThresholds();
+            InitializeStaticData();
 
             int result = InitializeHeapState();
             if (result == S_OK)
@@ -162,6 +197,11 @@ namespace Internal.Runtime.GC
             }
 
             ReleaseFinalizationQueue();
+            if (s_waitForGCEventInitialized)
+            {
+                s_waitForGCEvent.CloseEvent();
+                s_waitForGCEventInitialized = false;
+            }
         }
 
         public static void PublishObject(IGCHeap* heap, byte* obj)
@@ -174,6 +214,69 @@ namespace Internal.Runtime.GC
         {
             _ = heap;
             return (uint)gc_generation_num.max_generation;
+        }
+
+        public static uint GetCondemnedGeneration(IGCHeap* heap)
+        {
+            _ = heap;
+            return (uint)s_settings.condemned_generation;
+        }
+
+        public static bool IsGCInProgressHelper(IGCHeap* heap, bool considerGCStart)
+        {
+            _ = heap;
+            _ = considerGCStart;
+            return s_gcInProgress;
+        }
+
+        public static uint GetGcCount(IGCHeap* heap)
+        {
+            _ = heap;
+            return (uint)s_settings.gc_index;
+        }
+
+        public static void SetGCInProgress(IGCHeap* heap, bool inProgress)
+        {
+            _ = heap;
+            s_gcInProgress = inProgress;
+        }
+
+        public static void SetSuspensionPending(IGCHeap* heap, bool suspensionPending)
+        {
+            _ = heap;
+            if (suspensionPending)
+            {
+                System.Threading.Interlocked.Increment(
+                    ref GCCommon.g_fSuspensionPending);
+            }
+            else
+            {
+                System.Threading.Interlocked.Decrement(
+                    ref GCCommon.g_fSuspensionPending);
+            }
+        }
+
+        public static void SetWaitForGCEvent(IGCHeap* heap)
+        {
+            _ = heap;
+            s_waitForGCEvent.Set();
+        }
+
+        public static void ResetWaitForGCEvent(IGCHeap* heap)
+        {
+            _ = heap;
+            s_waitForGCEvent.Reset();
+        }
+
+        public static uint WaitUntilGCComplete(
+            IGCHeap* heap,
+            bool considerGCStart)
+        {
+            _ = heap;
+            _ = considerGCStart;
+            return s_gcInProgress
+                ? s_waitForGCEvent.Wait(uint.MaxValue, alertable: false)
+                : 0;
         }
 
         public static nuint GetLOHThreshold(IGCHeap* heap)
@@ -231,6 +334,170 @@ namespace Internal.Runtime.GC
             _ = heap;
             return System.Threading.Volatile.Read(ref s_totalAllocatedBytesSoh) +
                 System.Threading.Volatile.Read(ref s_totalAllocatedBytesUoh);
+        }
+
+        public static int GarbageCollect(
+            IGCHeap* heap,
+            int generation,
+            bool lowMemory,
+            int mode)
+        {
+            _ = heap;
+            if (generation == -1)
+            {
+                generation = (int)gc_generation_num.max_generation;
+            }
+
+            if (generation != (int)gc_generation_num.max_generation)
+            {
+                return E_NOTIMPL;
+            }
+
+            collection_mode collectionMode = (collection_mode)mode;
+            if ((collectionMode &
+                (collection_mode.collection_compacting |
+                 collection_mode.collection_aggressive)) != 0 ||
+                GCConfig.GetForceCompact() ||
+                GCConfig.GetLOHCompactionMode() ==
+                    (long)gc_loh_compaction_mode.loh_compaction_once)
+            {
+                return E_NOTIMPL;
+            }
+
+            if (System.Threading.Interlocked.CompareExchange(
+                    ref s_collectionInProgress,
+                    1,
+                    0) != 0)
+            {
+                return E_FAIL;
+            }
+
+            IGCToCLR* callback = GCCommon.g_theGCToCLR;
+            if (callback is null ||
+                callback->Vtable is null ||
+                callback->Vtable->SuspendEE is null ||
+                callback->Vtable->RestartEE is null ||
+                callback->Vtable->GcEnumAllocContexts is null)
+            {
+                System.Threading.Volatile.Write(
+                    ref s_collectionInProgress,
+                    0);
+                return E_FAIL;
+            }
+
+            ResetGcMechanisms();
+            s_settings.gc_index++;
+            s_settings.condemned_generation = generation;
+            s_settings.promotion = 1;
+            s_settings.reason = lowMemory
+                ? gc_reason.reason_lowmemory_blocking
+                : gc_reason.reason_induced;
+            s_settings.pause_mode = gc_pause_mode.pause_batch;
+
+            uint memoryLoad = 0;
+            ulong availablePhysical = 0;
+            ulong availablePageFile = 0;
+            GCToOSInterface.GetMemoryStatus(
+                s_isRestrictedPhysicalMemory ? s_totalPhysicalMemory : 0,
+                &memoryLoad,
+                &availablePhysical,
+                &availablePageFile);
+            s_settings.entry_memory_load = memoryLoad;
+            s_settings.entry_available_physical_mem = availablePhysical;
+            _ = availablePageFile;
+
+            GCRuntimeImports.SetThreadDoNotTriggerGC();
+            callback->Vtable->SuspendEE(
+                callback,
+                SUSPEND_REASON.SUSPEND_FOR_GC);
+            callback->Vtable->GcEnumAllocContexts(
+                callback,
+                &FixAllocationContextForGc,
+                null);
+
+            if (callback->Vtable->GcStartWork is not null)
+            {
+                callback->Vtable->GcStartWork(
+                    callback,
+                    generation,
+                    (int)gc_generation_num.max_generation);
+            }
+
+            int result = RunMarkPhaseCore(generation);
+            if (result == S_OK)
+            {
+                result = RunPlanPhaseCore(
+                    generation,
+                    promotion: true);
+            }
+
+            if (result != S_OK)
+            {
+                FailFast();
+            }
+
+            UpdateWriteBarrierAfterGc();
+            if (callback->Vtable->GcDone is not null)
+            {
+                callback->Vtable->GcDone(callback, generation);
+            }
+
+            callback->Vtable->RestartEE(callback, true);
+            GCRuntimeImports.ClearThreadDoNotTriggerGC();
+            System.Threading.Volatile.Write(
+                ref s_collectionInProgress,
+                0);
+            return result;
+        }
+
+        private static void FixAllocationContextForGc(
+            gc_alloc_context* context,
+            void* parameter)
+        {
+            _ = parameter;
+            if (context is null || context->alloc_ptr is null)
+            {
+                return;
+            }
+
+            if (context->alloc_limit is null ||
+                context->alloc_ptr > context->alloc_limit)
+            {
+                FailFast();
+                return;
+            }
+
+            nuint unused = (nuint)(
+                context->alloc_limit - context->alloc_ptr);
+            if (s_sohSegment.allocated >= context->alloc_limit &&
+                (nuint)(s_sohSegment.allocated - context->alloc_limit) <=
+                    MinObjectSize)
+            {
+                s_sohSegment.allocated = context->alloc_ptr;
+            }
+            else
+            {
+                nuint unusedObjectSize = unused + MinObjectSize;
+                FormatUnusedArray(
+                    context->alloc_ptr,
+                    unusedObjectSize);
+                s_generation0.free_obj_space += unusedObjectSize;
+            }
+
+            context->alloc_bytes -= (long)unused;
+            s_totalAllocatedBytesSoh -= unused;
+            context->alloc_ptr = null;
+            context->alloc_limit = null;
+        }
+
+        private static void UpdateWriteBarrierAfterGc()
+        {
+            WriteBarrierParameters parameters = default;
+            parameters.operation = WriteBarrierOp.StompEphemeral;
+            parameters.is_runtime_suspended = true;
+            parameters.ephemeral_low = s_generation1.allocation_start;
+            parameters.ephemeral_high = s_sohSegment.reserved;
+            GCCommon.PublishWriteBarrier(&parameters);
         }
 
         public static uint GetGenerationWithRange(IGCHeap* heap, Object* obj, byte** start, byte** allocated, byte** reserved)
@@ -857,6 +1124,7 @@ namespace Internal.Runtime.GC
                 InitializeGeneration(pohGeneration, 4, poh, pohBase + sizeof(heap_segment));
             }
 
+            SetStaticData();
             s_totalAllocatedBytesSoh = 0;
             s_totalAllocatedBytesUoh = 0;
 
@@ -1537,6 +1805,226 @@ namespace Internal.Runtime.GC
             generation->allocation_start = start;
             generation->allocation_segment = segment;
             generation->allocation_context_start_region = null;
+            generation->free_list_allocator.first_bucket_bits = (sizeof(nuint) * 8) - 1;
+            generation->free_list_allocator.num_buckets = 1;
+            generation->free_list_allocator.gen_number = number;
+        }
+
+        private static void InitializeGcMechanisms()
+        {
+            s_settings = default;
+            s_settings.gc_index = 0;
+            s_settings.gen0_reduction_count = 0;
+            s_settings.should_lock_elevation = 0;
+            s_settings.elevation_locked_count = 0;
+            s_settings.reason = gc_reason.reason_empty;
+            s_settings.pause_mode = gc_pause_mode.pause_batch;
+            ResetGcMechanisms();
+        }
+
+        private static void ResetGcMechanisms()
+        {
+            nuint gcIndex = s_settings.gc_index;
+            int gen0ReductionCount = s_settings.gen0_reduction_count;
+            int shouldLockElevation = s_settings.should_lock_elevation;
+            int elevationLockedCount = s_settings.elevation_locked_count;
+            gc_reason reason = s_settings.reason;
+            gc_pause_mode pauseMode = s_settings.pause_mode;
+
+            s_settings = default;
+            s_settings.gc_index = gcIndex;
+            s_settings.gen0_reduction_count = gen0ReductionCount;
+            s_settings.should_lock_elevation = shouldLockElevation;
+            s_settings.elevation_locked_count = elevationLockedCount;
+            s_settings.reason = reason;
+            s_settings.pause_mode = pauseMode;
+            s_settings.compaction = 1;
+        }
+
+        private static void InitializeMemoryThresholds()
+        {
+            bool isRestricted = false;
+            s_totalPhysicalMemory = GCToOSInterface.GetPhysicalMemoryLimit(&isRestricted);
+            s_isRestrictedPhysicalMemory = isRestricted;
+            s_memoryOnePercent = s_totalPhysicalMemory / 100;
+
+            uint configuredThreshold = (uint)GCConfig.GetGCHighMemPercent();
+            if (configuredThreshold != 0)
+            {
+                s_highMemoryLoadThreshold = configuredThreshold < 99 ? configuredThreshold : 99;
+                uint veryHighThreshold = s_highMemoryLoadThreshold + 7;
+                s_veryHighMemoryLoadThreshold = veryHighThreshold < 99 ? veryHighThreshold : 99;
+            }
+            else
+            {
+                int availableMemoryThreshold = 10;
+                if (s_totalPhysicalMemory >= 80UL * 1024 * 1024 * 1024)
+                {
+                    int adjustedAvailableMemoryThreshold = 3 + (47 / (int)GCCommon.g_num_processors);
+                    if (adjustedAvailableMemoryThreshold < availableMemoryThreshold)
+                    {
+                        availableMemoryThreshold = adjustedAvailableMemoryThreshold;
+                    }
+                }
+
+                s_highMemoryLoadThreshold = (uint)(100 - availableMemoryThreshold);
+                s_veryHighMemoryLoadThreshold = 97;
+            }
+        }
+
+        private static void InitializeStaticData()
+        {
+            fixed (StaticDataTable2* table = &s_staticDataTable)
+            {
+                SetStaticDataEntry(&table->Item0.Item0, 0, 0, 40000, 0.5f, 9.0f, 20.0f, 1000 * 1000, 1);
+                SetStaticDataEntry(&table->Item0.Item1, 160 * 1024, 0, 80000, 0.5f, 2.0f, 7.0f, 10 * 1000 * 1000, 10);
+                SetStaticDataEntry(&table->Item0.Item2, 256 * 1024, (nuint)nint.MaxValue, 200000, 0.25f, 1.2f, 1.8f, 100 * 1000 * 1000, 100);
+                SetStaticDataEntry(&table->Item0.Item3, 3 * 1024 * 1024, (nuint)nint.MaxValue, 0, 0.0f, 1.25f, 4.5f, 0, 0);
+                SetStaticDataEntry(&table->Item0.Item4, 3 * 1024 * 1024, (nuint)nint.MaxValue, 0, 0.0f, 1.25f, 4.5f, 0, 0);
+
+                SetStaticDataEntry(&table->Item1.Item0, 0, 0, 40000, 0.5f, 9.0f, 20.0f, 1000 * 1000, 1);
+                SetStaticDataEntry(&table->Item1.Item1, 256 * 1024, 0, 80000, 0.5f, 2.0f, 7.0f, 10 * 1000 * 1000, 10);
+                SetStaticDataEntry(&table->Item1.Item2, 256 * 1024, (nuint)nint.MaxValue, 200000, 0.25f, 1.2f, 1.8f, 100 * 1000 * 1000, 100);
+                SetStaticDataEntry(&table->Item1.Item3, 3 * 1024 * 1024, (nuint)nint.MaxValue, 0, 0.0f, 1.25f, 4.5f, 0, 0);
+                SetStaticDataEntry(&table->Item1.Item4, 3 * 1024 * 1024, (nuint)nint.MaxValue, 0, 0.0f, 1.25f, 4.5f, 0, 0);
+
+                nuint gen0MinSize = GetGen0MinSize();
+                nuint gen0MaxSize = (nuint)GCConfig.GetGCGen0MaxBudget();
+                if (gen0MaxSize == 0)
+                {
+                    nuint halfSegment = GCEnvironment.AlignUp(s_sohSegmentSize / 2, (nuint)sizeof(void*));
+                    gen0MaxSize = halfSegment < 6 * 1024 * 1024 ? 6 * 1024 * 1024 : halfSegment;
+                    if (gen0MaxSize > 200 * 1024 * 1024)
+                    {
+                        gen0MaxSize = 200 * 1024 * 1024;
+                    }
+
+                    if (gen0MaxSize < gen0MinSize)
+                    {
+                        gen0MaxSize = gen0MinSize;
+                    }
+                }
+
+                gen0MaxSize = GCEnvironment.AlignUp(gen0MaxSize, (nuint)sizeof(void*));
+                if (gen0MinSize > gen0MaxSize)
+                {
+                    gen0MinSize = gen0MaxSize;
+                }
+
+                GCConfig.SetGCGen0MaxBudget((long)gen0MaxSize);
+
+                nuint gen1MaxSize = GCEnvironment.AlignUp(s_sohSegmentSize / 2, (nuint)sizeof(void*));
+                if (gen1MaxSize < 6 * 1024 * 1024)
+                {
+                    gen1MaxSize = 6 * 1024 * 1024;
+                }
+
+                nuint configuredGen1MaxSize = (nuint)GCConfig.GetGCGen1MaxBudget();
+                if (configuredGen1MaxSize != 0 && configuredGen1MaxSize < gen1MaxSize)
+                {
+                    gen1MaxSize = configuredGen1MaxSize;
+                }
+
+                gen1MaxSize = GCEnvironment.AlignUp(gen1MaxSize, (nuint)sizeof(void*));
+                table->Item0.Item0.min_size = gen0MinSize;
+                table->Item0.Item0.max_size = gen0MaxSize;
+                table->Item0.Item1.max_size = gen1MaxSize;
+                table->Item1.Item0.min_size = gen0MinSize;
+                table->Item1.Item0.max_size = gen0MaxSize;
+                table->Item1.Item1.max_size = gen1MaxSize;
+            }
+
+            long configuredLatencyLevel = GCConfig.GetLatencyLevel();
+            s_latencyLevel = configuredLatencyLevel >= (long)gc_latency_level.latency_level_first &&
+                configuredLatencyLevel <= (long)gc_latency_level.latency_level_last
+                ? (gc_latency_level)configuredLatencyLevel
+                : gc_latency_level.latency_level_default;
+        }
+
+        private static void SetStaticDataEntry(
+            static_data* data,
+            nuint minSize,
+            nuint maxSize,
+            nuint fragmentationLimit,
+            float fragmentationBurdenLimit,
+            float limit,
+            float maxLimit,
+            ulong timeClock,
+            nuint gcClock)
+        {
+            data->min_size = minSize;
+            data->max_size = maxSize;
+            data->fragmentation_limit = fragmentationLimit;
+            data->fragmentation_burden_limit = fragmentationBurdenLimit;
+            data->limit = limit;
+            data->max_limit = maxLimit;
+            data->time_clock = timeClock;
+            data->gc_clock = gcClock;
+        }
+
+        private static nuint GetGen0MinSize()
+        {
+            nuint configuredSize = (nuint)GCConfig.GetGen0Size();
+            bool invalidConfiguration = configuredSize == 0 || configuredSize < 64 * 1024;
+            nuint gen0Size = configuredSize;
+            if (invalidConfiguration)
+            {
+                nuint cacheSize = GCToOSInterface.GetCacheSizePerLogicalCpu();
+                gen0Size = 4 * cacheSize / 5;
+                if (gen0Size < 256 * 1024)
+                {
+                    gen0Size = 256 * 1024;
+                }
+            }
+
+            if (gen0Size >= s_sohSegmentSize / 2)
+            {
+                gen0Size = s_sohSegmentSize / 2;
+            }
+
+            if (invalidConfiguration)
+            {
+                gen0Size = gen0Size / 8 * 5;
+            }
+
+            return GCEnvironment.AlignUp(gen0Size, (nuint)sizeof(void*));
+        }
+
+        private static void SetStaticData()
+        {
+            fixed (StaticDataTable2* table = &s_staticDataTable)
+            {
+                StaticDataArray5* pauseModeData = s_latencyLevel switch
+                {
+                    gc_latency_level.latency_level_memory_footprint => &table->Item0,
+                    _ => &table->Item1,
+                };
+
+                for (int generationNumber = 0;
+                    generationNumber < (int)gc_generation_num.total_generation_count;
+                    generationNumber++)
+                {
+                    dynamic_data* dynamicData = GetDynamicData(generationNumber);
+                    static_data* staticData = generationNumber switch
+                    {
+                        0 => &pauseModeData->Item0,
+                        1 => &pauseModeData->Item1,
+                        2 => &pauseModeData->Item2,
+                        3 => &pauseModeData->Item3,
+                        4 => &pauseModeData->Item4,
+                        _ => null,
+                    };
+
+                    if (dynamicData is null || staticData is null)
+                    {
+                        FailFast();
+                        return;
+                    }
+
+                    dynamicData->sdata = staticData;
+                    dynamicData->min_size = staticData->min_size;
+                }
+            }
         }
 
         private static bool InitializeCardTable()

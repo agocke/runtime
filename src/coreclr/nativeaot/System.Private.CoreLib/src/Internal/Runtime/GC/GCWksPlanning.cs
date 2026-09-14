@@ -5,16 +5,13 @@ namespace Internal.Runtime.GC
 {
     internal static unsafe partial class GCWksInitialization
     {
-        // Translation plan:
-        // 1. Initialize gc_mechanisms and the dynamic/static tuning data needed by
-        //    decide_on_compacting.
-        // 2. Finish the full-gen2 planning decision and UOH planning paths.
-        // 3. Translate a complete non-compacting sweep and free-list rebuild path.
-        // 4. Translate relocation and compaction, including roots, handles, and
-        //    finalization queues.
-        // 5. Add collection orchestration and wire GarbageCollect only after marking,
-        //    planning, and one complete post-plan path can run without returning from
-        //    partially mutated heap state.
+        // Translated scope:
+        // - Full-gen2 workstation planning for SOH, LOH, and POH.
+        // - Non-compacting sweep and free-list rebuilding.
+        // - Compaction decisions, with unsupported compaction and expansion rejected
+        //   before partially mutating the heap.
+        // Relocation, compacting collections, demotion, older-generation free-list
+        // allocation, and ephemeral collections remain outside this boundary.
         //
         // Translation workflow:
         // - Generate mechanical drafts with cpp_to_unsafe_csharp.py using the selected
@@ -38,14 +35,9 @@ namespace Internal.Runtime.GC
 
         private static int PlanPhase(int condemnedGeneration, bool promotion)
         {
-            // This is the segment-GC/WKS portion of gc_heap::plan_phase, beginning at
-            // plan_phase.cpp:3315. The selected non-region generation-start,
-            // ephemeral-boundary, survivor-accounting, allocate-in-condemned,
-            // convert-to-pinned/new-address, brick-table, relocation-tree,
-            // post-plug metadata, exhausted-segment handling, and fragmentation
-            // calculation are translated through plan_phase.cpp:4484.
-            // The next boundary is before decide_on_compacting and UOH
-            // sweep/compaction decisions.
+            // This is the selected segment-GC/WKS full-gen2 non-compacting path from
+            // gc_heap::plan_phase. It includes SOH plug planning, compaction decisions,
+            // UOH planning, and the post-plan sweep path.
             generation* condemnedGenerationState = GetGeneration(condemnedGeneration);
             if (condemnedGenerationState is null)
             {
@@ -102,7 +94,8 @@ namespace Internal.Runtime.GC
                 }
             }
 
-            heap_segment* condemnedSegment = condemnedGenerationState->start_segment;
+            heap_segment* condemnedSegment =
+                HeapSegmentRw(condemnedGenerationState->start_segment);
             if (condemnedSegment is null)
             {
                 return E_FAIL;
@@ -182,8 +175,13 @@ namespace Internal.Runtime.GC
                     return E_FAIL;
                 }
 
-                currentGeneration->allocation_segment = currentGeneration->start_segment;
+                currentGeneration->allocation_segment =
+                    HeapSegmentRw(currentGeneration->start_segment);
                 heap_segment* allocationSegment = currentGeneration->allocation_segment;
+                if (allocationSegment is null)
+                {
+                    return E_FAIL;
+                }
                 byte* allocationPointer;
                 fixed (heap_segment* ephemeralSegment = &s_sohSegment)
                 {
@@ -588,13 +586,13 @@ namespace Internal.Runtime.GC
                         if (oldestPinnedPlug->first >= ephemeralSegment->mem &&
                             oldestPinnedPlug->first < ephemeralSegment->reserved)
                         {
-                            int ensureResult = EnsureEphemeralHeapSegment(
-                                consingGeneration,
-                                out consingGeneration);
-                            if (ensureResult != S_OK)
+                            generation* ensuredConsingGeneration =
+                                EnsureEphemeralHeapSegment(consingGeneration);
+                            if (ensuredConsingGeneration is null)
                             {
-                                return ensureResult;
+                                return E_FAIL;
                             }
+                            consingGeneration = ensuredConsingGeneration;
 
                             while (activeNewGenerationNumber > 0)
                             {
@@ -719,14 +717,15 @@ namespace Internal.Runtime.GC
                 }
             }
 
-            int planStartsResult = PlanGenerationStarts(
+            generation* plannedConsingGeneration = PlanGenerationStarts(
                 condemnedGeneration,
-                ref consingGeneration,
+                consingGeneration,
                 promotion);
-            if (planStartsResult != S_OK)
+            if (plannedConsingGeneration is null)
             {
-                return planStartsResult;
+                return E_FAIL;
             }
+            consingGeneration = plannedConsingGeneration;
 
             fixed (heap_segment* ephemeralSegment = &s_sohSegment)
             {
@@ -734,12 +733,62 @@ namespace Internal.Runtime.GC
                     condemnedGenerationState,
                     consingGeneration,
                     ephemeralSegment->allocated);
-                _ = fragmentation;
+
+                bool shouldCompact = DecideOnCompacting(
+                    condemnedGeneration,
+                    fragmentation,
+                    out bool shouldExpand);
+
+                if (s_settings.loh_compaction != 0)
+                {
+                    shouldCompact = true;
+                }
+                else
+                {
+                    int lohSweepResult = SweepUohObjects(
+                        (int)gc_generation_num.loh_generation);
+                    if (lohSweepResult != S_OK)
+                    {
+                        return lohSweepResult;
+                    }
+                }
+
+                int pohSweepResult = SweepUohObjects(
+                    (int)gc_generation_num.poh_generation);
+                if (pohSweepResult != S_OK)
+                {
+                    return pohSweepResult;
+                }
+
+                if (shouldCompact || shouldExpand)
+                {
+                    FailFast();
+                    return E_NOTIMPL;
+                }
+
+                s_settings.promotion = 1;
+                s_settings.compaction = 0;
+                s_settings.demotion = 0;
+
+                int freeListResult = MakeFreeLists(condemnedGeneration);
+                if (freeListResult != S_OK)
+                {
+                    return freeListResult;
+                }
+
+                nuint recoveredSweepSize = RecoverSavedPinnedInfo();
+                generation* maxGeneration =
+                    GetGeneration((int)gc_generation_num.max_generation);
+                if (maxGeneration is null ||
+                    recoveredSweepSize > maxGeneration->free_obj_space)
+                {
+                    return E_FAIL;
+                }
+
+                maxGeneration->free_obj_space -= recoveredSweepSize;
             }
 
-            // Translation boundary: plan_phase.cpp:4484, before
-            // decide_on_compacting and the UOH sweep/compaction decisions.
-            return E_NOTIMPL;
+            return S_OK;
         }
 
         // plan_phase.cpp:7711-7784, selected WKS !USE_REGIONS path.
@@ -781,7 +830,8 @@ namespace Internal.Runtime.GC
                         (nint)(ephemeralSegment->allocated - ephemeralSegment->mem);
                 }
 
-                heap_segment* segment = generationState->start_segment;
+                heap_segment* segment =
+                    HeapSegmentRw(generationState->start_segment);
                 if (segment is null)
                 {
                     FailFast();
@@ -799,7 +849,7 @@ namespace Internal.Runtime.GC
 
                     fragmentation +=
                         (nint)(segment->allocated - segment->plan_allocated);
-                    segment = segment->next;
+                    segment = HeapSegmentNextRw(segment);
                     if (segment is null)
                     {
                         FailFast();
@@ -847,6 +897,7 @@ namespace Internal.Runtime.GC
                 {
                     heap_segment* segment = gen->start_segment;
                     while (segment is not null &&
+                           (segment->flags & HeapSegmentReadOnly) != 0 &&
                            (segment->flags & HeapSegmentInRange) == 0)
                     {
                         segment = segment->next;
@@ -862,6 +913,7 @@ namespace Internal.Runtime.GC
                         result += (nuint)(segment->allocated - segment->mem);
                         segment = segment->next;
                         while (segment is not null &&
+                               (segment->flags & HeapSegmentReadOnly) != 0 &&
                                (segment->flags & HeapSegmentInRange) == 0)
                         {
                             segment = segment->next;
@@ -871,6 +923,206 @@ namespace Internal.Runtime.GC
             }
 
             return result;
+        }
+
+        private static bool DecideOnCompacting(
+            int condemnedGeneration,
+            nuint fragmentation,
+            out bool shouldExpand)
+        {
+            shouldExpand = false;
+            generation* generationState = GetGeneration(condemnedGeneration);
+            dynamic_data* dynamicData = GetDynamicData(condemnedGeneration);
+            if (generationState is null ||
+                dynamicData is null ||
+                dynamicData->sdata is null)
+            {
+                FailFast();
+                return false;
+            }
+
+            nuint generationSizes = GenerationSizes(generationState, use_saved_p: true);
+            float fragmentationBurden =
+                fragmentation == 0 || generationSizes == 0
+                    ? 0.0f
+                    : (float)fragmentation / generationSizes;
+
+            bool shouldCompact = GCConfig.GetForceCompact();
+            if (condemnedGeneration == (int)gc_generation_num.max_generation &&
+                s_lastGcBeforeOom)
+            {
+                shouldCompact = true;
+                s_lastGcBeforeOom = false;
+            }
+
+            if (s_settings.reason is gc_reason.reason_induced_compacting or
+                gc_reason.reason_induced_aggressive or
+                gc_reason.reason_pm_full_gc)
+            {
+                shouldCompact = true;
+            }
+
+            if (!shouldCompact && !EphemeralGenerationFits(usePlan: false))
+            {
+                shouldCompact = true;
+            }
+
+            if (shouldCompact &&
+                condemnedGeneration >= (int)gc_generation_num.max_generation - 1 &&
+                !EphemeralGenerationFits(usePlan: true))
+            {
+                shouldExpand = true;
+            }
+
+            bool highMemory = false;
+            if (!shouldCompact &&
+                fragmentation >= dynamicData->sdata->fragmentation_limit &&
+                fragmentationBurden >= dynamicData->sdata->fragmentation_burden_limit)
+            {
+                shouldCompact = true;
+            }
+
+            if (!shouldCompact)
+            {
+                nint reclaimSpace =
+                    (nint)GenerationSizes(
+                        GetGeneration((int)gc_generation_num.max_generation),
+                        use_saved_p: false) -
+                    (nint)GenerationPlanSize((int)gc_generation_num.max_generation);
+                if (s_settings.entry_memory_load >= s_highMemoryLoadThreshold &&
+                    s_settings.entry_memory_load < s_veryHighMemoryLoadThreshold)
+                {
+                    ulong threshold = s_settings.entry_available_physical_mem;
+                    if (threshold > 256UL * 1024 * 1024)
+                    {
+                        threshold = 256UL * 1024 * 1024;
+                    }
+
+                    if (reclaimSpace > (long)threshold)
+                    {
+                        shouldCompact = true;
+                    }
+
+                    highMemory = true;
+                }
+                else if (s_settings.entry_memory_load >= s_veryHighMemoryLoadThreshold)
+                {
+                    if (reclaimSpace > (nint)GetMinimumReclaimFragmentationThreshold())
+                    {
+                        shouldCompact = true;
+                    }
+
+                    highMemory = true;
+                }
+            }
+
+            if (!shouldCompact && !EnsureGapAllocation(condemnedGeneration))
+            {
+                shouldCompact = true;
+            }
+
+            if (s_settings.condemned_generation ==
+                (int)gc_generation_num.max_generation &&
+                (highMemory && !shouldCompact ||
+                 !IsFullCompactingGcProductive()))
+            {
+                s_settings.should_lock_elevation = 1;
+            }
+
+            return shouldCompact;
+        }
+
+        private static bool EphemeralGenerationFits(bool usePlan)
+        {
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                byte* start = usePlan
+                    ? ephemeralSegment->plan_allocated
+                    : ephemeralSegment->allocated;
+                if (start is null || start > ephemeralSegment->reserved)
+                {
+                    return false;
+                }
+
+                if (!usePlan)
+                {
+                    dynamic_data* generation0Data =
+                        GetDynamicData((int)gc_generation_num.soh_gen0);
+                    return generation0Data is not null &&
+                        generation0Data->sdata is not null &&
+                        (nuint)(ephemeralSegment->reserved - start) >=
+                            generation0Data->min_size;
+                }
+
+                dynamic_data* generation0 =
+                    GetDynamicData((int)gc_generation_num.soh_gen0);
+                dynamic_data* generation1 =
+                    GetDynamicData((int)gc_generation_num.soh_gen1);
+                if (generation0 is null ||
+                    generation1 is null ||
+                    generation0->sdata is null ||
+                    generation1->sdata is null)
+                {
+                    return false;
+                }
+
+                nuint required =
+                    2 * generation0->min_size +
+                    2 * generation1->min_size;
+                return (nuint)(ephemeralSegment->reserved - start) > required;
+            }
+        }
+
+        private static nuint GetMinimumReclaimFragmentationThreshold()
+        {
+            nuint memoryBased =
+                (nuint)(500 -
+                    (s_settings.entry_memory_load - s_highMemoryLoadThreshold) * 40) *
+                1024 * 1024;
+            nuint generationBased =
+                GenerationSizes(
+                    GetGeneration((int)gc_generation_num.max_generation),
+                    use_saved_p: false) /
+                10;
+            ulong physicalMemoryBased = s_memoryOnePercent * 3;
+            nuint result = memoryBased < generationBased
+                ? memoryBased
+                : generationBased;
+            return (ulong)result < physicalMemoryBased
+                ? result
+                : (nuint)physicalMemoryBased;
+        }
+
+        private static bool EnsureGapAllocation(int condemnedGeneration)
+        {
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                nuint size =
+                    GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*)) *
+                    (nuint)(condemnedGeneration + 1);
+                byte* end = ephemeralSegment->allocated + (nint)size;
+                if (end > ephemeralSegment->reserved)
+                {
+                    return false;
+                }
+
+                return end <= ephemeralSegment->committed ||
+                    GrowHeapSegment(
+                        ephemeralSegment,
+                        ephemeralSegment->allocated,
+                        null,
+                        size,
+                        padFront: false);
+            }
+        }
+
+        private static bool IsFullCompactingGcProductive()
+        {
+            generation* generation1 =
+                GetGeneration((int)gc_generation_num.soh_gen1);
+            return generation1 is not null &&
+                generation1->plan_allocation_start <
+                    generation1->allocation_start;
         }
 
         private const nuint HeapSegmentInRange = 2;
@@ -980,39 +1232,35 @@ namespace Internal.Runtime.GC
             return S_OK;
         }
 
-        private static int PlanGenerationStarts(
+        private static generation* PlanGenerationStarts(
             int condemnedGeneration,
-            ref generation* consingGeneration,
+            generation* initialConsingGeneration,
             bool promotion)
         {
-            if (consingGeneration is null)
+            if (initialConsingGeneration is null)
             {
-                return E_FAIL;
+                return null;
             }
 
+            generation* consingGeneration = initialConsingGeneration;
             int generationNumber = condemnedGeneration;
             while (generationNumber >= 0)
             {
                 if (generationNumber < (int)gc_generation_num.max_generation)
                 {
-                    int ensureResult = EnsureEphemeralHeapSegment(
-                        consingGeneration,
-                        out consingGeneration);
-                    if (ensureResult != S_OK)
+                    generation* ensuredConsingGeneration =
+                        EnsureEphemeralHeapSegment(consingGeneration);
+                    if (ensuredConsingGeneration is null)
                     {
-                        return ensureResult;
+                        return null;
                     }
-
-                    if (consingGeneration is null)
-                    {
-                        return E_FAIL;
-                    }
+                    consingGeneration = ensuredConsingGeneration;
                 }
 
                 generation* generationState = GetGeneration(generationNumber);
                 if (generationState is null)
                 {
-                    return E_FAIL;
+                    return null;
                 }
 
                 if (generationState->plan_allocation_start is null)
@@ -1024,14 +1272,14 @@ namespace Internal.Runtime.GC
                         null);
                     if (planResult != S_OK)
                     {
-                        return planResult;
+                        return null;
                     }
 
                     System.Diagnostics.Debug.Assert(
                         generationState->plan_allocation_start is not null);
                     if (generationState->plan_allocation_start is null)
                     {
-                        return E_FAIL;
+                        return null;
                     }
                 }
 
@@ -1044,7 +1292,7 @@ namespace Internal.Runtime.GC
                     consingGeneration->allocation_context.alloc_ptr;
             }
 
-            return S_OK;
+            return consingGeneration;
         }
 
         // allocation.cpp:5446-5742, selected WKS !USE_REGIONS/SHORT_PLUGS path.
@@ -1795,12 +2043,11 @@ namespace Internal.Runtime.GC
                     }
 
                     allocateInCondemned = true;
-                    int result = EnsureEphemeralHeapSegment(
-                        consingGeneration,
-                        out generation* ensuredConsingGeneration);
-                    if (result != S_OK)
+                    generation* ensuredConsingGeneration =
+                        EnsureEphemeralHeapSegment(consingGeneration);
+                    if (ensuredConsingGeneration is null)
                     {
-                        return result;
+                        return E_FAIL;
                     }
 
                     consingGeneration = ensuredConsingGeneration;
@@ -1860,30 +2107,27 @@ namespace Internal.Runtime.GC
             return S_OK;
         }
 
-        private static int EnsureEphemeralHeapSegment(
-            generation* consingGeneration,
-            out generation* ensuredConsingGeneration)
+        private static generation* EnsureEphemeralHeapSegment(
+            generation* consingGeneration)
         {
-            ensuredConsingGeneration = null;
             if (consingGeneration is null ||
                 consingGeneration->allocation_segment is null)
             {
-                return E_FAIL;
+                return null;
             }
 
             fixed (heap_segment* ephemeralSegment = &s_sohSegment)
             {
                 if (consingGeneration->allocation_segment == ephemeralSegment)
                 {
-                    ensuredConsingGeneration = consingGeneration;
-                    return S_OK;
+                    return consingGeneration;
                 }
 
                 heap_segment* segment = consingGeneration->allocation_segment;
                 if (consingGeneration->allocation_context.alloc_ptr < segment->mem ||
                     consingGeneration->allocation_context.alloc_ptr > segment->committed)
                 {
-                    return E_FAIL;
+                    return null;
                 }
 
                 segment->plan_allocated =
@@ -1893,17 +2137,15 @@ namespace Internal.Runtime.GC
                     GetGeneration((int)gc_generation_num.max_generation - 1);
                 if (newConsingGeneration is null)
                 {
-                    return E_FAIL;
+                    return null;
                 }
 
                 newConsingGeneration->allocation_context.alloc_ptr = ephemeralSegment->mem;
                 newConsingGeneration->allocation_context.alloc_limit = ephemeralSegment->mem;
                 newConsingGeneration->allocation_context_start_region = ephemeralSegment->mem;
                 newConsingGeneration->allocation_segment = ephemeralSegment;
-                ensuredConsingGeneration = newConsingGeneration;
+                return newConsingGeneration;
             }
-
-            return S_OK;
         }
 
         private static dynamic_data* GetDynamicData(int generationNumber)
@@ -2083,7 +2325,8 @@ namespace Internal.Runtime.GC
             byte* lowestMarkedAddress,
             byte* highestMarkedAddress)
         {
-            heap_segment* segment = currentGeneration->start_segment;
+            heap_segment* segment =
+                HeapSegmentRw(currentGeneration->start_segment);
             if (segment is null)
             {
                 return E_FAIL;
@@ -2168,7 +2411,7 @@ namespace Internal.Runtime.GC
                     segment->allocated = startUnmarked;
                 }
 
-                segment = segment->next;
+                segment = HeapSegmentNextRw(segment);
             }
             while (segment is not null);
 
@@ -2182,16 +2425,22 @@ namespace Internal.Runtime.GC
                 generationNumber++)
             {
                 generation* currentGeneration = GetGeneration(generationNumber);
-                heap_segment* segment = currentGeneration->start_segment;
+                heap_segment* segment =
+                    HeapSegmentRw(currentGeneration->start_segment);
                 while (segment is not null)
                 {
                     segment->plan_allocated = segment->mem;
-                    segment = segment->next;
+                    segment = HeapSegmentNextRw(segment);
                 }
             }
 
-            condemnedGenerationState->allocation_segment = condemnedGenerationState->start_segment;
+            condemnedGenerationState->allocation_segment =
+                HeapSegmentRw(condemnedGenerationState->start_segment);
             heap_segment* allocationSegment = condemnedGenerationState->allocation_segment;
+            if (allocationSegment is null)
+            {
+                return;
+            }
             byte* allocationPointer;
             fixed (heap_segment* ephemeralSegment = &s_sohSegment)
             {
@@ -2537,6 +2786,497 @@ namespace Internal.Runtime.GC
             }
 
             return S_OK;
+        }
+
+        private struct MakeFreeArgs
+        {
+            public int FreeListGenerationNumber;
+            public byte* CurrentGenerationLimit;
+            public generation* FreeListGeneration;
+            public byte* HighestPlug;
+        }
+
+        private static int MakeFreeLists(int condemnedGeneration)
+        {
+            System.Diagnostics.Debug.Assert(s_settings.promotion != 0);
+
+            MakeFreeArgs args = default;
+            int stopGenerationIndex = GetStopGenerationIndex(condemnedGeneration);
+            for (int generationNumber = condemnedGeneration;
+                generationNumber >= stopGenerationIndex;
+                generationNumber--)
+            {
+                generation* condemnedGenerationState = GetGeneration(generationNumber);
+                if (condemnedGenerationState is null ||
+                    condemnedGenerationState->start_segment is null)
+                {
+                    return E_FAIL;
+                }
+
+                heap_segment* currentSegment =
+                    HeapSegmentRw(condemnedGenerationState->start_segment);
+                if (currentSegment is null)
+                {
+                    return E_FAIL;
+                }
+
+                byte* startAddress =
+                    GetSohStartObject(currentSegment, condemnedGenerationState);
+                byte* endAddress = currentSegment->allocated;
+                if (startAddress is null ||
+                    endAddress is null ||
+                    startAddress > endAddress)
+                {
+                    return E_FAIL;
+                }
+
+                nuint currentBrick = GetBrickIndex(startAddress);
+                nuint endBrick = startAddress == endAddress
+                    ? currentBrick
+                    : GetBrickIndex(endAddress - 1);
+
+                args.FreeListGenerationNumber =
+                    GetPlanGenerationNumber(generationNumber);
+                args.FreeListGeneration =
+                    GetGeneration(args.FreeListGenerationNumber);
+                args.HighestPlug = null;
+                args.CurrentGenerationLimit =
+                    GetGenerationLimit(args.FreeListGenerationNumber);
+                if (args.FreeListGeneration is null ||
+                    args.CurrentGenerationLimit is null)
+                {
+                    return E_FAIL;
+                }
+
+                while (true)
+                {
+                    if (currentBrick > endBrick)
+                    {
+                        heap_segment* nextSegment =
+                            HeapSegmentNextRw(currentSegment);
+                        if (nextSegment is null)
+                        {
+                            break;
+                        }
+
+                        currentSegment = nextSegment;
+                        currentBrick = GetBrickIndex(currentSegment->mem);
+                        if (currentSegment->allocated <= currentSegment->mem)
+                        {
+                            continue;
+                        }
+
+                        endBrick = GetBrickIndex(currentSegment->allocated - 1);
+                        continue;
+                    }
+
+                    int brickEntry = s_brickTable[currentBrick];
+                    if (brickEntry >= 0)
+                    {
+                        int result = MakeFreeListInBrick(
+                            BrickAddress(currentBrick) + brickEntry - 1,
+                            &args);
+                        if (result != S_OK)
+                        {
+                            return result;
+                        }
+
+                        SetBrick(
+                            currentBrick,
+                            args.HighestPlug is null
+                                ? -1
+                                : (nint)(args.HighestPlug -
+                                    BrickAddress(currentBrick)));
+                    }
+                    else if (brickEntry > short.MinValue)
+                    {
+                        SetBrick(currentBrick, -1);
+                    }
+
+                    currentBrick++;
+                }
+            }
+
+            args.FreeListGenerationNumber--;
+            while (args.FreeListGenerationNumber >=
+                (int)gc_generation_num.soh_gen0)
+            {
+                generation* generationState =
+                    GetGeneration(args.FreeListGenerationNumber);
+                byte* gap = AllocateAtEnd(
+                    GCEnvironment.AlignUp(
+                        MinObjectSize,
+                        (nuint)sizeof(void*)));
+                if (generationState is null || gap is null)
+                {
+                    return E_FAIL;
+                }
+
+                ResetAllocationPointers(generationState, gap);
+                FormatUnusedArray(
+                    gap,
+                    GCEnvironment.AlignUp(
+                        MinObjectSize,
+                        (nuint)sizeof(void*)));
+                args.FreeListGenerationNumber--;
+            }
+
+            s_sohSegment.used = s_sohSegment.allocated;
+            return S_OK;
+        }
+
+        private static int MakeFreeListInBrick(
+            byte* tree,
+            MakeFreeArgs* args)
+        {
+            if (tree is null ||
+                args is null ||
+                args->FreeListGeneration is null)
+            {
+                return E_FAIL;
+            }
+
+            nint rightNode = GetNodeRightChild(tree);
+            nint leftNode = GetNodeLeftChild(tree);
+            args->HighestPlug = null;
+            if (leftNode != 0)
+            {
+                int leftResult =
+                    MakeFreeListInBrick(tree + leftNode, args);
+                if (leftResult != S_OK)
+                {
+                    return leftResult;
+                }
+            }
+
+            byte* plug = tree;
+            nint nativeGapSize = GetNodeGapSize(tree);
+            if (nativeGapSize < 0)
+            {
+                return E_FAIL;
+            }
+
+            nuint gapSize = (nuint)nativeGapSize;
+            byte* gap = plug - (nint)gapSize;
+            args->HighestPlug = tree;
+
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                while (args->CurrentGenerationLimit != (byte*)nuint.MaxValue &&
+                    plug >= args->CurrentGenerationLimit &&
+                    IsAddressInSegment(plug, ephemeralSegment))
+                {
+                    args->FreeListGenerationNumber--;
+                    args->FreeListGeneration =
+                        GetGeneration(args->FreeListGenerationNumber);
+                    if (args->FreeListGeneration is null)
+                    {
+                        return E_FAIL;
+                    }
+
+                    ResetAllocationPointers(args->FreeListGeneration, gap);
+                    args->CurrentGenerationLimit =
+                        GetGenerationLimit(args->FreeListGenerationNumber);
+                    nuint alignedMinimumObjectSize =
+                        GCEnvironment.AlignUp(
+                            MinObjectSize,
+                            (nuint)sizeof(void*));
+                    if (gapSize >= 2 * alignedMinimumObjectSize)
+                    {
+                        FormatUnusedArray(gap, alignedMinimumObjectSize);
+                        gap += (nint)alignedMinimumObjectSize;
+                        gapSize -= alignedMinimumObjectSize;
+                    }
+                    else
+                    {
+                        if (gapSize != 0)
+                        {
+                            FormatUnusedArray(gap, gapSize);
+                        }
+
+                        gapSize = 0;
+                    }
+                }
+            }
+
+            int threadResult =
+                ThreadGap(gap, gapSize, args->FreeListGeneration);
+            if (threadResult != S_OK)
+            {
+                return threadResult;
+            }
+
+            return rightNode == 0
+                ? S_OK
+                : MakeFreeListInBrick(tree + rightNode, args);
+        }
+
+        private static int SweepUohObjects(int generationNumber)
+        {
+            generation* generationState = GetGeneration(generationNumber);
+            if (generationState is null)
+            {
+                return E_FAIL;
+            }
+
+            heap_segment* startSegment =
+                HeapSegmentRw(generationState->start_segment);
+            if (startSegment is null)
+            {
+                return E_FAIL;
+            }
+
+            ClearAllocator(&generationState->free_list_allocator);
+            generationState->free_list_space = 0;
+            generationState->free_obj_space = 0;
+            generationState->free_list_allocated = 0;
+
+            heap_segment* segment = startSegment;
+            while (segment is not null)
+            {
+                byte* current = segment == startSegment
+                    ? generationState->allocation_start
+                    : segment->mem;
+                byte* plugEnd = current;
+                while (current < segment->allocated)
+                {
+                    Object* obj = (Object*)current;
+                    nuint objectSize = GetObjectSize(obj);
+                    nuint alignedSize = GCEnvironment.AlignUp(
+                        objectSize,
+                        (nuint)sizeof(void*));
+                    if (objectSize < MinObjectSize ||
+                        alignedSize < objectSize ||
+                        alignedSize > (nuint)(segment->allocated - current))
+                    {
+                        return E_FAIL;
+                    }
+
+                    if (obj->IsMarked())
+                    {
+                        int gapResult = ThreadGap(
+                            plugEnd,
+                            (nuint)(current - plugEnd),
+                            generationState);
+                        if (gapResult != S_OK)
+                        {
+                            return gapResult;
+                        }
+
+                        do
+                        {
+                            obj->ClearMarked();
+                            ClearPinned(current);
+                            current += (nint)alignedSize;
+                            if (current >= segment->allocated)
+                            {
+                                break;
+                            }
+
+                            obj = (Object*)current;
+                            objectSize = GetObjectSize(obj);
+                            alignedSize = GCEnvironment.AlignUp(
+                                objectSize,
+                                (nuint)sizeof(void*));
+                            if (objectSize < MinObjectSize ||
+                                alignedSize < objectSize ||
+                                alignedSize >
+                                    (nuint)(segment->allocated - current))
+                            {
+                                return E_FAIL;
+                            }
+                        }
+                        while (obj->IsMarked());
+
+                        plugEnd = current;
+                    }
+                    else
+                    {
+                        current += (nint)alignedSize;
+                    }
+                }
+
+                if ((segment->flags & HeapSegmentReadOnly) == 0)
+                {
+                    segment->allocated = plugEnd;
+                    if (segment->used > plugEnd)
+                    {
+                        segment->used = plugEnd;
+                    }
+                }
+
+                segment = HeapSegmentNextRw(segment);
+            }
+
+            generationState->allocation_segment = startSegment;
+            generationState->allocation_context.alloc_ptr = null;
+            generationState->allocation_context.alloc_limit = null;
+            generationState->allocation_context_start_region = null;
+            return S_OK;
+        }
+
+        private static int ThreadGap(
+            byte* gapStart,
+            nuint size,
+            generation* generationState)
+        {
+            if (size == 0)
+            {
+                return S_OK;
+            }
+
+            nuint alignedMinimumObjectSize =
+                GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*));
+            if (gapStart is null ||
+                generationState is null ||
+                size < alignedMinimumObjectSize ||
+                size > uint.MaxValue + MinObjectSize)
+            {
+                return E_FAIL;
+            }
+
+            FormatUnusedArray(gapStart, size);
+            if (size >= 2 * alignedMinimumObjectSize)
+            {
+                generationState->free_list_space += size;
+                ThreadFreeItem(
+                    &generationState->free_list_allocator,
+                    gapStart);
+            }
+            else
+            {
+                generationState->free_obj_space += size;
+            }
+
+            return S_OK;
+        }
+
+        private static void ThreadFreeItem(
+            allocator* allocatorState,
+            byte* item)
+        {
+            alloc_list* list = &allocatorState->first_bucket;
+            byte** next = ((byte**)item) + 2;
+            byte** undo = ((byte**)item) - 1;
+            byte** previous = ((byte**)item) + 3;
+            *next = null;
+            *undo = (byte*)1;
+            *previous = allocatorState->gen_number ==
+                (int)gc_generation_num.max_generation
+                    ? list->tail
+                    : null;
+
+            if (list->head is null)
+            {
+                list->head = item;
+            }
+            else
+            {
+                *(((byte**)list->tail) + 2) = item;
+            }
+
+            list->tail = item;
+        }
+
+        private static int GetPlanGenerationNumber(int generationNumber)
+        {
+            return s_settings.promotion != 0 &&
+                generationNumber < (int)gc_generation_num.max_generation
+                    ? generationNumber + 1
+                    : generationNumber;
+        }
+
+        private static byte* GetGenerationLimit(int generationNumber)
+        {
+            if (s_settings.promotion != 0)
+            {
+                if (generationNumber <= (int)gc_generation_num.soh_gen1)
+                {
+                    return s_sohSegment.reserved;
+                }
+
+                generation* generationState =
+                    GetGeneration(generationNumber - 2);
+                return generationState is null
+                    ? null
+                    : generationState->allocation_start;
+            }
+
+            if (generationNumber <= (int)gc_generation_num.soh_gen0)
+            {
+                return s_sohSegment.reserved;
+            }
+
+            generation* previousGeneration =
+                GetGeneration(generationNumber - 1);
+            return previousGeneration is null
+                ? null
+                : previousGeneration->allocation_start;
+        }
+
+        private static byte* AllocateAtEnd(nuint size)
+        {
+            size = GCEnvironment.AlignUp(size, (nuint)sizeof(void*));
+            byte* result = s_sohSegment.allocated;
+            if (result is null ||
+                result > s_sohSegment.committed ||
+                size > (nuint)(s_sohSegment.committed - result))
+            {
+                return null;
+            }
+
+            s_sohSegment.allocated += (nint)size;
+            return result;
+        }
+
+        private static void ResetAllocationPointers(
+            generation* generationState,
+            byte* start)
+        {
+            generationState->allocation_start = start;
+            generationState->allocation_context.alloc_ptr = null;
+            generationState->allocation_context.alloc_limit = null;
+            generationState->allocation_context_start_region = null;
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+            {
+                generationState->allocation_segment = ephemeralSegment;
+            }
+        }
+
+        private static nuint RecoverSavedPinnedInfo()
+        {
+            ResetPinnedQueueBos();
+            nuint totalRecoveredSweepSize = 0;
+            while (!PinnedPlugQueueEmpty())
+            {
+                mark* entry = OldestPin();
+                if (entry->saved_pre_p != 0)
+                {
+                    *(gap_reloc_pair*)(
+                        entry->first - sizeof(plug_and_gap)) =
+                        entry->saved_pre_plug;
+                    totalRecoveredSweepSize +=
+                        (nuint)sizeof(gap_reloc_pair);
+                }
+
+                if (entry->saved_post_p != 0)
+                {
+                    if (entry->saved_post_plug_info_start is null)
+                    {
+                        FailFast();
+                        return 0;
+                    }
+
+                    *(gap_reloc_pair*)entry->saved_post_plug_info_start =
+                        entry->saved_post_plug;
+                    totalRecoveredSweepSize +=
+                        (nuint)sizeof(gap_reloc_pair);
+                }
+
+                DequeuePinnedPlug();
+            }
+
+            return totalRecoveredSweepSize;
         }
 
         private static bool IsAddressInSegment(byte* address, heap_segment* segment)

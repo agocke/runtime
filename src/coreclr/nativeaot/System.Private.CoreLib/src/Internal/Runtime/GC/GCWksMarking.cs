@@ -2,7 +2,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace Internal.Runtime.GC
 {
@@ -53,7 +52,6 @@ namespace Internal.Runtime.GC
             }
         }
 
-        [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvSuppressGCTransition) })]
         private static void Promote(Object** objectReference, ScanContext* scanContext, uint flags)
         {
             _ = scanContext;
@@ -256,7 +254,6 @@ namespace Internal.Runtime.GC
             }
         }
 
-        [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvSuppressGCTransition) })]
         private static void CheckPromoted(Object** objectReference, nuint* extraInfo, nuint param1, nuint param2)
         {
             _ = extraInfo;

@@ -27,6 +27,7 @@
 #include "thread.h"
 #include "threadstore.h"
 #include "threadstore.inl"
+#include "thread.inl"
 #include "RestrictedCallouts.h"
 #include "MethodTable.inl"
 
@@ -178,7 +179,9 @@ void RestrictedCallouts::InvokeGcCallouts(GcRestrictedCalloutKind eKind, uint32_
 
     // It is illegal for any of the callouts to trigger a GC.
     Thread * pThread = ThreadStore::GetCurrentThread();
-    pThread->SetDoNotTriggerGc();
+    bool fDoNotTriggerGcWasSet = pThread->IsDoNotTriggerGcSet();
+    if (!fDoNotTriggerGcWasSet)
+        pThread->SetDoNotTriggerGc();
 
     // Due to the above we have better suppress GC stress.
     bool fGcStressWasSuppressed = pThread->IsSuppressGcStressSet();
@@ -198,7 +201,8 @@ void RestrictedCallouts::InvokeGcCallouts(GcRestrictedCalloutKind eKind, uint32_
     if (!fGcStressWasSuppressed)
         pThread->ClearSuppressGcStress();
 
-    pThread->ClearDoNotTriggerGc();
+    if (!fDoNotTriggerGcWasSet)
+        pThread->ClearDoNotTriggerGc();
 }
 
 // Invoke all the registered ref counted handle callouts for the given object extracted from the handle. The
@@ -212,7 +216,9 @@ bool RestrictedCallouts::InvokeRefCountedHandleCallbacks(Object * pObject)
 
     // It is illegal for any of the callouts to trigger a GC.
     Thread * pThread = ThreadStore::GetCurrentThread();
-    pThread->SetDoNotTriggerGc();
+    bool fDoNotTriggerGcWasSet = pThread->IsDoNotTriggerGcSet();
+    if (!fDoNotTriggerGcWasSet)
+        pThread->SetDoNotTriggerGc();
 
     // Due to the above we have better suppress GC stress.
     bool fGcStressWasSuppressed = pThread->IsSuppressGcStressSet();
@@ -240,7 +246,8 @@ bool RestrictedCallouts::InvokeRefCountedHandleCallbacks(Object * pObject)
     if (!fGcStressWasSuppressed)
         pThread->ClearSuppressGcStress();
 
-    pThread->ClearDoNotTriggerGc();
+    if (!fDoNotTriggerGcWasSet)
+        pThread->ClearDoNotTriggerGc();
 
     return fResult;
 }
