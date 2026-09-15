@@ -55,9 +55,6 @@ namespace Internal.Runtime.GC
         [MethodImpl(MethodImplOptions.InternalCall)]
         internal static extern int sched_getaffinity(int pid, nuint size, byte* mask);
 
-        [LibraryImport("libc", EntryPoint = "raise")]
-        internal static partial int raise(int signal);
-
         [LibraryImport("libc", EntryPoint = "getrlimit")]
         internal static partial int getrlimit(int resource, Rlimit* limit);
 
@@ -109,7 +106,6 @@ namespace Internal.Runtime.GC
         private const int PROT_NONE = 0;
         private const int PROT_READ = 1;
         private const int PROT_WRITE = 2;
-        private const int SIGTRAP = 5;
         private const int RLIMIT_AS = 9;
         private const int CPU_SETSIZE = 1024;
 
@@ -496,7 +492,7 @@ namespace Internal.Runtime.GC
 
         public static void DebugBreak()
         {
-            GCUnixImports.raise(SIGTRAP);
+            System.Runtime.InternalCalls.RhpFallbackFailFast();
         }
 
         public static uint GetTotalProcessorCount()

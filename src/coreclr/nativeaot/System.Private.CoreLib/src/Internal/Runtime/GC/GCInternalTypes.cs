@@ -909,6 +909,7 @@ namespace Internal.Runtime.GC
         private byte _native_empty;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct plug
     {
         public byte* skew;
@@ -921,12 +922,14 @@ namespace Internal.Runtime.GC
         public short right;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct plug_and_pair
     {
         public pair m_pair;
         public plug m_plug;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct plug_and_reloc
     {
         public nint reloc;

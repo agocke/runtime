@@ -28,12 +28,12 @@ namespace Internal.Runtime.GC
         private const nuint LargeObjectSegmentSize = 128 * 1024 * 1024;
         private const nuint GCPageSize = 0x1000;
         private const nuint CardWordWidth = 32;
-        private static readonly nuint CardSize = sizeof(void*) == 8 ? 2 * GCPageSize / CardWordWidth : GCPageSize / CardWordWidth;
+        private static nuint CardSize => sizeof(void*) == 8 ? 2 * GCPageSize / CardWordWidth : GCPageSize / CardWordWidth;
         private const nuint CardBundleSize = GCPageSize / (sizeof(uint) * CardWordWidth);
         private const nuint CardBundleWordWidth = 32;
-        private static readonly nuint CardBundleWordCoverage = CardSize * CardWordWidth * CardBundleSize * CardBundleWordWidth;
+        private static nuint CardBundleWordCoverage => CardSize * CardWordWidth * CardBundleSize * CardBundleWordWidth;
         private const nuint BrickSize = 4096;
-        private static readonly nuint MinObjectSize = (nuint)(2 * sizeof(void*) + sizeof(ObjHeader));
+        private static nuint MinObjectSize => (nuint)(2 * sizeof(void*) + sizeof(ObjHeader));
         private const nuint AllocationQuantum = 8 * 1024 + 32;
         private const nuint SegmentAlignment = 4 * 1024 * 1024;
         private const nuint SegmentInitialCommit = 4096;
@@ -42,7 +42,7 @@ namespace Internal.Runtime.GC
         private const int FinalizerCriticalListSegment = (int)gc_generation_num.total_generation_count;
         private const int FinalizerListSegment = FinalizerCriticalListSegment + 1;
         private const int FinalizerFreeListSegment = FinalizerListSegment + (FinalizationExtraSegmentCount - 1);
-        private static readonly nuint LohPaddingSize = 4 * (nuint)sizeof(void*);
+        private static nuint LohPaddingSize => 4 * (nuint)sizeof(void*);
         private const uint UnsupportedAllocationFlags = (uint)GC_ALLOC_FLAGS.GC_ALLOC_ALIGN8_BIAS;
         private const uint SupportedAllocationFlags =
             (uint)(GC_ALLOC_FLAGS.GC_ALLOC_FINALIZE |
@@ -727,6 +727,13 @@ namespace Internal.Runtime.GC
 
         private static Object* GrantAllocationContext(gc_alloc_context* context, nuint alignedSize, uint flags)
         {
+            if (TryAllocateFromSohFreeList(context, alignedSize, flags, out Object* freeListAllocation))
+            {
+                context->alloc_ptr += alignedSize;
+                context->alloc_count++;
+                return freeListAllocation;
+            }
+
             byte* previousAllocation = context->alloc_ptr;
             byte* previousLimit = context->alloc_limit;
             byte* allocation = s_sohSegment.allocated;
@@ -824,6 +831,481 @@ namespace Internal.Runtime.GC
             context->alloc_ptr += alignedSize;
             context->alloc_count++;
             return (Object*)result;
+        }
+
+        private static bool TryAllocateFromSohFreeList(
+            gc_alloc_context* context,
+            nuint size,
+            uint flags,
+            out Object* allocation)
+        {
+            allocation = null;
+            fixed (generation* freeListGeneration = &s_generation2)
+            {
+                allocator* allocatorState = &freeListGeneration->free_list_allocator;
+                for (uint bucketNumber = 0;
+                    bucketNumber < allocatorState->num_buckets;
+                    bucketNumber++)
+                {
+                    alloc_list* list = GetAllocList(allocatorState, bucketNumber);
+                    if (list is null)
+                    {
+                        FailFast();
+                        return false;
+                    }
+
+                    byte* freeList = list->head;
+                    byte* previousFreeItem = null;
+                    while (freeList is not null)
+                    {
+                        nuint freeListSize = UnusedArraySize(freeList);
+                        nuint minimumObjectSize =
+                            GCEnvironment.AlignUp(
+                                MinObjectSize,
+                                (nuint)sizeof(void*));
+                        if (size <= nuint.MaxValue - minimumObjectSize &&
+                            size + minimumObjectSize <= freeListSize)
+                        {
+                            UnlinkFreeListItem(
+                                allocatorState,
+                                bucketNumber,
+                                freeList,
+                                previousFreeItem);
+
+                            nuint limit = LimitFromSize(
+                                size,
+                                flags,
+                                freeListSize,
+                                (int)gc_generation_num.soh_gen0);
+                            if (limit < size + minimumObjectSize ||
+                                limit > freeListSize)
+                            {
+                                FailFast();
+                                return false;
+                            }
+
+                            ConsumeNewAllocationBudget(
+                                (int)gc_generation_num.soh_gen0,
+                                limit);
+
+                            byte* remain = freeList + (nint)limit;
+                            nuint remainSize = freeListSize - limit;
+                            if (remainSize >=
+                                GCEnvironment.AlignUp(
+                                    2 * MinObjectSize,
+                                    (nuint)sizeof(void*)))
+                            {
+                                FormatUnusedArray(remain, remainSize);
+                                ThreadFreeListItemFront(
+                                    allocatorState,
+                                    bucketNumber,
+                                    remain,
+                                    remainSize);
+                            }
+                            else
+                            {
+                                limit += remainSize;
+                            }
+
+                            if (freeListGeneration->free_list_space < limit)
+                            {
+                                FailFast();
+                                return false;
+                            }
+
+                            freeListGeneration->free_list_space -= limit;
+                            AdjustLimitForFreeList(
+                                freeList,
+                                limit,
+                                size,
+                                context,
+                                flags,
+                                (int)gc_generation_num.soh_gen0);
+                            allocation = (Object*)context->alloc_ptr;
+                            return true;
+                        }
+
+                        if (allocatorState->num_buckets == 1)
+                        {
+                            if (previousFreeItem is not null)
+                            {
+                                FailFast();
+                                return false;
+                            }
+
+                            freeListGeneration->free_obj_space += freeListSize;
+                            if (freeListGeneration->free_list_space < freeListSize)
+                            {
+                                FailFast();
+                                return false;
+                            }
+
+                            UnlinkFreeListItem(
+                                allocatorState,
+                                bucketNumber,
+                                freeList,
+                                null);
+                            freeListGeneration->free_list_space -= freeListSize;
+                        }
+                        else
+                        {
+                            previousFreeItem = freeList;
+                        }
+
+                        freeList = FreeListNext(freeList);
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryAllocateFromUohFreeList(
+            gc_alloc_context* allocationContext,
+            nuint size,
+            uint flags,
+            bool pinned,
+            out Object* allocation)
+        {
+            allocation = null;
+            int generationNumber = pinned
+                ? (int)gc_generation_num.poh_generation
+                : (int)gc_generation_num.loh_generation;
+            nuint lohPadding = pinned ? 0 : LohPaddingSize;
+            if (!TryAdd(size, lohPadding, out nuint sizeWithPadding))
+            {
+                FailFast();
+                return false;
+            }
+
+            fixed (generation* lohGeneration = &s_lohGeneration)
+            fixed (generation* pohGeneration = &s_pohGeneration)
+            {
+                generation* generationState = pinned
+                    ? pohGeneration
+                    : lohGeneration;
+                allocator* allocatorState = &generationState->free_list_allocator;
+                for (uint bucketNumber = 0;
+                    bucketNumber < allocatorState->num_buckets;
+                    bucketNumber++)
+                {
+                    alloc_list* list = GetAllocList(allocatorState, bucketNumber);
+                    if (list is null)
+                    {
+                        FailFast();
+                        return false;
+                    }
+
+                    byte* freeList = list->head;
+                    byte* previousFreeItem = null;
+                    while (freeList is not null)
+                    {
+                        nuint freeListSize = UnusedArraySize(freeList);
+                        nuint minimumObjectSize =
+                            GCEnvironment.AlignUp(
+                                MinObjectSize,
+                                (nuint)sizeof(void*));
+                        if (freeListSize >= sizeWithPadding &&
+                            (freeListSize == sizeWithPadding ||
+                             freeListSize - sizeWithPadding >= minimumObjectSize))
+                        {
+                            UnlinkFreeListItem(
+                                allocatorState,
+                                bucketNumber,
+                                freeList,
+                                previousFreeItem);
+
+                            nuint sizeWithoutMinimumObject =
+                                sizeWithPadding - minimumObjectSize;
+                            nuint limit = LimitFromSize(
+                                sizeWithoutMinimumObject,
+                                flags,
+                                freeListSize,
+                                generationNumber);
+                            if (limit < size || limit > freeListSize)
+                            {
+                                FailFast();
+                                return false;
+                            }
+
+                            ConsumeNewAllocationBudget(generationNumber, limit);
+
+                            nuint savedFreeListSize = freeListSize;
+                            if (lohPadding != 0)
+                            {
+                                FormatUnusedArray(freeList, lohPadding);
+                                generationState->free_obj_space += lohPadding;
+                                limit -= lohPadding;
+                                freeList += (nint)lohPadding;
+                                freeListSize -= lohPadding;
+                            }
+
+                            byte* remain = freeList + (nint)limit;
+                            nuint remainSize = freeListSize - limit;
+                            if (remainSize != 0)
+                            {
+                                if (remainSize < minimumObjectSize)
+                                {
+                                    FailFast();
+                                    return false;
+                                }
+
+                                FormatUnusedArray(remain, remainSize);
+                            }
+
+                            if (remainSize >=
+                                GCEnvironment.AlignUp(
+                                    2 * MinObjectSize,
+                                    (nuint)sizeof(void*)))
+                            {
+                                ThreadFreeListItemFront(
+                                    allocatorState,
+                                    bucketNumber,
+                                    remain,
+                                    remainSize);
+                            }
+                            else
+                            {
+                                generationState->free_obj_space += remainSize;
+                            }
+
+                            if (generationState->free_list_space <
+                                savedFreeListSize)
+                            {
+                                FailFast();
+                                return false;
+                            }
+
+                            generationState->free_list_space -=
+                                savedFreeListSize;
+                            generationState->free_list_allocated += limit;
+                            AdjustLimitForFreeList(
+                                freeList,
+                                limit,
+                                size,
+                                allocationContext,
+                                flags,
+                                generationNumber);
+                            allocationContext->alloc_limit += minimumObjectSize;
+                            generationState->allocation_size += size;
+                            s_totalAllocatedBytesUoh += size;
+                            allocation = (Object*)freeList;
+                            return true;
+                        }
+
+                        previousFreeItem = freeList;
+                        freeList = FreeListNext(freeList);
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static void AdjustLimitForFreeList(
+            byte* start,
+            nuint limitSize,
+            nuint size,
+            gc_alloc_context* context,
+            uint flags,
+            int generationNumber)
+        {
+            nuint minimumObjectSize =
+                GCEnvironment.AlignUp(
+                    MinObjectSize,
+                    (nuint)sizeof(void*));
+            byte* previousAllocation = context->alloc_ptr;
+            byte* previousLimit = context->alloc_limit;
+
+            if (previousAllocation is not null &&
+                previousLimit is not null &&
+                previousLimit != start &&
+                previousLimit + (nint)minimumObjectSize != start)
+            {
+                nuint holeSize = (nuint)(previousLimit - previousAllocation);
+                if (holeSize > (nuint)context->alloc_bytes ||
+                    !TryAdd(holeSize, minimumObjectSize, out nuint freeObjectSize))
+                {
+                    FailFast();
+                    return;
+                }
+
+                FormatUnusedArray(previousAllocation, freeObjectSize);
+                context->alloc_bytes -= (long)holeSize;
+                if (s_totalAllocatedBytesSoh < holeSize)
+                {
+                    FailFast();
+                    return;
+                }
+
+                s_totalAllocatedBytesSoh -= holeSize;
+                s_generation0.free_obj_space += freeObjectSize;
+                context->alloc_ptr = start;
+            }
+            else if (generationNumber == (int)gc_generation_num.soh_gen0 &&
+                previousAllocation is not null)
+            {
+                FormatUnusedArray(previousAllocation, minimumObjectSize);
+                context->alloc_ptr = previousAllocation + (nint)minimumObjectSize;
+            }
+            else
+            {
+                context->alloc_ptr = start;
+            }
+
+            if (limitSize < minimumObjectSize)
+            {
+                FailFast();
+                return;
+            }
+
+            context->alloc_limit = start + (nint)(limitSize - minimumObjectSize);
+            nuint addedBytes = limitSize - minimumObjectSize;
+            if (generationNumber <= (int)gc_generation_num.max_generation)
+            {
+                context->alloc_bytes += (long)addedBytes;
+                s_totalAllocatedBytesSoh += addedBytes;
+            }
+
+            ClearSyncBlock(start);
+            if ((flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL) == 0)
+            {
+                ClearMemory(start, limitSize);
+            }
+        }
+
+        private static nuint LimitFromSize(
+            nuint size,
+            uint flags,
+            nuint physicalLimit,
+            int generationNumber)
+        {
+            nuint minimumObjectSize =
+                GCEnvironment.AlignUp(
+                    MinObjectSize,
+                    (nuint)sizeof(void*));
+            if (!TryAdd(size, minimumObjectSize, out nuint paddedSize))
+            {
+                FailFast();
+                return 0;
+            }
+
+            nuint minimumSizeToAllocate =
+                generationNumber == (int)gc_generation_num.soh_gen0 &&
+                (flags & (uint)GC_ALLOC_FLAGS.GC_ALLOC_ZEROING_OPTIONAL) == 0
+                    ? AllocationQuantum
+                    : 0;
+            nuint desiredSize = paddedSize > minimumSizeToAllocate
+                ? paddedSize
+                : minimumSizeToAllocate;
+            dynamic_data* dynamicData = GetDynamicData(generationNumber);
+            if (dynamicData is not null &&
+                dynamicData->new_allocation > 0 &&
+                (nuint)dynamicData->new_allocation > desiredSize)
+            {
+                desiredSize = (nuint)dynamicData->new_allocation;
+            }
+
+            return physicalLimit < desiredSize
+                ? physicalLimit
+                : desiredSize;
+        }
+
+        private static void ConsumeNewAllocationBudget(
+            int generationNumber,
+            nuint size)
+        {
+            dynamic_data* dynamicData = GetDynamicData(generationNumber);
+            if (dynamicData is null || size > (nuint)nint.MaxValue)
+            {
+                FailFast();
+                return;
+            }
+
+            dynamicData->new_allocation -= (nint)size;
+        }
+
+        private static nuint UnusedArraySize(byte* freeList)
+        {
+            nuint size = GetObjectSize((Object*)freeList);
+            return GCEnvironment.AlignUp(size, (nuint)sizeof(void*));
+        }
+
+        private static byte* FreeListNext(byte* freeList)
+        {
+            return ((byte**)freeList)[2];
+        }
+
+        private static alloc_list* GetAllocList(
+            allocator* allocatorState,
+            uint bucketNumber)
+        {
+            if (bucketNumber == 0)
+            {
+                return &allocatorState->first_bucket;
+            }
+
+            return allocatorState->buckets is null
+                ? null
+                : allocatorState->buckets + (bucketNumber - 1);
+        }
+
+        private static void UnlinkFreeListItem(
+            allocator* allocatorState,
+            uint bucketNumber,
+            byte* item,
+            byte* previousItem)
+        {
+            alloc_list* list = GetAllocList(allocatorState, bucketNumber);
+            if (list is null)
+            {
+                FailFast();
+                return;
+            }
+
+            byte* nextItem = FreeListNext(item);
+            if (previousItem is not null)
+            {
+                ((byte**)previousItem)[2] = nextItem;
+            }
+            else
+            {
+                list->head = nextItem;
+            }
+
+            if (list->tail == item)
+            {
+                list->tail = previousItem;
+            }
+
+            if (list->head is null)
+            {
+                list->tail = null;
+            }
+        }
+
+        private static void ThreadFreeListItemFront(
+            allocator* allocatorState,
+            uint bucketNumber,
+            byte* item,
+            nuint size)
+        {
+            _ = size;
+            alloc_list* list = GetAllocList(allocatorState, bucketNumber);
+            if (list is null)
+            {
+                FailFast();
+                return;
+            }
+
+            ((byte**)item)[2] = list->head;
+            ((byte**)item)[-1] = (byte*)1;
+
+            list->head = item;
+            if (list->tail is null)
+            {
+                list->tail = item;
+            }
         }
 
         private static void FormatUnusedArray(byte* address, nuint size)
@@ -1113,6 +1595,7 @@ namespace Internal.Runtime.GC
                 InitializeGeneration(generation0, 0, soh, generation0Start);
                 soh->allocated = allocationStart;
                 soh->used = allocationStart;
+
                 FormatUnusedArray(generation2Start, MinObjectSize);
                 FormatUnusedArray(generation1Start, MinObjectSize);
                 FormatUnusedArray(generation0Start, MinObjectSize);
@@ -1120,8 +1603,17 @@ namespace Internal.Runtime.GC
                 generation1->free_obj_space = MinObjectSize;
                 generation0->free_obj_space = MinObjectSize;
 
-                InitializeGeneration(lohGeneration, 3, loh, lohBase + sizeof(heap_segment));
-                InitializeGeneration(pohGeneration, 4, poh, pohBase + sizeof(heap_segment));
+                byte* lohStart = lohBase + sizeof(heap_segment);
+                byte* pohStart = pohBase + sizeof(heap_segment);
+                InitializeGeneration(lohGeneration, 3, loh, lohStart);
+                InitializeGeneration(pohGeneration, 4, poh, pohStart);
+                loh->allocated = lohStart + MinObjectSize;
+                loh->used = loh->allocated;
+                poh->allocated = pohStart + MinObjectSize;
+                poh->used = poh->allocated;
+
+                FormatUnusedArray(lohStart, MinObjectSize);
+                FormatUnusedArray(pohStart, MinObjectSize);
             }
 
             SetStaticData();
@@ -1225,6 +1717,19 @@ namespace Internal.Runtime.GC
                 {
                     s_uohAllocationLock.Leave();
                     return null;
+                }
+
+                gc_alloc_context allocationContext = default;
+                if (TryAllocateFromUohFreeList(
+                        &allocationContext,
+                        size,
+                        flags,
+                        pinned,
+                        out Object* freeListAllocation))
+                {
+                    context->alloc_bytes_uoh += (long)size;
+                    s_uohAllocationLock.Leave();
+                    return freeListAllocation;
                 }
 
                 byte* allocation = segment->allocated;
@@ -2071,6 +2576,13 @@ namespace Internal.Runtime.GC
             s_cardTable = (uint*)((byte*)untranslatedCardTable - ((((nuint)s_heapBase / CardSize) / CardWordWidth) * sizeof(uint)));
             s_cardBundleTable = (uint*)((byte*)untranslatedCardBundleTable -
                 ((((nuint)s_heapBase / CardBundleWordCoverage) * sizeof(uint))));
+
+            nuint brickCount = brickBytes / (nuint)sizeof(short);
+            for (nuint index = 0; index < brickCount; index++)
+            {
+                s_brickTable[index] = -1;
+            }
+
             _ = brickBytes;
             _ = cardBundleBytes;
             _ = segmentMappingBytes;

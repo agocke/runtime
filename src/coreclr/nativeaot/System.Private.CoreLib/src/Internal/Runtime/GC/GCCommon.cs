@@ -75,10 +75,16 @@ namespace Internal.Runtime.GC
                 g_theGCToCLR->Vtable->StompWriteBarrier(g_theGCToCLR, parameters);
             }
 
-            g_gc_card_table = parameters->card_table;
-            g_gc_card_bundle_table = parameters->card_bundle_table;
-            g_gc_lowest_address = parameters->lowest_address;
-            g_gc_highest_address = parameters->highest_address;
+            switch (parameters->operation)
+            {
+                case WriteBarrierOp.StompResize:
+                case WriteBarrierOp.Initialize:
+                    g_gc_card_table = parameters->card_table;
+                    g_gc_card_bundle_table = parameters->card_bundle_table;
+                    g_gc_lowest_address = parameters->lowest_address;
+                    g_gc_highest_address = parameters->highest_address;
+                    break;
+            }
         }
 
         public static void RecordChangedSegment(byte* start, byte* end, nuint currentGcIndex, bgc_state currentBgcState, changed_seg_state changedState)

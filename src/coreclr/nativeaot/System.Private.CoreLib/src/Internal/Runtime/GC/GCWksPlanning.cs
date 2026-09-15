@@ -144,11 +144,6 @@ namespace Internal.Runtime.GC
             byte* lastNode = null;
             nuint currentBrick = GetBrickIndex(x);
             nuint lastPlugLength = 0;
-            bool lastNonPinnedPlug = false;
-            bool lastPinnedPlugState = false;
-            byte* lastPinnedPlug = null;
-            nuint numPinnedPlugsInPlug = 0;
-            byte* lastObjectInPlug = null;
 
             if (condemnedGenerationNumber < (int)gc_generation_num.max_generation)
             {
@@ -204,10 +199,10 @@ namespace Internal.Runtime.GC
                 {
                     if (!useMarkList)
                     {
-                        System.Diagnostics.Debug.Assert(x == end);
+                        FailFastAssert(x == end);
                     }
 
-                    System.Diagnostics.Debug.Assert(segment->allocated == end);
+                    FailFastAssert(segment->allocated == end);
                     SaveAllocated(segment);
                     segment->allocated = plugEnd;
                     currentBrick = UpdateBrickTable(
@@ -230,6 +225,12 @@ namespace Internal.Runtime.GC
 
                     break;
                 }
+
+                bool lastNonPinnedPlug = false;
+                bool lastPinnedPlugState = false;
+                byte* lastPinnedPlug = null;
+                nuint numPinnedPlugsInPlug = 0;
+                byte* lastObjectInPlug = null;
 
                 while (x < end && ((Object*)x)->IsMarked())
                 {
@@ -264,7 +265,7 @@ namespace Internal.Runtime.GC
                                ((Object*)xl)->IsMarked() &&
                                (IsPinnedObject(xl) == pinnedPlug))
                         {
-                            System.Diagnostics.Debug.Assert(xl < end);
+                            FailFastAssert(xl < end);
 
                             if (IsPinnedObject(xl))
                             {
@@ -346,7 +347,7 @@ namespace Internal.Runtime.GC
                                 reloc > 0 &&
                                 (nuint)reloc < (ps / 16))
                             {
-                                System.Diagnostics.Debug.Assert(!savedLastNonPinnedPlug);
+                                FailFastAssert(!savedLastNonPinnedPlug);
 
                                 if (lastPinnedPlugState)
                                 {
@@ -461,15 +462,15 @@ namespace Internal.Runtime.GC
                         {
                             fixed (heap_segment* ephemeralSegment = &s_sohSegment)
                             {
-                                System.Diagnostics.Debug.Assert(
+                                FailFastAssert(
                                     consingGeneration->allocation_segment == ephemeralSegment);
-                                System.Diagnostics.Debug.Assert(
+                                FailFastAssert(
                                     consingGeneration->allocation_context.alloc_ptr +
                                         (nint)GCEnvironment.AlignUp(
                                             ps,
                                             (nuint)sizeof(void*)) <
                                     ephemeralSegment->allocated);
-                                System.Diagnostics.Debug.Assert(
+                                FailFastAssert(
                                     consingGeneration->allocation_context.alloc_ptr +
                                         (nint)GCEnvironment.AlignUp(
                                             ps,
@@ -640,7 +641,7 @@ namespace Internal.Runtime.GC
                                     s_demotionLow = oldestPinnedPlug->first;
                                 }
 
-                                System.Diagnostics.Debug.Assert(
+                                FailFastAssert(
                                     generationState->plan_allocation_start is not null);
                             }
                         }
@@ -672,7 +673,7 @@ namespace Internal.Runtime.GC
                 while (plug < consingGeneration->allocation_context.alloc_ptr ||
                        plug >= pinnedAllocationSegment->allocated)
                 {
-                    System.Diagnostics.Debug.Assert(
+                    FailFastAssert(
                         plug < pinnedAllocationSegment->mem ||
                         plug > pinnedAllocationSegment->reserved);
                     if (pinnedAllocationSegment->next is null ||
@@ -692,7 +693,7 @@ namespace Internal.Runtime.GC
                 SetNewPinInfo(
                     pinnedPlugEntry,
                     consingGeneration->allocation_context.alloc_ptr);
-                System.Diagnostics.Debug.Assert(
+                FailFastAssert(
                     pinnedPlugEntry->len == 0 ||
                     pinnedPlugEntry->len >= GCEnvironment.AlignUp(
                         MinObjectSize,
@@ -741,7 +742,8 @@ namespace Internal.Runtime.GC
 
                 if (s_settings.loh_compaction != 0)
                 {
-                    shouldCompact = true;
+                    FailFast();
+                    return E_NOTIMPL;
                 }
                 else
                 {
@@ -760,12 +762,15 @@ namespace Internal.Runtime.GC
                     return pohSweepResult;
                 }
 
-                if (shouldCompact || shouldExpand)
+                if (shouldExpand)
                 {
                     FailFast();
                     return E_NOTIMPL;
                 }
 
+                // Heuristic compaction remains advisory until relocation and
+                // compaction are implemented; this milestone always sweeps.
+                _ = shouldCompact;
                 s_settings.promotion = 1;
                 s_settings.compaction = 0;
                 s_settings.demotion = 0;
@@ -1162,7 +1167,7 @@ namespace Internal.Runtime.GC
                                 byte* plug = pinnedPlugEntry->first;
                                 pinnedPlugEntry->len = (nuint)(
                                     plug - consingGeneration->allocation_context.alloc_ptr);
-                                System.Diagnostics.Debug.Assert(
+                                FailFastAssert(
                                     s_markStack[entry].len == 0 ||
                                     s_markStack[entry].len >= GCEnvironment.AlignUp(
                                         MinObjectSize,
@@ -1275,7 +1280,7 @@ namespace Internal.Runtime.GC
                         return null;
                     }
 
-                    System.Diagnostics.Debug.Assert(
+                    FailFastAssert(
                         generationState->plan_allocation_start is not null);
                     if (generationState->plan_allocation_start is null)
                     {
@@ -1392,7 +1397,7 @@ namespace Internal.Runtime.GC
                         SetNewPinInfo(
                             pinnedPlugEntry,
                             generationState->allocation_context.alloc_ptr);
-                        System.Diagnostics.Debug.Assert(
+                        FailFastAssert(
                             pinnedPlugEntry->len == 0 ||
                             pinnedPlugEntry->len >= alignedMinimumObjectSize);
 
@@ -1427,7 +1432,7 @@ namespace Internal.Runtime.GC
                     }
                     else
                     {
-                        System.Diagnostics.Debug.Assert(
+                        FailFastAssert(
                             generationState != GetGeneration((int)gc_generation_num.soh_gen0));
 
                         if (SizeFits(
@@ -1514,7 +1519,7 @@ namespace Internal.Runtime.GC
                     padding != 0 &&
                     generationState->allocation_segment == currentSegment)
                 {
-                    System.Diagnostics.Debug.Assert(oldLocation is not null);
+                    FailFastAssert(oldLocation is not null);
                     nint distanceToNextPin =
                         (nint)(nextPinnedPlug -
                         (generationState->allocation_context.alloc_ptr +
@@ -1594,7 +1599,7 @@ namespace Internal.Runtime.GC
                         allocationPointer + (nint)size == allocationLimit);
             }
 
-            System.Diagnostics.Debug.Assert(size == alignedMinimumObjectSize);
+            FailFastAssert(size == alignedMinimumObjectSize);
             return available >= size;
         }
 
@@ -1748,7 +1753,7 @@ namespace Internal.Runtime.GC
 
         private static void SetNodeRelocationDistance(byte* node, nint value)
         {
-            System.Diagnostics.Debug.Assert((value & 3) == 0);
+            FailFastAssert((value & 3) == 0);
             nint* place = &(((plug_and_reloc*)node)[-1].reloc);
             *place &= 1;
             *place |= value;
@@ -1776,17 +1781,17 @@ namespace Internal.Runtime.GC
 
         private static void SetNodeLeftChild(byte* node, nint value)
         {
-            System.Diagnostics.Debug.Assert(value > -(nint)BrickSize);
-            System.Diagnostics.Debug.Assert(value < (nint)BrickSize);
-            System.Diagnostics.Debug.Assert((value & ((nint)sizeof(void*) - 1)) == 0);
+            FailFastAssert(value > -(nint)BrickSize);
+            FailFastAssert(value < (nint)BrickSize);
+            FailFastAssert((value & ((nint)sizeof(void*) - 1)) == 0);
             ((plug_and_pair*)node)[-1].m_pair.left = (short)value;
         }
 
         private static void SetNodeRightChild(byte* node, nint value)
         {
-            System.Diagnostics.Debug.Assert(value > -(nint)BrickSize);
-            System.Diagnostics.Debug.Assert(value < (nint)BrickSize);
-            System.Diagnostics.Debug.Assert((value & ((nint)sizeof(void*) - 1)) == 0);
+            FailFastAssert(value > -(nint)BrickSize);
+            FailFastAssert(value < (nint)BrickSize);
+            FailFastAssert((value & ((nint)sizeof(void*) - 1)) == 0);
             ((plug_and_pair*)node)[-1].m_pair.right = (short)value;
         }
 
@@ -1797,7 +1802,7 @@ namespace Internal.Runtime.GC
 
         private static nuint LogCount(nuint value)
         {
-            System.Diagnostics.Debug.Assert(value < 0x10000);
+            FailFastAssert(value < 0x10000);
             nuint count = (value & 0x5555) + ((value >> 1) & 0x5555);
             count = (count & 0x3333) + ((count >> 2) & 0x3333);
             count = (count & 0x0F0F) + ((count >> 4) & 0x0F0F);
@@ -1829,7 +1834,7 @@ namespace Internal.Runtime.GC
                 }
 
                 nint temporaryOffset = GetNodeRightChild(earlierNode);
-                System.Diagnostics.Debug.Assert(temporaryOffset != 0);
+                FailFastAssert(temporaryOffset != 0);
                 SetNodeLeftChild(newNode, (nint)(earlierNode + temporaryOffset - newNode));
                 SetNodeRightChild(earlierNode, (nint)(newNode - earlierNode));
             }
@@ -1850,7 +1855,7 @@ namespace Internal.Runtime.GC
                 value = -32767;
             }
 
-            System.Diagnostics.Debug.Assert(value < 32767);
+            FailFastAssert(value < 32767);
             s_brickTable[index] = value >= 0
                 ? (short)(value + 1)
                 : (short)value;
@@ -1985,7 +1990,7 @@ namespace Internal.Runtime.GC
                 }
 
                 activeOldGenerationNumber--;
-                System.Diagnostics.Debug.Assert(
+                FailFastAssert(
                     !promotion || activeNewGenerationNumber > 0);
 
                 if (activeNewGenerationNumber == (int)gc_generation_num.max_generation - 1)
@@ -2032,7 +2037,7 @@ namespace Internal.Runtime.GC
                         SetNewPinInfo(
                             pinnedPlugEntry,
                             consingGeneration->allocation_context.alloc_ptr);
-                        System.Diagnostics.Debug.Assert(
+                        FailFastAssert(
                             pinnedPlugEntry->len == 0 ||
                             pinnedPlugEntry->len >= GCEnvironment.AlignUp(
                                 MinObjectSize,
@@ -2099,7 +2104,7 @@ namespace Internal.Runtime.GC
                         }
                     }
 
-                    System.Diagnostics.Debug.Assert(
+                    FailFastAssert(
                         nextGeneration->plan_allocation_start is not null);
                 }
             }
@@ -2195,8 +2200,8 @@ namespace Internal.Runtime.GC
 
         private static void SetGapSize(byte* node, nuint size)
         {
-            System.Diagnostics.Debug.Assert(GCEnvironment.AlignUp(size, (nuint)sizeof(void*)) == size);
-            System.Diagnostics.Debug.Assert(size == 0 || size >= (nuint)sizeof(plug_and_reloc));
+            FailFastAssert(GCEnvironment.AlignUp(size, (nuint)sizeof(void*)) == size);
+            FailFastAssert(size == 0 || size >= (nuint)sizeof(plug_and_reloc));
 
             plug_and_gap* plugAndGap = ((plug_and_gap*)node) - 1;
             plugAndGap->reloc = 0;
@@ -2225,7 +2230,7 @@ namespace Internal.Runtime.GC
 
             if (!lastNonPinnedPlug && !lastPinnedPlugState)
             {
-                System.Diagnostics.Debug.Assert(
+                FailFastAssert(
                     plugStart == plugEnd ||
                     (nuint)(plugStart - plugEnd) >= GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*)));
                 SetGapSize(plugStart, (nuint)(plugStart - plugEnd));
@@ -2270,7 +2275,6 @@ namespace Internal.Runtime.GC
                     SavePostPlugInfo(lastPinnedPlug, lastObjectInLastPlug, plugStart);
                     SetGapSize(plugStart, (nuint)sizeof(gap_reloc_pair));
                 }
-
                 lastNonPinnedPlug = true;
                 lastPinnedPlugState = false;
             }
@@ -2798,7 +2802,7 @@ namespace Internal.Runtime.GC
 
         private static int MakeFreeLists(int condemnedGeneration)
         {
-            System.Diagnostics.Debug.Assert(s_settings.promotion != 0);
+            FailFastAssert(s_settings.promotion != 0);
 
             MakeFreeArgs args = default;
             int stopGenerationIndex = GetStopGenerationIndex(condemnedGeneration);
@@ -2841,7 +2845,9 @@ namespace Internal.Runtime.GC
                     GetGeneration(args.FreeListGenerationNumber);
                 args.HighestPlug = null;
                 args.CurrentGenerationLimit =
-                    GetGenerationLimit(args.FreeListGenerationNumber);
+                    generationNumber == (int)gc_generation_num.max_generation
+                        ? (byte*)nuint.MaxValue
+                        : GetGenerationLimit(args.FreeListGenerationNumber);
                 if (args.FreeListGeneration is null ||
                     args.CurrentGenerationLimit is null)
                 {
@@ -2962,16 +2968,19 @@ namespace Internal.Runtime.GC
 
             fixed (heap_segment* ephemeralSegment = &s_sohSegment)
             {
-                while (args->CurrentGenerationLimit != (byte*)nuint.MaxValue &&
-                    plug >= args->CurrentGenerationLimit &&
-                    IsAddressInSegment(plug, ephemeralSegment))
+                while (args->CurrentGenerationLimit == (byte*)nuint.MaxValue ||
+                    (plug >= args->CurrentGenerationLimit &&
+                     IsAddressInSegment(plug, ephemeralSegment)))
                 {
-                    args->FreeListGenerationNumber--;
-                    args->FreeListGeneration =
-                        GetGeneration(args->FreeListGenerationNumber);
-                    if (args->FreeListGeneration is null)
+                    if (args->CurrentGenerationLimit != (byte*)nuint.MaxValue)
                     {
-                        return E_FAIL;
+                        args->FreeListGenerationNumber--;
+                        args->FreeListGeneration =
+                            GetGeneration(args->FreeListGenerationNumber);
+                        if (args->FreeListGeneration is null)
+                        {
+                            return E_FAIL;
+                        }
                     }
 
                     ResetAllocationPointers(args->FreeListGeneration, gap);
@@ -3034,9 +3043,39 @@ namespace Internal.Runtime.GC
             heap_segment* segment = startSegment;
             while (segment is not null)
             {
-                byte* current = segment == startSegment
-                    ? generationState->allocation_start
-                    : segment->mem;
+                byte* current;
+                if (segment == startSegment)
+                {
+                    byte* generationStart = generationState->allocation_start;
+                    if (generationStart is null)
+                    {
+                        return E_FAIL;
+                    }
+
+                    if (generationStart > segment->allocated)
+                    {
+                        return E_FAIL;
+                    }
+
+                    nuint generationGapSize = GCEnvironment.AlignUp(
+                        GetObjectSize((Object*)generationStart),
+                        (nuint)sizeof(void*));
+                    if (generationGapSize != GCEnvironment.AlignUp(
+                            MinObjectSize,
+                            (nuint)sizeof(void*)) ||
+                        generationGapSize >
+                            (nuint)(segment->allocated - generationStart))
+                    {
+                        return E_FAIL;
+                    }
+
+                    current = generationStart + (nint)generationGapSize;
+                }
+                else
+                {
+                    current = segment->mem;
+                }
+
                 byte* plugEnd = current;
                 while (current < segment->allocated)
                 {
@@ -3158,13 +3197,8 @@ namespace Internal.Runtime.GC
             alloc_list* list = &allocatorState->first_bucket;
             byte** next = ((byte**)item) + 2;
             byte** undo = ((byte**)item) - 1;
-            byte** previous = ((byte**)item) + 3;
             *next = null;
             *undo = (byte*)1;
-            *previous = allocatorState->gen_number ==
-                (int)gc_generation_num.max_generation
-                    ? list->tail
-                    : null;
 
             if (list->head is null)
             {
@@ -3376,6 +3410,14 @@ namespace Internal.Runtime.GC
             }
 
             return (nuint)(address - GCCommon.g_gc_lowest_address) / BrickSize;
+        }
+
+        private static void FailFastAssert(bool condition)
+        {
+            if (!condition)
+            {
+                FailFast();
+            }
         }
     }
 }
