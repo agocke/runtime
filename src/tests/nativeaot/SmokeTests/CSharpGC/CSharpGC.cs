@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -17,12 +18,16 @@ internal static class CSharpGC
     private static byte[] s_sohSurvivor;
     private static byte[] s_lohSurvivor;
     private static byte[] s_pohSurvivor;
-    private static byte[] s_sohReuseCandidate1;
-    private static byte[] s_sohReuseCandidate2;
+    private static EphemeralHolder s_oldHolder;
 
     public static int Main()
     {
         if (!ValidateEmptyUohSegments())
+        {
+            return Fail;
+        }
+
+        if (!ValidateEphemeralCollections())
         {
             return Fail;
         }
@@ -34,7 +39,7 @@ internal static class CSharpGC
         s_lohSurvivor[0] = 2;
         s_pohSurvivor[0] = 3;
 
-        bool sohReused = ValidateSohGapReuse();
+        bool sohReused = false;
         bool lohReused = false;
         bool pohReused = false;
         for (int collection = 0; collection < CollectionCount; collection++)
@@ -99,9 +104,216 @@ internal static class CSharpGC
             }
         }
 
-        return sohReused && lohReused && pohReused
+        return lohReused && pohReused
             ? Pass
             : Fail;
+    }
+
+    private static bool ValidateEphemeralCollections()
+    {
+        s_oldHolder = new EphemeralHolder();
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
+
+        if (GC.GetGeneration(s_oldHolder) != GC.MaxGeneration)
+        {
+            return false;
+        }
+
+        byte[] young = new byte[SohObjectSize];
+        young[0] = 11;
+        WeakReference youngReference = new WeakReference(young);
+        s_oldHolder.Value = young;
+
+        GC.Collect(
+            0,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
+
+        if (!youngReference.IsAlive)
+        {
+            return false;
+        }
+
+        if (s_oldHolder.Value != young)
+        {
+            return false;
+        }
+
+        if (young[0] != 11)
+        {
+            return false;
+        }
+
+        if (GC.GetGeneration(young) < 1)
+        {
+            return false;
+        }
+
+        GC.Collect(
+            1,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
+
+        if (!youngReference.IsAlive)
+        {
+            return false;
+        }
+
+        if (s_oldHolder.Value != young)
+        {
+            return false;
+        }
+
+        if (young[0] != 11)
+        {
+            return false;
+        }
+
+        if (GC.GetGeneration(young) != GC.MaxGeneration)
+        {
+            return false;
+        }
+
+        if (!ValidateWeakHandleCollection())
+        {
+            return false;
+        }
+
+        if (!ValidatePinnedDemotion())
+        {
+            return false;
+        }
+
+        if (!ValidateDependentHandle())
+        {
+            return false;
+        }
+
+        s_oldHolder.Value = null;
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool ValidateWeakHandleCollection()
+    {
+        WeakReference reference = AllocateWeakEphemeralObject();
+        GC.Collect(
+            0,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
+        return !reference.IsAlive;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference AllocateWeakEphemeralObject()
+    {
+        byte[] value = new byte[SohObjectSize];
+        value[0] = 17;
+        return new WeakReference(value);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool ValidatePinnedDemotion()
+    {
+        byte[] pinned = new byte[SohObjectSize];
+        pinned[0] = 23;
+        s_oldHolder.Value = pinned;
+
+        GCHandle handle = GCHandle.Alloc(pinned, GCHandleType.Pinned);
+        nint address = handle.AddrOfPinnedObject();
+        try
+        {
+            for (int generation = 0; generation <= 1; generation++)
+            {
+                GC.Collect(
+                    generation,
+                    GCCollectionMode.Forced,
+                    blocking: true,
+                    compacting: false);
+
+                if (handle.AddrOfPinnedObject() != address)
+                {
+                    return false;
+                }
+
+                if (pinned[0] != 23)
+                {
+                    return false;
+                }
+
+                if (s_oldHolder.Value != pinned)
+                {
+                    return false;
+                }
+            }
+        }
+        finally
+        {
+            handle.Free();
+        }
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool ValidateDependentHandle()
+    {
+        object target = new object();
+        byte[] dependent = new byte[SohObjectSize];
+        dependent[0] = 29;
+        WeakReference dependentReference = new WeakReference(dependent);
+        s_oldHolder.Value = target;
+
+        using DependentHandle handle = new DependentHandle(target, dependent);
+        target = null;
+        dependent = null;
+
+        GC.Collect(
+            0,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
+
+        object value = handle.Dependent;
+        if (!dependentReference.IsAlive ||
+            value is not byte[] bytes ||
+            bytes[0] != 29)
+        {
+            return false;
+        }
+
+        using DependentHandle unreachableHandle =
+            AllocateUnreachableDependentHandle();
+
+        GC.Collect(
+            0,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: false);
+
+        return
+            unreachableHandle.Target is null &&
+            unreachableHandle.Dependent is null;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static DependentHandle AllocateUnreachableDependentHandle()
+    {
+        object target = new object();
+        byte[] dependent = new byte[SohObjectSize];
+        return new DependentHandle(target, dependent);
     }
 
     private static bool ValidateEmptyUohSegments()
@@ -218,70 +430,6 @@ internal static class CSharpGC
         return true;
     }
 
-    private static bool ValidateSohGapReuse()
-    {
-        PrepareSohGap(
-            out WeakReference firstReference,
-            out WeakReference secondReference,
-            out nint firstAddress,
-            out nint secondAddress);
-
-        GC.Collect(
-            GC.MaxGeneration,
-            GCCollectionMode.Forced,
-            blocking: true,
-            compacting: false);
-
-        if (firstReference.IsAlive || secondReference.IsAlive)
-        {
-            return false;
-        }
-
-        byte[] replacement = new byte[SohObjectSize];
-        replacement[0] = 1;
-        nint replacementAddress = GetAddress(replacement);
-        nint lowAddress = firstAddress < secondAddress
-            ? firstAddress
-            : secondAddress;
-        nint highAddress = firstAddress < secondAddress
-            ? secondAddress
-            : firstAddress;
-        return replacementAddress >= lowAddress &&
-            (nuint)(replacementAddress - lowAddress) <
-                (nuint)(highAddress - lowAddress) + (nuint)SohObjectSize;
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void PrepareSohGap(
-        out WeakReference firstReference,
-        out WeakReference secondReference,
-        out nint firstAddress,
-        out nint secondAddress)
-    {
-        s_sohReuseCandidate1 = new byte[SohObjectSize];
-        s_sohReuseCandidate2 = new byte[SohObjectSize];
-        s_sohReuseCandidate1[0] = 1;
-        s_sohReuseCandidate2[0] = 2;
-
-        GC.Collect(
-            GC.MaxGeneration,
-            GCCollectionMode.Forced,
-            blocking: true,
-            compacting: false);
-        GC.Collect(
-            GC.MaxGeneration,
-            GCCollectionMode.Forced,
-            blocking: true,
-            compacting: false);
-
-        firstAddress = GetAddress(s_sohReuseCandidate1);
-        secondAddress = GetAddress(s_sohReuseCandidate2);
-        firstReference = new WeakReference(s_sohReuseCandidate1);
-        secondReference = new WeakReference(s_sohReuseCandidate2);
-        s_sohReuseCandidate1 = null;
-        s_sohReuseCandidate2 = null;
-    }
-
     private static byte[] Allocate(int size, bool pinned)
     {
         return pinned
@@ -312,5 +460,10 @@ internal static class CSharpGC
         }
 
         return false;
+    }
+
+    private sealed class EphemeralHolder
+    {
+        public object Value;
     }
 }

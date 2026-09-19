@@ -92,9 +92,15 @@ namespace Internal.Runtime.GC
                 condemnedGeneration = (int)gc_generation_num.max_generation;
             }
 
-            if (condemnedGeneration != (int)gc_generation_num.max_generation)
+            if (condemnedGeneration < (int)gc_generation_num.soh_gen0 ||
+                condemnedGeneration > (int)gc_generation_num.max_generation)
             {
                 return E_NOTIMPL;
+            }
+
+            if (condemnedGeneration == (int)gc_generation_num.max_generation)
+            {
+                ClearStaleMarksForFullCollection();
             }
 
             IGCToCLR* callback = GCCommon.g_theGCToCLR;
@@ -112,9 +118,24 @@ namespace Internal.Runtime.GC
             s_lowestMarkedAddress = (byte*)nuint.MaxValue;
             s_highestMarkedAddress = null;
             s_numPinnedObjects = 0;
-            s_markLow = GCCommon.g_gc_lowest_address;
-            s_markHigh = GCCommon.g_gc_highest_address;
-            s_useMarkList = false;
+            if (condemnedGeneration == (int)gc_generation_num.max_generation)
+            {
+                s_markLow = GCCommon.g_gc_lowest_address;
+                s_markHigh = GCCommon.g_gc_highest_address;
+            }
+            else
+            {
+                generation* condemnedGenerationState = GetGeneration(condemnedGeneration);
+                if (condemnedGenerationState is null)
+                {
+                    return E_FAIL;
+                }
+
+                s_markLow = condemnedGenerationState->allocation_start;
+                s_markHigh = s_sohSegment.reserved;
+            }
+            s_useMarkList = condemnedGeneration < (int)gc_generation_num.max_generation &&
+                s_markList is not null;
 
             ScanContext scanContext = default;
             scanContext.thread_number = 0;
@@ -162,6 +183,20 @@ namespace Internal.Runtime.GC
             ProcessMarkOverflow();
             DrainMarkQueue();
 
+            if (condemnedGeneration < (int)gc_generation_num.max_generation)
+            {
+                MarkThroughCardsForSegments();
+                for (int generationNumber = (int)gc_generation_num.uoh_start_generation;
+                    generationNumber < (int)gc_generation_num.total_generation_count;
+                    generationNumber++)
+                {
+                    MarkThroughCardsForUohObjects(generationNumber);
+                }
+
+                ProcessMarkOverflow();
+                DrainMarkQueue();
+            }
+
             ScanDependentHandles(&scanContext);
             ProcessMarkOverflow();
             DrainMarkQueue();
@@ -197,6 +232,154 @@ namespace Internal.Runtime.GC
             }
 
             return S_OK;
+        }
+
+        private static void ClearStaleMarksForFullCollection()
+        {
+            fixed (generation* generation2 = &s_generation2)
+            {
+                heap_segment* firstSohSegment = HeapSegmentRw(generation2->start_segment);
+                for (heap_segment* segment = firstSohSegment;
+                    segment is not null;
+                    segment = HeapSegmentNextRw(segment))
+                {
+                    byte* start = segment == firstSohSegment
+                        ? GetSohStartObject(segment, generation2)
+                        : segment->mem;
+                    if (!ClearMarkedObjectsInSegment(segment, start))
+                    {
+                        FailFast();
+                        return;
+                    }
+                }
+            }
+
+            fixed (heap_segment* loh = &s_lohSegment)
+            {
+                if (!ClearMarkedObjectsInGeneration(
+                    GetGeneration((int)gc_generation_num.loh_generation),
+                    HeapSegmentRw(loh)))
+                {
+                    FailFast();
+                    return;
+                }
+            }
+
+            fixed (heap_segment* poh = &s_pohSegment)
+            {
+                if (!ClearMarkedObjectsInGeneration(
+                    GetGeneration((int)gc_generation_num.poh_generation),
+                    HeapSegmentRw(poh)))
+                {
+                    FailFast();
+                }
+            }
+        }
+
+        private static bool ClearMarkedObjectsInGeneration(
+            generation* generationState,
+            heap_segment* firstSegment)
+        {
+            if (generationState is null || firstSegment is null)
+            {
+                return true;
+            }
+
+            bool first = true;
+            for (heap_segment* segment = firstSegment;
+                segment is not null;
+                segment = HeapSegmentNextRw(segment))
+            {
+                byte* start = first
+                    ? generationState->allocation_start
+                    : segment->mem;
+                if (!ClearMarkedObjectsInSegment(segment, start))
+                {
+                    return false;
+                }
+
+                first = false;
+            }
+
+            return true;
+        }
+
+        private static bool ClearMarkedObjectsInSegment(heap_segment* segment, byte* start)
+        {
+            if (segment is null)
+            {
+                return true;
+            }
+
+            if (segment->mem is null ||
+                segment->allocated is null ||
+                start is null ||
+                start < segment->mem ||
+                start > segment->allocated)
+            {
+                return false;
+            }
+
+            byte* current = start;
+            byte* end = segment->allocated;
+            while (current < end)
+            {
+                Object* obj = (Object*)current;
+                if (obj->RawGetMethodTable() is null)
+                {
+                    byte* nextObject = FindNextObjectAfterGap(current, end);
+                    if (nextObject is null)
+                    {
+                        return true;
+                    }
+
+                    current = nextObject;
+                    continue;
+                }
+
+                nuint size = GetObjectSize(obj);
+                nuint alignedSize = GCEnvironment.AlignUp(size, (nuint)sizeof(void*));
+                if (size < MinObjectSize ||
+                    alignedSize < size ||
+                    alignedSize > (nuint)(end - current))
+                {
+                    return false;
+                }
+
+                obj->ClearMarked();
+                current += (nint)alignedSize;
+            }
+
+            return true;
+        }
+
+        private static byte* FindNextObjectAfterGap(byte* current, byte* end)
+        {
+            if (s_brickTable is null ||
+                current >= end)
+            {
+                return null;
+            }
+
+            nuint currentBrick = GetBrickIndex(current);
+            nuint endBrick = GetBrickIndex(end - 1);
+            while (currentBrick < endBrick)
+            {
+                currentBrick++;
+                nint brickEntry = s_brickTable[currentBrick];
+                if (brickEntry < 0)
+                {
+                    continue;
+                }
+
+                byte* candidate = BrickAddress(currentBrick) + brickEntry - 1;
+                if (candidate > current && candidate < end)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
 
         private static bool InitializeMarkState()
@@ -583,11 +766,6 @@ namespace Internal.Runtime.GC
 
             if (s_useMarkList)
             {
-                if (s_markListIndex == s_markListLength)
-                {
-                    GrowMarkList();
-                }
-
                 if (s_markListIndex < s_markListLength)
                 {
                     s_markList[s_markListIndex] = obj;
@@ -604,40 +782,6 @@ namespace Internal.Runtime.GC
             }
 
             s_promotedBytes += size;
-        }
-
-        private static void GrowMarkList()
-        {
-            if (s_markListLength > nuint.MaxValue / 2)
-            {
-                FailFast();
-                return;
-            }
-
-            nuint newLength = s_markListLength == 0
-                ? InitialMarkStackLength
-                : s_markListLength * 2;
-            if (!TryMultiply(newLength, (nuint)sizeof(Object*), out nuint newBytes))
-            {
-                FailFast();
-                return;
-            }
-
-            Object** newList = (Object**)GCToOSInterface.AllocateUnmanaged(newBytes);
-            if (newList is null)
-            {
-                FailFast();
-                return;
-            }
-
-            for (nuint i = 0; i < s_markListIndex; i++)
-            {
-                newList[i] = s_markList[i];
-            }
-
-            GCToOSInterface.FreeUnmanaged(s_markList);
-            s_markList = newList;
-            s_markListLength = newLength;
         }
 
         private static void DrainMarkQueue()
@@ -839,6 +983,575 @@ namespace Internal.Runtime.GC
             }
         }
 
+        private static void MarkThroughCardsForSegments()
+        {
+            if (s_cardTable is null ||
+                s_markLow is null ||
+                s_markHigh is null ||
+                s_generation2.start_segment is null)
+            {
+                return;
+            }
+
+            fixed (heap_segment* soh = &s_sohSegment)
+            {
+                heap_segment* segment = HeapSegmentRw(s_generation2.start_segment);
+                bool firstSegment = true;
+                while (segment is not null)
+                {
+                    if (segment->mem is null || segment->allocated is null)
+                    {
+                        return;
+                    }
+
+                    byte* begin = firstSegment
+                        ? s_generation2.allocation_start
+                        : segment->mem;
+                    byte* end = segment->allocated;
+                    if (segment == soh &&
+                        s_markLow > begin &&
+                        s_markLow < end)
+                    {
+                        end = s_markLow;
+                    }
+
+                    if (begin is not null && begin < end)
+                    {
+                        ScanDirtyCardsInSegment(
+                            segment,
+                            begin,
+                            end,
+                            false,
+                            segment == soh);
+                    }
+
+                    firstSegment = false;
+                    segment = HeapSegmentNextRw(segment);
+                }
+            }
+        }
+
+        private static void MarkThroughCardsForUohObjects(int generationNumber)
+        {
+            generation* generationState = GetGeneration(generationNumber);
+            if (generationState is null ||
+                generationState->start_segment is null ||
+                s_cardTable is null ||
+                s_markLow is null ||
+                s_markHigh is null)
+            {
+                return;
+            }
+
+            heap_segment* segment = HeapSegmentRw(generationState->start_segment);
+            bool firstSegment = true;
+            while (segment is not null)
+            {
+                if (segment->mem is null || segment->allocated is null)
+                {
+                    return;
+                }
+
+                byte* begin = firstSegment
+                    ? GetUohStartObjectForMarking(generationState)
+                    : segment->mem;
+                byte* end = segment->allocated;
+                if (begin is not null && begin < end)
+                {
+                    ScanDirtyCardsInSegment(segment, begin, end, true, false);
+                }
+
+                firstSegment = false;
+                segment = HeapSegmentNextRw(segment);
+            }
+        }
+
+        private static byte* GetUohStartObjectForMarking(generation* generationState)
+        {
+            byte* start = generationState->allocation_start;
+            if (start is null)
+            {
+                return null;
+            }
+
+            nuint size = GetObjectSize((Object*)start);
+            nuint alignedSize = GCEnvironment.AlignUp(size, LargeObjectAlignment);
+            if (alignedSize < size)
+            {
+                return null;
+            }
+
+            return start + (nint)alignedSize;
+        }
+
+        private static Object* FindFirstObjectForCard(
+            byte* start,
+            Object* lastObject,
+            heap_segment* segment,
+            bool uoh,
+            byte* scanEnd)
+        {
+            Object* obj = lastObject;
+            if (s_brickTable is not null &&
+                start > (byte*)lastObject &&
+                GetBrickIndex(start) != GetBrickIndex((byte*)lastObject))
+            {
+                nint minimumBrick = (nint)GetBrickIndex((byte*)lastObject);
+                nint previousBrick = (nint)GetBrickIndex(start) - 1;
+                nint brickEntry = 0;
+                while (previousBrick >= minimumBrick)
+                {
+                    brickEntry = s_brickTable[(nuint)previousBrick];
+                    if (brickEntry >= 0)
+                    {
+                        break;
+                    }
+
+                    FailFastAssert(brickEntry != 0);
+                    previousBrick += brickEntry;
+                }
+
+                obj = previousBrick < minimumBrick
+                    ? lastObject
+                    : (Object*)(BrickAddress((nuint)previousBrick) + brickEntry - 1);
+            }
+
+            FailFastAssert((byte*)obj >= (byte*)lastObject);
+
+            nuint alignment = uoh || (segment->flags & HeapSegmentReadOnly) == 0
+                ? LargeObjectAlignment
+                : (nuint)sizeof(void*);
+            while ((byte*)obj < start)
+            {
+                if ((byte*)obj < segment->mem || (byte*)obj >= scanEnd)
+                {
+                    return null;
+                }
+
+                if (obj->RawGetMethodTable() is null)
+                {
+                    byte* nextObject = FindNextObjectAfterGap(
+                        (byte*)obj,
+                        scanEnd);
+                    if (nextObject is null)
+                    {
+                        return null;
+                    }
+
+                    obj = (Object*)nextObject;
+                    continue;
+                }
+
+                nuint size = GetObjectSize(obj);
+                nuint alignedSize = GCEnvironment.AlignUp(size, alignment);
+                if (size < MinObjectSize ||
+                    alignedSize < size ||
+                    alignedSize > (nuint)(segment->allocated - (byte*)obj))
+                {
+                    return null;
+                }
+
+                byte* next = (byte*)obj + (nint)alignedSize;
+                if (next > start)
+                {
+                    break;
+                }
+
+                obj = (Object*)next;
+            }
+
+            return obj;
+        }
+
+        private static void ScanDirtyCardsInSegment(
+            heap_segment* segment,
+            byte* begin,
+            byte* end,
+            bool uoh,
+            bool ephemeralSegment)
+        {
+            if (segment is null ||
+                segment->mem is null ||
+                segment->allocated is null ||
+                begin < segment->mem)
+            {
+                FailFast();
+                return;
+            }
+
+            if (begin >= segment->allocated)
+            {
+                return;
+            }
+
+            if (!uoh &&
+                s_generation2.allocation_start is not null &&
+                s_generation2.allocation_start > begin)
+            {
+                begin = s_generation2.allocation_start;
+            }
+
+            if (end > segment->allocated)
+            {
+                end = segment->allocated;
+            }
+
+            byte* scanEnd = end;
+            if (segment->plan_allocated is not null &&
+                segment->plan_allocated < scanEnd)
+            {
+                scanEnd = segment->plan_allocated;
+            }
+
+            if (begin >= scanEnd)
+            {
+                return;
+            }
+
+            nuint card = CardOf(begin);
+            byte* nextBoundary = s_generation1.allocation_start;
+            byte* high = s_sohSegment.reserved;
+            Object* lastObject = (Object*)begin;
+
+            while (lastObject is not null && CardAddress(card) < scanEnd)
+            {
+                if (CardSet(card))
+                {
+                    byte* cardStart = CardAddress(card);
+                    if (cardStart < begin)
+                    {
+                        cardStart = begin;
+                    }
+
+                    byte* cardLimit = CardAddress(card + 1);
+                    if (cardLimit > scanEnd)
+                    {
+                        cardLimit = scanEnd;
+                    }
+
+                    Object* firstObject = FindFirstObjectForCard(
+                        cardStart,
+                        lastObject,
+                        segment,
+                        uoh,
+                        scanEnd);
+                    if (firstObject is null)
+                    {
+                        FailFast();
+                        return;
+                    }
+
+                    nuint cgPointersFound = 0;
+                    Object* obj = firstObject;
+                    while (obj is not null &&
+                        (byte*)obj < scanEnd &&
+                        (byte*)obj < cardStart)
+                    {
+                        if ((byte*)obj < segment->mem ||
+                            (byte*)obj >= scanEnd)
+                        {
+                            FailFast();
+                            return;
+                        }
+
+                        nuint size = GetObjectSize(obj);
+                        nuint alignment = (segment->flags & HeapSegmentReadOnly) != 0
+                            ? (nuint)sizeof(void*)
+                            : LargeObjectAlignment;
+                        nuint alignedSize = GCEnvironment.AlignUp(size, alignment);
+                        if (size < MinObjectSize ||
+                            alignedSize < size ||
+                            alignedSize > (nuint)(end - (byte*)obj))
+                        {
+                            FailFast();
+                            return;
+                        }
+
+                        byte* nextObject = (byte*)obj + (nint)alignedSize;
+                        if (nextObject > cardStart || nextObject >= scanEnd)
+                        {
+                            break;
+                        }
+
+                        obj = nextObject < scanEnd
+                            ? (Object*)nextObject
+                            : null;
+                    }
+
+                    while (obj is not null &&
+                        (byte*)obj < cardLimit &&
+                        (byte*)obj < scanEnd)
+                    {
+                        if ((byte*)obj < segment->mem ||
+                            (byte*)obj >= scanEnd)
+                        {
+                            FailFast();
+                            return;
+                        }
+
+                        if (obj->RawGetMethodTable() is null)
+                        {
+                            byte* nextGapObject = FindNextObjectAfterGap(
+                                (byte*)obj,
+                                scanEnd);
+                            if (nextGapObject is null)
+                            {
+                                obj = null;
+                                lastObject = null;
+                                break;
+                            }
+
+                            obj = (Object*)nextGapObject;
+                            lastObject = obj;
+                            continue;
+                        }
+
+                        nuint size = GetObjectSize(obj);
+                        if (size < MinObjectSize ||
+                            size > (nuint)(segment->allocated - (byte*)obj) ||
+                            size > (nuint)(scanEnd - (byte*)obj))
+                        {
+                            FailFast();
+                            return;
+                        }
+
+                        nuint alignment = (segment->flags & HeapSegmentReadOnly) != 0
+                            ? (nuint)sizeof(void*)
+                            : LargeObjectAlignment;
+                        nuint alignedSize = GCEnvironment.AlignUp(size, alignment);
+                        if (alignedSize < size ||
+                            alignedSize > (nuint)(scanEnd - (byte*)obj))
+                        {
+                            FailFast();
+                            return;
+                        }
+
+                        byte* currentNextBoundary = nextBoundary;
+                        if (!uoh && ephemeralSegment)
+                        {
+                            if ((byte*)obj >= s_generation0.allocation_start)
+                            {
+                                currentNextBoundary = high;
+                            }
+                            else if ((byte*)obj >= s_generation1.allocation_start)
+                            {
+                                currentNextBoundary = s_generation0.allocation_start;
+                            }
+                        }
+
+                        ScanCardObject(
+                            obj,
+                            cardStart,
+                            cardLimit,
+                            currentNextBoundary,
+                            high,
+                            ref cgPointersFound);
+
+                        byte* nextObject = (byte*)obj + (nint)alignedSize;
+                        if (nextObject >= segment->allocated ||
+                            (cardLimit == scanEnd && nextObject >= scanEnd))
+                        {
+                            obj = null;
+                            lastObject = null;
+                        }
+                        else if (nextObject > cardLimit)
+                        {
+                            lastObject = obj;
+                            obj = null;
+                        }
+                        else
+                        {
+                            byte* nextObjectAfterGap = nextObject;
+                            if (((Object*)nextObject)->RawGetMethodTable() is null)
+                            {
+                                nextObjectAfterGap = FindNextObjectAfterGap(
+                                    nextObject,
+                                    scanEnd);
+                            }
+
+                            if (nextObjectAfterGap is null)
+                            {
+                                obj = null;
+                                lastObject = null;
+                            }
+                            else
+                            {
+                                obj = (Object*)nextObjectAfterGap;
+                                lastObject = obj;
+                            }
+                        }
+                    }
+
+                    bool cardContainsUnscannedBoundary =
+                        !uoh &&
+                        cardLimit == scanEnd &&
+                        CardAddress(card + 1) > scanEnd;
+                    if (cgPointersFound == 0 && !cardContainsUnscannedBoundary)
+                    {
+                        ClearCards(card, card + 1);
+                    }
+                }
+
+                card++;
+            }
+        }
+
+        private static void ScanCardObject(
+            Object* obj,
+            byte* scanStart,
+            byte* scanLimit,
+            byte* nextBoundary,
+            byte* high,
+            ref nuint cgPointersFound)
+        {
+            MethodTable* methodTable = obj->GetGCSafeMethodTable();
+            if (methodTable is null)
+            {
+                return;
+            }
+
+            byte* objectAddress = (byte*)obj;
+            nuint objectSize = GetObjectSize(obj);
+            if (objectAddress >= scanStart &&
+                CardOf(objectAddress) == CardOf(scanStart) &&
+                methodTable->Collectible())
+            {
+                IGCToCLR* callback = GCCommon.g_theGCToCLR;
+                if (callback is not null &&
+                    callback->Vtable is not null &&
+                    callback->Vtable->GetLoaderAllocatorObjectForGC is not null)
+                {
+                    Object* classObject =
+                        (Object*)callback->Vtable->GetLoaderAllocatorObjectForGC(callback, obj);
+                    MarkCardReference(
+                        &classObject,
+                        nextBoundary,
+                        high,
+                        ref cgPointersFound);
+                }
+            }
+
+            if (!methodTable->ContainsGCPointers())
+            {
+                return;
+            }
+
+            nint seriesCount = GetSeriesCount(methodTable);
+            CGCDescSeries* current = GetHighestSeries(methodTable);
+            if (seriesCount >= 0)
+            {
+                CGCDescSeries* lowest = GetLowestSeries(methodTable, seriesCount);
+                do
+                {
+                    byte* slot = objectAddress + (nint)current->startoffset;
+                    byte* stop = slot + (nint)current->seriessize + objectSize;
+                    while (slot < stop)
+                    {
+                        if (slot >= scanStart && slot < scanLimit)
+                        {
+                            MarkCardReference(
+                                (Object**)slot,
+                                nextBoundary,
+                                high,
+                                ref cgPointersFound);
+                        }
+
+                        slot += sizeof(void*);
+                    }
+
+                    current--;
+                }
+                while (current >= lowest);
+
+                return;
+            }
+
+            byte* repeatingSlot = objectAddress + (nint)current->startoffset;
+            byte* objectEnd = objectAddress + objectSize - sizeof(ObjHeader);
+            val_serie_item* valueSeries = &current->val_serie;
+            while (repeatingSlot < objectEnd)
+            {
+                for (nint i = 0; i > seriesCount; i--)
+                {
+                    val_serie_item item = valueSeries[i];
+                    byte* stop = repeatingSlot + ((nuint)item.nptrs * (nuint)sizeof(void*));
+                    while (repeatingSlot < stop)
+                    {
+                        if (repeatingSlot >= scanStart && repeatingSlot < scanLimit)
+                        {
+                            MarkCardReference(
+                                (Object**)repeatingSlot,
+                                nextBoundary,
+                                high,
+                                ref cgPointersFound);
+                        }
+
+                        repeatingSlot += sizeof(void*);
+                    }
+
+                    repeatingSlot += item.skip;
+                }
+            }
+        }
+
+        private static void MarkCardReference(
+            Object** objectReference,
+            byte* nextBoundary,
+            byte* high,
+            ref nuint cgPointersFound)
+        {
+            Object* child = *objectReference;
+            if (child is null)
+            {
+                return;
+            }
+
+            byte* childAddress = (byte*)child;
+            if (IsInMarkRange(childAddress))
+            {
+                MarkObject(child);
+            }
+
+            if (nextBoundary is not null &&
+                childAddress >= nextBoundary &&
+                childAddress < high)
+            {
+                cgPointersFound++;
+            }
+        }
+
+        private static nuint CardOf(byte* address)
+        {
+            return (nuint)address / CardSize;
+        }
+
+        private static byte* CardAddress(nuint card)
+        {
+            return (byte*)(card * CardSize);
+        }
+
+        private static bool CardSet(nuint card)
+        {
+            return s_cardTable is not null &&
+                (s_cardTable[card / CardWordWidth] &
+                    (1u << (int)(card % CardWordWidth))) != 0;
+        }
+
+        private static void ClearCards(nuint startCard, nuint endCard)
+        {
+            if (s_cardTable is null)
+            {
+                return;
+            }
+
+            while (startCard < endCard)
+            {
+                s_cardTable[startCard / CardWordWidth] &=
+                    ~(1u << (int)(startCard % CardWordWidth));
+                startCard++;
+            }
+        }
+
         private static nint GetSeriesCount(MethodTable* methodTable)
         {
             return *(nint*)((byte*)methodTable - sizeof(nuint));
@@ -952,7 +1665,10 @@ namespace Internal.Runtime.GC
             }
         }
 
-        private static Object* FindObjectInSegment(byte* interior, heap_segment* segment)
+        private static Object* FindObjectInSegment(
+            byte* interior,
+            heap_segment* segment,
+            byte* scanEnd = null)
         {
             if (!IsInSegment(interior, segment) || interior >= segment->allocated)
             {
@@ -962,7 +1678,25 @@ namespace Internal.Runtime.GC
             bool smallObject = (segment->flags & HeapSegmentReadOnly) != 0;
             nuint alignment = smallObject ? (nuint)sizeof(void*) : LargeObjectAlignment;
             byte* current = segment->mem;
-            while (current < segment->allocated)
+            byte* objectEnd = segment->allocated;
+            if (scanEnd > current && scanEnd < objectEnd)
+            {
+                objectEnd = scanEnd;
+            }
+
+            if (scanEnd is not null &&
+                segment->plan_allocated is not null &&
+                segment->plan_allocated < objectEnd)
+            {
+                objectEnd = segment->plan_allocated;
+            }
+
+            if (scanEnd is not null && interior >= objectEnd)
+            {
+                return null;
+            }
+
+            while (current < objectEnd)
             {
                 Object* obj = (Object*)current;
                 nuint size = GetObjectSize(obj);
@@ -1025,6 +1759,13 @@ namespace Internal.Runtime.GC
                         continue;
                     }
 
+                    MethodTable* rawMethodTable = obj is null ? null : obj->RawGetMethodTable();
+                    if (rawMethodTable is null || rawMethodTable == GCCommon.g_gc_pFreeObjectMethodTable)
+                    {
+                        MoveFinalizationItem(current, segment, FinalizerFreeListSegment);
+                        continue;
+                    }
+
                     IGCToCLR* callback = GCCommon.g_theGCToCLR;
                     bool eagerFinalized = callback is not null &&
                         callback->Vtable is not null &&
@@ -1042,11 +1783,12 @@ namespace Internal.Runtime.GC
                     }
                     else
                     {
-                        int destination = obj->GetGCSafeMethodTable()->HasCriticalFinalizer()
+                        MethodTable* methodTable = obj->GetGCSafeMethodTable();
+                        int destination = methodTable->HasCriticalFinalizer()
                             ? FinalizerCriticalListSegment
                             : FinalizerListSegment;
-                        MoveFinalizationItem(current, segment, destination);
                         s_finalizeQueue->m_PromotedCount++;
+                        MoveFinalizationItem(current, segment, destination);
                     }
                 }
             }

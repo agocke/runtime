@@ -222,6 +222,23 @@ namespace Internal.Runtime.GC
             return (uint)s_settings.condemned_generation;
         }
 
+        public static bool IsPromotedOrOlderObject(Object* obj)
+        {
+            if (obj is null)
+            {
+                return false;
+            }
+
+            if (IsPromotedObject(obj))
+            {
+                return true;
+            }
+
+            uint generation = GetGenerationWithRangeCore(obj, null, null, null);
+            return generation <= (uint)gc_generation_num.max_generation &&
+                generation > (uint)s_settings.condemned_generation;
+        }
+
         public static bool IsGCInProgressHelper(IGCHeap* heap, bool considerGCStart)
         {
             _ = heap;
@@ -348,7 +365,8 @@ namespace Internal.Runtime.GC
                 generation = (int)gc_generation_num.max_generation;
             }
 
-            if (generation != (int)gc_generation_num.max_generation)
+            if (generation < 0 ||
+                generation > (int)gc_generation_num.max_generation)
             {
                 return E_NOTIMPL;
             }
@@ -389,6 +407,8 @@ namespace Internal.Runtime.GC
             s_settings.gc_index++;
             s_settings.condemned_generation = generation;
             s_settings.promotion = 1;
+            s_settings.compaction = 0;
+            s_settings.demotion = 0;
             s_settings.reason = lowMemory
                 ? gc_reason.reason_lowmemory_blocking
                 : gc_reason.reason_induced;
@@ -840,120 +860,136 @@ namespace Internal.Runtime.GC
             out Object* allocation)
         {
             allocation = null;
-            fixed (generation* freeListGeneration = &s_generation2)
+            fixed (generation* generation0 = &s_generation0)
             {
-                allocator* allocatorState = &freeListGeneration->free_list_allocator;
-                for (uint bucketNumber = 0;
-                    bucketNumber < allocatorState->num_buckets;
-                    bucketNumber++)
+                return TryAllocateFromSohFreeList(
+                    context,
+                    size,
+                    flags,
+                    generation0,
+                    out allocation);
+            }
+        }
+
+        private static bool TryAllocateFromSohFreeList(
+            gc_alloc_context* context,
+            nuint size,
+            uint flags,
+            generation* freeListGeneration,
+            out Object* allocation)
+        {
+            allocation = null;
+            allocator* allocatorState = &freeListGeneration->free_list_allocator;
+            for (uint bucketNumber = 0;
+                bucketNumber < allocatorState->num_buckets;
+                bucketNumber++)
+            {
+                alloc_list* list = GetAllocList(allocatorState, bucketNumber);
+                if (list is null)
                 {
-                    alloc_list* list = GetAllocList(allocatorState, bucketNumber);
-                    if (list is null)
-                    {
-                        FailFast();
-                        return false;
-                    }
+                    FailFast();
+                    return false;
+                }
 
-                    byte* freeList = list->head;
-                    byte* previousFreeItem = null;
-                    while (freeList is not null)
+                byte* freeList = list->head;
+                byte* previousFreeItem = null;
+                while (freeList is not null)
+                {
+                    nuint freeListSize = UnusedArraySize(freeList);
+                    nuint minimumObjectSize =
+                        GCEnvironment.AlignUp(
+                            MinObjectSize,
+                            (nuint)sizeof(void*));
+                    if (size <= nuint.MaxValue - minimumObjectSize &&
+                        size + minimumObjectSize <= freeListSize)
                     {
-                        nuint freeListSize = UnusedArraySize(freeList);
-                        nuint minimumObjectSize =
-                            GCEnvironment.AlignUp(
-                                MinObjectSize,
-                                (nuint)sizeof(void*));
-                        if (size <= nuint.MaxValue - minimumObjectSize &&
-                            size + minimumObjectSize <= freeListSize)
+                        UnlinkFreeListItem(
+                            allocatorState,
+                            bucketNumber,
+                            freeList,
+                            previousFreeItem);
+
+                        nuint limit = LimitFromSize(
+                            size,
+                            flags,
+                            freeListSize,
+                            (int)gc_generation_num.soh_gen0);
+                        if (limit < size + minimumObjectSize ||
+                            limit > freeListSize)
                         {
-                            UnlinkFreeListItem(
-                                allocatorState,
-                                bucketNumber,
-                                freeList,
-                                previousFreeItem);
-
-                            nuint limit = LimitFromSize(
-                                size,
-                                flags,
-                                freeListSize,
-                                (int)gc_generation_num.soh_gen0);
-                            if (limit < size + minimumObjectSize ||
-                                limit > freeListSize)
-                            {
-                                FailFast();
-                                return false;
-                            }
-
-                            ConsumeNewAllocationBudget(
-                                (int)gc_generation_num.soh_gen0,
-                                limit);
-
-                            byte* remain = freeList + (nint)limit;
-                            nuint remainSize = freeListSize - limit;
-                            if (remainSize >=
-                                GCEnvironment.AlignUp(
-                                    2 * MinObjectSize,
-                                    (nuint)sizeof(void*)))
-                            {
-                                FormatUnusedArray(remain, remainSize);
-                                ThreadFreeListItemFront(
-                                    allocatorState,
-                                    bucketNumber,
-                                    remain,
-                                    remainSize);
-                            }
-                            else
-                            {
-                                limit += remainSize;
-                            }
-
-                            if (freeListGeneration->free_list_space < limit)
-                            {
-                                FailFast();
-                                return false;
-                            }
-
-                            freeListGeneration->free_list_space -= limit;
-                            AdjustLimitForFreeList(
-                                freeList,
-                                limit,
-                                size,
-                                context,
-                                flags,
-                                (int)gc_generation_num.soh_gen0);
-                            allocation = (Object*)context->alloc_ptr;
-                            return true;
+                            FailFast();
+                            return false;
                         }
 
-                        if (allocatorState->num_buckets == 1)
+                        ConsumeNewAllocationBudget(
+                            (int)gc_generation_num.soh_gen0,
+                            limit);
+
+                        byte* remain = freeList + (nint)limit;
+                        nuint remainSize = freeListSize - limit;
+                        if (remainSize >=
+                            GCEnvironment.AlignUp(
+                                2 * MinObjectSize,
+                                (nuint)sizeof(void*)))
                         {
-                            if (previousFreeItem is not null)
-                            {
-                                FailFast();
-                                return false;
-                            }
-
-                            freeListGeneration->free_obj_space += freeListSize;
-                            if (freeListGeneration->free_list_space < freeListSize)
-                            {
-                                FailFast();
-                                return false;
-                            }
-
-                            UnlinkFreeListItem(
+                            FormatUnusedArray(remain, remainSize);
+                            ThreadFreeListItemFront(
                                 allocatorState,
                                 bucketNumber,
-                                freeList,
-                                null);
-                            freeListGeneration->free_list_space -= freeListSize;
+                                remain,
+                                remainSize);
                         }
                         else
                         {
-                            previousFreeItem = freeList;
+                            limit += remainSize;
                         }
 
-                        freeList = FreeListNext(freeList);
+                        if (freeListGeneration->free_list_space < limit)
+                        {
+                            FailFast();
+                            return false;
+                        }
+
+                        freeListGeneration->free_list_space -= limit;
+                        AdjustLimitForFreeList(
+                            freeList,
+                            limit,
+                            size,
+                            context,
+                            flags,
+                            (int)gc_generation_num.soh_gen0);
+                        allocation = (Object*)context->alloc_ptr;
+                        return true;
                     }
+
+                    if (allocatorState->num_buckets == 1)
+                    {
+                        if (previousFreeItem is not null)
+                        {
+                            FailFast();
+                            return false;
+                        }
+
+                        freeListGeneration->free_obj_space += freeListSize;
+                        if (freeListGeneration->free_list_space < freeListSize)
+                        {
+                            FailFast();
+                            return false;
+                        }
+
+                        UnlinkFreeListItem(
+                            allocatorState,
+                            bucketNumber,
+                            freeList,
+                            null);
+                        freeListGeneration->free_list_space -= freeListSize;
+                    }
+                    else
+                    {
+                        previousFreeItem = freeList;
+                    }
+
+                    freeList = FreeListNext(freeList);
                 }
             }
 
@@ -1058,6 +1094,7 @@ namespace Internal.Runtime.GC
                                     2 * MinObjectSize,
                                     (nuint)sizeof(void*)))
                             {
+                                generationState->free_list_space += remainSize;
                                 ThreadFreeListItemFront(
                                     allocatorState,
                                     bucketNumber,
@@ -1227,7 +1264,7 @@ namespace Internal.Runtime.GC
 
         private static nuint UnusedArraySize(byte* freeList)
         {
-            nuint size = GetObjectSize((Object*)freeList);
+            nuint size = GetPlanningObjectSize((Object*)freeList);
             return GCEnvironment.AlignUp(size, (nuint)sizeof(void*));
         }
 

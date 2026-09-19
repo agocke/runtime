@@ -28,6 +28,9 @@ namespace Internal.Runtime.GC
         private const uint VHT_WEAK_LONG = 0x00000200;
         private const uint VHT_STRONG = 0x00000400;
         private const uint VHT_PINNED = 0x00000800;
+        private const byte HandleMaxAge = 0x3E;
+        private const byte HandleInvalidAge = 0x3F;
+        private const int HandleMaxGeneration = 2;
 
         private static IGCHandleStoreVtable s_storeVtable;
         private static GCHandleStore s_globalStore;
@@ -397,7 +400,13 @@ namespace Internal.Runtime.GC
             }
 
             nint* slot = (nint*)handle;
-            return Interlocked.CompareExchangePointer(slot, value, null) == 0;
+            bool stored = Interlocked.CompareExchangePointer(slot, value, null) == 0;
+            if (stored && value is not null)
+            {
+                UpdateHandleAge(handle, value);
+            }
+
+            return stored;
         }
 
         public static void ManagerSetDependentHandleSecondary(IGCHandleManager* manager, OBJECTHANDLE__* handle, Object* value)
@@ -431,7 +440,14 @@ namespace Internal.Runtime.GC
                 return null;
             }
 
-            return (Object*)Interlocked.CompareExchangePointer((nint*)handle, value, comparand);
+            Object* previous =
+                (Object*)Interlocked.CompareExchangePointer((nint*)handle, value, comparand);
+            if (previous == comparand && value is not null)
+            {
+                UpdateHandleAge(handle, value);
+            }
+
+            return previous;
         }
 
         public static HandleType ManagerHandleFetchType(IGCHandleManager* manager, OBJECTHANDLE__* handle)
@@ -537,6 +553,229 @@ namespace Internal.Runtime.GC
                     }
                 }
             }
+        }
+
+        public static void AgeHandles(int condemnedGeneration, int maxGeneration)
+        {
+            UpdateHandleAges(condemnedGeneration, maxGeneration, rejuvenate: false);
+        }
+
+        public static void RejuvenateHandles(int condemnedGeneration, int maxGeneration)
+        {
+            UpdateHandleAges(condemnedGeneration, maxGeneration, rejuvenate: true);
+        }
+
+        private static void UpdateHandleAges(
+            int condemnedGeneration,
+            int maxGeneration,
+            bool rejuvenate)
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                for (HandleTableMap* map = mapStorage; map is not null; map = map->Next)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                UpdateHandleAgesInSegment(
+                                    segment,
+                                    condemnedGeneration,
+                                    maxGeneration,
+                                    rejuvenate);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void UpdateHandleAgesInSegment(
+            HandleTableSegment* segment,
+            int condemnedGeneration,
+            int maxGeneration,
+            bool rejuvenate)
+        {
+            for (int block = 0; block < HandleBlocksPerSegment; block++)
+            {
+                HandleType type = (HandleType)segment->BlockType[block];
+                if (!IsAgedHandleType(type))
+                {
+                    continue;
+                }
+
+                if (!EnsureBlockCommitted(segment, block))
+                {
+                    FailFast();
+                    return;
+                }
+
+                for (int clump = 0; clump < sizeof(uint); clump++)
+                {
+                    int ageIndex = (block * sizeof(uint)) + clump;
+                    byte age = segment->Generation[ageIndex];
+                    if (!IsHandleAgeEligible(age, condemnedGeneration, maxGeneration))
+                    {
+                        continue;
+                    }
+
+                    segment->Generation[ageIndex] = rejuvenate
+                        ? RecomputeHandleClumpAge(
+                            segment,
+                            block,
+                            clump,
+                            type)
+                        : (byte)(age + 1);
+                }
+            }
+        }
+
+        private static bool IsAgedHandleType(HandleType type)
+        {
+            return type is HandleType.HNDTYPE_WEAK_SHORT
+                or HandleType.HNDTYPE_WEAK_LONG
+                or HandleType.HNDTYPE_STRONG
+                or HandleType.HNDTYPE_PINNED
+                or HandleType.HNDTYPE_VARIABLE
+                or HandleType.HNDTYPE_REFCOUNTED
+                or HandleType.HNDTYPE_DEPENDENT
+                or HandleType.HNDTYPE_SIZEDREF
+                or HandleType.HNDTYPE_WEAK_INTERIOR_POINTER;
+        }
+
+        private static bool IsHandleAgeEligible(
+            byte age,
+            int condemnedGeneration,
+            int maxGeneration)
+        {
+            if (age == byte.MaxValue ||
+                age == HandleInvalidAge ||
+                age >= HandleMaxAge)
+            {
+                return false;
+            }
+
+            if (condemnedGeneration >= maxGeneration)
+            {
+                return age >= maxGeneration;
+            }
+
+            return age <= condemnedGeneration;
+        }
+
+        private static byte RecomputeHandleClumpAge(
+            HandleTableSegment* segment,
+            int block,
+            int clump,
+            HandleType type)
+        {
+            byte minimumAge = HandleMaxAge;
+            int firstSlot = clump * (HandleHandlesPerBlock / sizeof(uint));
+            int lastSlot = firstSlot + (HandleHandlesPerBlock / sizeof(uint));
+            for (int slot = firstSlot; slot < lastSlot; slot++)
+            {
+                if (IsHandleSlotFree(segment, block, slot))
+                {
+                    continue;
+                }
+
+                OBJECTHANDLE__* handle = SlotAddress(segment, block, slot);
+                Object* primary = FetchObject(handle);
+                if (primary is null)
+                {
+                    continue;
+                }
+
+                byte primaryAge = GetObjectHandleAge(primary);
+                if (primaryAge < minimumAge)
+                {
+                    minimumAge = primaryAge;
+                }
+
+                if (type == HandleType.HNDTYPE_DEPENDENT)
+                {
+                    void** secondarySlot =
+                        FetchExtraInfoSlot(handle, HandleType.HNDTYPE_DEPENDENT);
+                    if (secondarySlot is not null && *secondarySlot is not null)
+                    {
+                        byte secondaryAge = GetObjectHandleAge((Object*)*secondarySlot);
+                        if (secondaryAge < minimumAge)
+                        {
+                            minimumAge = secondaryAge;
+                        }
+                    }
+                }
+            }
+
+            return minimumAge;
+        }
+
+        private static byte GetObjectHandleAge(Object* obj)
+        {
+            uint generation = GCWksInitialization.WhichGeneration(null, obj);
+            return generation >= HandleMaxGeneration
+                ? (byte)HandleMaxGeneration
+                : (byte)generation;
+        }
+
+        private static void UpdateHandleAge(
+            OBJECTHANDLE__* handle,
+            Object* value)
+        {
+            if (handle is null ||
+                value is null)
+            {
+                return;
+            }
+
+            HandleTableSegment* segment = GetSegment(handle);
+            if (segment is null ||
+                !EnsureHandleCommitted(handle))
+            {
+                FailFast();
+                return;
+            }
+
+            nuint offset = (nuint)((byte*)handle - ((byte*)segment + HandleHeaderSize));
+            int block = (int)(offset / (nuint)HandleBlockSize);
+            int slot = (int)((offset % (nuint)HandleBlockSize) / (nuint)HandleSlotSize);
+            int ageIndex =
+                (block * sizeof(uint)) +
+                (slot / (HandleHandlesPerBlock / sizeof(uint)));
+            byte age = segment->Generation[ageIndex];
+            HandleType type = (HandleType)segment->BlockType[block];
+            if (age != 0 &&
+                (type == HandleType.HNDTYPE_DEPENDENT ||
+                 age > GetObjectHandleAge(value)))
+            {
+                segment->Generation[ageIndex] = 0;
+            }
+        }
+
+        private static bool IsHandleSlotFree(
+            HandleTableSegment* segment,
+            int block,
+            int slot)
+        {
+            return slot < 32
+                ? (segment->FreeMask[block * 2] & (1u << slot)) != 0
+                : (segment->FreeMask[(block * 2) + 1] & (1u << (slot - 32))) != 0;
         }
 
         private static void ScanHandleType(
@@ -985,7 +1224,7 @@ namespace Internal.Runtime.GC
 
                     OBJECTHANDLE__* handle = SlotAddress(segment, block, slot);
                     Object* primary = FetchObject(handle);
-                    if (!GCWksInitialization.IsPromotedObject(primary))
+                    if (!GCWksInitialization.IsPromotedOrOlderObject(primary))
                     {
                         StoreObject(handle, null);
                         secondarySlots[slot] = null;
@@ -1160,13 +1399,13 @@ namespace Internal.Runtime.GC
                                             continue;
                                         }
 
-                                        if (GCWksInitialization.IsPromotedObject(primary))
+                                        if (GCWksInitialization.IsPromotedOrOlderObject(primary))
                                         {
                                             Object** secondary = (Object**)secondarySlot;
-                                            bool wasPromoted = GCWksInitialization.IsPromotedObject((Object*)*secondarySlot);
+                                            bool wasPromoted = GCWksInitialization.IsPromotedOrOlderObject((Object*)*secondarySlot);
                                             callback(secondary, scanContext, 0);
                                             promoted |= !wasPromoted && *secondary is not null &&
-                                                GCWksInitialization.IsPromotedObject(*secondary);
+                                                GCWksInitialization.IsPromotedOrOlderObject(*secondary);
                                         }
                                     }
                                 }
@@ -1544,6 +1783,7 @@ namespace Internal.Runtime.GC
                     return;
                 }
 
+                UpdateHandleAge(handle, value);
                 Interlocked.ExchangePointer((nint*)handle, value);
             }
         }
@@ -1640,6 +1880,7 @@ namespace Internal.Runtime.GC
             void** slot = FetchExtraInfoSlot(handle, HandleType.HNDTYPE_DEPENDENT);
             if (slot is not null)
             {
+                UpdateHandleAge(handle, value);
                 Interlocked.ExchangePointer((nint*)slot, value);
             }
         }
