@@ -5,13 +5,17 @@ namespace Internal.Runtime.GC
 {
     internal static unsafe partial class GCWksInitialization
     {
+        private static byte* s_planFirstCondemnedAddress;
+        private static byte* s_planOriginalGeneration0Start;
+        private static generation* s_planConsingGeneration;
+
         // Translated scope:
         // - Full-gen2 workstation planning for SOH, LOH, and POH.
         // - Non-compacting sweep and free-list rebuilding.
-        // - Compaction decisions, with unsupported compaction and expansion rejected
-        //   before partially mutating the heap.
-        // Relocation, compacting collections, and segment expansion remain outside
-        // this boundary.
+        // - Compaction decisions, with unsupported expansion rejected before
+        //   partially mutating the heap.
+        // - Foreground single-segment SOH relocation and compaction wiring.
+        // UOH compaction and segment expansion remain outside this boundary.
         //
         // Translation workflow:
         // - Generate mechanical drafts with cpp_to_unsafe_csharp.py using the selected
@@ -25,10 +29,58 @@ namespace Internal.Runtime.GC
         //   ./build.sh clr.aot+libs -rc checked.
         private static int RunPlanPhaseCore(int condemnedGeneration, bool promotion)
         {
-            return PlanPhase(condemnedGeneration, promotion);
+            bool compacting = s_settings.compaction != 0;
+            int result = PlanPhase(condemnedGeneration, promotion, compacting);
+            if (result != S_OK || !compacting)
+            {
+                return result;
+            }
+
+            if (s_planFirstCondemnedAddress is null ||
+                s_planConsingGeneration is null)
+            {
+                return E_FAIL;
+            }
+
+            result = RelocatePhase(
+                condemnedGeneration,
+                s_planFirstCondemnedAddress);
+            if (result != S_OK)
+            {
+                return result;
+            }
+
+            result = CompactPhase(
+                condemnedGeneration,
+                s_planFirstCondemnedAddress,
+                clearCards: promotion && s_settings.demotion == 0);
+            if (result != S_OK)
+            {
+                return result;
+            }
+
+            result = FixGenerationBounds(
+                condemnedGeneration,
+                s_planConsingGeneration);
+            if (result != S_OK)
+            {
+                return result;
+            }
+
+            result = ThreadCompactionPinnedGaps(condemnedGeneration);
+            if (result != S_OK)
+            {
+                return result;
+            }
+
+            NotifyPostPlanCallbacks(condemnedGeneration);
+            return S_OK;
         }
 
-        private static int PlanPhase(int condemnedGeneration, bool promotion)
+        private static int PlanPhase(
+            int condemnedGeneration,
+            bool promotion,
+            bool compacting)
         {
             // This is the selected segment-GC/WKS full-gen2 non-compacting path from
             // gc_heap::plan_phase. It includes SOH plug planning, compaction decisions,
@@ -118,6 +170,10 @@ namespace Internal.Runtime.GC
             {
                 return E_FAIL;
             }
+
+            s_planFirstCondemnedAddress = firstCondemnedAddress;
+            s_planOriginalGeneration0Start = originalGeneration0Start;
+            s_planConsingGeneration = null;
 
             ResetPlanAllocation(condemnedGeneration, condemnedGenerationState);
 
@@ -211,7 +267,8 @@ namespace Internal.Runtime.GC
                         FailFastAssert(x == end);
                     }
 
-                    if (condemnedGeneration < (int)gc_generation_num.max_generation &&
+                    if (!compacting &&
+                        condemnedGeneration < (int)gc_generation_num.max_generation &&
                         plugEnd < end)
                     {
                         nuint trailingGapSize = (nuint)(end - plugEnd);
@@ -229,9 +286,11 @@ namespace Internal.Runtime.GC
 
                     FailFastAssert(segment->allocated == end);
                     SaveAllocated(segment);
-                    // The supported path is a non-relocating sweep. Keep the
-                    // scan endpoint until the gaps have been threaded.
-                    segment->allocated = end;
+                    // Relocation and subsequent card scans must not traverse
+                    // the unformatted trailing source gap.
+                    segment->allocated = compacting
+                        ? plugEnd
+                        : end;
                     currentBrick = UpdateBrickTable(
                         tree,
                         currentBrick,
@@ -645,7 +704,8 @@ namespace Internal.Runtime.GC
                     firstCondemnedAddress,
                     s_useMarkList,
                     ref markListNext,
-                    markListIndex);
+                    markListIndex,
+                    compacting);
                 if (x is null)
                 {
                     return E_FAIL;
@@ -844,14 +904,23 @@ namespace Internal.Runtime.GC
                     }
                 }
 
-                if (shouldExpand)
+                if (shouldExpand && compacting)
                 {
                     FailFast();
                     return E_NOTIMPL;
                 }
 
+                if (compacting)
+                {
+                    _ = shouldCompact;
+                    s_planConsingGeneration = consingGeneration;
+                    s_settings.promotion = promotion ? 1 : 0;
+                    s_settings.compaction = 1;
+                    return S_OK;
+                }
+
                 // Heuristic compaction remains advisory until relocation and
-                // compaction are implemented; this milestone always sweeps.
+                // compaction are implemented for non-explicit collections.
                 _ = shouldCompact;
                 s_settings.promotion = 1;
                 s_settings.compaction = 0;
@@ -2318,58 +2387,163 @@ namespace Internal.Runtime.GC
 
         private static int FixGenerationBounds(
             int condemnedGeneration,
-            generation* consingGeneration,
-            byte* originalAllocated,
-            byte* youngestAllocationStart)
+            generation* consingGeneration)
         {
-            if (condemnedGeneration >= (int)gc_generation_num.max_generation)
-            {
-                return S_OK;
-            }
-
-            if (consingGeneration is null)
+            if (consingGeneration is null ||
+                consingGeneration->allocation_segment is null)
             {
                 return E_FAIL;
             }
 
-            int generationNumber = condemnedGeneration;
-            while (generationNumber >= (int)gc_generation_num.soh_gen0)
+            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
             {
-                generation* generationState = GetGeneration(generationNumber);
-                if (generationState is null ||
-                    generationState->plan_allocation_start is null)
+                if (consingGeneration->allocation_segment != ephemeralSegment)
                 {
                     return E_FAIL;
                 }
 
-                ResetAllocationPointers(
-                    generationState,
-                    generationState->plan_allocation_start);
-                FormatUnusedArray(
-                    generationState->allocation_start,
-                    generationState->plan_allocation_start_size);
-                generationNumber--;
-            }
+                for (int generationNumber = condemnedGeneration;
+                    generationNumber >= (int)gc_generation_num.soh_gen0;
+                    generationNumber--)
+                {
+                    generation* generationState = GetGeneration(generationNumber);
+                    if (generationState is null ||
+                        generationState->plan_allocation_start is null)
+                    {
+                        return E_FAIL;
+                    }
 
-            fixed (heap_segment* ephemeralSegment = &s_sohSegment)
-            {
+                    ResetAllocationPointers(
+                        generationState,
+                        generationState->plan_allocation_start);
+
+                    nuint planStartSize =
+                        generationState->plan_allocation_start_size;
+                    if (planStartSize != 0)
+                    {
+                        if (planStartSize < MinObjectSize)
+                        {
+                            return E_NOTIMPL;
+                        }
+
+                        MethodTable* freeObjectMethodTable =
+                            GCCommon.g_gc_pFreeObjectMethodTable;
+                        if (freeObjectMethodTable is null)
+                        {
+                            return E_FAIL;
+                        }
+
+                        // A compacting plan can leave a pinned plug at this
+                        // address. Format only an unformatted or free object,
+                        // never a live plug.
+                        MethodTable* existingMethodTable =
+                            ((Object*)generationState->allocation_start)
+                                ->GetGCSafeMethodTable();
+                        if (existingMethodTable is null ||
+                            existingMethodTable == freeObjectMethodTable)
+                        {
+                            FormatUnusedArray(
+                                generationState->allocation_start,
+                                planStartSize);
+                        }
+                        else
+                        {
+                            return E_FAIL;
+                        }
+                    }
+                }
+
                 if (ephemeralSegment->plan_allocated is null)
                 {
                     return E_FAIL;
                 }
 
-                _ = originalAllocated;
-                if (youngestAllocationStart is not null)
+                ephemeralSegment->allocated = ephemeralSegment->plan_allocated;
+
+                generation* generation0 =
+                    GetGeneration((int)gc_generation_num.soh_gen0);
+                generation* generation1 =
+                    GetGeneration((int)gc_generation_num.soh_gen1);
+                if (generation0 is null || generation1 is null)
                 {
-                    generation* youngestGeneration =
-                        GetGeneration(condemnedGeneration - 1);
-                    if (youngestGeneration is null)
+                    return E_FAIL;
+                }
+
+                if (condemnedGeneration >=
+                    (int)gc_generation_num.max_generation)
+                {
+                    generation0->allocation_start =
+                        ephemeralSegment->allocated;
+                    generation1->allocation_start =
+                        ephemeralSegment->allocated;
+                }
+                else
+                {
+                    if (s_planOriginalGeneration0Start is null)
                     {
                         return E_FAIL;
                     }
 
-                    youngestGeneration->allocation_start =
-                        youngestAllocationStart;
+                    generation1->allocation_start =
+                        s_planOriginalGeneration0Start;
+                    generation0->allocation_start =
+                        condemnedGeneration ==
+                            (int)gc_generation_num.soh_gen0
+                            ? ephemeralSegment->allocated
+                            : s_planOriginalGeneration0Start;
+                }
+            }
+
+            return S_OK;
+        }
+
+        private static int ThreadCompactionPinnedGaps(int condemnedGeneration)
+        {
+            while (!PinnedPlugQueueEmpty())
+            {
+                nuint entry = DequeuePinnedPlug();
+                mark* pinnedPlugEntry = PinnedPlugOf(entry);
+                if (pinnedPlugEntry is null ||
+                    pinnedPlugEntry->first is null)
+                {
+                    return E_FAIL;
+                }
+
+                nuint length = pinnedPlugEntry->len;
+                byte* gap = pinnedPlugEntry->first - (nint)length;
+                if (length == 0)
+                {
+                    continue;
+                }
+
+                if (gap < s_sohSegment.mem ||
+                    gap >= s_sohSegment.reserved)
+                {
+                    return E_NOTIMPL;
+                }
+
+                int generationNumber = GetObjectPlanGenerationNumber(gap);
+                if (generationNumber < 0 ||
+                    generationNumber > (int)gc_generation_num.max_generation)
+                {
+                    return E_FAIL;
+                }
+
+                if (generationNumber < condemnedGeneration)
+                {
+                    generationNumber = condemnedGeneration;
+                }
+
+                generation* generationState = GetGeneration(generationNumber);
+                if (generationState is null)
+                {
+                    return E_FAIL;
+                }
+
+                int result = ThreadGap(gap, length, generationState);
+                if (result != S_OK)
+                {
+                    return result;
                 }
             }
 
@@ -3572,7 +3746,7 @@ namespace Internal.Runtime.GC
                     }
 
                     int brickEntry = s_brickTable[currentBrick];
-                    if (brickEntry >= 0)
+                    if (brickEntry > 0)
                     {
                         int result = MakeFreeListInBrick(
                             BrickAddress(currentBrick) + brickEntry - 1,
@@ -4114,7 +4288,8 @@ namespace Internal.Runtime.GC
             byte* firstObject,
             bool useMarkList,
             ref Object** markListNext,
-            Object** markListIndex)
+            Object** markListIndex,
+            bool compacting)
         {
             if (useMarkList)
             {
@@ -4150,7 +4325,12 @@ namespace Internal.Runtime.GC
                         firstObject);
                     if (nextObject is null)
                     {
-                        return end;
+                        return compacting ? null : end;
+                    }
+
+                    if (nextObject <= next)
+                    {
+                        return null;
                     }
 
                     next = nextObject;
@@ -4200,25 +4380,27 @@ namespace Internal.Runtime.GC
                 nint previousBrick = (nint)currentBrick - 1;
                 nint minimumBrick = (nint)firstBrick;
                 int brickEntry = -1;
+                bool foundPreviousBrick = false;
                 while (previousBrick >= minimumBrick)
                 {
                     brickEntry = s_brickTable is null
                         ? -1
                         : s_brickTable[(nuint)previousBrick];
-                    if (brickEntry >= 0)
+                    if (brickEntry > 0)
                     {
+                        foundPreviousBrick = true;
                         break;
                     }
 
                     if (brickEntry == 0)
                     {
-                        return null;
+                        break;
                     }
 
                     previousBrick += brickEntry;
                 }
 
-                if (previousBrick >= minimumBrick)
+                if (foundPreviousBrick)
                 {
                     current =
                         BrickAddress((nuint)previousBrick) +
@@ -4227,11 +4409,25 @@ namespace Internal.Runtime.GC
                 }
             }
 
+            nuint maxObjects = current < start
+                ? (nuint)(start - current) / MinObjectSize + 1
+                : 0;
             while (current < start)
             {
+                if (maxObjects-- == 0)
+                {
+                    return null;
+                }
+
                 if (((Object*)current)->GetGCSafeMethodTable() is null)
                 {
-                    return FindObjectFromFollowingBrick(start, end);
+                    byte* followingObject =
+                        FindObjectFromFollowingBrick(start, end);
+                    return followingObject is not null
+                        ? followingObject
+                        : GetBrickIndex(start) == GetBrickIndex(end - 1)
+                            ? end
+                            : null;
                 }
 
                 if (!TryGetAlignedObjectInfo(
@@ -4244,7 +4440,30 @@ namespace Internal.Runtime.GC
                     return FindObjectFromFollowingBrick(start, end);
                 }
 
+                if (nextObject <= current)
+                {
+                    byte* followingObject =
+                        FindObjectFromFollowingBrick(start, end);
+                    return followingObject is not null
+                        ? followingObject
+                        : GetBrickIndex(start) == GetBrickIndex(end - 1)
+                            ? end
+                            : null;
+                }
+
                 current = nextObject;
+            }
+
+            if (current == start &&
+                ((Object*)current)->GetGCSafeMethodTable() is null)
+            {
+                byte* followingObject =
+                    FindObjectFromFollowingBrick(start, end);
+                return followingObject is not null
+                    ? followingObject
+                    : GetBrickIndex(start) == GetBrickIndex(end - 1)
+                        ? end
+                        : null;
             }
 
             return current;
@@ -4265,7 +4484,7 @@ namespace Internal.Runtime.GC
             while (currentBrick <= endBrick)
             {
                 int brickEntry = s_brickTable[currentBrick];
-                if (brickEntry >= 0)
+                if (brickEntry > 0)
                 {
                     byte* candidate =
                         BrickAddress(currentBrick) + brickEntry - 1;

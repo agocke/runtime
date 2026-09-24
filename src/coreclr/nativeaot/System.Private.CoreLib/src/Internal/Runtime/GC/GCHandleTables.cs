@@ -505,6 +505,23 @@ namespace Internal.Runtime.GC
             ScanHandleType(HandleType.HNDTYPE_SIZEDREF, callback, scanContext, 0);
         }
 
+        public static void ScanForRelocation(
+            delegate*<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext)
+        {
+            ScanHandleType(HandleType.HNDTYPE_PINNED, callback, scanContext, (uint)GCInterfaceConstants.GC_CALL_PINNED);
+            ScanHandleType(HandleType.HNDTYPE_STRONG, callback, scanContext, 0);
+            ScanHandleType(HandleType.HNDTYPE_WEAK_SHORT, callback, scanContext, 0);
+            ScanHandleType(HandleType.HNDTYPE_WEAK_LONG, callback, scanContext, 0);
+            ScanHandleType(HandleType.HNDTYPE_REFCOUNTED, callback, scanContext, 0);
+            ScanHandleType(HandleType.HNDTYPE_WEAK_INTERIOR_POINTER, callback, scanContext, (uint)GCInterfaceConstants.GC_CALL_INTERIOR);
+            ScanVariableHandles(callback, scanContext, VHT_PINNED, (uint)GCInterfaceConstants.GC_CALL_PINNED);
+            ScanVariableHandles(callback, scanContext, VHT_STRONG, 0);
+            ScanVariableHandles(callback, scanContext, VHT_WEAK_SHORT, 0);
+            ScanVariableHandles(callback, scanContext, VHT_WEAK_LONG, 0);
+            ScanDependentHandlesForRelocation(callback, scanContext);
+        }
+
         public static void ClearUnpromotedHandles(HandleType type)
         {
             ClearUnpromotedHandleType(type);
@@ -1418,6 +1435,79 @@ namespace Internal.Runtime.GC
             }
 
             return promoted;
+        }
+
+        private static void ScanDependentHandlesForRelocation(
+            delegate*<Object**, ScanContext*, uint, void> callback,
+            ScanContext* scanContext)
+        {
+            fixed (HandleTableMap* mapStorage = &s_handleTableMap)
+            {
+                HandleTableMap* map = mapStorage;
+                while (map is not null)
+                {
+                    for (uint bucketIndex = 0; bucketIndex < InitialHandleTableArraySize; bucketIndex++)
+                    {
+                        HandleTableBucket* bucket = map->Buckets[bucketIndex];
+                        if (bucket is null || bucket->Tables is null)
+                        {
+                            continue;
+                        }
+
+                        for (uint tableIndex = 0; tableIndex < HandleTableCount; tableIndex++)
+                        {
+                            HandleTable* table = bucket->Tables[tableIndex];
+                            if (table is null)
+                            {
+                                continue;
+                            }
+
+                            for (HandleTableSegment* segment = table->SegmentList;
+                                segment is not null;
+                                segment = segment->NextSegment)
+                            {
+                                for (int block = 0; block < HandleBlocksPerSegment; block++)
+                                {
+                                    if (segment->BlockType[block] != (byte)HandleType.HNDTYPE_DEPENDENT)
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!EnsureBlockCommitted(segment, block))
+                                    {
+                                        FailFast();
+                                        return;
+                                    }
+
+                                    uint lowerMask = segment->FreeMask[block * 2];
+                                    uint upperMask = segment->FreeMask[(block * 2) + 1];
+                                    for (int slot = 0; slot < HandleHandlesPerBlock; slot++)
+                                    {
+                                        bool free = slot < 32
+                                            ? (lowerMask & (1u << slot)) != 0
+                                            : (upperMask & (1u << (slot - 32))) != 0;
+                                        if (free)
+                                        {
+                                            continue;
+                                        }
+
+                                        OBJECTHANDLE__* handle = SlotAddress(segment, block, slot);
+                                        callback((Object**)handle, scanContext, 0);
+                                        void** secondarySlot =
+                                            FetchExtraInfoSlot(handle, HandleType.HNDTYPE_DEPENDENT);
+                                        if (secondarySlot is not null)
+                                        {
+                                            callback((Object**)secondarySlot, scanContext, 0);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    map = map->Next;
+                }
+            }
         }
 
         private static OBJECTHANDLE__* CreateHandle(GCHandleStore* store, Object* value, HandleType type, void* extraInfo)
