@@ -15,6 +15,12 @@
 #include "gchandletableimpl.h"
 #include "gceventstatus.h"
 
+#ifdef FEATURE_NATIVEAOT
+extern "C" void F_CALL_CONV RhpGCHeapSetSuspensionPending(
+    volatile int32_t* suspension_pending_count,
+    uint32_t suspension_pending);
+#endif // FEATURE_NATIVEAOT
+
 #ifdef __INTELLISENSE__
 #if defined(FEATURE_SVR_GC)
 
@@ -513,6 +519,9 @@ bool GCHeap::RuntimeStructuresValid()
 
 void GCHeap::SetSuspensionPending(bool fSuspensionPending)
 {
+#ifdef FEATURE_NATIVEAOT
+    RhpGCHeapSetSuspensionPending(&g_fSuspensionPending, fSuspensionPending ? 1 : 0);
+#else
     if (fSuspensionPending)
     {
         Interlocked::Increment(&g_fSuspensionPending);
@@ -521,6 +530,7 @@ void GCHeap::SetSuspensionPending(bool fSuspensionPending)
     {
         Interlocked::Decrement(&g_fSuspensionPending);
     }
+#endif // FEATURE_NATIVEAOT
 }
 
 void GCHeap::ControlEvents(GCEventKeyword keyword, GCEventLevel level)

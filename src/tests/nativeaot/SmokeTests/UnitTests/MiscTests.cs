@@ -9,6 +9,7 @@ class MiscTests
 {
     internal static int Run()
     {
+        GC.Collect();
         TestMemoryFailPoint();
         TestSurrogateStringLiterals.Run();
         return 100;

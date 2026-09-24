@@ -38,6 +38,30 @@ namespace System.Threading
 #endif
         }
 
+        public static int Increment(ref int location)
+        {
+            int oldValue;
+
+            do
+            {
+                oldValue = location;
+            } while (CompareExchange(ref location, oldValue + 1, oldValue) != oldValue);
+
+            return oldValue + 1;
+        }
+
+        public static int Decrement(ref int location)
+        {
+            int oldValue;
+
+            do
+            {
+                oldValue = location;
+            } while (CompareExchange(ref location, oldValue - 1, oldValue) != oldValue);
+
+            return oldValue - 1;
+        }
+
         [Intrinsic]
         public static void MemoryBarrier() => MemoryBarrier();
     }
