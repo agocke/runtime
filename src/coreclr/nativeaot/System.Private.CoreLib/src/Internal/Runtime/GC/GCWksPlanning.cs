@@ -6,7 +6,6 @@ namespace Internal.Runtime.GC
     internal static unsafe partial class GCWksInitialization
     {
         private static byte* s_planFirstCondemnedAddress;
-        private static byte* s_planOriginalGeneration0Start;
         private static generation* s_planConsingGeneration;
 
         // Translated scope:
@@ -106,8 +105,7 @@ namespace Internal.Runtime.GC
                 return E_FAIL;
             }
 
-            byte* originalGeneration0Start = generation0->allocation_start;
-            if (originalGeneration0Start is null)
+            if (generation0->allocation_start is null)
             {
                 return E_FAIL;
             }
@@ -172,7 +170,6 @@ namespace Internal.Runtime.GC
             }
 
             s_planFirstCondemnedAddress = firstCondemnedAddress;
-            s_planOriginalGeneration0Start = originalGeneration0Start;
             s_planConsingGeneration = null;
 
             ResetPlanAllocation(condemnedGeneration, condemnedGenerationState);
@@ -193,6 +190,16 @@ namespace Internal.Runtime.GC
             bool allocateFirstGenerationStart = allocateInCondemned;
             bool decidePromoteGen1Pins = false;
             s_decidePromoteGen1Pins = decidePromoteGen1Pins;
+            alloc_list savedOlderFreeList = default;
+            nuint savedOlderFreeListSpace = 0;
+            nuint savedOlderFreeObjectSpace = 0;
+            nuint savedOlderFreeListAllocated = 0;
+            nuint savedOlderEndSegmentAllocated = 0;
+            nuint savedOlderCondemnedAllocated = 0;
+            byte* savedOlderAllocationPointer = null;
+            byte* savedOlderAllocationLimit = null;
+            byte* savedOlderAllocationStartRegion = null;
+            heap_segment* savedOlderAllocationSegment = null;
 
             heap_segment* segment = condemnedSegment;
             byte* end = segment->allocated;
@@ -208,7 +215,6 @@ namespace Internal.Runtime.GC
             nuint currentBrick = GetBrickIndex(x);
             nuint lastPlugLength = 0;
             byte* lastGen1PinEnd = null;
-            byte* firstPlannedPlug = null;
 
             if (condemnedGenerationNumber < (int)gc_generation_num.max_generation)
             {
@@ -218,11 +224,38 @@ namespace Internal.Runtime.GC
                     return E_FAIL;
                 }
 
+                // Only the head is unlinked from the single-bucket list during planning.
+                if (olderGeneration->free_list_allocator.num_buckets != 1)
+                {
+                    return E_NOTIMPL;
+                }
+
+                savedOlderFreeList =
+                    olderGeneration->free_list_allocator.first_bucket;
+                savedOlderFreeListSpace = olderGeneration->free_list_space;
+                savedOlderFreeObjectSpace = olderGeneration->free_obj_space;
+                savedOlderFreeListAllocated =
+                    olderGeneration->free_list_allocated;
+                savedOlderEndSegmentAllocated =
+                    olderGeneration->end_seg_allocated;
+                savedOlderCondemnedAllocated =
+                    olderGeneration->condemned_allocated;
+                savedOlderAllocationPointer =
+                    olderGeneration->allocation_context.alloc_ptr;
+                savedOlderAllocationLimit =
+                    olderGeneration->allocation_context.alloc_limit;
+                savedOlderAllocationStartRegion =
+                    olderGeneration->allocation_context_start_region;
+                savedOlderAllocationSegment =
+                    olderGeneration->allocation_segment;
+
                 if (olderGeneration->gen_num == (int)gc_generation_num.max_generation)
                 {
                     olderGeneration->set_bgc_mark_bit_p = 0;
                     olderGeneration->last_free_list_allocated = null;
                 }
+
+                olderGeneration->allocate_end_seg_p = 0;
             }
 
             while (condemnedGenerationNumber >= bottomGeneration)
@@ -255,8 +288,6 @@ namespace Internal.Runtime.GC
                 currentGeneration->allocation_context_start_region = allocationPointer;
                 condemnedGenerationNumber--;
             }
-
-            _ = olderGeneration;
 
             while (true)
             {
@@ -321,10 +352,6 @@ namespace Internal.Runtime.GC
                 while (x < end && ((Object*)x)->IsMarked())
                 {
                     byte* plugStart = x;
-                    if (firstPlannedPlug is null)
-                    {
-                        firstPlannedPlug = plugStart;
-                    }
                     byte* savedPlugEnd = plugEnd;
                     bool pinnedPlug = false;
                     bool nonPinnedBeforePinned = false;
@@ -924,124 +951,43 @@ namespace Internal.Runtime.GC
                 _ = shouldCompact;
                 s_settings.promotion = 1;
                 s_settings.compaction = 0;
-                s_settings.demotion = 0;
+
+                if (olderGeneration is not null)
+                {
+                    olderGeneration->free_list_allocator.first_bucket =
+                        savedOlderFreeList;
+                    olderGeneration->free_list_space =
+                        savedOlderFreeListSpace;
+                    olderGeneration->free_obj_space =
+                        savedOlderFreeObjectSpace;
+                    olderGeneration->free_list_allocated =
+                        savedOlderFreeListAllocated;
+                    olderGeneration->end_seg_allocated =
+                        savedOlderEndSegmentAllocated;
+                    olderGeneration->condemned_allocated =
+                        savedOlderCondemnedAllocated;
+                    olderGeneration->sweep_allocated +=
+                        GetDynamicData(condemnedGeneration)->survived_size;
+                    olderGeneration->allocation_context.alloc_ptr =
+                        savedOlderAllocationPointer;
+                    olderGeneration->allocation_context.alloc_limit =
+                        savedOlderAllocationLimit;
+                    olderGeneration->allocation_context_start_region =
+                        savedOlderAllocationStartRegion;
+                    olderGeneration->allocation_segment =
+                        savedOlderAllocationSegment;
+
+                    int olderAreaResult = FixOlderAllocationArea(olderGeneration);
+                    if (olderAreaResult != S_OK)
+                    {
+                        return olderAreaResult;
+                    }
+                }
 
                 int freeListResult = MakeFreeLists(condemnedGeneration);
                 if (freeListResult != S_OK)
                 {
                     return freeListResult;
-                }
-
-                if (condemnedGeneration <
-                    (int)gc_generation_num.max_generation &&
-                    firstPlannedPlug is not null &&
-                    firstPlannedPlug >= originalGeneration0Start)
-                {
-                    nuint minimumObjectSize =
-                        GCEnvironment.AlignUp(
-                            MinObjectSize,
-                            (nuint)sizeof(void*));
-                    byte* leadingGapStart;
-                    nuint leadingGapSize;
-                    if (firstPlannedPlug == originalGeneration0Start)
-                    {
-                        leadingGapStart = firstPlannedPlug -
-                            (nint)minimumObjectSize;
-                        leadingGapSize = minimumObjectSize;
-                    }
-                    else
-                    {
-                        leadingGapStart = originalGeneration0Start;
-                        leadingGapSize =
-                            (nuint)(firstPlannedPlug - originalGeneration0Start);
-                    }
-
-                    if (leadingGapSize >= minimumObjectSize &&
-                        *(nuint*)leadingGapStart == 0)
-                    {
-                        generation* leadingGapGeneration =
-                            GetGeneration(condemnedGeneration + 1);
-                        if (leadingGapGeneration is null)
-                        {
-                            return E_FAIL;
-                        }
-
-                        int leadingGapResult = ThreadGap(
-                            leadingGapStart,
-                            leadingGapSize,
-                            leadingGapGeneration);
-                        if (leadingGapResult != S_OK)
-                        {
-                            return leadingGapResult;
-                        }
-                    }
-                }
-
-                fixed (heap_segment* publishedSegment = &s_sohSegment)
-                {
-                    if (publishedSegment->plan_allocated is null ||
-                        publishedSegment->plan_allocated >
-                            publishedSegment->committed)
-                    {
-                        return E_FAIL;
-                    }
-
-                    if (condemnedGeneration <
-                        (int)gc_generation_num.max_generation)
-                    {
-                        for (int generationNumber = condemnedGeneration;
-                            generationNumber >=
-                                (int)gc_generation_num.soh_gen0;
-                            generationNumber--)
-                        {
-                            generation* generationState =
-                                GetGeneration(generationNumber);
-                            if (generationState is null ||
-                                generationState->plan_allocation_start is null)
-                            {
-                                return E_FAIL;
-                            }
-
-                            ResetAllocationPointers(
-                                generationState,
-                                generationState->plan_allocation_start);
-                            if (((Object*)generationState->plan_allocation_start)
-                                    ->GetGCSafeMethodTable() ==
-                                GCCommon.g_gc_pFreeObjectMethodTable)
-                            {
-                                FormatUnusedArray(
-                                    generationState->plan_allocation_start,
-                                    generationState->plan_allocation_start_size);
-                            }
-                        }
-                    }
-
-                    publishedSegment->plan_allocated =
-                        publishedSegment->allocated;
-                    publishedSegment->used = publishedSegment->allocated;
-
-                    if (condemnedGeneration ==
-                            (int)gc_generation_num.max_generation)
-                    {
-                        // MakeFreeLists has already reset the generation starts
-                        // through the native allocate_at_end path.
-                    }
-                    else if (condemnedGeneration ==
-                        (int)gc_generation_num.soh_gen0)
-                    {
-                        generation1->allocation_start =
-                            originalGeneration0Start;
-                        generation0->allocation_start =
-                            publishedSegment->allocated;
-                    }
-                    else if (condemnedGeneration ==
-                        (int)gc_generation_num.soh_gen1)
-                    {
-                        generation1->allocation_start =
-                            originalGeneration0Start;
-                        generation0->allocation_start =
-                            originalGeneration0Start;
-                    }
                 }
 
                 nuint recoveredSweepSize = RecoverSavedPinnedInfo();
@@ -1054,27 +1000,6 @@ namespace Internal.Runtime.GC
                 }
 
                 maxGeneration->free_obj_space -= recoveredSweepSize;
-            }
-
-            if (condemnedGeneration <
-                (int)gc_generation_num.max_generation &&
-                firstPlannedPlug is not null &&
-                firstPlannedPlug >= originalGeneration0Start)
-            {
-                nuint minimumObjectSize =
-                    GCEnvironment.AlignUp(
-                        MinObjectSize,
-                        (nuint)sizeof(void*));
-                byte* leadingGapStart = firstPlannedPlug ==
-                    originalGeneration0Start
-                    ? firstPlannedPlug - (nint)minimumObjectSize
-                    : originalGeneration0Start;
-                if (*(nuint*)leadingGapStart == 0)
-                {
-                    FormatUnusedArray(
-                        leadingGapStart,
-                        minimumObjectSize);
-                }
             }
 
             NotifyPostPlanCallbacks(condemnedGeneration);
@@ -2426,30 +2351,9 @@ namespace Internal.Runtime.GC
                             return E_NOTIMPL;
                         }
 
-                        MethodTable* freeObjectMethodTable =
-                            GCCommon.g_gc_pFreeObjectMethodTable;
-                        if (freeObjectMethodTable is null)
-                        {
-                            return E_FAIL;
-                        }
-
-                        // A compacting plan can leave a pinned plug at this
-                        // address. Format only an unformatted or free object,
-                        // never a live plug.
-                        MethodTable* existingMethodTable =
-                            ((Object*)generationState->allocation_start)
-                                ->GetGCSafeMethodTable();
-                        if (existingMethodTable is null ||
-                            existingMethodTable == freeObjectMethodTable)
-                        {
-                            FormatUnusedArray(
-                                generationState->allocation_start,
-                                planStartSize);
-                        }
-                        else
-                        {
-                            return E_FAIL;
-                        }
+                        FormatUnusedArray(
+                            generationState->allocation_start,
+                            planStartSize);
                     }
                 }
 
@@ -2459,39 +2363,6 @@ namespace Internal.Runtime.GC
                 }
 
                 ephemeralSegment->allocated = ephemeralSegment->plan_allocated;
-
-                generation* generation0 =
-                    GetGeneration((int)gc_generation_num.soh_gen0);
-                generation* generation1 =
-                    GetGeneration((int)gc_generation_num.soh_gen1);
-                if (generation0 is null || generation1 is null)
-                {
-                    return E_FAIL;
-                }
-
-                if (condemnedGeneration >=
-                    (int)gc_generation_num.max_generation)
-                {
-                    generation0->allocation_start =
-                        ephemeralSegment->allocated;
-                    generation1->allocation_start =
-                        ephemeralSegment->allocated;
-                }
-                else
-                {
-                    if (s_planOriginalGeneration0Start is null)
-                    {
-                        return E_FAIL;
-                    }
-
-                    generation1->allocation_start =
-                        s_planOriginalGeneration0Start;
-                    generation0->allocation_start =
-                        condemnedGeneration ==
-                            (int)gc_generation_num.soh_gen0
-                            ? ephemeralSegment->allocated
-                            : s_planOriginalGeneration0Start;
-                }
             }
 
             return S_OK;
@@ -3166,7 +3037,6 @@ namespace Internal.Runtime.GC
             objectSize = GetPlanningObjectSize((Object*)objectAddress);
             nuint alignmentMask = (nuint)sizeof(void*) - 1;
             if (objectSize < MinObjectSize ||
-                objectSize > s_lohThreshold ||
                 objectSize > nuint.MaxValue - alignmentMask)
             {
                 return false;
@@ -4069,6 +3939,71 @@ namespace Internal.Runtime.GC
             return S_OK;
         }
 
+        private static int FixOlderAllocationArea(generation* olderGeneration)
+        {
+            heap_segment* segment = olderGeneration->allocation_segment;
+            if (segment is null)
+            {
+                return E_FAIL;
+            }
+
+            byte* pointer = olderGeneration->allocation_context.alloc_ptr;
+            byte* limit = olderGeneration->allocation_context.alloc_limit;
+            if (pointer is null && limit is null)
+            {
+                return S_OK;
+            }
+
+            if (pointer is null || limit is null || limit < pointer)
+            {
+                return E_FAIL;
+            }
+
+            if (limit != segment->plan_allocated)
+            {
+                nuint size = (nuint)(limit - pointer);
+                if (size != 0)
+                {
+                    nuint minimumObjectSize =
+                        GCEnvironment.AlignUp(MinObjectSize, (nuint)sizeof(void*));
+                    if (size < minimumObjectSize ||
+                        size > uint.MaxValue + MinObjectSize)
+                    {
+                        return E_FAIL;
+                    }
+
+                    FormatUnusedArray(pointer, size);
+                    if (size >= 2 * minimumObjectSize)
+                    {
+                        ThreadFreeListItemFront(
+                            &olderGeneration->free_list_allocator,
+                            0,
+                            pointer,
+                            size);
+                        olderGeneration->free_list_space += size;
+                    }
+                    else
+                    {
+                        olderGeneration->free_obj_space += size;
+                    }
+                }
+            }
+            else
+            {
+                fixed (heap_segment* ephemeralSegment = &s_sohSegment)
+                {
+                    FailFastAssert(segment != ephemeralSegment);
+                }
+
+                segment->plan_allocated = pointer;
+                olderGeneration->allocation_context.alloc_limit = pointer;
+            }
+
+            olderGeneration->allocation_context.alloc_ptr = null;
+            olderGeneration->allocation_context.alloc_limit = null;
+            return S_OK;
+        }
+
         private static void ThreadFreeItem(
             allocator* allocatorState,
             byte* item)
@@ -4532,7 +4467,7 @@ namespace Internal.Runtime.GC
 
         private static void SiftDownMarkList(Object** markList, nuint root, nuint length)
         {
-            while (root <= (length - 2) / 2)
+            while (length >= 2 && root <= (length - 2) / 2)
             {
                 nuint child = root * 2 + 1;
                 if (child + 1 < length &&

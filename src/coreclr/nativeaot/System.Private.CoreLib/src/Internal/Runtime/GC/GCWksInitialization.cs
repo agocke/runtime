@@ -372,9 +372,7 @@ namespace Internal.Runtime.GC
             }
 
             collection_mode collectionMode = (collection_mode)mode;
-            if ((collectionMode &
-                (collection_mode.collection_compacting |
-                 collection_mode.collection_aggressive)) != 0 ||
+            if ((collectionMode & collection_mode.collection_aggressive) != 0 ||
                 GCConfig.GetForceCompact() ||
                 GCConfig.GetLOHCompactionMode() ==
                     (long)gc_loh_compaction_mode.loh_compaction_once)
@@ -407,7 +405,9 @@ namespace Internal.Runtime.GC
             s_settings.gc_index++;
             s_settings.condemned_generation = generation;
             s_settings.promotion = 1;
-            s_settings.compaction = 0;
+            s_settings.compaction =
+                (collectionMode & collection_mode.collection_compacting) != 0
+                    ? 1 : 0;
             s_settings.demotion = 0;
             s_settings.reason = lowMemory
                 ? gc_reason.reason_lowmemory_blocking

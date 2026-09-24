@@ -18,6 +18,7 @@ internal static class CSharpGC
     private static byte[] s_sohSurvivor;
     private static byte[] s_lohSurvivor;
     private static byte[] s_pohSurvivor;
+    private static object[] s_lohReferences;
     private static EphemeralHolder s_oldHolder;
 
     public static int Main()
@@ -28,6 +29,11 @@ internal static class CSharpGC
         }
 
         if (!ValidateEphemeralCollections())
+        {
+            return Fail;
+        }
+
+        if (!ValidateCompactingCollections())
         {
             return Fail;
         }
@@ -265,6 +271,85 @@ internal static class CSharpGC
         }
 
         return true;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool ValidateCompactingCollections()
+    {
+        byte[] pinned = new byte[SohObjectSize];
+        pinned[0] = 37;
+        GCHandle pinnedHandle = GCHandle.Alloc(pinned, GCHandleType.Pinned);
+        nint pinnedAddress = pinnedHandle.AddrOfPinnedObject();
+        byte[] loh = new byte[LohObjectSize];
+        byte[] poh = GC.AllocateArray<byte>(PohObjectSize, pinned: true);
+        s_lohReferences = new object[12_000];
+        loh[0] = 41;
+        poh[0] = 43;
+        s_lohSurvivor = loh;
+        s_pohSurvivor = poh;
+
+        try
+        {
+            bool moved = false;
+            for (int collection = 0; collection < 12; collection++)
+            {
+                int generation = collection % 3;
+                WeakReference dead = AllocateWeakEphemeralObject();
+                byte[] survivor = new byte[SohObjectSize];
+                survivor[0] = 31;
+                s_oldHolder.Value = survivor;
+                s_lohReferences[0] = survivor;
+                nint oldAddress = GetAddress(survivor);
+                using DependentHandle dependent = new DependentHandle(
+                    survivor,
+                    new byte[] { 47 });
+
+                GC.Collect(
+                    generation,
+                    GCCollectionMode.Forced,
+                    blocking: true,
+                    compacting: true);
+
+                if (dead.IsAlive ||
+                    !ReferenceEquals(s_oldHolder.Value, survivor) ||
+                    !ReferenceEquals(s_lohReferences[0], survivor) ||
+                    survivor[0] != 31 ||
+                    !ReferenceEquals(pinnedHandle.Target, pinned) ||
+                    pinnedHandle.AddrOfPinnedObject() != pinnedAddress ||
+                    pinned[0] != 37 ||
+                    !ReferenceEquals(dependent.Target, survivor) ||
+                    dependent.Dependent is not byte[] dependentBytes ||
+                    dependentBytes[0] != 47 ||
+                    loh[0] != 41 ||
+                    poh[0] != 43)
+                {
+                    return false;
+                }
+
+                moved |= GetAddress(survivor) != oldAddress;
+
+                GC.Collect(
+                    generation,
+                    GCCollectionMode.Forced,
+                    blocking: true,
+                    compacting: false);
+
+                if (!ReferenceEquals(s_lohReferences[0], survivor) ||
+                    survivor[0] != 31 ||
+                    pinned[0] != 37 ||
+                    loh[0] != 41 ||
+                    poh[0] != 43)
+                {
+                    return false;
+                }
+            }
+
+            return moved;
+        }
+        finally
+        {
+            pinnedHandle.Free();
+        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

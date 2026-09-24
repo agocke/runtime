@@ -1197,11 +1197,6 @@ namespace Internal.Runtime.GC
             }
 
             byte* scanEnd = end;
-            if (segment->plan_allocated is not null &&
-                segment->plan_allocated < scanEnd)
-            {
-                scanEnd = segment->plan_allocated;
-            }
 
             if (begin >= scanEnd)
             {
