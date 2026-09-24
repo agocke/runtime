@@ -2,14 +2,21 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Runtime;
 using System.Runtime.CompilerServices;
 
 class MiscTests
 {
     internal static int Run()
     {
+        TestMemoryFailPoint();
         TestSurrogateStringLiterals.Run();
         return 100;
+    }
+
+    private static void TestMemoryFailPoint()
+    {
+        using MemoryFailPoint memoryFailPoint = new(1);
     }
 
     class TestSurrogateStringLiterals

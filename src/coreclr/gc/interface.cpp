@@ -3,6 +3,13 @@
 
 #include "gcinternal.h"
 
+#ifdef FEATURE_NATIVEAOT
+extern "C" size_t F_CALL_CONV RhpGCHeapGetValidSegmentSize(
+    uint32_t large_segment,
+    size_t large_segment_size,
+    size_t small_segment_size);
+#endif // FEATURE_NATIVEAOT
+
 #ifdef SERVER_GC
 namespace SVR
 {
@@ -2476,11 +2483,18 @@ void GCHeap::PublishObject (uint8_t* Obj)
 size_t GCHeap::GetValidSegmentSize(bool large_seg)
 {
 #ifdef USE_REGIONS
-    return (large_seg ? global_region_allocator.get_large_region_alignment() :
-                        global_region_allocator.get_region_alignment());
+    size_t large_segment_size = global_region_allocator.get_large_region_alignment();
+    size_t small_segment_size = global_region_allocator.get_region_alignment();
 #else
-    return (large_seg ? gc_heap::min_uoh_segment_size : gc_heap::soh_segment_size);
+    size_t large_segment_size = gc_heap::min_uoh_segment_size;
+    size_t small_segment_size = gc_heap::soh_segment_size;
 #endif //USE_REGIONS
+
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapGetValidSegmentSize(large_seg ? 1 : 0, large_segment_size, small_segment_size);
+#else
+    return large_seg ? large_segment_size : small_segment_size;
+#endif // FEATURE_NATIVEAOT
 }
 
 void GCHeap::SetReservedVMLimit (size_t vmlimit)
