@@ -3,6 +3,18 @@
 
 #include "gcinternal.h"
 
+#ifdef FEATURE_NATIVEAOT
+extern "C" void F_CALL_CONV RhpGCHeapInitializeYieldProcessorSpinPolicy(
+    uint32_t* yp_spin_count_unit,
+    uint32_t* original_spin_count_unit,
+    bool* spin_count_unit_config_p,
+    uint32_t initial_spin_count_unit,
+    int64_t spin_count_unit_from_config,
+    int32_t dynamic_adaptation_mode,
+    int32_t dynamic_adaptation_to_application_sizes,
+    uint32_t dynamic_adaptation_enabled);
+#endif // FEATURE_NATIVEAOT
+
 #ifdef SERVER_GC
 namespace SVR {
 #else // SERVER_GC
@@ -1022,11 +1034,41 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
     if (!create_thread_support (number_of_heaps))
         return E_OUTOFMEMORY;
 
+#ifdef FEATURE_NATIVEAOT
+    uint32_t initial_spin_count_unit = 32 * number_of_heaps;
+#else
     yp_spin_count_unit = 32 * number_of_heaps;
+#endif // FEATURE_NATIVEAOT
+#else
+#ifdef FEATURE_NATIVEAOT
+    uint32_t initial_spin_count_unit = 32 * g_num_processors;
 #else
     yp_spin_count_unit = 32 * g_num_processors;
+#endif // FEATURE_NATIVEAOT
 #endif //MULTIPLE_HEAPS
 
+#ifdef FEATURE_NATIVEAOT
+    int64_t spin_count_unit_from_config = GCConfig::GetGCSpinCountUnit();
+    RhpGCHeapInitializeYieldProcessorSpinPolicy(
+        &yp_spin_count_unit,
+        &original_spin_count_unit,
+        &gc_heap::spin_count_unit_config_p,
+        initial_spin_count_unit,
+        spin_count_unit_from_config,
+#ifdef DYNAMIC_HEAP_COUNT
+        gc_heap::dynamic_adaptation_mode,
+        dynamic_adaptation_to_application_sizes,
+#else
+        0,
+        0,
+#endif // DYNAMIC_HEAP_COUNT
+#if (defined(MULTIPLE_HEAPS) && defined(DYNAMIC_HEAP_COUNT))
+        1
+#else
+        0
+#endif // MULTIPLE_HEAPS && DYNAMIC_HEAP_COUNT
+    );
+#else
     // Check if the values are valid for the spin count if provided by the user
     // and if they are, set them as the yp_spin_count_unit and then ignore any updates made in SetYieldProcessorScalingFactor.
     int64_t spin_count_unit_from_config = GCConfig::GetGCSpinCountUnit();
@@ -1044,6 +1086,7 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
         yp_spin_count_unit = 10;
     }
 #endif // MULTIPLE_HEAPS && DYNAMIC_HEAP_COUNT
+#endif // FEATURE_NATIVEAOT
 
 #if defined(__linux__)
     GCToEEInterface::UpdateGCEventStatus(static_cast<int>(GCEventStatus::GetEnabledLevel(GCEventProvider_Default)),

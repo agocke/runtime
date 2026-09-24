@@ -8,6 +8,12 @@ extern "C" size_t F_CALL_CONV RhpGCHeapGetValidSegmentSize(
     uint32_t large_segment,
     size_t large_segment_size,
     size_t small_segment_size);
+
+extern "C" void F_CALL_CONV RhpGCHeapSetYieldProcessorScalingFactor(
+    uint32_t* yp_spin_count_unit,
+    uint32_t* original_spin_count_unit,
+    bool* spin_count_unit_config_p,
+    float scaling_factor);
 #endif // FEATURE_NATIVEAOT
 
 #ifdef SERVER_GC
@@ -884,6 +890,13 @@ size_t GCHeap::GetPromotedBytes(int heap_index)
 
 void GCHeap::SetYieldProcessorScalingFactor (float scalingFactor)
 {
+#ifdef FEATURE_NATIVEAOT
+    RhpGCHeapSetYieldProcessorScalingFactor(
+        &yp_spin_count_unit,
+        &original_spin_count_unit,
+        &gc_heap::spin_count_unit_config_p,
+        scalingFactor);
+#else
     if (!gc_heap::spin_count_unit_config_p)
     {
         assert (yp_spin_count_unit != 0);
@@ -896,6 +909,7 @@ void GCHeap::SetYieldProcessorScalingFactor (float scalingFactor)
             yp_spin_count_unit = saved_yp_spin_count_unit;
         }
     }
+#endif // FEATURE_NATIVEAOT
 }
 
 unsigned int GCHeap::WhichGeneration (Object* object)
