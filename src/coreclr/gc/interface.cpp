@@ -24,6 +24,58 @@ namespace WKS
 {
 #endif // SERVER_GC
 
+#ifdef FEATURE_NATIVEAOT
+extern "C" void F_CALL_CONV RhpGCHeapGetMemoryInfo(
+    uint64_t* high_mem_load_threshold_bytes,
+    uint64_t* total_available_memory_bytes,
+    uint64_t* last_recorded_mem_load_bytes,
+    uint64_t* last_recorded_heap_size_bytes,
+    uint64_t* last_recorded_fragmentation_bytes,
+    uint64_t* total_committed_bytes,
+    uint64_t* promoted_bytes,
+    uint64_t* pinned_object_count,
+    uint64_t* finalization_pending_count,
+    uint64_t* index,
+    uint32_t* generation,
+    uint32_t* pause_time_pct,
+    bool* is_compaction,
+    bool* is_concurrent,
+    uint64_t* gen_info_raw,
+    uint64_t* pause_info_raw,
+    int kind,
+    last_recorded_gc_info* last_ephemeral_gc_info,
+    last_recorded_gc_info* last_full_blocking_gc_info,
+    last_recorded_gc_info* last_background_gc_info,
+    uint32_t is_last_recorded_bgc,
+    uint32_t high_memory_load_threshold,
+    uint64_t total_physical_memory,
+    size_t heap_hard_limit,
+    uint32_t background_gc_enabled);
+
+static_assert(sizeof(bool) == sizeof(uint8_t));
+static_assert(sizeof(recorded_generation_info) == sizeof(size_t) * 4);
+static_assert(offsetof(recorded_generation_info, size_before) == 0);
+static_assert(offsetof(recorded_generation_info, fragmentation_before) == sizeof(size_t));
+static_assert(offsetof(recorded_generation_info, size_after) == sizeof(size_t) * 2);
+static_assert(offsetof(recorded_generation_info, fragmentation_after) == sizeof(size_t) * 3);
+static_assert(offsetof(last_recorded_gc_info, index) == 0);
+static_assert(offsetof(last_recorded_gc_info, total_committed) == sizeof(size_t));
+static_assert(offsetof(last_recorded_gc_info, promoted) == sizeof(size_t) * 2);
+static_assert(offsetof(last_recorded_gc_info, pinned_objects) == sizeof(size_t) * 3);
+static_assert(offsetof(last_recorded_gc_info, finalize_promoted_objects) == sizeof(size_t) * 4);
+static_assert(offsetof(last_recorded_gc_info, pause_durations) == sizeof(size_t) * 5);
+static_assert(offsetof(last_recorded_gc_info, pause_percentage) == sizeof(size_t) * 7);
+static_assert(offsetof(last_recorded_gc_info, gen_info) == sizeof(size_t) * 8);
+static_assert(offsetof(last_recorded_gc_info, heap_size) == sizeof(size_t) * 28);
+static_assert(offsetof(last_recorded_gc_info, fragmentation) == sizeof(size_t) * 29);
+static_assert(offsetof(last_recorded_gc_info, memory_load) == sizeof(size_t) * 30);
+static_assert(offsetof(last_recorded_gc_info, condemned_generation) == sizeof(size_t) * 30 + sizeof(uint32_t));
+static_assert(offsetof(last_recorded_gc_info, compaction) == sizeof(size_t) * 30 + sizeof(uint32_t) + sizeof(uint8_t));
+static_assert(offsetof(last_recorded_gc_info, concurrent) == sizeof(size_t) * 30 + sizeof(uint32_t) + sizeof(uint8_t) * 2);
+static_assert(sizeof(last_recorded_gc_info) ==
+              ((sizeof(size_t) * 30 + sizeof(uint32_t) + sizeof(uint8_t) * 3 + sizeof(size_t) - 1) / sizeof(size_t)) * sizeof(size_t));
+#endif // FEATURE_NATIVEAOT
+
 class NoGCRegionLockHolder
 {
 public:
@@ -2234,6 +2286,44 @@ void GCHeap::GetMemoryInfo(uint64_t* highMemLoadThresholdBytes,
                            uint64_t* pauseInfoRaw,
                            int kind)
 {
+#ifdef FEATURE_NATIVEAOT
+    RhpGCHeapGetMemoryInfo(
+        highMemLoadThresholdBytes,
+        totalAvailableMemoryBytes,
+        lastRecordedMemLoadBytes,
+        lastRecordedHeapSizeBytes,
+        lastRecordedFragmentationBytes,
+        totalCommittedBytes,
+        promotedBytes,
+        pinnedObjectCount,
+        finalizationPendingCount,
+        index,
+        generation,
+        pauseTimePct,
+        isCompaction,
+        isConcurrent,
+        genInfoRaw,
+        pauseInfoRaw,
+        kind,
+        &gc_heap::last_ephemeral_gc_info,
+        &gc_heap::last_full_blocking_gc_info,
+#ifdef BACKGROUND_GC
+        gc_heap::get_completed_bgc_info(),
+        gc_heap::is_last_recorded_bgc ? 1U : 0U,
+#else
+        nullptr,
+        0U,
+#endif // BACKGROUND_GC
+        gc_heap::high_memory_load_th,
+        gc_heap::total_physical_mem,
+        gc_heap::heap_hard_limit,
+#ifdef BACKGROUND_GC
+        1U);
+#else
+        0U);
+#endif // BACKGROUND_GC
+    return;
+#else
     last_recorded_gc_info* last_gc_info = 0;
 
     if ((gc_kind)kind == gc_kind_ephemeral)
@@ -2315,6 +2405,7 @@ void GCHeap::GetMemoryInfo(uint64_t* highMemLoadThresholdBytes,
 #endif //BACKGROUND_GC
     }
 #endif //_DEBUG
+#endif // FEATURE_NATIVEAOT
 }
 
 int64_t GCHeap::GetTotalPauseDuration()

@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace System.Runtime
@@ -9,6 +11,51 @@ namespace System.Runtime
     internal static partial class RuntimeExports
     {
         private const uint MaxYpSpinCountUnit = 32768;
+        private const int GcKindAny = 0;
+        private const int GcKindEphemeral = 1;
+        private const int GcKindFullBlocking = 2;
+        private const int GcKindBackground = 3;
+        private const int MaxGeneration = 2;
+        private const int TotalGenerationCount = 5;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe nuint ReadVolatile(nuint* location)
+        {
+            return (nuint)Volatile.Read(ref *(nint*)location);
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct RecordedGenerationInfo
+        {
+            internal nuint SizeBefore;
+            internal nuint FragmentationBefore;
+            internal nuint SizeAfter;
+            internal nuint FragmentationAfter;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal unsafe struct LastRecordedGcInfo
+        {
+            internal nuint Index;
+            internal nuint TotalCommitted;
+            internal nuint Promoted;
+            internal nuint PinnedObjects;
+            internal nuint FinalizePromotedObjects;
+            internal nuint PauseDuration0;
+            internal nuint PauseDuration1;
+            internal float PausePercentage;
+            internal RecordedGenerationInfo GenInfo0;
+            internal RecordedGenerationInfo GenInfo1;
+            internal RecordedGenerationInfo GenInfo2;
+            internal RecordedGenerationInfo GenInfo3;
+            internal RecordedGenerationInfo GenInfo4;
+            internal nuint HeapSize;
+            internal nuint Fragmentation;
+            internal uint MemoryLoad;
+            internal byte CondemnedGeneration;
+            internal byte Compaction;
+            internal byte Concurrent;
+        }
 
         [RuntimeExport("RhpGCHeapGetValidSegmentSize")]
         internal static nuint RhpGCHeapGetValidSegmentSize(uint largeSegment, nuint largeSegmentSize, nuint smallSegmentSize)
@@ -76,6 +123,113 @@ namespace System.Runtime
                 if ((*ypSpinCountUnit == 0) || (*ypSpinCountUnit > MaxYpSpinCountUnit))
                 {
                     *ypSpinCountUnit = savedYpSpinCountUnit;
+                }
+            }
+        }
+
+        [RuntimeExport("RhpGCHeapGetMemoryInfo")]
+        internal static unsafe void RhpGCHeapGetMemoryInfo(
+            ulong* highMemoryLoadThresholdBytes,
+            ulong* totalAvailableMemoryBytes,
+            ulong* lastRecordedMemLoadBytes,
+            ulong* lastRecordedHeapSizeBytes,
+            ulong* lastRecordedFragmentationBytes,
+            ulong* totalCommittedBytes,
+            ulong* promotedBytes,
+            ulong* pinnedObjectCount,
+            ulong* finalizationPendingCount,
+            ulong* index,
+            uint* generation,
+            uint* pauseTimePct,
+            bool* isCompaction,
+            bool* isConcurrent,
+            ulong* genInfoRaw,
+            ulong* pauseInfoRaw,
+            int kind,
+            LastRecordedGcInfo* lastEphemeralGcInfo,
+            LastRecordedGcInfo* lastFullBlockingGcInfo,
+            LastRecordedGcInfo* lastBackgroundGcInfo,
+            uint isLastRecordedBgc,
+            uint highMemoryLoadThreshold,
+            ulong totalPhysicalMemory,
+            nuint heapHardLimit,
+            uint backgroundGcEnabled)
+        {
+            LastRecordedGcInfo* lastGcInfo;
+
+            if (kind == GcKindEphemeral)
+            {
+                lastGcInfo = lastEphemeralGcInfo;
+            }
+            else if (kind == GcKindFullBlocking)
+            {
+                lastGcInfo = lastFullBlockingGcInfo;
+            }
+            else if ((kind == GcKindBackground) && (backgroundGcEnabled != 0))
+            {
+                lastGcInfo = lastBackgroundGcInfo;
+            }
+            else
+            {
+                Debug.Assert(kind == GcKindAny);
+                if ((backgroundGcEnabled != 0) && (isLastRecordedBgc != 0))
+                {
+                    lastGcInfo = lastBackgroundGcInfo;
+                }
+                else
+                {
+                    lastGcInfo = ReadVolatile(&lastEphemeralGcInfo->Index) > ReadVolatile(&lastFullBlockingGcInfo->Index) ?
+                        lastEphemeralGcInfo :
+                        lastFullBlockingGcInfo;
+                }
+            }
+
+            *highMemoryLoadThresholdBytes = (ulong)(((double)highMemoryLoadThreshold) / 100 * totalPhysicalMemory);
+            *totalAvailableMemoryBytes = heapHardLimit != 0 ? (ulong)heapHardLimit : totalPhysicalMemory;
+            *lastRecordedMemLoadBytes = (ulong)(((double)lastGcInfo->MemoryLoad) / 100 * totalPhysicalMemory);
+            *lastRecordedHeapSizeBytes = (ulong)lastGcInfo->HeapSize;
+            *lastRecordedFragmentationBytes = (ulong)lastGcInfo->Fragmentation;
+            *totalCommittedBytes = (ulong)lastGcInfo->TotalCommitted;
+            *promotedBytes = (ulong)lastGcInfo->Promoted;
+            *pinnedObjectCount = (ulong)lastGcInfo->PinnedObjects;
+            *finalizationPendingCount = (ulong)lastGcInfo->FinalizePromotedObjects;
+            *index = (ulong)ReadVolatile(&lastGcInfo->Index);
+            *generation = lastGcInfo->CondemnedGeneration;
+            *pauseTimePct = (uint)(int)(lastGcInfo->PausePercentage * 100);
+            *isCompaction = lastGcInfo->Compaction != 0;
+            *isConcurrent = lastGcInfo->Concurrent != 0;
+
+            RecordedGenerationInfo* genInfo = &lastGcInfo->GenInfo0;
+            int genInfoIndex = 0;
+            for (int i = 0; i < TotalGenerationCount; i++)
+            {
+                genInfoRaw[genInfoIndex++] = (ulong)genInfo[i].SizeBefore;
+                genInfoRaw[genInfoIndex++] = (ulong)genInfo[i].FragmentationBefore;
+                genInfoRaw[genInfoIndex++] = (ulong)genInfo[i].SizeAfter;
+                genInfoRaw[genInfoIndex++] = (ulong)genInfo[i].FragmentationAfter;
+            }
+
+            nuint* pauseDurations = &lastGcInfo->PauseDuration0;
+            for (int i = 0; i < 2; i++)
+            {
+                pauseInfoRaw[i] = (ulong)pauseDurations[i] * 10;
+            }
+
+            if (ReadVolatile(&lastGcInfo->Index) != 0)
+            {
+                if (kind == GcKindEphemeral)
+                {
+                    Debug.Assert(lastGcInfo->CondemnedGeneration < MaxGeneration);
+                }
+                else if (kind == GcKindFullBlocking)
+                {
+                    Debug.Assert(lastGcInfo->CondemnedGeneration == MaxGeneration);
+                    Debug.Assert(lastGcInfo->Concurrent == 0);
+                }
+                else if ((kind == GcKindBackground) && (backgroundGcEnabled != 0))
+                {
+                    Debug.Assert(lastGcInfo->CondemnedGeneration == MaxGeneration);
+                    Debug.Assert(lastGcInfo->Concurrent != 0);
                 }
             }
         }
