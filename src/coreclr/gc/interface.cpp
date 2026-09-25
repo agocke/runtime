@@ -52,7 +52,34 @@ extern "C" void F_CALL_CONV RhpGCHeapGetMemoryInfo(
     size_t heap_hard_limit,
     uint32_t background_gc_enabled);
 
+extern "C" int64_t F_CALL_CONV RhpGCHeapGetTotalPauseDuration(uint64_t total_suspended_time);
+
+extern "C" uint32_t F_CALL_CONV RhpGCHeapGetMemoryLoad(uint32_t* exit_memory_load, uint32_t* entry_memory_load);
+
+extern "C" int32_t F_CALL_CONV RhpGCHeapGetGcLatencyMode(int32_t pause_mode);
+
+extern "C" int32_t F_CALL_CONV RhpGCHeapSetGcLatencyMode(
+    gc_pause_mode* settings_pause_mode,
+    gc_pause_mode* target_pause_mode,
+    int32_t new_latency_mode,
+    gc_pause_mode* saved_bgc_pause_mode,
+    uint32_t background_gc_enabled,
+    volatile BOOL* background_running,
+    uint32_t gc_can_use_concurrent,
+    uint32_t multiple_heaps);
+
+extern "C" int32_t F_CALL_CONV RhpGCHeapGetLohCompactionMode(gc_loh_compaction_mode* loh_compaction_mode);
+
+extern "C" void F_CALL_CONV RhpGCHeapSetLohCompactionMode(
+    gc_loh_compaction_mode* loh_compaction_mode,
+    int32_t new_loh_compaction_mode);
+
 static_assert(sizeof(bool) == sizeof(uint8_t));
+static_assert(sizeof(BOOL) == sizeof(int32_t));
+static_assert(sizeof(gc_pause_mode) == sizeof(int32_t));
+static_assert(alignof(gc_pause_mode) == alignof(int32_t));
+static_assert(sizeof(gc_loh_compaction_mode) == sizeof(int32_t));
+static_assert(alignof(gc_loh_compaction_mode) == alignof(int32_t));
 static_assert(sizeof(recorded_generation_info) == sizeof(size_t) * 4);
 static_assert(offsetof(recorded_generation_info, size_before) == 0);
 static_assert(offsetof(recorded_generation_info, fragmentation_before) == sizeof(size_t));
@@ -2410,7 +2437,11 @@ void GCHeap::GetMemoryInfo(uint64_t* highMemLoadThresholdBytes,
 
 int64_t GCHeap::GetTotalPauseDuration()
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapGetTotalPauseDuration(gc_heap::total_suspended_time);
+#else
     return (int64_t)(gc_heap::total_suspended_time * 10);
+#endif // FEATURE_NATIVEAOT
 }
 
 void GCHeap::EnumerateConfigurationValues(void* context, ConfigurationValueFunc configurationValueFunc)
@@ -2420,6 +2451,9 @@ void GCHeap::EnumerateConfigurationValues(void* context, ConfigurationValueFunc 
 
 uint32_t GCHeap::GetMemoryLoad()
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapGetMemoryLoad(&gc_heap::settings.exit_memory_load, &gc_heap::settings.entry_memory_load);
+#else
     uint32_t memory_load = 0;
     if (gc_heap::settings.exit_memory_load != 0)
         memory_load = gc_heap::settings.exit_memory_load;
@@ -2427,15 +2461,42 @@ uint32_t GCHeap::GetMemoryLoad()
         memory_load = gc_heap::settings.entry_memory_load;
 
     return memory_load;
+#endif // FEATURE_NATIVEAOT
 }
 
 int GCHeap::GetGcLatencyMode()
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapGetGcLatencyMode((int32_t)(pGenGCHeap->settings.pause_mode));
+#else
     return (int)(pGenGCHeap->settings.pause_mode);
+#endif // FEATURE_NATIVEAOT
 }
 
 int GCHeap::SetGcLatencyMode (int newLatencyMode)
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapSetGcLatencyMode(
+        &gc_heap::settings.pause_mode,
+        &pGenGCHeap->settings.pause_mode,
+        newLatencyMode,
+#ifdef BACKGROUND_GC
+        &gc_heap::saved_bgc_settings.pause_mode,
+        1U,
+        &gc_heap::gc_background_running,
+        gc_heap::gc_can_use_concurrent ? 1U : 0U,
+#else
+        nullptr,
+        0U,
+        nullptr,
+        0U,
+#endif // BACKGROUND_GC
+#ifdef MULTIPLE_HEAPS
+        1U);
+#else
+        0U);
+#endif // MULTIPLE_HEAPS
+#else
     if (gc_heap::settings.pause_mode == pause_no_gc)
         return (int)set_pause_mode_no_gc;
 
@@ -2474,22 +2535,37 @@ int GCHeap::SetGcLatencyMode (int newLatencyMode)
 #endif //BACKGROUND_GC
 
     return (int)set_pause_mode_success;
+#endif // FEATURE_NATIVEAOT
 }
 
 int GCHeap::GetLOHCompactionMode()
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef FEATURE_LOH_COMPACTION
+    return RhpGCHeapGetLohCompactionMode(&pGenGCHeap->loh_compaction_mode);
+#else
+    return loh_compaction_default;
+#endif // FEATURE_LOH_COMPACTION
+#else
 #ifdef FEATURE_LOH_COMPACTION
     return pGenGCHeap->loh_compaction_mode;
 #else
     return loh_compaction_default;
 #endif //FEATURE_LOH_COMPACTION
+#endif // FEATURE_NATIVEAOT
 }
 
 void GCHeap::SetLOHCompactionMode (int newLOHCompactionMode)
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef FEATURE_LOH_COMPACTION
+    RhpGCHeapSetLohCompactionMode(&pGenGCHeap->loh_compaction_mode, newLOHCompactionMode);
+#endif // FEATURE_LOH_COMPACTION
+#else
 #ifdef FEATURE_LOH_COMPACTION
     pGenGCHeap->loh_compaction_mode = (gc_loh_compaction_mode)newLOHCompactionMode;
 #endif //FEATURE_LOH_COMPACTION
+#endif // FEATURE_NATIVEAOT
 }
 
 bool GCHeap::RegisterForFullGCNotification(uint32_t gen2Percentage,

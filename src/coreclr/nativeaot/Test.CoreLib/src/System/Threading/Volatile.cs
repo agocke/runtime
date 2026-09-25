@@ -7,7 +7,12 @@ namespace System.Threading
 {
     public static class Volatile
     {
+        private struct VolatileInt32 { public volatile int Value; }
         private struct VolatileIntPtr { public volatile nint Value; }
+
+        [Intrinsic]
+        public static int Read(ref readonly int location) =>
+            Unsafe.As<int, VolatileInt32>(ref Unsafe.AsRef(in location)).Value;
 
         [Intrinsic]
         public static nint Read(ref readonly nint location) =>

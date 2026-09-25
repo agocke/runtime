@@ -17,11 +17,22 @@ namespace System.Runtime
         private const int GcKindBackground = 3;
         private const int MaxGeneration = 2;
         private const int TotalGenerationCount = 5;
+        private const int PauseLowLatency = 2;
+        private const int PauseSustainedLowLatency = 3;
+        private const int PauseNoGc = 4;
+        private const int SetPauseModeSuccess = 0;
+        private const int SetPauseModeNoGc = 1;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe nuint ReadVolatile(nuint* location)
         {
             return (nuint)Volatile.Read(ref *(nint*)location);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe int ReadVolatile(int* location)
+        {
+            return Volatile.Read(ref *location);
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -232,6 +243,94 @@ namespace System.Runtime
                     Debug.Assert(lastGcInfo->Concurrent != 0);
                 }
             }
+        }
+
+        [RuntimeExport("RhpGCHeapGetTotalPauseDuration")]
+        internal static long RhpGCHeapGetTotalPauseDuration(ulong totalSuspendedTime)
+        {
+            return (long)(totalSuspendedTime * 10);
+        }
+
+        [RuntimeExport("RhpGCHeapGetMemoryLoad")]
+        internal static unsafe uint RhpGCHeapGetMemoryLoad(uint* exitMemoryLoad, uint* entryMemoryLoad)
+        {
+            uint memoryLoad = 0;
+            if (*exitMemoryLoad != 0)
+            {
+                memoryLoad = *exitMemoryLoad;
+            }
+            else if (*entryMemoryLoad != 0)
+            {
+                memoryLoad = *entryMemoryLoad;
+            }
+
+            return memoryLoad;
+        }
+
+        [RuntimeExport("RhpGCHeapGetGcLatencyMode")]
+        internal static int RhpGCHeapGetGcLatencyMode(int pauseMode)
+        {
+            return pauseMode;
+        }
+
+        [RuntimeExport("RhpGCHeapSetGcLatencyMode")]
+        internal static unsafe int RhpGCHeapSetGcLatencyMode(
+            int* settingsPauseMode,
+            int* targetPauseMode,
+            int newLatencyMode,
+            int* savedBgcPauseMode,
+            uint backgroundGcEnabled,
+            int* backgroundRunning,
+            uint gcCanUseConcurrent,
+            uint multipleHeaps)
+        {
+            if (*settingsPauseMode == PauseNoGc)
+            {
+                return SetPauseModeNoGc;
+            }
+
+            int newMode = newLatencyMode;
+
+            if (newMode == PauseLowLatency)
+            {
+                if (multipleHeaps == 0)
+                {
+                    *targetPauseMode = newMode;
+                }
+            }
+            else if (newMode == PauseSustainedLowLatency)
+            {
+                if ((backgroundGcEnabled != 0) && (gcCanUseConcurrent != 0))
+                {
+                    *targetPauseMode = newMode;
+                }
+            }
+            else
+            {
+                *targetPauseMode = newMode;
+            }
+
+            if ((backgroundGcEnabled != 0) && (ReadVolatile(backgroundRunning) != 0))
+            {
+                if (*savedBgcPauseMode != newMode)
+                {
+                    *savedBgcPauseMode = newMode;
+                }
+            }
+
+            return SetPauseModeSuccess;
+        }
+
+        [RuntimeExport("RhpGCHeapGetLohCompactionMode")]
+        internal static unsafe int RhpGCHeapGetLohCompactionMode(int* lohCompactionMode)
+        {
+            return *lohCompactionMode;
+        }
+
+        [RuntimeExport("RhpGCHeapSetLohCompactionMode")]
+        internal static unsafe void RhpGCHeapSetLohCompactionMode(int* lohCompactionMode, int newLohCompactionMode)
+        {
+            *lohCompactionMode = newLohCompactionMode;
         }
     }
 }
