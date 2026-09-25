@@ -352,6 +352,100 @@ namespace System.Runtime
             return budget;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe int ObjectGennum(
+            byte* objectAddress,
+            uint useRegions,
+            byte* regionMap,
+            uint regionShift,
+            uint regionGenMask,
+            HeapSegmentPrefix** ephemeralHeapSegmentLocation,
+            byte* generationData,
+            nuint generationSize,
+            nuint generationAllocationStartOffset,
+            int maxGeneration)
+        {
+            if (useRegions != 0)
+            {
+                nuint skewedBasicRegionIndex = (nuint)objectAddress >> (int)regionShift;
+                return *(regionMap + (nint)skewedBasicRegionIndex) & (int)regionGenMask;
+            }
+
+            if (InRangeForSegment(objectAddress, *ephemeralHeapSegmentLocation) &&
+                (objectAddress >= *(byte**)(GenerationAddress(generationData, generationSize, maxGeneration - 1) +
+                    (nint)generationAllocationStartOffset)))
+            {
+                for (int i = 0; i < maxGeneration - 1; i++)
+                {
+                    if (objectAddress >= *(byte**)(GenerationAddress(generationData, generationSize, i) +
+                        (nint)generationAllocationStartOffset))
+                    {
+                        return i;
+                    }
+                }
+
+                return maxGeneration - 1;
+            }
+
+            return maxGeneration;
+        }
+
+        [RuntimeExport("RhpGCHeapWhichGeneration")]
+        internal static unsafe uint RhpGCHeapWhichGeneration(
+            byte* objectAddress,
+            uint useRegions,
+            byte* regionMap,
+            uint regionShift,
+            uint regionGenMask,
+            HeapSegmentPrefix** ephemeralHeapSegmentLocation,
+            byte* generationData,
+            nuint generationSize,
+            nuint generationAllocationStartOffset,
+            int maxGeneration)
+        {
+            return (uint)ObjectGennum(
+                objectAddress,
+                useRegions,
+                regionMap,
+                regionShift,
+                regionGenMask,
+                ephemeralHeapSegmentLocation,
+                generationData,
+                generationSize,
+                generationAllocationStartOffset,
+                maxGeneration);
+        }
+
+        [RuntimeExport("RhpGCHeapIsEphemeral")]
+        internal static unsafe uint RhpGCHeapIsEphemeral(
+            byte* objectAddress,
+            uint useRegions,
+            byte* regionMap,
+            uint regionShift,
+            uint regionGenMask,
+            byte** ephemeralLowLocation,
+            byte** ephemeralHighLocation,
+            int maxGeneration)
+        {
+            if (useRegions != 0)
+            {
+                int generation = ObjectGennum(
+                    objectAddress,
+                    useRegions,
+                    regionMap,
+                    regionShift,
+                    regionGenMask,
+                    null,
+                    null,
+                    0,
+                    0,
+                    maxGeneration);
+                return generation < maxGeneration ? 1U : 0U;
+            }
+
+            return (objectAddress >= *ephemeralLowLocation) && (objectAddress < *ephemeralHighLocation) ? 1U : 0U;
+        }
+
         [RuntimeExport("RhpGCHeapInitializeYieldProcessorSpinPolicy")]
         internal static unsafe void RhpGCHeapInitializeYieldProcessorSpinPolicy(
             uint* ypSpinCountUnit,

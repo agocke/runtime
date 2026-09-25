@@ -94,12 +94,36 @@ extern "C" void F_CALL_CONV RhpGCHeapSetLohCompactionMode(
     gc_loh_compaction_mode* loh_compaction_mode,
     int32_t new_loh_compaction_mode);
 
+extern "C" uint32_t F_CALL_CONV RhpGCHeapWhichGeneration(
+    uint8_t* object,
+    uint32_t use_regions,
+    uint8_t* region_map,
+    uint32_t region_shift,
+    uint32_t region_gen_mask,
+    heap_segment** ephemeral_heap_segment,
+    uint8_t* generation_data,
+    size_t generation_size,
+    size_t generation_allocation_start_offset,
+    int32_t max_generation);
+
+extern "C" uint32_t F_CALL_CONV RhpGCHeapIsEphemeral(
+    uint8_t* object,
+    uint32_t use_regions,
+    uint8_t* region_map,
+    uint32_t region_shift,
+    uint32_t region_gen_mask,
+    uint8_t** ephemeral_low,
+    uint8_t** ephemeral_high,
+    int32_t max_generation);
+
 static_assert(sizeof(bool) == sizeof(uint8_t));
 static_assert(sizeof(BOOL) == sizeof(int32_t));
 static_assert(sizeof(gc_pause_mode) == sizeof(int32_t));
 static_assert(alignof(gc_pause_mode) == alignof(int32_t));
 static_assert(sizeof(gc_loh_compaction_mode) == sizeof(int32_t));
 static_assert(alignof(gc_loh_compaction_mode) == alignof(int32_t));
+static_assert(sizeof(gc_heap::region_info) == sizeof(uint8_t));
+static_assert(alignof(gc_heap::region_info) == alignof(uint8_t));
 static_assert(sizeof(recorded_generation_info) == sizeof(size_t) * 4);
 static_assert(offsetof(recorded_generation_info, size_before) == 0);
 static_assert(offsetof(recorded_generation_info, fragmentation_before) == sizeof(size_t));
@@ -1062,6 +1086,49 @@ unsigned int GCHeap::WhichGeneration (Object* object)
     {
         return INT32_MAX;
     }
+#ifdef FEATURE_NATIVEAOT
+#ifndef USE_REGIONS
+    if (GCHeap::IsInFrozenSegment (object))
+    {
+        // in case if the object belongs to an in-range frozen segment
+        // For regions those are never in-range.
+        return INT32_MAX;
+    }
+#endif
+#ifdef USE_REGIONS
+    gc_heap::heap_of (o);
+    int generation = static_cast<int>(RhpGCHeapWhichGeneration(
+        o,
+        1U,
+        reinterpret_cast<uint8_t*>(gc_heap::map_region_to_generation_skewed),
+        static_cast<uint32_t>(gc_heap::min_segment_size_shr),
+        static_cast<uint32_t>(gc_heap::RI_GEN_MASK),
+        nullptr,
+        nullptr,
+        0,
+        0,
+        max_generation));
+    assert ((soh_gen0 <= generation) && (generation <= soh_gen2));
+    assert (generation == heap_segment_gen_num (gc_heap::region_of (o)));
+    dprintf (3, ("%zx is in gen %d", (size_t)object, generation));
+    return static_cast<unsigned int>(generation);
+#else
+    gc_heap* hp = gc_heap::heap_of (o);
+    unsigned int g = RhpGCHeapWhichGeneration(
+        o,
+        0U,
+        nullptr,
+        0,
+        0,
+        &hp->ephemeral_heap_segment,
+        reinterpret_cast<uint8_t*>(hp->generation_of (0)),
+        sizeof(generation),
+        offsetof(generation, allocation_start),
+        max_generation);
+    dprintf (3, ("%zx is in gen %d", (size_t)object, g));
+    return g;
+#endif // USE_REGIONS
+#else
 #ifndef USE_REGIONS
     if (GCHeap::IsInFrozenSegment (object))
     {
@@ -1074,6 +1141,7 @@ unsigned int GCHeap::WhichGeneration (Object* object)
     unsigned int g = hp->object_gennum (o);
     dprintf (3, ("%zx is in gen %d", (size_t)object, g));
     return g;
+#endif // FEATURE_NATIVEAOT
 }
 
 enable_no_gc_region_callback_status GCHeap::EnableNoGCRegionCallback(NoGCRegionCallbackFinalizerWorkItem* callback, uint64_t callback_threshold)
@@ -1166,8 +1234,36 @@ bool GCHeap::IsEphemeral (Object* object)
         return FALSE;
     }
 #endif
+#ifdef FEATURE_NATIVEAOT
+#ifdef USE_REGIONS
+    gc_heap* hp = gc_heap::heap_of (o);
+    bool is_ephemeral = RhpGCHeapIsEphemeral(
+        o,
+        1U,
+        reinterpret_cast<uint8_t*>(gc_heap::map_region_to_generation_skewed),
+        static_cast<uint32_t>(gc_heap::min_segment_size_shr),
+        static_cast<uint32_t>(gc_heap::RI_GEN_MASK),
+        nullptr,
+        nullptr,
+        max_generation) != 0;
+    assert (is_ephemeral == !!hp->ephemeral_pointer_p (o));
+    return is_ephemeral;
+#else
+    gc_heap* hp = gc_heap::heap_of (o);
+    return RhpGCHeapIsEphemeral(
+        o,
+        0U,
+        nullptr,
+        0,
+        0,
+        &hp->ephemeral_low,
+        &hp->ephemeral_high,
+        max_generation) != 0;
+#endif // USE_REGIONS
+#else
     gc_heap* hp = gc_heap::heap_of (o);
     return !!hp->ephemeral_pointer_p (o);
+#endif // FEATURE_NATIVEAOT
 }
 
 // Return NULL if can't find next object. When EE is not suspended,
