@@ -332,6 +332,26 @@ namespace System.Runtime
             return (nuint)(highPrecisionTimeStamp / 1000);
         }
 
+        [RuntimeExport("RhpGCHeapGetGenerationBudget")]
+        internal static unsafe ulong RhpGCHeapGetGenerationBudget(
+            byte** heapSource,
+            int heapCount,
+            nuint dynamicDataTableOffset,
+            nuint dynamicDataSize,
+            nuint desiredAllocationOffset,
+            int generation)
+        {
+            ulong budget = 0;
+            for (int i = 0; i < heapCount; i++)
+            {
+                byte* dynamicData = (byte*)heapSource[i] + (nint)dynamicDataTableOffset;
+                dynamicData += (nint)((nuint)generation * dynamicDataSize);
+                budget += (ulong)(*(nuint*)(dynamicData + (nint)desiredAllocationOffset));
+            }
+
+            return budget;
+        }
+
         [RuntimeExport("RhpGCHeapInitializeYieldProcessorSpinPolicy")]
         internal static unsafe void RhpGCHeapInitializeYieldProcessorSpinPolicy(
             uint* ypSpinCountUnit,

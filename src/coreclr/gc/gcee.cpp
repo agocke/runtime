@@ -50,6 +50,28 @@ namespace WKS {
 #include "gcimpl.h"
 #include "gcpriv.h"
 
+#ifdef FEATURE_NATIVEAOT
+extern "C" uint64_t F_CALL_CONV RhpGCHeapGetGenerationBudget(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    size_t dynamic_data_table_offset,
+    size_t dynamic_data_size,
+    size_t desired_allocation_offset,
+    int32_t generation);
+
+static_assert(sizeof(size_t) == sizeof(void*));
+static_assert(alignof(size_t) == alignof(void*));
+static_assert(sizeof(uint8_t*) == sizeof(void*));
+static_assert(alignof(uint8_t*) == alignof(void*));
+static_assert(sizeof(dynamic_data) % alignof(dynamic_data) == 0);
+static_assert(sizeof(decltype(((dynamic_data*)nullptr)->desired_allocation)) == sizeof(size_t));
+static_assert(alignof(decltype(((dynamic_data*)nullptr)->desired_allocation)) == alignof(size_t));
+static_assert(offsetof(dynamic_data, desired_allocation) % alignof(decltype(((dynamic_data*)nullptr)->desired_allocation)) == 0);
+static_assert(offsetof(dynamic_data, desired_allocation) + sizeof(decltype(((dynamic_data*)nullptr)->desired_allocation)) <= sizeof(dynamic_data));
+static_assert(sizeof(int32_t) == sizeof(int));
+static_assert(alignof(int32_t) == alignof(int));
+#endif // FEATURE_NATIVEAOT
+
 #ifndef DACCESS_COMPILE
 
 uint64_t g_TotalTimeInGC = 0;
@@ -587,6 +609,29 @@ void GCHeap::ControlPrivateEvents(GCEventKeyword keyword, GCEventLevel level)
 
 uint64_t GCHeap::GetGenerationBudget(int generation)
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, dynamic_data_table) % alignof(dynamic_data) == 0);
+    static_assert(offsetof(gc_heap, dynamic_data_table) + sizeof(dynamic_data) * total_generation_count <= sizeof(gc_heap));
+
+    return RhpGCHeapGetGenerationBudget(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        offsetof(gc_heap, dynamic_data_table),
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, desired_allocation),
+        generation);
+#else
+    uint8_t* dynamic_data_source = reinterpret_cast<uint8_t*>(pGenGCHeap->dynamic_data_of(0));
+    return RhpGCHeapGetGenerationBudget(
+        &dynamic_data_source,
+        1,
+        0,
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, desired_allocation),
+        generation);
+#endif // MULTIPLE_HEAPS
+#else
     uint64_t budget = 0;
 #ifdef MULTIPLE_HEAPS
     for (int i = 0; i < gc_heap::n_heaps; i++)
@@ -600,6 +645,7 @@ uint64_t GCHeap::GetGenerationBudget(int generation)
         budget += dd_desired_allocation (dd);
     }
     return budget;
+#endif // FEATURE_NATIVEAOT
 }
 
 #endif // !DACCESS_COMPILE
