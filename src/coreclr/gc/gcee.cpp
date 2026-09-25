@@ -19,6 +19,12 @@
 extern "C" void F_CALL_CONV RhpGCHeapSetSuspensionPending(
     volatile int32_t* suspension_pending_count,
     uint32_t suspension_pending);
+extern "C" int32_t F_CALL_CONV RhpGCHeapGetLastGCPercentTimeInGC(uint32_t percent_time_in_gc);
+extern "C" size_t F_CALL_CONV RhpGCHeapGetLastGCGenerationSize(size_t* generation_sizes, int32_t generation);
+extern "C" size_t F_CALL_CONV RhpGCHeapGetCurrentObjSize(size_t total_survived_size, size_t total_allocated_size);
+extern "C" size_t F_CALL_CONV RhpGCHeapGetLastGCStartTime(uint64_t time_clock);
+extern "C" size_t F_CALL_CONV RhpGCHeapGetLastGCDuration(size_t gc_elapsed_time);
+extern "C" size_t F_CALL_CONV RhpGCHeapGetNow(uint64_t high_precision_time_stamp);
 #endif // FEATURE_NATIVEAOT
 
 #ifdef __INTELLISENSE__
@@ -221,21 +227,42 @@ void GCHeap::UpdatePostGCCounters()
 
 int GCHeap::GetLastGCPercentTimeInGC()
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapGetLastGCPercentTimeInGC(g_percentTimeInGCSinceLastGC);
+#else
     return (int)(g_percentTimeInGCSinceLastGC);
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t GCHeap::GetLastGCGenerationSize(int gen)
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapGetLastGCGenerationSize(g_GenerationSizes, gen);
+#else
     return g_GenerationSizes[gen];
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t GCHeap::GetCurrentObjSize()
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapGetCurrentObjSize(totalSurvivedSize, gc_heap::get_total_allocated());
+#else
     return (totalSurvivedSize + gc_heap::get_total_allocated());
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t GCHeap::GetLastGCStartTime(int generation)
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    gc_heap* hp = gc_heap::g_heaps[0];
+#else
+    gc_heap* hp = pGenGCHeap;
+#endif //MULTIPLE_HEAPS
+
+    return RhpGCHeapGetLastGCStartTime(dd_time_clock(hp->dynamic_data_of(generation)));
+#else
 #ifdef MULTIPLE_HEAPS
     gc_heap* hp = gc_heap::g_heaps[0];
 #else
@@ -243,10 +270,20 @@ size_t GCHeap::GetLastGCStartTime(int generation)
 #endif //MULTIPLE_HEAPS
 
     return (size_t)(dd_time_clock (hp->dynamic_data_of (generation)) / 1000);
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t GCHeap::GetLastGCDuration(int generation)
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    gc_heap* hp = gc_heap::g_heaps[0];
+#else
+    gc_heap* hp = pGenGCHeap;
+#endif //MULTIPLE_HEAPS
+
+    return RhpGCHeapGetLastGCDuration(dd_gc_elapsed_time(hp->dynamic_data_of(generation)));
+#else
 #ifdef MULTIPLE_HEAPS
     gc_heap* hp = gc_heap::g_heaps[0];
 #else
@@ -254,11 +291,16 @@ size_t GCHeap::GetLastGCDuration(int generation)
 #endif //MULTIPLE_HEAPS
 
     return (size_t)(dd_gc_elapsed_time (hp->dynamic_data_of (generation)) / 1000);
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t GCHeap::GetNow()
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapGetNow(GetHighPrecisionTimeStamp());
+#else
     return (size_t)(GetHighPrecisionTimeStamp() / 1000);
+#endif // FEATURE_NATIVEAOT
 }
 
 bool GCHeap::IsGCInProgressHelper (bool bConsiderGCStart)

@@ -68,6 +68,215 @@ namespace System.Runtime
             internal byte Concurrent;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal unsafe struct HeapSegmentPrefix
+        {
+            internal byte* Allocated;
+            internal byte* Committed;
+            internal byte* Reserved;
+            internal byte* Used;
+            internal byte* Mem;
+            internal nuint Flags;
+            internal HeapSegmentPrefix* Next;
+        }
+
+        private const nuint HeapSegmentFlagsReadOnly = 1;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe HeapSegmentPrefix* HeapSegmentReadWrite(HeapSegmentPrefix* segment)
+        {
+            if (segment is null || (segment->Flags & HeapSegmentFlagsReadOnly) == 0)
+            {
+                return segment;
+            }
+
+            do
+            {
+                segment = segment->Next;
+            }
+            while (segment is not null && (segment->Flags & HeapSegmentFlagsReadOnly) != 0);
+
+            return segment;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe HeapSegmentPrefix* HeapSegmentNextReadWrite(HeapSegmentPrefix* segment)
+        {
+            return HeapSegmentReadWrite(segment->Next);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe bool InRangeForSegment(byte* address, HeapSegmentPrefix* segment)
+        {
+            return (address >= segment->Mem) && (address < segment->Reserved);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe byte* GenerationAddress(byte* generationData, nuint generationSize, int generationNumber)
+        {
+            return generationData + (nint)((nuint)generationNumber * generationSize);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe nuint GenerationSize(
+            int generationNumber,
+            byte* generationData,
+            nuint generationSize,
+            HeapSegmentPrefix** ephemeralHeapSegmentLocation,
+            nuint alignedMinObjectSize,
+            uint useRegions,
+            nuint generationStartSegmentOffset,
+            nuint generationAllocationStartOffset)
+        {
+            byte* generation = GenerationAddress(generationData, generationSize, generationNumber);
+            if (useRegions != 0)
+            {
+                nuint result = 0;
+                HeapSegmentPrefix* segment = HeapSegmentReadWrite(*(HeapSegmentPrefix**)(generation + (nint)generationStartSegmentOffset));
+                while (segment is not null)
+                {
+                    result += (nuint)(segment->Allocated - segment->Mem);
+                    segment = segment->Next;
+                }
+
+                return result;
+            }
+
+            if (generationNumber == 0)
+            {
+                HeapSegmentPrefix* ephemeralHeapSegment = *ephemeralHeapSegmentLocation;
+                nint generationBytes = (nint)(ephemeralHeapSegment->Allocated - *(byte**)(generation + (nint)generationAllocationStartOffset));
+                return generationBytes > (nint)alignedMinObjectSize ? (nuint)generationBytes : alignedMinObjectSize;
+            }
+
+            HeapSegmentPrefix* ephemeralHeapSegmentForGeneration = *ephemeralHeapSegmentLocation;
+            if (HeapSegmentReadWrite(*(HeapSegmentPrefix**)(generation + (nint)generationStartSegmentOffset)) == ephemeralHeapSegmentForGeneration)
+            {
+                byte* previousGeneration = GenerationAddress(generationData, generationSize, generationNumber - 1);
+                return (nuint)(*(byte**)(previousGeneration + (nint)generationAllocationStartOffset) -
+                    *(byte**)(generation + (nint)generationAllocationStartOffset));
+            }
+
+            nuint resultForGeneration = 0;
+            HeapSegmentPrefix* segmentForGeneration = HeapSegmentReadWrite(*(HeapSegmentPrefix**)(generation + (nint)generationStartSegmentOffset));
+            Debug.Assert(segmentForGeneration is not null);
+            while (segmentForGeneration is not null && segmentForGeneration != ephemeralHeapSegmentForGeneration)
+            {
+                resultForGeneration += (nuint)(segmentForGeneration->Allocated - segmentForGeneration->Mem);
+                segmentForGeneration = HeapSegmentNextReadWrite(segmentForGeneration);
+            }
+
+            if (segmentForGeneration is not null)
+            {
+                byte* previousGeneration = GenerationAddress(generationData, generationSize, generationNumber - 1);
+                resultForGeneration += (nuint)(*(byte**)(previousGeneration + (nint)generationAllocationStartOffset) -
+                    ephemeralHeapSegmentForGeneration->Mem);
+            }
+
+            return resultForGeneration;
+        }
+
+        [RuntimeExport("RhpGCHeapApproxTotalBytesInUse")]
+        internal static unsafe nuint RhpGCHeapApproxTotalBytesInUse(
+            uint smallHeapOnly,
+            byte** currentAllocAllocatedLocation,
+            HeapSegmentPrefix** ephemeralHeapSegmentLocation,
+            byte* generationData,
+            nuint generationSize,
+            nuint generationStartSegmentOffset,
+            nuint generationAllocationStartOffset,
+            nuint generationFreeListSpaceOffset,
+            nuint generationFreeObjectSpaceOffset,
+            nuint* backgroundSohSizeEndMark,
+            int* currentGcState,
+            int planningState,
+            uint backgroundGcEnabled,
+            int maxGeneration,
+            int uohStartGeneration,
+            int totalGenerationCount,
+            uint useRegions,
+            nuint alignedMinObjectSize)
+        {
+            nuint totalSize = 0;
+
+            byte* generationZero = generationData;
+            nuint generationZeroFragmentation =
+                *(nuint*)(generationZero + (nint)generationFreeListSpaceOffset) +
+                *(nuint*)(generationZero + (nint)generationFreeObjectSpaceOffset);
+            nuint generationZeroSize = 0;
+            byte* currentAllocAllocated = *currentAllocAllocatedLocation;
+            if (useRegions != 0)
+            {
+                HeapSegmentPrefix* generationZeroSegment =
+                    *(HeapSegmentPrefix**)(generationZero + (nint)generationStartSegmentOffset);
+                while (generationZeroSegment is not null)
+                {
+                    byte* end = InRangeForSegment(currentAllocAllocated, generationZeroSegment) ?
+                        currentAllocAllocated :
+                        generationZeroSegment->Allocated;
+                    generationZeroSize += (nuint)(end - generationZeroSegment->Mem);
+
+                    generationZeroSegment = generationZeroSegment->Next;
+                }
+            }
+            else
+            {
+                HeapSegmentPrefix* ephemeralHeapSegment = *ephemeralHeapSegmentLocation;
+                generationZeroSize = (nuint)(currentAllocAllocated - ephemeralHeapSegment->Mem);
+            }
+
+            totalSize = (generationZeroSize > generationZeroFragmentation) ?
+                (generationZeroSize - generationZeroFragmentation) :
+                0;
+
+            int stopGenerationIndex = maxGeneration;
+            if ((backgroundGcEnabled != 0) && (ReadVolatile(currentGcState) == planningState))
+            {
+                byte* oldestGeneration = GenerationAddress(generationData, generationSize, maxGeneration);
+                totalSize = *backgroundSohSizeEndMark -
+                    *(nuint*)(oldestGeneration + (nint)generationFreeListSpaceOffset) -
+                    *(nuint*)(oldestGeneration + (nint)generationFreeObjectSpaceOffset);
+                stopGenerationIndex--;
+            }
+
+            for (int i = maxGeneration - 1; i <= stopGenerationIndex; i++)
+            {
+                byte* generation = GenerationAddress(generationData, generationSize, i);
+                totalSize += GenerationSize(
+                    i,
+                    generationData,
+                    generationSize,
+                    ephemeralHeapSegmentLocation,
+                    alignedMinObjectSize,
+                    useRegions,
+                    generationStartSegmentOffset,
+                    generationAllocationStartOffset) -
+                    *(nuint*)(generation + (nint)generationFreeListSpaceOffset) -
+                    *(nuint*)(generation + (nint)generationFreeObjectSpaceOffset);
+            }
+
+            if (smallHeapOnly == 0)
+            {
+                for (int i = uohStartGeneration; i < totalGenerationCount; i++)
+                {
+                    byte* generation = GenerationAddress(generationData, generationSize, i);
+                    totalSize += GenerationSize(
+                        i,
+                        generationData,
+                        generationSize,
+                        ephemeralHeapSegmentLocation,
+                        alignedMinObjectSize,
+                        useRegions,
+                        generationStartSegmentOffset,
+                        generationAllocationStartOffset) -
+                        *(nuint*)(generation + (nint)generationFreeListSpaceOffset) -
+                        *(nuint*)(generation + (nint)generationFreeObjectSpaceOffset);
+                }
+            }
+
+            return totalSize;
+        }
+
         [RuntimeExport("RhpGCHeapGetValidSegmentSize")]
         internal static nuint RhpGCHeapGetValidSegmentSize(uint largeSegment, nuint largeSegmentSize, nuint smallSegmentSize)
         {
@@ -85,6 +294,42 @@ namespace System.Runtime
             {
                 Interlocked.Decrement(ref *suspensionPendingCount);
             }
+        }
+
+        [RuntimeExport("RhpGCHeapGetLastGCPercentTimeInGC")]
+        internal static int RhpGCHeapGetLastGCPercentTimeInGC(uint percentTimeInGC)
+        {
+            return (int)percentTimeInGC;
+        }
+
+        [RuntimeExport("RhpGCHeapGetLastGCGenerationSize")]
+        internal static unsafe nuint RhpGCHeapGetLastGCGenerationSize(nuint* generationSizes, int generation)
+        {
+            return generationSizes[generation];
+        }
+
+        [RuntimeExport("RhpGCHeapGetCurrentObjSize")]
+        internal static nuint RhpGCHeapGetCurrentObjSize(nuint totalSurvivedSize, nuint totalAllocatedSize)
+        {
+            return totalSurvivedSize + totalAllocatedSize;
+        }
+
+        [RuntimeExport("RhpGCHeapGetLastGCStartTime")]
+        internal static nuint RhpGCHeapGetLastGCStartTime(ulong timeClock)
+        {
+            return (nuint)(timeClock / 1000);
+        }
+
+        [RuntimeExport("RhpGCHeapGetLastGCDuration")]
+        internal static nuint RhpGCHeapGetLastGCDuration(nuint gcElapsedTime)
+        {
+            return (nuint)(gcElapsedTime / 1000);
+        }
+
+        [RuntimeExport("RhpGCHeapGetNow")]
+        internal static nuint RhpGCHeapGetNow(ulong highPrecisionTimeStamp)
+        {
+            return (nuint)(highPrecisionTimeStamp / 1000);
         }
 
         [RuntimeExport("RhpGCHeapInitializeYieldProcessorSpinPolicy")]

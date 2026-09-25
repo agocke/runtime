@@ -25,6 +25,26 @@ namespace WKS
 #endif // SERVER_GC
 
 #ifdef FEATURE_NATIVEAOT
+extern "C" size_t F_CALL_CONV RhpGCHeapApproxTotalBytesInUse(
+    uint32_t small_heap_only,
+    uint8_t** current_alloc_allocated,
+    heap_segment** ephemeral_heap_segment,
+    uint8_t* generation_data,
+    size_t generation_size,
+    size_t generation_start_segment_offset,
+    size_t generation_allocation_start_offset,
+    size_t generation_free_list_space_offset,
+    size_t generation_free_obj_space_offset,
+    size_t* background_soh_size_end_mark,
+    volatile int32_t* current_gc_state,
+    int32_t planning_state,
+    uint32_t background_gc_enabled,
+    int32_t max_generation,
+    int32_t uoh_start_generation,
+    int32_t total_generation_count,
+    uint32_t use_regions,
+    size_t aligned_min_obj_size);
+
 extern "C" void F_CALL_CONV RhpGCHeapGetMemoryInfo(
     uint64_t* high_mem_load_threshold_bytes,
     uint64_t* total_available_memory_bytes,
@@ -101,6 +121,50 @@ static_assert(offsetof(last_recorded_gc_info, compaction) == sizeof(size_t) * 30
 static_assert(offsetof(last_recorded_gc_info, concurrent) == sizeof(size_t) * 30 + sizeof(uint32_t) + sizeof(uint8_t) * 2);
 static_assert(sizeof(last_recorded_gc_info) ==
               ((sizeof(size_t) * 30 + sizeof(uint32_t) + sizeof(uint8_t) * 3 + sizeof(size_t) - 1) / sizeof(size_t)) * sizeof(size_t));
+static_assert(sizeof(size_t) == sizeof(void*));
+static_assert(alignof(size_t) == alignof(void*));
+static_assert(sizeof(c_gc_state) == sizeof(int32_t));
+static_assert(alignof(c_gc_state) == alignof(int32_t));
+static_assert(sizeof(generation) % alignof(generation) == 0);
+static_assert(sizeof(decltype(((generation*)nullptr)->start_segment)) == sizeof(void*));
+static_assert(alignof(decltype(((generation*)nullptr)->start_segment)) == alignof(void*));
+static_assert(offsetof(generation, start_segment) % alignof(decltype(((generation*)nullptr)->start_segment)) == 0);
+static_assert(offsetof(generation, start_segment) + sizeof(decltype(((generation*)nullptr)->start_segment)) <= sizeof(generation));
+static_assert(sizeof(decltype(((generation*)nullptr)->free_list_space)) == sizeof(size_t));
+static_assert(alignof(decltype(((generation*)nullptr)->free_list_space)) == alignof(size_t));
+static_assert(offsetof(generation, free_list_space) % alignof(decltype(((generation*)nullptr)->free_list_space)) == 0);
+static_assert(offsetof(generation, free_list_space) + sizeof(decltype(((generation*)nullptr)->free_list_space)) <= sizeof(generation));
+static_assert(sizeof(decltype(((generation*)nullptr)->free_obj_space)) == sizeof(size_t));
+static_assert(alignof(decltype(((generation*)nullptr)->free_obj_space)) == alignof(size_t));
+static_assert(offsetof(generation, free_obj_space) % alignof(decltype(((generation*)nullptr)->free_obj_space)) == 0);
+static_assert(offsetof(generation, free_obj_space) + sizeof(decltype(((generation*)nullptr)->free_obj_space)) <= sizeof(generation));
+#ifndef USE_REGIONS
+static_assert(sizeof(decltype(((generation*)nullptr)->allocation_start)) == sizeof(void*));
+static_assert(alignof(decltype(((generation*)nullptr)->allocation_start)) == alignof(void*));
+static_assert(offsetof(generation, allocation_start) % alignof(decltype(((generation*)nullptr)->allocation_start)) == 0);
+static_assert(offsetof(generation, allocation_start) + sizeof(decltype(((generation*)nullptr)->allocation_start)) <= sizeof(generation));
+#endif // !USE_REGIONS
+static_assert(sizeof(decltype(((heap_segment*)nullptr)->allocated)) == sizeof(uint8_t*));
+static_assert(sizeof(decltype(((heap_segment*)nullptr)->committed)) == sizeof(uint8_t*));
+static_assert(sizeof(decltype(((heap_segment*)nullptr)->reserved)) == sizeof(uint8_t*));
+static_assert(sizeof(decltype(((heap_segment*)nullptr)->used)) == sizeof(uint8_t*));
+static_assert(sizeof(decltype(((heap_segment*)nullptr)->mem)) == sizeof(uint8_t*));
+static_assert(sizeof(decltype(((heap_segment*)nullptr)->flags)) == sizeof(size_t));
+static_assert(sizeof(decltype(((heap_segment*)nullptr)->next)) == sizeof(void*));
+static_assert(alignof(decltype(((heap_segment*)nullptr)->allocated)) == alignof(uint8_t*));
+static_assert(alignof(decltype(((heap_segment*)nullptr)->committed)) == alignof(uint8_t*));
+static_assert(alignof(decltype(((heap_segment*)nullptr)->reserved)) == alignof(uint8_t*));
+static_assert(alignof(decltype(((heap_segment*)nullptr)->used)) == alignof(uint8_t*));
+static_assert(alignof(decltype(((heap_segment*)nullptr)->mem)) == alignof(uint8_t*));
+static_assert(alignof(decltype(((heap_segment*)nullptr)->flags)) == alignof(size_t));
+static_assert(alignof(decltype(((heap_segment*)nullptr)->next)) == alignof(void*));
+static_assert(offsetof(heap_segment, allocated) == 0);
+static_assert(offsetof(heap_segment, committed) == sizeof(void*));
+static_assert(offsetof(heap_segment, reserved) == sizeof(void*) * 2);
+static_assert(offsetof(heap_segment, used) == sizeof(void*) * 3);
+static_assert(offsetof(heap_segment, mem) == sizeof(void*) * 4);
+static_assert(offsetof(heap_segment, flags) == sizeof(void*) * 5);
+static_assert(offsetof(heap_segment, next) == sizeof(void*) * 6);
 #endif // FEATURE_NATIVEAOT
 
 class NoGCRegionLockHolder
@@ -2166,6 +2230,52 @@ int GCHeap::CollectionCount (int generation, int get_bgc_fgc_count)
 
 size_t GCHeap::ApproxTotalBytesInUse(BOOL small_heap_only)
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef BACKGROUND_GC
+    size_t* background_soh_size_end_mark = &pGenGCHeap->background_soh_size_end_mark;
+    volatile int32_t* current_gc_state = reinterpret_cast<volatile int32_t*>(&gc_heap::current_c_gc_state);
+    int32_t planning_state = (int32_t)c_gc_state_planning;
+    uint32_t background_gc_enabled = 1U;
+#else //BACKGROUND_GC
+    size_t* background_soh_size_end_mark = nullptr;
+    int32_t* current_gc_state = nullptr;
+    int32_t planning_state = 0;
+    uint32_t background_gc_enabled = 0;
+#endif //BACKGROUND_GC
+
+#ifdef USE_REGIONS
+    uint32_t use_regions = 1;
+    size_t aligned_min_obj_size = 0;
+#else //USE_REGIONS
+    uint32_t use_regions = 0;
+    size_t aligned_min_obj_size = Align (min_obj_size);
+#endif //USE_REGIONS
+
+    generation* generation_data = pGenGCHeap->generation_of (0);
+    return RhpGCHeapApproxTotalBytesInUse(
+        small_heap_only != FALSE ? 1U : 0U,
+        &pGenGCHeap->alloc_allocated,
+        &pGenGCHeap->ephemeral_heap_segment,
+        reinterpret_cast<uint8_t*>(generation_data),
+        sizeof(generation),
+        offsetof(generation, start_segment),
+#ifdef USE_REGIONS
+        0,
+#else //USE_REGIONS
+        offsetof(generation, allocation_start),
+#endif //USE_REGIONS
+        offsetof(generation, free_list_space),
+        offsetof(generation, free_obj_space),
+        background_soh_size_end_mark,
+        current_gc_state,
+        planning_state,
+        background_gc_enabled,
+        max_generation,
+        uoh_start_generation,
+        total_generation_count,
+        use_regions,
+        aligned_min_obj_size);
+#else
     size_t totsize = 0;
 
     // For gen0 it's a bit complicated because we are currently allocating in it. We get the fragmentation first
@@ -2223,6 +2333,7 @@ size_t GCHeap::ApproxTotalBytesInUse(BOOL small_heap_only)
     }
 
     return totsize;
+#endif // FEATURE_NATIVEAOT
 }
 
 #ifdef MULTIPLE_HEAPS
