@@ -434,6 +434,165 @@ namespace System.Runtime
             }
         }
 
+        [RuntimeExport("RhpGCHeapGetTotalSurvivedSize")]
+        internal static unsafe nuint RhpGCHeapGetTotalSurvivedSize(
+            byte** heapSource,
+            int heapCount,
+            byte* historySource,
+            nuint historyOffset,
+            nuint generationDataOffset,
+            nuint generationDataSize,
+            nuint sizeAfterOffset,
+            nuint freeListSpaceAfterOffset,
+            nuint freeObjSpaceAfterOffset,
+            int totalGenerationCount)
+        {
+            nuint totalSurvivedSize = 0;
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* history = historySource is null ?
+                        heapSource[heap] + (nint)historyOffset :
+                        historySource;
+                    byte* generationData = history + (nint)generationDataOffset;
+                    for (int generation = 0; generation < totalGenerationCount; generation++)
+                    {
+                        byte* generationEntry = generationData + (nint)((nuint)generation * generationDataSize);
+                        totalSurvivedSize +=
+                            *(nuint*)(generationEntry + (nint)sizeAfterOffset) -
+                            *(nuint*)(generationEntry + (nint)freeListSpaceAfterOffset) -
+                            *(nuint*)(generationEntry + (nint)freeObjSpaceAfterOffset);
+                    }
+                }
+            }
+
+            return totalSurvivedSize;
+        }
+
+        [RuntimeExport("RhpGCHeapGetTotalAllocatedSinceLastGC")]
+        internal static unsafe void RhpGCHeapGetTotalAllocatedSinceLastGC(
+            byte** heapSource,
+            int heapCount,
+            byte* allocatedSinceLastGCSource,
+            nuint allocatedSinceLastGCOffset,
+            int totalOhCount,
+            nuint* ohAllocated)
+        {
+            for (int oh = 0; oh < totalOhCount; oh++)
+            {
+                ohAllocated[oh] = 0;
+            }
+
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    nuint* allocatedSinceLastGC = (nuint*)(allocatedSinceLastGCSource is null ?
+                        heapSource[heap] + (nint)allocatedSinceLastGCOffset :
+                        allocatedSinceLastGCSource);
+                    for (int oh = 0; oh < totalOhCount; oh++)
+                    {
+                        ohAllocated[oh] += allocatedSinceLastGC[oh];
+                        allocatedSinceLastGC[oh] = 0;
+                    }
+                }
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe nuint CurrentAllocated(
+            byte* dynamicData,
+            nuint dynamicDataSize,
+            nuint desiredAllocationOffset,
+            nuint newAllocationOffset,
+            int uohStartGeneration,
+            int totalGenerationCount)
+        {
+            unchecked
+            {
+                nuint currentAllocated =
+                    *(nuint*)(dynamicData + (nint)desiredAllocationOffset) -
+                    (nuint)(*(nint*)(dynamicData + (nint)newAllocationOffset));
+                for (int generation = uohStartGeneration; generation < totalGenerationCount; generation++)
+                {
+                    byte* dynamicDataForGeneration = dynamicData + (nint)((nuint)generation * dynamicDataSize);
+                    currentAllocated +=
+                        *(nuint*)(dynamicDataForGeneration + (nint)desiredAllocationOffset) -
+                        (nuint)(*(nint*)(dynamicDataForGeneration + (nint)newAllocationOffset));
+                }
+
+                return currentAllocated;
+            }
+        }
+
+        [RuntimeExport("RhpGCHeapGetTotalAllocated")]
+        internal static unsafe nuint RhpGCHeapGetTotalAllocated(
+            byte** heapSource,
+            int heapCount,
+            byte* dynamicDataSource,
+            nuint dynamicDataTableOffset,
+            nuint dynamicDataSize,
+            nuint desiredAllocationOffset,
+            nuint newAllocationOffset,
+            int uohStartGeneration,
+            int totalGenerationCount)
+        {
+            nuint totalAllocated = 0;
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* dynamicData = dynamicDataSource is null ?
+                        heapSource[heap] + (nint)dynamicDataTableOffset :
+                        dynamicDataSource;
+                    totalAllocated += CurrentAllocated(
+                        dynamicData,
+                        dynamicDataSize,
+                        desiredAllocationOffset,
+                        newAllocationOffset,
+                        uohStartGeneration,
+                        totalGenerationCount);
+                }
+            }
+
+            return totalAllocated;
+        }
+
+        [RuntimeExport("RhpGCHeapGetTotalPromoted")]
+        internal static unsafe nuint RhpGCHeapGetTotalPromoted(
+            byte** heapSource,
+            int heapCount,
+            byte* dynamicDataSource,
+            nuint dynamicDataTableOffset,
+            nuint dynamicDataSize,
+            nuint promotedSizeOffset,
+            int condemnedGeneration,
+            int maxGeneration,
+            int totalGenerationCount)
+        {
+            int highestGeneration = condemnedGeneration == maxGeneration ?
+                totalGenerationCount - 1 :
+                condemnedGeneration;
+            nuint totalPromotedSize = 0;
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* dynamicData = dynamicDataSource is null ?
+                        heapSource[heap] + (nint)dynamicDataTableOffset :
+                        dynamicDataSource;
+                    for (int generation = 0; generation <= highestGeneration; generation++)
+                    {
+                        byte* dynamicDataForGeneration = dynamicData + (nint)((nuint)generation * dynamicDataSize);
+                        totalPromotedSize += *(nuint*)(dynamicDataForGeneration + (nint)promotedSizeOffset);
+                    }
+                }
+            }
+
+            return totalPromotedSize;
+        }
+
         [RuntimeExport("RhpGCHeapUpdatePostGCTimeCounters")]
         internal static unsafe void RhpGCHeapUpdatePostGCTimeCounters(
             ulong* totalTimeInGC,

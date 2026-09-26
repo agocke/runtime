@@ -11,6 +11,66 @@ namespace WKS
 {
 #endif // SERVER_GC
 
+#ifdef FEATURE_NATIVEAOT
+extern "C" size_t F_CALL_CONV RhpGCHeapGetTotalSurvivedSize(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* history_source,
+    size_t history_offset,
+    size_t generation_data_offset,
+    size_t generation_data_size,
+    size_t size_after_offset,
+    size_t free_list_space_after_offset,
+    size_t free_obj_space_after_offset,
+    int32_t total_generation_count);
+extern "C" void F_CALL_CONV RhpGCHeapGetTotalAllocatedSinceLastGC(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* allocated_since_last_gc_source,
+    size_t allocated_since_last_gc_offset,
+    int32_t total_oh_count,
+    size_t* oh_allocated);
+extern "C" size_t F_CALL_CONV RhpGCHeapGetTotalAllocated(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* dynamic_data_source,
+    size_t dynamic_data_table_offset,
+    size_t dynamic_data_size,
+    size_t desired_allocation_offset,
+    size_t new_allocation_offset,
+    int32_t uoh_start_generation,
+    int32_t total_generation_count);
+extern "C" size_t F_CALL_CONV RhpGCHeapGetTotalPromoted(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* dynamic_data_source,
+    size_t dynamic_data_table_offset,
+    size_t dynamic_data_size,
+    size_t promoted_size_offset,
+    int32_t condemned_generation,
+    int32_t max_generation,
+    int32_t total_generation_count);
+
+static_assert(sizeof(size_t) == sizeof(void*));
+static_assert(alignof(size_t) == alignof(void*));
+static_assert(sizeof(ptrdiff_t) == sizeof(size_t));
+static_assert(alignof(ptrdiff_t) == alignof(void*));
+static_assert(sizeof(uint8_t*) == sizeof(void*));
+static_assert(alignof(uint8_t*) == alignof(void*));
+static_assert(sizeof(decltype(((dynamic_data*)nullptr)->desired_allocation)) == sizeof(size_t));
+static_assert(alignof(decltype(((dynamic_data*)nullptr)->desired_allocation)) == alignof(size_t));
+static_assert(offsetof(dynamic_data, desired_allocation) % alignof(size_t) == 0);
+static_assert(offsetof(dynamic_data, desired_allocation) + sizeof(size_t) <= sizeof(dynamic_data));
+static_assert(sizeof(decltype(((dynamic_data*)nullptr)->new_allocation)) == sizeof(ptrdiff_t));
+static_assert(alignof(decltype(((dynamic_data*)nullptr)->new_allocation)) == alignof(ptrdiff_t));
+static_assert(offsetof(dynamic_data, new_allocation) % alignof(ptrdiff_t) == 0);
+static_assert(offsetof(dynamic_data, new_allocation) + sizeof(ptrdiff_t) <= sizeof(dynamic_data));
+static_assert(sizeof(decltype(((dynamic_data*)nullptr)->promoted_size)) == sizeof(size_t));
+static_assert(alignof(decltype(((dynamic_data*)nullptr)->promoted_size)) == alignof(size_t));
+static_assert(offsetof(dynamic_data, promoted_size) % alignof(size_t) == 0);
+static_assert(offsetof(dynamic_data, promoted_size) + sizeof(size_t) <= sizeof(dynamic_data));
+#endif // FEATURE_NATIVEAOT
+
 // If every heap's gen2 or gen3 size is less than this threshold we will do a blocking GC.
 const size_t bgc_min_per_heap = 4*1024*1024;
 
@@ -453,6 +513,58 @@ size_t get_survived_size (gc_history_per_heap* hist)
 
 size_t gc_heap::get_total_survived_size()
 {
+#ifdef FEATURE_NATIVEAOT
+    static_assert(offsetof(gc_history_per_heap, gen_data) % alignof(gc_generation_data) == 0);
+    static_assert(offsetof(gc_history_per_heap, gen_data) + sizeof(gc_generation_data) * total_generation_count <= sizeof(gc_history_per_heap));
+    static_assert(sizeof(decltype(((gc_generation_data*)nullptr)->size_after)) == sizeof(size_t));
+    static_assert(offsetof(gc_generation_data, size_after) % alignof(size_t) == 0);
+    static_assert(offsetof(gc_generation_data, size_after) + sizeof(size_t) <= sizeof(gc_generation_data));
+    static_assert(sizeof(decltype(((gc_generation_data*)nullptr)->free_list_space_after)) == sizeof(size_t));
+    static_assert(offsetof(gc_generation_data, free_list_space_after) % alignof(size_t) == 0);
+    static_assert(offsetof(gc_generation_data, free_list_space_after) + sizeof(size_t) <= sizeof(gc_generation_data));
+    static_assert(sizeof(decltype(((gc_generation_data*)nullptr)->free_obj_space_after)) == sizeof(size_t));
+    static_assert(offsetof(gc_generation_data, free_obj_space_after) % alignof(size_t) == 0);
+    static_assert(offsetof(gc_generation_data, free_obj_space_after) + sizeof(size_t) <= sizeof(gc_generation_data));
+
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, gc_data_per_heap) % alignof(gc_history_per_heap) == 0);
+    static_assert(offsetof(gc_heap, gc_data_per_heap) + sizeof(gc_history_per_heap) <= sizeof(gc_heap));
+    size_t history_offset = offsetof(gc_heap, gc_data_per_heap);
+#ifdef BACKGROUND_GC
+    static_assert(offsetof(gc_heap, bgc_data_per_heap) % alignof(gc_history_per_heap) == 0);
+    static_assert(offsetof(gc_heap, bgc_data_per_heap) + sizeof(gc_history_per_heap) <= sizeof(gc_heap));
+    if (settings.concurrent)
+    {
+        history_offset = offsetof(gc_heap, bgc_data_per_heap);
+    }
+#endif // BACKGROUND_GC
+
+    return RhpGCHeapGetTotalSurvivedSize(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        history_offset,
+        offsetof(gc_history_per_heap, gen_data),
+        sizeof(gc_generation_data),
+        offsetof(gc_generation_data, size_after),
+        offsetof(gc_generation_data, free_list_space_after),
+        offsetof(gc_generation_data, free_obj_space_after),
+        total_generation_count);
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalSurvivedSize(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(gc_heap::get_gc_data_per_heap()),
+        0,
+        offsetof(gc_history_per_heap, gen_data),
+        sizeof(gc_generation_data),
+        offsetof(gc_generation_data, size_after),
+        offsetof(gc_generation_data, free_list_space_after),
+        offsetof(gc_generation_data, free_obj_space_after),
+        total_generation_count);
+#endif // MULTIPLE_HEAPS
+#else
     size_t total_surv_size = 0;
 #ifdef MULTIPLE_HEAPS
     for (int i = 0; i < gc_heap::n_heaps; i++)
@@ -466,10 +578,34 @@ size_t gc_heap::get_total_survived_size()
     total_surv_size = get_survived_size (current_gc_data_per_heap);
 #endif //MULTIPLE_HEAPS
     return total_surv_size;
+#endif // FEATURE_NATIVEAOT
 }
 
 void gc_heap::get_total_allocated_since_last_gc (size_t* oh_allocated)
 {
+#ifdef FEATURE_NATIVEAOT
+    static_assert(sizeof(allocated_since_last_gc[0]) == sizeof(size_t));
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, allocated_since_last_gc) % alignof(size_t) == 0);
+    static_assert(offsetof(gc_heap, allocated_since_last_gc) + sizeof(size_t) * total_oh_count <= sizeof(gc_heap));
+    RhpGCHeapGetTotalAllocatedSinceLastGC(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        offsetof(gc_heap, allocated_since_last_gc),
+        total_oh_count,
+        oh_allocated);
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    RhpGCHeapGetTotalAllocatedSinceLastGC(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(&gc_heap::allocated_since_last_gc[0]),
+        0,
+        total_oh_count,
+        oh_allocated);
+#endif // MULTIPLE_HEAPS
+#else
     memset (oh_allocated, 0, (total_oh_count * sizeof (size_t)));
     size_t total_allocated_size = 0;
 
@@ -487,11 +623,41 @@ void gc_heap::get_total_allocated_since_last_gc (size_t* oh_allocated)
             hp->allocated_since_last_gc[oh_idx] = 0;
         }
     }
+#endif // FEATURE_NATIVEAOT
 }
 
 // Gets what's allocated on both SOH, LOH, etc that hasn't been collected.
 size_t gc_heap::get_current_allocated()
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, dynamic_data_table) % alignof(dynamic_data) == 0);
+    static_assert(offsetof(gc_heap, dynamic_data_table) + sizeof(dynamic_data) * total_generation_count <= sizeof(gc_heap));
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(this) };
+    return RhpGCHeapGetTotalAllocated(
+        heap_source,
+        1,
+        nullptr,
+        offsetof(gc_heap, dynamic_data_table),
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, desired_allocation),
+        offsetof(dynamic_data, new_allocation),
+        uoh_start_generation,
+        total_generation_count);
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalAllocated(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(dynamic_data_of(0)),
+        0,
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, desired_allocation),
+        offsetof(dynamic_data, new_allocation),
+        uoh_start_generation,
+        total_generation_count);
+#endif // MULTIPLE_HEAPS
+#else
     dynamic_data* dd = dynamic_data_of (0);
     size_t current_alloc = dd_desired_allocation (dd) - dd_new_allocation (dd);
     for (int i = uoh_start_generation; i < total_generation_count; i++)
@@ -500,10 +666,39 @@ size_t gc_heap::get_current_allocated()
         current_alloc += dd_desired_allocation (dd) - dd_new_allocation (dd);
     }
     return current_alloc;
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t gc_heap::get_total_allocated()
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, dynamic_data_table) % alignof(dynamic_data) == 0);
+    static_assert(offsetof(gc_heap, dynamic_data_table) + sizeof(dynamic_data) * total_generation_count <= sizeof(gc_heap));
+    return RhpGCHeapGetTotalAllocated(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        offsetof(gc_heap, dynamic_data_table),
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, desired_allocation),
+        offsetof(dynamic_data, new_allocation),
+        uoh_start_generation,
+        total_generation_count);
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalAllocated(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(dynamic_data_of(0)),
+        0,
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, desired_allocation),
+        offsetof(dynamic_data, new_allocation),
+        uoh_start_generation,
+        total_generation_count);
+#endif // MULTIPLE_HEAPS
+#else
     size_t total_current_allocated = 0;
 #ifdef MULTIPLE_HEAPS
     for (int i = 0; i < gc_heap::n_heaps; i++)
@@ -515,10 +710,40 @@ size_t gc_heap::get_total_allocated()
     total_current_allocated = get_current_allocated();
 #endif //MULTIPLE_HEAPS
     return total_current_allocated;
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t gc_heap::get_total_promoted()
 {
+#ifdef FEATURE_NATIVEAOT
+    int condemned_generation = settings.condemned_generation;
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, dynamic_data_table) % alignof(dynamic_data) == 0);
+    static_assert(offsetof(gc_heap, dynamic_data_table) + sizeof(dynamic_data) * total_generation_count <= sizeof(gc_heap));
+    return RhpGCHeapGetTotalPromoted(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        offsetof(gc_heap, dynamic_data_table),
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, promoted_size),
+        condemned_generation,
+        max_generation,
+        total_generation_count);
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalPromoted(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(dynamic_data_of(0)),
+        0,
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, promoted_size),
+        condemned_generation,
+        max_generation,
+        total_generation_count);
+#endif // MULTIPLE_HEAPS
+#else
     size_t total_promoted_size = 0;
     int highest_gen = ((settings.condemned_generation == max_generation) ?
                        (total_generation_count - 1) : settings.condemned_generation);
@@ -536,6 +761,7 @@ size_t gc_heap::get_total_promoted()
         }
     }
     return total_promoted_size;
+#endif // FEATURE_NATIVEAOT
 }
 
 #ifdef BGC_SERVO_TUNING
