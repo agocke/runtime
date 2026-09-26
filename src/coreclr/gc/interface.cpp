@@ -106,6 +106,22 @@ extern "C" uint32_t F_CALL_CONV RhpGCHeapWhichGeneration(
     size_t generation_allocation_start_offset,
     int32_t max_generation);
 
+extern "C" uint32_t F_CALL_CONV RhpGCHeapGetGenerationWithRange(
+    uint8_t* object,
+    heap_segment* segment,
+    uint32_t use_regions,
+    size_t segment_generation_offset,
+    int32_t loh_generation,
+    int32_t poh_generation,
+    heap_segment** ephemeral_heap_segment,
+    uint8_t* generation_data,
+    size_t generation_size,
+    size_t generation_allocation_start_offset,
+    int32_t max_generation,
+    uint8_t** start,
+    uint8_t** allocated,
+    uint8_t** reserved);
+
 extern "C" uint32_t F_CALL_CONV RhpGCHeapIsEphemeral(
     uint8_t* object,
     uint32_t use_regions,
@@ -1156,8 +1172,48 @@ FinalizerWorkItem* GCHeap::GetExtraWorkForFinalization()
 
 unsigned int GCHeap::GetGenerationWithRange (Object* object, uint8_t** ppStart, uint8_t** ppAllocated, uint8_t** ppReserved)
 {
-    int generation = -1;
     heap_segment * hs = gc_heap::find_segment ((uint8_t*)object, FALSE);
+#ifdef FEATURE_NATIVEAOT
+#ifdef USE_REGIONS
+    return RhpGCHeapGetGenerationWithRange(
+        reinterpret_cast<uint8_t*>(object),
+        hs,
+        1U,
+        offsetof(heap_segment, gen_num),
+        loh_generation,
+        poh_generation,
+        nullptr,
+        nullptr,
+        0,
+        0,
+        max_generation,
+        ppStart,
+        ppAllocated,
+        ppReserved);
+#else //USE_REGIONS
+#ifdef MULTIPLE_HEAPS
+    gc_heap* hp = heap_segment_heap (hs);
+#else //MULTIPLE_HEAPS
+    gc_heap* hp = __this;
+#endif //MULTIPLE_HEAPS
+    return RhpGCHeapGetGenerationWithRange(
+        reinterpret_cast<uint8_t*>(object),
+        hs,
+        0U,
+        0,
+        loh_generation,
+        poh_generation,
+        &hp->ephemeral_heap_segment,
+        reinterpret_cast<uint8_t*>(hp->generation_of (0)),
+        sizeof(generation),
+        offsetof(generation, allocation_start),
+        max_generation,
+        ppStart,
+        ppAllocated,
+        ppReserved);
+#endif //USE_REGIONS
+#else //FEATURE_NATIVEAOT
+    int generation = -1;
 #ifdef USE_REGIONS
     generation = heap_segment_gen_num (hs);
     if (generation == max_generation)
@@ -1222,6 +1278,7 @@ unsigned int GCHeap::GetGenerationWithRange (Object* object, uint8_t** ppStart, 
     }
 #endif //USE_REGIONS
     return (unsigned int)generation;
+#endif // FEATURE_NATIVEAOT
 }
 
 bool GCHeap::IsEphemeral (Object* object)

@@ -81,6 +81,8 @@ namespace System.Runtime
         }
 
         private const nuint HeapSegmentFlagsReadOnly = 1;
+        private const nuint HeapSegmentFlagsLoh = 8;
+        private const nuint HeapSegmentFlagsPoh = 512;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe HeapSegmentPrefix* HeapSegmentReadWrite(HeapSegmentPrefix* segment)
@@ -388,6 +390,96 @@ namespace System.Runtime
             }
 
             return maxGeneration;
+        }
+
+        [RuntimeExport("RhpGCHeapGetGenerationWithRange")]
+        internal static unsafe uint RhpGCHeapGetGenerationWithRange(
+            byte* objectAddress,
+            HeapSegmentPrefix* segment,
+            uint useRegions,
+            nuint segmentGenerationOffset,
+            int lohGeneration,
+            int pohGeneration,
+            HeapSegmentPrefix** ephemeralHeapSegmentLocation,
+            byte* generationData,
+            nuint generationSize,
+            nuint generationAllocationStartOffset,
+            int maxGeneration,
+            byte** start,
+            byte** allocated,
+            byte** reserved)
+        {
+            int generation = -1;
+            if (useRegions != 0)
+            {
+                generation = *((byte*)segment + (nint)segmentGenerationOffset);
+                if (generation == maxGeneration)
+                {
+                    if ((segment->Flags & HeapSegmentFlagsLoh) != 0)
+                    {
+                        generation = lohGeneration;
+                    }
+                    else if ((segment->Flags & HeapSegmentFlagsPoh) != 0)
+                    {
+                        generation = pohGeneration;
+                    }
+                }
+
+                *start = segment->Mem;
+                *allocated = segment->Allocated;
+                *reserved = segment->Reserved;
+            }
+            else
+            {
+                HeapSegmentPrefix* ephemeralHeapSegment = *ephemeralHeapSegmentLocation;
+                if (segment == ephemeralHeapSegment)
+                {
+                    byte* reservedAddress = segment->Reserved;
+                    byte* end = segment->Allocated;
+                    for (int gen = 0; gen < maxGeneration; gen++)
+                    {
+                        byte* generationStart = *(byte**)(GenerationAddress(generationData, generationSize, gen) +
+                            (nint)generationAllocationStartOffset);
+                        if (objectAddress >= generationStart)
+                        {
+                            generation = gen;
+                            *start = generationStart;
+                            *allocated = end;
+                            *reserved = reservedAddress;
+                            break;
+                        }
+
+                        end = reservedAddress = generationStart;
+                    }
+
+                    if (generation == -1)
+                    {
+                        generation = maxGeneration;
+                        *start = segment->Mem;
+                        byte* generationStart = *(byte**)(GenerationAddress(generationData, generationSize, maxGeneration - 1) +
+                            (nint)generationAllocationStartOffset);
+                        *allocated = *reserved = generationStart;
+                    }
+                }
+                else
+                {
+                    generation = maxGeneration;
+                    if ((segment->Flags & HeapSegmentFlagsLoh) != 0)
+                    {
+                        generation = lohGeneration;
+                    }
+                    else if ((segment->Flags & HeapSegmentFlagsPoh) != 0)
+                    {
+                        generation = pohGeneration;
+                    }
+
+                    *start = segment->Mem;
+                    *allocated = segment->Allocated;
+                    *reserved = segment->Reserved;
+                }
+            }
+
+            return (uint)generation;
         }
 
         [RuntimeExport("RhpGCHeapWhichGeneration")]
