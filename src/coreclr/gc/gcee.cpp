@@ -58,6 +58,35 @@ extern "C" uint64_t F_CALL_CONV RhpGCHeapGetGenerationBudget(
     size_t dynamic_data_size,
     size_t desired_allocation_offset,
     int32_t generation);
+extern "C" void F_CALL_CONV RhpGCHeapUpdatePostGCGenerationStats(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* generation_source,
+    uint8_t* dynamic_data_source,
+    uint8_t* ephemeral_heap_segment_location,
+    size_t generation_table_offset,
+    size_t generation_size,
+    size_t generation_start_segment_offset,
+    size_t generation_allocation_start_offset,
+    size_t ephemeral_heap_segment_offset,
+    size_t aligned_min_obj_size,
+    size_t dynamic_data_table_offset,
+    size_t dynamic_data_size,
+    size_t promoted_size_offset,
+    size_t freach_previous_promotion_offset,
+    int32_t condemned_generation,
+    int32_t max_generation,
+    int32_t loh_generation,
+    int32_t total_generation_count,
+    uint32_t use_regions,
+    size_t* generation_sizes,
+    size_t* generation_promoted_sizes,
+    size_t* promoted_finalization_mem);
+extern "C" void F_CALL_CONV RhpGCHeapUpdatePostGCTimeCounters(
+    uint64_t* total_time_in_gc,
+    uint64_t* total_time_since_last_gc_end,
+    uint32_t* percent_time_in_gc_since_last_gc,
+    uint64_t current_perf_counter_timer);
 
 static_assert(sizeof(size_t) == sizeof(void*));
 static_assert(alignof(size_t) == alignof(void*));
@@ -68,6 +97,25 @@ static_assert(sizeof(decltype(((dynamic_data*)nullptr)->desired_allocation)) == 
 static_assert(alignof(decltype(((dynamic_data*)nullptr)->desired_allocation)) == alignof(size_t));
 static_assert(offsetof(dynamic_data, desired_allocation) % alignof(decltype(((dynamic_data*)nullptr)->desired_allocation)) == 0);
 static_assert(offsetof(dynamic_data, desired_allocation) + sizeof(decltype(((dynamic_data*)nullptr)->desired_allocation)) <= sizeof(dynamic_data));
+static_assert(sizeof(decltype(((dynamic_data*)nullptr)->promoted_size)) == sizeof(size_t));
+static_assert(alignof(decltype(((dynamic_data*)nullptr)->promoted_size)) == alignof(size_t));
+static_assert(offsetof(dynamic_data, promoted_size) % alignof(decltype(((dynamic_data*)nullptr)->promoted_size)) == 0);
+static_assert(offsetof(dynamic_data, promoted_size) + sizeof(decltype(((dynamic_data*)nullptr)->promoted_size)) <= sizeof(dynamic_data));
+static_assert(sizeof(decltype(((dynamic_data*)nullptr)->freach_previous_promotion)) == sizeof(size_t));
+static_assert(alignof(decltype(((dynamic_data*)nullptr)->freach_previous_promotion)) == alignof(size_t));
+static_assert(offsetof(dynamic_data, freach_previous_promotion) % alignof(decltype(((dynamic_data*)nullptr)->freach_previous_promotion)) == 0);
+static_assert(offsetof(dynamic_data, freach_previous_promotion) + sizeof(decltype(((dynamic_data*)nullptr)->freach_previous_promotion)) <= sizeof(dynamic_data));
+static_assert(sizeof(generation) % alignof(generation) == 0);
+static_assert(sizeof(decltype(((generation*)nullptr)->start_segment)) == sizeof(void*));
+static_assert(alignof(decltype(((generation*)nullptr)->start_segment)) == alignof(void*));
+static_assert(offsetof(generation, start_segment) % alignof(decltype(((generation*)nullptr)->start_segment)) == 0);
+static_assert(offsetof(generation, start_segment) + sizeof(decltype(((generation*)nullptr)->start_segment)) <= sizeof(generation));
+#ifndef USE_REGIONS
+static_assert(sizeof(decltype(((generation*)nullptr)->allocation_start)) == sizeof(void*));
+static_assert(alignof(decltype(((generation*)nullptr)->allocation_start)) == alignof(void*));
+static_assert(offsetof(generation, allocation_start) % alignof(decltype(((generation*)nullptr)->allocation_start)) == 0);
+static_assert(offsetof(generation, allocation_start) + sizeof(decltype(((generation*)nullptr)->allocation_start)) <= sizeof(generation));
+#endif // !USE_REGIONS
 static_assert(sizeof(int32_t) == sizeof(int));
 static_assert(alignof(int32_t) == alignof(int));
 #endif // FEATURE_NATIVEAOT
@@ -132,6 +180,11 @@ void GCHeap::UpdatePostGCCounters()
 {
     totalSurvivedSize = gc_heap::get_total_survived_size();
 
+#ifdef FEATURE_NATIVEAOT
+    static_assert(sizeof(decltype(((gc_heap*)nullptr)->ephemeral_heap_segment)) == sizeof(void*));
+    static_assert(alignof(decltype(((gc_heap*)nullptr)->ephemeral_heap_segment)) == alignof(void*));
+#endif // FEATURE_NATIVEAOT
+
     //
     // The following is for instrumentation.
     //
@@ -163,6 +216,71 @@ void GCHeap::UpdatePostGCCounters()
         total_num_gc_handles = HndCountAllHandles(!IsGCInProgress());
 
     // per generation calculation.
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, dynamic_data_table) % alignof(dynamic_data) == 0);
+    static_assert(offsetof(gc_heap, dynamic_data_table) + sizeof(dynamic_data) * total_generation_count <= sizeof(gc_heap));
+    static_assert(offsetof(gc_heap, generation_table) % alignof(generation) == 0);
+    static_assert(offsetof(gc_heap, generation_table) + sizeof(generation) * total_generation_count <= sizeof(gc_heap));
+    static_assert(offsetof(gc_heap, ephemeral_heap_segment) % alignof(decltype(((gc_heap*)nullptr)->ephemeral_heap_segment)) == 0);
+    static_assert(offsetof(gc_heap, ephemeral_heap_segment) + sizeof(decltype(((gc_heap*)nullptr)->ephemeral_heap_segment)) <= sizeof(gc_heap));
+
+    RhpGCHeapUpdatePostGCGenerationStats(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        nullptr,
+        nullptr,
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    RhpGCHeapUpdatePostGCGenerationStats(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(pGenGCHeap->generation_of(0)),
+        reinterpret_cast<uint8_t*>(pGenGCHeap->dynamic_data_of(0)),
+        reinterpret_cast<uint8_t*>(&pGenGCHeap->ephemeral_heap_segment),
+#endif // MULTIPLE_HEAPS
+#ifdef MULTIPLE_HEAPS
+        offsetof(gc_heap, generation_table),
+#else
+        0,
+#endif // MULTIPLE_HEAPS
+        sizeof(generation),
+        offsetof(generation, start_segment),
+#ifdef USE_REGIONS
+        0,
+        0,
+        0,
+#else // USE_REGIONS
+        offsetof(generation, allocation_start),
+#ifdef MULTIPLE_HEAPS
+        offsetof(gc_heap, ephemeral_heap_segment),
+#else
+        0,
+#endif // MULTIPLE_HEAPS
+        Align(min_obj_size),
+#endif // USE_REGIONS
+#ifdef MULTIPLE_HEAPS
+        offsetof(gc_heap, dynamic_data_table),
+#else
+        0,
+#endif // MULTIPLE_HEAPS
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, promoted_size),
+        offsetof(dynamic_data, freach_previous_promotion),
+        condemned_gen,
+        max_generation,
+        loh_generation,
+        total_generation_count,
+#ifdef USE_REGIONS
+        1,
+#else // USE_REGIONS
+        0,
+#endif // USE_REGIONS
+        g_GenerationSizes,
+        g_GenerationPromotedSizes,
+        &promoted_finalization_mem);
+#else // FEATURE_NATIVEAOT
     for (int gen_index = 0; gen_index < total_generation_count; gen_index++)
     {
 #ifdef MULTIPLE_HEAPS
@@ -194,6 +312,7 @@ void GCHeap::UpdatePostGCCounters()
             }
         }
     }
+#endif // FEATURE_NATIVEAOT
 
     ReportGenerationBounds();
 
@@ -225,6 +344,13 @@ void GCHeap::UpdatePostGCCounters()
     // Compute Time in GC
     uint64_t _currentPerfCounterTimer = minipal_hires_ticks();
 
+#ifdef FEATURE_NATIVEAOT
+    RhpGCHeapUpdatePostGCTimeCounters(
+        &g_TotalTimeInGC,
+        &g_TotalTimeSinceLastGCEnd,
+        &g_percentTimeInGCSinceLastGC,
+        _currentPerfCounterTimer);
+#else
     g_TotalTimeInGC = _currentPerfCounterTimer - g_TotalTimeInGC;
     uint64_t _timeInGCBase = (_currentPerfCounterTimer - g_TotalTimeSinceLastGCEnd);
 
@@ -245,6 +371,7 @@ void GCHeap::UpdatePostGCCounters()
     else
         g_percentTimeInGCSinceLastGC = 0;
     g_TotalTimeSinceLastGCEnd = _currentPerfCounterTimer;
+#endif // FEATURE_NATIVEAOT
 }
 
 int GCHeap::GetLastGCPercentTimeInGC()

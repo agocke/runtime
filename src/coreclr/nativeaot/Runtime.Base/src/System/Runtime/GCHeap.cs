@@ -354,6 +354,122 @@ namespace System.Runtime
             return budget;
         }
 
+        [RuntimeExport("RhpGCHeapUpdatePostGCGenerationStats")]
+        internal static unsafe void RhpGCHeapUpdatePostGCGenerationStats(
+            byte** heapSource,
+            int heapCount,
+            byte* generationSource,
+            byte* dynamicDataSource,
+            byte* ephemeralHeapSegmentLocationSource,
+            nuint generationTableOffset,
+            nuint generationSize,
+            nuint generationStartSegmentOffset,
+            nuint generationAllocationStartOffset,
+            nuint ephemeralHeapSegmentOffset,
+            nuint alignedMinObjectSize,
+            nuint dynamicDataTableOffset,
+            nuint dynamicDataSize,
+            nuint promotedSizeOffset,
+            nuint freachPreviousPromotionOffset,
+            int condemnedGeneration,
+            int maxGeneration,
+            int lohGeneration,
+            int totalGenerationCount,
+            uint useRegions,
+            nuint* generationSizes,
+            nuint* generationPromotedSizes,
+            nuint* promotedFinalizationMemory)
+        {
+            *promotedFinalizationMemory = 0;
+            for (int generation = 0; generation < totalGenerationCount; generation++)
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* heapAddress = heapSource[heap];
+                    byte* generationData = generationSource is null ?
+                        heapAddress + (nint)generationTableOffset :
+                        generationSource;
+                    HeapSegmentPrefix** ephemeralHeapSegmentLocation = useRegions != 0 ?
+                        null :
+                        (HeapSegmentPrefix**)(ephemeralHeapSegmentLocationSource is null ?
+                            heapAddress + (nint)ephemeralHeapSegmentOffset :
+                            ephemeralHeapSegmentLocationSource);
+                    byte* dynamicDataAddress = (dynamicDataSource is null ?
+                        heapAddress + (nint)dynamicDataTableOffset :
+                        dynamicDataSource) +
+                        (nint)((nuint)generation * dynamicDataSize);
+
+                    nuint heapGenerationSize = GenerationSize(
+                        generation,
+                        generationData,
+                        generationSize,
+                        ephemeralHeapSegmentLocation,
+                        alignedMinObjectSize,
+                        useRegions,
+                        generationStartSegmentOffset,
+                        generationAllocationStartOffset);
+                    generationSizes[generation] = unchecked(generationSizes[generation] + heapGenerationSize);
+
+                    if (generation <= condemnedGeneration)
+                    {
+                        generationPromotedSizes[generation] = unchecked(
+                            generationPromotedSizes[generation] +
+                            *(nuint*)(dynamicDataAddress + (nint)promotedSizeOffset));
+                    }
+
+                    if ((generation == lohGeneration) && (condemnedGeneration == maxGeneration))
+                    {
+                        generationPromotedSizes[generation] = unchecked(
+                            generationPromotedSizes[generation] +
+                            *(nuint*)(dynamicDataAddress + (nint)promotedSizeOffset));
+                    }
+
+                    if (generation == 0)
+                    {
+                        *promotedFinalizationMemory = unchecked(
+                            *promotedFinalizationMemory +
+                            *(nuint*)(dynamicDataAddress + (nint)freachPreviousPromotionOffset));
+                    }
+                }
+            }
+        }
+
+        [RuntimeExport("RhpGCHeapUpdatePostGCTimeCounters")]
+        internal static unsafe void RhpGCHeapUpdatePostGCTimeCounters(
+            ulong* totalTimeInGC,
+            ulong* totalTimeSinceLastGCEnd,
+            uint* percentTimeInGCSinceLastGC,
+            ulong currentPerfCounterTimer)
+        {
+            unchecked
+            {
+                *totalTimeInGC = currentPerfCounterTimer - *totalTimeInGC;
+                ulong timeInGCBase = currentPerfCounterTimer - *totalTimeSinceLastGCEnd;
+
+                if (timeInGCBase < *totalTimeInGC)
+                {
+                    *totalTimeInGC = 0;
+                }
+
+                while (timeInGCBase > uint.MaxValue)
+                {
+                    timeInGCBase >>= 8;
+                    *totalTimeInGC >>= 8;
+                }
+
+                if (timeInGCBase != 0)
+                {
+                    *percentTimeInGCSinceLastGC = (uint)(*totalTimeInGC * 100 / timeInGCBase);
+                }
+                else
+                {
+                    *percentTimeInGCSinceLastGC = 0;
+                }
+
+                *totalTimeSinceLastGCEnd = currentPerfCounterTimer;
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe int ObjectGennum(
             byte* objectAddress,
