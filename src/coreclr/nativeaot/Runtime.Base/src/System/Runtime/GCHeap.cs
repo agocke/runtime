@@ -977,6 +977,333 @@ namespace System.Runtime
             return budget;
         }
 
+        [RuntimeExport("RhpGCHeapDesiredNewAllocation")]
+        internal static unsafe nuint RhpGCHeapDesiredNewAllocation(
+            byte* dynamicData,
+            byte* gcDataPerHeap,
+            int generationNumber,
+            int pass,
+            int maxGeneration,
+            nuint outputSize,
+            nuint freeListSpace,
+            uint dynamicAdaptationMode,
+            int* gen0ReductionCount,
+            int conserveMemSetting,
+            uint bgcFlTuningTriggered,
+            ulong availablePhysical,
+            byte* maxGenerationDynamicData,
+            nuint dynamicDataGcNewAllocationOffset,
+            nuint dynamicDataSurvOffset,
+            nuint dynamicDataDesiredAllocationOffset,
+            nuint dynamicDataBeginDataSizeOffset,
+            nuint dynamicDataCurrentSizeOffset,
+            nuint dynamicDataFragmentationOffset,
+            nuint dynamicDataTimeClockOffset,
+            nuint dynamicDataPreviousTimeClockOffset,
+            nuint dynamicDataSDataOffset,
+            nuint dynamicDataMinSizeOffset,
+            nuint staticDataLimitOffset,
+            nuint staticDataMaxLimitOffset,
+            nuint staticDataMaxSizeOffset,
+            nuint historyGenerationDataOffset,
+            nuint historyGenerationDataSize,
+            nuint historyNewAllocationOffset,
+            nuint alignmentSmall,
+            nuint alignmentLarge)
+        {
+            byte* historyGenerationData = gcDataPerHeap +
+                (nint)historyGenerationDataOffset +
+                (nint)((nuint)generationNumber * historyGenerationDataSize);
+
+            nuint beginDataSize = *(nuint*)(dynamicData + (nint)dynamicDataBeginDataSizeOffset);
+            if (beginDataSize == 0)
+            {
+                nuint initialAllocation = *(nuint*)(dynamicData + (nint)dynamicDataMinSizeOffset);
+                *(nuint*)(historyGenerationData + (nint)historyNewAllocationOffset) = initialAllocation;
+                return initialAllocation;
+            }
+
+            nuint previousDesiredAllocation = *(nuint*)(dynamicData + (nint)dynamicDataDesiredAllocationOffset);
+            nuint currentSize = *(nuint*)(dynamicData + (nint)dynamicDataCurrentSizeOffset);
+            nuint minGcSize = *(nuint*)(dynamicData + (nint)dynamicDataMinSizeOffset);
+            byte* staticData = *(byte**)(dynamicData + (nint)dynamicDataSDataOffset);
+            float maxLimit = *(float*)(staticData + (nint)staticDataMaxLimitOffset);
+            float limit = *(float*)(staticData + (nint)staticDataLimitOffset);
+            nuint maxSize = *(nuint*)(staticData + (nint)staticDataMaxSizeOffset);
+            float cst;
+            float f = 0;
+            nuint newAllocation;
+            ulong timeSincePreviousCollection = *(ulong*)(dynamicData + (nint)dynamicDataTimeClockOffset) -
+                *(ulong*)(dynamicData + (nint)dynamicDataPreviousTimeClockOffset);
+            float timeSincePreviousCollectionSecs = (float)timeSincePreviousCollection * 1e-6f;
+            float allocationFraction = (float)(
+                previousDesiredAllocation -
+                unchecked((nuint)(*(nint*)(dynamicData + (nint)dynamicDataGcNewAllocationOffset)))) /
+                (float)previousDesiredAllocation;
+
+            if (generationNumber >= maxGeneration)
+            {
+                nuint newSize;
+                cst = (float)outputSize / (float)beginDataSize;
+                if (cst > 1.0f)
+                {
+                    cst = 1.0f;
+                }
+
+                f = SurvToGrowth(cst, limit, maxLimit);
+                if (conserveMemSetting != 0)
+                {
+                    float fConserve = ((10.0f / conserveMemSetting) - 1) * 0.5f + 1.0f;
+                    if (fConserve < f)
+                    {
+                        f = fConserve;
+                    }
+                }
+
+                nuint maxGrowthSize = (nuint)(maxSize / f);
+                if (currentSize >= maxGrowthSize)
+                {
+                    newSize = maxSize;
+                }
+                else
+                {
+                    nuint growthSize = (nuint)(f * (float)currentSize);
+                    if (growthSize < minGcSize)
+                    {
+                        growthSize = minGcSize;
+                    }
+
+                    newSize = growthSize < maxSize ? growthSize : maxSize;
+                }
+
+                if (generationNumber == maxGeneration)
+                {
+                    newAllocation = unchecked(newSize - currentSize);
+                    if (newAllocation < minGcSize)
+                    {
+                        newAllocation = minGcSize;
+                    }
+
+                    newAllocation = LinearAllocationModel(
+                        allocationFraction,
+                        newAllocation,
+                        previousDesiredAllocation,
+                        timeSincePreviousCollectionSecs);
+
+                    if (bgcFlTuningTriggered == 0 &&
+                        conserveMemSetting == 0 &&
+                        *(nuint*)(dynamicData + (nint)dynamicDataFragmentationOffset) >
+                            (nuint)((f - 1) * (float)currentSize))
+                    {
+                        float denominator = (float)currentSize +
+                            2 * (float)(*(nuint*)(dynamicData + (nint)dynamicDataFragmentationOffset));
+                        nuint newAllocation1 = (nuint)((float)newAllocation * (float)currentSize / denominator);
+                        if (newAllocation1 < minGcSize)
+                        {
+                            newAllocation1 = minGcSize;
+                        }
+
+                        newAllocation = newAllocation1;
+                    }
+                }
+                else
+                {
+                    if (availablePhysical > 1024 * 1024)
+                    {
+                        availablePhysical -= 1024 * 1024;
+                    }
+
+                    ulong availableFree = availablePhysical + (ulong)freeListSpace;
+                    if (availableFree > ~(nuint)0)
+                    {
+                        availableFree = ~(nuint)0;
+                    }
+
+                    nuint maxGenerationDesiredAllocation = *(nuint*)(
+                        maxGenerationDynamicData + (nint)dynamicDataDesiredAllocationOffset);
+                    nuint generationGrowth = unchecked(newSize - currentSize);
+                    if (generationGrowth < maxGenerationDesiredAllocation)
+                    {
+                        generationGrowth = maxGenerationDesiredAllocation;
+                    }
+
+                    nuint availableAllocation = (nuint)availableFree < generationGrowth ?
+                        (nuint)availableFree :
+                        generationGrowth;
+                    nuint minimumAllocation = currentSize / 4;
+                    if (minimumAllocation < minGcSize)
+                    {
+                        minimumAllocation = minGcSize;
+                    }
+
+                    newAllocation = availableAllocation > minimumAllocation ?
+                        availableAllocation :
+                        minimumAllocation;
+                    newAllocation = LinearAllocationModel(
+                        allocationFraction,
+                        newAllocation,
+                        previousDesiredAllocation,
+                        timeSincePreviousCollectionSecs);
+                }
+            }
+            else
+            {
+                nuint survivors = outputSize;
+                cst = (float)survivors / (float)beginDataSize;
+                f = SurvToGrowth(cst, limit, maxLimit);
+                nuint growthSize = (nuint)(f * (float)survivors);
+                if (growthSize < minGcSize)
+                {
+                    growthSize = minGcSize;
+                }
+
+                newAllocation = growthSize < maxSize ? growthSize : maxSize;
+                newAllocation = LinearAllocationModel(
+                    allocationFraction,
+                    newAllocation,
+                    previousDesiredAllocation,
+                    timeSincePreviousCollectionSecs);
+
+                if (dynamicAdaptationMode != 1 && generationNumber == 0)
+                {
+                    if (pass == 0)
+                    {
+                        if (freeListSpace > minGcSize)
+                        {
+                            *gen0ReductionCount = 2;
+                        }
+                        else if (*gen0ReductionCount > 0)
+                        {
+                            (*gen0ReductionCount)--;
+                        }
+                    }
+
+                    if (*gen0ReductionCount > 0)
+                    {
+                        nuint reducedMaximum = maxSize / 3;
+                        if (reducedMaximum < minGcSize)
+                        {
+                            reducedMaximum = minGcSize;
+                        }
+
+                        if (newAllocation > reducedMaximum)
+                        {
+                            newAllocation = reducedMaximum;
+                        }
+                    }
+                }
+            }
+
+            nuint newAllocationRet = Align(newAllocation, generationNumber <= maxGeneration ? alignmentSmall : alignmentLarge);
+            *(nuint*)(historyGenerationData + (nint)historyNewAllocationOffset) = newAllocationRet;
+            *(float*)(dynamicData + (nint)dynamicDataSurvOffset) = cst;
+            return newAllocationRet;
+        }
+
+        [RuntimeExport("RhpGCHeapJoinedYoungestDesired")]
+        internal static nuint RhpGCHeapJoinedYoungestDesired(
+            nuint newAllocation,
+            uint entryMemoryLoad,
+            uint memoryLoad,
+            uint maxAllowedMemoryLoad,
+            ulong memoryOnePercent,
+            nuint minimumYoungestDesired,
+            nuint youngestDesiredThreshold,
+            uint heapCount,
+            nuint maxNewAllocation,
+            nuint alignmentSmall)
+        {
+            nuint finalNewAllocation = newAllocation;
+            if (newAllocation > minimumYoungestDesired)
+            {
+                nuint totalNewAllocation = unchecked(newAllocation * heapCount);
+                nuint totalMinAllocation = unchecked(minimumYoungestDesired * heapCount);
+                nuint largestMinimum = youngestDesiredThreshold > totalMinAllocation ?
+                    youngestDesiredThreshold :
+                    totalMinAllocation;
+                if (entryMemoryLoad >= maxAllowedMemoryLoad || totalNewAllocation > largestMinimum)
+                {
+                    nuint finalTotal;
+                    if (memoryLoad < maxAllowedMemoryLoad)
+                    {
+                        nuint remainMemoryLoad = unchecked(
+                            (nuint)(maxAllowedMemoryLoad - memoryLoad) * (nuint)memoryOnePercent);
+                        finalTotal = totalNewAllocation < remainMemoryLoad ? totalNewAllocation : remainMemoryLoad;
+                    }
+                    else
+                    {
+                        nuint totalMaxAllocation = (nuint)memoryOnePercent > totalMinAllocation ?
+                            (nuint)memoryOnePercent :
+                            totalMinAllocation;
+                        finalTotal = totalNewAllocation < totalMaxAllocation ? totalNewAllocation : totalMaxAllocation;
+                    }
+
+                    nuint finalPerHeap = Align(finalTotal / heapCount, alignmentSmall);
+                    finalNewAllocation = finalPerHeap < maxNewAllocation ? finalPerHeap : maxNewAllocation;
+                }
+            }
+
+            return finalNewAllocation;
+        }
+
+        [RuntimeExport("RhpGCHeapTrimYoungestDesiredLowMemory")]
+        internal static unsafe void RhpGCHeapTrimYoungestDesiredLowMemory(
+            byte* dynamicData,
+            nuint desiredAllocationOffset,
+            nuint minSizeOffset,
+            nuint committedMemory,
+            long keepPercent,
+            nuint alignmentSmall)
+        {
+            nuint candidate = Align((nuint)((double)committedMemory / 100.0 * keepPercent), alignmentSmall);
+            nuint minSize = *(nuint*)(dynamicData + (nint)minSizeOffset);
+            if (candidate < minSize)
+            {
+                candidate = minSize;
+            }
+
+            nuint current = *(nuint*)(dynamicData + (nint)desiredAllocationOffset);
+            *(nuint*)(dynamicData + (nint)desiredAllocationOffset) = current < candidate ? current : candidate;
+        }
+
+        [RuntimeExport("RhpGCHeapEstimateGenerationGrowth")]
+        internal static unsafe nint RhpGCHeapEstimateGenerationGrowth(
+            byte* dynamicData,
+            byte* generation,
+            uint useRegions,
+            nuint dynamicDataNewAllocationOffset,
+            nuint generationStartSegmentOffset,
+            nuint generationFreeListSpaceOffset,
+            nuint segmentAllocatedOffset,
+            nuint segmentReservedOffset,
+            nuint segmentMemOffset,
+            nuint segmentNextOffset)
+        {
+            nint newAllocation = *(nint*)(dynamicData + (nint)dynamicDataNewAllocationOffset);
+            nint freeListSpace = (nint)(*(nuint*)(generation + (nint)generationFreeListSpaceOffset));
+            if (useRegions == 0)
+            {
+                return newAllocation - freeListSpace / 2;
+            }
+
+            nint reservedNotInUse = 0;
+            nint allocated = 0;
+            HeapSegmentPrefix* region = HeapSegmentReadWrite(
+                *(HeapSegmentPrefix**)(generation + (nint)generationStartSegmentOffset));
+            while (region is not null)
+            {
+                allocated += (nint)(SegmentField(region, segmentAllocatedOffset) -
+                    SegmentField(region, segmentMemOffset));
+                reservedNotInUse += (nint)(SegmentField(region, segmentReservedOffset) -
+                    SegmentField(region, segmentAllocatedOffset));
+                region = *(HeapSegmentPrefix**)((byte*)region + (nint)segmentNextOffset);
+            }
+
+            double freeListFraction = allocated == 0 ? 0.0 : (double)freeListSpace / allocated;
+            nint usableFreeSpace = (nint)(freeListFraction * freeListSpace);
+            return newAllocation - usableFreeSpace - reservedNotInUse;
+        }
+
         [RuntimeExport("RhpGCHeapUpdatePostGCGenerationStats")]
         internal static unsafe void RhpGCHeapUpdatePostGCGenerationStats(
             byte** heapSource,
@@ -1250,6 +1577,44 @@ namespace System.Runtime
 
                 *totalTimeSinceLastGCEnd = currentPerfCounterTimer;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static float SurvToGrowth(float cst, float limit, float maxLimit)
+        {
+            float threshold = (maxLimit - limit) / (limit * (maxLimit - 1.0f));
+            if (cst < threshold)
+            {
+                return (limit - limit * cst) / (1.0f - cst * limit);
+            }
+
+            return maxLimit;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static nuint Align(nuint value, nuint alignment)
+        {
+            return unchecked((value + alignment) & ~alignment);
+        }
+
+        private static nuint LinearAllocationModel(
+            float allocationFraction,
+            nuint newAllocation,
+            nuint previousDesiredAllocation,
+            float timeSincePreviousCollectionSecs)
+        {
+            if (allocationFraction < 0.95 && allocationFraction > 0.0)
+            {
+                const float DecayTime = 5 * 60.0f;
+                float decayFactor = DecayTime <= timeSincePreviousCollectionSecs ?
+                    0 :
+                    (DecayTime - timeSincePreviousCollectionSecs) / DecayTime;
+                float previousAllocationFactor = (1.0f - allocationFraction) * decayFactor;
+                float previousAllocation = previousAllocationFactor * (float)previousDesiredAllocation;
+                return (nuint)((1.0 - previousAllocationFactor) * (double)newAllocation + previousAllocation);
+            }
+
+            return newAllocation;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

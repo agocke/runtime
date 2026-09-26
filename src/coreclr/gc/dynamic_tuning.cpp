@@ -92,6 +92,71 @@ extern "C" size_t F_CALL_CONV RhpGCHeapGetCommittedSize(
     size_t* generation_committed,
     size_t* generation_allocated);
 
+extern "C" size_t F_CALL_CONV RhpGCHeapDesiredNewAllocation(
+    uint8_t* dynamic_data,
+    uint8_t* gc_data_per_heap,
+    int32_t generation_number,
+    int32_t pass,
+    int32_t max_generation,
+    size_t output_size,
+    size_t free_list_space,
+    uint32_t dynamic_adaptation_mode,
+    int32_t* gen0_reduction_count,
+    int32_t conserve_mem_setting,
+    uint32_t bgc_fl_tuning_triggered,
+    uint64_t available_physical,
+    uint8_t* max_generation_dynamic_data,
+    size_t dynamic_data_gc_new_allocation_offset,
+    size_t dynamic_data_surv_offset,
+    size_t dynamic_data_desired_allocation_offset,
+    size_t dynamic_data_begin_data_size_offset,
+    size_t dynamic_data_current_size_offset,
+    size_t dynamic_data_fragmentation_offset,
+    size_t dynamic_data_time_clock_offset,
+    size_t dynamic_data_previous_time_clock_offset,
+    size_t dynamic_data_sdata_offset,
+    size_t dynamic_data_min_size_offset,
+    size_t static_data_limit_offset,
+    size_t static_data_max_limit_offset,
+    size_t static_data_max_size_offset,
+    size_t history_generation_data_offset,
+    size_t history_generation_data_size,
+    size_t history_new_allocation_offset,
+    size_t alignment_small,
+    size_t alignment_large);
+
+extern "C" size_t F_CALL_CONV RhpGCHeapJoinedYoungestDesired(
+    size_t new_allocation,
+    uint32_t entry_memory_load,
+    uint32_t memory_load,
+    uint32_t max_allowed_memory_load,
+    uint64_t memory_one_percent,
+    size_t minimum_youngest_desired,
+    size_t youngest_desired_threshold,
+    uint32_t heap_count,
+    size_t max_new_allocation,
+    size_t alignment_small);
+
+extern "C" void F_CALL_CONV RhpGCHeapTrimYoungestDesiredLowMemory(
+    uint8_t* dynamic_data,
+    size_t desired_allocation_offset,
+    size_t min_size_offset,
+    size_t committed_memory,
+    int64_t keep_percent,
+    size_t alignment_small);
+
+extern "C" ptrdiff_t F_CALL_CONV RhpGCHeapEstimateGenerationGrowth(
+    uint8_t* dynamic_data,
+    uint8_t* generation,
+    uint32_t use_regions,
+    size_t dynamic_data_new_allocation_offset,
+    size_t generation_start_segment_offset,
+    size_t generation_free_list_space_offset,
+    size_t segment_allocated_offset,
+    size_t segment_reserved_offset,
+    size_t segment_mem_offset,
+    size_t segment_next_offset);
+
 static_assert(sizeof(size_t) == sizeof(void*));
 static_assert(alignof(size_t) == alignof(void*));
 static_assert(sizeof(uint8_t*) == sizeof(void*));
@@ -117,6 +182,30 @@ static_assert(offsetof(dynamic_data, surv) % alignof(float) == 0);
 static_assert(offsetof(dynamic_data, surv) + sizeof(float) <= sizeof(dynamic_data));
 static_assert(offsetof(dynamic_data, fragmentation) % alignof(size_t) == 0);
 static_assert(offsetof(dynamic_data, fragmentation) + sizeof(size_t) <= sizeof(dynamic_data));
+static_assert(sizeof(static_data) % alignof(static_data) == 0);
+static_assert(offsetof(static_data, max_size) % alignof(size_t) == 0);
+static_assert(offsetof(static_data, max_size) + sizeof(size_t) <= sizeof(static_data));
+static_assert(offsetof(static_data, limit) % alignof(float) == 0);
+static_assert(offsetof(static_data, limit) + sizeof(float) <= sizeof(static_data));
+static_assert(offsetof(static_data, max_limit) % alignof(float) == 0);
+static_assert(offsetof(static_data, max_limit) + sizeof(float) <= sizeof(static_data));
+static_assert(offsetof(dynamic_data, begin_data_size) % alignof(size_t) == 0);
+static_assert(offsetof(dynamic_data, begin_data_size) + sizeof(size_t) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, gc_new_allocation) % alignof(ptrdiff_t) == 0);
+static_assert(offsetof(dynamic_data, gc_new_allocation) + sizeof(ptrdiff_t) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, min_size) % alignof(size_t) == 0);
+static_assert(offsetof(dynamic_data, min_size) + sizeof(size_t) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, sdata) % alignof(void*) == 0);
+static_assert(offsetof(dynamic_data, sdata) + sizeof(void*) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, time_clock) % alignof(uint64_t) == 0);
+static_assert(offsetof(dynamic_data, time_clock) + sizeof(uint64_t) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, previous_time_clock) % alignof(uint64_t) == 0);
+static_assert(offsetof(dynamic_data, previous_time_clock) + sizeof(uint64_t) <= sizeof(dynamic_data));
+static_assert(offsetof(gc_history_per_heap, gen_data) % alignof(gc_generation_data) == 0);
+static_assert(offsetof(gc_history_per_heap, gen_data) +
+              sizeof(gc_generation_data) * total_generation_count <= sizeof(gc_history_per_heap));
+static_assert(offsetof(gc_generation_data, new_allocation) % alignof(size_t) == 0);
+static_assert(offsetof(gc_generation_data, new_allocation) + sizeof(size_t) <= sizeof(gc_generation_data));
 static_assert(offsetof(heap_segment, allocated) % alignof(void*) == 0);
 static_assert(offsetof(heap_segment, allocated) + sizeof(void*) <= sizeof(heap_segment));
 static_assert(offsetof(heap_segment, committed) % alignof(void*) == 0);
@@ -2214,6 +2303,62 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
                                         size_t out, int gen_number,
                                         int pass)
 {
+#ifdef FEATURE_NATIVEAOT
+    uint64_t available_physical = 0;
+    if ((gen_number >= max_generation) && (gen_number != max_generation) &&
+        (dd_begin_data_size(dd) != 0))
+    {
+        uint32_t memory_load = 0;
+        get_memory_info (&memory_load, &available_physical);
+        if (heap_number == 0)
+        {
+            settings.exit_memory_load = memory_load;
+        }
+    }
+
+    uint32_t dynamic_adaptation_mode_value = 0;
+#ifdef DYNAMIC_HEAP_COUNT
+    dynamic_adaptation_mode_value = (uint32_t)dynamic_adaptation_mode;
+#endif // DYNAMIC_HEAP_COUNT
+
+    uint32_t bgc_fl_tuning_triggered = 0;
+#ifdef BGC_SERVO_TUNING
+    bgc_fl_tuning_triggered = bgc_tuning::fl_tuning_triggered ? 1U : 0U;
+#endif // BGC_SERVO_TUNING
+
+    return RhpGCHeapDesiredNewAllocation(
+        reinterpret_cast<uint8_t*>(dd),
+        reinterpret_cast<uint8_t*>(get_gc_data_per_heap()),
+        gen_number,
+        pass,
+        max_generation,
+        out,
+        generation_free_list_space(generation_of(gen_number)),
+        dynamic_adaptation_mode_value,
+        &settings.gen0_reduction_count,
+        conserve_mem_setting,
+        bgc_fl_tuning_triggered,
+        available_physical,
+        reinterpret_cast<uint8_t*>(dynamic_data_of(max_generation)),
+        offsetof(dynamic_data, gc_new_allocation),
+        offsetof(dynamic_data, surv),
+        offsetof(dynamic_data, desired_allocation),
+        offsetof(dynamic_data, begin_data_size),
+        offsetof(dynamic_data, current_size),
+        offsetof(dynamic_data, fragmentation),
+        offsetof(dynamic_data, time_clock),
+        offsetof(dynamic_data, previous_time_clock),
+        offsetof(dynamic_data, sdata),
+        offsetof(dynamic_data, min_size),
+        offsetof(static_data, limit),
+        offsetof(static_data, max_limit),
+        offsetof(static_data, max_size),
+        offsetof(gc_history_per_heap, gen_data),
+        sizeof(gc_generation_data),
+        offsetof(gc_generation_data, new_allocation),
+        get_alignment_constant(TRUE),
+        get_alignment_constant(FALSE));
+#else
     gc_history_per_heap* current_gc_data_per_heap = get_gc_data_per_heap();
 
     if (dd_begin_data_size (dd) == 0)
@@ -2385,6 +2530,7 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
 
         return new_allocation_ret;
     }
+#endif // FEATURE_NATIVEAOT
 }
 
 #ifdef HOST_64BIT
@@ -2410,6 +2556,50 @@ size_t gc_heap::trim_youngest_desired (uint32_t memory_load,
 
 size_t gc_heap::joined_youngest_desired (size_t new_allocation)
 {
+#ifdef FEATURE_NATIVEAOT
+    uint32_t num_heaps = 1;
+#ifdef MULTIPLE_HEAPS
+    num_heaps = (uint32_t)gc_heap::n_heaps;
+#endif // MULTIPLE_HEAPS
+
+    size_t total_new_allocation = new_allocation * num_heaps;
+    size_t total_min_allocation = (size_t)MIN_YOUNGEST_GEN_DESIRED * num_heaps;
+    bool should_query_memory =
+        (new_allocation > MIN_YOUNGEST_GEN_DESIRED) &&
+        ((settings.entry_memory_load >= MAX_ALLOWED_MEM_LOAD) ||
+         (total_new_allocation > max(youngest_gen_desired_th, total_min_allocation)));
+
+    uint32_t memory_load = 0;
+    if (should_query_memory)
+    {
+        get_memory_info (&memory_load);
+        settings.exit_memory_load = memory_load;
+    }
+
+#ifdef MULTIPLE_HEAPS
+    size_t max_new_allocation = dd_max_size (gc_heap::g_heaps[0]->dynamic_data_of (0));
+#else // MULTIPLE_HEAPS
+    size_t max_new_allocation = dd_max_size (dynamic_data_of (0));
+#endif // MULTIPLE_HEAPS
+    size_t final_new_allocation = RhpGCHeapJoinedYoungestDesired(
+        new_allocation,
+        settings.entry_memory_load,
+        memory_load,
+        MAX_ALLOWED_MEM_LOAD,
+        mem_one_percent,
+        MIN_YOUNGEST_GEN_DESIRED,
+        youngest_gen_desired_th,
+        num_heaps,
+        max_new_allocation,
+        get_alignment_constant(TRUE));
+
+    if (final_new_allocation < new_allocation)
+    {
+        settings.gen0_reduction_count = 2;
+    }
+
+    return final_new_allocation;
+#else
     dprintf (2, ("Entry memory load: %d; gen0 new_alloc: %zd", settings.entry_memory_load, new_allocation));
 
     size_t final_new_allocation = new_allocation;
@@ -2451,6 +2641,7 @@ size_t gc_heap::joined_youngest_desired (size_t new_allocation)
     }
 
     return final_new_allocation;
+#endif // FEATURE_NATIVEAOT
 }
 
 #endif //HOST_64BIT
@@ -2606,6 +2797,24 @@ void gc_heap::compute_new_dynamic_data (int gen_number)
 
 void gc_heap::trim_youngest_desired_low_memory()
 {
+#ifdef FEATURE_NATIVEAOT
+    if (g_low_memory_status)
+    {
+        int64_t keep_percent = GCConfig::GetGCTrimYoungestKeepPercent();
+        if ((keep_percent <= 0) || (keep_percent > 100))
+        {
+            keep_percent = 10;
+        }
+        size_t committed_mem = committed_size();
+        RhpGCHeapTrimYoungestDesiredLowMemory(
+            reinterpret_cast<uint8_t*>(dynamic_data_of(0)),
+            offsetof(dynamic_data, desired_allocation),
+            offsetof(dynamic_data, min_size),
+            committed_mem,
+            keep_percent,
+            get_alignment_constant(FALSE));
+    }
+#else
     if (g_low_memory_status)
     {
         int64_t keep_percent = GCConfig::GetGCTrimYoungestKeepPercent();
@@ -2620,10 +2829,28 @@ void gc_heap::trim_youngest_desired_low_memory()
 
         dd_desired_allocation (dd) = min (current, candidate);
     }
+#endif // FEATURE_NATIVEAOT
 }
 
 ptrdiff_t gc_heap::estimate_gen_growth (int gen_number)
 {
+#ifdef FEATURE_NATIVEAOT
+    return RhpGCHeapEstimateGenerationGrowth(
+        reinterpret_cast<uint8_t*>(dynamic_data_of(gen_number)),
+        reinterpret_cast<uint8_t*>(generation_of(gen_number)),
+#ifdef USE_REGIONS
+        1,
+#else // USE_REGIONS
+        0,
+#endif // USE_REGIONS
+        offsetof(dynamic_data, new_allocation),
+        offsetof(generation, start_segment),
+        offsetof(generation, free_list_space),
+        offsetof(heap_segment, allocated),
+        offsetof(heap_segment, reserved),
+        offsetof(heap_segment, mem),
+        offsetof(heap_segment, next));
+#else
     dynamic_data* dd_gen = dynamic_data_of (gen_number);
     generation *gen = generation_of (gen_number);
     ptrdiff_t new_allocation_gen = dd_new_allocation (dd_gen);
@@ -2661,6 +2888,7 @@ ptrdiff_t gc_heap::estimate_gen_growth (int gen_number)
 #endif //USE_REGIONS
 
     return budget_gen;
+#endif // FEATURE_NATIVEAOT
 }
 
 #if !defined(USE_REGIONS) || defined(MULTIPLE_HEAPS)
