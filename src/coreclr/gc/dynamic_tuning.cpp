@@ -9,6 +9,124 @@ namespace SVR {
 namespace WKS {
 #endif // SERVER_GC
 
+#ifdef FEATURE_NATIVEAOT
+extern "C" size_t F_CALL_CONV RhpGCHeapGetTotalHeapSize(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* generation_source,
+    size_t generation_table_offset,
+    size_t generation_size,
+    size_t generation_start_segment_offset,
+    size_t generation_allocation_start_offset,
+    uint8_t* ephemeral_heap_segment_location_source,
+    size_t ephemeral_heap_segment_offset,
+    size_t aligned_min_object_size,
+    int32_t max_generation,
+    int32_t total_generation_count,
+    uint32_t use_regions);
+
+extern "C" size_t F_CALL_CONV RhpGCHeapGetTotalFragmentation(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* generation_source,
+    size_t generation_table_offset,
+    size_t generation_size,
+    size_t free_list_space_offset,
+    size_t free_obj_space_offset,
+    int32_t total_generation_count);
+
+extern "C" size_t F_CALL_CONV RhpGCHeapGetTotalGenerationFragmentation(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* generation_source,
+    size_t generation_table_offset,
+    size_t generation_size,
+    size_t free_list_space_offset,
+    size_t free_obj_space_offset,
+    int32_t generation_number);
+
+extern "C" size_t F_CALL_CONV RhpGCHeapGetTotalGenerationEstimatedReclaim(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* dynamic_data_source,
+    size_t dynamic_data_table_offset,
+    size_t dynamic_data_size,
+    size_t desired_allocation_offset,
+    size_t new_allocation_offset,
+    size_t current_size_offset,
+    size_t survived_offset,
+    size_t fragmentation_offset,
+    int32_t generation_number);
+
+extern "C" size_t F_CALL_CONV RhpGCHeapGetTotalGenerationSize(
+    uint8_t** heap_source,
+    int32_t heap_count,
+    uint8_t* generation_source,
+    size_t generation_table_offset,
+    size_t generation_size,
+    size_t generation_start_segment_offset,
+    size_t generation_allocation_start_offset,
+    uint8_t* ephemeral_heap_segment_location_source,
+    size_t ephemeral_heap_segment_offset,
+    size_t aligned_min_object_size,
+    int32_t generation_number,
+    int32_t max_generation,
+    uint32_t use_regions);
+
+extern "C" size_t F_CALL_CONV RhpGCHeapGetCommittedSize(
+    uint8_t* heap_source,
+    uint8_t* generation_source,
+    size_t generation_table_offset,
+    size_t generation_size,
+    size_t generation_start_segment_offset,
+    size_t region_start_offset,
+    int32_t start_generation_index,
+    int32_t total_generation_count,
+    uint32_t use_regions,
+    uint8_t* free_regions_source,
+    size_t free_regions_offset,
+    size_t free_region_size,
+    size_t free_region_committed_size_offset,
+    int32_t basic_free_region,
+    int32_t count_free_region_kinds,
+    size_t* generation_committed,
+    size_t* generation_allocated);
+
+static_assert(sizeof(size_t) == sizeof(void*));
+static_assert(alignof(size_t) == alignof(void*));
+static_assert(sizeof(uint8_t*) == sizeof(void*));
+static_assert(alignof(uint8_t*) == alignof(void*));
+static_assert(sizeof(generation) % alignof(generation) == 0);
+static_assert(offsetof(generation, start_segment) % alignof(void*) == 0);
+static_assert(offsetof(generation, start_segment) + sizeof(void*) <= sizeof(generation));
+#ifndef USE_REGIONS
+static_assert(offsetof(generation, allocation_start) % alignof(void*) == 0);
+static_assert(offsetof(generation, allocation_start) + sizeof(void*) <= sizeof(generation));
+#endif // !USE_REGIONS
+static_assert(offsetof(generation, free_list_space) % alignof(size_t) == 0);
+static_assert(offsetof(generation, free_list_space) + sizeof(size_t) <= sizeof(generation));
+static_assert(offsetof(generation, free_obj_space) % alignof(size_t) == 0);
+static_assert(offsetof(generation, free_obj_space) + sizeof(size_t) <= sizeof(generation));
+static_assert(offsetof(dynamic_data, desired_allocation) % alignof(size_t) == 0);
+static_assert(offsetof(dynamic_data, desired_allocation) + sizeof(size_t) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, new_allocation) % alignof(ptrdiff_t) == 0);
+static_assert(offsetof(dynamic_data, new_allocation) + sizeof(ptrdiff_t) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, current_size) % alignof(size_t) == 0);
+static_assert(offsetof(dynamic_data, current_size) + sizeof(size_t) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, surv) % alignof(float) == 0);
+static_assert(offsetof(dynamic_data, surv) + sizeof(float) <= sizeof(dynamic_data));
+static_assert(offsetof(dynamic_data, fragmentation) % alignof(size_t) == 0);
+static_assert(offsetof(dynamic_data, fragmentation) + sizeof(size_t) <= sizeof(dynamic_data));
+static_assert(offsetof(heap_segment, allocated) % alignof(void*) == 0);
+static_assert(offsetof(heap_segment, allocated) + sizeof(void*) <= sizeof(heap_segment));
+static_assert(offsetof(heap_segment, committed) % alignof(void*) == 0);
+static_assert(offsetof(heap_segment, committed) + sizeof(void*) <= sizeof(heap_segment));
+static_assert(offsetof(heap_segment, mem) % alignof(void*) == 0);
+static_assert(offsetof(heap_segment, mem) + sizeof(void*) <= sizeof(heap_segment));
+static_assert(offsetof(heap_segment, next) % alignof(void*) == 0);
+static_assert(offsetof(heap_segment, next) + sizeof(void*) <= sizeof(heap_segment));
+#endif // FEATURE_NATIVEAOT
+
 
 // Things we need to manually initialize:
 // gen0 min_size - based on cache
@@ -302,6 +420,60 @@ void gc_heap::update_total_soh_stable_size()
 
 size_t gc_heap::get_total_heap_size()
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, generation_table) % alignof(generation) == 0);
+    static_assert(offsetof(gc_heap, generation_table) + sizeof(generation) * total_generation_count <= sizeof(gc_heap));
+    static_assert(offsetof(gc_heap, ephemeral_heap_segment) % alignof(void*) == 0);
+    static_assert(offsetof(gc_heap, ephemeral_heap_segment) + sizeof(void*) <= sizeof(gc_heap));
+    return RhpGCHeapGetTotalHeapSize(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        offsetof(gc_heap, generation_table),
+        sizeof(generation),
+        offsetof(generation, start_segment),
+#ifdef USE_REGIONS
+        0,
+#else // USE_REGIONS
+        offsetof(generation, allocation_start),
+#endif // USE_REGIONS
+        nullptr,
+        offsetof(gc_heap, ephemeral_heap_segment),
+        Align(min_obj_size),
+        max_generation,
+        total_generation_count,
+#ifdef USE_REGIONS
+        1);
+#else // USE_REGIONS
+        0);
+#endif // USE_REGIONS
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalHeapSize(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(generation_table),
+        0,
+        sizeof(generation),
+        offsetof(generation, start_segment),
+#ifdef USE_REGIONS
+        0,
+#else // USE_REGIONS
+        offsetof(generation, allocation_start),
+#endif // USE_REGIONS
+        reinterpret_cast<uint8_t*>(&ephemeral_heap_segment),
+        0,
+        Align(min_obj_size),
+        max_generation,
+        total_generation_count,
+#ifdef USE_REGIONS
+        1);
+#else // USE_REGIONS
+        0);
+#endif // USE_REGIONS
+#endif // MULTIPLE_HEAPS
+#else
     size_t total_heap_size = 0;
 
     // It's correct to start from max_generation for this method because
@@ -325,10 +497,37 @@ size_t gc_heap::get_total_heap_size()
 #endif //MULTIPLE_HEAPS
 
     return total_heap_size;
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t gc_heap::get_total_fragmentation()
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, generation_table) % alignof(generation) == 0);
+    static_assert(offsetof(gc_heap, generation_table) + sizeof(generation) * total_generation_count <= sizeof(gc_heap));
+    return RhpGCHeapGetTotalFragmentation(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        offsetof(gc_heap, generation_table),
+        sizeof(generation),
+        offsetof(generation, free_list_space),
+        offsetof(generation, free_obj_space),
+        total_generation_count);
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalFragmentation(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(generation_table),
+        0,
+        sizeof(generation),
+        offsetof(generation, free_list_space),
+        offsetof(generation, free_obj_space),
+        total_generation_count);
+#endif // MULTIPLE_HEAPS
+#else
     size_t total_fragmentation = 0;
 
 #ifdef MULTIPLE_HEAPS
@@ -347,10 +546,37 @@ size_t gc_heap::get_total_fragmentation()
     }
 
     return total_fragmentation;
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t gc_heap::get_total_gen_fragmentation (int gen_number)
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, generation_table) % alignof(generation) == 0);
+    static_assert(offsetof(gc_heap, generation_table) + sizeof(generation) * total_generation_count <= sizeof(gc_heap));
+    return RhpGCHeapGetTotalGenerationFragmentation(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        offsetof(gc_heap, generation_table),
+        sizeof(generation),
+        offsetof(generation, free_list_space),
+        offsetof(generation, free_obj_space),
+        gen_number);
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalGenerationFragmentation(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(generation_table),
+        0,
+        sizeof(generation),
+        offsetof(generation, free_list_space),
+        offsetof(generation, free_obj_space),
+        gen_number);
+#endif // MULTIPLE_HEAPS
+#else
     size_t total_fragmentation = 0;
 
 #ifdef MULTIPLE_HEAPS
@@ -366,6 +592,7 @@ size_t gc_heap::get_total_gen_fragmentation (int gen_number)
     }
 
     return total_fragmentation;
+#endif // FEATURE_NATIVEAOT
 }
 
 #ifdef USE_REGIONS
@@ -427,6 +654,38 @@ int gc_heap::get_total_new_regions_in_threading ()
 
 size_t gc_heap::get_total_gen_estimated_reclaim (int gen_number)
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, dynamic_data_table) % alignof(dynamic_data) == 0);
+    static_assert(offsetof(gc_heap, dynamic_data_table) + sizeof(dynamic_data) * total_generation_count <= sizeof(gc_heap));
+    return RhpGCHeapGetTotalGenerationEstimatedReclaim(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        offsetof(gc_heap, dynamic_data_table),
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, desired_allocation),
+        offsetof(dynamic_data, new_allocation),
+        offsetof(dynamic_data, current_size),
+        offsetof(dynamic_data, surv),
+        offsetof(dynamic_data, fragmentation),
+        gen_number);
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalGenerationEstimatedReclaim(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(dynamic_data_of(0)),
+        0,
+        sizeof(dynamic_data),
+        offsetof(dynamic_data, desired_allocation),
+        offsetof(dynamic_data, new_allocation),
+        offsetof(dynamic_data, current_size),
+        offsetof(dynamic_data, surv),
+        offsetof(dynamic_data, fragmentation),
+        gen_number);
+#endif // MULTIPLE_HEAPS
+#else
     size_t total_estimated_reclaim = 0;
 
 #ifdef MULTIPLE_HEAPS
@@ -441,10 +700,65 @@ size_t gc_heap::get_total_gen_estimated_reclaim (int gen_number)
     }
 
     return total_estimated_reclaim;
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t gc_heap::get_total_gen_size (int gen_number)
 {
+#ifdef FEATURE_NATIVEAOT
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, generation_table) % alignof(generation) == 0);
+    static_assert(offsetof(gc_heap, generation_table) + sizeof(generation) * total_generation_count <= sizeof(gc_heap));
+    static_assert(offsetof(gc_heap, ephemeral_heap_segment) % alignof(void*) == 0);
+    static_assert(offsetof(gc_heap, ephemeral_heap_segment) + sizeof(void*) <= sizeof(gc_heap));
+    return RhpGCHeapGetTotalGenerationSize(
+        reinterpret_cast<uint8_t**>(gc_heap::g_heaps),
+        gc_heap::n_heaps,
+        nullptr,
+        offsetof(gc_heap, generation_table),
+        sizeof(generation),
+        offsetof(generation, start_segment),
+#ifdef USE_REGIONS
+        0,
+#else // USE_REGIONS
+        offsetof(generation, allocation_start),
+#endif // USE_REGIONS
+        nullptr,
+        offsetof(gc_heap, ephemeral_heap_segment),
+        Align(min_obj_size),
+        gen_number,
+        max_generation,
+#ifdef USE_REGIONS
+        1);
+#else // USE_REGIONS
+        0);
+#endif // USE_REGIONS
+#else
+    uint8_t* heap_source[] = { reinterpret_cast<uint8_t*>(pGenGCHeap) };
+    return RhpGCHeapGetTotalGenerationSize(
+        heap_source,
+        1,
+        reinterpret_cast<uint8_t*>(generation_table),
+        0,
+        sizeof(generation),
+        offsetof(generation, start_segment),
+#ifdef USE_REGIONS
+        0,
+#else // USE_REGIONS
+        offsetof(generation, allocation_start),
+#endif // USE_REGIONS
+        reinterpret_cast<uint8_t*>(&ephemeral_heap_segment),
+        0,
+        Align(min_obj_size),
+        gen_number,
+        max_generation,
+#ifdef USE_REGIONS
+        1);
+#else // USE_REGIONS
+        0);
+#endif // USE_REGIONS
+#endif // MULTIPLE_HEAPS
+#else
 #ifdef MULTIPLE_HEAPS
     size_t size = 0;
     for (int hn = 0; hn < gc_heap::n_heaps; hn++)
@@ -456,10 +770,93 @@ size_t gc_heap::get_total_gen_size (int gen_number)
     size_t size = generation_size (gen_number);
 #endif //MULTIPLE_HEAPS
     return size;
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t gc_heap::committed_size()
 {
+#ifdef FEATURE_NATIVEAOT
+    size_t generation_committed[total_generation_count] = {};
+    size_t generation_allocated[total_generation_count] = {};
+#ifdef MULTIPLE_HEAPS
+    static_assert(offsetof(gc_heap, generation_table) % alignof(generation) == 0);
+    static_assert(offsetof(gc_heap, generation_table) + sizeof(generation) * total_generation_count <= sizeof(gc_heap));
+#ifdef USE_REGIONS
+    static_assert(offsetof(gc_heap, free_regions) % alignof(region_free_list) == 0);
+    static_assert(offsetof(gc_heap, free_regions) + sizeof(region_free_list) * count_free_region_kinds <= sizeof(gc_heap));
+#endif // USE_REGIONS
+    uint8_t* heap_source = reinterpret_cast<uint8_t*>(this);
+    uint8_t* generation_source = nullptr;
+#ifdef USE_REGIONS
+    uint8_t* free_regions_source = nullptr;
+#endif // USE_REGIONS
+    size_t generation_table_offset = offsetof(gc_heap, generation_table);
+#ifdef USE_REGIONS
+    size_t free_regions_offset = offsetof(gc_heap, free_regions);
+#endif // USE_REGIONS
+#else
+    uint8_t* heap_source = reinterpret_cast<uint8_t*>(pGenGCHeap);
+    uint8_t* generation_source = reinterpret_cast<uint8_t*>(generation_table);
+#ifdef USE_REGIONS
+    uint8_t* free_regions_source = reinterpret_cast<uint8_t*>(&free_regions[0]);
+#else // USE_REGIONS
+    uint8_t* free_regions_source = nullptr;
+#endif // USE_REGIONS
+    size_t generation_table_offset = 0;
+    size_t free_regions_offset = 0;
+#endif // MULTIPLE_HEAPS
+
+    size_t total_committed = RhpGCHeapGetCommittedSize(
+        heap_source,
+        generation_source,
+        generation_table_offset,
+        sizeof(generation),
+        offsetof(generation, start_segment),
+#ifdef USE_REGIONS
+        sizeof(aligned_plug_and_gap),
+        0,
+#else // USE_REGIONS
+        0,
+        max_generation,
+#endif // USE_REGIONS
+        total_generation_count,
+#ifdef USE_REGIONS
+        1,
+        free_regions_source,
+        free_regions_offset,
+        sizeof(region_free_list),
+        offsetof(dac_region_free_list, size_committed_in_free_regions),
+        basic_free_region,
+        count_free_region_kinds,
+#else // USE_REGIONS
+        0,
+        nullptr,
+        0,
+        0,
+        0,
+        0,
+        0,
+#endif // USE_REGIONS
+        generation_committed,
+        generation_allocated);
+
+    const size_t kB = 1024;
+    for (int i = get_start_generation_index(); i < total_generation_count; i++)
+    {
+        dprintf (3, ("h%d committed in gen%d %zdkB, allocated %zdkB, committed-allocated %zdkB",
+            heap_number, i, generation_committed[i]/kB, generation_allocated[i]/kB,
+            (generation_committed[i] - generation_allocated[i])/kB));
+    }
+#ifdef USE_REGIONS
+    size_t committed_in_free = total_committed;
+    for (int i = get_start_generation_index(); i < total_generation_count; i++)
+    {
+        committed_in_free -= generation_committed[i];
+    }
+    dprintf (3, ("h%d committed in free %zdkB", heap_number, committed_in_free/kB));
+#endif // USE_REGIONS
+    return total_committed;
+#else
     size_t total_committed = 0;
 
     const size_t kB = 1024;
@@ -504,6 +901,7 @@ size_t gc_heap::committed_size()
 #endif //USE_REGIONS
 
     return total_committed;
+#endif // FEATURE_NATIVEAOT
 }
 
 size_t gc_heap::get_total_committed_size()

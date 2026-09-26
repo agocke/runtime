@@ -480,6 +480,281 @@ namespace System.Runtime
             }
         }
 
+        [RuntimeExport("RhpGCHeapGetTotalHeapSize")]
+        internal static unsafe nuint RhpGCHeapGetTotalHeapSize(
+            byte** heapSource,
+            int heapCount,
+            byte* generationSource,
+            nuint generationTableOffset,
+            nuint generationSize,
+            nuint generationStartSegmentOffset,
+            nuint generationAllocationStartOffset,
+            byte* ephemeralHeapSegmentLocationSource,
+            nuint ephemeralHeapSegmentOffset,
+            nuint alignedMinObjectSize,
+            int maxGeneration,
+            int totalGenerationCount,
+            uint useRegions)
+        {
+            nuint totalHeapSize = 0;
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* heapAddress = heapSource[heap];
+                    byte* generationData = generationSource is null ?
+                        heapAddress + (nint)generationTableOffset :
+                        generationSource;
+                    HeapSegmentPrefix** ephemeralHeapSegmentLocation = useRegions != 0 ?
+                        null :
+                        (HeapSegmentPrefix**)(ephemeralHeapSegmentLocationSource is null ?
+                            heapAddress + (nint)ephemeralHeapSegmentOffset :
+                            ephemeralHeapSegmentLocationSource);
+
+                    byte* generation = GenerationAddress(generationData, generationSize, maxGeneration);
+                    HeapSegmentPrefix* generationStartSegment = useRegions != 0 ?
+                        null :
+                        *(HeapSegmentPrefix**)(generation + (nint)generationStartSegmentOffset);
+                    byte* generationAllocationStart = useRegions != 0 ?
+                        null :
+                        *(byte**)(generation + (nint)generationAllocationStartOffset);
+
+                    for (int generationNumber = maxGeneration; generationNumber < totalGenerationCount; generationNumber++)
+                    {
+                        totalHeapSize += RhpGCHeapGetGenerationSizes(
+                            generationData,
+                            generationSize,
+                            generationNumber,
+                            generationStartSegment,
+                            generationAllocationStart,
+                            ephemeralHeapSegmentLocation is null ? null : *ephemeralHeapSegmentLocation,
+                            useRegions,
+                            0,
+                            maxGeneration,
+                            generationStartSegmentOffset,
+                            0,
+                            0);
+
+                        if (generationNumber + 1 < totalGenerationCount && useRegions == 0)
+                        {
+                            generation = GenerationAddress(generationData, generationSize, generationNumber + 1);
+                            generationStartSegment = *(HeapSegmentPrefix**)(generation + (nint)generationStartSegmentOffset);
+                            generationAllocationStart = *(byte**)(generation + (nint)generationAllocationStartOffset);
+                        }
+                    }
+                }
+            }
+
+            return totalHeapSize;
+        }
+
+        [RuntimeExport("RhpGCHeapGetTotalFragmentation")]
+        internal static unsafe nuint RhpGCHeapGetTotalFragmentation(
+            byte** heapSource,
+            int heapCount,
+            byte* generationSource,
+            nuint generationTableOffset,
+            nuint generationSize,
+            nuint freeListSpaceOffset,
+            nuint freeObjSpaceOffset,
+            int totalGenerationCount)
+        {
+            nuint totalFragmentation = 0;
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* generationData = generationSource is null ?
+                        heapSource[heap] + (nint)generationTableOffset :
+                        generationSource;
+                    for (int generationNumber = 0; generationNumber < totalGenerationCount; generationNumber++)
+                    {
+                        byte* generation = GenerationAddress(generationData, generationSize, generationNumber);
+                        totalFragmentation +=
+                            *(nuint*)(generation + (nint)freeListSpaceOffset) +
+                            *(nuint*)(generation + (nint)freeObjSpaceOffset);
+                    }
+                }
+            }
+
+            return totalFragmentation;
+        }
+
+        [RuntimeExport("RhpGCHeapGetTotalGenerationFragmentation")]
+        internal static unsafe nuint RhpGCHeapGetTotalGenerationFragmentation(
+            byte** heapSource,
+            int heapCount,
+            byte* generationSource,
+            nuint generationTableOffset,
+            nuint generationSize,
+            nuint freeListSpaceOffset,
+            nuint freeObjSpaceOffset,
+            int generationNumber)
+        {
+            nuint totalFragmentation = 0;
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* generationData = generationSource is null ?
+                        heapSource[heap] + (nint)generationTableOffset :
+                        generationSource;
+                    byte* generation = GenerationAddress(generationData, generationSize, generationNumber);
+                    totalFragmentation +=
+                        *(nuint*)(generation + (nint)freeListSpaceOffset) +
+                        *(nuint*)(generation + (nint)freeObjSpaceOffset);
+                }
+            }
+
+            return totalFragmentation;
+        }
+
+        [RuntimeExport("RhpGCHeapGetTotalGenerationEstimatedReclaim")]
+        internal static unsafe nuint RhpGCHeapGetTotalGenerationEstimatedReclaim(
+            byte** heapSource,
+            int heapCount,
+            byte* dynamicDataSource,
+            nuint dynamicDataTableOffset,
+            nuint dynamicDataSize,
+            nuint desiredAllocationOffset,
+            nuint newAllocationOffset,
+            nuint currentSizeOffset,
+            nuint survivedOffset,
+            nuint fragmentationOffset,
+            int generationNumber)
+        {
+            nuint totalEstimatedReclaim = 0;
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* dynamicData = dynamicDataSource is null ?
+                        heapSource[heap] + (nint)dynamicDataTableOffset :
+                        dynamicDataSource;
+                    byte* dynamicDataForGeneration = GenerationAddress(dynamicData, dynamicDataSize, generationNumber);
+                    nuint generationAllocated =
+                        *(nuint*)(dynamicDataForGeneration + (nint)desiredAllocationOffset) -
+                        (nuint)(*(nint*)(dynamicDataForGeneration + (nint)newAllocationOffset));
+                    nuint generationTotalSize = generationAllocated +
+                        *(nuint*)(dynamicDataForGeneration + (nint)currentSizeOffset);
+                    nuint estimatedSurvived = (nuint)((float)generationTotalSize *
+                        *(float*)(dynamicDataForGeneration + (nint)survivedOffset));
+                    totalEstimatedReclaim += generationTotalSize - estimatedSurvived +
+                        *(nuint*)(dynamicDataForGeneration + (nint)fragmentationOffset);
+                }
+            }
+
+            return totalEstimatedReclaim;
+        }
+
+        [RuntimeExport("RhpGCHeapGetTotalGenerationSize")]
+        internal static unsafe nuint RhpGCHeapGetTotalGenerationSize(
+            byte** heapSource,
+            int heapCount,
+            byte* generationSource,
+            nuint generationTableOffset,
+            nuint generationSize,
+            nuint generationStartSegmentOffset,
+            nuint generationAllocationStartOffset,
+            byte* ephemeralHeapSegmentLocationSource,
+            nuint ephemeralHeapSegmentOffset,
+            nuint alignedMinObjectSize,
+            int generationNumber,
+            int maxGeneration,
+            uint useRegions)
+        {
+            nuint totalGenerationSize = 0;
+            unchecked
+            {
+                for (int heap = 0; heap < heapCount; heap++)
+                {
+                    byte* heapAddress = heapSource[heap];
+                    byte* generationData = generationSource is null ?
+                        heapAddress + (nint)generationTableOffset :
+                        generationSource;
+                    HeapSegmentPrefix** ephemeralHeapSegmentLocation = useRegions != 0 ?
+                        null :
+                        (HeapSegmentPrefix**)(ephemeralHeapSegmentLocationSource is null ?
+                            heapAddress + (nint)ephemeralHeapSegmentOffset :
+                            ephemeralHeapSegmentLocationSource);
+                    totalGenerationSize += GenerationSize(
+                        generationNumber,
+                        generationData,
+                        generationSize,
+                        ephemeralHeapSegmentLocation,
+                        alignedMinObjectSize,
+                        useRegions,
+                        generationStartSegmentOffset,
+                        generationAllocationStartOffset);
+                }
+            }
+
+            return totalGenerationSize;
+        }
+
+        [RuntimeExport("RhpGCHeapGetCommittedSize")]
+        internal static unsafe nuint RhpGCHeapGetCommittedSize(
+            byte* heapSource,
+            byte* generationSource,
+            nuint generationTableOffset,
+            nuint generationSize,
+            nuint generationStartSegmentOffset,
+            nuint regionStartOffset,
+            int startGenerationIndex,
+            int totalGenerationCount,
+            uint useRegions,
+            byte* freeRegionsSource,
+            nuint freeRegionsOffset,
+            nuint freeRegionSize,
+            nuint freeRegionCommittedSizeOffset,
+            int basicFreeRegion,
+            int countFreeRegionKinds,
+            nuint* generationCommitted,
+            nuint* generationAllocated)
+        {
+            byte* generationData = generationSource is null ?
+                heapSource + (nint)generationTableOffset :
+                generationSource;
+            nuint totalCommitted = 0;
+            unchecked
+            {
+                for (int generationNumber = startGenerationIndex;
+                    generationNumber < totalGenerationCount;
+                    generationNumber++)
+                {
+                    byte* generation = GenerationAddress(generationData, generationSize, generationNumber);
+                    HeapSegmentPrefix* segment = HeapSegmentReadWrite(
+                        *(HeapSegmentPrefix**)(generation + (nint)generationStartSegmentOffset));
+                    while (segment is not null)
+                    {
+                        byte* start = useRegions != 0 ?
+                            segment->Mem - (nint)regionStartOffset :
+                            (byte*)segment;
+                        nuint committed = (nuint)(segment->Committed - start);
+                        nuint allocated = (nuint)(segment->Allocated - start);
+                        generationCommitted[generationNumber] += committed;
+                        generationAllocated[generationNumber] += allocated;
+                        totalCommitted += committed;
+                        segment = segment->Next;
+                    }
+                }
+
+                if (useRegions != 0)
+                {
+                    byte* freeRegions = freeRegionsSource is null ?
+                        heapSource + (nint)freeRegionsOffset :
+                        freeRegionsSource;
+                    for (int kind = basicFreeRegion; kind < countFreeRegionKinds; kind++)
+                    {
+                        totalCommitted += *(nuint*)(freeRegions +
+                            (nint)((nuint)kind * freeRegionSize + freeRegionCommittedSizeOffset));
+                    }
+                }
+            }
+
+            return totalCommitted;
+        }
+
         [RuntimeExport("RhpGCHeapGetEstimatedReclaim")]
         internal static unsafe nuint RhpGCHeapGetEstimatedReclaim(
             byte* dynamicData,
