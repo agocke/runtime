@@ -15,6 +15,7 @@ if(CLR_CMAKE_HOST_WIN32)
     set(CREATEDUMP_SOURCES
         main.cpp
         createdumpmain.cpp
+        createdumpcli.cpp
         dumpname.cpp
         createdumpwindows.cpp
         createdump.rc
@@ -73,6 +74,7 @@ else(CLR_CMAKE_HOST_WIN32)
 if(CLR_CMAKE_HOST_OSX)
     add_library_clr(createdump_static
         STATIC
+        createdumpcallback.cpp
         crashinfomac.cpp
         threadinfomac.cpp
         dumpwritermacho.cpp
@@ -81,6 +83,7 @@ if(CLR_CMAKE_HOST_OSX)
 else()
     add_library_clr(createdump_static
         STATIC
+        createdumpcallback.cpp
         crashinfounix.cpp
         threadinfounix.cpp
         dumpwriterelf.cpp
@@ -91,6 +94,7 @@ target_link_libraries(createdump_static PRIVATE minipal)
 
     add_executable_clr(createdump
         main.cpp
+        createdumpcli.cpp
         createdumppal.cpp
     )
 
