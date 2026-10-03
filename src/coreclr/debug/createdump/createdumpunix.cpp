@@ -14,6 +14,13 @@ long g_pageSize = 0;
 bool
 CreateDump(const CreateDumpOptions& options)
 {
+#ifdef CREATEDUMP_NO_DAC
+    if (options.AppModel != AppModelType::NativeAOT || options.DumpType != DumpType::Full || options.CrashReport)
+    {
+        printf_error("The DAC-free dump library only supports NativeAOT full dumps\n");
+        return false;
+    }
+#endif
     ReleaseHolder<CrashInfo> crashInfo{ new CrashInfo(options) };
     DumpWriter dumpWriter(*crashInfo);
     std::string dumpPath;
@@ -65,18 +72,22 @@ CreateDump(const CreateDumpOptions& options)
         goto exit;
     }
     // Write the crash report json file if enabled
+#ifndef CREATEDUMP_NO_DAC
     if (options.CrashReport)
     {
         CrashReportWriter crashReportWriter(*crashInfo);
         crashReportWriter.WriteCrashReport(dumpPath);
     }
+#endif
     if (options.CreateDump)
     {
+#ifndef CREATEDUMP_NO_DAC
         // Gather all the useful memory regions from the DAC
         if (!crashInfo->EnumerateMemoryRegionsWithDAC(options.DumpType))
         {
             goto exit;
         }
+#endif
         // Join all adjacent memory regions
         crashInfo->CombineMemoryRegions();
     

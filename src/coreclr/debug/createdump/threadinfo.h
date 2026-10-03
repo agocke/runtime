@@ -109,7 +109,9 @@ public:
 #endif
     ~ThreadInfo();
     bool Initialize();
+#ifndef CREATEDUMP_NO_DAC
     bool UnwindThread(IXCLRDataProcess* pClrDataProcess, ISOSDacInterface* pSos);
+#endif
     void GetThreadStack();
     void GetThreadContext(uint32_t flags, CONTEXT* context) const;
 
@@ -173,9 +175,11 @@ public:
     bool IsCrashThread() const;
 
 private:
+#ifndef CREATEDUMP_NO_DAC
     void UnwindNativeFrames(CONTEXT* pContext);
     void GatherStackFrames(CONTEXT* pContext, IXCLRDataStackWalk* pStackwalk);
     void AddStackFrame(const StackFrame& frame);
+#endif
 #ifndef __APPLE__
     bool GetRegistersWithPTrace();
 #endif

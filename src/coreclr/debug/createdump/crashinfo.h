@@ -38,7 +38,10 @@ extern std::string FormatString(const char* format, ...) MINIPAL_ATTR_FORMAT_PRI
 extern std::string ConvertString(const WCHAR* str);
 extern std::string FormatGuid(const GUID* guid);
 
-class CrashInfo : public ICLRDataEnumMemoryRegionsCallback, public ICLRDataLoggingCallback,
+class CrashInfo :
+#ifndef CREATEDUMP_NO_DAC
+    public ICLRDataEnumMemoryRegionsCallback, public ICLRDataLoggingCallback,
+#endif
 #ifdef __APPLE__
     public MachOReader
 #else
@@ -50,9 +53,11 @@ private:
     pid_t m_pid;                                    // pid
     pid_t m_ppid;                                   // parent pid
     pid_t m_tgid;                                   // process group
+#ifndef CREATEDUMP_NO_DAC
     void* m_dacModule;                              // dac module pointer when loaded
     ICLRDataEnumMemoryRegions* m_pClrDataEnumRegions; // dac enumerate memory interface instance
     IXCLRDataProcess* m_pClrDataProcess;            // dac process interface instance
+#endif
     AppModelType m_appModel;                        // Normal, single-file or native AOT app.
     bool m_gatherFrames;                            // if true, add the native and managed stack frames to the thread info
     pid_t m_crashThread;                            // crashing thread id or 0 if none
@@ -98,14 +103,20 @@ public:
     bool EnumerateAndSuspendThreads();
     bool GatherCrashInfo(DumpType dumpType);
     void CombineMemoryRegions();
+#ifndef CREATEDUMP_NO_DAC
     bool EnumerateMemoryRegionsWithDAC(DumpType dumpType);
+#endif
     bool ReadMemory(uint64_t address, void* buffer, size_t size);                       // read memory and add to dump
     bool ReadProcessMemory(uint64_t address, void* buffer, size_t size, size_t* read);  // read raw memory
     uint64_t GetBaseAddressFromAddress(uint64_t address);
     uint64_t GetBaseAddressFromName(const char* moduleName);
     ModuleInfo* GetModuleInfoFromBaseAddress(uint64_t baseAddress);
     void AddModuleAddressRange(uint64_t startAddress, uint64_t endAddress, uint64_t baseAddress);
+#ifndef CREATEDUMP_NO_DAC
     void AddModuleInfo(bool isManaged, uint64_t baseAddress, IXCLRDataModule* pClrDataModule, const std::string& moduleName);
+#else
+    void AddModuleInfo(bool isManaged, uint64_t baseAddress, const std::string& moduleName);
+#endif
     int InsertMemoryRegion(uint64_t address, size_t size);
     const ModuleRegion* SearchModuleRegions(const ModuleRegion& search);
     static const MemoryRegion* SearchMemoryRegions(const std::set<MemoryRegion>& regions, const MemoryRegion& search);
@@ -135,16 +146,20 @@ public:
 #endif
     bool ReadMemory(void* address, void* buffer, size_t size) { return ReadMemory((uint64_t)address, buffer, size); }
 
+#ifndef CREATEDUMP_NO_DAC
     // IUnknown
     STDMETHOD(QueryInterface)(___in REFIID InterfaceId, ___out PVOID* Interface);
+#endif
     STDMETHOD_(ULONG, AddRef)();
     STDMETHOD_(ULONG, Release)();
 
+#ifndef CREATEDUMP_NO_DAC
     // ICLRDataEnumMemoryRegionsCallback
     virtual HRESULT STDMETHODCALLTYPE EnumMemoryRegion(/* [in] */ CLRDATA_ADDRESS address, /* [in] */ ULONG32 size);
 
     // ICLRDataLoggingCallback
     virtual HRESULT STDMETHODCALLTYPE LogMessage( /* [in] */ LPCSTR message);
+#endif
 
 private:
 #ifdef __APPLE__
@@ -160,10 +175,12 @@ private:
     void VisitProgramHeader(uint64_t loadbias, uint64_t baseAddress, ElfW(Phdr)* phdr);
     bool EnumerateMemoryRegions();
 #endif
+#ifndef CREATEDUMP_NO_DAC
     bool InitializeDAC(DumpType dumpType);
     bool EnumerateManagedModules();
     bool UnwindAllThreads();
     void AddOrReplaceModuleMapping(uint64_t baseAddress, uint64_t size, const std::string& pszName);
+#endif
     int InsertMemoryRegion(const MemoryRegion& region);
     uint32_t GetMemoryRegionFlags(uint64_t start);
     bool PageCanBeRead(uint64_t start);

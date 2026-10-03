@@ -353,7 +353,11 @@ CrashInfo::VisitModule(uint64_t baseAddress, std::string& moduleName)
             TRACE("VisitModule using module name from mappings '%s'\n", moduleName.c_str());
         }
     }
+#ifndef CREATEDUMP_NO_DAC
     AddModuleInfo(false, baseAddress, nullptr, moduleName);
+#else
+    AddModuleInfo(false, baseAddress, moduleName);
+#endif
     if (m_coreclrPath.empty())
     {
         size_t last = moduleName.rfind(DIRECTORY_SEPARATOR_STR_A MAKEDLLNAME_A("coreclr"));
@@ -413,6 +417,7 @@ CrashInfo::VisitModule(uint64_t baseAddress, std::string& moduleName)
     EnumerateProgramHeaders(baseAddress);
 }
 
+#ifndef CREATEDUMP_NO_DAC
 // Helper for PAL_GetUnwindInfoSize. Reads memory directly without adding it to the memory region list.
 BOOL
 ReadMemoryAdapter(PVOID address, PVOID buffer, SIZE_T size)
@@ -420,6 +425,7 @@ ReadMemoryAdapter(PVOID address, PVOID buffer, SIZE_T size)
     size_t read = 0;
     return g_crashInfo->ReadProcessMemory(CONVERT_FROM_SIGN_EXTENDED(address), buffer, size, &read);
 }
+#endif
 
 //
 // Called for each program header adding the build id note, unwind frame
@@ -449,6 +455,7 @@ CrashInfo::VisitProgramHeader(uint64_t loadbias, uint64_t baseAddress, Phdr* phd
             TRACE("VisitProgramHeader: ehFrameHdrStart %" PRIA PRIx64 " ehFrameHdrSize %08" PRIx64 "\n", ehFrameHdrStart, ehFrameHdrSize);
             InsertMemoryRegion(ehFrameHdrStart, ehFrameHdrSize);
 
+#ifndef CREATEDUMP_NO_DAC
             if (m_appModel != AppModelType::NativeAOT)
             {
                 ULONG64 ehFrameStart;
@@ -466,6 +473,7 @@ CrashInfo::VisitProgramHeader(uint64_t loadbias, uint64_t baseAddress, Phdr* phd
                     TRACE("VisitProgramHeader: PAL_GetUnwindInfoSize FAILED\n");
                 }
             }
+#endif
         }
         break;
 

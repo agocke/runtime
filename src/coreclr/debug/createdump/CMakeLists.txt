@@ -66,9 +66,7 @@ else(CLR_CMAKE_HOST_WIN32)
         createdumpunix.cpp
         crashinfo.cpp
         threadinfo.cpp
-        datatarget.cpp
         dumpwriter.cpp
-        crashreportwriter.cpp
     )
 
 if(CLR_CMAKE_HOST_OSX)
@@ -78,6 +76,8 @@ if(CLR_CMAKE_HOST_OSX)
         crashinfomac.cpp
         threadinfomac.cpp
         dumpwritermacho.cpp
+        datatarget.cpp
+        crashreportwriter.cpp
         ${CREATEDUMP_SOURCES}
     )
 else()
@@ -87,8 +87,23 @@ else()
         crashinfounix.cpp
         threadinfounix.cpp
         dumpwriterelf.cpp
+        datatarget.cpp
+        crashreportwriter.cpp
         ${CREATEDUMP_SOURCES}
     )
+    # Full NativeAOT dumps use the same writer without DAC callbacks or thread unwinding.
+    # Keep those dependencies out of the archive so they cannot be pulled into a NativeAOT link.
+    if(CLR_CMAKE_TARGET_LINUX AND (CLR_CMAKE_TARGET_ARCH_AMD64 OR CLR_CMAKE_TARGET_ARCH_ARM64))
+        add_library_clr(createdump_nodac_static
+            STATIC
+            crashinfounix.cpp
+            threadinfounix.cpp
+            dumpwriterelf.cpp
+            ${CREATEDUMP_SOURCES}
+        )
+        target_compile_definitions(createdump_nodac_static PRIVATE CREATEDUMP_NO_DAC)
+        target_link_libraries(createdump_nodac_static PRIVATE minipal)
+    endif()
 endif(CLR_CMAKE_HOST_OSX)
 target_link_libraries(createdump_static PRIVATE minipal)
 

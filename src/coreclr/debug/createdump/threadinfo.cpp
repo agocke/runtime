@@ -13,6 +13,7 @@ typedef int __ptrace_request;
 
 extern CrashInfo* g_crashInfo;
 
+#ifndef CREATEDUMP_NO_DAC
 // Helper for UnwindNativeFrames
 static void
 GetFrameLocation(CONTEXT* pContext, uint64_t* ip, uint64_t* sp)
@@ -377,6 +378,7 @@ ThreadInfo::AddStackFrame(const StackFrame& frame)
         }
     }
 }
+#endif
 
 void
 ThreadInfo::GetThreadStack()

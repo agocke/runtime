@@ -3,8 +3,10 @@
 
 #include "createdump.h"
 
+#ifndef CREATEDUMP_NO_DAC
 typedef BOOL (PALAPI_NOEXPORT *PFN_DLLMAIN)(HINSTANCE, DWORD, LPVOID);      /* entry point of module */
 typedef HINSTANCE (PALAPI_NOEXPORT *PFN_REGISTER_MODULE)(LPCSTR);           /* used to create the HINSTANCE for above DLLMain entry point */
+#endif
 
 // This is for the PAL_VirtualUnwindOutOfProc read memory adapter.
 CrashInfo* g_crashInfo;
@@ -15,9 +17,11 @@ CrashInfo::CrashInfo(const CreateDumpOptions& options) :
     m_ref(1),
     m_pid(options.Pid),
     m_ppid(-1),
+#ifndef CREATEDUMP_NO_DAC
     m_dacModule(nullptr),
     m_pClrDataEnumRegions(nullptr),
     m_pClrDataProcess(nullptr),
+#endif
     m_appModel(options.AppModel),
     m_gatherFrames(options.CrashReport),
     m_crashThread(options.CrashThread),
@@ -60,6 +64,7 @@ CrashInfo::~CrashInfo()
     }
     m_moduleInfos.clear();
 
+#ifndef CREATEDUMP_NO_DAC
     // Clean up DAC interfaces
     if (m_pClrDataEnumRegions != nullptr)
     {
@@ -75,6 +80,7 @@ CrashInfo::~CrashInfo()
         dlclose(m_dacModule);
         m_dacModule = nullptr;
     }
+#endif
 #ifdef __APPLE__
     if (m_task != 0)
     {
@@ -87,6 +93,7 @@ CrashInfo::~CrashInfo()
 #endif
 }
 
+#ifndef CREATEDUMP_NO_DAC
 STDMETHODIMP
 CrashInfo::QueryInterface(
     ___in REFIID InterfaceId,
@@ -111,6 +118,7 @@ CrashInfo::QueryInterface(
         return E_NOINTERFACE;
     }
 }
+#endif
 
 STDMETHODIMP_(ULONG)
 CrashInfo::AddRef()
@@ -130,6 +138,7 @@ CrashInfo::Release()
     return ref;
 }
 
+#ifndef CREATEDUMP_NO_DAC
 HRESULT STDMETHODCALLTYPE
 CrashInfo::EnumMemoryRegion(
     /* [in] */ CLRDATA_ADDRESS address,
@@ -147,6 +156,7 @@ CrashInfo::LogMessage(
     Trace("%s", message);
     return S_OK;
 }
+#endif
 
 //
 // Gather all the necessary crash dump info.
@@ -184,6 +194,7 @@ CrashInfo::GatherCrashInfo(DumpType dumpType)
         return false;
     }
 #endif
+#ifndef CREATEDUMP_NO_DAC
     // Load and initialize DAC interfaces
     if (!InitializeDAC(dumpType))
     {
@@ -196,16 +207,19 @@ CrashInfo::GatherCrashInfo(DumpType dumpType)
     {
         return false;
     }
+#endif
     // Add the special (fake) memory region for the special diagnostics info. Use constructor that doesn't assert PAGE_SIZE alignment.
     MemoryRegion special(PF_R, SpecialDiagInfoAddress, SpecialDiagInfoAddress + SpecialDiagInfoSize, /* offset */ 0);
     m_memoryRegions.insert(special);
 #ifdef __APPLE__
     InitializeOtherMappings();
 #endif
+#ifndef CREATEDUMP_NO_DAC
     if (!UnwindAllThreads())
     {
         return false;
     }
+#endif
     if (g_diagnosticsVerbose)
     {
         TRACE("Module addresses:\n");
@@ -259,6 +273,7 @@ CrashInfo::GatherCrashInfo(DumpType dumpType)
     return true;
 }
 
+#ifndef CREATEDUMP_NO_DAC
 static const char*
 GetHResultString(HRESULT hr)
 {
@@ -550,6 +565,7 @@ CrashInfo::AddOrReplaceModuleMapping(uint64_t baseAddress, uint64_t size, const 
         }
     }
 }
+#endif
 
 //
 // Returns the module base address for the IP or 0. Used by the thread unwind code.
@@ -618,7 +634,11 @@ CrashInfo::AddModuleAddressRange(uint64_t startAddress, uint64_t endAddress, uin
 // Adds module info (baseAddress, module name, etc)
 //
 void
+#ifndef CREATEDUMP_NO_DAC
 CrashInfo::AddModuleInfo(bool isManaged, uint64_t baseAddress, IXCLRDataModule* pClrDataModule, const std::string& moduleName)
+#else
+CrashInfo::AddModuleInfo(bool isManaged, uint64_t baseAddress, const std::string& moduleName)
+#endif
 {
     ModuleInfo moduleInfo(baseAddress);
     const auto& found = m_moduleInfos.find(&moduleInfo);
@@ -630,6 +650,7 @@ CrashInfo::AddModuleInfo(bool isManaged, uint64_t baseAddress, IXCLRDataModule* 
         GUID mvid;
         if (isManaged)
         {
+#ifndef CREATEDUMP_NO_DAC
             IMAGE_DOS_HEADER dosHeader;
             if (ReadMemory(baseAddress, &dosHeader, sizeof(dosHeader)))
             {
@@ -664,6 +685,10 @@ CrashInfo::AddModuleInfo(bool isManaged, uint64_t baseAddress, IXCLRDataModule* 
                 pClrDataModule->GetVersionId(&mvid);
             }
             TRACE("MODULE: timestamp %08x size %08x %s %s%s\n", timeStamp, imageSize, FormatGuid(&mvid).c_str(), isMainModule ? "*" : "", moduleName.c_str());
+#else
+            printf_error("Managed module enumeration requires DAC support\n");
+            return;
+#endif
         }
         ModuleInfo* moduleInfo = new ModuleInfo(isManaged, baseAddress, timeStamp, imageSize, &mvid, moduleName);
         if (isMainModule) {
