@@ -146,7 +146,6 @@ if(CLR_CMAKE_TARGET_WIN32)
 else()
     if(CLR_CMAKE_HOST_OSX OR (CLR_CMAKE_HOST_LINUX AND NOT CLR_CMAKE_HOST_UNIX_X86 AND NOT CLR_CMAKE_HOST_ANDROID))
         LIST(APPEND NATIVE_LIBS createdump_static)
-        target_sources(singlefilehost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../../coreclr/debug/createdump/createdumpcli.cpp)
         target_compile_definitions(singlefilehost PRIVATE FEATURE_STATIC_CREATEDUMP)
     endif()
 
