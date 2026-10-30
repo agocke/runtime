@@ -2905,6 +2905,10 @@ namespace Internal.Metadata.NativeFormat.Writer
             EnterGetHashCode();
             int hash = -1777408040;
             hash = ((hash << 13) - (hash >> 19)) ^ (Method == null ? 0 : Method.GetHashCode());
+            for (int i = 0; i < GenericTypeArguments.Count; i++)
+            {
+                hash = ((hash << 13) - (hash >> 19)) ^ (GenericTypeArguments[i] == null ? 0 : GenericTypeArguments[i].GetHashCode());
+            }
             LeaveGetHashCode();
             _hash = hash;
             return _hash;
@@ -4590,6 +4594,10 @@ namespace Internal.Metadata.NativeFormat.Writer
             EnterGetHashCode();
             int hash = 770132338;
             hash = ((hash << 13) - (hash >> 19)) ^ (GenericType == null ? 0 : GenericType.GetHashCode());
+            for (int i = 0; i < GenericTypeArguments.Count; i++)
+            {
+                hash = ((hash << 13) - (hash >> 19)) ^ (GenericTypeArguments[i] == null ? 0 : GenericTypeArguments[i].GetHashCode());
+            }
             LeaveGetHashCode();
             _hash = hash;
             return _hash;
