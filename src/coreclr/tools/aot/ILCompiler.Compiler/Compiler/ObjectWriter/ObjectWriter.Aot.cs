@@ -93,7 +93,7 @@ namespace ILCompiler.ObjectWriter
             if (logger.IsVerbose)
                 logger.LogMessage($"Emitting debug information");
 
-            _userDefinedTypeDescriptor = new UserDefinedTypeDescriptor(CreateDebugInfoBuilder(), _nodeFactory);
+            _userDefinedTypeDescriptor = new UserDefinedTypeDescriptor(CreateDebugInfoBuilder(), _nodeFactory, GetStaticVariableName);
 
             foreach (DependencyNode depNode in nodes)
             {

@@ -762,12 +762,16 @@
     <Compile Include="IL\Stubs\StartupCode\NativeLibraryStartupMethod.Sorting.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Compiler\DependencyAnalysis\CompactEETypeSymbols.cs" />
     <Compile Include="Compiler\DiscoveryAlgorithms.cs" />
     <Compile Include="Compiler\DiscoveryReuse.cs" />
     <Compile Include="Compiler\MetadataSet.cs" />
     <Compile Include="Compiler\MethodReflectabilityPlan.cs" />
     <Compile Include="Compiler\NodeHashAudit.cs" />
+    <Compile Include="Compiler\ObjectWriter\CompactDataSymbols.cs" />
     <Compile Include="Compiler\ObjectWriter\PreparedTypeEmission.cs" />
+    <Compile Include="Compiler\ObjectWriter\StaticDataDebugNames.cs" />
+    <Compile Include="Compiler\ObjectWriter\UnixStaticDataDebugNames.cs" />
     <Compile Include="Compiler\ReflectionAnalysisWork.cs" />
   </ItemGroup>
   <ItemGroup>

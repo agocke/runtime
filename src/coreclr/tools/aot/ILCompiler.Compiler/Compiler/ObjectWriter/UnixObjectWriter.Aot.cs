@@ -308,7 +308,7 @@ namespace ILCompiler.ObjectWriter
                 arangeSectionWriter,
                 symbolName =>
                 {
-                    if (definedSymbols.TryGetValue(ExternCName(symbolName), out SymbolDefinition symbolDef) &&
+                    if (!symbolName.IsNull && definedSymbols.TryGetValue(symbolName, out SymbolDefinition symbolDef) &&
                         _sections[symbolDef.SectionIndex] is UnixSectionDefinition section)
                     {
                         return (section.SymbolName, symbolDef.Value);

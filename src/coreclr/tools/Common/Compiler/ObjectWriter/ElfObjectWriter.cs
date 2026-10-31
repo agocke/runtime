@@ -38,6 +38,10 @@ namespace ILCompiler.ObjectWriter
     /// </remarks>
     internal sealed partial class ElfObjectWriter : UnixObjectWriter
     {
+#if !READYTORUN
+        private protected override bool SupportsCompactDataSymbols => true;
+#endif
+
         private readonly bool _useInlineRelocationAddends;
         private readonly ushort _machine;
         private readonly bool _useSoftFPAbi;

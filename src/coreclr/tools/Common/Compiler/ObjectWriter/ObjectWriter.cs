@@ -288,8 +288,15 @@ namespace ILCompiler.ObjectWriter
 
             if (!_mangledNameMap.TryGetValue(symbolNode, out symbolName))
             {
-                symbolNode.AppendMangledName(_nodeFactory.NameMangler, _utf8StringBuilder.Clear());
-                symbolName = ExternCName(_utf8StringBuilder.ToUtf8String());
+#if !READYTORUN
+                if (!TryGetCompactDataSymbol(symbolNode, out symbolName))
+                {
+#endif
+                    symbolNode.AppendMangledName(_nodeFactory.NameMangler, _utf8StringBuilder.Clear());
+                    symbolName = ExternCName(_utf8StringBuilder.ToUtf8String());
+#if !READYTORUN
+                }
+#endif
                 _mangledNameMap.Add(symbolNode, symbolName);
             }
 

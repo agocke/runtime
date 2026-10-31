@@ -19,6 +19,7 @@ namespace ILCompiler
     {
         private object _lock = new object();
         private NodeFactory _nodeFactory;
+        private readonly Func<FieldDesc, Utf8String> _getStaticVariableName;
 
         private NodeFactory NodeFactory => _nodeFactory;
 
@@ -26,10 +27,12 @@ namespace ILCompiler
 
         private TargetAbi Abi => NodeFactory.Target.Abi;
 
-        public UserDefinedTypeDescriptor(ITypesDebugInfoWriter objectWriter, NodeFactory nodeFactory)
+        public UserDefinedTypeDescriptor(ITypesDebugInfoWriter objectWriter, NodeFactory nodeFactory,
+            Func<FieldDesc, Utf8String> getStaticVariableName)
         {
             _objectWriter = objectWriter;
             _nodeFactory = nodeFactory;
+            _getStaticVariableName = getStaticVariableName;
         }
 
         // Get type index for use as a variable/parameter
@@ -586,9 +589,6 @@ namespace ILCompiler
             List<DataFieldDescriptor> threadStaticFields = new List<DataFieldDescriptor>();
             List<StaticDataFieldDescriptor> staticsDescs = new List<StaticDataFieldDescriptor>();
 
-            Utf8String nonGcStaticDataName = NodeFactory.NameMangler.NodeMangler.NonGCStatics(type);
-            Utf8String gcStaticDataName = NodeFactory.NameMangler.NodeMangler.GCStatics(type);
-            Utf8String threadStaticDataName = NodeFactory.NameMangler.NodeMangler.ThreadStatics(type);
             bool isNativeAOT = Abi == TargetAbi.NativeAot;
 
             bool hasNonGcStatics = NodeFactory.MetadataManager.HasNonGcStaticBase(defType);
@@ -685,13 +685,13 @@ namespace ILCompiler
                         field.Offset = 0xFFFFFFFF;
 
                         if (fieldDesc.IsThreadStatic) {
-                            staticDesc.StaticDataName = threadStaticDataName;
+                            staticDesc.StaticDataName = _getStaticVariableName(fieldDesc);
                             staticDesc.IsStaticDataInObject = isNativeAOT ? 1 : 0;
                         } else if (fieldDesc.HasGCStaticBase) {
-                            staticDesc.StaticDataName = gcStaticDataName;
+                            staticDesc.StaticDataName = _getStaticVariableName(fieldDesc);
                             staticDesc.IsStaticDataInObject = isNativeAOT ? 1 : 0;
                         } else {
-                            staticDesc.StaticDataName = nonGcStaticDataName;
+                            staticDesc.StaticDataName = _getStaticVariableName(fieldDesc);
                             staticDesc.IsStaticDataInObject = 0;
                         }
 

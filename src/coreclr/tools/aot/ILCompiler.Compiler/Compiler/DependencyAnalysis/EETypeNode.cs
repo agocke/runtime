@@ -1292,6 +1292,7 @@ namespace ILCompiler.DependencyAnalysis
             private readonly EETypeNode _type;
 
             public WritableDataNode(EETypeNode type) => _type = type;
+            internal TypeDesc Type => _type.Type;
             public override ObjectNodeSection GetSection(NodeFactory factory)
                 => _type.GetFrozenRuntimeTypeNode(factory).Marked
                 ? (factory.Target.IsWindows ? ObjectNodeSection.ReadOnlyDataSection : ObjectNodeSection.DataSection)
