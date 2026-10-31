@@ -1,4 +1,4 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 using Internal.Text;
 
 namespace ILCompiler.ObjectWriter
@@ -50,11 +51,39 @@ namespace ILCompiler.ObjectWriter
 
             Span<Utf8String> reservedStringsSpan = CollectionsMarshal.AsSpan(reservedStrings);
 
-            // Establish a deterministic order before the in-place suffix sort.
-            reservedStringsSpan.Sort();
-
-            // Sort strings so matching suffixes are adjacent.
-            MultiKeySort(reservedStringsSpan, 0);
+            bool parallel = Environment.GetEnvironmentVariable("DOTNET_ILC_PORTFOLIO_STRINGS") == "1"
+                && reservedStringsSpan.Length >= 4096;
+            if (parallel)
+            {
+                foreach (Utf8String text in reservedStringsSpan)
+                    if (text.AsSpan().IndexOf((byte)0) >= 0)
+                        parallel = false;
+            }
+            if (parallel)
+            {
+                int[] counts = new int[65536];
+                foreach (Utf8String text in reservedStringsSpan)
+                    counts[(TailCharacter(text, 0) << 8) | TailCharacter(text, 1)]++;
+                int[] starts = new int[counts.Length];
+                int position = 0;
+                for (int i = counts.Length - 1; i >= 0; i--)
+                {
+                    starts[i] = position;
+                    position += counts[i];
+                }
+                int[] offsets = (int[])starts.Clone();
+                Utf8String[] ordered = new Utf8String[reservedStringsSpan.Length];
+                foreach (Utf8String text in reservedStringsSpan)
+                    ordered[offsets[(TailCharacter(text, 0) << 8) | TailCharacter(text, 1)]++] = text;
+                Parallel.For(0, counts.Length, new ParallelOptions { MaxDegreeOfParallelism = 4 },
+                    i => MultiKeySort(ordered.AsSpan(starts[i], counts[i]), 2));
+                ordered.CopyTo(reservedStringsSpan);
+            }
+            else
+            {
+                reservedStringsSpan.Sort();
+                MultiKeySort(reservedStringsSpan, 0);
+            }
 
             // Add the strings to string table
             Utf8String lastText = default;
