@@ -66,24 +66,23 @@ namespace ILCompiler
         protected readonly DynamicInvokeThunkGenerationPolicy _dynamicInvokeThunkGenerationPolicy;
 
         private readonly List<DispatchCellNode> _dispatchCells = new List<DispatchCellNode>();
-        private readonly SortedSet<NonGCStaticsNode> _cctorContextsGenerated = new SortedSet<NonGCStaticsNode>(CompilerComparer.Instance);
-        private readonly SortedSet<MetadataType> _typesWithGCStaticsGenerated = new SortedSet<MetadataType>(CompilerComparer.Instance);
-        private readonly SortedSet<MetadataType> _typesWithNonGCStaticsGenerated = new SortedSet<MetadataType>(CompilerComparer.Instance);
-        private readonly SortedSet<MetadataType> _typesWithThreadStaticsGenerated = new SortedSet<MetadataType>(CompilerComparer.Instance);
-        private readonly SortedSet<TypeDesc> _typesWithEETypesGenerated = new SortedSet<TypeDesc>(TypeSystemComparer.Instance);
-        private readonly SortedSet<TypeDesc> _typesWithConstructedEETypesGenerated = new SortedSet<TypeDesc>(TypeSystemComparer.Instance);
-        private readonly SortedSet<MethodDesc> _reflectableMethods = new SortedSet<MethodDesc>(TypeSystemComparer.Instance);
-        private readonly SortedSet<IMethodBodyNode> _methodBodiesGenerated = new SortedSet<IMethodBodyNode>(CompilerComparer.Instance);
-        private readonly SortedSet<FrozenObjectNode> _frozenObjects = new SortedSet<FrozenObjectNode>(CompilerComparer.Instance);
-        private readonly SortedSet<TypeGVMEntriesNode> _typeGVMEntries
-            = new SortedSet<TypeGVMEntriesNode>(Comparer<TypeGVMEntriesNode>.Create((a, b) => TypeSystemComparer.Instance.Compare(a.AssociatedType, b.AssociatedType)));
-        private readonly SortedSet<DefType> _typesWithDelegateMarshalling = new SortedSet<DefType>(TypeSystemComparer.Instance);
-        private readonly SortedSet<DefType> _typesWithStructMarshalling = new SortedSet<DefType>(TypeSystemComparer.Instance);
+        private readonly MetadataSet<NonGCStaticsNode> _cctorContextsGenerated = new("_cctorContextsGenerated", CompilerComparer.Instance);
+        private readonly MetadataSet<MetadataType> _typesWithGCStaticsGenerated = new("_typesWithGCStaticsGenerated", CompilerComparer.Instance);
+        private readonly MetadataSet<MetadataType> _typesWithNonGCStaticsGenerated = new("_typesWithNonGCStaticsGenerated", CompilerComparer.Instance);
+        private readonly MetadataSet<MetadataType> _typesWithThreadStaticsGenerated = new("_typesWithThreadStaticsGenerated", CompilerComparer.Instance);
+        private readonly MetadataSet<TypeDesc> _typesWithEETypesGenerated = new("_typesWithEETypesGenerated", TypeSystemComparer.Instance);
+        private readonly MetadataSet<TypeDesc> _typesWithConstructedEETypesGenerated = new("_typesWithConstructedEETypesGenerated", TypeSystemComparer.Instance);
+        private readonly MetadataSet<MethodDesc> _reflectableMethods = new("_reflectableMethods", TypeSystemComparer.Instance);
+        private readonly MetadataSet<IMethodBodyNode> _methodBodiesGenerated = new("_methodBodiesGenerated", CompilerComparer.Instance);
+        private readonly MetadataSet<FrozenObjectNode> _frozenObjects = new("_frozenObjects", CompilerComparer.Instance);
+        private readonly MetadataSet<TypeGVMEntriesNode> _typeGVMEntries = new("_typeGVMEntries", Comparer<TypeGVMEntriesNode>.Create((a, b) => TypeSystemComparer.Instance.Compare(a.AssociatedType, b.AssociatedType)));
+        private readonly MetadataSet<DefType> _typesWithDelegateMarshalling = new("_typesWithDelegateMarshalling", TypeSystemComparer.Instance);
+        private readonly MetadataSet<DefType> _typesWithStructMarshalling = new("_typesWithStructMarshalling", TypeSystemComparer.Instance);
         private HashSet<NativeLayoutTemplateMethodSignatureVertexNode> _templateMethodEntries = new HashSet<NativeLayoutTemplateMethodSignatureVertexNode>();
-        private readonly SortedSet<TypeDesc> _typeTemplates = new SortedSet<TypeDesc>(TypeSystemComparer.Instance);
-        private readonly SortedSet<MetadataType> _typesWithGenericStaticBaseInfo = new SortedSet<MetadataType>(TypeSystemComparer.Instance);
-        private readonly SortedSet<MethodDesc> _genericMethodHashtableEntries = new SortedSet<MethodDesc>(TypeSystemComparer.Instance);
-        private readonly SortedSet<MethodDesc> _exactMethodHashtableEntries = new SortedSet<MethodDesc>(TypeSystemComparer.Instance);
+        private readonly MetadataSet<TypeDesc> _typeTemplates = new("_typeTemplates", TypeSystemComparer.Instance);
+        private readonly MetadataSet<MetadataType> _typesWithGenericStaticBaseInfo = new("_typesWithGenericStaticBaseInfo", TypeSystemComparer.Instance);
+        private readonly MetadataSet<MethodDesc> _genericMethodHashtableEntries = new("_genericMethodHashtableEntries", TypeSystemComparer.Instance);
+        private readonly MetadataSet<MethodDesc> _exactMethodHashtableEntries = new("_exactMethodHashtableEntries", TypeSystemComparer.Instance);
         private readonly HashSet<TypeDesc> _usedInterfaces = new HashSet<TypeDesc>();
 
         private List<(DehydratableObjectNode Node, ObjectNode.ObjectData Data)> _dehydratableData = new List<(DehydratableObjectNode Node, ObjectNode.ObjectData data)>();
@@ -100,6 +99,27 @@ namespace ILCompiler
             MetadataManagerOptions options, FlowAnnotations flowAnnotations)
         {
             _typeSystemContext = typeSystemContext;
+            if (MetadataSets.Profile || MetadataSets.Capture)
+            {
+                string owner = MetadataSets.NewOwner(GetType().Name);
+                _cctorContextsGenerated.Owner = owner;
+                _typesWithGCStaticsGenerated.Owner = owner;
+                _typesWithNonGCStaticsGenerated.Owner = owner;
+                _typesWithThreadStaticsGenerated.Owner = owner;
+                _typesWithEETypesGenerated.Owner = owner;
+                _typesWithConstructedEETypesGenerated.Owner = owner;
+                _reflectableMethods.Owner = owner;
+                _methodBodiesGenerated.Owner = owner;
+                _frozenObjects.Owner = owner;
+                _typeGVMEntries.Owner = owner;
+                _typesWithDelegateMarshalling.Owner = owner;
+                _typesWithStructMarshalling.Owner = owner;
+                _typeTemplates.Owner = owner;
+                _typesWithGenericStaticBaseInfo.Owner = owner;
+                _genericMethodHashtableEntries.Owner = owner;
+                _exactMethodHashtableEntries.Owner = owner;
+            }
+
             _blockingPolicy = blockingPolicy;
             _resourceBlockingPolicy = resourceBlockingPolicy;
             _dynamicInvokeThunkGenerationPolicy = dynamicInvokeThunkGenerationPolicy;
@@ -136,8 +156,23 @@ namespace ILCompiler
                 yield return entry.Data;
         }
 
-        public void AttachToDependencyGraph(DependencyAnalyzerBase<NodeFactory> graph)
+        public void AttachToDependencyGraph(DependencyAnalyzerBase<NodeFactory> graph, bool isScanner = false)
         {
+            if (isScanner && MetadataSets.Mode is "prune" or "prune-hash")
+            {
+                _cctorContextsGenerated.DisableForScanner();
+                _typesWithGCStaticsGenerated.DisableForScanner();
+                _typesWithNonGCStaticsGenerated.DisableForScanner();
+                _typesWithThreadStaticsGenerated.DisableForScanner();
+                _typesWithConstructedEETypesGenerated.DisableForScanner();
+                _methodBodiesGenerated.DisableForScanner();
+                _frozenObjects.DisableForScanner();
+                _typeGVMEntries.DisableForScanner();
+                _typeTemplates.DisableForScanner();
+                _typesWithGenericStaticBaseInfo.DisableForScanner();
+                _genericMethodHashtableEntries.DisableForScanner();
+                _exactMethodHashtableEntries.DisableForScanner();
+            }
             graph.NewMarkedNode += Graph_NewMarkedNode;
         }
 
@@ -1066,9 +1101,9 @@ namespace ILCompiler
         internal IEnumerable<MetadataType> GetTypesWithStaticBases()
         {
             var allTypes = new SortedSet<MetadataType>(CompilerComparer.Instance);
-            allTypes.UnionWith(_typesWithNonGCStaticsGenerated);
-            allTypes.UnionWith(_typesWithGCStaticsGenerated);
-            allTypes.UnionWith(_typesWithThreadStaticsGenerated);
+            allTypes.UnionWith(_typesWithNonGCStaticsGenerated.GetOrderedEnumerable());
+            allTypes.UnionWith(_typesWithGCStaticsGenerated.GetOrderedEnumerable());
+            allTypes.UnionWith(_typesWithThreadStaticsGenerated.GetOrderedEnumerable());
             return allTypes;
         }
 
