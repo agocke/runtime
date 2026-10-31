@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 using Internal.NativeFormat;
 
@@ -459,7 +460,13 @@ namespace Internal.TypeSystem
             {
                 _typicalMethodDef = typicalMethodDef;
                 _instantiatedType = instantiatedType;
-                _hashcode = instantiatedType.GetHashCode() ^ VersionResilientHashCode.NameHashCode(typicalMethodDef.Name);
+                _hashcode = GetLookupHashCode(typicalMethodDef, instantiatedType);
+            }
+
+            // Cache equality is reference identity; descriptor hashes deliberately omit overload signatures.
+            private static int GetLookupHashCode(MethodDesc method, TypeDesc owningType)
+            {
+                return HashCode.Combine(RuntimeHelpers.GetHashCode(method), RuntimeHelpers.GetHashCode(owningType));
             }
 
             public MethodDesc TypicalMethodDef
@@ -487,7 +494,7 @@ namespace Internal.TypeSystem
 
                 protected override int GetValueHashCode(MethodForInstantiatedType value)
                 {
-                    return value.GetHashCode();
+                    return GetLookupHashCode(value.GetTypicalMethodDefinition(), value.OwningType);
                 }
 
                 protected override bool CompareKeyToValue(MethodForInstantiatedTypeKey key, MethodForInstantiatedType value)
@@ -505,7 +512,9 @@ namespace Internal.TypeSystem
 
                 protected override MethodForInstantiatedType CreateValueFromKey(MethodForInstantiatedTypeKey key)
                 {
-                    return new MethodForInstantiatedType(key.TypicalMethodDef, key.InstantiatedType, key._hashcode);
+                    int hashCode = key.InstantiatedType.GetHashCode()
+                        ^ VersionResilientHashCode.NameHashCode(key.TypicalMethodDef.Name);
+                    return new MethodForInstantiatedType(key.TypicalMethodDef, key.InstantiatedType, hashCode);
                 }
             }
         }

@@ -1,6 +1,9 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
 using Internal.TypeSystem;
 
 using Xunit;
@@ -37,6 +40,41 @@ namespace TypeSystemTests
             _genericStructType = _testModule.GetType("Canonicalization"u8, "GenericStructType`1"u8);
             _genericReferenceTypeWithThreeParams = _testModule.GetType("Canonicalization"u8, "GenericReferenceTypeWithThreeParams`3"u8);
             _genericStructTypeWithThreeParams = _testModule.GetType("Canonicalization"u8, "GenericStructTypeWithThreeParams`3"u8);
+        }
+
+        [Fact]
+        public void RuntimeDeterminedCachePreservesIdentityAcrossGrowth()
+        {
+            DefType[] canonTypes =
+            [
+                _context.CanonType,
+                _context.UniversalCanonType,
+                _genericStructType.MakeInstantiatedType(_context.CanonType)
+            ];
+            MetadataType[] declarations = [_genericReferenceTypeWithThreeParams, _genericStructTypeWithThreeParams];
+            var types = new List<RuntimeDeterminedType>();
+            foreach (DefType canonType in canonTypes)
+            {
+                foreach (MetadataType declaration in declarations)
+                {
+                    foreach (TypeDesc parameter in declaration.Instantiation)
+                    {
+                        RuntimeDeterminedType type = _context.GetRuntimeDeterminedType(canonType, (GenericParameterDesc)parameter);
+                        Assert.Same(canonType, type.CanonicalType);
+                        Assert.Same(parameter, type.RuntimeDeterminedDetailsType);
+                        Assert.Equal(canonType.GetHashCode(), type.GetHashCode());
+                        types.Add(type);
+                    }
+                }
+            }
+
+            Parallel.For(0, 100, _ =>
+            {
+                foreach (RuntimeDeterminedType type in types)
+                {
+                    Assert.Same(type, _context.GetRuntimeDeterminedType(type.CanonicalType, type.RuntimeDeterminedDetailsType));
+                }
+            });
         }
 
         [Fact]

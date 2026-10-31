@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 using Internal.NativeFormat;
 
@@ -21,16 +22,22 @@ namespace Internal.TypeSystem
                 _detailsType = detailsType;
             }
 
+            // Generic parameter descriptor hashes do not distinguish their declaring types or methods.
+            private static int GetLookupHashCode(DefType canonType, GenericParameterDesc detailsType)
+            {
+                return HashCode.Combine(RuntimeHelpers.GetHashCode(canonType), RuntimeHelpers.GetHashCode(detailsType));
+            }
+
             public sealed class RuntimeDeterminedTypeKeyHashtable : LockFreeReaderHashtable<RuntimeDeterminedTypeKey, RuntimeDeterminedType>
             {
                 protected override int GetKeyHashCode(RuntimeDeterminedTypeKey key)
                 {
-                    return key._detailsType.GetHashCode() ^ key._plainCanonType.GetHashCode();
+                    return GetLookupHashCode(key._plainCanonType, key._detailsType);
                 }
 
                 protected override int GetValueHashCode(RuntimeDeterminedType value)
                 {
-                    return value.RuntimeDeterminedDetailsType.GetHashCode() ^ value.CanonicalType.GetHashCode();
+                    return GetLookupHashCode(value.CanonicalType, value.RuntimeDeterminedDetailsType);
                 }
 
                 protected override bool CompareKeyToValue(RuntimeDeterminedTypeKey key, RuntimeDeterminedType value)

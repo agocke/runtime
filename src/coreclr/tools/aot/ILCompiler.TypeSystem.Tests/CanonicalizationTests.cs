@@ -1,6 +1,9 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
 using Internal.TypeSystem;
 
 using Xunit;
@@ -37,6 +40,36 @@ namespace TypeSystemTests
             _genericStructType = _testModule.GetType("Canonicalization"u8, "GenericStructType`1"u8);
             _genericReferenceTypeWithThreeParams = _testModule.GetType("Canonicalization"u8, "GenericReferenceTypeWithThreeParams`3"u8);
             _genericStructTypeWithThreeParams = _testModule.GetType("Canonicalization"u8, "GenericStructTypeWithThreeParams`3"u8);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void InstantiatedMethodCachePreservesIdentityAndStableHashes(bool genericMethod)
+        {
+            var other = new CanonicalizationTests();
+            MethodDesc definition = _genericReferenceType.GetMethod(genericMethod ? "GenericMethod"u8 : "Method"u8, null);
+            MethodDesc otherDefinition = other._genericReferenceType.GetMethod(genericMethod ? "GenericMethod"u8 : "Method"u8, null);
+            var methods = new List<MethodDesc>();
+            for (int rank = 1; rank <= 32; rank++)
+            {
+                InstantiatedType owningType = _genericReferenceType.MakeInstantiatedType(_referenceType.MakeArrayType(rank));
+                InstantiatedType otherOwningType = other._genericReferenceType.MakeInstantiatedType(other._referenceType.MakeArrayType(rank));
+                MethodDesc method = _context.GetMethodForInstantiatedType(definition, owningType);
+                MethodDesc otherMethod = other._context.GetMethodForInstantiatedType(otherDefinition, otherOwningType);
+                Assert.Same(owningType, method.OwningType);
+                Assert.Same(definition, method.GetTypicalMethodDefinition());
+                Assert.Equal(otherMethod.GetHashCode(), method.GetHashCode());
+                methods.Add(method);
+            }
+
+            Parallel.For(0, 100, _ =>
+            {
+                foreach (MethodDesc method in methods)
+                {
+                    Assert.Same(method, _context.GetMethodForInstantiatedType(definition, (InstantiatedType)method.OwningType));
+                }
+            });
         }
 
         [Theory]

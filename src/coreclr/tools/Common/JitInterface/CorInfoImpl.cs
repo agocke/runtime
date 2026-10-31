@@ -789,7 +789,7 @@ namespace Internal.JitInterface
             _methodILScopeToHandle.Clear();
         }
 
-        private Dictionary<object, IntPtr> _objectToHandle = new Dictionary<object, IntPtr>(new JitObjectComparer());
+        private Dictionary<object, IntPtr> _objectToHandle = new Dictionary<object, IntPtr>(ReferenceEqualityComparer.Instance);
         private Dictionary<MethodDesc, IntPtr> _methodILScopeToHandle = new Dictionary<MethodDesc, IntPtr>(new JitObjectComparer());
         private List<object> _handleToObject = new List<object>();
 
