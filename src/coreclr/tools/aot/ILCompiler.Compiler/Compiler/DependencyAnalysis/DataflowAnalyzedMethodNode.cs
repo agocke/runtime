@@ -1,4 +1,4 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
@@ -19,6 +19,7 @@ namespace ILCompiler.DependencyAnalysis
     public class DataflowAnalyzedMethodNode : DependencyNodeCore<NodeFactory>
     {
         private readonly MethodIL _methodIL;
+        private DependencyList _dependencies;
         private List<(MethodDesc OwningMethod, INodeWithRuntimeDeterminedDependencies Dependency)> _runtimeDependencies;
 
         public DataflowAnalyzedMethodNode(MethodIL methodIL)
@@ -28,22 +29,36 @@ namespace ILCompiler.DependencyAnalysis
             _methodIL = methodIL;
         }
 
-        public override void AddStaticDependencies(DependencySink sink, NodeFactory factory)
+        public void ComputeDependencies(NodeFactory factory)
         {
+            Debug.Assert(_dependencies is null);
+            using ReflectionAnalysisWork.AnalysisScope work = ReflectionAnalysisWork.StartAnalysis();
             using CompilationEventSource.WorkScope analysisScope = CompilationEventSource.StartWork("Dataflow.Analysis", this);
             var mdManager = (UsageBasedMetadataManager)factory.MetadataManager;
             try
             {
-                foreach (DependencyListEntry dependency in Dataflow.ReflectionMethodBodyScanner.ScanAndProcessReturnValue(factory, mdManager.FlowAnnotations, mdManager.Logger, _methodIL, out _runtimeDependencies))
-                {
-                    sink.Add(dependency);
-                }
+                _dependencies = Dataflow.ReflectionMethodBodyScanner.ScanAndProcessReturnValue(factory, mdManager.FlowAnnotations, mdManager.Logger, _methodIL, out _runtimeDependencies);
             }
             catch (TypeSystemException)
             {
                 // Something wrong with the input - missing references, etc.
                 // The method body likely won't compile either, so we don't care.
                 _runtimeDependencies = new List<(MethodDesc, INodeWithRuntimeDeterminedDependencies)>();
+                _dependencies = new DependencyList();
+            }
+            ReflectionAnalysisWork.RecordRuntimeDependencies(_runtimeDependencies.Count);
+        }
+
+        public override void AddStaticDependencies(DependencySink sink, NodeFactory factory)
+        {
+            if (!ReflectionAnalysisWork.IsDeferred)
+            {
+                ComputeDependencies(factory);
+            }
+            Debug.Assert(_dependencies is not null);
+            foreach (DependencyListEntry dependency in _dependencies)
+            {
+                sink.Add(dependency);
             }
         }
 
@@ -84,7 +99,7 @@ namespace ILCompiler.DependencyAnalysis
         public override bool InterestingForDynamicDependencyAnalysis => false;
         public override bool HasDynamicDependencies => _runtimeDependencies.Count > 0;
         public override bool HasConditionalStaticDependencies => false;
-        public override bool StaticDependenciesAreComputed => true;
+        public override bool StaticDependenciesAreComputed => !ReflectionAnalysisWork.IsDeferred || _dependencies is not null;
         public override void AddConditionalDependencies(DependencySink sink, NodeFactory context) { }
     }
 }

@@ -55,9 +55,15 @@ namespace ILCompiler
             // Determine the list of method we actually need to scan
             var methodsToCompile = new List<ScannedMethodNode>();
             var canonicalMethodsToCompile = new HashSet<MethodDesc>();
+            var dataflowToAnalyze = new List<DataflowAnalyzedMethodNode>();
 
             foreach (DependencyNodeCore<NodeFactory> dependency in obj)
             {
+                if (dependency is DataflowAnalyzedMethodNode dataflow)
+                {
+                    dataflowToAnalyze.Add(dataflow);
+                    continue;
+                }
                 var methodCodeNodeNeedingCode = dependency as ScannedMethodNode;
                 if (methodCodeNodeNeedingCode == null)
                 {
@@ -78,15 +84,18 @@ namespace ILCompiler
                 methodsToCompile.Add(methodCodeNodeNeedingCode);
             }
 
-            using var phase = CompilationEventSource.StartPhase("Scanner.Import", methodsToCompile.Count);
-            if (_parallelism == 1)
+            using (CompilationEventSource.StartPhase("Scanner.Import", methodsToCompile.Count))
             {
-                CompileSingleThreaded(methodsToCompile);
+                if (_parallelism == 1)
+                {
+                    CompileSingleThreaded(methodsToCompile);
+                }
+                else
+                {
+                    CompileMultiThreaded(methodsToCompile);
+                }
             }
-            else
-            {
-                CompileMultiThreaded(methodsToCompile);
-            }
+            ReflectionAnalysisWork.Run(dataflowToAnalyze, _nodeFactory, _parallelism);
         }
 
         private void CompileMultiThreaded(List<ScannedMethodNode> methodsToCompile)
@@ -154,6 +163,7 @@ namespace ILCompiler
             _dependencyGraph.AddRoot(GetHelperEntrypoint(ReadyToRunHelper.IsInstanceOfException), "Not tracked by scanner");
 
             _dependencyGraph.ComputeMarkedNodes();
+            ReflectionAnalysisWork.WriteStatistics("scanner");
 
             _nodeFactory.SetMarkingComplete();
 
