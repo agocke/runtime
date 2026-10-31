@@ -16,6 +16,7 @@
     <Configurations>Debug;Release;Checked</Configurations>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="CompilationEventSource.cs" />
     <Compile Include="DependencyAnalyzer.cs" />
     <Compile Include="DependencyAnalyzerBase.cs" />
     <Compile Include="DependencyNode.cs" />
@@ -25,6 +26,7 @@
     <Compile Include="EventSourceLogStrategy.cs" />
     <Compile Include="FirstMarkLogStrategy.cs" />
     <Compile Include="FullGraphLogStrategy.cs" />
+    <Compile Include="GraphWorkProfile.cs" />
     <Compile Include="IDependencyAnalyzerLogEdgeVisitor.cs" />
     <Compile Include="IDependencyAnalyzerLogNodeVisitor.cs" />
     <Compile Include="IDependencyAnalysisMarkStrategy.cs" />

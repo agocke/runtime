@@ -105,14 +105,17 @@ namespace ILCompiler
 
         protected override void CompileInternal(string outputFile, ObjectDumper dumper)
         {
-            _dependencyGraph.ComputeMarkedNodes();
+            using (CompilationEventSource.StartPhase("Compilation.Graph"))
+                _dependencyGraph.ComputeMarkedNodes();
 
             // Release single-threaded JIT state before object emission to reduce peak memory usage.
+            _singleThreadedWorkerState.CorInfoImpl?.LogHandleTableStatistics();
             _singleThreadedWorkerState = default;
 
             var nodes = _dependencyGraph.MarkedNodeList;
 
-            nodes = _fileLayoutOptimizer.ApplyProfilerGuidedMethodSort(nodes);
+            using (CompilationEventSource.StartPhase("Compilation.Layout", nodes.Length))
+                nodes = _fileLayoutOptimizer.ApplyProfilerGuidedMethodSort(nodes);
 
             NodeFactory.SetMarkingComplete();
 
@@ -126,7 +129,8 @@ namespace ILCompiler
             if ((_compilationOptions & RyuJitCompilationOptions.ControlFlowGuardAnnotations) != 0)
                 options |= ObjectWritingOptions.ControlFlowGuard;
 
-            ObjectWriter.ObjectWriter.EmitObject(outputFile, nodes, NodeFactory, options, dumper, _logger);
+            using (CompilationEventSource.StartPhase("ObjectEmission", nodes.Length))
+                ObjectWriter.ObjectWriter.EmitObject(outputFile, nodes, NodeFactory, options, dumper, _logger);
         }
 
         protected override void ComputeDependencyNodeDependencies(List<DependencyNodeCore<NodeFactory>> obj)
@@ -157,6 +161,7 @@ namespace ILCompiler
                 methodsToCompile.Add(methodCodeNodeNeedingCode);
             }
 
+            using var phase = CompilationEventSource.StartPhase("Compilation.Methods", methodsToCompile.Count);
             if (_parallelism == 1)
             {
                 CompileSingleThreaded(methodsToCompile);

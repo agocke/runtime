@@ -22,6 +22,21 @@ namespace Internal.TypeSystem
     /// <typeparam name="TValue"></typeparam>
     public abstract class LockFreeReaderHashtable<TKey, TValue> where TValue : class
     {
+        [ThreadStatic]
+        private static LookupCounters t_lookupCounters;
+
+        private sealed class LookupCounters
+        {
+            public readonly int ThreadId = Environment.CurrentManagedThreadId;
+            public long Calls;
+            public long Hits;
+            public long Probes;
+            public long Comparisons;
+            public int MaximumProbes;
+            public readonly long[] HitHistogram = new long[32];
+            public readonly long[] MissHistogram = new long[32];
+        }
+
         private const int _initialSize = 16;
         private const int _fillPercentageBeforeResize = 60;
 
@@ -148,6 +163,15 @@ namespace Internal.TypeSystem
         /// </summary>
         public LockFreeReaderHashtable()
         {
+            if (HashtableLookupProfile.Enabled)
+            {
+                var weakTable = new WeakReference<LockFreeReaderHashtable<TKey, TValue>>(this);
+                HashtableLookupProfile.Register((writer, phase) =>
+                {
+                    if (weakTable.TryGetTarget(out var table))
+                        table.WriteHashStatistics(writer, phase);
+                });
+            }
 
 #if DEBUG
             // Ensure the initial value is a power of 2
@@ -181,6 +205,9 @@ namespace Internal.TypeSystem
         /// <returns>true if a value was found</returns>
         public bool TryGetValue(TKey key, out TValue value)
         {
+            if (HashtableLookupProfile.Enabled)
+                return TryGetValueProfiled(key, out value);
+
             TValue[] hashTableLocal = GetCurrentHashtable();
             Debug.Assert(hashTableLocal.Length > 0);
             TValue sentinel;
@@ -768,5 +795,150 @@ namespace Internal.TypeSystem
         /// to collection. Return value must not be null.
         /// </summary>
         protected abstract TValue CreateValueFromKey(TKey key);
+
+        private bool TryGetValueProfiled(TKey key, out TValue value)
+        {
+            TValue[] table = GetCurrentHashtable();
+            int mask = table.Length - 1;
+            int hash = GetKeyHashCode(key);
+            int index = HashInt1(hash) & mask;
+            int step = 0;
+            int probes = 0;
+            int comparisons = 0;
+            while (true)
+            {
+                probes++;
+                TValue entry = table[index];
+                if (entry is null || entry == _entryInProcessOfWritingSentinel)
+                    break;
+
+                comparisons++;
+                if (CompareKeyToValue(key, entry))
+                {
+                    value = entry;
+                    RecordLookup(true, probes, comparisons);
+                    return true;
+                }
+
+                if (step == 0)
+                    step = HashInt2(hash);
+                index = (index + step) & mask;
+            }
+
+            TValue sentinel = Volatile.Read(ref _entryInProcessOfWritingSentinel);
+            if (sentinel is not null)
+            {
+                comparisons++;
+                if (CompareKeyToValue(key, sentinel))
+                {
+                    value = sentinel;
+                    RecordLookup(true, probes, comparisons);
+                    return true;
+                }
+            }
+
+            value = null;
+            RecordLookup(false, probes, comparisons);
+            return false;
+        }
+
+        private static void RecordLookup(bool hit, int probes, int comparisons)
+        {
+            LookupCounters counters = t_lookupCounters;
+            if (counters is null)
+            {
+                counters = t_lookupCounters = new LookupCounters();
+                LookupCounters registered = counters;
+                HashtableLookupProfile.Register((writer, phase) =>
+                {
+                    writer.WriteLine(string.Join("\t", "LOOKUP", phase, typeof(TKey), typeof(TValue),
+                        registered.ThreadId, Volatile.Read(ref registered.Calls), Volatile.Read(ref registered.Hits),
+                        Volatile.Read(ref registered.Probes), Volatile.Read(ref registered.Comparisons),
+                        Volatile.Read(ref registered.MaximumProbes),
+                        FormatHistogram(registered.HitHistogram), FormatHistogram(registered.MissHistogram)));
+                });
+            }
+
+            counters.Calls++;
+            if (hit)
+                counters.Hits++;
+            counters.Probes += probes;
+            counters.Comparisons += comparisons;
+            counters.MaximumProbes = Math.Max(counters.MaximumProbes, probes);
+            int bucket = 0;
+            for (int remaining = probes; remaining > 0; remaining >>= 1)
+                bucket++;
+            (hit ? counters.HitHistogram : counters.MissHistogram)[bucket]++;
+        }
+
+        private static string FormatHistogram(long[] histogram)
+        {
+            var snapshot = new long[histogram.Length];
+            for (int i = 0; i < snapshot.Length; i++)
+                snapshot[i] = Volatile.Read(ref histogram[i]);
+
+            return string.Join(",", snapshot);
+        }
+
+        private void WriteHashStatistics(System.IO.TextWriter writer, string phase)
+        {
+            var hashes = new Dictionary<int, int>();
+            int count = 0;
+            int maximum = 0;
+            int maximumHash = 0;
+            long pairs = 0;
+            foreach (TValue value in Enumerator.Get(this))
+            {
+                int hash = GetValueHashCode(value);
+                hashes.TryGetValue(hash, out int multiplicity);
+                hashes[hash] = multiplicity + 1;
+                pairs += multiplicity;
+                if (multiplicity + 1 > maximum)
+                {
+                    maximum = multiplicity + 1;
+                    maximumHash = hash;
+                }
+                count++;
+            }
+            writer.WriteLine(string.Join("\t", "HASH", phase, GetType(), count, _hashtable.Length,
+                hashes.Count, maximum, pairs));
+            if (typeof(TValue).Name == "MethodForInstantiatedType")
+            {
+                int examples = 0;
+                foreach (TValue value in Enumerator.Get(this))
+                {
+                    if (GetValueHashCode(value) == maximumHash)
+                    {
+                        writer.WriteLine(string.Join("\t", "HASH_EXAMPLE", phase, GetType(), maximumHash, value));
+                        if (++examples == 8)
+                            break;
+                    }
+                }
+            }
+        }
+    }
+
+    internal static class HashtableLookupProfile
+    {
+        private static readonly List<Action<System.IO.TextWriter, string>> s_writers = new();
+
+        internal static bool Enabled { get; } =
+            AppContext.TryGetSwitch("ILCompiler.ProfileLookups", out bool enabled) && enabled;
+
+        internal static void Register(Action<System.IO.TextWriter, string> writer)
+        {
+            lock (s_writers)
+                s_writers.Add(writer);
+        }
+
+        internal static void WriteStatistics(System.IO.TextWriter writer, string phase)
+        {
+            Action<System.IO.TextWriter, string>[] writers;
+            lock (s_writers)
+                writers = s_writers.ToArray();
+            foreach (Action<System.IO.TextWriter, string> write in writers)
+                write(writer, phase);
+            writer.Flush();
+        }
     }
 }

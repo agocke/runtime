@@ -360,6 +360,11 @@ namespace ILCompiler.ObjectWriter
             List<ISymbolRangeNode> symbolRangeNodes = [];
             List<BlockToRelocate> blocksToRelocate = [];
             List<ChecksumsToCalculate> checksumRelocations = [];
+            bool collectStatistics = CompilationEventSource.Log.IsEnabled();
+            int emittedNodes = 0;
+            long emittedBytes = 0;
+            long relocationCount = 0;
+            CompilationEventSource.Log.PhaseStart("ObjectEmission.Nodes", nodes.Count);
             foreach (DependencyNode depNode in nodes)
             {
                 if (_nodeFactory.Target.IsWasm && depNode is INodeWithTypeSignature methodDeclaration)
@@ -527,7 +532,14 @@ namespace ILCompiler.ObjectWriter
 
                 // Note that this has to be done last as not to advance the section writer position.
                 sectionWriter.EmitData(nodeContents.Data);
+                if (collectStatistics)
+                {
+                    emittedNodes++;
+                    emittedBytes += nodeContents.Data.Length;
+                    relocationCount += nodeContents.Relocs?.Length ?? 0;
+                }
             }
+            CompilationEventSource.Log.PhaseStop("ObjectEmission.Nodes");
 
             RecordFoldedSymbolDefinitions(_definedSymbols);
 
@@ -564,6 +576,7 @@ namespace ILCompiler.ObjectWriter
                 EmitSymbolRangeDefinition(rangeNodeName, startNodeName, endNodeName, endSymbol);
             }
 
+            CompilationEventSource.Log.PhaseStart("ObjectEmission.Relocate", blocksToRelocate.Count);
             foreach (BlockToRelocate blockToRelocate in blocksToRelocate)
             {
                 ArrayBuilder<Relocation> checksumRelocationsBuilder = default;
@@ -597,25 +610,31 @@ namespace ILCompiler.ObjectWriter
                 checksumRelocations.Add(new ChecksumsToCalculate(blockToRelocate.SectionIndex, blockToRelocate.Offset, checksumRelocationsBuilder.ToArray()));
             }
             blocksToRelocate.Clear();
+            CompilationEventSource.Log.PhaseStop("ObjectEmission.Relocate");
 
             PrepareImportsForUndefinedSymbols();
             EmitSectionsAndLayout();
 
             if (_options.HasFlag(ObjectWritingOptions.GenerateDebugInfo))
             {
+                using var phase = CompilationEventSource.StartPhase("ObjectEmission.DebugInfo");
                 EmitDebugInfo(nodes, logger);
             }
 
-            EmitSymbolTable(_definedSymbols, GetUndefinedSymbols());
+            using (CompilationEventSource.StartPhase("ObjectEmission.Symbols", _definedSymbols.Count))
+                EmitSymbolTable(_definedSymbols, GetUndefinedSymbols());
 
+            CompilationEventSource.Log.PhaseStart("ObjectEmission.RelocationTables", 0);
             int relocSectionIndex = 0;
             foreach (List<SymbolicRelocation> relocationList in _sectionIndexToRelocations)
             {
                 EmitRelocations(relocSectionIndex, relocationList);
                 relocSectionIndex++;
             }
+            CompilationEventSource.Log.PhaseStop("ObjectEmission.RelocationTables");
 
-            EmitObjectFile(outputFileStream);
+            using (CompilationEventSource.StartPhase("ObjectEmission.Write"))
+                EmitObjectFile(outputFileStream);
 
             if (checksumRelocations.Count > 0)
             {
@@ -629,6 +648,8 @@ namespace ILCompiler.ObjectWriter
                     _outputInfoBuilder.AddSection(outputSection);
                 }
             }
+            if (collectStatistics)
+                CompilationEventSource.Log.ObjectStatistics(emittedNodes, emittedBytes, relocationCount, _definedSymbols.Count);
         }
 
         private protected virtual void RecordMethodDeclaration(INodeWithTypeSignature node)

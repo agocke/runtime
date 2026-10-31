@@ -30,6 +30,7 @@ namespace ILCompiler.DependencyAnalysis
 
         public override void AddStaticDependencies(DependencySink sink, NodeFactory factory)
         {
+            using CompilationEventSource.WorkScope analysisScope = CompilationEventSource.StartWork("Dataflow.Analysis", this);
             var mdManager = (UsageBasedMetadataManager)factory.MetadataManager;
             try
             {

@@ -2,7 +2,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.Tracing;
 using System.IO;
 
 using ILCompiler.DependencyAnalysisFramework;
@@ -196,6 +198,63 @@ namespace ILCompiler.DependencyAnalysisFramework.Tests
                     Assert.Equal(11, nodeCount);
                     Assert.Equal(0, edgeCount);
                 }
+            }
+        }
+    }
+
+    public class CompilationEventTests
+    {
+        [Fact]
+        public void GraphStatisticsPreservesTypedPayload()
+        {
+            using var listener = new PhaseListener();
+            CompilationEventSource.Log.GraphStatistics(7, 1L << 33, 1L << 34);
+            Assert.Contains((7, 1L << 33, 1L << 34), listener.GraphEvents);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void NestedPhasesReportCompletion(bool throwException)
+        {
+            using var listener = new PhaseListener();
+            try
+            {
+                using var outer = CompilationEventSource.StartPhase("Test.Outer", 7);
+                using var inner = CompilationEventSource.StartPhase("Test.Inner", 3);
+                if (throwException)
+                    throw new InvalidOperationException("Test exception");
+            }
+            catch (InvalidOperationException) when (throwException)
+            {
+            }
+
+            Assert.Equal(new[]
+            {
+                (1, "Test.Outer", 7L),
+                (1, "Test.Inner", 3L),
+                (2, "Test.Inner", 0L),
+                (2, "Test.Outer", 0L)
+            }, listener.Events);
+        }
+
+        private sealed class PhaseListener : EventListener
+        {
+            public List<(int, string, long)> Events { get; } = new();
+            public ConcurrentQueue<(int, long, long)> GraphEvents { get; } = new();
+
+            protected override void OnEventSourceCreated(EventSource source)
+            {
+                if (source.Name == "Microsoft-ILCompiler-Compilation")
+                    EnableEvents(source, EventLevel.Informational);
+            }
+
+            protected override void OnEventWritten(EventWrittenEventArgs args)
+            {
+                if (args.EventId == 4)
+                    GraphEvents.Enqueue(((int)args.Payload[0], (long)args.Payload[1], (long)args.Payload[2]));
+                if (args.Payload?.Count > 0 && args.Payload[0] is string name && name.StartsWith("Test.", StringComparison.Ordinal))
+                    Events.Add((args.EventId, name, args.EventId == 1 ? (long)args.Payload[1] : 0));
             }
         }
     }

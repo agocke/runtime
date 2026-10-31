@@ -15,6 +15,7 @@ using Internal.TypeSystem.Ecma;
 
 using ILCompiler;
 using ILCompiler.DependencyAnalysis;
+using ILCompiler.DependencyAnalysisFramework;
 using System.Runtime.CompilerServices;
 
 #if SUPPORT_JIT
@@ -44,6 +45,45 @@ namespace Internal.JitInterface
             : this()
         {
             _compilation = compilation;
+        }
+
+        public void LogHandleTableStatistics()
+        {
+            if (!CompilationEventSource.Log.IsEnabled())
+                return;
+
+            using var phase = CompilationEventSource.StartPhase("Compilation.HandleTableAudit");
+            var hashesByType = new Dictionary<Type, Dictionary<int, int>>();
+            var comparer = new JitObjectComparer();
+            foreach (object key in _objectToHandle.Keys)
+            {
+                Type type = key.GetType();
+                if (!hashesByType.TryGetValue(type, out Dictionary<int, int> hashes))
+                {
+                    hashes = new Dictionary<int, int>();
+                    hashesByType.Add(type, hashes);
+                }
+
+                int hash = comparer.GetHashCode(key);
+                hashes.TryGetValue(hash, out int multiplicity);
+                hashes[hash] = multiplicity + 1;
+            }
+
+            foreach (KeyValuePair<Type, Dictionary<int, int>> entry in hashesByType)
+            {
+                int count = 0;
+                int maximumMultiplicity = 0;
+                long collidingPairs = 0;
+                foreach (int multiplicity in entry.Value.Values)
+                {
+                    count += multiplicity;
+                    maximumMultiplicity = Math.Max(maximumMultiplicity, multiplicity);
+                    collidingPairs += (long)multiplicity * (multiplicity - 1) / 2;
+                }
+
+                CompilationEventSource.Log.TableStatistics(entry.Key.FullName, count, entry.Value.Count,
+                    maximumMultiplicity, collidingPairs);
+            }
         }
 
         private FrozenObjectNode HandleToObject(CORINFO_OBJECT_STRUCT_* obj) => (FrozenObjectNode)HandleToObject((void*)obj);

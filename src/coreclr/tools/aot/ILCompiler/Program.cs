@@ -21,6 +21,7 @@ using Internal.TypeSystem.Ecma;
 
 using ILCompiler.Dataflow;
 using ILCompiler.DependencyAnalysis;
+using ILCompiler.DependencyAnalysisFramework;
 using ILLink.Shared;
 
 using Debug = System.Diagnostics.Debug;
@@ -509,6 +510,7 @@ namespace ILCompiler
             [MethodImpl(MethodImplOptions.NoInlining)]
             void RunScanner()
             {
+                using var scannerPhase = CompilationEventSource.StartPhase("Scanner");
                 ILScannerBuilder scannerBuilder = builder.GetILScannerBuilder()
                     .UseCompilationRoots(compilationRoots)
                     .UseMetadataManager(metadataManager)
@@ -526,6 +528,7 @@ namespace ILCompiler
 
                 ILScanResults scanResults = scanner.Scan();
 
+                using var analysisPhase = CompilationEventSource.StartPhase("Scanner.Analysis");
 #if DEBUG
                 scannerCompiledMethods = new List<MethodDesc>(scanResults.CompiledMethodBodies);
                 scannerConstructedTypes = new List<TypeDesc>(scanResults.ConstructedEETypes);

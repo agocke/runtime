@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 
 using ILCompiler.DependencyAnalysis;
+using ILCompiler.DependencyAnalysisFramework;
 
 using Debug = System.Diagnostics.Debug;
 
@@ -40,6 +41,7 @@ namespace ILCompiler
             if (_symbolRemapping != null)
                 return;
 
+            using var phase = CompilationEventSource.StartPhase("ObjectEmission.Deduplication");
             Dictionary<ISymbolNode, ISymbolNode> previousSymbolRemapping;
             Dictionary<ISymbolNode, ISymbolNode> symbolRemapping = null;
 

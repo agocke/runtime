@@ -78,6 +78,7 @@ namespace ILCompiler
                 methodsToCompile.Add(methodCodeNodeNeedingCode);
             }
 
+            using var phase = CompilationEventSource.StartPhase("Scanner.Import", methodsToCompile.Count);
             if (_parallelism == 1)
             {
                 CompileSingleThreaded(methodsToCompile);
@@ -138,6 +139,7 @@ namespace ILCompiler
 
         ILScanResults IILScanner.Scan()
         {
+            using var phase = CompilationEventSource.StartPhase("Scanner.Graph");
             _dependencyGraph.AddRoot(GetHelperEntrypoint(ReadyToRunHelper.BulkWriteBarrier), "Not tracked by scanner");
             _dependencyGraph.AddRoot(GetHelperEntrypoint(ReadyToRunHelper.MemCpy), "Not tracked by scanner");
             _dependencyGraph.AddRoot(GetHelperEntrypoint(ReadyToRunHelper.MemSet), "Not tracked by scanner");
