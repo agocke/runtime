@@ -315,14 +315,22 @@ namespace ILCompiler.DependencyAnalysis
 
         public override void AddConditionalDependencies(DependencySink sink, NodeFactory factory)
         {
+            using TypeDiscoveryCensus.Scope censusScope = TypeDiscoveryCensus.Start(this, factory, sink);
             if (IsReflectionVisible)
             {
-                factory.MetadataManager.GetConditionalDependenciesDueToEETypePresence(sink, factory, _type, allocated: EmitVirtualSlots);
+                using (TypeDiscoveryCensus.Time(TypeDiscoveryCensus.Section.Metadata))
+                {
+                    using (CompilationEventSource.StartWork("EEType.MetadataConditions", this))
+                    {
+                        factory.MetadataManager.GetConditionalDependenciesDueToEETypePresence(sink, factory, _type, allocated: EmitVirtualSlots);
+                    }
+                }
 
                 if (!_type.IsCanonicalSubtype(CanonicalFormKind.Any))
                 {
                     foreach (DefType iface in _type.RuntimeInterfaces)
                     {
+                        TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 2);
                         var ifaceDefinition = (DefType)iface.GetTypeDefinition();
                         sink.Add(new CombinedDependencyListEntry(
                             GetInterfaceTypeNode(factory, iface),
@@ -333,6 +341,7 @@ namespace ILCompiler.DependencyAnalysis
             }
 
             IEETypeNode maximallyConstructableType = factory.MaximallyConstructableType(_type);
+            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries);
 
             if (maximallyConstructableType != this)
             {
@@ -347,8 +356,10 @@ namespace ILCompiler.DependencyAnalysis
             }
 
             TypeDesc canonOwningType = _type.ConvertToCanonForm(CanonicalFormKind.Specific);
+            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Canonicalizations);
             if (_type.IsDefType && _type != canonOwningType)
             {
+                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 2);
                 sink.Add(new CombinedDependencyListEntry(
                     factory.GenericStaticBaseInfo((MetadataType)_type),
                     factory.NativeLayout.TemplateTypeLayout(canonOwningType),
@@ -365,14 +376,18 @@ namespace ILCompiler.DependencyAnalysis
             {
                 if (!defType.IsInterface)
                 {
+                    using TypeDiscoveryCensus.Timing classTime = TypeDiscoveryCensus.Time(TypeDiscoveryCensus.Section.ClassSlots);
+                    using CompilationEventSource.WorkScope classScope = CompilationEventSource.StartWork("EEType.VirtualSlots", this);
                     bool isAbstractType = ((MetadataType)defType).IsAbstract;
 
                     foreach (MethodDesc decl in defType.EnumAllVirtualSlots())
                     {
+                        TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.ClassSlots);
                         // Generic virtual methods are tracked by an orthogonal mechanism.
                         if (decl.HasInstantiation)
                             continue;
 
+                        TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.ClassResolutions);
                         MethodDesc impl = defType.FindVirtualFunctionTargetMethodOnObjectType(decl);
                         bool implOwnerIsAbstract = ((MetadataType)impl.OwningType).IsAbstract;
 
@@ -388,6 +403,9 @@ namespace ILCompiler.DependencyAnalysis
                         // We also skip abstract methods since they don't have a body to refer to.
                         if ((impl.OwningType == defType || implOwnerIsAbstract) && !impl.IsAbstract)
                         {
+                            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.ClassImplementations);
+                            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Canonicalizations, 2);
+                            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 4);
                             MethodDesc canonImpl = impl.GetCanonMethodTarget(CanonicalFormKind.Specific);
 
                             // If this is an abstract type, only request a tentative entrypoint (whose body
@@ -411,13 +429,18 @@ namespace ILCompiler.DependencyAnalysis
 
                         if (impl.OwningType == defType)
                         {
+                            using TypeDiscoveryCensus.Timing noteTime = TypeDiscoveryCensus.TimeNote(decl, impl);
                             factory.MetadataManager.NoteOverridingMethod(decl, impl);
                         }
 
+                        TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.OverrideChecks);
+                        using TypeDiscoveryCensus.Timing overrideTime = TypeDiscoveryCensus.TimeOverride(decl, impl);
                         factory.MetadataManager.GetDependenciesForOverridingMethod(sink, factory, decl, impl);
                     }
                 }
 
+                using CompilationEventSource.WorkScope interfaceScope = CompilationEventSource.StartWork("EEType.InterfaceSlots", this);
+                using TypeDiscoveryCensus.Timing interfaceTime = TypeDiscoveryCensus.Time(TypeDiscoveryCensus.Section.InterfaceSlots);
                 Debug.Assert(
                     _type == defType ||
                     ((System.Collections.IStructuralEquatable)defType.RuntimeInterfaces).Equals(_type.RuntimeInterfaces,
@@ -438,6 +461,7 @@ namespace ILCompiler.DependencyAnalysis
                 Debug.Assert(defTypeDefinitionRuntimeInterfaces.Length == defTypeRuntimeInterfaces.Length);
                 for (int interfaceIndex = 0; interfaceIndex < defTypeRuntimeInterfaces.Length; interfaceIndex++)
                 {
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Interfaces);
                     DefType interfaceType = defTypeRuntimeInterfaces[interfaceIndex];
                     DefType definitionInterfaceType = defTypeDefinitionRuntimeInterfaces[interfaceIndex];
 
@@ -447,6 +471,7 @@ namespace ILCompiler.DependencyAnalysis
 
                     foreach (MethodDesc interfaceMethod in interfaceType.EnumAllVirtualSlots())
                     {
+                        TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.InterfaceSlots);
                         // Generic virtual methods are tracked by an orthogonal mechanism.
                         if (interfaceMethod.HasInstantiation)
                             continue;
@@ -458,11 +483,20 @@ namespace ILCompiler.DependencyAnalysis
 
                         MethodDesc interfaceMethodDefinition = interfaceMethod;
                         if (interfaceType != definitionInterfaceType)
+                        {
+                            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.InstantiationMappings);
                             interfaceMethodDefinition = factory.TypeSystemContext.GetMethodForInstantiatedType(interfaceMethodDefinition.GetTypicalMethodDefinition(), (InstantiatedType)definitionInterfaceType);
+                        }
 
-                        MethodDesc implMethod = isStaticInterfaceMethod ?
-                            defTypeDefinition.ResolveInterfaceMethodToStaticVirtualMethodOnType(interfaceMethodDefinition) :
-                            defTypeDefinition.ResolveInterfaceMethodToVirtualMethodOnType(interfaceMethodDefinition);
+                        MethodDesc implMethod;
+                        TypeDiscoveryCensus.Count(isStaticInterfaceMethod
+                            ? TypeDiscoveryCensus.Unit.StaticInterfaceResolutions : TypeDiscoveryCensus.Unit.InterfaceResolutions);
+                        using (CompilationEventSource.StartWork("EEType.ResolveInterface", this))
+                        {
+                            implMethod = isStaticInterfaceMethod ?
+                                defTypeDefinition.ResolveInterfaceMethodToStaticVirtualMethodOnType(interfaceMethodDefinition) :
+                                defTypeDefinition.ResolveInterfaceMethodToVirtualMethodOnType(interfaceMethodDefinition);
+                        }
                         if (implMethod != null)
                         {
                             TypeDesc implType = defType;
@@ -470,7 +504,12 @@ namespace ILCompiler.DependencyAnalysis
                                 implType = implType.BaseType;
 
                             if (!implType.IsTypeDefinition)
+                            {
+                                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.InstantiationMappings);
                                 implMethod = factory.TypeSystemContext.GetMethodForInstantiatedType(implMethod.GetTypicalMethodDefinition(), (InstantiatedType)implType);
+                            }
+                            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Canonicalizations, 2);
+                            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 4);
 
                             if (isStaticInterfaceMethod)
                             {
@@ -503,6 +542,8 @@ namespace ILCompiler.DependencyAnalysis
                             // can dispatch to an implementation of IEnumerable<string>.GetEnumerator()).
                             if (isVariantInterfaceImpl)
                             {
+                                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.VariantImplementations);
+                                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 4);
                                 MethodDesc typicalInterfaceMethod = interfaceMethod.GetTypicalMethodDefinition();
 
                                 object implMethodUseNode = isStaticInterfaceMethod ?
@@ -513,8 +554,11 @@ namespace ILCompiler.DependencyAnalysis
                             }
 
                             TypeSystemEntity origin = (implMethod.OwningType != defType) ? defType : null;
-                            factory.MetadataManager.NoteOverridingMethod(interfaceMethod, implMethod, origin);
+                            using (TypeDiscoveryCensus.TimeNote(interfaceMethod, implMethod, origin))
+                                factory.MetadataManager.NoteOverridingMethod(interfaceMethod, implMethod, origin);
 
+                            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.OverrideChecks);
+                            using TypeDiscoveryCensus.Timing overrideTime = TypeDiscoveryCensus.TimeOverride(interfaceMethod, implMethod);
                             factory.MetadataManager.GetDependenciesForOverridingMethod(sink, factory, interfaceMethod, implMethod);
                         }
                         else
@@ -522,9 +566,13 @@ namespace ILCompiler.DependencyAnalysis
                             // Is the implementation provided by a default interface method?
                             // If so, add a dependency on the entrypoint directly since nobody else is going to do that
                             // (interface types have an empty vtable, modulo their generic dictionary).
+                            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.DefaultResolutions);
                             var resolution = defTypeDefinition.ResolveInterfaceMethodToDefaultImplementationOnType(interfaceMethodDefinition, out implMethod);
                             if (resolution == DefaultInterfaceMethodResolution.DefaultImplementation)
                             {
+                                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.DefaultImplementations);
+                                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Canonicalizations, 2);
+                                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 4);
                                 DefType providingInterfaceDefinitionType = (DefType)implMethod.OwningType;
                                 implMethod = implMethod.InstantiateSignature(defType.Instantiation, Instantiation.Empty);
 
@@ -549,8 +597,11 @@ namespace ILCompiler.DependencyAnalysis
                                     factory.DelegateTargetVirtualMethod(interfaceMethod.GetCanonMethodTarget(CanonicalFormKind.Specific)),
                                     "Slot is delegate target"));
 
-                                factory.MetadataManager.NoteOverridingMethod(interfaceMethod, implMethod);
+                                using (TypeDiscoveryCensus.TimeNote(interfaceMethod, implMethod))
+                                    factory.MetadataManager.NoteOverridingMethod(interfaceMethod, implMethod);
 
+                                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.OverrideChecks);
+                                using TypeDiscoveryCensus.Timing overrideTime = TypeDiscoveryCensus.TimeOverride(interfaceMethod, implMethod);
                                 factory.MetadataManager.GetDependenciesForOverridingMethod(sink, factory, interfaceMethod, implMethod);
                             }
                         }

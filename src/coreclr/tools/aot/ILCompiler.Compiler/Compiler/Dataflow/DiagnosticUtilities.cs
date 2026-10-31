@@ -35,6 +35,9 @@ namespace ILCompiler.Dataflow
 
         internal static bool TryGetRequiresAttribute(TypeSystemEntity member, string requiresAttributeName, [NotNullWhen(returnValue: true)] out CustomAttributeValue<TypeDesc>? attribute)
         {
+#if !ILTRIM
+            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.AttributeQueries);
+#endif
             attribute = default;
             CustomAttributeValue<TypeDesc>? decoded;
             switch (member)
@@ -97,6 +100,9 @@ namespace ILCompiler.Dataflow
 
         internal static bool IsInRequiresScope(this MethodDesc method, string requiresAttribute, [NotNullWhen(returnValue: true)] out CustomAttributeValue<TypeDesc>? attribute)
         {
+#if !ILTRIM
+            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.RequiresScopeQueries);
+#endif
             if (TryGetRequiresAttribute(method, requiresAttribute, out attribute) && !method.IsStaticConstructor)
                 return true;
 

@@ -22,6 +22,9 @@ namespace ILCompiler
 
         private (MethodDesc Slot, MethodDesc Implementation)[] ComputeVtable(TypeDesc type)
         {
+#if !READYTORUN
+            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.VTableCreations);
+#endif
             // Do not recompute the same things for all the generics
             Debug.Assert(type.IsTypeDefinition);
 
@@ -66,6 +69,9 @@ namespace ILCompiler
 
             foreach (var kvp in _vtableCache.GetOrAdd(objectType.GetTypeDefinition(), _vtableCreator))
             {
+#if !READYTORUN
+                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.SlotComparisons);
+#endif
                 if (kvp.Slot == slotDefiningMethod)
                 {
                     MethodDesc result = kvp.Implementation;

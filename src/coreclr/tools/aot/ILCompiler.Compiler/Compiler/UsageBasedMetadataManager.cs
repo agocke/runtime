@@ -481,9 +481,12 @@ namespace ILCompiler
 
             if (type.HasInstantiation && !type.IsTypeDefinition && !IsReflectionBlocked(type))
             {
+                using CompilationEventSource.WorkScope membersScope = CompilationEventSource.StartWork("Metadata.MemberConditions", type);
+                using TypeDiscoveryCensus.Timing membersTime = TypeDiscoveryCensus.Time(TypeDiscoveryCensus.Section.Members);
                 // Ensure fields can be consistently reflection set & get.
                 foreach (FieldDesc field in type.GetFields())
                 {
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FieldsExamined);
                     // Tiny optimization: no get/set for literal fields since they only exist in metadata
                     if (field.IsLiteral)
                         continue;
@@ -491,6 +494,8 @@ namespace ILCompiler
                     if (IsReflectionBlocked(field))
                         continue;
 
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FieldsRetained);
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 2);
                     dependencies.Add(new DependencyNodeCore<NodeFactory>.CombinedDependencyListEntry(
                         factory.ReflectedField(field),
                         factory.ReflectedField(field.GetTypicalFieldDefinition()),
@@ -500,6 +505,7 @@ namespace ILCompiler
                 // Ensure methods can be consistently reflection-accessed
                 foreach (MethodDesc method in type.GetMethods())
                 {
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.MethodsExamined);
                     if (IsReflectionBlocked(method))
                         continue;
 
@@ -511,7 +517,10 @@ namespace ILCompiler
                     MethodDesc reflectedMethod;
                     if (method.HasInstantiation)
                     {
-                        Instantiation inst = TypeExtensions.GetInstantiationThatMeetsConstraints(method.Instantiation, allowCanon: true);
+                        TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.GenericConstraintQueries);
+                        Instantiation inst;
+                        using (TypeDiscoveryCensus.Time(TypeDiscoveryCensus.Section.Constraints))
+                            inst = TypeExtensions.GetInstantiationThatMeetsConstraints(method.Instantiation, allowCanon: true);
                         if (inst.IsNull)
                             continue;
 
@@ -522,6 +531,9 @@ namespace ILCompiler
                         reflectedMethod = method;
                     }
 
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.MethodsRetained);
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Canonicalizations);
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 2);
                     dependencies.Add(new DependencyNodeCore<NodeFactory>.CombinedDependencyListEntry(
                         factory.ReflectedMethod(reflectedMethod.GetCanonMethodTarget(CanonicalFormKind.Specific)),
                         factory.ReflectedMethod(reflectedMethod.GetTypicalMethodDefinition()),

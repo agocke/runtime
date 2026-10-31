@@ -56,6 +56,52 @@ namespace ILCompiler.DependencyAnalysisFramework.Tests
             });
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void DiagnosticSnapshotPreservesSinkAndSelectsSuffix(bool includePrefix)
+        {
+            var graph = new TestGraph();
+            var sink = new DependencyNodeCore<TestGraph>.DependencySink();
+            var first = graph.GetNode("A");
+            var second = graph.GetNode("B");
+            var condition = graph.GetNode("C");
+            if (includePrefix)
+            {
+                sink.Add(condition, "Prefix");
+                sink.Add(new DependencyNodeCore<TestGraph>.CombinedDependencyListEntry(first, second, "Conditional prefix"));
+            }
+            var start = sink.GetDiagnosticCounts();
+            sink.Add(new DependencyNodeCore<TestGraph>.CombinedDependencyListEntry(second, condition, "Conditional suffix"));
+            sink.Add(first, "Unconditional suffix");
+
+            var snapshot = sink.GetDiagnosticSnapshot(start.Unconditional, start.Conditional);
+            Assert.Collection(snapshot,
+                entry =>
+                {
+                    Assert.Same(first, entry.Node);
+                    Assert.Null(entry.OtherReasonNode);
+                    Assert.Equal("Unconditional suffix", entry.Reason);
+                },
+                entry =>
+                {
+                    Assert.Same(second, entry.Node);
+                    Assert.Same(condition, entry.OtherReasonNode);
+                    Assert.Equal("Conditional suffix", entry.Reason);
+                });
+            Assert.Equal((start.Unconditional + 1, start.Conditional + 1), sink.GetDiagnosticCounts());
+            Assert.Empty(sink.GetDiagnosticSnapshot(start.Unconditional + 1, start.Conditional + 1));
+
+            int drained = 0;
+            using (var entries = sink.Drain())
+            {
+                while (entries.MoveNext())
+                    drained++;
+            }
+            Assert.Equal(includePrefix ? 4 : 2, drained);
+            Assert.Equal((0, 0), sink.GetDiagnosticCounts());
+        }
+
         [Fact]
         public void TestADependsOnBIfC_NoC()
         {

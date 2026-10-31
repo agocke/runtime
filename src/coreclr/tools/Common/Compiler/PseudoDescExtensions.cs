@@ -17,8 +17,14 @@ namespace ILCompiler
 
             var type = ecmaAccessor.OwningType;
             var reader = type.MetadataReader;
+#if !READYTORUN && !ILTRIM
+            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.PropertySearches);
+#endif
             foreach (var propertyHandle in reader.GetTypeDefinition(type.Handle).GetProperties())
             {
+#if !READYTORUN && !ILTRIM
+                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.PropertySteps);
+#endif
                 var accessors = reader.GetPropertyDefinition(propertyHandle).GetAccessors();
                 if (ecmaAccessor.Handle == accessors.Getter
                     || ecmaAccessor.Handle == accessors.Setter)
@@ -37,8 +43,14 @@ namespace ILCompiler
 
             var type = ecmaAccessor.OwningType;
             var reader = type.MetadataReader;
+#if !READYTORUN && !ILTRIM
+            TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.EventSearches);
+#endif
             foreach (var eventHandle in reader.GetTypeDefinition(type.Handle).GetEvents())
             {
+#if !READYTORUN && !ILTRIM
+                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.EventSteps);
+#endif
                 var accessors = reader.GetEventDefinition(eventHandle).GetAccessors();
                 if (ecmaAccessor.Handle == accessors.Adder
                     || ecmaAccessor.Handle == accessors.Remover

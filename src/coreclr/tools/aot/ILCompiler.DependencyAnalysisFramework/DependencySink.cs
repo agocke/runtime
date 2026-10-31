@@ -82,6 +82,43 @@ namespace ILCompiler.DependencyAnalysisFramework
                 return new DrainEnumerator(this);
             }
 
+            public (int Unconditional, int Conditional) GetDiagnosticCounts()
+                => (_dependencies.Count, _combinedDependencies.Count);
+
+            public readonly struct DiagnosticEntry
+            {
+                public readonly DependencyNodeCore<DependencyContextType> Node;
+                public readonly DependencyNodeCore<DependencyContextType>? OtherReasonNode;
+                public readonly string Reason;
+
+                internal DiagnosticEntry(DependencyNodeCore<DependencyContextType> node,
+                    DependencyNodeCore<DependencyContextType>? otherReasonNode, string reason)
+                {
+                    Node = node;
+                    OtherReasonNode = otherReasonNode;
+                    Reason = reason;
+                }
+            }
+
+            public DiagnosticEntry[] GetDiagnosticSnapshot(int unconditionalStart, int conditionalStart)
+            {
+                var result = new DiagnosticEntry[
+                    _dependencies.Count - unconditionalStart + _combinedDependencies.Count - conditionalStart];
+                int index = 0;
+                for (int i = unconditionalStart; i < _dependencies.Count; i++)
+                {
+                    DependencyListEntry entry = _dependencies[i];
+                    result[index++] = new DiagnosticEntry(entry.Node, null, entry.Reason);
+                }
+                for (int i = conditionalStart; i < _combinedDependencies.Count; i++)
+                {
+                    CombinedDependencyListEntry entry = _combinedDependencies[i];
+                    result[index++] = new DiagnosticEntry(entry.Node, entry.OtherReasonNode, entry.Reason);
+                }
+
+                return result;
+            }
+
             private void Clear()
             {
                 _dependencies.Clear();
