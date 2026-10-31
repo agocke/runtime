@@ -41,6 +41,11 @@ namespace ILCompiler.DependencyAnalysisFramework
         private readonly DependencyNodeCore<DependencyContextType>.DependencySink _dependencySink = new DependencyNodeCore<DependencyContextType>.DependencySink();
 
         private Dictionary<DependencyNodeCore<DependencyContextType>, HashSet<DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry>> _conditional_dependency_store = new Dictionary<DependencyNodeCore<DependencyContextType>, HashSet<DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry>>();
+        private readonly CompactPendingStore<DependencyContextType> _compactPending =
+            typeof(MarkStrategy) == typeof(NoLogStrategy<DependencyContextType>)
+            && Environment.GetEnvironmentVariable("DOTNET_ILC_PORTFOLIO_GRAPH") == "1"
+            && !(AppContext.TryGetSwitch("ILCompiler.ProfileLookups", out bool compactAudit) && compactAudit)
+            ? new CompactPendingStore<DependencyContextType>() : null;
         private bool _markingCompleted;
         private readonly bool _collectStatistics = CompilationEventSource.Log.IsEnabled();
         private long _edgesCommitted;
@@ -48,6 +53,23 @@ namespace ILCompiler.DependencyAnalysisFramework
         private readonly ConditionalAudit _conditionalAudit =
             AppContext.TryGetSwitch("ILCompiler.ProfileLookups", out bool audit) && audit ? new ConditionalAudit() : null;
         private readonly GraphWorkProfile _workProfile = GraphWorkProfile.Enabled ? new GraphWorkProfile() : null;
+
+        private sealed class ConditionalTargetComparer : IEqualityComparer<DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry>
+        {
+            public static readonly ConditionalTargetComparer Instance = new ConditionalTargetComparer();
+
+            public bool Equals(
+                DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry x,
+                DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry y)
+            {
+                return ReferenceEquals(x.Node, y.Node);
+            }
+
+            public int GetHashCode(DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry entry)
+            {
+                return entry.Node.GetHashCode();
+            }
+        }
 
         private sealed class ConditionalAudit
         {
@@ -243,9 +265,20 @@ namespace ILCompiler.DependencyAnalysisFramework
                     if (dependencies.Dependency.Marked)
                         _conditionalAudit.PendingAlreadyMarked++;
                 }
+                // Without logging, only reachability matters, not additional reasons for an existing mark.
+                if (typeof(MarkStrategy) == typeof(NoLogStrategy<DependencyContextType>) && dependencies.Dependency.Marked)
+                    continue;
+
+                if (_compactPending is not null)
+                {
+                    _compactPending.Add(otherReasonNode, dependencies.Dependency);
+                    continue;
+                }
+
                 if (!_conditional_dependency_store.TryGetValue(otherReasonNode, out HashSet<DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry> storedDependencySet))
                 {
-                    storedDependencySet = new HashSet<DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry>();
+                    storedDependencySet = new HashSet<DependencyNodeCore<DependencyContextType>.CombinedDependencyListEntry>(
+                        typeof(MarkStrategy) == typeof(NoLogStrategy<DependencyContextType>) ? ConditionalTargetComparer.Instance : null);
                     _conditional_dependency_store.Add(otherReasonNode, storedDependencySet);
                     if (_conditionalAudit is not null)
                         _conditionalAudit.NewSets++;
@@ -319,7 +352,13 @@ namespace ILCompiler.DependencyAnalysisFramework
                         if (_conditional_dependency_store.Count == 0)
                             _conditionalAudit.EmptyQueries++;
                     }
-                    if (_conditional_dependency_store.TryGetValue(currentNode, out storedDependencySet))
+                    if (_compactPending is not null)
+                    {
+                        int pending = _compactPending.Take(currentNode);
+                        while (pending != 0)
+                            AddToMarkStack(_compactPending.Pop(ref pending), null, null, null);
+                    }
+                    else if (_conditional_dependency_store.TryGetValue(currentNode, out storedDependencySet))
                     {
                         if (_conditionalAudit is not null)
                             _conditionalAudit.SatisfiedSets++;
@@ -445,6 +484,16 @@ namespace ILCompiler.DependencyAnalysisFramework
                         audit.Queries, audit.EmptyQueries, audit.SatisfiedSets, audit.ActivatedEntries,
                         audit.ActivatedAlreadyMarked, audit.MaximumSet, _conditional_dependency_store.Count,
                         remaining, remainingMarked, repeatedTargets));
+                }
+                _compactPending?.Release();
+                if (Environment.GetEnvironmentVariable("DOTNET_ILC_PORTFOLIO_RETIRE") == "1")
+                {
+                    _conditional_dependency_store = new();
+                    _dynamicDependencyInterestingList = new();
+                    _markedNodesWithDynamicDependencies = new();
+                    _deferredStaticDependencies = new();
+                    _rootNodes = new();
+                    _markStack = new();
                 }
             }
         }

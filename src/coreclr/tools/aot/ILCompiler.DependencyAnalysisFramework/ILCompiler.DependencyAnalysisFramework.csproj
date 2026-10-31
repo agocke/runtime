@@ -17,6 +17,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="CompilationEventSource.cs" />
+    <Compile Include="CompactPendingStore.cs" />
     <Compile Include="DependencyAnalyzer.cs" />
     <Compile Include="DependencyAnalyzerBase.cs" />
     <Compile Include="DependencyNode.cs" />

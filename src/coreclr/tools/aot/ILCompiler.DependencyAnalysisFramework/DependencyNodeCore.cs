@@ -10,6 +10,8 @@ namespace ILCompiler.DependencyAnalysisFramework
 {
     public abstract partial class DependencyNodeCore<DependencyContextType> : DependencyNode, IDependencyNode<DependencyContextType>
     {
+        internal int ConditionalStoreIndex;
+
         public readonly struct DependencyListEntry(
             DependencyNodeCore<DependencyContextType> node,
             string reason)

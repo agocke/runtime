@@ -135,6 +135,54 @@ namespace ILCompiler.DependencyAnalysisFramework.Tests
             });
         }
 
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(false, true)]
+        [InlineData(true, false)]
+        [InlineData(true, true)]
+        public void ConditionalDuplicatesPreserveReachabilityAndReasons(bool markTarget, bool markCondition)
+        {
+            TestOnGraphTypes((TestGraph graph, DependencyAnalyzerBase<TestGraph> analyzer) =>
+            {
+                graph.AddConditionalRule("A", "C", "B", "First reason");
+                graph.AddConditionalRule("A", "C", "B", "Second reason");
+                graph.AddConditionalRule("D", "C", "B", "Other source");
+                if (markTarget)
+                    graph.AddRoot("B", "Target root");
+                graph.AddRoot("A", "Source root");
+                graph.AddRoot("D", "Other source root");
+                if (markCondition)
+                {
+                    graph.AddStaticRule("A", "E", "Deferred condition source");
+                    graph.AddStaticRule("E", "C", "Condition dependency");
+                }
+
+                int markedTargets = 0;
+                analyzer.NewMarkedNode += node =>
+                {
+                    if (ReferenceEquals(node, graph.GetNode("B")))
+                        markedTargets++;
+                };
+                List<string> results = graph.AnalysisResults;
+                Assert.Equal(markTarget || markCondition, results.Contains("B"));
+                Assert.Equal(markCondition, results.Contains("C"));
+                Assert.Equal(!markTarget && markCondition ? 1 : 0, markedTargets);
+                Assert.Equal(2 + (markTarget || markCondition ? 1 : 0) + (markCondition ? 2 : 0), results.Count);
+
+                if (markCondition && analyzer is DependencyAnalyzer<FullGraphLogStrategy<TestGraph>, TestGraph>)
+                {
+                    using var output = new MemoryStream();
+                    DgmlWriter.WriteDependencyGraphToStream(output, analyzer, graph);
+                    output.Position = 0;
+                    using var reader = new StreamReader(output);
+                    string dgml = reader.ReadToEnd();
+                    Assert.Contains("First reason", dgml);
+                    Assert.Contains("Second reason", dgml);
+                    Assert.Contains("Other source", dgml);
+                }
+            });
+        }
+
         [Fact]
         public void TestSimpleDynamicRule()
         {
@@ -167,6 +215,49 @@ namespace ILCompiler.DependencyAnalysisFramework.Tests
                 Assert.Contains("B**D", results);
                 Assert.True(results.Count == 9);
             });
+        }
+
+        [Theory]
+        [InlineData(1)]
+        [InlineData(8)]
+        [InlineData(9)]
+        [InlineData(2049)]
+        public void ConditionalFanoutPreservesCallbackOrderAcrossWaves(int fanout)
+        {
+            TestGraph context = new();
+            var graph = new DependencyAnalyzer<NoLogStrategy<TestGraph>, TestGraph>(context, null);
+            context.AttachToDependencyAnalyzer(graph);
+            List<string> order = new();
+            List<string> expected = new();
+            graph.NewMarkedNode += node => order.Add(((TestGraph.TestNode)node).Data);
+            for (int wave = 0; wave < 4; wave++)
+            {
+                string source = $"Source{wave}";
+                string condition = $"Condition{wave}";
+                context.AddStaticRule(source, $"Delay{wave}", "Delay activation");
+                context.AddStaticRule($"Delay{wave}", condition, "Activate condition");
+                context.AddConditionalRule(source, "Never", "Unreachable", "Inactive condition");
+                context.AddConditionalRule(source, "Never", "Source0", "Already marked target");
+                expected.Add(source);
+                expected.Add($"Delay{wave}");
+                expected.Add(condition);
+                for (int target = 0; target < fanout; target++)
+                {
+                    string name = $"Target{wave}.{target}";
+                    context.AddConditionalRule(source, condition, name, "First reason");
+                    context.AddConditionalRule(source, condition, name, "Duplicate target");
+                    expected.Add(name);
+                }
+                if (wave < 3)
+                    context.AddStaticRule($"Target{wave}.0", $"Source{wave + 1}", "Next wave");
+            }
+            context.AddRoot("Source0", "Root");
+            List<string> result = context.AnalysisResults;
+            Assert.DoesNotContain("Unreachable", result);
+            Assert.Equal(expected.Count, result.Count);
+            Assert.Equal(expected, order);
+            graph.ComputeMarkedNodes();
+            Assert.Equal(expected, order);
         }
 
         private void BuildGraphUsingAllTypesOfRules(TestGraph testGraph, DependencyAnalyzerBase<TestGraph> analyzer)
