@@ -760,6 +760,9 @@
     <Compile Include="IL\Stubs\StartupCode\NativeLibraryStartupMethod.Sorting.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Compiler\NodeHashAudit.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="..\..\Common\System\FormattingHelpers.cs">
       <Link>Common\FormattingHelpers.cs</Link>
     </Compile>

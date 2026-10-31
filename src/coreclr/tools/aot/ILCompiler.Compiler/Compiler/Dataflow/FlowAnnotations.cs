@@ -327,8 +327,13 @@ namespace ILLink.Shared.TrimAnalysis
 
             protected override bool CompareKeyToValue(TypeDesc key, TypeAnnotations value) => key == value.Type;
             protected override bool CompareValueToValue(TypeAnnotations value1, TypeAnnotations value2) => value1.Type == value2.Type;
+#if ILTRIM
             protected override int GetKeyHashCode(TypeDesc key) => key.GetHashCode();
             protected override int GetValueHashCode(TypeAnnotations value) => value.Type.GetHashCode();
+#else
+            protected override int GetKeyHashCode(TypeDesc key) => ILCompiler.NodeHashAudit.LookupHash(key);
+            protected override int GetValueHashCode(TypeAnnotations value) => ILCompiler.NodeHashAudit.LookupHash(value.Type);
+#endif
 
             protected override TypeAnnotations CreateValueFromKey(TypeDesc key)
             {

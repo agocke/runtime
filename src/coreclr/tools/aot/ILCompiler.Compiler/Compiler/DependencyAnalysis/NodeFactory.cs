@@ -165,14 +165,12 @@ namespace ILCompiler.DependencyAnalysis
 
             public NodeCache(Func<TKey, TValue> creator, IEqualityComparer<TKey> comparer)
             {
-                _creator = creator;
-                _cache = new ConcurrentDictionary<TKey, TValue>(comparer);
+                (_cache, _creator) = NodeHashAudit.CreateCache(creator, comparer, allowIdentity: false);
             }
 
             public NodeCache(Func<TKey, TValue> creator)
             {
-                _creator = creator;
-                _cache = new ConcurrentDictionary<TKey, TValue>();
+                (_cache, _creator) = NodeHashAudit.CreateCache(creator);
             }
 
             public TValue GetOrAdd(TKey key)
@@ -738,8 +736,8 @@ namespace ILCompiler.DependencyAnalysis
             public TypeSymbolHashtable(NodeFactory factory) => _factory = factory;
             protected override bool CompareKeyToValue(TypeDesc key, IEETypeNode value) => key == value.Type;
             protected override bool CompareValueToValue(IEETypeNode value1, IEETypeNode value2) => value1.Type == value2.Type;
-            protected override int GetKeyHashCode(TypeDesc key) => key.GetHashCode();
-            protected override int GetValueHashCode(IEETypeNode value) => value.Type.GetHashCode();
+            protected override int GetKeyHashCode(TypeDesc key) => NodeHashAudit.LookupHash(key);
+            protected override int GetValueHashCode(IEETypeNode value) => NodeHashAudit.LookupHash(value.Type);
         }
 
         private sealed class NecessaryTypeSymbolHashtable : TypeSymbolHashtable
@@ -1060,8 +1058,8 @@ namespace ILCompiler.DependencyAnalysis
                 else
                     return _factory._vtableSliceProvider.GetSlice(key);
             }
-            protected override int GetKeyHashCode(TypeDesc key) => key.GetHashCode();
-            protected override int GetValueHashCode(VTableSliceNode value) => value.Type.GetHashCode();
+            protected override int GetKeyHashCode(TypeDesc key) => NodeHashAudit.LookupHash(key);
+            protected override int GetValueHashCode(VTableSliceNode value) => NodeHashAudit.LookupHash(value.Type);
         }
 
         private VTableSliceHashtable _vTableNodes;
@@ -1113,8 +1111,8 @@ namespace ILCompiler.DependencyAnalysis
             protected override bool CompareKeyToValue(MethodDesc key, IMethodNode value) => key == value.Method;
             protected override bool CompareValueToValue(IMethodNode value1, IMethodNode value2) => value1.Method == value2.Method;
             protected override IMethodNode CreateValueFromKey(MethodDesc key) => _factory.CreateMethodEntrypointNode(key);
-            protected override int GetKeyHashCode(MethodDesc key) => key.GetHashCode();
-            protected override int GetValueHashCode(IMethodNode value) => value.Method.GetHashCode();
+            protected override int GetKeyHashCode(MethodDesc key) => NodeHashAudit.LookupHash(key);
+            protected override int GetValueHashCode(IMethodNode value) => NodeHashAudit.LookupHash(value.Method);
         }
 
         private MethodEntrypointHashtable _methodEntrypoints;
@@ -1319,8 +1317,8 @@ namespace ILCompiler.DependencyAnalysis
             protected override bool CompareValueToValue(ShadowConcreteMethodNode value1, ShadowConcreteMethodNode value2) => value1.Method == value2.Method;
             protected override ShadowConcreteMethodNode CreateValueFromKey(MethodDesc key) =>
                 new ShadowConcreteMethodNode(key, (IMethodBodyNode)_factory.MethodEntrypoint(key.GetCanonMethodTarget(CanonicalFormKind.Specific)));
-            protected override int GetKeyHashCode(MethodDesc key) => key.GetHashCode();
-            protected override int GetValueHashCode(ShadowConcreteMethodNode value) => value.Method.GetHashCode();
+            protected override int GetKeyHashCode(MethodDesc key) => NodeHashAudit.LookupHash(key);
+            protected override int GetValueHashCode(ShadowConcreteMethodNode value) => NodeHashAudit.LookupHash(value.Method);
         }
 
         private ShadowConcreteMethodHashtable _shadowConcreteMethods;
@@ -1337,8 +1335,8 @@ namespace ILCompiler.DependencyAnalysis
             protected override bool CompareValueToValue(ShadowNonConcreteMethodNode value1, ShadowNonConcreteMethodNode value2) => value1.Method == value2.Method;
             protected override ShadowNonConcreteMethodNode CreateValueFromKey(MethodDesc key) =>
                 new ShadowNonConcreteMethodNode(key, (IMethodBodyNode)_factory.MethodEntrypoint(key.GetCanonMethodTarget(CanonicalFormKind.Specific)));
-            protected override int GetKeyHashCode(MethodDesc key) => key.GetHashCode();
-            protected override int GetValueHashCode(ShadowNonConcreteMethodNode value) => value.Method.GetHashCode();
+            protected override int GetKeyHashCode(MethodDesc key) => NodeHashAudit.LookupHash(key);
+            protected override int GetValueHashCode(ShadowNonConcreteMethodNode value) => NodeHashAudit.LookupHash(value.Method);
         }
 
         private ShadowNonConcreteMethodHashtable _shadowNonConcreteMethods;
@@ -1411,8 +1409,8 @@ namespace ILCompiler.DependencyAnalysis
                 Debug.Assert(!_factory.VTable(key.OwningType).HasKnownVirtualMethodUse);
                 return new VirtualMethodUseNode(key);
             }
-            protected override int GetKeyHashCode(MethodDesc key) => key.GetHashCode();
-            protected override int GetValueHashCode(VirtualMethodUseNode value) => value.Method.GetHashCode();
+            protected override int GetKeyHashCode(MethodDesc key) => NodeHashAudit.LookupHash(key);
+            protected override int GetValueHashCode(VirtualMethodUseNode value) => NodeHashAudit.LookupHash(value.Method);
         }
 
         private VirtualMethodUseHashtable _virtMethods;
