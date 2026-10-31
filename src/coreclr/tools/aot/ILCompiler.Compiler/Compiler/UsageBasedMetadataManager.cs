@@ -44,6 +44,8 @@ namespace ILCompiler
         internal readonly UsageBasedMetadataGenerationOptions _generationOptions;
 
         private readonly LinkAttributesHashTable _linkAttributesHashTable;
+        private readonly AnnotationFactsCache _annotationFacts = new();
+        private readonly MethodReflectabilityPlan _methodReflectabilityPlan = new();
 
         private static (string AttributeName, DiagnosticId Id)[] _requiresAttributeMismatchNameAndId = new[]
             {
@@ -502,43 +504,76 @@ namespace ILCompiler
                         "Fields have same reflectability"));
                 }
 
-                // Ensure methods can be consistently reflection-accessed
-                foreach (MethodDesc method in type.GetMethods())
+                if (DiscoveryAlgorithms.Reflection)
+                    AddPlannedMethodReflectability(dependencies, factory, type);
+                else
+                    AddOriginalMethodReflectability(dependencies, factory, type);
+            }
+        }
+
+        private void AddPlannedMethodReflectability(DependencySink dependencies, NodeFactory factory, TypeDesc type)
+        {
+            foreach (MethodReflectabilityPlan.Entry entry in _methodReflectabilityPlan.Get(type, this, factory))
+            {
+                DiscoveryAlgorithms.Note(DiscoveryAlgorithms.Work.ReflectionPlanMethods);
+                if (entry.GenericDefinition is null)
                 {
-                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.MethodsExamined);
-                    if (IsReflectionBlocked(method))
+                    dependencies.AddConditional(entry.Target, entry.Condition, "Methods have same reflectability");
+                    continue;
+                }
+                DiscoveryAlgorithms.Note(DiscoveryAlgorithms.Work.ReflectionPlanGenericMethods);
+                MethodDesc method = factory.TypeSystemContext.GetMethodForInstantiatedType(
+                    entry.GenericDefinition, (InstantiatedType)type);
+                if (IsReflectionBlocked(method))
+                    continue;
+                Instantiation inst = TypeExtensions.GetInstantiationThatMeetsConstraints(method.Instantiation, allowCanon: true);
+                if (inst.IsNull)
+                    continue;
+                MethodDesc reflectedMethod = method.MakeInstantiatedMethod(inst);
+                dependencies.AddConditional(
+                    factory.ReflectedMethod(reflectedMethod.GetCanonMethodTarget(CanonicalFormKind.Specific)),
+                    factory.ReflectedMethod(reflectedMethod.GetTypicalMethodDefinition()),
+                    "Methods have same reflectability");
+            }
+        }
+
+        private void AddOriginalMethodReflectability(DependencySink dependencies, NodeFactory factory, TypeDesc type)
+        {
+            foreach (MethodDesc method in type.GetMethods())
+            {
+                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.MethodsExamined);
+                if (IsReflectionBlocked(method))
+                    continue;
+
+                // Generic methods need to be instantiated over something.
+                // We try to make up a canonical instantiation if possible to match the
+                // general expectation that if one has a type, and a method on the uninstantiated type,
+                // one can GetMemberWithSameMetadataDefinitionAs and MakeGenericMethod the result
+                // over reference types. We promise reference type instantiations are possible.
+                MethodDesc reflectedMethod;
+                if (method.HasInstantiation)
+                {
+                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.GenericConstraintQueries);
+                    Instantiation inst;
+                    using (TypeDiscoveryCensus.Time(TypeDiscoveryCensus.Section.Constraints))
+                        inst = TypeExtensions.GetInstantiationThatMeetsConstraints(method.Instantiation, allowCanon: true);
+                    if (inst.IsNull)
                         continue;
 
-                    // Generic methods need to be instantiated over something.
-                    // We try to make up a canonical instantiation if possible to match the
-                    // general expectation that if one has a type, and a method on the uninstantiated type,
-                    // one can GetMemberWithSameMetadataDefinitionAs and MakeGenericMethod the result
-                    // over reference types. We promise reference type instantiations are possible.
-                    MethodDesc reflectedMethod;
-                    if (method.HasInstantiation)
-                    {
-                        TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.GenericConstraintQueries);
-                        Instantiation inst;
-                        using (TypeDiscoveryCensus.Time(TypeDiscoveryCensus.Section.Constraints))
-                            inst = TypeExtensions.GetInstantiationThatMeetsConstraints(method.Instantiation, allowCanon: true);
-                        if (inst.IsNull)
-                            continue;
-
-                        reflectedMethod = method.MakeInstantiatedMethod(inst);
-                    }
-                    else
-                    {
-                        reflectedMethod = method;
-                    }
-
-                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.MethodsRetained);
-                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Canonicalizations);
-                    TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 2);
-                    dependencies.Add(new DependencyNodeCore<NodeFactory>.CombinedDependencyListEntry(
-                        factory.ReflectedMethod(reflectedMethod.GetCanonMethodTarget(CanonicalFormKind.Specific)),
-                        factory.ReflectedMethod(reflectedMethod.GetTypicalMethodDefinition()),
-                        "Methods have same reflectability"));
+                    reflectedMethod = method.MakeInstantiatedMethod(inst);
                 }
+                else
+                {
+                    reflectedMethod = method;
+                }
+
+                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.MethodsRetained);
+                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Canonicalizations);
+                TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 2);
+                dependencies.Add(new DependencyNodeCore<NodeFactory>.CombinedDependencyListEntry(
+                    factory.ReflectedMethod(reflectedMethod.GetCanonMethodTarget(CanonicalFormKind.Specific)),
+                    factory.ReflectedMethod(reflectedMethod.GetTypicalMethodDefinition()),
+                    "Methods have same reflectability"));
             }
         }
 
@@ -824,11 +859,22 @@ namespace ILCompiler
 
             origin ??= overridingMethod;
 
-            bool baseMethodTypeIsInterface = baseMethod.OwningType.IsInterface;
-            foreach (var requiresAttribute in _requiresAttributeMismatchNameAndId)
+            RequirementsFacts baseFacts = default;
+            RequirementsFacts overridingFacts = default;
+            if (DiscoveryReuse.Annotations)
             {
+                baseFacts = _annotationFacts.Get(baseMethod);
+                overridingFacts = _annotationFacts.Get(overridingMethod);
+            }
+
+            bool baseMethodTypeIsInterface = baseMethod.OwningType.IsInterface;
+            for (int i = 0; i < _requiresAttributeMismatchNameAndId.Length; i++)
+            {
+                var requiresAttribute = _requiresAttributeMismatchNameAndId[i];
                 // We validate that the various dataflow/Requires* annotations are consistent across virtual method overrides
-                if (HasMismatchingAttributes(baseMethod, overridingMethod, requiresAttribute.AttributeName))
+                if (DiscoveryReuse.Annotations
+                    ? baseFacts.Mismatches(overridingFacts, i)
+                    : HasMismatchingAttributes(baseMethod, overridingMethod, requiresAttribute.AttributeName))
                 {
                     string overridingMethodName = overridingMethod.GetDisplayName();
                     string baseMethodName = baseMethod.GetDisplayName();

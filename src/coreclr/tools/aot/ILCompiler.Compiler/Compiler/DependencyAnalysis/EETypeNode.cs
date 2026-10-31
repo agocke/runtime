@@ -380,7 +380,7 @@ namespace ILCompiler.DependencyAnalysis
                     using CompilationEventSource.WorkScope classScope = CompilationEventSource.StartWork("EEType.VirtualSlots", this);
                     bool isAbstractType = ((MetadataType)defType).IsAbstract;
 
-                    foreach (MethodDesc decl in defType.EnumAllVirtualSlots())
+                    foreach ((MethodDesc decl, MethodDesc resolvedImplementation) in DiscoveryAlgorithms.ClassSlots(defType))
                     {
                         TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.ClassSlots);
                         // Generic virtual methods are tracked by an orthogonal mechanism.
@@ -388,7 +388,7 @@ namespace ILCompiler.DependencyAnalysis
                             continue;
 
                         TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.ClassResolutions);
-                        MethodDesc impl = defType.FindVirtualFunctionTargetMethodOnObjectType(decl);
+                        MethodDesc impl = resolvedImplementation;
                         bool implOwnerIsAbstract = ((MetadataType)impl.OwningType).IsAbstract;
 
                         // We add a conditional dependency in two situations:
@@ -469,8 +469,12 @@ namespace ILCompiler.DependencyAnalysis
 
                     bool isVariantInterfaceImpl = VariantInterfaceMethodUseNode.IsVariantInterfaceImplementation(factory, _type, interfaceType);
 
-                    foreach (MethodDesc interfaceMethod in interfaceType.EnumAllVirtualSlots())
+                    foreach (MethodDesc candidateInterfaceMethod in
+                        (DiscoveryAlgorithms.Interfaces ? definitionInterfaceType : interfaceType).EnumAllVirtualSlots())
                     {
+                        MethodDesc interfaceMethod = candidateInterfaceMethod;
+                        if (DiscoveryAlgorithms.Interfaces)
+                            DiscoveryAlgorithms.Note(DiscoveryAlgorithms.Work.DefinitionInterfaceMethods);
                         TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.InterfaceSlots);
                         // Generic virtual methods are tracked by an orthogonal mechanism.
                         if (interfaceMethod.HasInstantiation)
@@ -482,7 +486,7 @@ namespace ILCompiler.DependencyAnalysis
                             continue;
 
                         MethodDesc interfaceMethodDefinition = interfaceMethod;
-                        if (interfaceType != definitionInterfaceType)
+                        if (!DiscoveryAlgorithms.Interfaces && interfaceType != definitionInterfaceType)
                         {
                             TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.InstantiationMappings);
                             interfaceMethodDefinition = factory.TypeSystemContext.GetMethodForInstantiatedType(interfaceMethodDefinition.GetTypicalMethodDefinition(), (InstantiatedType)definitionInterfaceType);
@@ -499,6 +503,8 @@ namespace ILCompiler.DependencyAnalysis
                         }
                         if (implMethod != null)
                         {
+                            if (DiscoveryAlgorithms.Interfaces && interfaceType != definitionInterfaceType)
+                                interfaceMethod = DiscoveryAlgorithms.BindInterfaceMethod(candidateInterfaceMethod, interfaceType);
                             TypeDesc implType = defType;
                             while (!implType.HasSameTypeDefinition(implMethod.OwningType))
                                 implType = implType.BaseType;
@@ -570,6 +576,8 @@ namespace ILCompiler.DependencyAnalysis
                             var resolution = defTypeDefinition.ResolveInterfaceMethodToDefaultImplementationOnType(interfaceMethodDefinition, out implMethod);
                             if (resolution == DefaultInterfaceMethodResolution.DefaultImplementation)
                             {
+                                if (DiscoveryAlgorithms.Interfaces && interfaceType != definitionInterfaceType)
+                                    interfaceMethod = DiscoveryAlgorithms.BindInterfaceMethod(candidateInterfaceMethod, interfaceType);
                                 TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.DefaultImplementations);
                                 TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.Canonicalizations, 2);
                                 TypeDiscoveryCensus.Count(TypeDiscoveryCensus.Unit.FactoryQueries, 4);

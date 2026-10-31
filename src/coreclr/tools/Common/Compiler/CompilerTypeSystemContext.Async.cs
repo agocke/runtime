@@ -118,6 +118,20 @@ namespace ILCompiler
                 return result;
             }
 
+            public override IEnumerable<(MethodDesc Slot, MethodDesc Implementation)> EnumerateResolvedSlots(TypeDesc type)
+            {
+                foreach ((MethodDesc slot, MethodDesc implementation) in base.EnumerateResolvedSlots(type))
+                {
+                    yield return (slot, implementation);
+                    if (slot.GetTypicalMethodDefinition() is EcmaMethod ecmaMethod
+                        && ecmaMethod.Signature.ReturnsTaskOrValueTask())
+                    {
+                        yield return (_context.GetAsyncVariantMethod(slot),
+                            implementation is null ? null : WrapAsAsyncVariant(slot, implementation));
+                    }
+                }
+            }
+
             public override IEnumerable<MethodDesc> ComputeAllVirtualSlots(TypeDesc type)
             {
                 return WithAsyncVariants(_context, base.ComputeAllVirtualSlots(type));

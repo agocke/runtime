@@ -16,9 +16,48 @@ namespace ILCompiler
             = new ConcurrentDictionary<TypeDesc, (MethodDesc Slot, MethodDesc Implementation)[]>();
 
         private readonly Func<TypeDesc, (MethodDesc Slot, MethodDesc Implementation)[]> _vtableCreator;
+#if !READYTORUN
+        private readonly InterfaceBindingCache _interfaceBindings;
 
         public CachingVirtualMethodAlgorithm()
+        {
+            _vtableCreator = ComputeVtable;
+            _interfaceBindings = new InterfaceBindingCache(ResolveInterfaceUncached);
+        }
+
+        public override MethodDesc ResolveInterfaceMethodToVirtualMethodOnType(MethodDesc interfaceMethod, TypeDesc currentType)
+            => _interfaceBindings.Get(currentType, interfaceMethod, InterfaceBindingKind.Instance).Implementation;
+
+        public override MethodDesc ResolveInterfaceMethodToStaticVirtualMethodOnType(MethodDesc interfaceMethod, TypeDesc currentType)
+            => _interfaceBindings.Get(currentType, interfaceMethod, InterfaceBindingKind.Static).Implementation;
+
+        public override DefaultInterfaceMethodResolution ResolveInterfaceMethodToDefaultImplementationOnType(
+            MethodDesc interfaceMethod, TypeDesc currentType, out MethodDesc impl)
+        {
+            InterfaceBindingResult result = _interfaceBindings.Get(currentType, interfaceMethod, InterfaceBindingKind.Default);
+            impl = result.Implementation;
+            return result.Resolution;
+        }
+
+        private InterfaceBindingResult ResolveInterfaceUncached(TypeDesc type, MethodDesc method, InterfaceBindingKind kind)
+        {
+            switch (kind)
+            {
+                case InterfaceBindingKind.Instance:
+                    return new InterfaceBindingResult(base.ResolveInterfaceMethodToVirtualMethodOnType(method, type));
+                case InterfaceBindingKind.Static:
+                    return new InterfaceBindingResult(base.ResolveInterfaceMethodToStaticVirtualMethodOnType(method, type));
+                case InterfaceBindingKind.Default:
+                    DefaultInterfaceMethodResolution resolution = base.ResolveInterfaceMethodToDefaultImplementationOnType(method, type, out MethodDesc impl);
+                    return new InterfaceBindingResult(impl, resolution);
+                default:
+                    throw new UnreachableException();
+            }
+        }
+#else
+        public CachingVirtualMethodAlgorithm()
             => _vtableCreator = ComputeVtable;
+#endif
 
         private (MethodDesc Slot, MethodDesc Implementation)[] ComputeVtable(TypeDesc type)
         {
@@ -36,6 +75,18 @@ namespace ILCompiler
             }
 
             return result.ToArray();
+        }
+
+        public virtual IEnumerable<(MethodDesc Slot, MethodDesc Implementation)> EnumerateResolvedSlots(TypeDesc type)
+        {
+            foreach ((MethodDesc slotDefinition, MethodDesc implementationDefinition) in
+                _vtableCache.GetOrAdd(type.GetTypeDefinition(), _vtableCreator))
+            {
+                MethodDesc slot = type.FindMethodOnTypeWithMatchingTypicalMethod(slotDefinition);
+                MethodDesc implementation = slot.HasInstantiation ? null
+                    : type.FindMethodOnTypeWithMatchingTypicalMethod(implementationDefinition);
+                yield return (slot, implementation);
+            }
         }
 
         public override IEnumerable<MethodDesc> ComputeAllVirtualSlots(TypeDesc type)
