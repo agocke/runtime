@@ -1,4 +1,4 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
 namespace ILCompiler.DependencyAnalysis
@@ -16,8 +16,13 @@ namespace ILCompiler.DependencyAnalysis
 
         public sealed override ObjectData GetData(NodeFactory factory, bool relocsOnly = false)
         {
-            ObjectData result = GetDehydratableData(factory, relocsOnly);
+            return CompleteData(factory, GetDehydratableData(factory, relocsOnly), relocsOnly);
+        }
 
+        internal ObjectData GetHydratedData(NodeFactory factory) => GetDehydratableData(factory, relocsOnly: false);
+
+        internal ObjectData CompleteData(NodeFactory factory, ObjectData result, bool relocsOnly)
+        {
             // If we're not actually generating data yet, don't dehydrate
             bool skipDehydrating = relocsOnly;
 

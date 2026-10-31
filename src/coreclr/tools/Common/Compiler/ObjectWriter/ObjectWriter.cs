@@ -363,9 +363,16 @@ namespace ILCompiler.ObjectWriter
             int emittedNodes = 0;
             long emittedBytes = 0;
             long relocationCount = 0;
+#if !READYTORUN
+            PreparedTypeEmission preparedTypes = PrepareTypeEmission(nodes);
+            int emissionIndex = 0;
+#endif
             CompilationEventSource.Log.PhaseStart("ObjectEmission.Nodes", nodes.Count);
             foreach (DependencyNode depNode in nodes)
             {
+#if !READYTORUN
+                int currentIndex = emissionIndex++;
+#endif
                 if (_nodeFactory.Target.IsWasm && depNode is INodeWithTypeSignature methodDeclaration)
                 {
                     RecordMethodDeclaration(methodDeclaration);
@@ -401,7 +408,14 @@ namespace ILCompiler.ObjectWriter
                     }
                 }
 
+#if !READYTORUN
+                ObjectData hydrated = preparedTypes?.Take(currentIndex);
+                ObjectData nodeContents = hydrated is not null
+                    ? ((DehydratableObjectNode)node).CompleteData(_nodeFactory, hydrated, relocsOnly: false)
+                    : node.GetData(_nodeFactory);
+#else
                 ObjectData nodeContents = node.GetData(_nodeFactory);
+#endif
 
                 dumper?.DumpObjectNode(_nodeFactory, node, nodeContents);
 

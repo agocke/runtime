@@ -767,6 +767,7 @@
     <Compile Include="Compiler\MetadataSet.cs" />
     <Compile Include="Compiler\MethodReflectabilityPlan.cs" />
     <Compile Include="Compiler\NodeHashAudit.cs" />
+    <Compile Include="Compiler\ObjectWriter\PreparedTypeEmission.cs" />
     <Compile Include="Compiler\ReflectionAnalysisWork.cs" />
   </ItemGroup>
   <ItemGroup>
