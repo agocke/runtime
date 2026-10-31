@@ -368,7 +368,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private protected override void EmitRelocations(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private protected override void EmitRelocations(int sectionIndex, RelocationList relocationList)
         {
             switch (_machine)
             {
@@ -396,7 +396,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private void EmitRelocationsX86(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private void EmitRelocationsX86(int sectionIndex, RelocationList relocationList)
         {
             if (relocationList.Count > 0)
             {
@@ -423,7 +423,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private void EmitRelocationsX64(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private void EmitRelocationsX64(int sectionIndex, RelocationList relocationList)
         {
             if (relocationList.Count > 0)
             {
@@ -452,7 +452,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private void EmitRelocationsARM(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private void EmitRelocationsARM(int sectionIndex, RelocationList relocationList)
         {
             if (relocationList.Count > 0)
             {
@@ -490,7 +490,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private void EmitRelocationsARM64(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private void EmitRelocationsARM64(int sectionIndex, RelocationList relocationList)
         {
             if (relocationList.Count > 0)
             {
@@ -526,7 +526,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private void EmitRelocationsLoongArch64(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private void EmitRelocationsLoongArch64(int sectionIndex, RelocationList relocationList)
         {
             if (relocationList.Count > 0)
             {
@@ -562,7 +562,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private void EmitRelocationsRiscV64(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private void EmitRelocationsRiscV64(int sectionIndex, RelocationList relocationList)
         {
             if (relocationList.Count > 0)
             {

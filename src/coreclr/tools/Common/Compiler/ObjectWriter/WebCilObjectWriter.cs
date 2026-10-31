@@ -611,7 +611,7 @@ namespace ILCompiler.ObjectWriter
         private readonly record struct PendingBaseReloc(int SectionIndex, long Offset, RelocType FileRelocType);
         private readonly List<PendingBaseReloc> _pendingBaseRelocs = new();
 
-        private protected override void EmitRelocations(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private protected override void EmitRelocations(int sectionIndex, RelocationList relocationList)
         {
             foreach (var reloc in relocationList)
             {
@@ -766,7 +766,7 @@ namespace ILCompiler.ObjectWriter
                         blobShrink[b] += (int)Relocation.GetSize(curReloc.Type) - size;
 
                         long nextStart = curReloc.Offset + Relocation.GetSize(curReloc.Type);
-                        long nextEnd = nextReloc is not null ? nextReloc.Offset : blob.End;
+                        long nextEnd = nextReloc?.Offset ?? blob.End;
                         long betweenSize = nextEnd - nextStart;
 
                         Debug.Assert(nextStart == sectionStream.Position);

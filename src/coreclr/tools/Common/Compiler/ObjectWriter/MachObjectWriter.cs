@@ -625,7 +625,7 @@ namespace ILCompiler.ObjectWriter
             EmitCompactUnwindTable(definedSymbols);
         }
 
-        private protected override void EmitRelocations(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private protected override void EmitRelocations(int sectionIndex, RelocationList relocationList)
         {
             if (_cpuType == CPU_TYPE_ARM64)
             {
@@ -717,7 +717,7 @@ namespace ILCompiler.ObjectWriter
             return anchorIndex >= 0 ? anchors[anchorIndex].SymbolIndex : (uint)sectionIndex;
         }
 
-        private void EmitRelocationsX64(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private void EmitRelocationsX64(int sectionIndex, RelocationList relocationList)
         {
             ICollection<MachRelocation> sectionRelocations = _sections[sectionIndex].Relocations;
 
@@ -846,7 +846,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private void EmitRelocationsArm64(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private void EmitRelocationsArm64(int sectionIndex, RelocationList relocationList)
         {
             ICollection<MachRelocation> sectionRelocations = _sections[sectionIndex].Relocations;
 

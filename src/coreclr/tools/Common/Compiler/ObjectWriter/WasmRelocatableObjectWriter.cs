@@ -57,7 +57,7 @@ namespace ILCompiler.ObjectWriter
         }
 
         private readonly Dictionary<Utf8String, int> _linkingSymbolIndices = new();
-        private readonly Dictionary<int, List<SymbolicRelocation>> _relocations = new();
+        private readonly Dictionary<int, RelocationList> _relocations = new();
         private readonly Dictionary<int, long> _functionOffsets = new();
 
         public WasmRelocatableObjectWriter(NodeFactory factory, ObjectWritingOptions options, OutputInfoBuilder outputInfoBuilder = null) : base(factory, options, outputInfoBuilder)
@@ -141,7 +141,7 @@ namespace ILCompiler.ObjectWriter
             Dictionary<int, (string Name, MemoryStream Entries, int Count)> relocationSections = new();
             try
             {
-                foreach ((int sectionIndex, List<SymbolicRelocation> relocations) in _relocations)
+                foreach ((int sectionIndex, RelocationList relocations) in _relocations)
                 {
                     SectionDataEmitter section = _sections[sectionIndex];
                     (int contentOffset, int targetSectionIndex, string name) = section switch
@@ -340,7 +340,7 @@ namespace ILCompiler.ObjectWriter
             payload.CopyTo(stream); // payload_data: content of this subsection, of length payload_len.
         }
 
-        private protected override void EmitRelocations(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private protected override void EmitRelocations(int sectionIndex, RelocationList relocationList)
         {
             if (relocationList.Count > 0)
             {
@@ -348,7 +348,7 @@ namespace ILCompiler.ObjectWriter
             }
         }
 
-        private unsafe int WriteRelocationEntries(SectionDataEmitter section, int contentOffset, List<SymbolicRelocation> relocs, MemoryStream payload)
+        private unsafe int WriteRelocationEntries(SectionDataEmitter section, int contentOffset, RelocationList relocs, MemoryStream payload)
         {
             using Stream originalStream = section.ContentReadStream;
             MemoryStream sectionStream = new((int)originalStream.Length);

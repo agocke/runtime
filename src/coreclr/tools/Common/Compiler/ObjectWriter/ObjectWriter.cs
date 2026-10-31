@@ -25,7 +25,6 @@ namespace ILCompiler.ObjectWriter
     {
         protected virtual CodeDataLayout LayoutMode => CodeDataLayout.Unified;
         private protected sealed record SymbolDefinition(int SectionIndex, long Value, int Size = 0, bool Global = false);
-        protected sealed record SymbolicRelocation(long Offset, RelocType Type, Utf8String SymbolName, long Addend = 0);
         private sealed record BlockToRelocate(int SectionIndex, long Offset, byte[] Data, Relocation[] Relocations);
         private protected sealed record ChecksumsToCalculate(int SectionIndex, long Offset, Relocation[] ChecksumRelocations);
 
@@ -42,7 +41,7 @@ namespace ILCompiler.ObjectWriter
         // Standard sections
         private readonly Dictionary<string, int> _sectionNameToSectionIndex = new(StringComparer.Ordinal);
         private readonly List<SectionData> _sectionIndexToData = new();
-        private readonly List<List<SymbolicRelocation>> _sectionIndexToRelocations = new();
+        private readonly List<RelocationList> _sectionIndexToRelocations = new();
         private protected readonly List<OutputSection> _outputSectionLayout = [];
 
         // Symbol table
@@ -251,7 +250,7 @@ namespace ILCompiler.ObjectWriter
         /// <remarks>
         /// This methods is guaranteed to run after <see cref="EmitSymbolTable" />.
         /// </remarks>
-        private protected abstract void EmitRelocations(int sectionIndex, List<SymbolicRelocation> relocationList);
+        private protected abstract void EmitRelocations(int sectionIndex, RelocationList relocationList);
 
         /// <summary>
         /// Emit new symbol definition at specified location in a given section.
@@ -478,7 +477,7 @@ namespace ILCompiler.ObjectWriter
                     }
                 }
 
-                if (nodeContents.Relocs is not null)
+                if (nodeContents.Relocs is { Length: > 0 })
                 {
                     blocksToRelocate.Add(new BlockToRelocate(
                         sectionWriter.SectionIndex,
@@ -607,7 +606,8 @@ namespace ILCompiler.ObjectWriter
                         HandleControlFlowForRelocation(relocTarget, relocSymbolName);
                     }
                 }
-                checksumRelocations.Add(new ChecksumsToCalculate(blockToRelocate.SectionIndex, blockToRelocate.Offset, checksumRelocationsBuilder.ToArray()));
+                if (checksumRelocationsBuilder.Count > 0)
+                    checksumRelocations.Add(new ChecksumsToCalculate(blockToRelocate.SectionIndex, blockToRelocate.Offset, checksumRelocationsBuilder.ToArray()));
             }
             blocksToRelocate.Clear();
             CompilationEventSource.Log.PhaseStop("ObjectEmission.Relocate");
@@ -626,7 +626,7 @@ namespace ILCompiler.ObjectWriter
 
             CompilationEventSource.Log.PhaseStart("ObjectEmission.RelocationTables", 0);
             int relocSectionIndex = 0;
-            foreach (List<SymbolicRelocation> relocationList in _sectionIndexToRelocations)
+            foreach (RelocationList relocationList in _sectionIndexToRelocations)
             {
                 EmitRelocations(relocSectionIndex, relocationList);
                 relocSectionIndex++;

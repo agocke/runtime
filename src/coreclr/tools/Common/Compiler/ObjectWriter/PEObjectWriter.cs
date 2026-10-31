@@ -70,7 +70,7 @@ namespace ILCompiler.ObjectWriter
         private readonly int? _coffTimestamp;
 
         // Relocations that we can resolve at emit time (ie not file-based relocations).
-        private Dictionary<int, List<SymbolicRelocation>> _resolvableRelocations = [];
+        private Dictionary<int, RelocationList> _resolvableRelocations = [];
 
         private int _baseRelocSectionIndex = NoSectionIndex;
 
@@ -560,13 +560,13 @@ namespace ILCompiler.ObjectWriter
             sizeOfImage = (uint)AlignmentHelper.AlignUp((int)virtualAddress, (int)_peSectionAlignment);
         }
 
-        private protected override unsafe void EmitRelocations(int sectionIndex, List<SymbolicRelocation> relocationList)
+        private protected override unsafe void EmitRelocations(int sectionIndex, RelocationList relocationList)
         {
             foreach (var reloc in relocationList)
             {
-                if (!_resolvableRelocations.TryGetValue(sectionIndex, out List<SymbolicRelocation> resolvable))
+                if (!_resolvableRelocations.TryGetValue(sectionIndex, out RelocationList resolvable))
                 {
-                    _resolvableRelocations[sectionIndex] = resolvable = [];
+                    _resolvableRelocations[sectionIndex] = resolvable = new();
                 }
                 resolvable.Add(reloc);
                 if (Relocation.GetFileRelocationType(reloc.Type) == reloc.Type)
@@ -827,7 +827,7 @@ namespace ILCompiler.ObjectWriter
                 {
                     Debug.Assert(outputFileStream.Position <= section.Header.PointerToRawData);
                     outputFileStream.Position = section.Header.PointerToRawData; // Pad to alignment
-                    if (_resolvableRelocations.TryGetValue(i, out List<SymbolicRelocation> relocationsToResolve))
+                    if (_resolvableRelocations.TryGetValue(i, out RelocationList relocationsToResolve))
                     {
                         // Resolve all relocations we can't represent in a PE as we write out the data.
                         MemoryStream stream = new((int)section.Stream.Length);
@@ -888,7 +888,7 @@ namespace ILCompiler.ObjectWriter
             return pendingWrites;
         }
 
-        private unsafe void ResolveRelocations(int sectionIndex, List<SymbolicRelocation> symbolicRelocations, long imageBase, MemoryStream stream)
+        private unsafe void ResolveRelocations(int sectionIndex, RelocationList symbolicRelocations, long imageBase, MemoryStream stream)
         {
             foreach (SymbolicRelocation reloc in symbolicRelocations)
             {

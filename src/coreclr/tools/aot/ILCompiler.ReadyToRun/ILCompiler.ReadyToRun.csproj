@@ -184,6 +184,7 @@
     <Compile Include="..\..\Common\Compiler\ObjectWriter\Eabi\EabiAttributesBuilder.cs" Link="Compiler\ObjectWriter\Eabi\EabiAttributesBuilder.cs" />
     <Compile Include="..\..\Common\Compiler\ObjectWriter\Eabi\EabiNative.cs" Link="Compiler\ObjectWriter\Eabi\EabiNative.cs" />
     <Compile Include="..\..\Common\Compiler\ObjectWriter\ObjectWriter.cs" Link="Compiler\ObjectWriter\ObjectWriter.cs" />
+    <Compile Include="..\..\Common\Compiler\ObjectWriter\RelocationList.cs" Link="Compiler\ObjectWriter\RelocationList.cs" />
     <Compile Include="..\..\Common\Compiler\ObjectWriter\ObjectWritingOptions.cs" Link="Compiler\ObjectWriter\ObjectWritingOptions.cs" />
     <Compile Include="..\..\Common\Compiler\ObjectWriter\OutputInfoBuilder.cs" Link="Compiler\ObjectWriter\OutputInfoBuilder.cs" />
     <Compile Include="..\..\Common\Compiler\ObjectWriter\MachNative.cs" Link="Compiler\ObjectWriter\MachNative.cs" />
