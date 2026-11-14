@@ -165,5 +165,28 @@ namespace System.Text.Json
             Debug.Assert(reader.BytesConsumed == (actualByteCount ?? utf8Json.Length) || reader.CurrentState.Options.AllowMultipleValues);
             return value;
         }
+
+#if NET
+        /// <summary>
+        /// Parses the UTF-8 encoded text representing a single JSON value into a <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="utf8Json">JSON text to parse.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<T>(ReadOnlySpan<byte> utf8Json)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(utf8Json, T.GetTypeInfo());
+
+        /// <summary>
+        /// Parses the UTF-8 encoded text representing a single JSON value into a <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="utf8Json">JSON text to parse.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<TContext, T>(ReadOnlySpan<byte> utf8Json)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(utf8Json, TContext.GetTypeInfo());
+#endif
     }
 }

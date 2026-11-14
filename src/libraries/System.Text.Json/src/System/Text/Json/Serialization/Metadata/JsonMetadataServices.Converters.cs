@@ -318,6 +318,55 @@ namespace System.Text.Json.Serialization.Metadata
             return new NullableConverter<T>(underlyingConverter);
         }
 
+        /// <summary>
+        /// Creates a nullable converter using a converter or factory for the nullable type or its underlying type.
+        /// </summary>
+        /// <typeparam name="T">The underlying non-nullable value type.</typeparam>
+        /// <param name="converter">The converter or factory to use.</param>
+        /// <param name="options">The options to pass to converter factories.</param>
+        /// <returns>A converter for <typeparamref name="T"/> nullable values.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="converter"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">The converter is incompatible with the nullable and underlying types, or a factory returns an invalid converter.</exception>
+        /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
+        public static JsonConverter<T?> GetNullableConverter<T>(JsonConverter converter, JsonSerializerOptions options) where T : struct
+        {
+            ArgumentNullException.ThrowIfNull(converter);
+            ArgumentNullException.ThrowIfNull(options);
+
+            if (converter.CanConvert(typeof(T?)))
+            {
+                return (JsonConverter<T?>)options.ExpandConverterFactory(converter, typeof(T?));
+            }
+
+            converter = ExpandConverter(typeof(T), converter, options);
+            JsonTypeInfo<T> typeInfo = CreateValueInfo<T>(options, converter);
+            return GetNullableConverter(typeInfo);
+        }
+
+        /// <summary>
+        /// Validates a converter and expands it if it is a converter factory.
+        /// </summary>
+        /// <param name="typeToConvert">The type the converter must support.</param>
+        /// <param name="converter">The converter or factory to use.</param>
+        /// <param name="options">The options to pass to converter factories.</param>
+        /// <returns>The converter, or the converter returned by the factory.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="typeToConvert"/>, <paramref name="converter"/>, or <paramref name="options"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">The converter is incompatible with the type, or a factory returns an invalid converter.</exception>
+        /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
+        public static JsonConverter ExpandConverter(Type typeToConvert, JsonConverter converter, JsonSerializerOptions options)
+        {
+            ArgumentNullException.ThrowIfNull(typeToConvert);
+            ArgumentNullException.ThrowIfNull(converter);
+            ArgumentNullException.ThrowIfNull(options);
+
+            if (!converter.CanConvert(typeToConvert))
+            {
+                ThrowHelper.ThrowInvalidOperationException_SerializationConverterNotCompatible(converter.GetType(), typeToConvert);
+            }
+
+            return options.ExpandConverterFactory(converter, typeToConvert);
+        }
+
         internal static JsonConverter<T> GetTypedConverter<T>(JsonConverter converter)
         {
             JsonConverter<T>? typedConverter = converter as JsonConverter<T>;

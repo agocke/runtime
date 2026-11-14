@@ -495,5 +495,28 @@ namespace System.Text.Json
                 ? new Utf8JsonReader(valueSequence, isFinalBlock: true, state: scopedCurrentState)
                 : new Utf8JsonReader(valueSpan, isFinalBlock: true, state: scopedCurrentState);
         }
+
+#if NET
+        /// <summary>
+        /// Reads one JSON value (including objects or arrays) from the provided reader into a <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="reader">The reader to read.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<T>(ref Utf8JsonReader reader)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(ref reader, T.GetTypeInfo());
+
+        /// <summary>
+        /// Reads one JSON value (including objects or arrays) from the provided reader into a <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="reader">The reader to read.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<TContext, T>(ref Utf8JsonReader reader)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(ref reader, TContext.GetTypeInfo());
+#endif
     }
 }

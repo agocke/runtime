@@ -21,6 +21,7 @@ namespace System.Text.Json.SourceGeneration
     {
         // The source generator requires NRT and init-only property support.
         private const LanguageVersion MinimumSupportedLanguageVersion = LanguageVersion.CSharp9;
+        private const LanguageVersion MinimumJsonSerializableLanguageVersion = (LanguageVersion)1100;
 
         private sealed class Parser
         {
@@ -64,6 +65,7 @@ namespace System.Text.Json.SourceGeneration
             public List<Diagnostic> Diagnostics { get; } = new();
             private Location? _contextClassLocation;
             private JsonNumberHandling _contextNumberHandling;
+            private string? _pocoContextName;
 
             public void ReportDiagnostic(DiagnosticDescriptor descriptor, Location? location, params object?[]? messageArgs)
             {
@@ -113,7 +115,25 @@ namespace System.Text.Json.SourceGeneration
 
                 if (!_knownSymbols.JsonSerializerContextType.IsAssignableFrom(contextTypeSymbol))
                 {
-                    ReportDiagnostic(DiagnosticDescriptors.JsonSerializableAttributeOnNonContextType, _contextClassLocation, contextTypeSymbol.ToDisplayString());
+                    // Only emit the diagnostic if the type has one-arg [JsonSerializable(typeof(T))] attributes.
+                    // Types with only parameterless [JsonSerializable] are handled by the POCO pipeline.
+                    bool hasOneArgForm = false;
+                    foreach (AttributeData attr in contextTypeSymbol.GetAttributes())
+                    {
+                        if (SymbolEqualityComparer.Default.Equals(attr.AttributeClass, _knownSymbols.JsonSerializableAttributeType)
+                            && attr.ConstructorArguments.Length == 1)
+                        {
+                            hasOneArgForm = true;
+                            break;
+                        }
+                    }
+
+                    if (hasOneArgForm)
+                    {
+                        ReportDiagnostic(DiagnosticDescriptors.JsonSerializableAttributeOnNonContextType, _contextClassLocation, contextTypeSymbol.ToDisplayString());
+                    }
+
+                    _contextClassLocation = null;
                     return null;
                 }
 
@@ -185,6 +205,9 @@ namespace System.Text.Json.SourceGeneration
                     ContextClassDeclarations = classDeclarationList.ToImmutableEquatableArray(),
                     GeneratedOptionsSpec = options,
                     UseUpdatedMemorySafetyRules = semanticModel.UsesUpdatedMemorySafetyRules(),
+                    IsIJsonSerializableAvailable = _knownSymbols.IJsonSerializableType is not null &&
+                        langVersion >= MinimumJsonSerializableLanguageVersion &&
+                        LanguageVersionFacts.TryParse("11.0", out _),
                 };
 
                 // Clear the caches of generated metadata between the processing of context classes.
@@ -597,6 +620,12 @@ namespace System.Text.Json.SourceGeneration
 
             private TypeToGenerate? ParseJsonSerializableAttribute(AttributeData attributeData)
             {
+                // Parameterless [JsonSerializable] — handled by the POCO pipeline, not the context pipeline.
+                if (attributeData.ConstructorArguments.Length == 0)
+                {
+                    return null;
+                }
+
                 Debug.Assert(attributeData.ConstructorArguments.Length == 1);
                 var typeSymbol = (ITypeSymbol?)attributeData.ConstructorArguments[0].Value;
                 if (typeSymbol is null)
@@ -872,7 +901,17 @@ namespace System.Text.Json.SourceGeneration
                     ReportDiagnostic(DiagnosticDescriptors.TypeNotSupported, typeToGenerate.AttributeLocation ?? typeToGenerate.Location, type.ToDisplayString());
                 }
 
-                if (!_generatedContextAndTypeNames.Add((contextType.Name, typeInfoPropertyName)))
+                string contextName = _pocoContextName ?? contextType.Name;
+                if (_pocoContextName is not null)
+                {
+                    string baseName = typeInfoPropertyName;
+                    int suffix = 0;
+                    while (!_generatedContextAndTypeNames.Add((contextName, typeInfoPropertyName)))
+                    {
+                        typeInfoPropertyName = baseName + (++suffix).ToString(CultureInfo.InvariantCulture);
+                    }
+                }
+                else if (!_generatedContextAndTypeNames.Add((contextName, typeInfoPropertyName)))
                 {
                     // The context name/property name combination will result in a conflict in generated types.
                     // Workaround for https://github.com/dotnet/roslyn/issues/54185 by keeping track of the file names we've used.
@@ -3328,7 +3367,8 @@ namespace System.Text.Json.SourceGeneration
             }
 
             private bool IsSymbolAccessibleWithin(ISymbol symbol, INamedTypeSymbol within)
-                => _knownSymbols.Compilation.IsSymbolAccessibleWithin(symbol, within);
+                => _knownSymbols.Compilation.IsSymbolAccessibleWithin(
+                    symbol, within, throughType: _pocoContextName is not null ? symbol.ContainingType : null);
 
             private bool IsUnsupportedType(ITypeSymbol type)
             {
@@ -3437,6 +3477,161 @@ namespace System.Text.Json.SourceGeneration
                 }
 
                 return display.Substring(whereIndex + 1);
+            }
+
+            /// <summary>
+            /// Parses a directly annotated POCO and its type graph in the POCO's lexical scope.
+            /// </summary>
+            public PocoSerializableSpec? ParsePocoGenerationSpec(
+                INamedTypeSymbol pocoType,
+                TypeDeclarationSyntax declaration,
+                SemanticModel model,
+                CancellationToken cancellationToken)
+            {
+                if (!_compilationContainsCoreJsonTypes || _knownSymbols.IJsonSerializableType is null ||
+                    _knownSymbols.JsonSerializerContextType!.IsAssignableFrom(pocoType))
+                {
+                    return null;
+                }
+
+                AttributeData? attribute = pocoType.GetAttributes().FirstOrDefault(attribute =>
+                    SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, _knownSymbols.JsonSerializableAttributeType) &&
+                    attribute.ConstructorArguments.Length == 0);
+
+                // Emit once even when multiple partial declarations carry the attribute.
+                if (attribute?.ApplicationSyntaxReference is not { } attributeSyntax ||
+                    attributeSyntax.SyntaxTree != declaration.SyntaxTree || !declaration.Span.Contains(attributeSyntax.Span))
+                {
+                    return null;
+                }
+
+                Debug.Assert(_typesToGenerate.Count == 0);
+                Debug.Assert(_generatedTypes.Count == 0);
+
+                _contextClassLocation = pocoType.GetLocation() ?? declaration.GetLocation();
+
+                LanguageVersion? langVersion = _knownSymbols.Compilation.GetLanguageVersion();
+                if (langVersion is null || langVersion < MinimumJsonSerializableLanguageVersion ||
+                    !LanguageVersionFacts.TryParse("11.0", out _))
+                {
+                    ReportDiagnostic(DiagnosticDescriptors.JsonUnsupportedLanguageVersion, _contextClassLocation, langVersion?.ToDisplayString(), "11.0");
+                    _contextClassLocation = null;
+                    return null;
+                }
+
+                if (!ContainingTypeUtilities.TryGetContainingTypeDeclarations(declaration, model, cancellationToken, out List<string>? typeDeclarations))
+                {
+                    ReportDiagnostic(DiagnosticDescriptors.ContextClassesMustBePartial, pocoType.GetLocation(), pocoType.Name);
+                    _contextClassLocation = null;
+                    return null;
+                }
+
+                if (pocoType.IsGenericType || pocoType.IsStatic || pocoType.IsRefLikeType ||
+                    declaration.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Any(static type =>
+                        type.Modifiers.Any(static modifier => modifier.ValueText == "file")))
+                {
+                    ReportDiagnostic(DiagnosticDescriptors.TypeNotSupported, pocoType.GetLocation(), pocoType.ToDisplayString());
+                    _contextClassLocation = null;
+                    return null;
+                }
+
+                const string DefaultContextName = "__JsonSerializerContext";
+                string contextName = DefaultContextName;
+                int contextNameSuffix = 0;
+                while (ConflictsWithContextName(contextName))
+                {
+                    contextName = DefaultContextName + (++contextNameSuffix).ToString(CultureInfo.InvariantCulture);
+                }
+
+                _pocoContextName = contextName;
+                _generatedContextAndTypeNames.Add((contextName, contextName));
+                string typeInfoPropertyName = GetTypeInfoPropertyName(pocoType);
+                JsonSourceGenerationMode? generationMode = null;
+                foreach (KeyValuePair<string, TypedConstant> argument in attribute.NamedArguments)
+                {
+                    if (argument.Key == nameof(JsonSerializableAttribute.TypeInfoPropertyName))
+                    {
+                        typeInfoPropertyName = (string?)argument.Value.Value ?? typeInfoPropertyName;
+                    }
+                    else if (argument.Key == nameof(JsonSerializableAttribute.GenerationMode))
+                    {
+                        generationMode = (JsonSourceGenerationMode)argument.Value.Value!;
+                    }
+                }
+
+                ITypeSymbol rootType = _knownSymbols.Compilation.EraseCompileTimeMetadata(pocoType);
+                _typesToGenerate.Enqueue(new TypeToGenerate
+                {
+                    Type = rootType,
+                    Mode = generationMode,
+                    TypeInfoPropertyName = typeInfoPropertyName,
+                    Location = pocoType.GetLocation(),
+                    AttributeLocation = attributeSyntax.GetSyntax(cancellationToken).GetLocation(),
+                });
+
+                while (_typesToGenerate.Count > 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    TypeToGenerate typeToGenerate = _typesToGenerate.Dequeue();
+                    if (!_generatedTypes.ContainsKey(typeToGenerate.Type))
+                    {
+                        TypeGenerationSpec spec = ParseTypeGenerationSpec(typeToGenerate, pocoType, options: null);
+                        _generatedTypes.Add(typeToGenerate.Type, spec);
+                    }
+                }
+
+                var pocoTypeRef = new TypeRef(pocoType);
+                string contextFullyQualifiedName = pocoTypeRef.FullyQualifiedName + "." + contextName;
+                var contextDeclarations = new List<string>(typeDeclarations.Count + 1) { "private sealed partial class " + contextName };
+                contextDeclarations.AddRange(typeDeclarations);
+                var contextSpec = new ContextGenerationSpec
+                {
+                    ContextType = new TypeRef(contextName, contextFullyQualifiedName),
+                    SourceFilePrefix = contextFullyQualifiedName.Replace("global::", ""),
+                    GeneratedTypes = _generatedTypes.Values.OrderBy(t => t.TypeRef.FullyQualifiedName, StringComparer.Ordinal).ToImmutableEquatableArray(),
+                    Namespace = pocoType.ContainingNamespace is { IsGlobalNamespace: false } ns ? ns.ToDisplayString() : null,
+                    ContextClassDeclarations = contextDeclarations.ToImmutableEquatableArray(),
+                    BaseTypeDeclaration = "global::System.Text.Json.Serialization.JsonSerializerContext",
+                    GeneratedOptionsSpec = null,
+                    IsIJsonSerializableAvailable = false,
+                    UseUpdatedMemorySafetyRules = model.UsesUpdatedMemorySafetyRules(),
+                };
+
+                var result = new PocoSerializableSpec
+                {
+                    ContextSpec = contextSpec,
+                    TypeRef = pocoTypeRef,
+                    TypeInfoPropertyName = _generatedTypes[rootType].TypeInfoPropertyName,
+                    TypeDeclarations = typeDeclarations.ToImmutableEquatableArray(),
+                };
+
+                // Clear caches.
+                _generatedTypes.Clear();
+                _genericTypeDefinitions.Clear();
+                _typesToGenerate.Clear();
+                _contextClassLocation = null;
+                _contextNumberHandling = default;
+                _pocoContextName = null;
+
+                return result;
+
+                bool ConflictsWithContextName(string name)
+                {
+                    if (pocoType.Name == name)
+                    {
+                        return true;
+                    }
+
+                    for (INamedTypeSymbol? type = pocoType; type is not null; type = type.BaseType)
+                    {
+                        if (!type.GetMembers(name).IsEmpty)
+                        {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
             }
 
             private readonly struct TypeToGenerate

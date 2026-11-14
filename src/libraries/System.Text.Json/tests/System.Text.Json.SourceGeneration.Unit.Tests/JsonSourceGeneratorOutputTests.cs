@@ -14,8 +14,8 @@ using Xunit.Abstractions;
 namespace System.Text.Json.SourceGeneration.UnitTests
 {
     /// <summary>
-    /// Verifies the exact source output of the System.Text.Json source generator against
-    /// checked-in baseline files under the <c>Baselines/</c> directory.
+    /// Verifies the source output of the System.Text.Json source generator against
+    /// checked-in baselines, normalizing line endings and trailing whitespace.
     /// <para>
     /// Baselines are organized as <c>Baselines/{TestId}/{TFM}/{HintName}.cs.txt</c> where:
     /// <list type="bullet">
@@ -428,6 +428,430 @@ namespace System.Text.Json.SourceGeneration.UnitTests
                 """, nameof(UnsafeAccessors_GenericTypeInitOnlyProperties));
         }
 
+#if NET && ROSLYN4_0_OR_GREATER
+        [Fact]
+        public void DirectPocoAnnotation()
+        {
+            // The context is private and nested in the annotated type, preserving its lexical access.
+            VerifyAgainstBaseline("""
+                using System.Text.Json.Serialization;
+                namespace TestApp
+                {
+                    [JsonSerializable]
+                    public partial class Person
+                    {
+                        public string Name { get; set; }
+                        public int Age { get; set; }
+                    }
+                }
+                """, nameof(DirectPocoAnnotation), parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+        }
+
+        [Fact]
+        public void ContextWithIJsonSerializable()
+        {
+            // Same shape as SimplePoco but compiled at C# 11+, so IJsonSerializable<T>
+            // implementations should be emitted on the JsonSerializerContext
+            // (one per [JsonSerializable(typeof(...))] entry) in a separate
+            // MyContext.IJsonSerializable.g.cs file.
+            VerifyAgainstBaseline("""
+                using System.Text.Json.Serialization;
+                namespace TestApp
+                {
+                    [JsonSerializable(typeof(Person))]
+                    internal partial class MyContext : JsonSerializerContext { }
+                    public class Person
+                    {
+                        public string Name { get; set; }
+                        public int Age { get; set; }
+                    }
+                }
+                """, nameof(ContextWithIJsonSerializable), parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+        }
+
+        [Theory]
+        [InlineData("class")]
+        [InlineData("struct")]
+        [InlineData("record")]
+        [InlineData("record struct")]
+        public void DirectAnnotations_PreserveTypeMetadataAssociations(string typeKind)
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation($$"""
+                using System.Text.Json;
+                using System.Text.Json.Serialization;
+
+                namespace Z
+                {
+                    [JsonSerializable]
+                    public partial {{typeKind}} Model { public int Number { get; set; } }
+                }
+                namespace A
+                {
+                    [JsonSerializable]
+                    public partial {{typeKind}} Model { public string Text { get; set; } }
+                }
+                public static class Consumer
+                {
+                    public static string WriteZ(Z.Model value) => JsonSerializer.Serialize(value);
+                    public static string WriteA(A.Model value) => JsonSerializer.Serialize(value);
+                }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+            result.AssertContainsType("global::A.Model");
+            result.AssertContainsType("global::Z.Model");
+        }
+
+        [Fact]
+        public void DirectAnnotations_HandleNestingAndTransitiveNameCollisions()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.Text.Json.Serialization;
+
+                namespace A_B
+                {
+                    [JsonSerializable]
+                    public partial class Model
+                    {
+                        public One.Extra First { get; set; }
+                        public Two.Extra Second { get; set; }
+                    }
+                }
+                namespace A
+                {
+                    public partial class B
+                    {
+                        [JsonSerializable]
+                        public partial class Model { public Two.Extra Second { get; set; } }
+                    }
+                }
+                namespace One { public class Extra { public int Number { get; set; } } }
+                namespace Two { public class Extra { public string Text { get; set; } } }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+            Assert.Equal(2, result.ContextGenerationSpecs.Length);
+            ContextGenerationSpec context = Assert.Single(result.ContextGenerationSpecs,
+                spec => spec.ContextType.FullyQualifiedName.StartsWith("global::A_B.Model.", StringComparison.Ordinal));
+            Assert.Equal(2, context.GeneratedTypes.Count(type => type.TypeRef.Name == "Extra"));
+            Assert.Equal(context.GeneratedTypes.Count, context.GeneratedTypes.Select(type => type.TypeInfoPropertyName).Distinct().Count());
+        }
+
+        [Fact]
+        public void DirectAnnotations_UseRuntimeConverterHelpers()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial class First { public int Value { get; set; } }
+                [JsonSerializable]
+                public partial class Second { public int Value { get; set; } }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+            Assert.DoesNotContain(result.NewCompilation.SyntaxTrees,
+                tree => tree.FilePath.EndsWith("JsonSerializableContextHelpers.g.cs", StringComparison.Ordinal));
+
+            SyntaxTree[] scalarFactories = result.NewCompilation.SyntaxTrees
+                .Where(tree => tree.FilePath.EndsWith(".Int32.g.cs", StringComparison.Ordinal))
+                .ToArray();
+            Assert.Equal(2, scalarFactories.Length);
+            foreach (SyntaxTree factory in scalarFactories)
+            {
+                Assert.Contains("JsonMetadataServices.CreateValueInfo<int>", factory.ToString());
+                Assert.DoesNotContain("TryGetTypeInfoForRuntimeCustomConverter", factory.ToString());
+            }
+
+            SyntaxTree[] objectFactories = result.NewCompilation.SyntaxTrees
+                .Where(tree => tree.FilePath.EndsWith(".First.g.cs", StringComparison.Ordinal) ||
+                    tree.FilePath.EndsWith(".Second.g.cs", StringComparison.Ordinal))
+                .ToArray();
+            Assert.Equal(2, objectFactories.Length);
+            Assert.All(objectFactories, factory => Assert.Contains("JsonMetadataServices.TryCreateValueInfo<", factory.ToString()));
+        }
+
+        [Fact]
+        public void DirectAnnotations_OnMultiplePartialsGenerateOnce()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial class Model { public int Number { get; set; } }
+                [JsonSerializable]
+                public partial class Model { public string Text { get; set; } }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+            Assert.Single(result.ContextGenerationSpecs);
+            Assert.Single(result.AllGeneratedTypes, type => type.TypeRef.Name == "Model");
+        }
+
+        [Theory]
+        [InlineData("class")]
+        [InlineData("struct")]
+        [InlineData("record")]
+        [InlineData("record struct")]
+        public void DirectAnnotations_PrivateMembersUseLexicalAccess(string typeKind)
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation($$"""
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial {{typeKind}} Model
+                {
+                    [JsonConstructor]
+                    private Model(int value) { Value = _enabled ? value : 0; }
+                    [JsonInclude]
+                    public int Value { get; private set; }
+                    [JsonInclude]
+                    private string Text { get; set; }
+                    [JsonInclude]
+                    private bool _enabled = true;
+                }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+            ContextGenerationSpec context = Assert.Single(result.ContextGenerationSpecs);
+            Assert.StartsWith("global::Model.", context.ContextType.FullyQualifiedName);
+            TypeGenerationSpec model = Assert.Single(context.GeneratedTypes, type => type.TypeRef.Name == "Model");
+            Assert.False(model.ConstructorIsInaccessible);
+            Assert.All(model.PropertyGenSpecs.Where(property => property.HasJsonInclude), property =>
+            {
+                Assert.True(property.CanUseGetter);
+                Assert.True(property.CanUseSetter);
+            });
+            Assert.DoesNotContain(result.NewCompilation.SyntaxTrees,
+                tree => tree.FilePath.EndsWith(".g.cs", StringComparison.Ordinal) &&
+                    tree.ToString().Contains("UnsafeAccessorAttribute"));
+        }
+
+        [Fact]
+        public void DirectAnnotations_PreserveRequiredUnsafeAccessors()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial class Model
+                {
+                    public Other Child { get; set; }
+                    public int Value { get; init; }
+                }
+                public class Other
+                {
+                    [JsonInclude]
+                    private int Secret { get; set; }
+                }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+            TypeGenerationSpec other = Assert.Single(result.AllGeneratedTypes, type => type.TypeRef.Name == "Other");
+            Assert.False(Assert.Single(other.PropertyGenSpecs).CanUseGetter);
+            Assert.Contains(result.NewCompilation.SyntaxTrees,
+                tree => tree.ToString().Contains("Name = \"get_Secret\""));
+            Assert.Contains(result.NewCompilation.SyntaxTrees,
+                tree => tree.ToString().Contains("Name = \"set_Value\""));
+        }
+
+        [Fact]
+        public void DirectAnnotations_IsolateAccessibilityAndTypeGraphs()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial class First { public Second Child { get; set; } }
+                [JsonSerializable]
+                public partial class Second
+                {
+                    [JsonInclude]
+                    private string Secret { get; set; }
+                }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+            Assert.Equal(2, result.ContextGenerationSpecs.Length);
+            ContextGenerationSpec first = Assert.Single(result.ContextGenerationSpecs,
+                spec => spec.ContextType.FullyQualifiedName.StartsWith("global::First.", StringComparison.Ordinal));
+            ContextGenerationSpec second = Assert.Single(result.ContextGenerationSpecs,
+                spec => spec.ContextType.FullyQualifiedName.StartsWith("global::Second.", StringComparison.Ordinal));
+            Assert.DoesNotContain(second.GeneratedTypes, type => type.TypeRef.Name == "First");
+            TypeGenerationSpec childFromFirst = Assert.Single(first.GeneratedTypes, type => type.TypeRef.Name == "Second");
+            TypeGenerationSpec childFromSecond = Assert.Single(second.GeneratedTypes, type => type.TypeRef.Name == "Second");
+            Assert.False(Assert.Single(childFromFirst.PropertyGenSpecs).CanUseGetter);
+            Assert.True(Assert.Single(childFromSecond.PropertyGenSpecs).CanUseGetter);
+        }
+
+        [Theory]
+        [InlineData("public")]
+        [InlineData("protected")]
+        [InlineData("private")]
+        public void DirectAnnotations_InheritedMembersCompile(string accessibility)
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation($$"""
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial class Model : Base { }
+                public class Base
+                {
+                    [JsonInclude]
+                    {{accessibility}} int Value { get; set; }
+                }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+        }
+
+        [Fact]
+        public void DirectAnnotations_PrivateNestedTypesCompile()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.Text.Json;
+                using System.Text.Json.Serialization;
+
+                public partial class Container
+                {
+                    [JsonSerializable]
+                    private partial class Model
+                    {
+                        [JsonConstructor]
+                        private Model() { }
+                        [JsonInclude]
+                        private Detail Child { get; set; }
+                        private class Detail { public int Value { get; set; } }
+                        public static Model Create() => new Model();
+                    }
+                    public static string Write() => JsonSerializer.Serialize(Model.Create());
+                }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+        }
+
+        [Theory]
+        [InlineData("__JsonSerializerContext")]
+        [InlineData("__JsonSerializerContext1")]
+        public void DirectAnnotations_AvoidNestedContextMemberNames(string memberName)
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation($$"""
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial class Model : Base
+                {
+                    public {{(memberName == "__JsonSerializerContext" ? "new " : "")}}class {{memberName}} { }
+                }
+                public class Base { public int __JsonSerializerContext { get; set; } }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+            Assert.NotEqual(memberName, Assert.Single(result.ContextGenerationSpecs).ContextType.Name);
+        }
+
+        [Theory]
+        [InlineData("__JsonSerializerContext")]
+        [InlineData("__JsonSerializerContext1")]
+        public void DirectAnnotations_DisambiguateContextAndMetadataNames(string propertyName)
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation($$"""
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable(TypeInfoPropertyName = "{{propertyName}}")]
+                public partial class Model { public Types.__JsonSerializerContext Child { get; set; } }
+                namespace Types { public class __JsonSerializerContext { } }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+        }
+
+        [Fact]
+        public void DirectAnnotations_ExperimentalTypesCompile()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.Diagnostics.CodeAnalysis;
+                using System.Text.Json.Serialization;
+
+                [Experimental("TEST001")]
+                [JsonSerializable]
+                public partial class Model { public int Number { get; set; } }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+        }
+
+        [Fact]
+        public void DirectAnnotations_AvoidExistingContextName()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.Text.Json;
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial class Model { public int Number { get; set; } }
+                namespace User
+                {
+                    [JsonSerializable(typeof(global::Model), TypeInfoPropertyName = "Poco")]
+                    public partial class Model : JsonSerializerContext { }
+                }
+                public static class Consumer
+                {
+                    public static string Write(Model value) => JsonSerializer.Serialize(value);
+                }
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+        }
+
+        [Fact]
+        public void Providers_CSharp11AsyncCallsWithExplicitCancellationCompile()
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation("""
+                using System.IO;
+                using System.Text.Json;
+                using System.Text.Json.Serialization;
+                using System.Threading;
+                using System.Threading.Tasks;
+
+                [JsonSerializable]
+                public partial class Model { public int Number { get; set; } }
+                public static class Consumer
+                {
+                    public static Task Write(Stream stream, Model value) =>
+                        JsonSerializer.SerializeAsync(stream, value, CancellationToken.None);
+                    public static ValueTask<Model> Read(Stream stream) =>
+                        JsonSerializer.DeserializeAsync<Model>(stream, CancellationToken.None);
+                    public static Task WriteUnannotated(Stream stream, int value) =>
+                        JsonSerializer.SerializeAsync(stream, value);
+                }
+                """,
+                additionalReferences: new[] { MetadataReference.CreateFromFile(typeof(System.IO.Pipelines.PipeReader).Assembly.Location) },
+                parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            CompilationHelper.RunJsonSourceGenerator(compilation, logger: logger);
+        }
+
+        [Theory]
+        [InlineData("public partial class Model<T> { }")]
+        [InlineData("public static partial class Model { }")]
+        [InlineData("public ref partial struct Model { }")]
+        [InlineData("file partial class Model { }")]
+        public void DirectAnnotations_UnsupportedTypesReportDiagnostics(string declaration)
+        {
+            Compilation compilation = CompilationHelper.CreateCompilation($$"""
+                using System.Text.Json.Serialization;
+                [JsonSerializable]
+                {{declaration}}
+                """, parseOptions: CompilationHelper.CreateParseOptions((LanguageVersion)1100));
+
+            JsonSourceGeneratorResult result = CompilationHelper.RunJsonSourceGenerator(compilation, disableDiagnosticValidation: true, logger: logger);
+            Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SYSLIB1030");
+            Assert.DoesNotContain(result.NewCompilation.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        }
+#endif
+
         #region Baseline comparison infrastructure
 
         private static readonly string s_baselinesRelativePath = IO.Path.Combine(
@@ -491,9 +915,9 @@ namespace System.Text.Json.SourceGeneration.UnitTests
                 foreach (SyntaxTree tree in generatedTrees)
                 {
                     string baselineFileName = ToBaselineFileName(tree.FilePath);
-                    SourceText generatedSourceText = tree.GetText();
+                    string generatedSourceText = NormalizeSnapshot(tree.GetText().ToString());
                     string absPath = IO.Path.Combine(absDir, baselineFileName);
-                    IO.File.WriteAllText(absPath, generatedSourceText.ToString());
+                    IO.File.WriteAllText(absPath, generatedSourceText);
                 }
 
                 return result;
@@ -518,9 +942,9 @@ namespace System.Text.Json.SourceGeneration.UnitTests
             {
                 string baselineFileName = ToBaselineFileName(tree.FilePath);
                 string baselinePath = IO.Path.Combine(baselineDir, baselineFileName);
-                SourceText generatedSourceText = tree.GetText();
+                SourceText generatedSourceText = SourceText.From(NormalizeSnapshot(tree.GetText().ToString()));
 
-                string baseline = LineEndingsHelper.Normalize(IO.File.ReadAllText(baselinePath));
+                string baseline = NormalizeSnapshot(IO.File.ReadAllText(baselinePath));
                 string[] expectedLines = baseline
                     .Replace("%VERSION%", typeof(JsonSourceGenerator).Assembly.GetName().Version?.ToString())
                     .Split(new[] { Environment.NewLine }, StringSplitOptions.None);
@@ -532,6 +956,11 @@ namespace System.Text.Json.SourceGeneration.UnitTests
             return result;
 #endif
         }
+
+        private static string NormalizeSnapshot(string source)
+            => string.Join(Environment.NewLine, LineEndingsHelper.Normalize(source)
+                .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
+                .Select(static line => line.TrimEnd()));
 
         private static void AssertLegacyCompilerDiagnostics(JsonSourceGeneratorResult result, params string[] expectedIds)
         {

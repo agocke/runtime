@@ -88,6 +88,82 @@ namespace System.Text.Json.SourceGeneration
                 contextGenerationSpecs.Select(static (t, _) => t.Item2);
 
             context.RegisterSourceOutput(diagnostics, EmitDiagnostics);
+
+            IncrementalValuesProvider<(INamedTypeSymbol Type, TypeDeclarationSyntax Declaration, SemanticModel Model)?> pocoTargets = context.SyntaxProvider
+                .ForAttributeWithMetadataName(
+#if !ROSLYN4_4_OR_GREATER
+                    context,
+#endif
+                    Parser.JsonSerializableAttributeFullName,
+                    (node, _) => node is TypeDeclarationSyntax,
+                    (context, cancellationToken) =>
+                    {
+                        if (context.TargetNode is not TypeDeclarationSyntax typeDecl)
+                        {
+                            return ((INamedTypeSymbol, TypeDeclarationSyntax, SemanticModel)?)null;
+                        }
+
+                        INamedTypeSymbol? symbol = (INamedTypeSymbol?)context.SemanticModel.GetDeclaredSymbol(typeDecl, cancellationToken);
+                        if (symbol is null)
+                        {
+                            return null;
+                        }
+
+                        // Check for parameterless [JsonSerializable] attribute (POCO mode).
+                        // Use context.Attributes which is pre-filtered to matching attributes.
+                        bool hasParameterlessCtor = false;
+                        foreach (AttributeData attr in context.Attributes)
+                        {
+                            if (attr.ConstructorArguments.Length == 0)
+                            {
+                                hasParameterlessCtor = true;
+                                break;
+                            }
+                        }
+
+                        if (!hasParameterlessCtor)
+                        {
+                            return null;
+                        }
+
+                        return (symbol, typeDecl, context.SemanticModel);
+                    })
+                .Where(static t => t.HasValue);
+
+            IncrementalValuesProvider<(PocoSerializableSpec?, ImmutableArray<Diagnostic>)> pocoGenerationSpecs =
+                pocoTargets
+                .Combine(knownTypeSymbols)
+                .Select(static (tuple, cancellationToken) =>
+                {
+#pragma warning disable RS1035
+                    CultureInfo originalCulture = CultureInfo.CurrentCulture;
+                    CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+                    try
+                    {
+#pragma warning restore RS1035
+                        Parser parser = new(tuple.Right);
+                        var target = tuple.Left!.Value;
+                        PocoSerializableSpec? spec = parser.ParsePocoGenerationSpec(target.Type, target.Declaration, target.Model, cancellationToken);
+                        ImmutableArray<Diagnostic> diags = parser.Diagnostics.ToImmutableArray();
+                        return (spec, diags);
+#pragma warning disable RS1035
+                    }
+                    finally
+                    {
+                        CultureInfo.CurrentCulture = originalCulture;
+                    }
+#pragma warning restore RS1035
+                });
+
+            IncrementalValuesProvider<PocoSerializableSpec?> pocoGenerationModels =
+                pocoGenerationSpecs.Select(static (t, _) => t.Item1);
+
+            context.RegisterSourceOutput(pocoGenerationModels, EmitPocoSource);
+
+            IncrementalValuesProvider<ImmutableArray<Diagnostic>> pocoDiagnostics =
+                pocoGenerationSpecs.Select(static (t, _) => t.Item2);
+
+            context.RegisterSourceOutput(pocoDiagnostics, EmitDiagnostics);
         }
 
         private void EmitSource(SourceProductionContext sourceProductionContext, ContextGenerationSpec? contextGenerationSpec)
@@ -123,6 +199,32 @@ namespace System.Text.Json.SourceGeneration
             {
                 context.ReportDiagnostic(diagnostic);
             }
+        }
+
+        private void EmitPocoSource(SourceProductionContext sourceProductionContext, PocoSerializableSpec? pocoSpec)
+        {
+            if (pocoSpec is null)
+            {
+                return;
+            }
+
+            OnSourceEmitting?.Invoke(ImmutableArray.Create(pocoSpec.ContextSpec));
+
+#pragma warning disable RS1035
+            CultureInfo originalCulture = CultureInfo.CurrentCulture;
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            try
+            {
+                Emitter emitter = new(sourceProductionContext);
+
+                emitter.Emit(pocoSpec.ContextSpec);
+                emitter.EmitPocoJsonSerializableImplementation(pocoSpec);
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = originalCulture;
+            }
+#pragma warning restore RS1035
         }
 
         /// <summary>

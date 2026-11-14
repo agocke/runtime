@@ -1165,7 +1165,7 @@ namespace System.Text.Json.Serialization
     {
         public JsonRequiredAttribute() { }
     }
-    [System.AttributeUsageAttribute(System.AttributeTargets.Class, AllowMultiple=true)]
+    [System.AttributeUsageAttribute(System.AttributeTargets.Class | System.AttributeTargets.Struct, AllowMultiple=true)]
     public sealed partial class JsonSerializableAttribute : System.Text.Json.Serialization.JsonAttribute
     {
         public JsonSerializableAttribute(System.Type type) { }
@@ -1430,10 +1430,14 @@ namespace System.Text.Json.Serialization.Metadata
         public static System.Text.Json.Serialization.Metadata.JsonTypeInfo<TCollection> CreateStackInfo<TCollection>(System.Text.Json.JsonSerializerOptions options, System.Text.Json.Serialization.Metadata.JsonCollectionInfoValues<TCollection> collectionInfo, System.Action<TCollection, object?> addFunc) where TCollection : System.Collections.IEnumerable { throw null; }
         public static System.Text.Json.Serialization.Metadata.JsonTypeInfo<TCollection> CreateStackInfo<TCollection, TElement>(System.Text.Json.JsonSerializerOptions options, System.Text.Json.Serialization.Metadata.JsonCollectionInfoValues<TCollection> collectionInfo) where TCollection : System.Collections.Generic.Stack<TElement> { throw null; }
         public static System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> CreateValueInfo<T>(System.Text.Json.JsonSerializerOptions options, System.Text.Json.Serialization.JsonConverter converter) { throw null; }
+        public static System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> CreateValueInfo<T>(System.Text.Json.JsonSerializerOptions options, System.Text.Json.Serialization.JsonConverter fallbackConverter, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver resolver) { throw null; }
+        public static System.Text.Json.Serialization.JsonConverter ExpandConverter(System.Type typeToConvert, System.Text.Json.Serialization.JsonConverter converter, System.Text.Json.JsonSerializerOptions options) { throw null; }
         public static System.Text.Json.Serialization.JsonConverter<T> GetEnumConverter<T>(System.Text.Json.JsonSerializerOptions options) where T : struct, System.Enum { throw null; }
         public static System.Text.Json.Serialization.JsonConverter<T?> GetNullableConverter<T>(System.Text.Json.JsonSerializerOptions options) where T : struct { throw null; }
+        public static System.Text.Json.Serialization.JsonConverter<T?> GetNullableConverter<T>(System.Text.Json.Serialization.JsonConverter converter, System.Text.Json.JsonSerializerOptions options) where T : struct { throw null; }
         public static System.Text.Json.Serialization.JsonConverter<T?> GetNullableConverter<T>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> underlyingTypeInfo) where T : struct { throw null; }
         public static System.Text.Json.Serialization.JsonConverter<T> GetUnsupportedTypeConverter<T>() { throw null; }
+        public static bool TryCreateValueInfo<T>(System.Text.Json.JsonSerializerOptions options, [System.Diagnostics.CodeAnalysis.NotNullWhenAttribute(true)] out System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>? typeInfo) { throw null; }
     }
     [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
     public sealed partial class JsonObjectInfoValues<T>

@@ -523,5 +523,84 @@ namespace System.Text.Json
                 }
             }
         }
+
+#if NET
+        /// <summary>
+        /// Reads the UTF-8 encoded text representing a single JSON value into a <typeparamref name="T"/>.
+        /// The Stream will be read to completion.
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="utf8Json">JSON data to parse.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<T>(Stream utf8Json)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(utf8Json, T.GetTypeInfo());
+
+        /// <summary>
+        /// Reads the UTF-8 encoded text representing a single JSON value into a <typeparamref name="T"/>.
+        /// The Stream will be read to completion.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="utf8Json">JSON data to parse.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<TContext, T>(Stream utf8Json)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(utf8Json, TContext.GetTypeInfo());
+
+        /// <summary>
+        /// Asynchronously reads the UTF-8 encoded text representing a single JSON value into a <typeparamref name="T"/>.
+        /// The Stream will be read to completion.
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="utf8Json">JSON data to parse.</param>
+        /// <param name="cancellationToken">The <see cref="CancellationToken"/> that can be used to cancel the read operation.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        [OverloadResolutionPriority(1)]
+        public static ValueTask<T?> DeserializeAsync<T>(Stream utf8Json, CancellationToken cancellationToken = default)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.DeserializeAsync(utf8Json, T.GetTypeInfo(), cancellationToken);
+
+        /// <summary>
+        /// Asynchronously reads the UTF-8 encoded text representing a single JSON value into a <typeparamref name="T"/>.
+        /// The Stream will be read to completion.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="utf8Json">JSON data to parse.</param>
+        /// <param name="cancellationToken">The <see cref="CancellationToken"/> that can be used to cancel the read operation.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        [OverloadResolutionPriority(1)]
+        public static ValueTask<T?> DeserializeAsync<TContext, T>(Stream utf8Json, CancellationToken cancellationToken = default)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.DeserializeAsync(utf8Json, TContext.GetTypeInfo(), cancellationToken);
+
+        /// <summary>
+        /// Wraps the UTF-8 encoded text into an <see cref="IAsyncEnumerable{T}"/> that can be used to deserialize
+        /// root-level JSON arrays in a streaming manner.
+        /// </summary>
+        /// <typeparam name="T">The element type to deserialize.</typeparam>
+        /// <param name="utf8Json">JSON data to parse.</param>
+        /// <param name="cancellationToken">The <see cref="CancellationToken"/> that can be used to cancel the read operation.</param>
+        /// <returns>An <see cref="IAsyncEnumerable{T}"/> representation of the provided JSON array.</returns>
+        [OverloadResolutionPriority(1)]
+        public static IAsyncEnumerable<T?> DeserializeAsyncEnumerable<T>(Stream utf8Json, CancellationToken cancellationToken = default)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.DeserializeAsyncEnumerable(utf8Json, T.GetTypeInfo(), cancellationToken);
+
+        /// <summary>
+        /// Wraps the UTF-8 encoded text into an <see cref="IAsyncEnumerable{T}"/> that can be used to deserialize
+        /// root-level JSON arrays in a streaming manner.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The element type to deserialize.</typeparam>
+        /// <param name="utf8Json">JSON data to parse.</param>
+        /// <param name="cancellationToken">The <see cref="CancellationToken"/> that can be used to cancel the read operation.</param>
+        /// <returns>An <see cref="IAsyncEnumerable{T}"/> representation of the provided JSON array.</returns>
+        [OverloadResolutionPriority(1)]
+        public static IAsyncEnumerable<T?> DeserializeAsyncEnumerable<TContext, T>(Stream utf8Json, CancellationToken cancellationToken = default)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.DeserializeAsyncEnumerable(utf8Json, TContext.GetTypeInfo(), cancellationToken);
+#endif
     }
 }

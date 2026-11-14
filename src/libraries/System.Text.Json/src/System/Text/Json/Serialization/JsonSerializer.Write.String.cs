@@ -176,5 +176,28 @@ namespace System.Text.Json
                 Utf8JsonWriterCache.ReturnWriterAndBuffer(writer, output);
             }
         }
+
+#if NET
+        /// <summary>
+        /// Converts the provided value into a <see cref="string"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="value">The value to convert.</param>
+        /// <returns>A <see cref="string"/> representation of the value.</returns>
+        public static string Serialize<T>(T value)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.Serialize(value, T.GetTypeInfo());
+
+        /// <summary>
+        /// Converts the provided value into a <see cref="string"/>.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="value">The value to convert.</param>
+        /// <returns>A <see cref="string"/> representation of the value.</returns>
+        public static string Serialize<TContext, T>(T value)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.Serialize(value, TContext.GetTypeInfo());
+#endif
     }
 }

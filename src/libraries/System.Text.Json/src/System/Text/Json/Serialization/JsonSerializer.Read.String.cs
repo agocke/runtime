@@ -439,5 +439,49 @@ namespace System.Text.Json
                 }
             }
         }
+
+#if NET
+        /// <summary>
+        /// Parses the text representing a single JSON value into a <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="json">JSON text to parse.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<T>([StringSyntax(StringSyntaxAttribute.Json)] string json)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(json, T.GetTypeInfo());
+
+        /// <summary>
+        /// Parses the text representing a single JSON value into a <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="json">JSON text to parse.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<TContext, T>([StringSyntax(StringSyntaxAttribute.Json)] string json)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(json, TContext.GetTypeInfo());
+
+        /// <summary>
+        /// Parses the text representing a single JSON value into a <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="json">The JSON text to parse.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<T>([StringSyntax(StringSyntaxAttribute.Json)] ReadOnlySpan<char> json)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(json, T.GetTypeInfo());
+
+        /// <summary>
+        /// Parses the text representing a single JSON value into a <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type to deserialize the JSON value into.</typeparam>
+        /// <param name="json">The JSON text to parse.</param>
+        /// <returns>A <typeparamref name="T"/> representation of the JSON value.</returns>
+        public static T? Deserialize<TContext, T>([StringSyntax(StringSyntaxAttribute.Json)] ReadOnlySpan<char> json)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.Deserialize(json, TContext.GetTypeInfo());
+#endif
     }
 }

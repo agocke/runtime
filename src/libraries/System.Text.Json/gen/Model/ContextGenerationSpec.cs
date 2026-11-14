@@ -29,6 +29,8 @@ namespace System.Text.Json.SourceGeneration
     {
         public required TypeRef ContextType { get; init; }
 
+        public string? SourceFilePrefix { get; init; }
+
         public required ImmutableEquatableArray<TypeGenerationSpec> GeneratedTypes { get; init; }
 
         public required string? Namespace { get; init; }
@@ -38,5 +40,18 @@ namespace System.Text.Json.SourceGeneration
         public required SourceGenerationOptionsSpec? GeneratedOptionsSpec { get; init; }
 
         public required bool UseUpdatedMemorySafetyRules { get; init; }
+
+        /// <summary>
+        /// Base type declaration to emit on the primary context source file only.
+        /// Null for user-defined contexts (user code supplies the base class).
+        /// Set for generated nested contexts.
+        /// </summary>
+        public string? BaseTypeDeclaration { get; init; }
+
+        /// <summary>
+        /// Whether to generate <c>IJsonSerializable&lt;T&gt;</c> implementations on the context.
+        /// When false, the emitter should not generate <c>IJsonSerializable&lt;T&gt;</c> implementations.
+        /// </summary>
+        public required bool IsIJsonSerializableAvailable { get; init; }
     }
 }

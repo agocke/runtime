@@ -44,7 +44,9 @@ namespace System.Text.Json.Serialization.Tests
 
             // STJ serializes ExpandoObject as IDictionary<string, object>;
             // there is no custom converter for ExpandoObject.
-            string json = JsonSerializer.Serialize<dynamic>(myDynamic);
+            // Pass options explicitly to disambiguate for the C# runtime binder,
+            // which doesn't exclude constrained overloads during resolution.
+            string json = JsonSerializer.Serialize<dynamic>(myDynamic, (JsonSerializerOptions?)null);
             JsonTestHelper.AssertJsonEqual(Json, json);
 
             dynamic d = JsonSerializer.Deserialize<dynamic>(json);
@@ -112,14 +114,14 @@ namespace System.Text.Json.Serialization.Tests
             VerifyObject();
             VerifyArray();
 
-            // Re-serialize
-            string json = JsonSerializer.Serialize<ExpandoObject>(obj);
+            // Re-serialize (pass options explicitly to disambiguate for the C# runtime binder)
+            string json = JsonSerializer.Serialize<ExpandoObject>(obj, (JsonSerializerOptions?)null);
             JsonTestHelper.AssertJsonEqual(Json, json);
 
-            json = JsonSerializer.Serialize<dynamic>(obj);
+            json = JsonSerializer.Serialize<dynamic>(obj, (JsonSerializerOptions?)null);
             JsonTestHelper.AssertJsonEqual(Json, json);
 
-            json = JsonSerializer.Serialize(obj);
+            json = JsonSerializer.Serialize(obj, (JsonSerializerOptions?)null);
             JsonTestHelper.AssertJsonEqual(Json, json);
 
             void VerifyPrimitives()

@@ -22,6 +22,16 @@ namespace SourceGenerators
             SpecialType = type.OriginalDefinition.SpecialType;
         }
 
+        /// <summary>
+        /// Creates a reference to a synthesized class without an <see cref="ITypeSymbol"/>.
+        /// </summary>
+        internal TypeRef(string name, string fullyQualifiedName)
+        {
+            Name = name;
+            FullyQualifiedName = fullyQualifiedName;
+            TypeKind = TypeKind.Class;
+        }
+
         public string Name { get; }
 
         /// <summary>

@@ -142,7 +142,7 @@ namespace System.Text.Json.SourceGeneration.UnitTests
             var generatedSpecs = ImmutableArray<ContextGenerationSpec>.Empty;
             var generator = new JsonSourceGenerator
             {
-                OnSourceEmitting = specs => generatedSpecs = specs
+                OnSourceEmitting = specs => generatedSpecs = generatedSpecs.AddRange(specs)
             };
 
             CSharpGeneratorDriver driver = CreateJsonSourceGeneratorDriver(compilation, generator);

@@ -138,5 +138,28 @@ namespace System.Text.Json
             JsonTypeInfo jsonTypeInfo = GetTypeInfo(context, inputType);
             jsonTypeInfo.SerializeAsObject(writer, value);
         }
+
+#if NET
+        /// <summary>
+        /// Writes one JSON value (including objects or arrays) to the provided writer.
+        /// </summary>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="writer">The writer to write.</param>
+        /// <param name="value">The value to convert and write.</param>
+        public static void Serialize<T>(Utf8JsonWriter writer, T value)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.Serialize(writer, value, T.GetTypeInfo());
+
+        /// <summary>
+        /// Writes one JSON value (including objects or arrays) to the provided writer.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="writer">The writer to write.</param>
+        /// <param name="value">The value to convert and write.</param>
+        public static void Serialize<TContext, T>(Utf8JsonWriter writer, T value)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.Serialize(writer, value, TContext.GetTypeInfo());
+#endif
     }
 }

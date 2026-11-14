@@ -11,7 +11,7 @@ namespace System.Text.Json.Serialization
     /// Instructs the System.Text.Json source generator to generate source code to help optimize performance
     /// when serializing and deserializing instances of the specified type and types in its object graph.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = true)]
 
 #if BUILDING_SOURCE_GENERATOR
     internal
@@ -26,6 +26,15 @@ namespace System.Text.Json.Serialization
         /// </summary>
         /// <param name="type">The type to generate source code for.</param>
         public JsonSerializableAttribute(Type type) { }
+
+#if BUILDING_SOURCE_GENERATOR || NET
+        /// <summary>
+        /// Initializes a new instance of <see cref="JsonSerializableAttribute"/>.
+        /// When applied to a partial type, the source generator will emit an
+        /// <c>IJsonSerializable&lt;T&gt;</c> implementation on the type.
+        /// </summary>
+        public JsonSerializableAttribute() { }
+#endif
 #pragma warning restore IDE0060
 
         /// <summary>

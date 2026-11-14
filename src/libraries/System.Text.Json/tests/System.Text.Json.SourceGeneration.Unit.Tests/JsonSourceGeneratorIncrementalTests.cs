@@ -192,6 +192,36 @@ namespace System.Text.Json.SourceGeneration.UnitTests
         }
 
 #if ROSLYN4_4_OR_GREATER
+#if NET
+        [Fact]
+        public static void DirectAnnotations_OnlyChangedRootRegenerates()
+        {
+            const string Source = """
+                using System.Text.Json.Serialization;
+
+                [JsonSerializable]
+                public partial class First { public int Changed { get; set; } }
+                [JsonSerializable]
+                public partial class Second { public string Unchanged { get; set; } }
+                """;
+
+            var parseOptions = CompilationHelper.CreateParseOptions((Microsoft.CodeAnalysis.CSharp.LanguageVersion)1100);
+            Compilation compilation = CompilationHelper.CreateCompilation(Source, parseOptions: parseOptions);
+            var emittedContexts = new List<ContextGenerationSpec>();
+            var generator = new JsonSourceGenerator { OnSourceEmitting = specs => emittedContexts.AddRange(specs) };
+            GeneratorDriver driver = CompilationHelper.CreateJsonSourceGeneratorDriver(compilation, generator);
+            driver = driver.RunGenerators(compilation);
+            Assert.Equal(2, emittedContexts.Count);
+
+            emittedContexts.Clear();
+            compilation = compilation.ReplaceSyntaxTree(compilation.SyntaxTrees.First(),
+                CompilationHelper.ParseSource(Source.Replace("int Changed", "long Changed"), parseOptions));
+            driver.RunGenerators(compilation);
+
+            Assert.StartsWith("global::First.", Assert.Single(emittedContexts).ContextType.FullyQualifiedName);
+        }
+#endif
+
         [Theory]
         [MemberData(nameof(GetCompilationHelperFactories))]
         public static void IncrementalGenerator_SameInput_DoesNotRegenerate(Func<Compilation> factory)

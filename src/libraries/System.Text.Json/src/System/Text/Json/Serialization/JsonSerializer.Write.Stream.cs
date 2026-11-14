@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
@@ -407,5 +408,55 @@ namespace System.Text.Json
             using var bufferWriter = new PooledByteBufferWriter(jsonTypeInfo.Options.DefaultBufferSize, utf8Json);
             await SerializeAsyncEnumerableAsJsonLines(bufferWriter, value, jsonTypeInfo, cancellationToken).ConfigureAwait(false);
         }
+
+#if NET
+        /// <summary>
+        /// Converts the provided value to UTF-8 encoded JSON text and writes it to the <see cref="Stream"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="utf8Json">The UTF-8 <see cref="Stream"/> to write to.</param>
+        /// <param name="value">The value to convert.</param>
+        public static void Serialize<T>(Stream utf8Json, T value)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.Serialize(utf8Json, value, T.GetTypeInfo());
+
+        /// <summary>
+        /// Converts the provided value to UTF-8 encoded JSON text and writes it to the <see cref="Stream"/>.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="utf8Json">The UTF-8 <see cref="Stream"/> to write to.</param>
+        /// <param name="value">The value to convert.</param>
+        public static void Serialize<TContext, T>(Stream utf8Json, T value)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.Serialize(utf8Json, value, TContext.GetTypeInfo());
+
+        /// <summary>
+        /// Asynchronously converts the provided value to UTF-8 encoded JSON text and writes it to the <see cref="Stream"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="utf8Json">The UTF-8 <see cref="Stream"/> to write to.</param>
+        /// <param name="value">The value to convert.</param>
+        /// <param name="cancellationToken">The <see cref="CancellationToken"/> that can be used to cancel the write operation.</param>
+        /// <returns>A task that represents the asynchronous write operation.</returns>
+        [OverloadResolutionPriority(1)]
+        public static Task SerializeAsync<T>(Stream utf8Json, T value, CancellationToken cancellationToken = default)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.SerializeAsync(utf8Json, value, T.GetTypeInfo(), cancellationToken);
+
+        /// <summary>
+        /// Asynchronously converts the provided value to UTF-8 encoded JSON text and writes it to the <see cref="Stream"/>.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="utf8Json">The UTF-8 <see cref="Stream"/> to write to.</param>
+        /// <param name="value">The value to convert.</param>
+        /// <param name="cancellationToken">The <see cref="CancellationToken"/> that can be used to cancel the write operation.</param>
+        /// <returns>A task that represents the asynchronous write operation.</returns>
+        [OverloadResolutionPriority(1)]
+        public static Task SerializeAsync<TContext, T>(Stream utf8Json, T value, CancellationToken cancellationToken = default)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.SerializeAsync(utf8Json, value, TContext.GetTypeInfo(), cancellationToken);
+#endif
     }
 }

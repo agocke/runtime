@@ -203,6 +203,9 @@ namespace System.Text.Json.SourceGeneration
         public INamedTypeSymbol? JsonSerializableAttributeType => GetOrResolveType("System.Text.Json.Serialization.JsonSerializableAttribute", ref _JsonSerializableAttributeType);
         private Option<INamedTypeSymbol?> _JsonSerializableAttributeType;
 
+        public INamedTypeSymbol? IJsonSerializableType => GetOrResolveType("System.Text.Json.Serialization.IJsonSerializable`1", ref _IJsonSerializableType);
+        private Option<INamedTypeSymbol?> _IJsonSerializableType;
+
         public INamedTypeSymbol? JsonDocumentType => GetOrResolveType("System.Text.Json.JsonDocument", ref _JsonDocumentType);
         private Option<INamedTypeSymbol?> _JsonDocumentType;
 

@@ -159,5 +159,28 @@ namespace System.Text.Json
                 Utf8JsonWriterCache.ReturnWriterAndBuffer(writer, output);
             }
         }
+
+#if NET
+        /// <summary>
+        /// Converts the provided value into a UTF-8 encoded <see cref="T:byte[]"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="value">The value to convert.</param>
+        /// <returns>A UTF-8 representation of the value.</returns>
+        public static byte[] SerializeToUtf8Bytes<T>(T value)
+            where T : IJsonSerializable<T>
+            => JsonSerializer.SerializeToUtf8Bytes(value, T.GetTypeInfo());
+
+        /// <summary>
+        /// Converts the provided value into a UTF-8 encoded <see cref="T:byte[]"/>.
+        /// </summary>
+        /// <typeparam name="TContext">The type implementing <see cref="IJsonSerializable{T}"/> that provides metadata.</typeparam>
+        /// <typeparam name="T">The type of the value to serialize.</typeparam>
+        /// <param name="value">The value to convert.</param>
+        /// <returns>A UTF-8 representation of the value.</returns>
+        public static byte[] SerializeToUtf8Bytes<TContext, T>(T value)
+            where TContext : IJsonSerializable<T>
+            => JsonSerializer.SerializeToUtf8Bytes(value, TContext.GetTypeInfo());
+#endif
     }
 }

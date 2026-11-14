@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization.Converters;
 
 namespace System.Text.Json.Serialization.Metadata
@@ -55,6 +57,7 @@ namespace System.Text.Json.Serialization.Metadata
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> or <paramref name="objectInfo"/> is null.</exception>
         /// <returns>A <see cref="JsonTypeInfo{T}"/> instance representing the class or struct.</returns>
         /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static JsonTypeInfo<T> CreateObjectInfo<T>(JsonSerializerOptions options, JsonObjectInfoValues<T> objectInfo) where T : notnull
         {
             ArgumentNullException.ThrowIfNull(options);
@@ -111,6 +114,51 @@ namespace System.Text.Json.Serialization.Metadata
 
             JsonTypeInfo<T> info = CreateCore<T>(converter, options);
             return info;
+        }
+
+        /// <summary>
+        /// Creates metadata using a custom converter from the options or a fallback converter.
+        /// </summary>
+        /// <typeparam name="T">The type to create metadata for.</typeparam>
+        /// <param name="options">The options to initialize the metadata with and search for custom converters.</param>
+        /// <param name="fallbackConverter">The converter to use when the options contain no converter for <typeparamref name="T"/>.</param>
+        /// <param name="resolver">The originating resolver of the metadata.</param>
+        /// <returns>A new metadata instance bound to <paramref name="options"/> and <paramref name="resolver"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="options"/>, <paramref name="fallbackConverter"/>, or <paramref name="resolver"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">A custom converter factory returns an invalid converter.</exception>
+        /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
+        public static JsonTypeInfo<T> CreateValueInfo<T>(JsonSerializerOptions options, JsonConverter fallbackConverter, IJsonTypeInfoResolver resolver)
+        {
+            ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(fallbackConverter);
+            ArgumentNullException.ThrowIfNull(resolver);
+
+            if (!TryCreateValueInfo<T>(options, out JsonTypeInfo<T>? typeInfo))
+            {
+                typeInfo = CreateValueInfo<T>(options, fallbackConverter);
+            }
+
+            typeInfo.OriginatingResolver = resolver;
+            return typeInfo;
+        }
+
+        /// <summary>
+        /// Creates metadata when the options contain a custom converter for the type.
+        /// </summary>
+        /// <typeparam name="T">The type to create metadata for.</typeparam>
+        /// <param name="options">The options to initialize the metadata with and search for custom converters.</param>
+        /// <param name="typeInfo">When this method returns, contains the metadata, or <see langword="null"/> if no custom converter was found. This parameter is treated as uninitialized.</param>
+        /// <returns><see langword="true"/> if a custom converter was found; otherwise, <see langword="false"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">A custom converter factory returns an invalid converter.</exception>
+        /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
+        public static bool TryCreateValueInfo<T>(JsonSerializerOptions options, [NotNullWhen(true)] out JsonTypeInfo<T>? typeInfo)
+        {
+            ArgumentNullException.ThrowIfNull(options);
+
+            JsonConverter? converter = options.ExpandConverterFactory(options.GetConverterFromList(typeof(T)), typeof(T));
+            typeInfo = converter is not null ? CreateValueInfo<T>(options, converter) : null;
+            return typeInfo is not null;
         }
     }
 }

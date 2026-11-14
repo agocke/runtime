@@ -1030,7 +1030,11 @@ namespace System.Text.Json.SourceGeneration.Tests
 
             // Test serialization of type from first partial
             var obj1 = new TypeFromPartial1 { Id = 42, Name = "Test" };
+#if NET && ROSLYN4_0_OR_GREATER
+            string json1 = JsonSerializer.Serialize<MultiplePartialDeclarationsContext, TypeFromPartial1>(obj1);
+#else
             string json1 = JsonSerializer.Serialize(obj1, MultiplePartialDeclarationsContext.Default.TypeFromPartial1);
+#endif
             Assert.Contains("42", json1);
             Assert.Contains("Test", json1);
 
@@ -1046,7 +1050,11 @@ namespace System.Text.Json.SourceGeneration.Tests
             Assert.Contains("true", json2);
 
             // Test deserialization of type from second partial
+#if NET && ROSLYN4_0_OR_GREATER
+            var deserialized2 = JsonSerializer.Deserialize<MultiplePartialDeclarationsContext, TypeFromPartial2>(json2);
+#else
             var deserialized2 = JsonSerializer.Deserialize<TypeFromPartial2>(json2, MultiplePartialDeclarationsContext.Default.TypeFromPartial2);
+#endif
             Assert.Equal(3.14, deserialized2.Value);
             Assert.True(deserialized2.IsActive);
         }
@@ -1057,10 +1065,18 @@ namespace System.Text.Json.SourceGeneration.Tests
         public static void SupportsOpenGenericConverterOnGenericType_Int(int value, string expectedJson)
         {
             Option<int> option = new Option<int>(value);
+#if NET && ROSLYN4_0_OR_GREATER
+            string json = JsonSerializer.Serialize<OpenGenericConverterContext, Option<int>>(option);
+#else
             string json = JsonSerializer.Serialize(option, OpenGenericConverterContext.Default.OptionInt32);
+#endif
             Assert.Equal(expectedJson, json);
 
+#if NET && ROSLYN4_0_OR_GREATER
+            Option<int> deserialized = JsonSerializer.Deserialize<OpenGenericConverterContext, Option<int>>(json);
+#else
             Option<int> deserialized = JsonSerializer.Deserialize<Option<int>>(json, OpenGenericConverterContext.Default.OptionInt32);
+#endif
             Assert.True(deserialized.HasValue);
             Assert.Equal(value, deserialized.Value);
         }
